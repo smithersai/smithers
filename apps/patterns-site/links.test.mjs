@@ -13,18 +13,14 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
+import { API_PAGES, readCatalog, USE_CASES } from "./catalog.mjs"
+
+export { readCatalog }
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, "../..")
-const apiPages = join(root, "apps/site/src/content/docs/docs/reference/api")
-const useCases = join(root, "packages/smithers/agent/examples/use-cases")
-
-/** The catalog block `site/index.html` renders from. */
-export const readCatalog = (html) => {
-  const block = html.match(/<script type="application\/json" id="catalog-data">([\s\S]*?)<\/script>/)
-  assert.ok(block, "site/index.html has no catalog-data block")
-  return JSON.parse(block[1])
-}
+const apiPages = join(root, API_PAGES)
+const useCases = join(root, USE_CASES)
 
 /**
  * The id GitHub and Starlight give a heading: inline markup dropped,

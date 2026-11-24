@@ -55,7 +55,7 @@ export interface ObjectStorage {
   put(key: string, value: unknown): Promise<void>
   put(entries: Record<string, unknown>): Promise<void>
   delete(key: string): Promise<boolean>
-  list(options: { readonly prefix: string; readonly start?: string }): Promise<Map<string, unknown>>
+  list(options: { readonly prefix: string; readonly start?: string; readonly limit?: number }): Promise<Map<string, unknown>>
   setAlarm(scheduledTime: number): Promise<void>
   deleteAlarm(): Promise<void>
   readonly sql: { exec(query: string, ...bindings: ReadonlyArray<unknown>): SqlCursor }
@@ -101,9 +101,10 @@ export function objectStorage(): ObjectStorage {
       else for (const [key, entry] of Object.entries(keyOrEntries)) kv.set(key, entry)
     },
     delete: async (key) => kv.delete(key),
-    list: async ({ prefix, start }) => {
+    list: async ({ prefix, start, limit }) => {
       const rows = new Map<string, unknown>()
       for (const key of [...kv.keys()].sort()) {
+        if (limit !== undefined && rows.size >= limit) break
         if (key.startsWith(prefix) && (start === undefined || key >= start)) rows.set(key, kv.get(key))
       }
       return rows

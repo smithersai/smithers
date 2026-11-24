@@ -118,7 +118,7 @@ export const make = <E, R>(services: Services<E, R>) => {
     if (!MISSING.has(error.code)) return Effect.fail(refusedBy(error))
     return Effect.gen(function* () {
       const head = yield* Repos.readyHead(id).pipe(Effect.provide(database), Effect.mapError(() => new ReadRefused({ code: "unavailable" })))
-      if (Option.isNone(head)) return yield* new ReadRefused({ code: "not_found" })
+      if (Option.isNone(head)) return yield* new ReadRefused({ code: "not_imported" })
       const commit = yield* codeStorage.listCommits(id, { ref: sha, limit: 1 }).pipe(Effect.result)
       if (commit._tag === "Failure" && !MISSING.has(commit.failure.code)) return yield* refusedBy(commit.failure)
       if (commit._tag === "Success") yield* meter(commit.success.bytesRead)

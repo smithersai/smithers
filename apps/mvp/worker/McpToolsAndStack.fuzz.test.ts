@@ -437,9 +437,10 @@ describe("BYOA MCP tools under adversarial input", () => {
           const principal = input.anonymous ? Option.none<McpPrincipal>() : Option.some(principalOf(role, scopes))
           const effective = input.anonymous ? null : role
           const outcome = outcomeOf(yield* Effect.exit(registry.callTool(tool, args, contextOf(principal))))
+          const readAllowed = (input.isPublic && reference.minimum === null) || (!input.anonymous && scopes.includes("mcp:read"))
           const expected = reference.writes
             ? input.anonymous ? "authentication" : !scopes.includes("mcp:write") || rank(effective) < rank(reference.minimum) ? "forbidden" : "ok"
-            : (!input.isPublic && effective === null) || rank(effective) < rank(reference.minimum)
+            : !readAllowed || (!input.isPublic && effective === null) || rank(effective) < rank(reference.minimum)
             ? "forbidden"
             : "ok"
           must(outcome === expected, `${tool} as ${String(effective)}: ${outcome}, expected ${expected}`)

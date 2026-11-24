@@ -2,7 +2,7 @@
 // the `RunContent` Durable Object gives it over its own; e2e/agent-runner.spec.ts runs the object itself.
 import { Transcript } from "@smthrs/agent"
 import { describe, expect, test } from "vitest"
-import { GENESIS, PAGE_EVENTS } from "../../src/features/transcript/contract.ts"
+import { GENESIS, PAGE_BYTES, PAGE_EVENTS } from "../../src/features/transcript/contract.ts"
 import { chain } from "../../src/features/transcript/digest.ts"
 import { sqliteStore } from "../test/runContent.ts"
 import * as Store from "./RunContent.ts"
@@ -39,7 +39,9 @@ describe("a run's transcript store", () => {
     const totals = Store.summary(sql)
     const rows = Store.page(sql, -1)
     expect(totals).toMatchObject({ events: 3, last: 3, truncated: false })
-    expect(totals.bytes).toBe(rows.reduce((sum, row) => sum + JSON.stringify(row.update).length, 0))
+    // Bytes as stored, UTF-8: "é" is two.
+    expect(totals.bytes).toBe(rows.reduce((sum, row) => sum + Buffer.byteLength(JSON.stringify(row.update), "utf8"), 0))
+    expect(totals.bytes).toBeGreaterThan(rows.reduce((sum, row) => sum + JSON.stringify(row.update).length, 0))
     expect(totals.digest).toBe(rows.reduce(chain, GENESIS))
     expect(Store.summary(sqliteStore())).toEqual({ events: 0, bytes: 0, last: 0, digest: GENESIS, truncated: false })
   })
@@ -59,6 +61,30 @@ describe("a run's transcript store", () => {
     const page = Store.page(big, -1)
     expect(page.length).toBeGreaterThan(1)
     expect(page.length).toBeLessThan(40)
+  })
+
+  test("the cap and a page count UTF-8 bytes, not UTF-16 code units: CJK text stops at the same size as ASCII", () => {
+    const sql = sqliteStore()
+    // 100 000 code units, 300 000 bytes.
+    const text = "汉".repeat(100_000)
+    const body = JSON.stringify(event(0, text).update)
+    const perEvent = Store.bytesOf(body)
+    expect(perEvent).toBe(Buffer.byteLength(body, "utf8"))
+    expect(perEvent).toBeGreaterThan(body.length * 2)
+    const fits = Math.floor(Transcript.MAX_RUN_BYTES / perEvent)
+    for (let from = 0; from < fits + 3; from += 50) {
+      Store.append(sql, 1, Array.from({ length: Math.min(50, fits + 3 - from) }, (_, n) => event(from + n, text)), 5_000)
+    }
+    const totals = Store.summary(sql)
+    // Counted in code units, three times as many would have been kept.
+    expect(totals.truncated).toBe(true)
+    expect(totals.events).toBe(fits + 1)
+    expect(totals.bytes).toBe(fits * perEvent + 2)
+    expect(totals.bytes).toBeLessThanOrEqual(Transcript.MAX_RUN_BYTES)
+    // Two of these events are over a page's bytes, though far under it in code units.
+    expect(perEvent * 2).toBeGreaterThan(PAGE_BYTES)
+    expect(body.length * 2).toBeLessThan(PAGE_BYTES)
+    expect(Store.page(sql, -1).map((row) => row.seq)).toEqual([0])
   })
 
   test("past the run's cap keeps one truncated event, drops the rest, and still counts their seqs as taken", () => {

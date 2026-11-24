@@ -120,12 +120,13 @@ describe("resolve", () => {
   })
 
   test.each([
-    ["admin", "member"],
-    ["maintain", "member"],
+    // R1-NEON-D4-001: an organization's admins and maintainers keep their roles.
+    ["admin", "admin"],
+    ["maintain", "maintainer"],
     ["write", "member"],
     ["triage", "guest"],
     ["read", "guest"],
-  ] as const)("another repository (non-owner): GitHub's %s is capped at %s, held by the person's row", async (permission, role) => {
+  ] as const)("another repository (an organization's): GitHub's %s is %s, held by the person's row", async (permission, role) => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", permission)
     const resolved = await resolve(await roles(github))
@@ -136,19 +137,19 @@ describe("resolve", () => {
     })
   })
 
-  test("project owner holds admin on their own repository, and deployment admin roninjin10 holds admin everywhere", async () => {
+  test("a repository's owner holds admin on it, and a person GitHub names no collaborator holds no role", async () => {
     const ownedRepo = { id: "github/maya/widgets", owner: "maya", name: "widgets" } as const
     const ownedGh = scriptedGitHub("maya", "widgets")
     ownedGh.roles.set("maya", "admin")
     const ownedResolved = await resolve(await roles(ownedGh), maya, ownedRepo)
     expect(ownedResolved._tag === "Success" && ownedResolved.success.role).toBe("admin")
 
-    const RONIN = "8e2f4c9a-5b3d-4f7a-9c8e-3d4f5a6b7c8d"
-    await sql(runtime, `INSERT INTO people (id, github_id, github_login) VALUES ('${RONIN}', ${accountIdOf("roninjin10")}, 'roninjin10')`)
+    // R1-NEON-D4-001: no login is admin everywhere. A person the repository's GitHub does not know holds nothing on it.
+    const DEVON = "8e2f4c9a-5b3d-4f7a-9c8e-3d4f5a6b7c8d"
+    await sql(runtime, `INSERT INTO people (id, github_id, github_login) VALUES ('${DEVON}', ${accountIdOf("devon")}, 'devon')`)
     const otherGh = scriptedGitHub("acme", "widgets")
-    otherGh.roles.set("roninjin10", "admin")
-    const adminResolved = await resolve(await roles(otherGh), { ...maya, subject: { kind: "person", id: RONIN }, login: "roninjin10" }, OTHER)
-    expect(adminResolved._tag === "Success" && adminResolved.success.role).toBe("admin")
+    const none = await resolve(await roles(otherGh), { ...maya, subject: { kind: "person", id: DEVON }, login: "devon" }, OTHER)
+    expect(none._tag === "Success" && none.success.role).toBe(null)
   })
 
   test("a role is kept 5 minutes, no role included; a stale one is read again", async () => {

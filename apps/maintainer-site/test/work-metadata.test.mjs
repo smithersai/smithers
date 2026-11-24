@@ -22,7 +22,7 @@ const check = (repo, paths = []) => build(repo, ["--check", ...paths])
 function fixture(t, files) {
   const repo = mkdtempSync(join(tmpdir(), "maintainer-metadata-"))
   t.after(() => rmSync(repo, { recursive: true, force: true }))
-  for (const name of ["build.mjs", "markdown.mjs", "client/site.css", "client/site.js"]) {
+  for (const name of ["checked-file.mjs", "build.mjs", "markdown.mjs", "client/site.css", "client/site.js"]) {
     const target = join(repo, "apps/maintainer-site", name)
     mkdirSync(dirname(target), { recursive: true })
     copyFileSync(join(root, "apps/maintainer-site", name), target)

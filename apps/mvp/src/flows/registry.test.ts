@@ -322,7 +322,7 @@ describe("side effects (the registry's `changes`)", () => {
 
   test("only a flow that says what it changes asks the person first: saving or deleting your flow, publishing a branch, removing your model", () => {
     const asking = names.filter((name) => entryOf(name).confirm !== undefined)
-    expect(asking).toEqual(["flow/save", "flow/delete", "flow/draft/delete", "branch/publish", "model/remove"])
+    expect(asking).toEqual(["flow/save", "flow/write", "flow/delete", "flow/draft/delete", "branch/publish", "model/remove"])
     for (const name of asking) expect([name, entryOf(name).changes !== undefined]).toEqual([name, true])
   })
 

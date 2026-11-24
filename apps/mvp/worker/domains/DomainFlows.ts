@@ -4,6 +4,7 @@ import { Effect, Layer, Metric, Option, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import type { DomainState } from "../../src/features/domains/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { DomainProvider, ProviderUnavailable, type Registration } from "./Provider.ts"
 import * as Store from "./Store.ts"
 
@@ -15,6 +16,13 @@ import * as Store from "./Store.ts"
 //     every attempt: domain/Check ─ ensure at the provider, read its verdict, write the row
 //   domain/Remove { repoId, hostname, actorId }
 //     domain/Release ─ mark the row removing, forget it at the provider, delete the row
+//
+// Every payload carries `authority`, the session and role scope the route admitted (`WriteAuthority.protectedOf`). A
+// poll lasts days and a removal retries for a day, so each step asks again, under the session and person locks, before
+// it calls the provider and in the transaction that changes the row (`Store.authorized`). A person demoted since, or a
+// payload recorded without authority, ends the flow (`stale`, `unauthorized`) with the provider untouched. A session or
+// role observation that is only stale (`unavailable`) skips that attempt: the poll goes on once the person's role is
+// confirmed again. `domain/Cleanup` carries none: it forgets a registration an admitted removal already orphaned.
 //
 // Each step writes and records once under its invocation key. Postgres failing is `StoreUnavailable` and the provider
 // failing is `ProviderUnavailable`, both retried; a check that can't reach the provider records `unreachable` and
@@ -60,6 +68,7 @@ export const VERIFY_INTERVAL_MS = 60_000
 export const VERIFY_ATTEMPTS = 140
 
 const verifyInput = {
+  authority: WriteAuthority.Admission,
   repoId: Schema.String,
   hostname: Schema.String,
   actorId: Schema.String,
@@ -74,7 +83,7 @@ const verifyInput = {
  */
 export const Claim = Action.make("domain/Claim", {
   payload: verifyInput,
-  success: Schema.Struct({ change: Schema.Literals(["add", "refresh", "taken", "removing", "missing", "repeat"]) }),
+  success: Schema.Struct({ change: Schema.Literals(["add", "refresh", "taken", "removing", "missing", "repeat", "stale"]) }),
   error: StoreUnavailable,
   capabilities: ["db:write:domains"],
   retryPolicy: STORE_RETRY,
@@ -100,8 +109,8 @@ export const Cleanup = Action.make("domain/Cleanup", {
 
 /** Marks the row removing, forgets the domain at the provider and deletes the row. */
 export const Release = Action.make("domain/Release", {
-  payload: { repoId: Schema.String, hostname: Schema.String, actorId: Schema.String },
-  success: Schema.Struct({ change: Schema.Literals(["released", "missing"]) }),
+  payload: { authority: WriteAuthority.Admission, repoId: Schema.String, hostname: Schema.String, actorId: Schema.String },
+  success: Schema.Struct({ change: Schema.Literals(["released", "missing", "stale"]) }),
   error: Schema.Union([StoreUnavailable, ReleaseUnavailable]),
   capabilities: ["db:write:domains", "net:domains"],
   retryPolicy: RELEASE_RETRY,
@@ -209,12 +218,20 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         row.value.repoId !== input.repoId
       ) return { satisfied: true, output: "superseded" }
       const last = input.attempt >= VERIFY_ATTEMPTS
+      // Confirmed demotion ends the poll; an expired session or role observation only skips this attempt.
+      const refused = (held: "unavailable" | "denied") => ({ satisfied: held === "denied" || last, output: "unauthorized" })
+      // Before the provider is asked to register anything: the person must still hold what the route admitted.
+      const held = yield* store(Store.authorizedNow(input.authority))
+      if (held !== "held") return refused(held)
       const provider = yield* DomainProvider
       const providerId = row.value.providerId
-      const write = (found: Omit<Store.Check, "hostname" | "pollId">) =>
+      const write = (found: Omit<Store.Check, "hostname" | "pollId" | "authority">) =>
         Effect.gen(function* () {
-          const recorded = yield* store(Store.record({ ...found, hostname: input.hostname, pollId: input.pollId }))
+          const recorded = yield* store(
+            Store.record({ ...found, hostname: input.hostname, pollId: input.pollId, authority: input.authority }),
+          )
           if (recorded === "written") return { satisfied: found.state !== "pending", output: found.state }
+          if (recorded === "denied" || recorded === "unavailable") return refused(recorded)
           // Removal knew only the old id. Seal the new id before a separate durable step forgets it.
           if (recorded === "removed" && found.providerId !== undefined && found.providerId !== providerId) {
             return { satisfied: true, output: "superseded", cleanupId: found.providerId }
@@ -276,7 +293,9 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   const release = (input: typeof Release.payloadSchema.Type) =>
     Effect.gen(function* () {
       const key = yield* invocationKey
+      // Asked again on every try: a retry a day later never reaches the provider for someone demoted meanwhile.
       const withdrawn = yield* store(Store.withdraw({ ...input, invocationKey: key }))
+      if (withdrawn === "stale") return { change: "stale" as const }
       if (Option.isNone(withdrawn)) return { change: "missing" as const }
       const provider = yield* DomainProvider
       if (withdrawn.value.providerId !== null) {
@@ -293,8 +312,8 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           ),
         )
       }
-      yield* store(Store.erase(input.hostname))
-      return { change: "released" as const }
+      const erased = yield* store(Store.erase(input.hostname, input.authority))
+      return { change: erased === "erased" ? "released" as const : "stale" as const }
     }).pipe((effect) => recorded("release", input.repoId, ({ change }) => change, effect))
 
   return { claim, check, cleanup, release }

@@ -14,6 +14,15 @@ const Step = Flow.make("auth/GitHubConnection", {
 })
 const Refused = Delegation.DelegationRefused
 
+/**
+ * Settled executions are forgotten thirty days after they finish (`CloudflareRuntime.Options.retention`), so a
+ * person's object stops growing by one run per install, revoke, webhook and journaled answer. A `once` execution names a
+ * fresh random id nobody asks for again. A journaled answer is asked for again only while its step may be retried: a
+ * refresh under a generation the store has since left, a revoke under a nonce that expired within minutes, and a write
+ * under an idempotency key whose keyed operation is found at GitHub before it is performed again.
+ */
+export const EXECUTION_RETENTION = { olderThanMs: 30 * 86_400_000 }
+
 export interface Setup {
   readonly origin: string
   readonly sites: ReadonlyArray<GitHub.Delegation.Site>
@@ -38,7 +47,7 @@ export effect function make(person: number, hostId: string, storage: ObjectDatab
     })
     return Effect.orDie(scoped(Effect.provide(effect {
       return try Effect.orDie((try FlowRuntime.FlowRuntime).execute(Step, { executionId, payload: { step } }))
-    }, CloudflareRuntime.layer({ hostId, executionId, flow: Step._tag }, registration).pipe(Layer.provide(ObjectDatabase.layer(storage))))))
+    }, CloudflareRuntime.layer({ hostId, executionId, flow: Step._tag, retention: EXECUTION_RETENTION }, registration).pipe(Layer.provide(ObjectDatabase.layer(storage))))))
   }
   /** Records success only: a refused attempt moves to a fresh execution, so a transient failure can be retried. */
   const journal: GitHub.Delegation.Journal = (name, body) => effect {

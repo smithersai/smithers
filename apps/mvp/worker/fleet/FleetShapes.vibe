@@ -1,9 +1,9 @@
 /**
  * Deployment-wide ElectricSQL shape proxies for `/app/fleet`.
  *
- * Strictly restricted to deployment admins (`roninjin10` by default via
- * `DeploymentPolicy`): signed-out callers get 401; non-admin signed-in users
- * (even owners of their own projects) get 403.
+ * Restricted to a deployment admin signed in as a person (`DeploymentPolicy`): signed-out callers get 401; everyone
+ * else gets 403, including a repository Admin who is no deployment admin and any run, flow, sandbox or agent
+ * credential acting for a deployment admin. The refusal is decided before Electric is contacted.
  */
 
 import { ShapeProxy } from "@smthrs/effect-electric"
@@ -41,7 +41,7 @@ export effect function make(admins?: ReadonlySet<string>) {
     if (Option.isNone(actor)) {
       throw new ShapeProxy.Refused({ status: 401 })
     }
-    if (!DeploymentPolicy.isDeploymentAdmin(actor.value.login, allowedAdmins)) {
+    if (!DeploymentPolicy.holdsDeploymentAuthority(actor.value, allowedAdmins)) {
       throw new ShapeProxy.Refused({ status: 403 })
     }
     return actor.value

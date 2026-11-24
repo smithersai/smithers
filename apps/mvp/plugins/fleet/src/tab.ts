@@ -1,6 +1,8 @@
 import { Host } from "@smthrs/plugin"
 import { Effect, Scope } from "effect"
+import { availabilityOf } from "../../../src/features/fleet/globalContract"
 import type { HostNode, ObservedSession, ProviderAccount } from "../../../src/features/fleet/globalSchema"
+import { ALL, type SessionFilters } from "./GlobalFleetModel"
 import type { AgentRun, Machine } from "./model"
 
 export const RUNS = "core/agent-runs"
@@ -26,11 +28,17 @@ export interface FleetTab {
     readonly globalNodes: () => Watched<Rows<HostNode>>
     readonly globalSessions: () => Watched<Rows<ObservedSession>>
     readonly globalAccounts: () => Watched<Rows<ProviderAccount>>
+    /** Which sessions the deployment-wide table shows: this tab's own state, kept while the tab lives. */
+    readonly filters: Watched<SessionFilters>
   }
   readonly actions: {
     readonly href: (repository: Host.Repository) => string
     readonly open: (repository: Host.Repository) => void
     readonly openGlobal: () => void
+    /** Shows only host `host`'s sessions, or every host's (`ALL`). */
+    readonly filterHost: (host: string) => void
+    /** Shows only harness `harness`'s sessions, or every harness's (`ALL`). */
+    readonly filterHarness: (harness: string) => void
   }
 }
 
@@ -68,8 +76,16 @@ export const make = (host: Host.PluginHost) =>
             Scope.provide(
               Effect.acquireRelease(
                 Effect.sync(() => {
-                  value.set({ _tag: "Ready", rows: live.current() })
-                  return live.subscribe(() => value.set({ _tag: "Ready", rows: live.current() }))
+                  // A source that says its rows aren't delivered is never read as no rows: still syncing its first
+                  // snapshot is `Loading`, withheld is `Refused` (Astra-D4-031).
+                  const read = (): Rows<A> => {
+                    const availability = availabilityOf(live)
+                    if (availability === "loading") return { _tag: "Loading" }
+                    if (availability === "unavailable") return { _tag: "Refused", reason: "unavailable" }
+                    return { _tag: "Ready", rows: live.current() }
+                  }
+                  value.set(read())
+                  return live.subscribe(() => value.set(read()))
                 }),
                 (stop) => Effect.sync(stop),
               ),
@@ -106,6 +122,8 @@ export const make = (host: Host.PluginHost) =>
       }
     }
 
+    const filters = cell<SessionFilters>({ host: ALL, harness: ALL })
+
     return {
       queries: {
         runs: perRepository<AgentRun>(RUNS),
@@ -113,11 +131,14 @@ export const make = (host: Host.PluginHost) =>
         globalNodes: singleton<HostNode>(FLEET_NODES),
         globalSessions: singleton<ObservedSession>(FLEET_SESSIONS),
         globalAccounts: singleton<ProviderAccount>(FLEET_ACCOUNTS),
+        filters,
       },
       actions: {
         href: (repository) => Host.pathOf({ plugin: "fleet", scope: "repository", path: "" }, repository)!,
         open: (repository) => void run(host.open(VIEW, repository)),
         openGlobal: () => void run(host.open(GLOBAL_VIEW)),
+        filterHost: (host) => filters.set({ ...filters.current(), host }),
+        filterHarness: (harness) => filters.set({ ...filters.current(), harness }),
       },
     } satisfies FleetTab
   })

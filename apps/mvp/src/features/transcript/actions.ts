@@ -152,17 +152,19 @@ export const watch = (runId: string | null) =>
               return
             }
             yield* Metric.update(Metric.withAttributes(dials, { outcome: "dropped" }), 1)
+            const wasLive = (yield* panelNow).phase === "live"
             yield* setPanel({ phase: "offline" })
             const now = yield* Clock.currentTimeMillis
-            const firstFailureAt = startedAt ?? now
+            const firstFailureAt = wasLive ? now : startedAt ?? now
+            const attemptNumber = wasLive ? 1 : n
             const decision = yield* RetryPolicy.decideEffect(store.redial, {
-              attempt: n,
+              attempt: attemptNumber,
               error: dropped,
               elapsedMs: now - firstFailureAt,
             })
             if (decision._tag === "GiveUp") return yield* Effect.fail(dropped)
             yield* Effect.sleep(Duration.millis(decision.delayMs))
-            return yield* attempt(n + 1, firstFailureAt)
+            return yield* attempt(attemptNumber + 1, firstFailureAt)
           })
         ),
       )

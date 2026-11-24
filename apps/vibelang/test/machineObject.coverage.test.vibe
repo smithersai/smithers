@@ -3,6 +3,7 @@
 // and a container whose commands are local processes (fuzz/machine-box.ts): the running status, a lease it refuses, a
 // command before any lease, a command answered from its receipt, and a command whose generation stops while it runs.
 import { describe, expect, it } from "@effect/vitest"
+import { TestClock } from "effect/testing"
 import { RuntimeContext } from "alchemy"
 import { machineObject, type MachineBox, type ObjectState } from "../worker/machineObject.vibe"
 import { makeBox } from "../fuzz/machine-box.ts"
@@ -14,7 +15,7 @@ effect function started() {
   const storage = try Effect.try(() => objectStorage())
   const machine = try machineObject(local.box as unknown as MachineBox, { raw: { storage }, id: { toString: () => "m" } } as unknown as ObjectState)
   expect(try machine.apply("start", 1, "start", "")).toEqual({ ok: true, output: "" })
-  return { local, machine }
+  return { local, machine, storage }
 }
 
 const provided = <A, E>(body: A!E!(RuntimeContext | Scope.Scope)) => Effect.scoped(Effect.provideService(body, RuntimeContext, {} as never))
@@ -52,6 +53,44 @@ describe("the machine object", () => {
     expect(local.state.executed.filter((script) => script.includes("echo"))).toHaveLength(1)
   }), 30_000)
 
+  // Review R1 D4 (Fable-D4-013): the command ran, so its output and receipt survive a checkpoint that fails after it.
+  it.live("keeps a finished command when its checkpoint fails, and answers its replay from the receipt", () => provided(effect {
+    const { local, machine, storage } = try started()
+    try machine.apply("lease", 1, "", "60000")
+    const before = try machine.apply("command", 1, "op-0", "echo checkpointed")
+    local.faults.add("snapshot")
+    const first = try machine.apply("command", 1, "op-1", "echo kept")
+    const again = try machine.apply("command", 1, "op-1", "echo kept")
+    const saved = (try promise(() => storage.get("machine"))) as { readonly snapshot?: { readonly id: string }; readonly checkpointFailed?: boolean }
+    expect(before.ok).toBe(true)
+    expect([first.ok, first.output.includes("kept"), again]).toEqual([true, true, first])
+    expect(local.state.executed.filter((script) => script.includes("echo kept"))).toHaveLength(1)
+    expect(try Effect.try(() => storage.sql.exec("SELECT phase FROM sandbox_machine_commands WHERE id = '1/op-1'").toArray())).toEqual([{ phase: "done" }])
+    // The last good checkpoint stays restorable and the failure is recorded, as a failed stop records it.
+    expect(saved).toMatchObject({ snapshot: { id: "snapshot-1" }, checkpointFailed: true })
+    local.faults.delete("snapshot")
+    expect((try machine.apply("command", 1, "op-2", "echo next")).ok).toBe(true)
+    expect((try promise(() => storage.get("machine"))) as typeof saved).toMatchObject({ snapshot: { id: "snapshot-2" }, checkpointFailed: false })
+  }), 30_000)
+
+  // Review R1 D4 (Fable-D4-014): the fence refuses older generations, so their receipts are dropped at the next start.
+  it.live("drops an older generation's receipts when a new generation starts", () => provided(effect {
+    const { machine, storage } = try started()
+    const count = (pattern: string) => Number(storage.sql.exec("SELECT count(*) AS n FROM sandbox_machine_commands WHERE id LIKE ?", pattern).toArray()[0]!["n"])
+    try machine.apply("lease", 1, "", "60000")
+    expect((try machine.apply("command", 1, "op-1", "echo one")).ok).toBe(true)
+    expect((try machine.apply("command", 1, "op-2", "echo two")).ok).toBe(true)
+    expect(count("1/%")).toBe(2)
+    expect(try machine.apply("stop", 1, "stop", "")).toMatchObject({ ok: true })
+    expect(try machine.apply("start", 2, "start-2", "")).toEqual({ ok: true, output: "" })
+    expect(count("1/%")).toBe(0)
+    try machine.apply("lease", 2, "", "60000")
+    expect((try machine.apply("command", 2, "op-1", "echo three")).ok).toBe(true)
+    expect([count("1/%"), count("2/%")]).toEqual([0, 1])
+    // Generation 1 is still refused by the fence, with or without its receipts.
+    expect(try machine.apply("command", 1, "op-1", "echo one")).toEqual(refused("generation"))
+  }), 30_000)
+
   it.live("refuses a command's answer when its generation stopped while it ran", () => provided(effect {
     const { machine } = try started()
     try machine.apply("lease", 1, "", "60000")
@@ -59,5 +98,16 @@ describe("the machine object", () => {
     try sleep("300 millis")
     expect(try machine.apply("stop", 1, "stop", "")).toMatchObject({ ok: true })
     expect(try Fiber.join(running)).toEqual(refused("not-current"))
+  }), 30_000)
+
+  // Review R1 D4 (Fable-D4-039): the lease is read from Clock, so a test clock expires it.
+  it.effect("refuses a command once its lease has run out on the clock", () => provided(effect {
+    const { machine } = try started()
+    expect(try machine.apply("lease", 1, "", "60000")).toEqual({ ok: true, output: "running" })
+    try TestClock.adjust("59 seconds")
+    const within = try Effect.result(Effect.timeout(Effect.as(TestClock.adjust("0 millis"), "leased"), "1 second"))
+    try TestClock.adjust("1 second")
+    expect(within._tag).toBe("Success")
+    expect(try machine.apply("command", 1, "late", "echo late")).toEqual(refused("lease-expired"))
   }), 30_000)
 })

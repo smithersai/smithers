@@ -210,7 +210,7 @@ describe("undo", () => {
     expect(get(cwd, "a.ts")).toBe("before\n")
   })
 
-  it("reverses a credential edit after the session was saved and reopened, byte for byte", async () => {
+  it("reverses a credential edit byte for byte in the live session, and refuses it once reopened from the journal", async () => {
     const cwd = scratch()
     const before = "ANTHROPIC_API_KEY=sk-ant-api03-Qx7Lm2Vb9Tz4Rk8Wp1Ns6Hd3\n"
     const after = "ANTHROPIC_API_KEY=sk-ant-api03-Rotated9Tz4Rk8Wp1Ns6Hd3\n"
@@ -223,11 +223,18 @@ describe("undo", () => {
     process.env.SMITHERS_TUI_SESSION_DIR = scratch()
     const writer = Session.create(cwd)
     for (const record of r.records) writer.append(record)
-    expect(readFileSync(writer.file, "utf8").split("\n").filter((line) => line.includes("\"event\"")).join("\n")).not
-      .toContain("Rotated9")
+    const raw = readFileSync(writer.file, "utf8")
+    for (const secret of ["Qx7Lm2Vb9", "Rotated9"]) expect(raw).not.toContain(secret)
 
+    // Reopened: the journal holds only placeholders, so undo refuses rather than writing one into `.env`.
     const transcript = Session.restore(Session.load(writer.file)).transcript
-    const result = await undo(cwd, transcript, cellRows(transcript)[0]!.id)
+    const reopened = await Undo.plan(cwd, Undo.turn(transcript, cellRows(transcript)[0]!.id).cells) as Undo.Plan
+    expect(entries(reopened)).toEqual([{ path: ".env", refused: "redacted" }])
+    expect(Undo.refusal(reopened)).toBe("Not undone · held a credential: .env")
+    expect(get(cwd, ".env")).toBe(after)
+
+    // Live: the process that saw the credential still undoes it exactly.
+    const result = await undo(cwd, r.transcript(), cellRows(r.transcript())[0]!.id)
     expect("_tag" in result).toBe(false)
     expect(get(cwd, ".env")).toBe(before)
   })
@@ -1382,5 +1389,71 @@ describe("undo commit containment", () => {
       paths: ["link/victim"]
     })
     expect(get(root, "elsewhere/victim")).toBe("x\n")
+  })
+})
+
+describe("undo commit against intervening writers", () => {
+  it("stops with a conflict and keeps a second writer's edit made between two publications", async () => {
+    const cwd = scratch()
+    put(cwd, "a.ts", "after a\n")
+    put(cwd, "b.ts", "after b\n")
+    const files = [
+      { path: "a.ts", current: "after a\n", next: "before a\n" },
+      { path: "b.ts", current: "after b\n", next: "before b\n" }
+    ]
+    const result = await Undo.commit(cwd, files, undefined, async (path, content, mode) => {
+      await Undo.put(path, content, mode)
+      // A person saves b.ts right after undo publishes a.ts.
+      if (path === join(cwd, "a.ts")) writeFileSync(join(cwd, "b.ts"), "person's b\n")
+    })
+    expect(result).toEqual({ _tag: "Conflict", paths: ["b.ts"] })
+    expect(get(cwd, "b.ts")).toBe("person's b\n")
+    // a.ts held what undo wrote, so it is rolled back to its pre-undo bytes.
+    expect(get(cwd, "a.ts")).toBe("after a\n")
+  })
+
+  it("rollback keeps a file another writer changed after undo wrote it", async () => {
+    const cwd = scratch()
+    put(cwd, "a.ts", "after a\n")
+    put(cwd, "b.ts", "after b\n")
+    const files = [
+      { path: "a.ts", current: "after a\n", next: "before a\n" },
+      { path: "b.ts", current: "after b\n", next: "before b\n" }
+    ]
+    const result = await Undo.commit(cwd, files, undefined, async (path, content, mode) => {
+      if (path === join(cwd, "b.ts")) {
+        // A person edits a.ts after undo published it, then b.ts fails.
+        writeFileSync(join(cwd, "a.ts"), "person's a\n")
+        throw Object.assign(new Error("no space"), { code: "ENOSPC" })
+      }
+      await Undo.put(path, content, mode)
+    })
+    expect(result).toEqual({ _tag: "WriteFailed", path: "b.ts", message: "ENOSPC", restored: false, kept: ["a.ts"] })
+    expect(get(cwd, "a.ts")).toBe("person's a\n")
+    expect(get(cwd, "b.ts")).toBe("after b\n")
+    expect(Undo.message(result!)).toBe("Undo failed · b.ts: disk full · files partly changed · kept newer edits: a.ts")
+  })
+
+  it("refuses a later file whose directory became a symlink out of the workspace mid-commit", async () => {
+    const root = scratch()
+    const cwd = join(root, "repo")
+    mkdirSync(join(root, "elsewhere"), { recursive: true })
+    put(root, "elsewhere/victim", "x\n")
+    put(cwd, "a.ts", "after a\n")
+    put(cwd, "sub/victim", "x\n")
+    const files = [
+      { path: "a.ts", current: "after a\n", next: "before a\n" },
+      { path: "sub/victim", current: "x\n", next: null }
+    ]
+    const result = await Undo.commit(cwd, files, undefined, async (path, content, mode) => {
+      await Undo.put(path, content, mode)
+      if (path === join(cwd, "a.ts")) {
+        rmSync(join(cwd, "sub"), { recursive: true })
+        symlinkSync(join(root, "elsewhere"), join(cwd, "sub"))
+      }
+    })
+    expect(result).toEqual({ _tag: "Outside", paths: ["sub/victim"] })
+    expect(get(root, "elsewhere/victim")).toBe("x\n")
+    expect(get(cwd, "a.ts")).toBe("after a\n")
   })
 })

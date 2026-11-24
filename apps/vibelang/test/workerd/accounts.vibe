@@ -34,6 +34,8 @@ export class ProjectAccounts {
             ? succeed({ id, login: "fixture-person-" + id })
             : fail(new GitHub.Auth.GitHubRefused({ step: "user", reason: "rejected" }))
         } },
+        // The fixture App issued every `device-token-` token and no other.
+        issuedHere: (token: Redacted.Redacted<string>) => succeed(Redacted.value(token).startsWith("device-token-")),
       } : setup
       return await runPromise(Accounts.make(state.id.toString(), state.storage, configured).pipe(Effect.provide(FetchHttpClient.layer)))
     })

@@ -155,7 +155,12 @@ export const forwardSubscription = (
       Effect.provideService(SqlClient.SqlClient, sql),
       Effect.option,
     )
-    if (Option.isNone(repository)) return HttpServerResponse.text("unavailable", { status: 503 })
+    if (Option.isNone(repository)) {
+      yield* Effect.logWarning("secrets.egress").pipe(
+        Effect.annotateLogs({ egress: "subscription", outcome: "unavailable", errorCode: "policy" }),
+      )
+      return HttpServerResponse.text("unavailable", { status: 503 })
+    }
     const policy: Egress.Policy = {
       secrets: [...repository.value.policy.secrets, { name, placeholder, hosts: subscription.hosts }],
       allow,
@@ -217,18 +222,32 @@ export const overflowPlaceholders = (guest: Guest, keys: Keys, overflow: Pick<Ov
  * credentials alone, its runner's token bound to this deployment's host and the Admin's API key bound to its base URL's
  * host, plus `allow`. Each opens per request from its sealed row and never enters the box: the same placeholders,
  * substitution, refusals, scrubbing and audit as a subscription's (`forwardSubscription`), for a BYOK key. The box
- * gets no repository secret: it runs no branch's code.
+ * gets no repository secret: it runs no branch's code. `unavailable` (503), logged as `secrets.egress`, when a stored
+ * credential's URL names no host: nothing is forwarded under a policy that binds a credential to nowhere.
  */
 export const forwardOverflow = (guest: Guest, overflow: OverflowCredentials, allow: ReadonlyArray<string> = []) =>
   Effect.gen(function* () {
     const keys = yield* SecretKeys
     if (Option.isNone(keys)) return HttpServerResponse.text("off", { status: 503 })
+    // A stored URL that doesn't parse is a refusal with a record, never a defect.
+    const tokenHost = URL.parse(overflow.origin)?.hostname ?? ""
+    const keyHost = URL.parse(overflow.baseUrl)?.hostname ?? ""
+    if (tokenHost === "" || keyHost === "") {
+      yield* Effect.logWarning("secrets.egress").pipe(
+        Effect.annotateLogs({
+          egress: "overflow",
+          outcome: "unavailable",
+          errorCode: tokenHost === "" ? "overflow_origin" : "overflow_base_url",
+        }),
+      )
+      return HttpServerResponse.text("unavailable", { status: 503 })
+    }
     const placeholders = yield* overflowPlaceholders(guest, keys.value, overflow)
     const keyName = `connection:${overflow.connectionId}`
     const policy: Egress.Policy = {
       secrets: [
-        { name: OVERFLOW_TOKEN, placeholder: placeholders.token, hosts: [new URL(overflow.origin).hostname] },
-        { name: keyName, placeholder: placeholders.key, hosts: [new URL(overflow.baseUrl).hostname] },
+        { name: OVERFLOW_TOKEN, placeholder: placeholders.token, hosts: [tokenHost] },
+        { name: keyName, placeholder: placeholders.key, hosts: [keyHost] },
       ],
       allow,
     }

@@ -1,4 +1,3 @@
-import * as DeploymentPolicy from "../DeploymentPolicy.vibe"
 import { rankOf } from "../Actor.ts"
 import { GitHub } from "@smthrs/integrations"
 import { Clock, Config, Duration, Effect, Function, type Layer, Metric, Option, Schema } from "effect"
@@ -528,9 +527,8 @@ export const makeWith = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>,
           )
         }
         // What decides is the row as it stands after this read: a later read's, when one already landed.
-        const admins = yield* DeploymentPolicy.configuredAdmins().pipe(Effect.orElseSucceed(() => DeploymentPolicy.DEFAULT_ADMINS))
         const kept = yield* timed(stages, "recordMs", inDatabase(
-          remember(repository.id, personId, sameAccount && Option.isSome(account) ? DeploymentPolicy.effectiveRole(account.value.login, repository, roleOf(permissionOf(answer.value)), admins) : null, asOf, freshSeconds),
+          remember(repository.id, personId, sameAccount ? roleOf(permissionOf(answer.value)) : null, asOf, freshSeconds),
           "role_record",
         ))
         // A read slow enough that its row expired before it returned decides nothing: decision 0079's five minutes run

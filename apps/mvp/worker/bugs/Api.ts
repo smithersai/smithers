@@ -31,8 +31,11 @@ import * as ShapeAccess from "../ShapeAccess.ts"
 //   (`ReportRequest`). Who filed it comes from the actor, never the body; fields the body adds are ignored. The row is
 //   keyed by the report's id, so filing it again answers as filed and changes nothing, and an id another person filed is
 //   refused. Then it starts `ops/BugReport`, which tells the Admins (worker/flows/BugReport.ts), once per report.
-// - `GET /api/bugs?limit=N`: the latest reports, newest first, for an Admin (in person, or a run acting for one), or for
-//   a bearer of the deployment's read token (`BUG_REPORTS_READ_TOKEN`; unset, that door is off).
+//   A person files at most `BUG_REPORTS_DAILY_LIMIT` new reports (`DAILY_ALLOWANCE` unless set) in any 24 hours,
+//   whoever acts for them: the next is refused `429 rate_limited`, stores nothing and starts nothing.
+// - `GET /api/bugs?limit=N`: the latest reports, newest first, for an Admin in person or their agent (`act.kind`
+//   `agent`), or for a bearer of the deployment's read token (`BUG_REPORTS_READ_TOKEN`; unset, that door is off). A
+//   sandbox, flow or app credential running for an Admin is refused 403: it reads no other person's report.
 // - `GET /api/shapes/bug-reports`: every report for an Admin in person; a person's own for anyone else signed in.
 //
 // No log line, span or metric carries what a person wrote, a page, a login or the token; a refusal names a code.
@@ -48,6 +51,15 @@ export const shapes = Metric.counter("smithers_bug_shape_requests", {
   description: "GET /api/shapes/bug-reports requests, by status and live",
   incremental: true,
 })
+
+/** New reports one person may file in any 24 hours, unless `BUG_REPORTS_DAILY_LIMIT` says otherwise. */
+export const DAILY_ALLOWANCE = 20
+
+/** The deployment variable that sets a person's daily allowance of new reports. */
+export const DAILY_LIMIT_VARIABLE = "BUG_REPORTS_DAILY_LIMIT"
+
+/** What the routes answer in a refusal's `code`: the contract's, and `rate_limited` for a person over their allowance. */
+type Refused = Refusal | "rate_limited"
 
 /** Whether a path is one of the bug reports' routes. */
 export const handles = (path: string): boolean => path === BUG_REPORTS_ROUTE || path === BUG_REPORTS_SHAPE_ROUTE
@@ -83,12 +95,24 @@ export const limitOf = (raw: string | null): number | undefined => {
 
 /**
  * Writes `report` as `actor`'s, against the `SqlClient` in context, unless its id is taken. Answers the transaction
- * that wrote it; `null` when `actor` had filed it already; `"conflict"` when someone else had.
+ * that wrote it; `null` when `actor` had filed it already; `"conflict"` when someone else had; `"rate_limited"` when it
+ * is new and `actor`'s person already filed `allowance` reports in the last 24 hours.
+ *
+ * The count and the insert are one transaction under the person's advisory lock, so concurrent filings can't each see
+ * room for the last report. A report filed again is answered before the allowance is read: a retry never spends it.
  */
-export const file = (report: ReportRequest, actor: Actor) =>
+export const file = (report: ReportRequest, actor: Actor, allowance: number = DAILY_ALLOWANCE) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const reporter = actor.subject.id
+    yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${`bugs:allowance:${reporter}`}, 0))`
+    const known = yield* sql<{ readonly mine: boolean }>`
+      SELECT reporter_id = ${reporter} AS mine FROM bug_reports WHERE id = ${report.id}`
+    if (known[0] !== undefined) return known[0].mine ? null : "conflict" as const
+    const filed = yield* sql<{ readonly n: number }>`
+      SELECT count(*)::int AS n FROM bug_reports
+      WHERE reporter_id = ${reporter} AND created_at > now() - interval '24 hours'`
+    if (filed[0]!.n >= allowance) return "rate_limited" as const
     const written = yield* sql<{ readonly txid: string }>`
       INSERT INTO bug_reports (id, reporter_id, reporter_login, reporter_role, acted_by, what, route, repo, build, traces,
         runs, failures, errors, browser, viewport)
@@ -102,7 +126,7 @@ export const file = (report: ReportRequest, actor: Actor) =>
     const mine = yield* sql<{ readonly mine: boolean }>`
       SELECT reporter_id = ${reporter} AS mine FROM bug_reports WHERE id = ${report.id}`
     return mine.some((row) => row.mine) ? null : "conflict" as const
-  })
+  }).pipe((effect) => Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(effect)))
 
 /** The latest `limit` reports, newest first, against the `SqlClient` in context, as the read route answers them. */
 export const latest = (limit: number) =>
@@ -124,6 +148,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       yield* Config.option(Config.Redacted(BUG_READ_TOKEN_VARIABLE)),
       (value) => Redacted.value(value).trim() !== "",
     )
+    const allowance = yield* Config.Int(DAILY_LIMIT_VARIABLE).pipe(Config.withDefault(DAILY_ALLOWANCE))
 
     /** `GET /api/shapes/bug-reports`: every report for an Admin in person, a person's own otherwise. */
     const shape = ShapeProxy.make({
@@ -147,7 +172,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       const startedAt = yield* Clock.currentTimeMillis
       const op = request.method === "GET" ? "list" : "file"
       const fields: Fields = { op }
-      const refuse = (status: number, code: Refusal) => {
+      const refuse = (status: number, code: Refused) => {
         fields.code = code
         return HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
       }
@@ -163,6 +188,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
             const actor = yield* (yield* Sessions).resolve
             if (Option.isNone(actor)) return refuse(401, "authentication")
             if (actor.value.role !== "admin") return refuse(403, "forbidden")
+            // In person or their agent only: a sandbox, flow or app credential running for an Admin reads no report.
+            if (actor.value.act !== undefined) {
+              fields.by = actor.value.act.kind
+              if (actor.value.act.kind !== "agent") return refuse(403, "forbidden")
+            }
           }
           fields.door = byToken ? "token" : "session"
           const limit = limitOf(new URL(request.url, "http://chat.invalid").searchParams.get("limit"))
@@ -186,8 +216,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         if (Option.isNone(decoded) || hasNul(decoded.value)) return refuse(400, "invalid")
         const report = decoded.value
         fields.reportId = report.id
-        const txid = yield* file(report, actor.value).pipe(Effect.provide(database))
+        const txid = yield* file(report, actor.value, allowance).pipe(Effect.provide(database))
         if (txid === "conflict") return refuse(409, "conflict")
+        if (txid === "rate_limited") return refuse(429, "rate_limited")
         if (txid === null) fields.existing = true
         // Filed again, it starts again: a start an earlier request couldn't record runs now, and one it did is the same.
         const started = yield* (yield* Flows.FlowStarter).start(BugReport, {

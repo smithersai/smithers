@@ -33,7 +33,6 @@ import { codeOf } from "./ErrorCode.ts"
 import * as Flows from "./Flows.ts"
 import * as ReplacedTokens from "./flows/RevokeReplacedGitHubToken.ts"
 import { RevokeGitHubToken, revokeExecutionId } from "./flows/RevokeGitHubToken.ts"
-import * as DeploymentPolicy from "./DeploymentPolicy.vibe"
 import { appSlug, GitHubAuth, type GitHubRefused, roleOf } from "./GitHubAuth.ts"
 import * as HostedModel from "./HostedModel.ts"
 import * as RunCredentials from "./RunCredentials.ts"
@@ -965,8 +964,9 @@ export const make = <E, R>(
             Effect.provide(database),
             Effect.mapError((error) => new CallbackFailed({ reason: "database", returnTo, errorCode: codeOf(error) })),
           )
-          const admins = yield* DeploymentPolicy.configuredAdmins().pipe(Effect.orElseSucceed(() => DeploymentPolicy.DEFAULT_ADMINS))
-          const role = DeploymentPolicy.effectiveRole(user.login, repository, roleOf(yield* fromGitHub(github.permission(tokens.accessToken, repository))), admins)
+          // The role is GitHub's answer for the repository, never more and never less (decision 0007): deployment
+          // authority (worker/DeploymentPolicy.vibe) grants no repository role.
+          const role = roleOf(yield* fromGitHub(github.permission(tokens.accessToken, repository)))
           const freshId = crypto.randomUUID()
           const freshToken = yield* keys.token
           return yield* SessionStore.issuance(Effect.gen(function* () {

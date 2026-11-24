@@ -103,3 +103,16 @@ and logout never overwrite/revoke the live credential or make a network request,
 `GET /api/auth/device` stays unchanged: only GitHub knows whether device flow is on, and the server cannot ask without minting a device code.
 
 CLI and MCP login report a `misconfigured` device start as `Device sign-in is off for <origin>.`; other reasons keep their existing message. The SDK classifies GitHub's four client/configuration error codes at any HTTP status, with real-socket SDK and emitted CLI regressions.
+
+Review R1 D4, 2026-11-23 (Neon-D4-002, Fable-D4-001, Fable-D4-002):
+
+- A device session grants and revokes no role, its own included. `POST /api/roles` answers 403 `forbidden` before it
+  reads the body, and the grant step names who acts with the proved `grantActor`, never a fixed `"person"`.
+- `POST /api/auth/device` mints a session only for a token GitHub says this App issued: the site asks
+  `POST /applications/<client id>/token` as the App (`Accounts.appTokenCheck`). A 404, any other status, a failure or
+  a 10-second silence signs nobody in, and a token the App did not issue is never revoked through the App. A personal
+  access token, or another app's token for the same person, answers 401.
+- Not done here: the `may` kernel still admits `roles` and `settings` by role alone. Making them person-only there
+  changes a proved contract in `src/core/conversation.vibe`; the host refusal above is the guard until it is re-proved.
+- SDK gap: `@smthrs/integrations` `GitHubAuth` has no `checkToken`. The check lives in `worker/Accounts.vibe` until
+  the SDK has one.

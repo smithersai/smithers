@@ -101,6 +101,16 @@ export const mode = (
   return value
 }
 
+/**
+ * Whether `all` was asked for by name, with `--approve all` or
+ * `SMITHERS_TUI_APPROVE=all`, rather than reached by default. Only a named
+ * `all` lets a wrapped vendor worker bypass its own permissions and sandbox.
+ */
+export const explicitAll = (
+  env: Readonly<Record<string, string | undefined>>,
+  flag?: string | undefined
+): boolean => (flag !== undefined ? flag : env[environmentKey]) === "all"
+
 export const consequential = (capability: Capability.Capability, cwd: string): boolean =>
   capability.action.startsWith("net:") || Capability.tierOf(capability, { workspaceRoot: cwd }) !== "sealed"
 
@@ -228,7 +238,8 @@ const commandLine = (input: Record<string, unknown>, keys: ReadonlyArray<string>
  */
 export const shownInput = (flow: string, input: unknown): string => {
   if (typeof input !== "object" || input === null) return input === undefined ? "" : JSON.stringify(input)
-  const keys = Object.keys(input).filter((key) => !(inert[flow] ?? []).includes(key))
+  const skipped = Object.hasOwn(inert, flow) ? inert[flow]! : []
+  const keys = Object.keys(input).filter((key) => !skipped.includes(key))
   const line = flow === "bash" ? commandLine(input as Record<string, unknown>, keys) : undefined
   if (line !== undefined) return line
   const only = keys.length === 1 ? (input as Record<string, unknown>)[keys[0]!] : undefined
@@ -245,6 +256,20 @@ export const previewWidth = 240
 
 /** Text the store accepts: a lone surrogate becomes `�`. */
 export const wellFormed = (text: string): string => text.toWellFormed()
+
+/**
+ * A request's subject as a row shows it, character for character as it runs:
+ * a newline stays a line break (the shell runs each line as a command) marked
+ * `⏎`, a tab is `⇥`, and every other control, format (bidi override,
+ * zero-width) or line-separator character is `�`. Spaces keep their count.
+ */
+export const legible = (text: string): string =>
+  text.toWellFormed().replace(/\r?\n|[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, (each) =>
+    each === "\n" || each === "\r\n"
+      ? `${each === "\r\n" ? "\ufffd" : ""}⏎\n`
+      : each === "\t"
+      ? "⇥"
+      : "\ufffd")
 
 /**
  * One changed line as a row can draw it: control characters shown as `�` so
@@ -627,7 +652,7 @@ export const requests = (call: Cell.Call, cwd: string, source: string): Readonly
       }
     } else if (capability.action === "proc:spawn") {
       // The flow, not the command: `a` then means this flow for the run.
-      const spawned = spawns[call.flowName]
+      const spawned = Object.hasOwn(spawns, call.flowName) ? spawns[call.flowName] : undefined
       const shown = spawned === undefined ? subject : spawned(call.input)
       if (shown === undefined) continue
       add(Capability.make("proc:spawn", call.flowName), shown)
@@ -698,7 +723,7 @@ export const deniedPrefix = "Denied: "
  * whose refused change a command touches.
  */
 export const refusal = (meta: Pick<Meta, "flow" | "subject">, path?: string): string =>
-  `${deniedPrefix}${meta.flow} ${meta.subject}. ${
+  `${deniedPrefix}${meta.flow} ${legible(meta.subject)}. ${
     path === undefined
       ? "The person refused this for the rest of the run; do not do it another way."
       : `It names ${path}, whose change the person refused for the rest of the run; do not change it another way.`

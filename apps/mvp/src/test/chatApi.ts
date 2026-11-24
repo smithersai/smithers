@@ -214,6 +214,8 @@ export const testChatDatabase = (prefix: string) => TestDatabase.layer(prefix).p
  */
 export interface ChatApiOptions {
   readonly actor?: Actor.Actor | null
+  /** The GitHub logins this deployment names its admins (`DEPLOYMENT_ADMIN_LOGINS`): nobody unless set. */
+  readonly deploymentAdmins?: string
   /** Real confirmed sessions for these UUID people, persisted before any device can read protected routes. */
   readonly confirmedSessions?: ReadonlyArray<Actor.Actor>
   /** The curated homes ChatApi answers (worker/home/Curated.ts): the real ones unless set. */
@@ -545,6 +547,7 @@ export class TestChatApi extends Context.Service<
           HOSTED_MODEL_ENABLED: "true",
           ALERT_APP_URL: "http://chat.test/app",
           FEED_KEYS: `${TEST_REPOSITORY}=${digestSync(TEST_FEED_KEY)}`,
+          ...(options.deploymentAdmins === undefined ? {} : { DEPLOYMENT_ADMIN_LOGINS: options.deploymentAdmins }),
           ...(options.forge === "code-storage"
             ? { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: yield* Effect.promise(codeStorageKey) }
             : {})

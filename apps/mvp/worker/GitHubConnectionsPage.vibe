@@ -1,12 +1,15 @@
 // A person's sites connected to GitHub through smithers.sh (decision 0165): the Disconnect that doesn't depend on the site.
 import { nameOf, type GitHubConnection } from "./GitHubConnection.vibe"
 import { Sessions } from "./Actor.ts"
+import { readBounded } from "./Body.ts"
 import { GitHub } from "@smthrs/integrations"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as SessionStore from "./SessionStore.ts"
 
 export const ROUTE = "/api/auth/connections"
 export const handles = (url: string) => new URL(url, "https://broker.invalid").pathname === ROUTE
+/** The Disconnect form is one `origin` field: a larger body is refused (413) before it is buffered. */
+export const MAX_FORM_BYTES = 4096
 const HEADERS = { ...GitHub.Auth.Broker.HEADERS, "content-security-policy": GitHub.Auth.Broker.CONSENT_CSP }
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 export function pageHtml(origins: ReadonlyArray<string>): string {
@@ -30,8 +33,9 @@ export effect function serve(objects: Effect.Success<typeof GitHubConnection>) {
   if (person === undefined) return page("<!doctype html><title>Sign in</title><p>Sign in.</p>", 401)
   const object = try Effect.orDie(Effect.try(() => objects.getByName(nameOf(person))))
   if (request.method === "POST") {
-    const text = try Effect.orDie(request.text)
-    const target = new URLSearchParams(text).get("origin") ?? ""
+    const text = try Effect.result(readBounded(request, MAX_FORM_BYTES))
+    if (text._tag === "Failure") return empty(text.failure.reason === "too_large" ? 413 : 400)
+    const target = new URLSearchParams(text.success).get("origin") ?? ""
     const ended = try object.revoke(person, target)
     if ("reason" in ended) return page("<!doctype html><title>Unavailable</title><p>Couldn't disconnect. Retry.</p>", 503)
     return HttpServerResponse.empty({ status: 303, headers: { ...GitHub.Auth.Broker.HEADERS, location: ROUTE } })

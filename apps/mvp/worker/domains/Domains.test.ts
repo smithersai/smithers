@@ -3,7 +3,8 @@
 // shape, and each refusal, on the compose Postgres and Electric. The provider is the real `Dns` adapter over a resolver
 // scripted at the network; an unhappy path swaps in a faulty provider.
 import { Action } from "@smthrs/flow"
-import { Effect, Fiber, Option, Redacted } from "effect"
+import { Logger as StructuredLogger } from "@smthrs/observability"
+import { Effect, Fiber, Logger, Metric, Option, Redacted } from "effect"
 import { Layer } from "effect"
 import { HttpEffect } from "effect/http"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest"
@@ -12,7 +13,8 @@ import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { DOMAIN_RESOLVE_ROUTE, DOMAINS_SHAPE_ROUTE, domainRoute, domainsRoute } from "../../src/features/domains/contract.ts"
 import * as Flows from "../Flows.ts"
-import { personOnlyRefusals } from "../Actor.ts"
+import { type Actor, personOnlyRefusals } from "../Actor.ts"
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { eventually, testFile } from "../test/harness.ts"
 import { incarnation } from "../test/flowHost.ts"
 import * as DomainsApi from "./Api.ts"
@@ -280,7 +282,7 @@ describe("domain/Verify", () => {
         payload: {
           repoId: REPO_ID,
           hostname: "docs.example.com",
-          actorId: "p",
+          authority: null, actorId: "p",
           pollId: "poll-later",
           refresh: true,
           attempt: 2,
@@ -321,7 +323,7 @@ describe("replacement registration cleanup", () => {
     })
     await Effect.runPromise(host.starter.start(DomainFlows.Verify, {
       executionId: pollId,
-      payload: { repoId: REPO_ID, hostname, actorId: "p", pollId, refresh: true, attempt: 2 },
+      payload: { repoId: REPO_ID, hostname, authority: null, actorId: "p", pollId, refresh: true, attempt: 2 },
     }))
     expect(host.exits.at(-1)).toMatchObject({ _tag: "Success" })
     expect(await rows(runtime)).toEqual([])
@@ -334,7 +336,7 @@ describe("durable registration cleanup", () => {
   test("a host restart resumes cleanup from the sealed id after the domain row is gone", async () => {
     const hostname = "docs.example.com"
     const pollId = crypto.randomUUID()
-    const payload = { repoId: REPO_ID, hostname, actorId: "p", pollId, refresh: true, attempt: 2 }
+    const payload = { repoId: REPO_ID, hostname, authority: null, actorId: "p", pollId, refresh: true, attempt: 2 }
     await seed(runtime, { hostname, pollId, providerId: "cf-obsolete" })
     const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
     const registration = DomainFlows.registration(scratch.database, provider.layer)
@@ -388,6 +390,7 @@ describe("the steps", () => {
     actorId: "person-maintainer",
     pollId: "poll-1",
     refresh: false,
+    authority: null,
   }
 
   test("a check that can't reach the provider records unreachable and waits; the last attempt times out", async () => {
@@ -437,7 +440,7 @@ describe("the steps", () => {
     expect(await rows(runtime)).toMatchObject([{ state: "active", providerId: "cf-1", pollId: "poll-1" }])
     const forgotten: Array<string> = []
     provider.use({ remove: (id) => Effect.sync(() => void forgotten.push(id)) })
-    expect(await keyed(release({ repoId: REPO_ID, hostname: "docs.example.com", actorId: "p" }), "step-2")).toEqual({
+    expect(await keyed(release({ repoId: REPO_ID, hostname: "docs.example.com", authority: null, actorId: "p" }), "step-2")).toEqual({
       change: "released",
     })
     expect(forgotten).toEqual(["cf-1"])
@@ -467,7 +470,7 @@ describe("the steps", () => {
     await seed(runtime, { hostname: "docs.example.com", providerId: "cf-1", state: "active" })
     provider.use({ remove: () => Effect.fail(new ProviderUnavailable({ code: "http_500" })) })
     const exit = await Effect.runPromiseExit(
-      release({ repoId: REPO_ID, hostname: "docs.example.com", actorId: "p" }).pipe(
+      release({ repoId: REPO_ID, hostname: "docs.example.com", authority: null, actorId: "p" }).pipe(
         Effect.provideService(Action.CurrentInvocationKey, "step-1"),
         Effect.provide(provider.layer),
       ),
@@ -475,11 +478,11 @@ describe("the steps", () => {
     expect(JSON.stringify(exit)).toContain("@smthrs/mvp/domains/ReleaseUnavailable")
     expect(await rows(runtime)).toMatchObject([{ state: "removing" }])
     provider.reset()
-    expect(await keyed(release({ repoId: REPO_ID, hostname: "docs.example.com", actorId: "p" }))).toEqual({
+    expect(await keyed(release({ repoId: REPO_ID, hostname: "docs.example.com", authority: null, actorId: "p" }))).toEqual({
       change: "released",
     })
     expect((await events(runtime)).map((event) => event.action)).toEqual(["remove"])
-    expect(await keyed(release({ repoId: REPO_ID, hostname: "docs.example.com", actorId: "p" }))).toEqual({
+    expect(await keyed(release({ repoId: REPO_ID, hostname: "docs.example.com", authority: null, actorId: "p" }))).toEqual({
       change: "missing",
     })
   })
@@ -490,13 +493,13 @@ describe("the steps", () => {
     await seed(runtime, { hostname: "docs.example.com", providerId: "cf-1", state: "active" })
     const forgotten: Array<string> = []
     provider.use({ remove: (id) => Effect.sync(() => void forgotten.push(id)) })
-    const removal = { repoId: REPO_ID, hostname: "docs.example.com", actorId: "p" }
+    const removal = { repoId: REPO_ID, hostname: "docs.example.com", authority: null, actorId: "p" }
     expect(await keyed(release(removal))).toEqual({ change: "released" })
     // The step erased the row but the engine never sealed it; the domain is added again before the retry.
     expect(await keyed(claim({ ...input, pollId: "poll-2" }), "step-2")).toEqual({ change: "add" })
     await Effect.runPromise(
       Effect.provide(
-        Store.record({ hostname: "docs.example.com", pollId: "poll-2", providerId: "cf-2", state: "active", problem: null }),
+        Store.record({ hostname: "docs.example.com", pollId: "poll-2", providerId: "cf-2", state: "active", problem: null, authority: null }),
         db,
       ) as Effect.Effect<unknown>,
     )
@@ -519,7 +522,7 @@ describe("the steps", () => {
     await seed(runtime, { hostname: "new.example.com" })
     const off = (hostname: string) =>
       Effect.runPromiseExit(
-        release({ repoId: REPO_ID, hostname, actorId: "p" }).pipe(
+        release({ repoId: REPO_ID, hostname, authority: null, actorId: "p" }).pipe(
           Effect.provideService(Action.CurrentInvocationKey, `step-${hostname}`),
           Effect.provide(DomainProvider.off),
         ),
@@ -620,7 +623,7 @@ describe("the steps", () => {
       .toContain("@smthrs/mvp/domains/ReleaseUnavailable")
     expect(forgotten).toEqual([])
     // The new poll is removed before its check can adopt the registration.
-    expect(await keyed(release({ repoId: REPO_ID, hostname: input.hostname, actorId: "p" }), "remove-new"))
+    expect(await keyed(release({ repoId: REPO_ID, hostname: input.hostname, authority: null, actorId: "p" }), "remove-new"))
       .toEqual({ change: "released" })
     expect(await keyed(cleanup(pending))).toEqual({ satisfied: true, output: "superseded" })
     expect(forgotten).toEqual(["cf-replacement"])
@@ -673,7 +676,7 @@ describe("the steps", () => {
     await keyed(claim(input))
     provider.use({
       ensure: () => Effect.gen(function* () {
-        yield* Store.withdraw({ hostname: input.hostname, repoId: REPO_ID, actorId: "p", invocationKey: "removing" })
+        yield* Store.withdraw({ hostname: input.hostname, repoId: REPO_ID, authority: null, actorId: "p", invocationKey: "removing" })
           .pipe(Effect.provide(db), Effect.orDie)
         return { id: "cf-new", records: [], verification: "pending", certificate: "pending" } as const
       }),
@@ -704,7 +707,7 @@ describe("the steps", () => {
       const effect of [
         down.claim(input),
         down.check({ ...input, attempt: 1 }),
-        down.release({ repoId: REPO_ID, hostname: "x.example.com", actorId: "p" }),
+        down.release({ repoId: REPO_ID, hostname: "x.example.com", authority: null, actorId: "p" }),
       ] as Array<Effect.Effect<unknown, unknown, any>>
     ) {
       const exit = await Effect.runPromiseExit(
@@ -736,14 +739,203 @@ describe("the steps", () => {
     const db = await database()
     await seed(runtime, { hostname: "docs.example.com", pollId: "poll-1" })
     const run = <A>(effect: Effect.Effect<A, unknown, any>) => Effect.runPromise(Effect.provide(effect, db) as Effect.Effect<A>)
-    expect(await run(Store.record({ hostname: "docs.example.com", pollId: "poll-1", state: "pending", problem: null })))
+    expect(await run(Store.record({ hostname: "docs.example.com", pollId: "poll-1", state: "pending", problem: null, authority: null })))
       .toBe("written")
-    expect(await run(Store.record({ hostname: "docs.example.com", pollId: "poll-9", state: "active", problem: null })))
+    expect(await run(Store.record({ hostname: "docs.example.com", pollId: "poll-9", state: "active", problem: null, authority: null })))
       .toBe("superseded")
-    expect(await run(Store.record({ hostname: "gone.example.com", pollId: "poll-1", state: "active", problem: null })))
+    expect(await run(Store.record({ hostname: "gone.example.com", pollId: "poll-1", state: "active", problem: null, authority: null })))
       .toBe("removed")
     expect(await rows(runtime)).toMatchObject([{ state: "pending", verification: "pending", records: [] }])
     expect(await events(runtime)).toEqual([])
+  })
+})
+
+describe("authority held through the flows", () => {
+  const query = <A extends object>(f: (sql: SqlClient.SqlClient) => Effect.Effect<ReadonlyArray<A>, unknown>) =>
+    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, f))
+  /** A person signed in for real: a session row whose role was confirmed now. */
+  const person = async (role: "maintainer" | "admin") => {
+    const id = crypto.randomUUID(), session = crypto.randomUUID()
+    await query((sql) => sql`INSERT INTO people (id, github_id, github_login)
+      VALUES (${id}, ${Math.floor(Math.random() * 1e9)}, ${`writer-${id}`})`)
+    await query((sql) => sql`
+      INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, role_verified_at, expires_at)
+      VALUES (${session}, ${session}, ${id}, ${role}, clock_timestamp(), clock_timestamp(),
+        clock_timestamp() + interval '1 day')`)
+    const actor: Actor = { subject: { kind: "person", id }, role, login: "writer", session, cookieKey: "legacy" }
+    return { id, session, actor, authority: WriteAuthority.protectedOf(actor) }
+  }
+  type Person = Awaited<ReturnType<typeof person>>
+  /** GitHub now says the person is only a Member, confirmed this instant. */
+  const demote = (who: Person) =>
+    query((sql) => sql`UPDATE sessions SET role = 'member', role_checked_at = clock_timestamp(),
+      role_verified_at = clock_timestamp() WHERE id = ${who.session}`)
+  const signOut = (who: Person) => query((sql) => sql`UPDATE sessions SET revoked_at = clock_timestamp() WHERE id = ${who.session}`)
+  const signBackIn = (who: Person) => query((sql) => sql`UPDATE sessions SET revoked_at = NULL WHERE id = ${who.session}`)
+  const keyed = <A, E>(effect: Effect.Effect<A, E, any>, key = "step-1") =>
+    Effect.runPromise(
+      Effect.provideService(effect, Action.CurrentInvocationKey, key).pipe(
+        Effect.provide(provider.layer),
+      ) as Effect.Effect<A, E>,
+    )
+  const database = async () => (await runtime.runPromise(Effect.service(TestDatabase.Scratch))).database
+  const hostname = "docs.example.com"
+  const verify = (who: Person) => ({
+    authority: who.authority,
+    repoId: REPO_ID,
+    hostname,
+    actorId: who.id,
+    pollId: "poll-1",
+    refresh: false,
+  })
+  /** A provider that counts what it is asked to change. */
+  const counting = () => {
+    const calls = { ensure: 0, status: 0, remove: 0 }
+    provider.use({
+      ensure: (name) =>
+        Effect.sync(() => {
+          calls.ensure++
+          return { id: `cf-${name}`, records: [], verification: "active" as const, certificate: "active" as const }
+        }),
+      status: () => Effect.sync(() => (calls.status++, Option.none())),
+      remove: () => Effect.sync(() => void calls.remove++),
+    })
+    return calls
+  }
+
+  test("the routes hand each flow the session and role scope they admitted", async () => {
+    const who = await person("maintainer")
+    const started: Array<{ readonly flow: unknown; readonly payload: unknown }> = []
+    const starter = Flows.FlowStarter.of({
+      start: (flow, { payload }) => Effect.sync(() => void started.push({ flow, payload })),
+    })
+    const h = await open({ actor: who.actor, starter })
+    expect((await h.fetch(path, add(hostname))).status).toBe(202)
+    expect((await h.fetch(domainRoute(REPO.owner, REPO.name, hostname), remove)).status).toBe(202)
+    const authority = { personId: who.id, sessionId: who.session, cookieKey: "legacy", scope: { _tag: "Deployment" } }
+    expect(started.map((start) => start.flow)).toEqual([DomainFlows.Verify, DomainFlows.Remove])
+    expect(started.map((start) => start.payload)).toMatchObject([
+      { authority, actorId: who.id },
+      { authority, actorId: who.id },
+    ])
+  })
+
+  test("a signed-in Maintainer adds and removes a domain through the real flows while the authority holds", async () => {
+    const who = await person("maintainer")
+    zone.set(`${hostname} CNAME`, [TARGET])
+    const h = await open({ actor: who.actor })
+    expect((await h.fetch(path, add(hostname))).status).toBe(202)
+    expect(await rows(runtime)).toMatchObject([{ state: "active", updatedBy: who.id }])
+    expect((await h.fetch(domainRoute(REPO.owner, REPO.name, hostname), remove)).status).toBe(202)
+    expect(await rows(runtime)).toEqual([])
+  })
+
+  test("a Maintainer demoted after domain/Verify started: the next check ends the poll and never asks the provider", async () => {
+    const who = await person("maintainer")
+    const { claim, check } = DomainFlows.steps(await database())
+    expect(await keyed(claim(verify(who)))).toEqual({ change: "add" })
+    await demote(who)
+    const calls = counting()
+    expect(await keyed(check({ ...verify(who), attempt: 2 }))).toEqual({ satisfied: true, output: "unauthorized" })
+    expect(calls).toEqual({ ensure: 0, status: 0, remove: 0 })
+    expect(await rows(runtime)).toMatchObject([{ state: "pending", providerId: null, checkedAt: null }])
+    expect((await events(runtime)).map((event) => event.action)).toEqual(["add"])
+    // Nor may they claim again, and a payload recorded before steps carried authority fails closed.
+    await resetDomains(runtime)
+    expect(await keyed(claim(verify(who)), "step-2")).toEqual({ change: "stale" })
+    const { authority: _legacy, ...legacy } = verify(await person("admin"))
+    expect(await keyed(claim(legacy), "step-3")).toEqual({ change: "stale" })
+    expect(await rows(runtime)).toEqual([])
+    await seed(runtime, { hostname, pollId: "poll-1" })
+    expect(await keyed(check({ ...legacy, attempt: 2 }))).toEqual({ satisfied: true, output: "unauthorized" })
+    expect(calls).toEqual({ ensure: 0, status: 0, remove: 0 })
+  })
+
+  test("a whole domain/Verify started by someone demoted since ends without a row or a provider call", async () => {
+    const who = await person("maintainer")
+    await demote(who)
+    const calls = counting()
+    await Effect.runPromise(
+      host.starter.start(DomainFlows.Verify, { executionId: "poll-demoted", payload: { ...verify(who), pollId: "poll-demoted" } }),
+    )
+    expect(await rows(runtime)).toEqual([])
+    expect(calls).toEqual({ ensure: 0, status: 0, remove: 0 })
+  })
+
+  test("a signed-out session skips each attempt and the poll resumes once it is live again; the last attempt ends it", async () => {
+    const who = await person("admin")
+    const { claim, check } = DomainFlows.steps(await database())
+    await keyed(claim(verify(who)))
+    await signOut(who)
+    const calls = counting()
+    expect(await keyed(check({ ...verify(who), attempt: 2 }))).toEqual({ satisfied: false, output: "unauthorized" })
+    expect(await keyed(check({ ...verify(who), attempt: DomainFlows.VERIFY_ATTEMPTS }))).toEqual({
+      satisfied: true,
+      output: "unauthorized",
+    })
+    expect(calls).toEqual({ ensure: 0, status: 0, remove: 0 })
+    expect(await rows(runtime)).toMatchObject([{ state: "pending", providerId: null }])
+    await signBackIn(who)
+    expect(await keyed(check({ ...verify(who), attempt: 3 }))).toEqual({ satisfied: true, output: "active" })
+    expect(calls.ensure).toBe(1)
+    expect(await rows(runtime)).toMatchObject([{ state: "active", providerId: `cf-${hostname}` }])
+  })
+
+  test("a Maintainer demoted while the provider answers: the domain is not promoted to active", async () => {
+    const who = await person("maintainer")
+    const { claim, check } = DomainFlows.steps(await database())
+    await keyed(claim(verify(who)))
+    provider.use({
+      ensure: (name) =>
+        Effect.promise(() => demote(who)).pipe(
+          Effect.as({ id: `cf-${name}`, records: [], verification: "active" as const, certificate: "active" as const }),
+        ),
+    })
+    expect(await keyed(check({ ...verify(who), attempt: 1 }))).toEqual({ satisfied: true, output: "unauthorized" })
+    expect(await rows(runtime)).toMatchObject([{ state: "pending", providerId: null }])
+    expect((await events(runtime)).map((event) => event.action)).toEqual(["add"])
+  })
+
+  test("a Maintainer demoted after domain/Remove started: the provider keeps the domain and the row stays", async () => {
+    const who = await person("maintainer")
+    await seed(runtime, { hostname, providerId: "cf-1", state: "active" })
+    await demote(who)
+    const calls = counting()
+    const h = await open({ actor: who.actor })
+    // The route still holds the role its cookie carried; the flow asks the database again.
+    expect((await h.fetch(domainRoute(REPO.owner, REPO.name, hostname), remove)).status).toBe(202)
+    expect(calls).toEqual({ ensure: 0, status: 0, remove: 0 })
+    expect(await rows(runtime)).toMatchObject([{ state: "active", providerId: "cf-1" }])
+    expect(await events(runtime)).toEqual([])
+    const { release } = DomainFlows.steps(await database())
+    const { authority: _legacy, ...legacy } = { authority: null, repoId: REPO_ID, hostname, actorId: "p" }
+    expect(await keyed(release(legacy))).toEqual({ change: "stale" })
+    expect(calls.remove).toBe(0)
+  })
+
+  test("a removal retried after its person was demoted leaves the provider alone; another Maintainer finishes it", async () => {
+    const who = await person("maintainer")
+    await seed(runtime, { hostname, providerId: "cf-1", state: "active" })
+    const { release } = DomainFlows.steps(await database())
+    const removal = { authority: who.authority, repoId: REPO_ID, hostname, actorId: who.id }
+    let asked = 0
+    provider.use({ remove: () => Effect.suspend(() => (asked++, Effect.fail(new ProviderUnavailable({ code: "http_500" })))) })
+    const exit = await Effect.runPromiseExit(
+      release(removal).pipe(Effect.provideService(Action.CurrentInvocationKey, "step-1"), Effect.provide(provider.layer)),
+    )
+    expect(JSON.stringify(exit)).toContain("@smthrs/mvp/domains/ReleaseUnavailable")
+    expect(asked).toBe(1)
+    await demote(who)
+    const calls = counting()
+    expect(await keyed(release(removal))).toEqual({ change: "stale" })
+    expect(calls.remove).toBe(0)
+    expect(await rows(runtime)).toMatchObject([{ state: "removing", providerId: "cf-1" }])
+    const next = await person("admin")
+    expect(await keyed(release({ ...removal, authority: next.authority, actorId: next.id }), "step-2")).toEqual({
+      change: "released",
+    })
+    expect(calls.remove).toBe(1)
+    expect(await rows(runtime)).toEqual([])
   })
 })
 
@@ -814,6 +1006,7 @@ describe("GET /api/shapes/domains", () => {
     await seed(runtime, { hostname: "pending.example.com", state: "pending" })
     await seed(runtime, { hostname: "live.example.com", state: "active" })
     const h = await open({ actor: null })
+    expect(h.line("domain.resolve")).toEqual([])
     expect((await h.fetch(`${DOMAIN_RESOLVE_ROUTE}?host=live.example.com`, { method: "POST" })).status).toBe(405)
     expect((await h.fetch(DOMAIN_RESOLVE_ROUTE)).status).toBe(400)
     expect((await h.fetch(`${DOMAIN_RESOLVE_ROUTE}?host=not_a_host`)).status).toBe(400)
@@ -822,10 +1015,52 @@ describe("GET /api/shapes/domains", () => {
     const active = await h.fetch(`${DOMAIN_RESOLVE_ROUTE}?host=LIVE.EXAMPLE.COM.`)
     expect(active.status).toBe(200)
     expect(await active.json()).toEqual({ path: "/acme/widgets" })
+    // Every answer is one count, one log line and one server span, by outcome (OBS-1, OBS-2).
+    expect(
+      (["found", "not_found", "invalid", "method", "unavailable"] as const).map((outcome) =>
+        h.count(DomainsApi.resolves, { outcome })
+      ),
+    ).toEqual([1, 2, 2, 1, 0])
+    const lines = h.line("domain.resolve")
+    expect(lines.map((line) => [line.annotations.outcome, line.annotations.status])).toEqual([
+      ["method", 405], ["invalid", 400], ["invalid", 400], ["not_found", 404], ["not_found", 404], ["found", 200],
+    ])
+    expect(lines.at(-1)!.annotations).toMatchObject({ repoId: REPO_ID })
+    expect(typeof lines.at(-1)!.annotations.durationMs).toBe("number")
+    // A hostname someone asked about is never recorded: a pending one is its Maintainer's.
+    expect(JSON.stringify(lines)).not.toMatch(/example\.com/i)
+    const spans = h.spans.filter((span) => span.name === "domain.resolve")
+    expect(spans.map((span) => [span.kind, span.attributes.get("outcome"), span.attributes.get("http.response.status_code")]))
+      .toEqual([
+        ["server", "method", 405], ["server", "invalid", 400], ["server", "invalid", 400], ["server", "not_found", 404],
+        ["server", "not_found", 404], ["server", "found", 200],
+      ])
+  })
+
+  test("GET /api/domains/resolve with the database down answers 503, counted and logged unavailable by code", async () => {
+    const registry: Metric.MetricRegistry = new Map()
+    const logs: Array<ReturnType<typeof StructuredLogger.formatStructured.log>> = []
+    const logger = Logger.make((options) => void logs.push(StructuredLogger.formatStructured.log(options)))
     const broken = await Effect.runPromise(Effect.gen(function* () {
       const api = yield* DomainsApi.make({ id: REPO_ID }, Layer.effectDiscard(Effect.fail(new Error("db_down"))) as never)
-      return HttpEffect.toWebHandler(api.fetch as never)
+      return HttpEffect.toWebHandler(
+        (api.fetch as Effect.Effect<never>).pipe(
+          Effect.provideService(Metric.MetricRegistry, registry),
+          Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
+        ) as never,
+      )
     }))
     expect((await broken(new Request(`http://localhost${DOMAIN_RESOLVE_ROUTE}?host=live.example.com`))).status).toBe(503)
+    expect(
+      Effect.runSync(
+        Metric.value(Metric.withAttributes(DomainsApi.resolves, { outcome: "unavailable" })).pipe(
+          Effect.provideService(Metric.MetricRegistry, registry),
+        ),
+      ).count,
+    ).toBe(1)
+    const [line] = logs.filter((log) => log.message === "domain.resolve")
+    expect(line!.annotations).toMatchObject({ outcome: "unavailable", status: 503 })
+    expect(typeof line!.annotations.errorCode).toBe("string")
+    expect(JSON.stringify(line)).not.toContain("live.example.com")
   })
 })

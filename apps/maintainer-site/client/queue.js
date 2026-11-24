@@ -72,19 +72,20 @@
     return body
   }
 
-  const fileUrl = (path) => `/api/file?path=${encodeURIComponent(path)}`
-  // Path form, so a design's relative styles and scripts resolve beside it.
-  const frameUrl = (path) => `/api/file/${path.startsWith("/") ? "/" : ""}${path.replace(/^\/+/, "").split("/").map(encodeURIComponent).join("/")}`
+  const pin = (path, item) => item?.digest && (Object.hasOwn(item.assets, path) || item.files?.some((entry) => (entry.path ?? entry.replace?.(/:\d+(?:-\d+)?$/, "")) === path))
+    ? `&slice=${encodeURIComponent(item.id)}&digest=${encodeURIComponent(item.digest)}` : ""
+  const fileUrl = (path, item = current) => `/api/file?path=${encodeURIComponent(path)}${pin(path, item)}`
+  const frameUrl = fileUrl
   const extOf = (path) => (path.match(/\.([a-z0-9]+)$/i)?.[1] ?? "").toLowerCase()
   const IMAGE = new Set(["gif", "png", "jpg", "jpeg", "webp", "avif", "svg"])
   const VIDEO = new Set(["mp4", "webm"])
 
-  const loadFile = (path, slice = "", commit = "", revision = "") => {
-    const key = JSON.stringify([slice, commit, revision, path])
+  const loadFile = (path, item = current) => {
+    const key = JSON.stringify([pin(path, item), path])
     if (!files.has(key))
       files.set(
         key,
-        fetch(fileUrl(path) + `&slice=${encodeURIComponent(slice)}`, { cache: "no-store" })
+        fetch(fileUrl(path, item), { cache: "no-store" })
           .then(async (response) => {
             const text = await response.text()
             if (!response.ok) {
@@ -104,8 +105,8 @@
   // Comments, folds and symbols from the server's TypeScript parse; null for other languages or on failure. A failure
   // is not kept, so the next view of the file asks again (a server restarted with the endpoint, a file that parses now).
   const canOutline = (path) => /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/i.test(path ?? "")
-  const loadOutline = (path, slice = "", commit = "", revision = "") => {
-    const key = JSON.stringify([slice, commit, revision, path])
+  const loadOutline = (path, item = current) => {
+    const key = JSON.stringify([pin(path, item), path])
     if (!outlines.has(key)) {
       const failed = () => {
         outlines.delete(key)
@@ -114,7 +115,7 @@
       outlines.set(
         key,
         canOutline(path)
-          ? fetch(`/api/outline?path=${encodeURIComponent(path)}&slice=${encodeURIComponent(slice)}`, { cache: "no-store" })
+          ? fetch(`/api/outline?path=${encodeURIComponent(path)}${pin(path, item)}`, { cache: "no-store" })
               .then((response) => (response.ok ? response.json() : failed()))
               .then((outline) => (outline?.supported ? outline : null))
               .catch(failed)
@@ -158,8 +159,8 @@
   function prefetch(item) {
     if (item.kind === "code")
       for (const file of item.files ?? []) {
-        loadFile(file.path, item.id, item.commit, item.revision)
-        loadOutline(file.path, item.id, item.commit, item.revision)
+        loadFile(file.path, item)
+        loadOutline(file.path, item)
       }
   }
 
@@ -329,7 +330,7 @@
     const token = {}
     codeToken = token
     view = null
-    Promise.all([loadFile(file.path, item.id, item.commit, item.revision), loadOutline(file.path, item.id, item.commit, item.revision)]).then(([result, outline]) => {
+    Promise.all([loadFile(file.path, item), loadOutline(file.path, item)]).then(([result, outline]) => {
       if (!target.isConnected) return
       target.classList.remove("loading")
       if (!result.ok) {
@@ -605,7 +606,7 @@
     const type = media.type || extOf(media.path)
     const name = media.path.split("/").pop()
     let body
-    if (type === "html") body = `<iframe class="q-frame" sandbox="allow-scripts" src="${esc(frameUrl(media.path))}" title="${esc(name)}"></iframe><span class="q-frame-hint">Keys go to the design. Click outside it for queue keys.</span>`
+    if (type === "html") body = `<iframe class="q-frame" sandbox="" src="${esc(frameUrl(media.path))}" title="${esc(name)}"></iframe><span class="q-frame-hint">Keys go to the design. Click outside it for queue keys.</span>`
     else if (isMarkdown(media)) body = null
     else if (!isVideo(media)) body = `<img class="q-img" src="${esc(fileUrl(media.path))}" alt="${esc(name)}">`
     player = null
@@ -623,7 +624,7 @@
   const isMarkdown = (media) => Boolean(media) && (media.type === "md" || media.type === "markdown" || ["md", "mdx", "markdown"].includes(extOf(media.path ?? "")))
   const LANG = { typescript: "ts", javascript: "js", shell: "sh", console: "sh", rust: "rs", python: "py", golang: "go", yml: "yaml", markdown: "md", jsonc: "json", html: "html", xml: "xml" }
   async function renderDoc(media, article) {
-    const response = await fetch(`/api/markdown?path=${encodeURIComponent(media.path)}`, { cache: "no-store" }).catch(() => null)
+    const response = await fetch(`/api/markdown?path=${encodeURIComponent(media.path)}${pin(media.path, current)}`, { cache: "no-store" }).catch(() => null)
     const body = response ? await response.json().catch(() => ({})) : {}
     if (!article.isConnected) return
     article.classList.remove("loading")
@@ -951,7 +952,7 @@
       const name = media.path.split("/").pop()
       const body =
         type === "html"
-          ? `<iframe class="q-frame" sandbox="allow-scripts" src="${esc(frameUrl(media.path))}" title="${esc(`${label}: ${name}`)}"></iframe>`
+          ? `<iframe class="q-frame" sandbox="" src="${esc(frameUrl(media.path))}" title="${esc(`${label}: ${name}`)}"></iframe>`
           : `<img class="q-img" src="${esc(fileUrl(media.path))}" alt="${esc(`${label}: ${name}`)}">`
       return `<figure class="q-pane ${cls}"><figcaption><b>${label}</b> <span class="q-path" title="${esc(media.path)}">${esc(name)}</span></figcaption><div class="q-media">${body}</div></figure>`
     }
@@ -1196,7 +1197,7 @@
     const item = current
     const text = box()?.value ?? ""
     const scope = scopeAll
-    const answer = { itemId: item.id, action, ...(action === "option" ? { option } : {}), ...(scope ? { scope: "all", kind: item.kind } : {}), text: bare(text) ? text.trim() : "", revision: item.revision ?? null, commit: item.commit ?? null, addedAt: item.addedAt ?? null, title: item.title }
+    const answer = { itemId: item.id, action, ...(action === "option" ? { option } : {}), ...(scope ? { scope: "all", kind: item.kind } : {}), text: bare(text) ? text.trim() : "", digest: item.digest, revision: item.revision ?? null, commit: item.commit ?? null, addedAt: item.addedAt ?? null, title: item.title }
     inFlight.add(item.id)
     items = items.filter((entry) => entry.id !== item.id)
     // Its own record: an earlier answer that fails later removes only itself.
@@ -1206,7 +1207,7 @@
     stats = { ...stats, doneToday: stats.doneToday + (action === "later" ? 0 : 1) }
     show(next(item.id), "up")
     try {
-      await api("/api/answer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(answer) })
+      await api("/api/answer", { method: "POST", headers: { "Content-Type": "application/json", "X-Maintainer-Write": "1" }, body: JSON.stringify(answer) })
       record.saved = true
       store.set(draftKey(item.id), "")
       store.set(scopeKey(item.id), "")
@@ -1243,7 +1244,7 @@
     const itemId = local?.item.id ?? serverLast?.itemId
     if (!itemId) return say("Nothing to undo")
     try {
-      await api("/api/answer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, action: "undo", text: "" }) })
+      await api("/api/answer", { method: "POST", headers: { "Content-Type": "application/json", "X-Maintainer-Write": "1" }, body: JSON.stringify({ itemId, action: "undo", text: "" }) })
     } catch (error) {
       return say(`Undo failed: ${error.message}`, true)
     }
@@ -1313,7 +1314,7 @@
     const counter = links.length > 1 && linkIndex >= 0 ? `<span class="q-range">${linkIndex + 1} / ${links.length} ${kbd("o")}</span>` : ""
     viewer.innerHTML = `<div class="q-viewer-box" role="dialog" aria-label="${esc(label || name)}"><div class="q-file-head"><span class="q-path">${esc(label && label !== path ? `${label} · ${path}` : path)}</span>${counter}<span class="q-close">${kbd("Esc")}</span></div><div class="q-viewer-body"><div class="q-code loading">Loading…</div></div></div>`
     const body = viewer.querySelector(".q-viewer-body")
-    if (ext === "html") body.innerHTML = `<iframe class="q-frame" sandbox="allow-scripts" src="${esc(frameUrl(path))}" title="${esc(name)}"></iframe>`
+    if (ext === "html") body.innerHTML = `<iframe class="q-frame" sandbox="" src="${esc(frameUrl(path))}" title="${esc(name)}"></iframe>`
     else if (IMAGE.has(ext)) body.innerHTML = `<div class="q-media"><img class="q-img" src="${esc(fileUrl(path))}" alt="${esc(name)}"></div>`
     else {
       const result = await loadFile(path)

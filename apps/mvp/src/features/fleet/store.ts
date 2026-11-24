@@ -7,7 +7,7 @@ import type { Source } from "../repo/gate"
 import { RepoStore } from "../repo/store"
 import { repoVisibility } from "../repo/visibility"
 import { AGENT_RUNS_SHAPE_ROUTE, MACHINES_SHAPE_ROUTE } from "./contract"
-import { FLEET_ACCOUNTS_SHAPE_ROUTE, FLEET_NODES_SHAPE_ROUTE, FLEET_SESSIONS_SHAPE_ROUTE } from "./globalContract"
+import { FLEET_ACCOUNTS_SHAPE_ROUTE, FLEET_NODES_SHAPE_ROUTE, FLEET_SESSIONS_SHAPE_ROUTE, type FleetAvailability, type GlobalFleetShape } from "./globalContract"
 import { HostNode, ObservedSession, ProviderAccount } from "./globalSchema"
 import { AgentRun, Machine } from "./schema"
 
@@ -42,6 +42,31 @@ const globalAccountsQuery = (collection: ElectricCollection.ElectricCollection<P
 export type GlobalNodes = Effect.Success<ReturnType<typeof globalNodesQuery>>
 export type GlobalSessions = Effect.Success<ReturnType<typeof globalSessionsQuery>>
 export type GlobalAccounts = Effect.Success<ReturnType<typeof globalAccountsQuery>>
+
+/**
+ * A deployment-wide shape's gate, read synchronously at each read: `visible` is whether its rows may show now,
+ * `availability` whether they are still syncing a first snapshot (`loading`), withheld (`unavailable`) or delivered
+ * (`ready`), and `subscribe` hears each change of either.
+ */
+export interface GlobalAccess {
+  readonly visible: (shape: GlobalFleetShape) => boolean
+  readonly availability: (shape: GlobalFleetShape) => FleetAvailability
+  readonly subscribe: (shape: GlobalFleetShape, listener: () => void) => () => void
+}
+
+/** One deployment-wide shape's authority and readiness on this tab. */
+interface GlobalGate {
+  /** True from an answer that put the reader's authority in doubt until a later request is answered 2xx. */
+  rejected: boolean
+  /** Counts each doubt: an answer to a request sent before the latest one reopens nothing. */
+  generation: number
+  /** The login whose session the rows were read under, once a session said who. */
+  owner: string | null | undefined
+  /** Whether a whole first snapshot arrived since the rows were last dropped. */
+  synced: boolean
+  readonly listeners: Set<() => void>
+}
+const gateOf = (): GlobalGate => ({ rejected: false, generation: 0, owner: undefined, synced: false, listeners: new Set() })
 
 /** Electric's text for a timestamp, a big integer and a numeric, as the rows hold them. */
 const parser = {
@@ -134,6 +159,8 @@ export class FleetStore extends Context.Service<
     readonly globalSessions: Effect.Effect<GlobalSessions>
     /** Deployment-wide provider accounts synced over ElectricSQL (Admin only). */
     readonly globalAccounts: Effect.Effect<GlobalAccounts>
+    /** Whether each deployment-wide shape's rows may show now, and whether its first snapshot arrived. */
+    readonly global: GlobalAccess
   }
 >()("@smthrs/mvp/fleet/FleetStore") {
   /** The store; its shapes closed when the scope closes. Needs the tab's `ShapeSource`. */
@@ -190,18 +217,62 @@ export class FleetStore extends Context.Service<
             }).pipe(Scope.provide(scope), Effect.orDie),
           capacity: Number.MAX_SAFE_INTEGER,
         })
+        // Deployment-wide authority, per shape (Astra-D4-003): what a shape synced shows only while nothing put its
+        // reader's authority in doubt. A 401, a 403, a stopped shape, a session that ended or that a reached server
+        // couldn't verify, and another person signing in each hide the rows in the same change, read at each read.
+        // Only a later 2xx answer to a request sent after that reopens them, and another person's rows start empty.
+        const gates: Record<GlobalFleetShape, GlobalGate> = { nodes: gateOf(), sessions: gateOf(), accounts: gateOf() }
+        const sessionNow = () => Option.isSome(auth) ? auth.value.sessionState.tanstack.toArray[0] : undefined
+        const visible = (shape: GlobalFleetShape) => {
+          const gate = gates[shape]
+          if (gate.rejected) return false
+          const session = sessionNow()
+          if (session === undefined) return true
+          if (session.status === "signed_out" || session.unverifiable === true) return false
+          return gate.owner === undefined || session.status !== "signed_in" || session.login === gate.owner
+        }
+        const global: GlobalAccess = {
+          visible,
+          availability: (shape) => !visible(shape) ? "unavailable" : gates[shape].synced ? "ready" : "loading",
+          subscribe: (shape, listener) => {
+            const gate = gates[shape]
+            gate.listeners.add(listener)
+            const sessions = Option.isSome(auth) ? auth.value.sessionState.tanstack.subscribeChanges(listener) : undefined
+            return () => {
+              gate.listeners.delete(listener)
+              sessions?.unsubscribe()
+            }
+          },
+        }
         const adminShape = <A extends Record<string, unknown>>(
+          shape: GlobalFleetShape,
           id: string,
           schema: Parameters<typeof ElectricCollection.make<A>>[0]["schema"],
           getKey: (row: A) => string,
           route: string,
         ) =>
           Effect.gen(function* () {
+            const gate = gates[shape]
+            const tell = () => { for (const listener of gate.listeners) listener() }
+            /** Hides the rows now: every answer to a request already sent is void. */
+            const reject = Effect.sync(() => {
+              gate.rejected = true
+              gate.generation += 1
+              tell()
+            })
             const running = yield* Latch.make(true)
             let collection: ElectricCollection.ElectricCollection<A> | undefined
+            /** Whether the last 2xx answer said the shape is caught up: the batch it carried completes a snapshot. */
+            let caughtUp = false
             const stop = Effect.suspend(() =>
-              Effect.andThen(running.close, collection === undefined ? Effect.void : collection.evict)
+              Effect.andThen(
+                Effect.andThen(reject, Effect.sync(() => { gate.synced = false; caughtUp = false })),
+                Effect.andThen(running.close, collection === undefined ? Effect.void : collection.evict),
+              )
             ).pipe(Effect.orDie)
+            const start = Effect.suspend(() =>
+              Effect.andThen(running.open, collection === undefined ? Effect.void : collection.reconnect)
+            )
             const source = yield* ShapeSource.ShapeSource
             collection = yield* ElectricCollection.make<A>({
               id,
@@ -219,20 +290,58 @@ export class FleetStore extends Context.Service<
                 request: (url, init) =>
                   Effect.andThen(
                     running.await,
-                    Effect.tap(source.request(url, init), (response) => {
-                      if (response.status === 401) {
-                        return Effect.andThen(running.close, Option.isSome(auth) ? auth.value.askCheck : Effect.void)
-                      }
-                      return response.status === 403
-                        ? Effect.forkIn(stop, scope, { startImmediately: true })
-                        : Effect.void
+                    Effect.suspend(() => {
+                      const sent = gate.generation
+                      return Effect.tap(source.request(url, init), (response) => {
+                        if (response.status === 401) {
+                          return Effect.andThen(reject, Effect.andThen(running.close, Option.isSome(auth) ? auth.value.askCheck : Effect.void))
+                        }
+                        if (response.status === 403) return Effect.andThen(reject, Effect.forkIn(stop, scope, { startImmediately: true }))
+                        if (!response.ok || sent !== gate.generation) return Effect.void
+                        return Effect.sync(() => {
+                          caughtUp = response.headers.has("electric-up-to-date")
+                          if (!gate.rejected) return
+                          gate.rejected = false
+                          tell()
+                        })
+                      })
                     }),
                   ),
               })
             )
+            const synced = collection
+            yield* synced.sync.pipe(
+              Stream.runForEach((event) => {
+                // A shape Electric gave up on delivers nothing more: its rows are no evidence of the fleet now.
+                if (event._tag === "Stopped") return gate.rejected ? Effect.void : reject
+                if (event._tag !== "Succeeded" || !caughtUp || gate.synced) return Effect.void
+                const sent = gate.generation
+                // The first whole snapshot, an empty one included: only now are no rows "no hosts" (Astra-D4-031).
+                return Effect.andThen(synced.currentApplied, Effect.sync(() => {
+                  if (sent !== gate.generation || gate.synced) return
+                  gate.synced = true
+                  tell()
+                }))
+              }),
+              Effect.forkIn(scope, { startImmediately: true }),
+            )
             if (Option.isSome(auth)) {
               yield* auth.value.sessionState.rows.pipe(
-                Stream.runForEach((sessions) => sessions[0]?.status === "signed_out" ? stop : Effect.void),
+                Stream.runForEach((sessions) => Effect.suspend(() => {
+                  const session = sessions[0]
+                  if (session?.status === "signed_out") {
+                    gate.owner = undefined
+                    return stop
+                  }
+                  if (session?.status !== "signed_in") return Effect.void
+                  if (gate.owner === undefined || gate.owner === session.login) {
+                    gate.owner = session.login
+                    return Effect.void
+                  }
+                  // Another person on this tab: the rows the last one read go before anything is asked for them.
+                  gate.owner = session.login
+                  return Effect.andThen(stop, start)
+                })),
                 Effect.forkIn(scope, { startImmediately: true }),
               )
               yield* auth.value.confirmations.pipe(
@@ -240,9 +349,7 @@ export class FleetStore extends Context.Service<
                   Effect.map(auth.value.session.get(SESSION), (row) => Option.isSome(row) && row.value.status === "signed_in")
                 ),
                 Stream.filter((signedIn) => signedIn),
-                Stream.runForEach(() =>
-                  Effect.andThen(running.open, collection === undefined ? Effect.void : collection.reconnect)
-                ),
+                Stream.runForEach(() => start),
                 Effect.forkIn(scope, { startImmediately: true }),
               )
             }
@@ -251,7 +358,7 @@ export class FleetStore extends Context.Service<
         const nodesCache = yield* Cache.make({
           lookup: (_key: string) =>
             Effect.gen(function* () {
-              const c = yield* adminShape<HostNode>("fleet-global-nodes", HostNode, (r) => r.nodeId, FLEET_NODES_SHAPE_ROUTE)
+              const c = yield* adminShape<HostNode>("nodes", "fleet-global-nodes", HostNode, (r) => r.nodeId, FLEET_NODES_SHAPE_ROUTE)
               return yield* globalNodesQuery(c)
             }).pipe(Scope.provide(scope), Effect.orDie),
           capacity: 1,
@@ -259,7 +366,7 @@ export class FleetStore extends Context.Service<
         const sessionsCache = yield* Cache.make({
           lookup: (_key: string) =>
             Effect.gen(function* () {
-              const c = yield* adminShape<ObservedSession>("fleet-global-sessions", ObservedSession, (r) => r.sessionKey, FLEET_SESSIONS_SHAPE_ROUTE)
+              const c = yield* adminShape<ObservedSession>("sessions", "fleet-global-sessions", ObservedSession, (r) => r.sessionKey, FLEET_SESSIONS_SHAPE_ROUTE)
               return yield* globalSessionsQuery(c)
             }).pipe(Scope.provide(scope), Effect.orDie),
           capacity: 1,
@@ -267,7 +374,7 @@ export class FleetStore extends Context.Service<
         const accountsCache = yield* Cache.make({
           lookup: (_key: string) =>
             Effect.gen(function* () {
-              const c = yield* adminShape<ProviderAccount>("fleet-global-accounts", ProviderAccount, (r) => r.accountKey, FLEET_ACCOUNTS_SHAPE_ROUTE)
+              const c = yield* adminShape<ProviderAccount>("accounts", "fleet-global-accounts", ProviderAccount, (r) => r.accountKey, FLEET_ACCOUNTS_SHAPE_ROUTE)
               return yield* globalAccountsQuery(c)
             }).pipe(Scope.provide(scope), Effect.orDie),
           capacity: 1,
@@ -278,6 +385,7 @@ export class FleetStore extends Context.Service<
           globalNodes: Cache.get(nodesCache, "all"),
           globalSessions: Cache.get(sessionsCache, "all"),
           globalAccounts: Cache.get(accountsCache, "all"),
+          global,
         })
       }),
     )

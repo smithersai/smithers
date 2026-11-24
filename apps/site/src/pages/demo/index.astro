@@ -133,6 +133,12 @@ const endpoint = "https://bug.smithers.sh/api/demo-requests"
   const status = form.querySelector("[data-status]")
   const button = form.querySelector("button[type=submit]")
   const label = button.querySelector("[data-label]")
+  // One idempotency key per submission, resent on every retry: a retry after
+  // a lost response gets the stored request's receipt instead of a duplicate.
+  const submissionId = crypto.randomUUID()
+  // The intake's receipt: 201 with the stored request's ID. Anything else,
+  // such as an HTML page from a misrouted request, did not store it.
+  const RECEIPT_ID = /^[0-9a-z]{26}$/
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault()
@@ -150,10 +156,12 @@ const endpoint = "https://bug.smithers.sh/api/demo-requests"
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, submissionId }),
         signal: AbortSignal.timeout(20_000),
       })
-      if (!res.ok) throw new Error(`intake answered ${res.status}`)
+      if (res.status !== 201) throw new Error(`intake answered ${res.status}`)
+      const receipt = await res.json()
+      if (typeof receipt?.id !== "string" || !RECEIPT_ID.test(receipt.id)) throw new Error("intake answered without a receipt")
       form.hidden = true
       thanks.hidden = false
     } catch (error) {

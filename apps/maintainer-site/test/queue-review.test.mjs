@@ -1,7 +1,7 @@
 // Real queue/server/browser regressions for attachment selection and old-line review notes.
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { after, before, test } from "node:test"
@@ -153,4 +153,30 @@ test("the built home renders three counts and the screenshot check rejects their
   assert.equal(hasHomeCounts(await page.locator(".stat-n").allTextContents()), true)
   await page.locator(".stat-n").evaluateAll((nodes) => nodes.forEach((node) => node.remove()))
   assert.equal(hasHomeCounts(await page.locator(".stat-n").allTextContents()), false)
+})
+
+test("a signed-in reviewer can approve and contributed documents cannot run scripts", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "queue-auth-browser-"))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const item = { id: "browser-review", kind: "design", title: "Browser review" }
+  writeFileSync(join(dir, "queue.json"), JSON.stringify({ items: [item] }))
+  writeFileSync(join(dir, "index.html"), "<title>Site</title>")
+  mkdirSync(join(dir, "files"))
+  writeFileSync(join(dir, "files", "design.html"), "<title>Design</title><script>document.title='executed'</script>")
+  const server = startServer({ port: 0, repo: dir, queueDir: dir, site: dir, writeToken: "browser-fixture" })
+  t.after(() => server.close())
+  const base = await server.ready
+  const page = await browser.newPage({ httpCredentials: { username: "maintainer", password: "browser-fixture" } })
+  t.after(() => page.context().close())
+  await page.goto(base + "/queue")
+  await page.locator('.q-card[data-id="browser-review"]').waitFor()
+  const saved = page.waitForResponse((res) => res.url().endsWith("/api/answer"), { timeout: 5000 })
+  await page.keyboard.press("a")
+  assert.equal((await saved).status(), 200)
+  const receipt = JSON.parse(readFileSync(join(dir, "answers.jsonl"), "utf8"))
+  assert.equal(receipt.action, "approve")
+  assert.match(receipt.digest, /^[0-9a-f]{64}$/)
+  await page.goto(base + "/files/design.html")
+  assert.equal(await page.title(), "Design")
+  assert.equal(await page.evaluate(() => window.origin), "null")
 })

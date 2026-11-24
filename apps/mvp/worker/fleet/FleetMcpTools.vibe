@@ -35,7 +35,7 @@ export function isFleetTool(name: string): name is FleetToolName {
 export const FLEET_TOOL_DESCRIPTORS: ReadonlyArray<McpToolDescriptor> = [
   {
     name: "fleet_heartbeat",
-    description: "Register or update a Smithers host node heartbeat (MacBook, Mac mini, bare-metal, Cloudflare).",
+    description: "Register or update a Smithers host node heartbeat.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -61,7 +61,7 @@ export const FLEET_TOOL_DESCRIPTORS: ReadonlyArray<McpToolDescriptor> = [
   },
   {
     name: "fleet_sessions_report",
-    description: "Report observed or managed agent sessions running on a host node (Claude, Codex, AGY, Cloudflare).",
+    description: "Report observed or managed agent sessions running on a host node.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -75,7 +75,7 @@ export const FLEET_TOOL_DESCRIPTORS: ReadonlyArray<McpToolDescriptor> = [
   },
   {
     name: "fleet_accounts_report",
-    description: "Report redacted provider account usage, quotas, cooldowns, and grants (Claude, Codex, Google/AGY).",
+    description: "Report redacted provider account usage, quotas, cooldowns, and grants.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -112,18 +112,46 @@ function jsonResult(value: unknown): FleetToolResult {
   }
 }
 
+/** The scope a fleet tool needs: the overview reads, every report writes. */
+function scopeOf(name: string): "mcp:read" | "mcp:write" {
+  return name === "fleet_overview" ? "mcp:read" : "mcp:write"
+}
+
+/**
+ * Why `principal` may not use a fleet tool needing `scope`, or `null` when it may. The one deployment-scope check, for
+ * discovery and for every call: fleet tools read and write every host, session and provider account of the
+ * deployment, so a token a person pinned to one repository (`repoScope`) never reaches them, whatever its person or
+ * its scopes.
+ */
+export function fleetRefusal(
+  principal: Option.Option<McpPrincipal>,
+  scope: "mcp:read" | "mcp:write",
+  admins: ReadonlySet<string>
+): McpToolError | null {
+  if (Option.isNone(principal)) {
+    return new McpToolError({ code: "authentication", message: "Authentication required for fleet MCP tools." })
+  }
+  const p = principal.value
+  if (p.repoScope !== null) {
+    return new McpToolError({
+      code: "forbidden",
+      message: "Fleet tools are deployment-wide. A token limited to one repository cannot use them.",
+    })
+  }
+  if (!DeploymentPolicy.isDeploymentAdmin(p.login, admins)) {
+    return new McpToolError({ code: "forbidden", message: "Fleet tools are restricted to a deployment admin." })
+  }
+  if (!p.scopes.includes(scope)) {
+    return new McpToolError({ code: "forbidden", message: `Token lacks required scope ${scope}.` })
+  }
+  return null
+}
+
 export function visibleDescriptors(
   principal: Option.Option<McpPrincipal>,
   admins: ReadonlySet<string> = DeploymentPolicy.DEFAULT_ADMINS
 ): ReadonlyArray<McpToolDescriptor> {
-  if (Option.isNone(principal)) return []
-  const p = principal.value
-  if (!DeploymentPolicy.isDeploymentAdmin(p.login, admins)) return []
-  const hasWrite = p.scopes.includes("mcp:write")
-  const hasRead = p.scopes.includes("mcp:read")
-  return FLEET_TOOL_DESCRIPTORS.filter((d) =>
-    d.name === "fleet_overview" ? hasRead : hasWrite
-  )
+  return FLEET_TOOL_DESCRIPTORS.filter((d) => fleetRefusal(principal, scopeOf(d.name), admins) === null)
 }
 
 effect function requireFleetAccess(
@@ -131,26 +159,11 @@ effect function requireFleetAccess(
   scope: "mcp:read" | "mcp:write",
   admins: ReadonlySet<string>
 ): McpPrincipal!McpToolError {
-  if (Option.isNone(ctx.principal)) {
-    throw new McpToolError({
-      code: "authentication",
-      message: "Authentication required for fleet MCP tools.",
-    })
+  const refusal = fleetRefusal(ctx.principal, scope, admins)
+  if (refusal !== null || Option.isNone(ctx.principal)) {
+    throw refusal ?? new McpToolError({ code: "authentication", message: "Authentication required for fleet MCP tools." })
   }
-  const p = ctx.principal.value
-  if (!DeploymentPolicy.isDeploymentAdmin(p.login, admins)) {
-    throw new McpToolError({
-      code: "forbidden",
-      message: "Fleet tools are restricted to the deployment admin.",
-    })
-  }
-  if (!p.scopes.includes(scope)) {
-    throw new McpToolError({
-      code: "forbidden",
-      message: `Token lacks required scope ${scope}.`,
-    })
-  }
-  return p
+  return ctx.principal.value
 }
 
 effect function decodeOrFail<A>(schema: Schema.Decoder<A>, raw: unknown): A!McpToolError {

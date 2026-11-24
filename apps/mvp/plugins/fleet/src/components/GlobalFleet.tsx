@@ -1,6 +1,6 @@
 import { EmptyState, RelativeTime, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, useClock } from "@smthrs/ui"
-import { useState, useSyncExternalStore } from "react"
-import { accountRowsOf, hostRowsOf, sessionRowsOf, summarizeGlobal } from "../GlobalFleetModel.vibe"
+import { useSyncExternalStore } from "react"
+import { accountRowsOf, ALL, filterSessions, harnessesOf, hostRowsOf, rowsOf, sectionOf, sessionRowsOf, summaryOfGlobal } from "../GlobalFleetModel"
 import type { FleetTab, Watched } from "../tab"
 import "./fleet.css"
 import { Pill } from "./parts"
@@ -14,39 +14,41 @@ export function GlobalFleet({ tab }: { readonly tab?: FleetTab }) {
   return <Shown tab={tab} />
 }
 
+const HOST_WORDS = { loading: "Loading hosts", unavailable: "Hosts unavailable", empty: "No hosts connected" }
+const ACCOUNT_WORDS = { loading: "Loading accounts", unavailable: "Accounts unavailable", empty: "No accounts reported" }
+const SESSION_WORDS = { loading: "Loading sessions", unavailable: "Sessions unavailable", empty: "No active sessions" }
+
 function Shown({ tab }: { readonly tab: FleetTab }) {
   const nodes = useWatched(tab.queries.globalNodes())
   const sessions = useWatched(tab.queries.globalSessions())
   const accounts = useWatched(tab.queries.globalAccounts())
-  const [hostFilter, setHostFilter] = useState<string>("all")
-  const [harnessFilter, setHarnessFilter] = useState<string>("all")
+  const filters = useWatched(tab.queries.filters)
   const now = useClock(true, 10_000)
 
-  const hostRows = hostRowsOf(nodes._tag === "Ready" ? nodes.rows : [], now)
-  const allSessions = sessionRowsOf(sessions._tag === "Ready" ? sessions.rows : [], now, false)
-  const accountRows = accountRowsOf(accounts._tag === "Ready" ? accounts.rows : [])
-  const summary = summarizeGlobal(hostRows, allSessions, accountRows)
-
-  const filteredSessions = allSessions.filter((s) =>
-    (hostFilter === "all" || s.nodeId === hostFilter) &&
-    (harnessFilter === "all" || s.harness === harnessFilter)
-  )
+  // Each part draws counts and "none" only from a delivered snapshot: loading or withheld rows are not an empty fleet.
+  const hosts = sectionOf(nodes, HOST_WORDS, (rows) => hostRowsOf(rows, now))
+  const active = sectionOf(sessions, SESSION_WORDS, (rows) => sessionRowsOf(rows, now, false))
+  const accountsShown = sectionOf(accounts, ACCOUNT_WORDS, accountRowsOf)
+  const summary = summaryOfGlobal(hosts, active, accountsShown)
+  const hostRows = rowsOf(hosts)
+  const accountRows = rowsOf(accountsShown)
+  const allSessions = rowsOf(active)
+  const filteredSessions = filterSessions(allSessions, filters)
 
   return (
     <div className="fleet" data-global-fleet="">
-      <p className="fleet-summary" aria-label="Fleet summary">
-        <span>hosts {summary.onlineHosts}/{summary.totalHosts}</span>
-        <span>{summary.activeSessions} active sessions</span>
-        <span>claude {summary.claudeSessions}</span>
-        <span>codex {summary.codexSessions}</span>
-        <span>agy {summary.agySessions}</span>
-        <span>cf {summary.cloudflareSessions}</span>
-        <span>accounts {summary.readyAccounts}/{summary.totalAccounts} ready</span>
-        {summary.alertsCount > 0 ? <Pill tone="bad">{summary.alertsCount} alerts</Pill> : null}
-      </p>
+      {summary === undefined ? <p className="fleet-summary" aria-label="Fleet summary" data-pending="">Fleet counts unavailable</p> : (
+        <p className="fleet-summary" aria-label="Fleet summary">
+          <span>hosts {summary.onlineHosts}/{summary.totalHosts}</span>
+          <span>{summary.activeSessions} active sessions</span>
+          {summary.harnesses.map((each) => <span key={each.harness} data-harness={each.harness}>{each.harness} {each.sessions}</span>)}
+          <span>accounts {summary.readyAccounts}/{summary.totalAccounts} ready</span>
+          {summary.alertsCount > 0 ? <Pill tone="bad">{summary.alertsCount} alerts</Pill> : null}
+        </p>
+      )}
 
       <h2>Hosts</h2>
-      {hostRows.length === 0 ? <EmptyState title="No hosts connected" /> : (
+      {hosts._tag !== "Rows" ? <EmptyState title={hosts.title} /> : (
         <Table className="fleet-machines" aria-label="Hosts">
           <TableHeader>
             <TableRow>
@@ -80,7 +82,7 @@ function Shown({ tab }: { readonly tab: FleetTab }) {
       )}
 
       <h2>Accounts</h2>
-      {accountRows.length === 0 ? <EmptyState title="No accounts reported" /> : (
+      {accountsShown._tag !== "Rows" ? <EmptyState title={accountsShown.title} /> : (
         <Table className="fleet-accounts" aria-label="Accounts">
           <TableHeader>
             <TableRow>
@@ -89,7 +91,7 @@ function Shown({ tab }: { readonly tab: FleetTab }) {
               <TableHead>Plan</TableHead>
               <TableHead>5h</TableHead>
               <TableHead>Weekly</TableHead>
-              <TableHead className="fleet-wide">Fable</TableHead>
+              <TableHead className="fleet-wide">Scoped</TableHead>
               <TableHead className="fleet-wide">Resets</TableHead>
               <TableHead className="fleet-wide">Credits</TableHead>
               <TableHead>Active</TableHead>
@@ -121,26 +123,20 @@ function Shown({ tab }: { readonly tab: FleetTab }) {
       <div className="fleet-summary" role="group" aria-label="Session filters">
         <label>
           Host{" "}
-          <select value={hostFilter} onChange={(e) => setHostFilter(e.target.value)}>
-            <option value="all">All hosts</option>
+          <select value={filters.host} onChange={(e) => tab.actions.filterHost(e.target.value)}>
+            <option value={ALL}>All hosts</option>
             {hostRows.map((h) => <option key={h.nodeId} value={h.nodeId}>{h.name}</option>)}
           </select>
         </label>
         <label>
           Harness{" "}
-          <select value={harnessFilter} onChange={(e) => setHarnessFilter(e.target.value)}>
-            <option value="all">All</option>
-            <option value="claude">Claude</option>
-            <option value="codex">Codex</option>
-            <option value="agy-cli">AGY CLI</option>
-            <option value="agy-ide">AGY IDE</option>
-            <option value="cfbox">cfbox</option>
-            <option value="cf-sandbox">CF Sandbox</option>
-            <option value="smithers">Smithers</option>
+          <select value={filters.harness} onChange={(e) => tab.actions.filterHarness(e.target.value)}>
+            <option value={ALL}>All</option>
+            {harnessesOf(allSessions).map((each) => <option key={each.harness} value={each.harness}>{each.harness}</option>)}
           </select>
         </label>
       </div>
-      {filteredSessions.length === 0 ? <EmptyState title="No active sessions" /> : (
+      {active._tag === "Pending" ? <EmptyState title={active.title} /> : filteredSessions.length === 0 ? <EmptyState title={SESSION_WORDS.empty} /> : (
         <Table className="fleet-runs" aria-label="Active sessions">
           <TableHeader>
             <TableRow>

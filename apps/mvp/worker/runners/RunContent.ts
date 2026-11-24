@@ -78,6 +78,14 @@ export interface Appended {
   readonly summary: Summary
 }
 
+const encoder = new TextEncoder()
+
+/**
+ * A stored body's size in UTF-8 bytes: what `Transcript.MAX_RUN_BYTES` and `PAGE_BYTES` bound and SQLite keeps. A
+ * string's `length` counts UTF-16 code units, a third of the bytes of CJK text.
+ */
+export const bytesOf = (body: string): number => encoder.encode(body).byteLength
+
 const has = (sql: Sql, generation: number, seq: number) =>
   sql.exec(`SELECT 1 AS one FROM events WHERE generation = ? AND seq = ?`, generation, seq).length > 0
 
@@ -103,7 +111,7 @@ export const append = (
     totals = {
       ...totals,
       events: totals.events + 1,
-      bytes: totals.bytes + body.length,
+      bytes: totals.bytes + bytesOf(body),
       last: stored_.n,
       digest: chain(totals.digest, stored_),
     }
@@ -117,7 +125,7 @@ export const append = (
       continue
     }
     const body = JSON.stringify(event.update)
-    if (totals.bytes + body.length > Transcript.MAX_RUN_BYTES) {
+    if (totals.bytes + bytesOf(body) > Transcript.MAX_RUN_BYTES) {
       store({ ...event, kind: Transcript.KINDS.truncated }, "{}")
       totals = { ...totals, truncated: true }
     } else {
@@ -141,8 +149,9 @@ export const page = (sql: Sql, after: number): ReadonlyArray<Row> => {
   let bytes = 0
   for (const row of rows) {
     const body = String(row.body)
-    if (out.length > 0 && bytes + body.length > PAGE_BYTES) break
-    bytes += body.length
+    const size = bytesOf(body)
+    if (out.length > 0 && bytes + size > PAGE_BYTES) break
+    bytes += size
     out.push({
       n: Number(row.n),
       generation: Number(row.generation),

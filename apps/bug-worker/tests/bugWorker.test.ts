@@ -336,6 +336,41 @@ describe("bug worker", () => {
     expect(record.report.summary).toBe("gated");
   });
 
+  test("operator answers are never cached, sniffed or readable cross-origin", async () => {
+    const worker = createBugWorker();
+    const env = makeEnv();
+    const { id } = (await (await worker.fetch(postBug({ summary: "private" }), env)).json()) as { id: string };
+    const admin = { "x-bug-admin": ADMIN };
+    for (const request of [
+      new Request(`https://bug.smithers.sh/api/bugs/${id}`, { headers: admin }),
+      new Request(`https://bug.smithers.sh/api/bugs/${id}`),
+      new Request("https://bug.smithers.sh/api/bugs/doesnotexist", { headers: admin }),
+      new Request("https://bug.smithers.sh/api/bugs", { headers: admin }),
+    ]) {
+      const res = await worker.fetch(request, env);
+      expect(res.headers.get("cache-control")).toBe("private, no-store");
+      expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(res.headers.get("access-control-allow-origin")).toBeNull();
+    }
+    const preflight = await worker.fetch(new Request("https://bug.smithers.sh/api/bugs", { method: "OPTIONS" }), env);
+    expect(preflight.headers.get("access-control-allow-headers")).not.toContain("x-bug-admin");
+    expect(preflight.headers.get("access-control-allow-methods")).not.toContain("GET");
+  });
+
+  test("an operator lists stored bug ids; anyone else gets 401", async () => {
+    const worker = createBugWorker();
+    const env = makeEnv();
+    const ids: string[] = [];
+    for (const summary of ["first", "second"]) {
+      ids.push(((await (await worker.fetch(postBug({ summary }), env)).json()) as { id: string }).id);
+    }
+    const anonymous = await worker.fetch(new Request("https://bug.smithers.sh/api/bugs"), env);
+    expect(anonymous.status).toBe(401);
+    const listed = await worker.fetch(new Request("https://bug.smithers.sh/api/bugs", { headers: { "x-bug-admin": ADMIN } }), env);
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toEqual({ ids: [...ids].sort() });
+  });
+
   test("admin GET 404s for an unknown id", async () => {
     const worker = createBugWorker();
     const res = await worker.fetch(
@@ -374,6 +409,9 @@ describe("bug worker", () => {
         throw new Error("KV namespace unavailable");
       },
       async delete(): Promise<void> {
+        throw new Error("KV namespace unavailable");
+      },
+      async list(): Promise<never> {
         throw new Error("KV namespace unavailable");
       },
     };

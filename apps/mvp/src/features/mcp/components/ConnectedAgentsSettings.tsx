@@ -2,7 +2,6 @@ import { Badge, Button, EmptyState, RelativeTime } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import {
   CONNECTED_AGENTS,
-  CONNECTED_AGENTS_ABOUT,
   CREATED,
   errorText,
   EXPIRES,
@@ -10,7 +9,6 @@ import {
   LOADING,
   NEVER_USED,
   NO_AGENTS,
-  NO_AGENTS_ABOUT,
   REFRESH,
   REVOKE,
   revokeLabel,
@@ -78,9 +76,8 @@ function ConnectedAgentsSettingsInner({ mcp }: { readonly mcp: NonNullable<Retur
         <h2>{CONNECTED_AGENTS}</h2>
         <Button size="sm" variant="outline" disabled={waiting} onClick={() => void actions.loadTokens()}>{REFRESH}</Button>
       </div>
-      <p>{CONNECTED_AGENTS_ABOUT}</p>
       <p role="status">{status === "loading" ? LOADING : errorText(state?.error ?? null)}</p>
-      {status === "ready" && rows.length === 0 ? <EmptyState title={NO_AGENTS} description={NO_AGENTS_ABOUT} /> : null}
+      {status === "ready" && rows.length === 0 ? <EmptyState title={NO_AGENTS} /> : null}
       {rows.length === 0 ? null : (
         <ul className="connected-agents-list" aria-label={CONNECTED_AGENTS}>
           {rows.map((row) => <Agent key={row.id} row={row} revoking={state?.revokingId === row.id} waiting={waiting} onRevoke={actions.revokeToken} />)}

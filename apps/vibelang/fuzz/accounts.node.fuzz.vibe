@@ -36,6 +36,7 @@ const setup = (login: string) => ({
     permission: () => succeed("read" as const),
     revoke: () => Effect.void,
   } as never,
+  issuedHere: () => succeed(true),
 })
 
 interface Jar { readonly cookies: ReadonlyMap<string, string> }

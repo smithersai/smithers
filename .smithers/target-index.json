@@ -49437,6 +49437,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/bug-worker/infra/**/*.ts",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/bug-worker/alchemy.run.ts"
       },
@@ -49467,6 +49472,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/bug-worker/infra/**/*.ts",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/bug-worker/alchemy.run.ts"
       },
@@ -49474,6 +49484,14 @@
         "kind": "glob",
         "pattern": "apps/bug-worker/tests/**/*.ts",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/bug-worker/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/bug-worker/package.json"
       },
       {
         "kind": "file",
@@ -49495,7 +49513,7 @@
     "package": "apps/bug-worker",
     "name": "security",
     "rule": "LlmLint",
-    "reviewPolicy": "{\"changes\":{\"_tag\":\"GitDiff\",\"base\":\"origin/main\",\"paths\":[\"apps/bug-worker/src/**\",\"apps/bug-worker/alchemy.run.ts\"]},\"include\":[{\"_tag\":\"Glob\",\"pattern\":\"//apps/bug-worker/src/**\",\"exclude\":[]},{\"_tag\":\"File\",\"path\":\"//apps/bug-worker/alchemy.run.ts\"}],\"context\":[],\"deps\":[],\"prompt\":\"You are the security engineer for this repository, performing an authorized defensive security review commissioned by the repository owner. The owner wants weaknesses in their own code found and fixed before anyone can abuse them; this is the routine application-security review a code owner runs before a release. Read the files as an attacker would, then report each weakness precisely enough for the owner to fix it: the vulnerable location, the attacker's precondition, the impact, and the fix. Do not write exploit code for attacking live systems. Safe local regression tests using synthetic data are permitted; a trusted host can run them in an isolated checkout. This reviewer cannot attest execution; prefer one well-evidenced finding over several speculative ones.\",\"rubric\":\"Checks. Every finding names exactly one check id below.\\n\\n[operator-gate] Stored reports require the x-bug-admin token before any read\\nThreat: An anonymous caller reads private bug report contents.\\nFocus: apps/bug-worker/src/worker.ts, apps/bug-worker/src/isOperator.ts\\nLook for:\\n- GET /api/bugs/:id reads storage before isOperator succeeds.\\n- A missing admin token admits a caller or comparison leaks the secret length.\\n\\n[intake-abuse-bounds] Anonymous bug and demo-request intake is bounded in body size, rate, and stored content\\nThreat: An anonymous caller exhausts storage or Worker memory, or plants HTML for triage tools.\\nFocus: apps/bug-worker/src/worker.ts, apps/bug-worker/src/readBodyBounded.ts, apps/bug-worker/src/checkRateLimit.ts, apps/bug-worker/src/RateLimiter.ts, apps/bug-worker/src/bugReportSchema.ts, apps/bug-worker/src/demoRequestSchema.ts\\nLook for:\\n- A body read buffers before readBodyBounded, or the cap trusts content-length alone.\\n- A rate-limit key trusts x-forwarded-for instead of cf-connecting-ip.\\n- Counters use KV read-modify-write instead of RateLimiter, IPv6 bypasses the /64 budget, or the all-clients hourly cap is absent.\\n- A stored report is served as HTML or loose fields are echoed into HTML.\\n\\n[kv-key-space] Report retrieval stays inside the generated bug key space\\nThreat: A caller chooses an ID that reads a different KV namespace prefix.\\nFocus: apps/bug-worker/src/worker.ts, apps/bug-worker/src/newBugId.ts\\nLook for:\\n- A report ID admits path separators, colons or other characters outside the generated ID format.\\n\\n[deploy-secrets] Deployment redacts the admin secret and serves only declared hosts\\nThreat: Deployment leaks BUG_ADMIN_TOKEN into plain bindings or exposes intake outside the configured domain.\\nFocus: apps/bug-worker/alchemy.run.ts\\nLook for:\\n- The admin token uses a literal or plaintext Config instead of requireSecret.\\n- workersDev is enabled, a domain alias escapes smithers.sh, or a missing token defaults to an empty value.\\n\\n[general] Any other vulnerability\\nThreat: Any attacker who controls an input this code reads (a network request, a file, an environment variable, a model or tool output, a dependency) makes it act outside what its caller authorized.\\nFocus: every reviewed file\\nLook for:\\n- Injection: untrusted text reaching a shell, SQL, a template, a regex, HTML, a log line, or an eval.\\n- Authorization: an action or read that skips the ownership, tenancy, or role check its siblings perform.\\n- Secrets: credentials, tokens, or keys hardcoded, logged, returned to a client, or passed to a child process that does not need them.\\n- Path traversal: a caller-controlled path or archive entry that can escape its intended root, including via symlinks.\\n- SSRF: a caller-controlled URL, host, or redirect fetched by the server.\\n- Unsafe deserialization: untrusted bytes decoded into code, prototypes, or unchecked types.\\n- Command execution: a spawn, exec, or shell whose argv or environment an untrusted input shapes.\\n- Crypto misuse: weak or homemade primitives, predictable randomness for secrets, missing constant-time comparison, disabled TLS verification.\\n- Prompt injection: untrusted content placed in an agent prompt or tool result that can steer tool calls, approvals, or data egress.\\n- Supply chain: install scripts, unpinned downloads, or unverified artifacts executed at build or run time.\\n- Denial of service: unbounded reads, allocations, loops, recursion, retries, or regex backtracking on untrusted input.\\n- Information leaks: stack traces, internal paths, other tenants' data, or secrets in errors, logs, or responses.\\n\\nReporting rules:\\n- Include structured security fields: checkId, impact, verification, releaseRecommendation, attackerPreconditions, evidence, and nextConfirmationStep. Message describes the cause and concrete fix.\\n- Impact is low, medium, high, or critical; verification is suspected for every model finding. Only a trusted host receipt of controlled reproduction at an immutable revision can confirm a finding.\\n- Release recommendation is allow, review, or block. High and critical impact always block release, even when suspected. Severity is derived from release recommendation, never verification.\\n- file and line point at the vulnerable operation (the sink or the missing check), not an import.\\n- Report each distinct flaw once; name at most three call sites of the same flaw.\\n- Style, correctness bugs without a security consequence, and missing tests are not findings.\\n- Return the completion envelope requested by the review host, including coverage for every declared check.\",\"engine\":\"claude\",\"model\":\"claude-opus-5-5\",\"batchSize\":4,\"failOn\":\"error\",\"securityChecks\":[\"operator-gate\",\"intake-abuse-bounds\",\"kv-key-space\",\"deploy-secrets\",\"general\"],\"scope\":\"changed\",\"manual\":false}",
+    "reviewPolicy": "{\"changes\":{\"_tag\":\"GitDiff\",\"base\":\"origin/main\",\"paths\":[\"apps/bug-worker/src/**\",\"apps/bug-worker/infra/**\",\"apps/bug-worker/alchemy.run.ts\"]},\"include\":[{\"_tag\":\"Glob\",\"pattern\":\"//apps/bug-worker/src/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/bug-worker/infra/**\",\"exclude\":[]},{\"_tag\":\"File\",\"path\":\"//apps/bug-worker/alchemy.run.ts\"}],\"context\":[],\"deps\":[],\"prompt\":\"You are the security engineer for this repository, performing an authorized defensive security review commissioned by the repository owner. The owner wants weaknesses in their own code found and fixed before anyone can abuse them; this is the routine application-security review a code owner runs before a release. Read the files as an attacker would, then report each weakness precisely enough for the owner to fix it: the vulnerable location, the attacker's precondition, the impact, and the fix. Do not write exploit code for attacking live systems. Safe local regression tests using synthetic data are permitted; a trusted host can run them in an isolated checkout. This reviewer cannot attest execution; prefer one well-evidenced finding over several speculative ones.\",\"rubric\":\"Checks. Every finding names exactly one check id below.\\n\\n[operator-gate] Stored reports and demo requests require the x-bug-admin token before any read\\nThreat: An anonymous caller reads private bug report contents.\\nFocus: apps/bug-worker/src/worker.ts, apps/bug-worker/src/isOperator.ts\\nLook for:\\n- GET /api/bugs, /api/bugs/:id, /api/demo-requests or /api/demo-requests/:id reads storage before isOperator succeeds.\\n- An operator answer is cacheable, lacks nosniff, or carries a wildcard CORS origin.\\n- A missing admin token admits a caller or comparison leaks the secret length.\\n\\n[intake-abuse-bounds] Anonymous bug and demo-request intake is bounded in body size, rate, and stored content\\nThreat: An anonymous caller exhausts storage or Worker memory, or plants HTML for triage tools.\\nFocus: apps/bug-worker/src/worker.ts, apps/bug-worker/src/readBodyBounded.ts, apps/bug-worker/src/checkRateLimit.ts, apps/bug-worker/src/RateLimiter.ts, apps/bug-worker/src/bugReportSchema.ts, apps/bug-worker/src/demoRequestSchema.ts\\nLook for:\\n- A body read buffers before readBodyBounded, or the cap trusts content-length alone.\\n- A rate-limit key trusts x-forwarded-for instead of cf-connecting-ip.\\n- Counters use KV read-modify-write instead of RateLimiter, IPv6 bypasses the /64 budget, or the all-clients hourly cap is absent.\\n- A stored report is served as HTML or loose fields are echoed into HTML.\\n\\n[kv-key-space] Report retrieval stays inside the generated bug key space\\nThreat: A caller chooses an ID that reads a different KV namespace prefix.\\nFocus: apps/bug-worker/src/worker.ts, apps/bug-worker/src/newBugId.ts\\nLook for:\\n- A report ID admits path separators, colons or other characters outside the generated ID format.\\n\\n[deploy-secrets] Deployment redacts the admin secret and serves only declared hosts\\nThreat: Deployment leaks BUG_ADMIN_TOKEN into plain bindings or exposes intake outside the configured domain.\\nFocus: apps/bug-worker/alchemy.run.ts, apps/bug-worker/infra/Deployment.ts\\nLook for:\\n- The admin token uses a literal or plaintext Config instead of requireSecret.\\n- workersDev is enabled while a custom domain is declared, a configured hostname or alias is not validated, or a missing token defaults to an empty value.\\n- A hosted account, zone, resource name or hostname is a literal instead of deployment configuration.\\n\\n[general] Any other vulnerability\\nThreat: Any attacker who controls an input this code reads (a network request, a file, an environment variable, a model or tool output, a dependency) makes it act outside what its caller authorized.\\nFocus: every reviewed file\\nLook for:\\n- Injection: untrusted text reaching a shell, SQL, a template, a regex, HTML, a log line, or an eval.\\n- Authorization: an action or read that skips the ownership, tenancy, or role check its siblings perform.\\n- Secrets: credentials, tokens, or keys hardcoded, logged, returned to a client, or passed to a child process that does not need them.\\n- Path traversal: a caller-controlled path or archive entry that can escape its intended root, including via symlinks.\\n- SSRF: a caller-controlled URL, host, or redirect fetched by the server.\\n- Unsafe deserialization: untrusted bytes decoded into code, prototypes, or unchecked types.\\n- Command execution: a spawn, exec, or shell whose argv or environment an untrusted input shapes.\\n- Crypto misuse: weak or homemade primitives, predictable randomness for secrets, missing constant-time comparison, disabled TLS verification.\\n- Prompt injection: untrusted content placed in an agent prompt or tool result that can steer tool calls, approvals, or data egress.\\n- Supply chain: install scripts, unpinned downloads, or unverified artifacts executed at build or run time.\\n- Denial of service: unbounded reads, allocations, loops, recursion, retries, or regex backtracking on untrusted input.\\n- Information leaks: stack traces, internal paths, other tenants' data, or secrets in errors, logs, or responses.\\n\\nReporting rules:\\n- Include structured security fields: checkId, impact, verification, releaseRecommendation, attackerPreconditions, evidence, and nextConfirmationStep. Message describes the cause and concrete fix.\\n- Impact is low, medium, high, or critical; verification is suspected for every model finding. Only a trusted host receipt of controlled reproduction at an immutable revision can confirm a finding.\\n- Release recommendation is allow, review, or block. High and critical impact always block release, even when suspected. Severity is derived from release recommendation, never verification.\\n- file and line point at the vulnerable operation (the sink or the missing check), not an import.\\n- Report each distinct flaw once; name at most three call sites of the same flaw.\\n- Style, correctness bugs without a security consequence, and missing tests are not findings.\\n- Return the completion envelope requested by the review host, including coverage for every declared check.\",\"engine\":\"claude\",\"model\":\"claude-opus-5-5\",\"batchSize\":4,\"failOn\":\"error\",\"securityChecks\":[\"operator-gate\",\"intake-abuse-bounds\",\"kv-key-space\",\"deploy-secrets\",\"general\"],\"scope\":\"changed\",\"manual\":false}",
     "kinds": [
       "review"
     ],
@@ -49507,12 +49525,18 @@
         "base": "origin/main",
         "paths": [
           "apps/bug-worker/src/**",
+          "apps/bug-worker/infra/**",
           "apps/bug-worker/alchemy.run.ts"
         ]
       },
       {
         "kind": "glob",
         "pattern": "apps/bug-worker/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/bug-worker/infra/**",
         "exclude": []
       },
       {
@@ -49531,7 +49555,7 @@
     "package": "apps/bug-worker",
     "name": "securityAudit",
     "rule": "LlmLint",
-    "reviewPolicy": "{\"changes\":{\"_tag\":\"GitDiff\",\"base\":\"HEAD\",\"paths\":[\"apps/bug-worker/src/**\",\"apps/bug-worker/alchemy.run.ts\"]},\"include\":[{\"_tag\":\"Glob\",\"pattern\":\"//apps/bug-worker/src/**\",\"exclude\":[]},{\"_tag\":\"File\",\"path\":\"//apps/bug-worker/alchemy.run.ts\"}],\"context\":[],\"deps\":[],\"prompt\":\"You are the security engineer for this repository, performing an authorized defensive security review commissioned by the repository owner. The owner wants weaknesses in their own code found and fixed before anyone can abuse them; this is the routine application-security review a code owner runs before a release. Read the files as an attacker would, then report each weakness precisely enough for the owner to fix it: the vulnerable location, the attacker's precondition, the impact, and the fix. Do not write exploit code for attacking live systems. Safe local regression tests using synthetic data are permitted; a trusted host can run them in an isolated checkout. This reviewer cannot attest execution; prefer one well-evidenced finding over several speculative ones.\",\"rubric\":\"Checks. Every finding names exactly one check id below.\\n\\n[operator-gate] Stored reports require the x-bug-admin token before any read\\nThreat: An anonymous caller reads private bug report contents.\\nFocus: apps/bug-worker/src/worker.ts, apps/bug-worker/src/isOperator.ts\\nLook for:\\n- GET /api/bugs/:id reads storage before isOperator succeeds.\\n- A missing admin token admits a caller or comparison leaks the secret length.\\n\\n[intake-abuse-bounds] Anonymous bug and demo-request intake is bounded in body size, rate, and stored content\\nThreat: An anonymous caller exhausts storage or Worker memory, or plants HTML for triage tools.\\nFocus: apps/bug-worker/src/worker.ts, apps/bug-worker/src/readBodyBounded.ts, apps/bug-worker/src/checkRateLimit.ts, apps/bug-worker/src/RateLimiter.ts, apps/bug-worker/src/bugReportSchema.ts, apps/bug-worker/src/demoRequestSchema.ts\\nLook for:\\n- A body read buffers before readBodyBounded, or the cap trusts content-length alone.\\n- A rate-limit key trusts x-forwarded-for instead of cf-connecting-ip.\\n- Counters use KV read-modify-write instead of RateLimiter, IPv6 bypasses the /64 budget, or the all-clients hourly cap is absent.\\n- A stored report is served as HTML or loose fields are echoed into HTML.\\n\\n[kv-key-space] Report retrieval stays inside the generated bug key space\\nThreat: A caller chooses an ID that reads a different KV namespace prefix.\\nFocus: apps/bug-worker/src/worker.ts, apps/bug-worker/src/newBugId.ts\\nLook for:\\n- A report ID admits path separators, colons or other characters outside the generated ID format.\\n\\n[deploy-secrets] Deployment redacts the admin secret and serves only declared hosts\\nThreat: Deployment leaks BUG_ADMIN_TOKEN into plain bindings or exposes intake outside the configured domain.\\nFocus: apps/bug-worker/alchemy.run.ts\\nLook for:\\n- The admin token uses a literal or plaintext Config instead of requireSecret.\\n- workersDev is enabled, a domain alias escapes smithers.sh, or a missing token defaults to an empty value.\\n\\n[general] Any other vulnerability\\nThreat: Any attacker who controls an input this code reads (a network request, a file, an environment variable, a model or tool output, a dependency) makes it act outside what its caller authorized.\\nFocus: every reviewed file\\nLook for:\\n- Injection: untrusted text reaching a shell, SQL, a template, a regex, HTML, a log line, or an eval.\\n- Authorization: an action or read that skips the ownership, tenancy, or role check its siblings perform.\\n- Secrets: credentials, tokens, or keys hardcoded, logged, returned to a client, or passed to a child process that does not need them.\\n- Path traversal: a caller-controlled path or archive entry that can escape its intended root, including via symlinks.\\n- SSRF: a caller-controlled URL, host, or redirect fetched by the server.\\n- Unsafe deserialization: untrusted bytes decoded into code, prototypes, or unchecked types.\\n- Command execution: a spawn, exec, or shell whose argv or environment an untrusted input shapes.\\n- Crypto misuse: weak or homemade primitives, predictable randomness for secrets, missing constant-time comparison, disabled TLS verification.\\n- Prompt injection: untrusted content placed in an agent prompt or tool result that can steer tool calls, approvals, or data egress.\\n- Supply chain: install scripts, unpinned downloads, or unverified artifacts executed at build or run time.\\n- Denial of service: unbounded reads, allocations, loops, recursion, retries, or regex backtracking on untrusted input.\\n- Information leaks: stack traces, internal paths, other tenants' data, or secrets in errors, logs, or responses.\\n\\nReporting rules:\\n- Include structured security fields: checkId, impact, verification, releaseRecommendation, attackerPreconditions, evidence, and nextConfirmationStep. Message describes the cause and concrete fix.\\n- Impact is low, medium, high, or critical; verification is suspected for every model finding. Only a trusted host receipt of controlled reproduction at an immutable revision can confirm a finding.\\n- Release recommendation is allow, review, or block. High and critical impact always block release, even when suspected. Severity is derived from release recommendation, never verification.\\n- file and line point at the vulnerable operation (the sink or the missing check), not an import.\\n- Report each distinct flaw once; name at most three call sites of the same flaw.\\n- Style, correctness bugs without a security consequence, and missing tests are not findings.\\n- Return the completion envelope requested by the review host, including coverage for every declared check.\",\"engine\":\"claude\",\"model\":\"claude-opus-5-5\",\"batchSize\":8,\"failOn\":\"error\",\"securityChecks\":[\"operator-gate\",\"intake-abuse-bounds\",\"kv-key-space\",\"deploy-secrets\",\"general\"],\"scope\":\"all\",\"manual\":true}",
+    "reviewPolicy": "{\"changes\":{\"_tag\":\"GitDiff\",\"base\":\"HEAD\",\"paths\":[\"apps/bug-worker/src/**\",\"apps/bug-worker/infra/**\",\"apps/bug-worker/alchemy.run.ts\"]},\"include\":[{\"_tag\":\"Glob\",\"pattern\":\"//apps/bug-worker/src/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/bug-worker/infra/**\",\"exclude\":[]},{\"_tag\":\"File\",\"path\":\"//apps/bug-worker/alchemy.run.ts\"}],\"context\":[],\"deps\":[],\"prompt\":\"You are the security engineer for this repository, performing an authorized defensive security review commissioned by the repository owner. The owner wants weaknesses in their own code found and fixed before anyone can abuse them; this is the routine application-security review a code owner runs before a release. Read the files as an attacker would, then report each weakness precisely enough for the owner to fix it: the vulnerable location, the attacker's precondition, the impact, and the fix. Do not write exploit code for attacking live systems. Safe local regression tests using synthetic data are permitted; a trusted host can run them in an isolated checkout. This reviewer cannot attest execution; prefer one well-evidenced finding over several speculative ones.\",\"rubric\":\"Checks. Every finding names exactly one check id below.\\n\\n[operator-gate] Stored reports and demo requests require the x-bug-admin token before any read\\nThreat: An anonymous caller reads private bug report contents.\\nFocus: apps/bug-worker/src/worker.ts, apps/bug-worker/src/isOperator.ts\\nLook for:\\n- GET /api/bugs, /api/bugs/:id, /api/demo-requests or /api/demo-requests/:id reads storage before isOperator succeeds.\\n- An operator answer is cacheable, lacks nosniff, or carries a wildcard CORS origin.\\n- A missing admin token admits a caller or comparison leaks the secret length.\\n\\n[intake-abuse-bounds] Anonymous bug and demo-request intake is bounded in body size, rate, and stored content\\nThreat: An anonymous caller exhausts storage or Worker memory, or plants HTML for triage tools.\\nFocus: apps/bug-worker/src/worker.ts, apps/bug-worker/src/readBodyBounded.ts, apps/bug-worker/src/checkRateLimit.ts, apps/bug-worker/src/RateLimiter.ts, apps/bug-worker/src/bugReportSchema.ts, apps/bug-worker/src/demoRequestSchema.ts\\nLook for:\\n- A body read buffers before readBodyBounded, or the cap trusts content-length alone.\\n- A rate-limit key trusts x-forwarded-for instead of cf-connecting-ip.\\n- Counters use KV read-modify-write instead of RateLimiter, IPv6 bypasses the /64 budget, or the all-clients hourly cap is absent.\\n- A stored report is served as HTML or loose fields are echoed into HTML.\\n\\n[kv-key-space] Report retrieval stays inside the generated bug key space\\nThreat: A caller chooses an ID that reads a different KV namespace prefix.\\nFocus: apps/bug-worker/src/worker.ts, apps/bug-worker/src/newBugId.ts\\nLook for:\\n- A report ID admits path separators, colons or other characters outside the generated ID format.\\n\\n[deploy-secrets] Deployment redacts the admin secret and serves only declared hosts\\nThreat: Deployment leaks BUG_ADMIN_TOKEN into plain bindings or exposes intake outside the configured domain.\\nFocus: apps/bug-worker/alchemy.run.ts, apps/bug-worker/infra/Deployment.ts\\nLook for:\\n- The admin token uses a literal or plaintext Config instead of requireSecret.\\n- workersDev is enabled while a custom domain is declared, a configured hostname or alias is not validated, or a missing token defaults to an empty value.\\n- A hosted account, zone, resource name or hostname is a literal instead of deployment configuration.\\n\\n[general] Any other vulnerability\\nThreat: Any attacker who controls an input this code reads (a network request, a file, an environment variable, a model or tool output, a dependency) makes it act outside what its caller authorized.\\nFocus: every reviewed file\\nLook for:\\n- Injection: untrusted text reaching a shell, SQL, a template, a regex, HTML, a log line, or an eval.\\n- Authorization: an action or read that skips the ownership, tenancy, or role check its siblings perform.\\n- Secrets: credentials, tokens, or keys hardcoded, logged, returned to a client, or passed to a child process that does not need them.\\n- Path traversal: a caller-controlled path or archive entry that can escape its intended root, including via symlinks.\\n- SSRF: a caller-controlled URL, host, or redirect fetched by the server.\\n- Unsafe deserialization: untrusted bytes decoded into code, prototypes, or unchecked types.\\n- Command execution: a spawn, exec, or shell whose argv or environment an untrusted input shapes.\\n- Crypto misuse: weak or homemade primitives, predictable randomness for secrets, missing constant-time comparison, disabled TLS verification.\\n- Prompt injection: untrusted content placed in an agent prompt or tool result that can steer tool calls, approvals, or data egress.\\n- Supply chain: install scripts, unpinned downloads, or unverified artifacts executed at build or run time.\\n- Denial of service: unbounded reads, allocations, loops, recursion, retries, or regex backtracking on untrusted input.\\n- Information leaks: stack traces, internal paths, other tenants' data, or secrets in errors, logs, or responses.\\n\\nReporting rules:\\n- Include structured security fields: checkId, impact, verification, releaseRecommendation, attackerPreconditions, evidence, and nextConfirmationStep. Message describes the cause and concrete fix.\\n- Impact is low, medium, high, or critical; verification is suspected for every model finding. Only a trusted host receipt of controlled reproduction at an immutable revision can confirm a finding.\\n- Release recommendation is allow, review, or block. High and critical impact always block release, even when suspected. Severity is derived from release recommendation, never verification.\\n- file and line point at the vulnerable operation (the sink or the missing check), not an import.\\n- Report each distinct flaw once; name at most three call sites of the same flaw.\\n- Style, correctness bugs without a security consequence, and missing tests are not findings.\\n- Return the completion envelope requested by the review host, including coverage for every declared check.\",\"engine\":\"claude\",\"model\":\"claude-opus-5-5\",\"batchSize\":8,\"failOn\":\"error\",\"securityChecks\":[\"operator-gate\",\"intake-abuse-bounds\",\"kv-key-space\",\"deploy-secrets\",\"general\"],\"scope\":\"all\",\"manual\":true}",
     "kinds": [
       "review"
     ],
@@ -49543,12 +49567,18 @@
         "base": "HEAD",
         "paths": [
           "apps/bug-worker/src/**",
+          "apps/bug-worker/infra/**",
           "apps/bug-worker/alchemy.run.ts"
         ]
       },
       {
         "kind": "glob",
         "pattern": "apps/bug-worker/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/bug-worker/infra/**",
         "exclude": []
       },
       {
@@ -49578,6 +49608,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/bug-worker/infra/**/*.ts",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/bug-worker/alchemy.run.ts"
       },
@@ -49585,6 +49620,14 @@
         "kind": "glob",
         "pattern": "apps/bug-worker/tests/**/*.ts",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/bug-worker/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/bug-worker/package.json"
       },
       {
         "kind": "file",
@@ -50769,10 +50812,784 @@
         "kind": "glob",
         "pattern": "apps/patterns-site/site/**",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/patterns-site/catalog.mjs"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/checks/affected-test/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/checks/drift/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/checks/lint/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/checks/review/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/coding/rebase-conflict/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/coding/verify/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/create-flow/clarify/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/create-flow/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/create-flow/scaffold/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/issue-sweep/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/issue-triage/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/issue/repro/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/lint/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/memory/mine/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/pr-triage/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/release-content/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/release-notes/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/release/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/review/README.md"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/review/change/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/review/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/rollout/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/security-audit/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/todo/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/wiki/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/wrapped/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/docs/concepts/seats.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/docs/guides/quota-and-budgets.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/docs/guides/structured-output.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/evals/docs/guides/author-a-suite.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/11-agent-step.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/13-agent-live-smoke-local.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/14-agent-live-smoke-gemini.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/20-child-flows.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/26-memory-recall.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/39-agent-policies.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/adaptive-rag-citation-loop.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/alert-suppressor.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/benchmark-sheriff.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/bisect-guide.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/blog-analyzer-pipeline.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/branch-doctor.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/bun-port-smithers.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/calendar-negotiator-with-approval.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/canary-judge.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/classifier-switchboard.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/code-review-loop.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/collector-probe.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/command-watchdog.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/compliance-evidence-collector.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/config-diff-explainer.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/contract-drift-sentinel.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/defending-code.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/dependency-update.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/doc-sync.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/docs-fixup-bot.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/docs-patcher.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/document-exception-queue.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/dstack.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/dynamic-schema-enricher.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/error-clusterer.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/etl.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-anything-workbench.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/assemble.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/collect.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/flow.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/instructions.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/label.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/main.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/prepare.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-prompt.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/fail-only-report.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/failing-test-author.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/feedback-pulse.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/financial-inbox-guard.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/flake-hunter.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/form-filler-assistant.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/friday-bot.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/gastown.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/github-issues.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/incident-runbook-memory.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/invoice-approval-watch.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/kit.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/lead-enricher.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/lead-router-with-approval.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/log-digest.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/mcp-health-probe.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/meeting-briefer.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/memory-support-agent.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/milestone.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/monitor-workflow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/openapi-contract-agent.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/playwright-test-agent.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/ransomware-isolation-coordinator.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/receipt-stream-watcher.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/refactor.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/repo-janitor.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/retry-budget-manager.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/revenue-scout.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/rfp-response-room.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/rollback-advisor.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/service-desk-dispatcher.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/slo-breach-explainer.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/smoketest.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/social-inbox-router.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/sql-analyst-dashboard.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/support-deflector.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/survey-answerer-agent.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/swe-evo.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/test-sharder-judge.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/threat-intel-enricher.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/trace-explainer.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/triage.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/trust-safety-moderator.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/tweet-thread.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/visual-diff-explainer.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness/benchmarks/harbor/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness/benchmarks/swebench/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness/docs/external-transcripts.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/memory/docs/guides/scope-a-flow-tree.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model/examples/15-model-layer-smoke.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/regression/agent.eval.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/scorers/docs/guides/attach-a-scorer-to-a-flow.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/std/examples/32-intervene.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/triggers/docs/concepts/schedules.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/triggers/docs/guides/declare-a-trigger.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/triggers/docs/guides/ingest-a-webhook.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/docs/guides/approvals.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/docs/guides/monitor-runs.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/docs/guides/launch-a-detached-run.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/docs/reference/cli/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/engine/examples/01-define-and-run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/examples/03-crash-and-resume.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/examples/04-retry-policy.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/examples/05-time-travel-fork.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/examples/10-telemetry-export.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/examples/16-fan-out-fan-in.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/examples/17-review-loop.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/examples/18-approval-and-signal.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/examples/21-cache-and-compensation.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/examples/33-delegation-trellis.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/examples/34-human-task.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/examples/34-poll.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/examples/35-remote-cache.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/examples/38-monitor-and-alert.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/examples/40-sandbox-placement.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/examples/41-sandboxed-flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/concepts/trampoline-rounds.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/guides/ask-a-person.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/guides/build-a-body.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/guides/cancel-and-roll-back.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/guides/poll-until-ready.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/guides/retry-a-failing-action.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/guides/reuse-a-recorded-result.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/guides/run-a-child-flow.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/guides/wait-for-a-deadline.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/guides/wait-for-an-external-signal.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/src/HumanTask.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/src/RetryPolicy.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/docs/api.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/docs/burndown.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/docs/delegation.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/docs/loops.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/docs/teams.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/examples/30-failure-control.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/examples/31-bounded-loops.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/Bounded.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/Burndown.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/CheckSuite.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/Debate.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/DelegationChain.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/DriftDetector.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/Escalation.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/Intervene.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/Kanban.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/MapReduce.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/MergeQueue.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/Optimizer.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/Panel.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/Quarantine.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/ReviewLoop.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/Runbook.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/Saga.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/ScanFixVerify.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/Sidecar.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/Supervisor.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/src/Trellis.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/mcp/examples/22-mcp-tools.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/migrate/docs/concepts/units.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/migrate/docs/guides/run-as-a-durable-flow.md"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/site:apiReferenceSources"
+    ],
     "source": {
       "file": "apps/patterns-site/PACKAGE.ts"
     }
@@ -50893,6 +51710,26 @@
       "//packages/smithers:docsFiles",
       "//packages/testing:docsFiles"
     ],
+    "source": {
+      "file": "apps/site/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/site:apiReferenceSources",
+    "package": "apps/site",
+    "name": "apiReferenceSources",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/site/src/content/docs/docs/reference/api/*.mdx",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
     "source": {
       "file": "apps/site/PACKAGE.ts"
     }
@@ -52438,6 +53275,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/bug-worker/infra/Deployment.ts"
+      },
+      {
+        "kind": "file",
         "path": "apps/bug-worker/README.md"
       },
       {
@@ -52921,7 +53762,7 @@
     "package": "apps/site",
     "name": "security",
     "rule": "LlmLint",
-    "reviewPolicy": "{\"changes\":{\"_tag\":\"GitDiff\",\"base\":\"origin/main\",\"paths\":[\"apps/site/src/*.ts\",\"apps/site/src/components/**\",\"apps/site/src/layouts/**\",\"apps/site/src/pages/**\",\"apps/site/docs-redirect/src/**\",\"apps/site/docs-redirect/wrangler.jsonc\",\"apps/site/scripts/**\",\"apps/site/tapes/**\",\"apps/site/public/_headers\",\"apps/site/public/_redirects\",\"apps/site/astro.config.mjs\",\"apps/site/docs/installation.mdx\",\"apps/site/src/content/docs/docs/installation.mdx\"]},\"include\":[{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/*.ts\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/components/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/layouts/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/pages/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/docs-redirect/src/**\",\"exclude\":[]},{\"_tag\":\"File\",\"path\":\"//apps/site/docs-redirect/wrangler.jsonc\"},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/scripts/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/tapes/**\",\"exclude\":[]},{\"_tag\":\"File\",\"path\":\"//apps/site/public/_headers\"},{\"_tag\":\"File\",\"path\":\"//apps/site/public/_redirects\"},{\"_tag\":\"File\",\"path\":\"//apps/site/astro.config.mjs\"},{\"_tag\":\"File\",\"path\":\"//apps/site/docs/installation.mdx\"},{\"_tag\":\"File\",\"path\":\"//apps/site/src/content/docs/docs/installation.mdx\"}],\"context\":[],\"deps\":[],\"prompt\":\"You are the security engineer for this repository, performing an authorized defensive security review commissioned by the repository owner. The owner wants weaknesses in their own code found and fixed before anyone can abuse them; this is the routine application-security review a code owner runs before a release. Read the files as an attacker would, then report each weakness precisely enough for the owner to fix it: the vulnerable location, the attacker's precondition, the impact, and the fix. Do not write exploit code for attacking live systems. Safe local regression tests using synthetic data are permitted; a trusted host can run them in an isolated checkout. This reviewer cannot attest execution; prefer one well-evidenced finding over several speculative ones.\",\"rubric\":\"Checks. Every finding names exactly one check id below.\\n\\n[demo-intake-form] The demo form sends only the typed fields to the fixed intake endpoint\\nThreat: A visitor's name, work email and message reach a third party, or a script on the page rewrites where the form posts.\\nFocus: apps/site/src/pages/demo/**, apps/site/scripts/demo-form.test.mjs\\nLook for:\\n- An intake endpoint taken from a query parameter, env var, or page data instead of the literal bug.smithers.sh URL.\\n- Error handling that renders the server's response body into the page with innerHTML.\\n- The fetch sending credentials or extra headers (cookies, tokens) to the cross-origin intake worker.\\n\\n[redirects] Redirects stay on smithers.sh\\nThreat: An attacker uses a smithers.sh URL, or a retired `<slug>.smithers.sh` docs host, as an open redirect to a phishing origin.\\nFocus: apps/site/public/_headers, apps/site/public/_redirects, apps/site/scripts/check-built-site.mjs, apps/site/docs-redirect/src/**, apps/site/docs-redirect/wrangler.jsonc\\nLook for:\\n- A _redirects rule whose destination is an absolute off-site URL or a splat that forwards a user-controlled host.\\n- A docs-redirect Location built from request text (host suffix, path, query or headers) instead of a value of the generated maps under https://github.com/smithersai/smithers/.\\n\\n[build-time-secret-exposure] No secret or server-only env var is inlined into the built client bundle\\nThreat: Anyone who loads smithers.sh reads a provider key, deploy token, or dev API origin baked into static HTML or JS.\\nFocus: apps/site/astro.config.mjs, apps/site/src/**\\nLook for:\\n- import.meta.env reads of a non-PUBLIC_ variable in a component or client script.\\n- A vite `define` that embeds process.env values other than the commit sha.\\n- A fixture flag that stays active in a production build.\\n\\n[recording-scripts-credentials] The recording script keeps provider credentials and git state on the operator's machine\\nThreat: Running record-tape leaks the operator's ChatGPT or API key into a committed recording, or removes a worktree it does not own.\\nFocus: apps/site/scripts/record-tape.sh, apps/site/tapes/**\\nLook for:\\n- A tape or script that echoes env, prints auth files, or types a key that lands in public/media output.\\n- A cleanup trap that runs `rm -rf` or `git worktree remove` on a path not created by mktemp in the same script.\\n- An unquoted variable in a shell command that splits or globs a path with spaces.\\n\\n[copyable-install-snippets] Install and tutorial snippets that visitors run are safe to paste\\nThreat: A visitor who copies a docs command runs an unpinned remote script or leaks a key into shell history or a committed file.\\nFocus: apps/site/docs/installation.mdx, apps/site/src/content/docs/docs/installation.mdx\\nLook for:\\n- A `curl | sh` or `npx` command fetching from a host other than the project's own domains or npm.\\n- A snippet with a real-looking API key or token rather than a placeholder.\\n- A tutorial that writes a key into a source file instead of reading it from the environment.\\n\\n[general] Any other vulnerability\\nThreat: Any attacker who controls an input this code reads (a network request, a file, an environment variable, a model or tool output, a dependency) makes it act outside what its caller authorized.\\nFocus: every reviewed file\\nLook for:\\n- Injection: untrusted text reaching a shell, SQL, a template, a regex, HTML, a log line, or an eval.\\n- Authorization: an action or read that skips the ownership, tenancy, or role check its siblings perform.\\n- Secrets: credentials, tokens, or keys hardcoded, logged, returned to a client, or passed to a child process that does not need them.\\n- Path traversal: a caller-controlled path or archive entry that can escape its intended root, including via symlinks.\\n- SSRF: a caller-controlled URL, host, or redirect fetched by the server.\\n- Unsafe deserialization: untrusted bytes decoded into code, prototypes, or unchecked types.\\n- Command execution: a spawn, exec, or shell whose argv or environment an untrusted input shapes.\\n- Crypto misuse: weak or homemade primitives, predictable randomness for secrets, missing constant-time comparison, disabled TLS verification.\\n- Prompt injection: untrusted content placed in an agent prompt or tool result that can steer tool calls, approvals, or data egress.\\n- Supply chain: install scripts, unpinned downloads, or unverified artifacts executed at build or run time.\\n- Denial of service: unbounded reads, allocations, loops, recursion, retries, or regex backtracking on untrusted input.\\n- Information leaks: stack traces, internal paths, other tenants' data, or secrets in errors, logs, or responses.\\n\\nReporting rules:\\n- Include structured security fields: checkId, impact, verification, releaseRecommendation, attackerPreconditions, evidence, and nextConfirmationStep. Message describes the cause and concrete fix.\\n- Impact is low, medium, high, or critical; verification is suspected for every model finding. Only a trusted host receipt of controlled reproduction at an immutable revision can confirm a finding.\\n- Release recommendation is allow, review, or block. High and critical impact always block release, even when suspected. Severity is derived from release recommendation, never verification.\\n- file and line point at the vulnerable operation (the sink or the missing check), not an import.\\n- Report each distinct flaw once; name at most three call sites of the same flaw.\\n- Style, correctness bugs without a security consequence, and missing tests are not findings.\\n- Return the completion envelope requested by the review host, including coverage for every declared check.\",\"engine\":\"claude\",\"model\":\"claude-opus-5-5\",\"batchSize\":4,\"failOn\":\"error\",\"securityChecks\":[\"demo-intake-form\",\"redirects\",\"build-time-secret-exposure\",\"recording-scripts-credentials\",\"copyable-install-snippets\",\"general\"],\"scope\":\"changed\",\"manual\":false}",
+    "reviewPolicy": "{\"changes\":{\"_tag\":\"GitDiff\",\"base\":\"origin/main\",\"paths\":[\"apps/site/src/*.ts\",\"apps/site/src/components/**\",\"apps/site/src/layouts/**\",\"apps/site/src/pages/**\",\"apps/site/docs-redirect/src/**\",\"apps/site/docs-redirect/wrangler.jsonc\",\"apps/site/scripts/**\",\"apps/site/tapes/**\",\"apps/site/public/_headers\",\"apps/site/public/_redirects\",\"apps/site/astro.config.mjs\",\"apps/site/docs/installation.mdx\",\"apps/site/src/content/docs/docs/installation.mdx\"]},\"include\":[{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/*.ts\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/components/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/layouts/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/pages/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/docs-redirect/src/**\",\"exclude\":[]},{\"_tag\":\"File\",\"path\":\"//apps/site/docs-redirect/wrangler.jsonc\"},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/scripts/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/tapes/**\",\"exclude\":[]},{\"_tag\":\"File\",\"path\":\"//apps/site/public/_headers\"},{\"_tag\":\"File\",\"path\":\"//apps/site/public/_redirects\"},{\"_tag\":\"File\",\"path\":\"//apps/site/astro.config.mjs\"},{\"_tag\":\"File\",\"path\":\"//apps/site/docs/installation.mdx\"},{\"_tag\":\"File\",\"path\":\"//apps/site/src/content/docs/docs/installation.mdx\"}],\"context\":[],\"deps\":[],\"prompt\":\"You are the security engineer for this repository, performing an authorized defensive security review commissioned by the repository owner. The owner wants weaknesses in their own code found and fixed before anyone can abuse them; this is the routine application-security review a code owner runs before a release. Read the files as an attacker would, then report each weakness precisely enough for the owner to fix it: the vulnerable location, the attacker's precondition, the impact, and the fix. Do not write exploit code for attacking live systems. Safe local regression tests using synthetic data are permitted; a trusted host can run them in an isolated checkout. This reviewer cannot attest execution; prefer one well-evidenced finding over several speculative ones.\",\"rubric\":\"Checks. Every finding names exactly one check id below.\\n\\n[demo-intake-form] The demo form sends only the typed fields to the fixed intake endpoint\\nThreat: A visitor's name, work email and message reach a third party, or a script on the page rewrites where the form posts.\\nFocus: apps/site/src/pages/demo/**, apps/site/scripts/demo-form.test.mjs\\nLook for:\\n- An intake endpoint taken from a query parameter, env var, or page data instead of the literal bug.smithers.sh URL.\\n- The page shows success without a 201 receipt whose id matches the intake's ID format, or draws a new submissionId per retry.\\n- Error handling that renders the server's response body into the page with innerHTML.\\n- The fetch sending credentials or extra headers (cookies, tokens) to the cross-origin intake worker.\\n\\n[redirects] Redirects stay on smithers.sh\\nThreat: An attacker uses a smithers.sh URL, or a retired `<slug>.smithers.sh` docs host, as an open redirect to a phishing origin.\\nFocus: apps/site/public/_headers, apps/site/public/_redirects, apps/site/scripts/check-built-site.mjs, apps/site/docs-redirect/src/**, apps/site/docs-redirect/wrangler.jsonc\\nLook for:\\n- A _redirects rule whose destination is an absolute off-site URL or a splat that forwards a user-controlled host.\\n- A docs-redirect Location built from request text (host suffix, path, query or headers) instead of a value of the generated maps under https://github.com/smithersai/smithers/.\\n\\n[build-time-secret-exposure] No secret or server-only env var is inlined into the built client bundle\\nThreat: Anyone who loads smithers.sh reads a provider key, deploy token, or dev API origin baked into static HTML or JS.\\nFocus: apps/site/astro.config.mjs, apps/site/src/**\\nLook for:\\n- import.meta.env reads of a non-PUBLIC_ variable in a component or client script.\\n- A vite `define` that embeds process.env values other than the commit sha.\\n- A fixture flag that stays active in a production build.\\n\\n[recording-scripts-credentials] The recording script keeps provider credentials and git state on the operator's machine\\nThreat: Running record-tape leaks the operator's ChatGPT or API key into a committed recording, or removes a worktree it does not own.\\nFocus: apps/site/scripts/record-tape.sh, apps/site/tapes/**\\nLook for:\\n- A tape or script that echoes env, prints auth files, or types a key that lands in public/media output.\\n- A cleanup trap that runs `rm -rf` or `git worktree remove` on a path not created by mktemp in the same script.\\n- An unquoted variable in a shell command that splits or globs a path with spaces.\\n\\n[copyable-install-snippets] Install and tutorial snippets that visitors run are safe to paste\\nThreat: A visitor who copies a docs command runs an unpinned remote script or leaks a key into shell history or a committed file.\\nFocus: apps/site/docs/installation.mdx, apps/site/src/content/docs/docs/installation.mdx\\nLook for:\\n- A `curl | sh` or `npx` command fetching from a host other than the project's own domains or npm.\\n- A snippet with a real-looking API key or token rather than a placeholder.\\n- A tutorial that writes a key into a source file instead of reading it from the environment.\\n\\n[general] Any other vulnerability\\nThreat: Any attacker who controls an input this code reads (a network request, a file, an environment variable, a model or tool output, a dependency) makes it act outside what its caller authorized.\\nFocus: every reviewed file\\nLook for:\\n- Injection: untrusted text reaching a shell, SQL, a template, a regex, HTML, a log line, or an eval.\\n- Authorization: an action or read that skips the ownership, tenancy, or role check its siblings perform.\\n- Secrets: credentials, tokens, or keys hardcoded, logged, returned to a client, or passed to a child process that does not need them.\\n- Path traversal: a caller-controlled path or archive entry that can escape its intended root, including via symlinks.\\n- SSRF: a caller-controlled URL, host, or redirect fetched by the server.\\n- Unsafe deserialization: untrusted bytes decoded into code, prototypes, or unchecked types.\\n- Command execution: a spawn, exec, or shell whose argv or environment an untrusted input shapes.\\n- Crypto misuse: weak or homemade primitives, predictable randomness for secrets, missing constant-time comparison, disabled TLS verification.\\n- Prompt injection: untrusted content placed in an agent prompt or tool result that can steer tool calls, approvals, or data egress.\\n- Supply chain: install scripts, unpinned downloads, or unverified artifacts executed at build or run time.\\n- Denial of service: unbounded reads, allocations, loops, recursion, retries, or regex backtracking on untrusted input.\\n- Information leaks: stack traces, internal paths, other tenants' data, or secrets in errors, logs, or responses.\\n\\nReporting rules:\\n- Include structured security fields: checkId, impact, verification, releaseRecommendation, attackerPreconditions, evidence, and nextConfirmationStep. Message describes the cause and concrete fix.\\n- Impact is low, medium, high, or critical; verification is suspected for every model finding. Only a trusted host receipt of controlled reproduction at an immutable revision can confirm a finding.\\n- Release recommendation is allow, review, or block. High and critical impact always block release, even when suspected. Severity is derived from release recommendation, never verification.\\n- file and line point at the vulnerable operation (the sink or the missing check), not an import.\\n- Report each distinct flaw once; name at most three call sites of the same flaw.\\n- Style, correctness bugs without a security consequence, and missing tests are not findings.\\n- Return the completion envelope requested by the review host, including coverage for every declared check.\",\"engine\":\"claude\",\"model\":\"claude-opus-5-5\",\"batchSize\":4,\"failOn\":\"error\",\"securityChecks\":[\"demo-intake-form\",\"redirects\",\"build-time-secret-exposure\",\"recording-scripts-credentials\",\"copyable-install-snippets\",\"general\"],\"scope\":\"changed\",\"manual\":false}",
     "kinds": [
       "review"
     ],
@@ -53018,7 +53859,7 @@
     "package": "apps/site",
     "name": "securityAudit",
     "rule": "LlmLint",
-    "reviewPolicy": "{\"changes\":{\"_tag\":\"GitDiff\",\"base\":\"HEAD\",\"paths\":[\"apps/site/src/*.ts\",\"apps/site/src/components/**\",\"apps/site/src/layouts/**\",\"apps/site/src/pages/**\",\"apps/site/docs-redirect/src/**\",\"apps/site/docs-redirect/wrangler.jsonc\",\"apps/site/scripts/**\",\"apps/site/tapes/**\",\"apps/site/public/_headers\",\"apps/site/public/_redirects\",\"apps/site/astro.config.mjs\",\"apps/site/docs/installation.mdx\",\"apps/site/src/content/docs/docs/installation.mdx\"]},\"include\":[{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/*.ts\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/components/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/layouts/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/pages/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/docs-redirect/src/**\",\"exclude\":[]},{\"_tag\":\"File\",\"path\":\"//apps/site/docs-redirect/wrangler.jsonc\"},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/scripts/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/tapes/**\",\"exclude\":[]},{\"_tag\":\"File\",\"path\":\"//apps/site/public/_headers\"},{\"_tag\":\"File\",\"path\":\"//apps/site/public/_redirects\"},{\"_tag\":\"File\",\"path\":\"//apps/site/astro.config.mjs\"},{\"_tag\":\"File\",\"path\":\"//apps/site/docs/installation.mdx\"},{\"_tag\":\"File\",\"path\":\"//apps/site/src/content/docs/docs/installation.mdx\"}],\"context\":[],\"deps\":[],\"prompt\":\"You are the security engineer for this repository, performing an authorized defensive security review commissioned by the repository owner. The owner wants weaknesses in their own code found and fixed before anyone can abuse them; this is the routine application-security review a code owner runs before a release. Read the files as an attacker would, then report each weakness precisely enough for the owner to fix it: the vulnerable location, the attacker's precondition, the impact, and the fix. Do not write exploit code for attacking live systems. Safe local regression tests using synthetic data are permitted; a trusted host can run them in an isolated checkout. This reviewer cannot attest execution; prefer one well-evidenced finding over several speculative ones.\",\"rubric\":\"Checks. Every finding names exactly one check id below.\\n\\n[demo-intake-form] The demo form sends only the typed fields to the fixed intake endpoint\\nThreat: A visitor's name, work email and message reach a third party, or a script on the page rewrites where the form posts.\\nFocus: apps/site/src/pages/demo/**, apps/site/scripts/demo-form.test.mjs\\nLook for:\\n- An intake endpoint taken from a query parameter, env var, or page data instead of the literal bug.smithers.sh URL.\\n- Error handling that renders the server's response body into the page with innerHTML.\\n- The fetch sending credentials or extra headers (cookies, tokens) to the cross-origin intake worker.\\n\\n[redirects] Redirects stay on smithers.sh\\nThreat: An attacker uses a smithers.sh URL, or a retired `<slug>.smithers.sh` docs host, as an open redirect to a phishing origin.\\nFocus: apps/site/public/_headers, apps/site/public/_redirects, apps/site/scripts/check-built-site.mjs, apps/site/docs-redirect/src/**, apps/site/docs-redirect/wrangler.jsonc\\nLook for:\\n- A _redirects rule whose destination is an absolute off-site URL or a splat that forwards a user-controlled host.\\n- A docs-redirect Location built from request text (host suffix, path, query or headers) instead of a value of the generated maps under https://github.com/smithersai/smithers/.\\n\\n[build-time-secret-exposure] No secret or server-only env var is inlined into the built client bundle\\nThreat: Anyone who loads smithers.sh reads a provider key, deploy token, or dev API origin baked into static HTML or JS.\\nFocus: apps/site/astro.config.mjs, apps/site/src/**\\nLook for:\\n- import.meta.env reads of a non-PUBLIC_ variable in a component or client script.\\n- A vite `define` that embeds process.env values other than the commit sha.\\n- A fixture flag that stays active in a production build.\\n\\n[recording-scripts-credentials] The recording script keeps provider credentials and git state on the operator's machine\\nThreat: Running record-tape leaks the operator's ChatGPT or API key into a committed recording, or removes a worktree it does not own.\\nFocus: apps/site/scripts/record-tape.sh, apps/site/tapes/**\\nLook for:\\n- A tape or script that echoes env, prints auth files, or types a key that lands in public/media output.\\n- A cleanup trap that runs `rm -rf` or `git worktree remove` on a path not created by mktemp in the same script.\\n- An unquoted variable in a shell command that splits or globs a path with spaces.\\n\\n[copyable-install-snippets] Install and tutorial snippets that visitors run are safe to paste\\nThreat: A visitor who copies a docs command runs an unpinned remote script or leaks a key into shell history or a committed file.\\nFocus: apps/site/docs/installation.mdx, apps/site/src/content/docs/docs/installation.mdx\\nLook for:\\n- A `curl | sh` or `npx` command fetching from a host other than the project's own domains or npm.\\n- A snippet with a real-looking API key or token rather than a placeholder.\\n- A tutorial that writes a key into a source file instead of reading it from the environment.\\n\\n[general] Any other vulnerability\\nThreat: Any attacker who controls an input this code reads (a network request, a file, an environment variable, a model or tool output, a dependency) makes it act outside what its caller authorized.\\nFocus: every reviewed file\\nLook for:\\n- Injection: untrusted text reaching a shell, SQL, a template, a regex, HTML, a log line, or an eval.\\n- Authorization: an action or read that skips the ownership, tenancy, or role check its siblings perform.\\n- Secrets: credentials, tokens, or keys hardcoded, logged, returned to a client, or passed to a child process that does not need them.\\n- Path traversal: a caller-controlled path or archive entry that can escape its intended root, including via symlinks.\\n- SSRF: a caller-controlled URL, host, or redirect fetched by the server.\\n- Unsafe deserialization: untrusted bytes decoded into code, prototypes, or unchecked types.\\n- Command execution: a spawn, exec, or shell whose argv or environment an untrusted input shapes.\\n- Crypto misuse: weak or homemade primitives, predictable randomness for secrets, missing constant-time comparison, disabled TLS verification.\\n- Prompt injection: untrusted content placed in an agent prompt or tool result that can steer tool calls, approvals, or data egress.\\n- Supply chain: install scripts, unpinned downloads, or unverified artifacts executed at build or run time.\\n- Denial of service: unbounded reads, allocations, loops, recursion, retries, or regex backtracking on untrusted input.\\n- Information leaks: stack traces, internal paths, other tenants' data, or secrets in errors, logs, or responses.\\n\\nReporting rules:\\n- Include structured security fields: checkId, impact, verification, releaseRecommendation, attackerPreconditions, evidence, and nextConfirmationStep. Message describes the cause and concrete fix.\\n- Impact is low, medium, high, or critical; verification is suspected for every model finding. Only a trusted host receipt of controlled reproduction at an immutable revision can confirm a finding.\\n- Release recommendation is allow, review, or block. High and critical impact always block release, even when suspected. Severity is derived from release recommendation, never verification.\\n- file and line point at the vulnerable operation (the sink or the missing check), not an import.\\n- Report each distinct flaw once; name at most three call sites of the same flaw.\\n- Style, correctness bugs without a security consequence, and missing tests are not findings.\\n- Return the completion envelope requested by the review host, including coverage for every declared check.\",\"engine\":\"claude\",\"model\":\"claude-opus-5-5\",\"batchSize\":8,\"failOn\":\"error\",\"securityChecks\":[\"demo-intake-form\",\"redirects\",\"build-time-secret-exposure\",\"recording-scripts-credentials\",\"copyable-install-snippets\",\"general\"],\"scope\":\"all\",\"manual\":true}",
+    "reviewPolicy": "{\"changes\":{\"_tag\":\"GitDiff\",\"base\":\"HEAD\",\"paths\":[\"apps/site/src/*.ts\",\"apps/site/src/components/**\",\"apps/site/src/layouts/**\",\"apps/site/src/pages/**\",\"apps/site/docs-redirect/src/**\",\"apps/site/docs-redirect/wrangler.jsonc\",\"apps/site/scripts/**\",\"apps/site/tapes/**\",\"apps/site/public/_headers\",\"apps/site/public/_redirects\",\"apps/site/astro.config.mjs\",\"apps/site/docs/installation.mdx\",\"apps/site/src/content/docs/docs/installation.mdx\"]},\"include\":[{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/*.ts\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/components/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/layouts/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/src/pages/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/docs-redirect/src/**\",\"exclude\":[]},{\"_tag\":\"File\",\"path\":\"//apps/site/docs-redirect/wrangler.jsonc\"},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/scripts/**\",\"exclude\":[]},{\"_tag\":\"Glob\",\"pattern\":\"//apps/site/tapes/**\",\"exclude\":[]},{\"_tag\":\"File\",\"path\":\"//apps/site/public/_headers\"},{\"_tag\":\"File\",\"path\":\"//apps/site/public/_redirects\"},{\"_tag\":\"File\",\"path\":\"//apps/site/astro.config.mjs\"},{\"_tag\":\"File\",\"path\":\"//apps/site/docs/installation.mdx\"},{\"_tag\":\"File\",\"path\":\"//apps/site/src/content/docs/docs/installation.mdx\"}],\"context\":[],\"deps\":[],\"prompt\":\"You are the security engineer for this repository, performing an authorized defensive security review commissioned by the repository owner. The owner wants weaknesses in their own code found and fixed before anyone can abuse them; this is the routine application-security review a code owner runs before a release. Read the files as an attacker would, then report each weakness precisely enough for the owner to fix it: the vulnerable location, the attacker's precondition, the impact, and the fix. Do not write exploit code for attacking live systems. Safe local regression tests using synthetic data are permitted; a trusted host can run them in an isolated checkout. This reviewer cannot attest execution; prefer one well-evidenced finding over several speculative ones.\",\"rubric\":\"Checks. Every finding names exactly one check id below.\\n\\n[demo-intake-form] The demo form sends only the typed fields to the fixed intake endpoint\\nThreat: A visitor's name, work email and message reach a third party, or a script on the page rewrites where the form posts.\\nFocus: apps/site/src/pages/demo/**, apps/site/scripts/demo-form.test.mjs\\nLook for:\\n- An intake endpoint taken from a query parameter, env var, or page data instead of the literal bug.smithers.sh URL.\\n- The page shows success without a 201 receipt whose id matches the intake's ID format, or draws a new submissionId per retry.\\n- Error handling that renders the server's response body into the page with innerHTML.\\n- The fetch sending credentials or extra headers (cookies, tokens) to the cross-origin intake worker.\\n\\n[redirects] Redirects stay on smithers.sh\\nThreat: An attacker uses a smithers.sh URL, or a retired `<slug>.smithers.sh` docs host, as an open redirect to a phishing origin.\\nFocus: apps/site/public/_headers, apps/site/public/_redirects, apps/site/scripts/check-built-site.mjs, apps/site/docs-redirect/src/**, apps/site/docs-redirect/wrangler.jsonc\\nLook for:\\n- A _redirects rule whose destination is an absolute off-site URL or a splat that forwards a user-controlled host.\\n- A docs-redirect Location built from request text (host suffix, path, query or headers) instead of a value of the generated maps under https://github.com/smithersai/smithers/.\\n\\n[build-time-secret-exposure] No secret or server-only env var is inlined into the built client bundle\\nThreat: Anyone who loads smithers.sh reads a provider key, deploy token, or dev API origin baked into static HTML or JS.\\nFocus: apps/site/astro.config.mjs, apps/site/src/**\\nLook for:\\n- import.meta.env reads of a non-PUBLIC_ variable in a component or client script.\\n- A vite `define` that embeds process.env values other than the commit sha.\\n- A fixture flag that stays active in a production build.\\n\\n[recording-scripts-credentials] The recording script keeps provider credentials and git state on the operator's machine\\nThreat: Running record-tape leaks the operator's ChatGPT or API key into a committed recording, or removes a worktree it does not own.\\nFocus: apps/site/scripts/record-tape.sh, apps/site/tapes/**\\nLook for:\\n- A tape or script that echoes env, prints auth files, or types a key that lands in public/media output.\\n- A cleanup trap that runs `rm -rf` or `git worktree remove` on a path not created by mktemp in the same script.\\n- An unquoted variable in a shell command that splits or globs a path with spaces.\\n\\n[copyable-install-snippets] Install and tutorial snippets that visitors run are safe to paste\\nThreat: A visitor who copies a docs command runs an unpinned remote script or leaks a key into shell history or a committed file.\\nFocus: apps/site/docs/installation.mdx, apps/site/src/content/docs/docs/installation.mdx\\nLook for:\\n- A `curl | sh` or `npx` command fetching from a host other than the project's own domains or npm.\\n- A snippet with a real-looking API key or token rather than a placeholder.\\n- A tutorial that writes a key into a source file instead of reading it from the environment.\\n\\n[general] Any other vulnerability\\nThreat: Any attacker who controls an input this code reads (a network request, a file, an environment variable, a model or tool output, a dependency) makes it act outside what its caller authorized.\\nFocus: every reviewed file\\nLook for:\\n- Injection: untrusted text reaching a shell, SQL, a template, a regex, HTML, a log line, or an eval.\\n- Authorization: an action or read that skips the ownership, tenancy, or role check its siblings perform.\\n- Secrets: credentials, tokens, or keys hardcoded, logged, returned to a client, or passed to a child process that does not need them.\\n- Path traversal: a caller-controlled path or archive entry that can escape its intended root, including via symlinks.\\n- SSRF: a caller-controlled URL, host, or redirect fetched by the server.\\n- Unsafe deserialization: untrusted bytes decoded into code, prototypes, or unchecked types.\\n- Command execution: a spawn, exec, or shell whose argv or environment an untrusted input shapes.\\n- Crypto misuse: weak or homemade primitives, predictable randomness for secrets, missing constant-time comparison, disabled TLS verification.\\n- Prompt injection: untrusted content placed in an agent prompt or tool result that can steer tool calls, approvals, or data egress.\\n- Supply chain: install scripts, unpinned downloads, or unverified artifacts executed at build or run time.\\n- Denial of service: unbounded reads, allocations, loops, recursion, retries, or regex backtracking on untrusted input.\\n- Information leaks: stack traces, internal paths, other tenants' data, or secrets in errors, logs, or responses.\\n\\nReporting rules:\\n- Include structured security fields: checkId, impact, verification, releaseRecommendation, attackerPreconditions, evidence, and nextConfirmationStep. Message describes the cause and concrete fix.\\n- Impact is low, medium, high, or critical; verification is suspected for every model finding. Only a trusted host receipt of controlled reproduction at an immutable revision can confirm a finding.\\n- Release recommendation is allow, review, or block. High and critical impact always block release, even when suspected. Severity is derived from release recommendation, never verification.\\n- file and line point at the vulnerable operation (the sink or the missing check), not an import.\\n- Report each distinct flaw once; name at most three call sites of the same flaw.\\n- Style, correctness bugs without a security consequence, and missing tests are not findings.\\n- Return the completion envelope requested by the review host, including coverage for every declared check.\",\"engine\":\"claude\",\"model\":\"claude-opus-5-5\",\"batchSize\":8,\"failOn\":\"error\",\"securityChecks\":[\"demo-intake-form\",\"redirects\",\"build-time-secret-exposure\",\"recording-scripts-credentials\",\"copyable-install-snippets\",\"general\"],\"scope\":\"all\",\"manual\":true}",
     "kinds": [
       "review"
     ],

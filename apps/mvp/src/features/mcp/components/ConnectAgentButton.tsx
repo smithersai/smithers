@@ -5,7 +5,7 @@ import { useAuth } from "../../auth/components/AuthContext"
 import { signInHref } from "../../auth/contract"
 import { useRepoAnswer } from "../../repo/components/RepoContext"
 import { MCP_CLIENTS } from "../contract"
-import { ACTING_AS, CLIENT_LABEL, CLIENTS, CONNECT_AGENT, connectTitle, COPY_SNIPPET, SIGNED_OUT_NOTE } from "../copy"
+import { ACTING_AS, CLIENT_LABEL, CLIENTS, CONNECT_AGENT, connectTitle, COPY_SNIPPET } from "../copy"
 import { connectDialogView } from "../view"
 import { AgentPermissions } from "./AgentPermissions"
 import { useMcpOptional } from "./McpContext"
@@ -41,7 +41,7 @@ function ConnectAgentButtonInner({ owner, name, mcp }: { readonly owner: string;
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{connectTitle(owner, name)}</DialogTitle>
-                <DialogDescription>{view.signedIn ? view.snippet.note : SIGNED_OUT_NOTE}</DialogDescription>
+                <DialogDescription>{view.snippet.note}</DialogDescription>
               </DialogHeader>
               <div className="connect-agent">
                 <div className="connect-agent-clients" role="group" aria-label={CLIENTS}>
@@ -60,7 +60,6 @@ function ConnectAgentButtonInner({ owner, name, mcp }: { readonly owner: string;
                 <div className="connect-agent-snippet">
                   <p>{view.snippet.label}</p>
                   <Snippet code={view.snippet.command} copyLabel={COPY_SNIPPET} />
-                  {view.signedIn ? null : <p>{view.snippet.note}</p>}
                 </div>
                 <AgentPermissions
                   roleLabel={view.roleLabel}

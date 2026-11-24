@@ -1,6 +1,6 @@
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@smthrs/ui"
 import type { ReactNode } from "react"
-import { AGENT_PERMISSIONS, ALLOWED, BLOCKED, PERSON_ONLY_GUARD, YOUR_ROLE } from "../copy"
+import { AGENT_PERMISSIONS, ALLOWED, BLOCKED, YOUR_ROLE } from "../copy"
 import "./connect-agent.css"
 
 // What an agent may and may never do for one role (contract.ts `mcpPermissionsFor`): the card the Connect agent dialog
@@ -35,7 +35,6 @@ export function AgentPermissions(
             <ul>{blocked.map((line) => <li key={line}>{line}</li>)}</ul>
           </section>
         </div>
-        <p className="connect-agent-guard">{PERSON_ONLY_GUARD}</p>
       </CardContent>
     </Card>
   )

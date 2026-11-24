@@ -16,5 +16,5 @@
     "skipLibCheck": true,
     "types": ["bun-types"]
   },
-  "include": ["src/**/*", "tests/**/*", "alchemy.run.ts"]
+  "include": ["src/**/*", "infra/**/*", "tests/**/*", "alchemy.run.ts"]
 }

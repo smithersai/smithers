@@ -525,6 +525,43 @@ describe("the runner events route", () => {
     expect(RunContent.summary(run).events).toBe(5)
   })
 
+  test("events are stored only under the claim that holds the job, or held it until it ended a moment ago", async () => {
+    const token = await register("nyc-01")
+    const store = await jobs()
+    const transcripts = RunContentTest.transcripts()
+    const { call, claim } = await routes(undefined, transcripts.layer)
+    await Effect.runPromise(store.start(taskOf({ context: { attemptId: "a4" } }), "todo:a4#g1"))
+    const job = (await claim(token)).body.job!
+    expect((await call("events", token, { key: job.key, claim: job.claim, events: [said(0, "mine")] })).body)
+      .toEqual({ next: 1 })
+    const run = transcripts.of("todo:a4")
+    // A claim that never held the job, or isn't a claim at all, stores nothing, while the job runs.
+    for (const claimed of [crypto.randomUUID(), "not-a-claim"]) {
+      const foreign = await call("events", token, { key: job.key, claim: claimed, events: [said(1, "stale")] })
+      expect([foreign.status, foreign.body]).toEqual([409, { code: "not_held" }])
+    }
+    expect(RunContent.summary(run).events).toBe(1)
+    // Settled a moment ago: the end of the transcript still arrives. Long ago: the job never grows again.
+    await call("settle", token, { key: job.key, claim: job.claim, outcome: done() })
+    expect((await call("events", token, { key: job.key, claim: job.claim, events: [said(1, "end")] })).body)
+      .toEqual({ next: 2 })
+    await sql`UPDATE agent_jobs SET settled_at = now() - ${RunnersApi.EVENTS_AFTER_SETTLE_SECONDS + 1}::int * interval '1 second'
+      WHERE key = ${job.key}`
+    const late = await call("events", token, { key: job.key, claim: job.claim, events: [said(2, "late")] })
+    expect([late.status, late.body]).toEqual([409, { code: "not_held" }])
+    expect(RunContent.summary(run).events).toBe(2)
+    // A job the host stopped keeps its claim: only that claim sends its last events.
+    await Effect.runPromise(store.start(taskOf({ context: { attemptId: "a5" } }), "todo:a5#g1"))
+    const stopped = (await claim(token)).body.job!
+    await sql`UPDATE agent_jobs SET status = 'cancelled', outcome = '{"_tag":"Cancelled","processTreeGone":true}'::jsonb,
+      stopped_claim = claim, claim = NULL, lease_until = NULL, settled_at = now() WHERE key = ${stopped.key}`
+    const other = await call("events", token, { key: stopped.key, claim: job.claim, events: [said(0, "other")] })
+    expect([other.status, other.body]).toEqual([409, { code: "not_held" }])
+    expect((await call("events", token, { key: stopped.key, claim: stopped.claim, events: [said(0, "last")] })).body)
+      .toEqual({ next: 1 })
+    expect(RunContent.summary(transcripts.of("todo:a5")).events).toBe(1)
+  })
+
   test("refuses an event a runner should have dropped, a job with no run, and a body that isn't events", async () => {
     const token = await register("nyc-01")
     const store = await jobs()

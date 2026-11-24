@@ -287,3 +287,13 @@ describe("Claude Code seats", () => {
     }
   })
 })
+
+describe("seat aliases are own keys only", () => {
+  test.each(["constructor", "__proto__", "toString", "hasOwnProperty"])(
+    "%s is an unknown seat, not a prototype member",
+    (name) => {
+      expect(Models.seatOf(name, [])).toBeUndefined()
+      expect(Models.delegateSeat(name)).toBe(name)
+    }
+  )
+})

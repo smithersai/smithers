@@ -46,6 +46,8 @@ export function setupWith(githubService: GitHub.Auth.GitHubAuth["Service"], init
     signingSecret: Redacted.make("fixture-only-signing-secret-32-chars"),
     encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
     github: githubService,
+    // Every fixture token is the fixture App's own; a test of a foreign token overrides this.
+    issuedHere: () => succeed(true),
   }
 }
 

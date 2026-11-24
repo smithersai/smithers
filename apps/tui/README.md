@@ -607,9 +607,10 @@ Its tab draws the vendor's stream in its own glyphs (`⏺ Read(x)`, `⎿`,
 run (Codex after its turn completes) and hands the terminal to the vendor's
 own TUI on the same session (`claude --resume <id>`, `codex resume <id>`);
 quitting it hands the worker back, and it continues headless with
-`--resume` and the same brief bytes. Headless it cannot ask: under `--approve all` the vendor acts without asking,
-otherwise it only reads (Claude Code in plan mode, Codex in a read-only
-sandbox).
+`--resume` and the same brief bytes. Headless it cannot ask: only when `all` is named, with `--approve all` or
+`SMITHERS_TUI_APPROVE=all`, does the vendor act without asking or a sandbox. Otherwise, including the unflagged
+default, it only reads (Claude Code in plan mode, Codex in a read-only sandbox), and on take-over the vendor's own
+TUI asks.
 
 A wrapped worker answers to the same spend caps as any other worker. A launch
 is refused once the run's cap or the day's is spent. Each model call the vendor
@@ -682,7 +683,8 @@ TypeScript plugin drops literal spaces beside expressions such as
 ## Performance tracing
 
 `SMITHERS_DEBUG=true smthrs tui 2>/dev/null` traces the terminal's own performance as JSON lines in
-`$TMPDIR/smthrs-tui-debug.log` (`/tmp` without `TMPDIR`), mirrored to stderr unless
+`~/.smithers/tui/debug.log` (beside `tui.log`, under `$SMITHERS_TUI_SESSION_DIR` when set; the folder is 0700
+and the file 0600, and a pre-existing symlink there is never written through), mirrored to stderr unless
 `SMTHRS_DEBUG_STDERR=false`. Any other `SMITHERS_DEBUG` value leaves tracing off at the cost of one boolean test per call
 site. `src/debug.ts` owns it.
 

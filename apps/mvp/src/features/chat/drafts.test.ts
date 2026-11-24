@@ -1,10 +1,11 @@
 import { createMemoryHistory } from "@tanstack/react-router"
-import { Effect, ManagedRuntime, Metric } from "effect"
+import { Deferred, Effect, ManagedRuntime, Metric } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { appLayer, realServices } from "../../boot"
 import { failingWorker, nodeDevice, type NodeDevice } from "../../test/chatApi"
 import { Runs } from "../runs/runs"
 import { reads } from "../runs/store"
+import { setDraft } from "./actions"
 import { Chat } from "./chat"
 import { ChatStore } from "./store"
 
@@ -155,4 +156,50 @@ test("the outbox initializes before repository restoration and drafts save offli
   tab.chat.actions.setDraft("Ready before the gate")
   await vi.waitFor(() => expect(tab.composer()).toMatchObject({ draft: "Ready before the gate", saved: true }))
   expect(host.stored("chat-drafts")).toBe(1)
+})
+
+test.each(["same conversation", "another conversation"])("a delayed receipt cannot save equal text in %s", async (place) => {
+  const tab = await open(nodeDevice())
+  const store = await tab.runtime.runPromise(Effect.service(ChatStore))
+  // Delay delivery of the real SQLite transaction receipt after storage completes.
+  const hold = () => {
+    const entered = Effect.runSync(Deferred.make<void>())
+    const release = Effect.runSync(Deferred.make<void>())
+    const delayed = { ...store, drafts: { ...store.drafts,
+      insert: (row: Parameters<typeof store.drafts.insert>[0]) => store.drafts.insert(row).pipe(Effect.map(tx => ({
+        ...tx, persisted: tx.persisted.pipe(Effect.andThen(Deferred.succeed(entered, undefined)), Effect.andThen(Deferred.await(release))),
+      }))),
+    } }
+    const write = tab.runtime.runPromise(setDraft("same", undefined, true).pipe(Effect.provideService(ChatStore, delayed)))
+    return { entered: tab.runtime.runPromise(Deferred.await(entered)), finish: async () => {
+      await tab.runtime.runPromise(Deferred.succeed(release, undefined))
+      await write
+    } }
+  }
+  const first = hold()
+  await first.entered
+  if (place === "another conversation") await tab.chat.actions.show(null)
+  else await tab.runtime.runPromise(setDraft("", undefined, true))
+  const second = hold()
+  await second.entered
+  await first.finish()
+  expect(tab.composer()).toMatchObject({ draft: "same", saved: false })
+  await second.finish()
+  expect(tab.composer()).toMatchObject({ draft: "same", saved: true })
+})
+
+test("a question follows a restored unsent row even when the device clock is earlier", async () => {
+  const host = nodeDevice()
+  const first = await open(host)
+  const store = await first.runtime.runPromise(Effect.service(ChatStore))
+  const queuedAt = Date.now() + 3_600_000
+  await first.runtime.runPromise(store.unsent.insert({ id: crypto.randomUUID(), answerId: crypto.randomUUID(),
+    text: "earlier", queuedAt, reason: "refused", conversationId: "branch-draft" }).pipe(Effect.flatMap(tx => tx.persisted)))
+  await first.runtime.dispose()
+  const next = await open(host)
+  const result = await next.chat.actions.ask("later")
+  expect(result.asked).toBe(true)
+  if (!result.asked) throw new Error(result.reason)
+  const restored = await next.runtime.runPromise(Effect.service(ChatStore))
+  expect((restored.asking.tanstack.get(result.questionId) ?? restored.unsent.tanstack.get(result.questionId))?.queuedAt).toBe(queuedAt + 1)
 })

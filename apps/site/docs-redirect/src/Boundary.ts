@@ -1,7 +1,7 @@
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
-import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
+import type { WorkerFailureCodes } from "@smthrs/rpc"
 
 /*
  * Where an Effect meets a Web callback. Two callers exist: the redirect
@@ -26,7 +26,7 @@ export const UNEXPECTED_FAILURE_MESSAGE = "Smithers could not complete this requ
  * require-corp, so a 499 or 500 can never be framed or read as a page from
  * another origin.
  */
-const answer = (status: number, code: WorkerFailureCode, message: string): Response =>
+const answer = (status: number, code: WorkerFailureCodes.WorkerFailureCode, message: string): Response =>
   new Response(JSON.stringify({ status: "error", code, message }), {
     status,
     headers: {

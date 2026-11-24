@@ -6,7 +6,8 @@
 import { NodeWS } from "@effect/platform-node"
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { RetryPolicy } from "@smthrs/flow"
-import { Effect, Layer, ManagedRuntime, Metric } from "effect"
+import { Clock, Effect, Layer, ManagedRuntime, Metric } from "effect"
+import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -83,14 +84,16 @@ const QUICK = RetryPolicy.make({ initialMs: 20, factor: 1, maxMs: 20, maxAttempt
 const tab = async (
   origin: string,
   redial: RetryPolicy.RetryPolicy | null = QUICK,
-  runs: Layer.Layer<RunsStore> = Layer.empty as never
+  runs: Layer.Layer<RunsStore> = Layer.empty as never,
+  clock?: TestClock.TestClock
 ) => {
   const registry: Metric.MetricRegistry = new Map()
   const runtime = ManagedRuntime.make(
     Transcript.layer(redial === null ? { origin } : { origin, redial }).pipe(
       Layer.provideMerge(Layer.succeed(Metric.MetricRegistry, registry)),
       Layer.provideMerge(FetchHttpClient.layer),
-      Layer.provide(runs)
+      Layer.provide(runs),
+      Layer.provide(clock === undefined ? Layer.empty : Layer.succeed(Clock.Clock, clock))
     )
   )
   closers.push(() => runtime.dispose())
@@ -199,7 +202,6 @@ describe("watching a run's transcript", () => {
       await until(() => expect(host.peers).toHaveLength(1))
       host.peers[0]!.drop()
       await until(() => expect(page.panel()).toMatchObject({ phase: "closed", closed }))
-      await Effect.runPromise(Effect.sleep(100))
       expect(host.peers).toHaveLength(1)
       expect(page.count(dials, { outcome: closed })).toBe(1)
     }
@@ -320,4 +322,27 @@ describe("the transcript's contract", () => {
     expect(transcribed([{ action: "todo/Begin" }, { action: "agent/Session" }])).toBe(true)
     expect(transcribed([{ action: "todo/Implement" }, { action: null }, {}])).toBe(false)
   })
+})
+
+test("each live reconnect starts a fresh redial budget", async () => {
+  const host = await transcriptHost()
+  const time = ManagedRuntime.make(TestClock.layer())
+  closers.push(() => time.dispose())
+  const clock = await time.runPromise(TestClock.testClockWith(Effect.succeed))
+  const page = await tab(host.origin, RetryPolicy.make({
+    initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 2, expirationMs: 30 * 60_000,
+  }), undefined, clock)
+  page.actions.watch(RUN)
+  for (let i = 0; i < 4; i++) {
+    await until(() => expect(host.peers).toHaveLength(i + 1))
+    host.peers[i]!.send({ type: "live", n: 0, digest: GENESIS })
+    await until(() => expect(page.panel().phase).toBe("live"))
+    await Effect.runPromise(clock.adjust("31 minutes"))
+    if (i < 3) {
+      host.peers[i]!.drop()
+      await until(() => expect(page.panel().phase).toBe("offline"))
+      await Effect.runPromise(clock.adjust(1))
+    }
+  }
+  expect(page.count(dials, { outcome: "live" })).toBe(4)
 })

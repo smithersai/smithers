@@ -4,14 +4,13 @@ import { describe, expect, test } from "bun:test"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { legacySites, README_URL as SCRIPT_README_URL } from "../../../../.smithers/flows/docs-sync/package-docs.mjs"
-import { answerIsUnclaimed, decide, handleDocsRedirect, pageKey, UNCLAIMED_MARKER } from "./docsRedirect"
+import { answerIsUnclaimed, decide, handleDocsRedirect, MAX_UNCLAIMED_CACHE_ENTRIES, pageKey, UNCLAIMED_MARKER, unclaimedCacheSize } from "./docsRedirect"
 import type { DocsRedirectEnv } from "./docsRedirect"
 import { DOCS_PAGES, DOCS_REDIRECTS, README_URL } from "./docsRedirectMap"
 import { Transport, transportFrom } from "./Http"
 import { parseWranglerConfig } from "./wranglerConfig"
 
 const REPO = "https://github.com/smithersai/smithers/"
-const ZONE_ID = "8ebd98d2f0dc7d8db2e61f31ebc19c14"
 
 type Seen = { readonly url: string; readonly host: string | null }
 
@@ -257,6 +256,19 @@ describe("unknown slugs", () => {
     }
   })
 
+  test("txt-marker: a scan of 5,000 random names keeps the DNS cache at its cap, and a recent name stays cached", async () => {
+    const answer = (url: URL) => url.host === "cloudflare-dns.com" ? Response.json({ Status: 0 }) : new Response("origin")
+    for (let i = 0; i < 5_000; i++) {
+      await run(new Request(`https://scan-${i}.smithers.sh/`), ON, answer)
+      expect(unclaimedCacheSize()).toBeLessThanOrEqual(MAX_UNCLAIMED_CACHE_ENTRIES)
+    }
+    expect(unclaimedCacheSize()).toBe(MAX_UNCLAIMED_CACHE_ENTRIES)
+    const { seen } = await run(new Request("https://scan-4999.smithers.sh/"), ON, answer)
+    expect(seen.map(s => s.host)).toEqual(["scan-4999.smithers.sh"])
+    const evicted = await run(new Request("https://scan-0.smithers.sh/"), ON, answer)
+    expect(evicted.seen.map(s => s.host)).toEqual(["cloudflare-dns.com", "scan-0.smithers.sh"])
+  })
+
   test("the marker must answer for the queried name, with the exact data and NOERROR", () => {
     expect(answerIsUnclaimed("a.smithers.sh", { Status: 0, Answer: [{ name: "a.smithers.sh.", type: 16, data: `"${UNCLAIMED_MARKER}"` }] })).toBe(true)
     expect(answerIsUnclaimed("a.smithers.sh", { Status: 0, Answer: [{ name: "b.smithers.sh.", type: 16, data: `"${UNCLAIMED_MARKER}"` }] })).toBe(false)
@@ -278,9 +290,14 @@ describe("the map, the routes and the package list agree", () => {
   test("the Worker claims exactly the retired docs-site hostnames: no wildcard, no other host", () => {
     expect(config.name).toBe("smithers-docs-redirect")
     expect(config.main).toBe("src/worker.ts")
-    expect(config.routes).toEqual(legacySites.map(([slug]) => ({ pattern: `${slug}.smithers.sh/*`, zone_id: ZONE_ID })))
+    expect(config.routes).toEqual(legacySites.map(([slug]) => ({ pattern: `${slug}.smithers.sh/*`, zone_name: "smithers.sh" })))
     expect([...DOCS_REDIRECTS.keys()]).toEqual(legacySites.map(([slug]) => slug))
     expect(config.vars).toEqual({ UNKNOWN_SLUGS: "off" })
+  })
+
+  test("the config names the zone, never a hosted account's zone ID", () => {
+    const source = readFileSync(fileURLToPath(new URL("../wrangler.jsonc", import.meta.url)), "utf8")
+    expect(source).not.toMatch(/zone_id|\b[0-9a-f]{32}\b/)
   })
 
   test("no route names a hostname that serves something other than a docs site", () => {

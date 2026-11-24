@@ -226,6 +226,8 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
         // unreachable objects `unreachable` (an object lost after N calls may be either, so it is not checked).
         const query = step.pick % 2 === 0 ? "" : `?conversation=room${step.room % 3}`
         const response = try ask(step, { method: "GET", path: `/api/health/objects${query}` })
+        // Naming a conversation is a maintainer's: any other caller is refused before an object is reached (review R1 D4).
+        if (query !== "" && response?.status === 403) return
         if (response === undefined || response.status !== 200) throw new Finding({ report: `health-objects: ${response?.status ?? "failed"}` })
         const body = try promise(() => HttpServerResponse.toWeb(response).json()) as { readonly commit: unknown; readonly objects: Record<string, { readonly startup: string }> }
         if (body.commit !== "fuzz-commit") throw new Finding({ report: "health-objects: the deployment's commit not named" })

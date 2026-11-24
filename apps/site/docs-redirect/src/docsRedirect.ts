@@ -85,7 +85,43 @@ const permanent = (location: string): Response =>
 
 const DNS_TIMEOUT_MS = 2_000
 const CACHE_TTL_MS = 300_000
+
+/**
+ * The most hostnames the DNS answer cache holds. Under the wildcard route a
+ * scan of random subdomains brings a new name per request; past this many the
+ * least recently used name is evicted, so the isolate's memory stays bounded.
+ */
+export const MAX_UNCLAIMED_CACHE_ENTRIES = 1_024
+
+/** Hostname to DNS answer, in least-to-most recently used order. */
 const unclaimedCache = new Map<string, { readonly unclaimed: boolean; readonly expires: number }>()
+
+/** How many hostnames the DNS answer cache holds now; a test seam. */
+export const unclaimedCacheSize = (): number => unclaimedCache.size
+
+/** A fresh cached answer, moved to most recently used; an expired one is deleted. */
+const cachedAnswer = (hostname: string, now: number): boolean | undefined => {
+  const cached = unclaimedCache.get(hostname)
+  if (cached === undefined) return undefined
+  unclaimedCache.delete(hostname)
+  if (cached.expires <= now) return undefined
+  unclaimedCache.set(hostname, cached)
+  return cached.unclaimed
+}
+
+/** Store an answer, first evicting expired names and then the least recently used. */
+const cacheAnswer = (hostname: string, unclaimed: boolean, now: number): void => {
+  unclaimedCache.delete(hostname)
+  if (unclaimedCache.size >= MAX_UNCLAIMED_CACHE_ENTRIES) {
+    for (const [name, entry] of unclaimedCache) if (entry.expires <= now) unclaimedCache.delete(name)
+  }
+  while (unclaimedCache.size >= MAX_UNCLAIMED_CACHE_ENTRIES) {
+    const oldest = unclaimedCache.keys().next()
+    if (oldest.done === true) break
+    unclaimedCache.delete(oldest.value)
+  }
+  unclaimedCache.set(hostname, { unclaimed, expires: now + CACHE_TTL_MS })
+}
 
 /** Whether a DNS-over-HTTPS answer for `hostname` TXT carries the wildcard marker. */
 export const answerIsUnclaimed = (hostname: string, body: unknown): boolean => {
@@ -101,14 +137,14 @@ export const answerIsUnclaimed = (hostname: string, body: unknown): boolean => {
 const isUnclaimed = (hostname: string): Effect.Effect<boolean, never, Transport> =>
   Effect.gen(function* () {
     const now = Date.now()
-    const cached = unclaimedCache.get(hostname)
-    if (cached !== undefined && cached.expires > now) return cached.unclaimed
+    const cached = cachedAnswer(hostname, now)
+    if (cached !== undefined) return cached
     const query = new URL("https://cloudflare-dns.com/dns-query")
     query.searchParams.set("name", hostname)
     query.searchParams.set("type", "TXT")
     const response = yield* fetchWithDeadline("dns", query, { headers: { accept: "application/dns-json" } }, DNS_TIMEOUT_MS)
     const unclaimed = response.ok && answerIsUnclaimed(hostname, yield* readBoundedJson(response, 65_536))
-    unclaimedCache.set(hostname, { unclaimed, expires: now + CACHE_TTL_MS })
+    cacheAnswer(hostname, unclaimed, now)
     return unclaimed
   }).pipe(Effect.catch(() => Effect.succeed(false)))
 

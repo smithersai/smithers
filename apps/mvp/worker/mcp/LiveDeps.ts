@@ -1,7 +1,7 @@
 import type { ImmutableCache } from "@smthrs/artifacts"
 import { digestSync } from "@smthrs/crypto"
 import { Docs } from "@smthrs/views"
-import { Clock, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Duration, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { MAX_LISTED, SEARCH_LIMIT } from "../../src/features/docs/contract.ts"
@@ -24,6 +24,7 @@ import {
   type IssueDetail,
   type IssuePage,
   type IssueQuery,
+  type IssueSummary,
   type McpToolDeps,
   type PullDetail,
   type PullFilesListing,
@@ -130,16 +131,19 @@ const makePublicGitHubReader = (
       return first
     })
 
-  const getJson = (pathAndQuery: string, what: string): Effect.Effect<unknown, McpToolError> =>
+  const getPage = (pathAndQuery: string, what: string) =>
     Effect.gen(function* () {
       const response = yield* executeGitHub(pathAndQuery, "application/vnd.github+json", what)
       if (response.status < 200 || response.status >= 300) {
         return yield* mapGitHubStatus(response.status, what)
       }
-      return yield* response.json.pipe(
+      const data: unknown = yield* response.json.pipe(
         Effect.mapError(() => new McpToolError({ code: "unavailable", message: `Malformed GitHub JSON for ${what}` })),
       )
+      return { data, hasNext: /;\s*rel="next"/i.test(response.headers["link"] ?? "") }
     })
+
+  const getJson = (path: string, what: string) => Effect.map(getPage(path, what), page => page.data)
 
   const getRawBytes = (pathAndQuery: string, what: string): Effect.Effect<Uint8Array, McpToolError> =>
     Effect.gen(function* () {
@@ -151,10 +155,26 @@ const makePublicGitHubReader = (
       if (Number.isFinite(len) && len > MAX_FILE_PREVIEW_BYTES * 4) {
         return yield* new McpToolError({ code: "invalid_params", message: "File exceeds maximum preview size" })
       }
-      const buffer = yield* response.arrayBuffer.pipe(
-        Effect.mapError(() => new McpToolError({ code: "unavailable", message: `Could not read GitHub body for ${what}` })),
+      const chunks: Uint8Array[] = []
+      let size = 0
+      yield* response.stream.pipe(
+        Stream.mapError(() => new McpToolError({ code: "unavailable", message: `Could not read GitHub body for ${what}` })),
+        Stream.runForEach(chunk => {
+          size += chunk.byteLength
+          if (size > MAX_FILE_PREVIEW_BYTES * 4) {
+            return Effect.fail(new McpToolError({ code: "invalid_params", message: "File exceeds maximum preview size" }))
+          }
+          chunks.push(chunk)
+          return Effect.void
+        }),
       )
-      return new Uint8Array(buffer)
+      const bytes = new Uint8Array(size)
+      let offset = 0
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset)
+        offset += chunk.byteLength
+      }
+      return bytes
     })
 
   const repoPath = (owner: string, name: string) =>
@@ -163,8 +183,11 @@ const makePublicGitHubReader = (
   const defaultBranchOf = (owner: string, name: string) =>
     Effect.gen(function* () {
       const data = yield* getJson(repoPath(owner, name), `${owner}/${name}`)
-      const rec = data as { readonly default_branch?: unknown }
-      return typeof rec.default_branch === "string" && rec.default_branch !== "" ? rec.default_branch : "main"
+      const branch = (data as { readonly default_branch?: unknown } | null)?.default_branch
+      if (typeof branch !== "string" || branch === "") {
+        return yield* new McpToolError({ code: "unavailable", message: "Missing default branch" })
+      }
+      return branch
     })
 
   const listRefs = (owner: string, name: string): Effect.Effect<RefListing, McpToolError> =>
@@ -172,22 +195,18 @@ const makePublicGitHubReader = (
       const rp = repoPath(owner, name)
       const defaultBranch = yield* defaultBranchOf(owner, name)
       const [headRef, branchesRaw, tagsRaw] = yield* Effect.all([
-        getJson(`${rp}/git/ref/heads/${encodePathSegments(defaultBranch)}`, "default branch").pipe(Effect.option),
-        getJson(`${rp}/branches?per_page=100`, "branches").pipe(Effect.orElseSucceed(() => [])),
-        getJson(`${rp}/tags?per_page=100`, "tags").pipe(Effect.orElseSucceed(() => [])),
+        getJson(`${rp}/git/ref/heads/${encodePathSegments(defaultBranch)}`, "default branch"),
+        getJson(`${rp}/branches?per_page=100`, "branches"),
+        getJson(`${rp}/tags?per_page=100`, "tags"),
       ])
-      const headObj = Option.isSome(headRef) ? (headRef.value as { readonly object?: { readonly sha?: unknown } }) : undefined
-      const head = typeof headObj?.object?.sha === "string" ? headObj.object.sha : defaultBranch
-      const branches = Array.isArray(branchesRaw)
-        ? branchesRaw
-            .map((entry) => (entry as { readonly name?: unknown })?.name)
-            .filter((n): n is string => typeof n === "string")
-        : []
-      const tags = Array.isArray(tagsRaw)
-        ? tagsRaw
-            .map((entry) => (entry as { readonly name?: unknown })?.name)
-            .filter((n): n is string => typeof n === "string")
-        : []
+      const head = (headRef as { object?: { sha?: unknown } } | null)?.object?.sha
+      if (typeof head !== "string" || !SHA_RE.test(head) || !Array.isArray(branchesRaw) || !Array.isArray(tagsRaw)) {
+        return yield* new McpToolError({ code: "unavailable", message: "Malformed GitHub refs" })
+      }
+      const names = (refs: readonly { readonly name?: unknown }[]) =>
+        refs.map(entry => entry?.name).filter((name): name is string => typeof name === "string")
+      const branches = names(branchesRaw)
+      const tags = names(tagsRaw)
       return { defaultBranch, head, branches, tags }
     })
 
@@ -228,35 +247,45 @@ const makePublicGitHubReader = (
 
   const listIssues = (owner: string, name: string, query: IssueQuery): Effect.Effect<IssuePage, McpToolError> =>
     Effect.gen(function* () {
-      const perPage = Math.min(100, Math.max(query.limit, query.q ? 50 : query.limit))
-      const raw = yield* getJson(
-        `${repoPath(owner, name)}/issues?state=${encodeURIComponent(query.state)}&per_page=${perPage}`,
-        "issues",
-      )
-      const list = Array.isArray(raw) ? raw : []
+      const fingerprint = digestSync(JSON.stringify([repoId(owner, name), query.state, query.q]))
+      const cursor = (page: number, offset: number) => `gh_${fingerprint}_${page}_${offset}`
+      let page = 1
+      let offset = 0
+      if (query.cursor !== undefined) {
+        const match = /^gh_([a-f0-9]{64})_([1-9]\d{0,8})_(\d{1,2})$/.exec(query.cursor)
+        if (match === null || match[1] !== fingerprint) {
+          return yield* new McpToolError({ code: "invalid_params", message: "Invalid pagination cursor" })
+        }
+        page = Number(match[2])
+        offset = Number(match[3])
+      }
       const qLower = query.q.toLowerCase()
       const qNum = /^#?(\d{1,10})$/.exec(query.q)?.[1]
-      const issues = list
-        .filter((item) => typeof item === "object" && item !== null && !("pull_request" in item))
-        .map((item) => {
-          const i = item as Record<string, unknown>
-          const user = i["user"] as { readonly login?: unknown } | null | undefined
-          return {
-            number: Number(i["number"] ?? 0),
-            title: typeof i["title"] === "string" ? i["title"] : "",
-            state: typeof i["state"] === "string" ? i["state"] : "open",
-            author: typeof user?.login === "string" ? user.login : null,
-            comments: Number(i["comments"] ?? 0),
-            updatedAt: typeof i["updated_at"] === "string" ? i["updated_at"] : "",
-          }
-        })
-        .filter((issue) =>
-          qLower === "" ||
-          issue.title.toLowerCase().includes(qLower) ||
-          (qNum !== undefined && issue.number === Number(qNum))
+      const issues: IssueSummary[] = []
+      // Bound upstream work on sparse searches. A continuation always identifies the next unread position.
+      for (let scanned = 0; scanned < 10; scanned++, page++, offset = 0) {
+        const { data, hasNext } = yield* getPage(
+          `${repoPath(owner, name)}/issues?state=${query.state}&sort=created&direction=asc&per_page=100&page=${page}`, "issues",
         )
-        .slice(0, query.limit)
-      return { issues, nextCursor: null }
+        if (!Array.isArray(data)) return yield* new McpToolError({ code: "unavailable", message: "Malformed GitHub issue page" })
+        for (let index = offset; index < data.length; index++) {
+          const item = data[index] as Record<string, unknown> | null
+          if (item === null || typeof item !== "object" || "pull_request" in item) continue
+          const number = Number(item["number"])
+          const title = typeof item["title"] === "string" ? item["title"] : ""
+          if (!title.toLowerCase().includes(qLower) && number !== Number(qNum)) continue
+          if (issues.length === query.limit) return { issues, nextCursor: cursor(page, index) }
+          const user = item["user"] as { readonly login?: unknown } | null | undefined
+          issues.push({
+            number, title, state: typeof item["state"] === "string" ? item["state"] : "open",
+            author: typeof user?.login === "string" ? user.login : null,
+            comments: Number(item["comments"] ?? 0),
+            updatedAt: typeof item["updated_at"] === "string" ? item["updated_at"] : "",
+          })
+        }
+        if (!hasNext) return { issues, nextCursor: null }
+      }
+      return { issues, nextCursor: cursor(page, 0) }
     })
 
   const getIssue = (owner: string, name: string, number: number): Effect.Effect<IssueDetail, McpToolError> =>
@@ -267,25 +296,22 @@ const makePublicGitHubReader = (
       if ("pull_request" in item) {
         return yield* new McpToolError({ code: "not_found", message: `Issue #${number} not found` })
       }
-      const commentsRaw = yield* getJson(`${rp}/issues/${number}/comments?per_page=100`, `comments on #${number}`).pipe(
-        Effect.orElseSucceed(() => []),
-      )
+      const commentsRaw = yield* getJson(`${rp}/issues/${number}/comments?per_page=100`, `comments on #${number}`)
       const user = item["user"] as { readonly login?: unknown } | null | undefined
       const rawLabels = Array.isArray(item["labels"]) ? item["labels"] : []
       const labels = rawLabels
         .map((l) => (typeof l === "string" ? l : typeof (l as { readonly name?: unknown })?.name === "string" ? (l as { readonly name: string }).name : null))
         .filter((l): l is string => l !== null)
-      const comments = Array.isArray(commentsRaw)
-        ? commentsRaw.map((c) => {
-            const rec = c as Record<string, unknown>
-            const author = rec["user"] as { readonly login?: unknown } | null | undefined
-            return {
-              author: typeof author?.login === "string" ? author.login : null,
-              body: typeof rec["body"] === "string" ? rec["body"] : "",
-              createdAt: typeof rec["created_at"] === "string" ? rec["created_at"] : "",
-            }
-          })
-        : []
+      if (!Array.isArray(commentsRaw)) return yield* new McpToolError({ code: "unavailable", message: "Malformed GitHub comments" })
+      const comments = commentsRaw.map((c) => {
+        const rec = c as Record<string, unknown>
+        const author = rec["user"] as { readonly login?: unknown } | null | undefined
+        return {
+          author: typeof author?.login === "string" ? author.login : null,
+          body: typeof rec["body"] === "string" ? rec["body"] : "",
+          createdAt: typeof rec["created_at"] === "string" ? rec["created_at"] : "",
+        }
+      })
       return {
         number: Number(item["number"] ?? number),
         title: typeof item["title"] === "string" ? item["title"] : "",
@@ -338,20 +364,17 @@ const makePublicGitHubReader = (
       const base = p["base"] as { readonly ref?: unknown } | null | undefined
       // Pull request checks are Smithers flow runs, never GitHub Actions (ruling GH-1, github.no-actions).
       // An unindexed public GitHub repository has no Smithers runs yet, so `checks` stays empty here.
-      const reviewsRaw = yield* getJson(`${rp}/pulls/${number}/reviews?per_page=100`, `reviews on #${number}`).pipe(
-        Effect.orElseSucceed(() => []),
-      )
-      const reviews = Array.isArray(reviewsRaw)
-        ? reviewsRaw.map((entry) => {
-            const r = entry as Record<string, unknown>
-            const author = r["user"] as { readonly login?: unknown } | null | undefined
-            return {
-              author: typeof author?.login === "string" ? author.login : null,
-              state: typeof r["state"] === "string" ? r["state"] : "",
-              body: typeof r["body"] === "string" ? r["body"] : "",
-            }
-          })
-        : []
+      const reviewsRaw = yield* getJson(`${rp}/pulls/${number}/reviews?per_page=100`, `reviews on #${number}`)
+      if (!Array.isArray(reviewsRaw)) return yield* new McpToolError({ code: "unavailable", message: "Malformed GitHub reviews" })
+      const reviews = reviewsRaw.map((entry) => {
+        const r = entry as Record<string, unknown>
+        const author = r["user"] as { readonly login?: unknown } | null | undefined
+        return {
+          author: typeof author?.login === "string" ? author.login : null,
+          state: typeof r["state"] === "string" ? r["state"] : "",
+          body: typeof r["body"] === "string" ? r["body"] : "",
+        }
+      })
       const checks: PullDetail["checks"] = []
       return {
         number: Number(p["number"] ?? number),
@@ -423,23 +446,28 @@ export const makeLiveDeps = <R = never>(options: LiveDepsOptions<R>): Effect.Eff
       ? undefined
       : makePublicGitHubReader(fallbackClient, options.githubApiBaseUrl, options.githubReadToken)
 
-    const hasSyncedIssues = (owner: string, name: string): Effect.Effect<boolean> =>
+    const hasSyncedIssues = (owner: string, name: string): Effect.Effect<boolean, McpToolError> =>
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient
         const rows = yield* sql<{ readonly ok: number }>`
           SELECT 1 AS ok FROM github_sync WHERE repo_id = ${repoId(owner, name)} LIMIT 1`
         return rows.length > 0
-      }).pipe(Effect.provide(database), Effect.orElseSucceed(() => false))
+      }).pipe(Effect.provide(database), Effect.mapError(mapSqlError("github_sync")))
 
-    const resolveSha = (owner: string, name: string, ref?: string) =>
+    type Mirror = ReturnType<typeof RepoReads.make<unknown, R>>
+    const mirrored = <A>(local: (mirror: Mirror) => Effect.Effect<A, RepoReads.ReadRefused | McpToolError>,
+      upstream: (reader: PublicGitHubReader) => Effect.Effect<A, McpToolError>) => {
+      if (Option.isNone(reads)) return publicGitHub === undefined
+        ? Effect.fail(new McpToolError({ code: "unavailable", message: "Code storage is not configured" }))
+        : upstream(publicGitHub)
+      return local(reads.value).pipe(Effect.catchTag("ReadRefused", error =>
+        error.code === "not_imported" && publicGitHub !== undefined ? upstream(publicGitHub) : Effect.fail(mapReadError(error))))
+    }
+
+    const resolveSha = (mirror: Mirror, owner: string, name: string, ref?: string) =>
       Effect.gen(function* () {
-        if (Option.isNone(reads)) {
-          return yield* new McpToolError({ code: "unavailable", message: "Code storage is not configured" })
-        }
         if (ref !== undefined && SHA_RE.test(ref)) return ref.toLowerCase()
-        const listing = yield* withCtx(reads.value.refs(owner, name).pipe(Effect.provide(repoCache))).pipe(
-          Effect.mapError(mapReadError),
-        )
+        const listing = yield* withCtx(mirror.refs(owner, name).pipe(Effect.provide(repoCache)))
         if (ref === undefined || ref === listing.defaultBranch) return listing.head
         const branch = listing.branches.find((b) => b.name === ref)
         if (branch !== undefined) return branch.sha
@@ -447,9 +475,6 @@ export const makeLiveDeps = <R = never>(options: LiveDepsOptions<R>): Effect.Eff
         if (tag !== undefined) return tag.sha
         return yield* new McpToolError({ code: "not_found", message: `Unknown ref ${ref}` })
       })
-
-    const isNotImported = (error: McpToolError): boolean =>
-      error.code === "unavailable" || (error.code === "not_found" && error.message.includes("not_imported"))
 
     const admitWrite = (
       owner: string,
@@ -493,80 +518,32 @@ export const makeLiveDeps = <R = never>(options: LiveDepsOptions<R>): Effect.Eff
       })
 
     return makeLiveToolDeps({
-      readTree: (owner, name, ref) =>
-        Effect.gen(function* () {
-          if (Option.isNone(reads)) {
-            if (publicGitHub !== undefined) return yield* publicGitHub.readTree(owner, name, ref)
-            return yield* new McpToolError({ code: "unavailable", message: "Code storage is not configured" })
-          }
-          const resolved = yield* resolveSha(owner, name, ref).pipe(Effect.result)
-          if (resolved._tag === "Failure") {
-            if (publicGitHub !== undefined && isNotImported(resolved.failure)) {
-              return yield* publicGitHub.readTree(owner, name, ref)
-            }
-            return yield* resolved.failure
-          }
-          const sha = resolved.success
-          const bytes = yield* withCtx(reads.value.tree(owner, name, sha).pipe(Effect.provide(repoCache))).pipe(
-            Effect.mapError(mapReadError),
-          )
-          const parsed = yield* decodeTree(decoder.decode(bytes)).pipe(
-            Effect.mapError(() => new McpToolError({ code: "unavailable", message: "Malformed tree listing" })),
-          )
-          return { ref: sha, paths: parsed.paths, truncated: parsed.truncated }
-        }),
+      readTree: (owner, name, ref) => mirrored(mirror => Effect.gen(function* () {
+        const sha = yield* resolveSha(mirror, owner, name, ref)
+        const bytes = yield* withCtx(mirror.tree(owner, name, sha).pipe(Effect.provide(repoCache)))
+        const parsed = yield* decodeTree(decoder.decode(bytes)).pipe(
+          Effect.mapError(() => new McpToolError({ code: "unavailable", message: "Malformed tree listing" })),
+        )
+        return { ref: sha, paths: parsed.paths, truncated: parsed.truncated }
+      }), reader => reader.readTree(owner, name, ref)),
 
-      readFile: (owner, name, path, ref) =>
-        Effect.gen(function* () {
-          if (Option.isNone(reads)) {
-            if (publicGitHub !== undefined) return yield* publicGitHub.readFile(owner, name, path, ref)
-            return yield* new McpToolError({ code: "unavailable", message: "Code storage is not configured" })
-          }
-          const resolved = yield* resolveSha(owner, name, ref).pipe(Effect.result)
-          if (resolved._tag === "Failure") {
-            if (publicGitHub !== undefined && isNotImported(resolved.failure)) {
-              return yield* publicGitHub.readFile(owner, name, path, ref)
-            }
-            return yield* resolved.failure
-          }
-          const sha = resolved.success
-          const entry = yield* withCtx(reads.value.blob(owner, name, sha, path).pipe(Effect.provide(repoCache))).pipe(
-            Effect.mapError(mapReadError),
-          )
-          const content = textOf(entry.bytes)
-          if (content === undefined) {
-            return { path, ref: sha, content: "\u0000" }
-          }
-          return { path, ref: sha, content }
-        }),
+      readFile: (owner, name, path, ref) => mirrored(mirror => Effect.gen(function* () {
+        const sha = yield* resolveSha(mirror, owner, name, ref)
+        const entry = yield* withCtx(mirror.blob(owner, name, sha, path).pipe(Effect.provide(repoCache)))
+        return { path, ref: sha, content: textOf(entry.bytes) ?? "\u0000" }
+      }), reader => reader.readFile(owner, name, path, ref)),
 
-      listRefs: (owner, name) =>
-        Effect.gen(function* () {
-          if (Option.isNone(reads)) {
-            if (publicGitHub !== undefined) return yield* publicGitHub.listRefs(owner, name)
-            return yield* new McpToolError({ code: "unavailable", message: "Code storage is not configured" })
-          }
-          const listed = yield* withCtx(reads.value.refs(owner, name).pipe(Effect.provide(repoCache))).pipe(
-            Effect.mapError(mapReadError),
-            Effect.result,
-          )
-          if (listed._tag === "Failure") {
-            if (publicGitHub !== undefined && isNotImported(listed.failure)) {
-              return yield* publicGitHub.listRefs(owner, name)
-            }
-            return yield* listed.failure
-          }
-          const listing = listed.success
-          return {
-            defaultBranch: listing.defaultBranch,
-            head: listing.head,
-            branches: listing.branches.map((b) => b.name),
-            tags: listing.tags.map((t) => t.name),
-          }
-        }),
+      listRefs: (owner, name) => mirrored<RefListing>(mirror => Effect.gen(function* () {
+        const listing = yield* withCtx(mirror.refs(owner, name).pipe(Effect.provide(repoCache)))
+        return {
+          defaultBranch: listing.defaultBranch, head: listing.head,
+          branches: listing.branches.map(b => b.name), tags: listing.tags.map(t => t.name),
+        }
+      }), reader => reader.listRefs(owner, name)),
 
       listIssues: (owner, name, query) =>
         Effect.gen(function* () {
+          if (query.cursor?.startsWith("gh_") && publicGitHub !== undefined) return yield* publicGitHub.listIssues(owner, name, query)
           const cursor = query.cursor === undefined ? undefined : IssueList.decodeCursor(query.cursor)
           if (query.cursor !== undefined && cursor === undefined) {
             return yield* new McpToolError({ code: "invalid_params", message: "Invalid pagination cursor" })
@@ -862,12 +839,6 @@ export const makeLiveDeps = <R = never>(options: LiveDepsOptions<R>): Effect.Eff
             lane: null,
           }))
         }).pipe(Effect.provide(database), Effect.mapError(mapSqlError("todo_list"))),
-
-      draftTodo: () =>
-        Effect.sync(() => ({
-          id: crypto.randomUUID(),
-          state: "draft" as const,
-        })),
 
       postWorkLink: (params) =>
         Effect.gen(function* () {

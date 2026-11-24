@@ -1,4 +1,4 @@
-import { digestSync } from "@smthrs/crypto"
+import { digestSync, Uuid, WebCrypto } from "@smthrs/crypto"
 import { Cause, Clock, Effect, type Layer, Metric, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -48,8 +48,8 @@ import * as Metrics from "./Metrics.ts"
 //    MCP `sma_` bearer or `actor.act !== undefined` -> 403 `person_only`; signed-out -> 401 `authentication`.
 //    Browser HTML `GET /api/mcp/oauth/authorize` redirects 302 to `/app/mcp/authorize?<query>`.
 // 4. Codes and bearer tokens are NEVER stored or logged in plaintext; only SHA-256 hex digests hit Postgres.
-// 5. Token exchange atomically burns the authorization code OUTSIDE the minting transaction so failed PKCE/client
-//    verifications cannot roll back `used_at` and replay attempts revoke tokens issued from the replayed grant.
+// 5. Code consumption and issuance share one transaction. Invalid exchanges commit the burn;
+//    the code digest names exactly one grant, so a replay revokes only that grant.
 // 6. Per-person active token limit (`MCP_MAX_ACTIVE_TOKENS_PER_PERSON`) is checked on approval and enforced
 //    atomically inside a transaction-scoped advisory lock on token issuance.
 // 7. OBS-5: zero tokens, auth codes, verifiers, request bodies, or logins appear in logs, spans, or metrics.
@@ -65,6 +65,10 @@ export const MAX_REDIRECT_URIS = 8
 
 /** Maximum UTF-8 byte length of a single redirect URI (matches DB CHECK `BETWEEN 1 AND 2048`). */
 export const MAX_REDIRECT_URI_BYTES = 2048
+
+const REGISTRATIONS_PER_MINUTE = 30
+const UNUSED_CLIENT_DAYS = 30
+const GRANT_NAMESPACE = "81c97868-570f-49f6-9d82-0ad317744a64"
 
 const MAX_CLIENT_ID_BYTES = 128
 const MAX_CODE_BYTES = 512
@@ -516,12 +520,6 @@ interface ConsumedCodeRow {
   readonly codeChallenge: string
 }
 
-interface ReplayedCodeRow {
-  readonly personId: string
-  readonly clientId: string
-  readonly usedAt: string
-}
-
 interface TokenSummaryRow {
   readonly id: string
   readonly clientName: string
@@ -679,8 +677,10 @@ export const makeOAuthHandlers = <E, R, R2>(
               client_id AS "clientId",
               client_name AS "clientName",
               redirect_uris AS "redirectUris"
-            FROM mcp_oauth_clients
-            WHERE client_id = ${clientId}`
+            FROM mcp_oauth_clients c
+            WHERE client_id = ${clientId} AND (created_at > now() - make_interval(days => ${UNUSED_CLIENT_DAYS})
+                OR EXISTS (SELECT 1 FROM mcp_tokens t WHERE t.client_id = c.client_id)
+                OR EXISTS (SELECT 1 FROM mcp_oauth_codes a WHERE a.client_id = c.client_id AND a.expires_at > now()))`
           return Option.fromNullishOr(rows[0])
         }),
       )
@@ -940,14 +940,26 @@ export const makeOAuthHandlers = <E, R, R2>(
         const clientId = generateClientId()
         const issuedAt = Math.floor((yield* Clock.currentTimeMillis) / 1000)
 
-        yield* withDb(
-          Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient
-            yield* sql`
-              INSERT INTO mcp_oauth_clients (client_id, client_name, redirect_uris)
-              VALUES (${clientId}, ${clientName}, ${redirectUris}::text[])`
-          }),
-        )
+        const registered = yield* withDb(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+          // The deployment-wide limit also covers requests distributed across networks and Worker isolates.
+          yield* sql`SELECT pg_advisory_xact_lock(hashtextextended('mcp-dynamic-registration', 0))`
+          const [recent] = yield* sql<{ count: number }>`
+            SELECT count(*)::int AS count FROM (
+              SELECT 1 FROM mcp_oauth_clients WHERE created_at > clock_timestamp() - interval '1 minute'
+              LIMIT ${REGISTRATIONS_PER_MINUTE}
+            ) recent`
+          if ((recent?.count ?? 0) >= REGISTRATIONS_PER_MINUTE) return false
+          yield* sql`DELETE FROM mcp_oauth_clients c WHERE NOT (created_at > now() - make_interval(days => ${UNUSED_CLIENT_DAYS})
+                OR EXISTS (SELECT 1 FROM mcp_tokens t WHERE t.client_id = c.client_id)
+                OR EXISTS (SELECT 1 FROM mcp_oauth_codes a WHERE a.client_id = c.client_id AND a.expires_at > now()))`
+          yield* sql`INSERT INTO mcp_oauth_clients (client_id, client_name, redirect_uris)
+            VALUES (${clientId}, ${clientName}, ${redirectUris}::text[])`
+          return true
+        }))))
+        if (!registered) {
+          yield* recordEvent("register", "rate_limited")
+          return errorJson(429, "rate_limited", "temporarily_unavailable", undefined, { ...NO_STORE_HEADERS, "retry-after": "60" })
+        }
 
         yield* recordEvent("register", "created", { redirectUriCount: redirectUris.length })
         return HttpServerResponse.jsonUnsafe(
@@ -1286,163 +1298,109 @@ export const makeOAuthHandlers = <E, R, R2>(
 
         const codeSha256 = digestSync(code)
 
-        // Atomically consume the single-use code OUTSIDE the token-minting transaction.
-        // Any subsequent verification failure (wrong PKCE verifier, wrong client_id, wrong redirect_uri)
-        // leaves `used_at` committed, preventing verifier oracle / brute-force retries.
-        const consumedRows = yield* withDb(
-          Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient
-            return yield* sql<ConsumedCodeRow>`
-              UPDATE mcp_oauth_codes
-              SET used_at = clock_timestamp()
-              WHERE code_sha256 = ${codeSha256}
-                AND used_at IS NULL
-                AND expires_at > clock_timestamp()
-              RETURNING
-                person_id::text AS "personId",
-                client_id AS "clientId",
-                redirect_uri AS "redirectUri",
-                repo_scope AS "repoScope",
-                scopes,
-                code_challenge AS "codeChallenge"`
-          }),
-        )
+        const resourceRequested = params["resource"] !== undefined
+        // The public grant ID is a namespaced digest of the code, independent of the random bearer secret.
+        const tokenId = yield* Uuid.v5(GRANT_NAMESPACE, codeSha256).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+        return yield* withDb(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+          const [consumed] = yield* sql<ConsumedCodeRow>`
+            UPDATE mcp_oauth_codes
+            SET used_at = clock_timestamp()
+            WHERE code_sha256 = ${codeSha256}
+              AND used_at IS NULL
+              AND expires_at > clock_timestamp()
+            RETURNING
+              person_id::text AS "personId",
+              client_id AS "clientId",
+              redirect_uri AS "redirectUri",
+              repo_scope AS "repoScope",
+              scopes,
+              code_challenge AS "codeChallenge"`
+          if (consumed === undefined) {
+            const revoked = yield* sql`UPDATE mcp_tokens SET revoked_at = clock_timestamp()
+              WHERE id = ${tokenId}::uuid AND revoked_at IS NULL RETURNING id`
+            yield* recordEvent("token", revoked.length > 0 ? "code_replay_revoked" : "invalid_grant")
+            return errorJson(400, "invalid_grant", "invalid_grant", undefined, TOKEN_RESPONSE_HEADERS)
+          }
 
-        const consumed = consumedRows[0]
-        if (consumed === undefined) {
-          // OAuth 2.1 §4.1.2 replay mitigation: if this code was already redeemed, revoke active tokens
-          // minted for that (person, client) from the redemption window.
-          yield* withDb(
-            Effect.gen(function* () {
-              const sql = yield* SqlClient.SqlClient
-              const replayed = yield* sql<ReplayedCodeRow>`
-                SELECT
-                  person_id::text AS "personId",
-                  client_id AS "clientId",
-                  used_at::text AS "usedAt"
-                FROM mcp_oauth_codes
-                WHERE code_sha256 = ${codeSha256}
-                  AND used_at IS NOT NULL`
-              const seen = replayed[0]
-              if (seen !== undefined) {
-                yield* sql`
-                  UPDATE mcp_tokens
-                  SET revoked_at = clock_timestamp()
-                  WHERE person_id = ${seen.personId}::uuid
-                    AND client_id = ${seen.clientId}
-                    AND revoked_at IS NULL
-                    AND created_at >= ${seen.usedAt}::timestamptz - interval '5 seconds'`
-                yield* recordEvent("token", "code_replay_revoked")
-              }
-            }),
-          ).pipe(Effect.catchCause(() => Effect.void))
+          if (
+            !timingSafeEqualString(consumed.clientId, clientId) ||
+            !timingSafeEqualString(consumed.redirectUri, redirectUri) ||
+            !verifyPkceS256(codeVerifier, consumed.codeChallenge)
+          ) {
+            yield* recordEvent("token", "invalid_grant")
+            return errorJson(400, "invalid_grant", "invalid_grant", undefined, TOKEN_RESPONSE_HEADERS)
+          }
 
-          yield* recordEvent("token", "invalid_grant")
-          return errorJson(400, "invalid_grant", "invalid_grant", undefined, TOKEN_RESPONSE_HEADERS)
-        }
+          if (resourceRequested && resourceRepo !== null && consumed.repoScope !== null && resourceRepo.repoId !== consumed.repoScope) {
+            yield* recordEvent("token", "invalid_grant")
+            return errorJson(400, "invalid_grant", "invalid_grant", undefined, TOKEN_RESPONSE_HEADERS)
+          }
 
-        if (
-          !timingSafeEqualString(consumed.clientId, clientId) ||
-          !timingSafeEqualString(consumed.redirectUri, redirectUri) ||
-          !verifyPkceS256(codeVerifier, consumed.codeChallenge)
-        ) {
-          yield* recordEvent("token", "invalid_grant")
-          return errorJson(400, "invalid_grant", "invalid_grant", undefined, TOKEN_RESPONSE_HEADERS)
-        }
+          const effectiveRepoScope = consumed.repoScope ?? (resourceRepo === null ? null : resourceRepo.repoId)
+          const validScopes = MCP_SCOPES.filter((scope) => consumed.scopes.includes(scope))
+          if (validScopes.length === 0) {
+            yield* recordEvent("token", "invalid_grant")
+            return errorJson(400, "invalid_grant", "invalid_grant", undefined, TOKEN_RESPONSE_HEADERS)
+          }
 
-        if (params["resource"] !== undefined && resourceRepo !== null && consumed.repoScope !== null && resourceRepo.repoId !== consumed.repoScope) {
-          yield* recordEvent("token", "invalid_grant")
-          return errorJson(400, "invalid_grant", "invalid_grant", undefined, TOKEN_RESPONSE_HEADERS)
-        }
+          const ttlSeconds = MCP_TOKEN_TTL_DAYS * 24 * 60 * 60
+          const rawToken = generateMcpToken()
+          const tokenSha256 = digestSync(rawToken)
 
-        const effectiveRepoScope = consumed.repoScope ?? (resourceRepo === null ? null : resourceRepo.repoId)
-        const validScopes = MCP_SCOPES.filter((scope) => consumed.scopes.includes(scope))
-        if (validScopes.length === 0) {
-          yield* recordEvent("token", "invalid_grant")
-          return errorJson(400, "invalid_grant", "invalid_grant", undefined, TOKEN_RESPONSE_HEADERS)
-        }
+          yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${`mcp-tokens:${consumed.personId}`}, 0))`
+          const countRows = yield* sql<{ readonly count: number | string }>`
+            SELECT count(*)::int AS count
+            FROM mcp_tokens
+            WHERE person_id = ${consumed.personId}::uuid
+              AND revoked_at IS NULL
+              AND expires_at > clock_timestamp()`
+          if (Number(countRows[0]?.count ?? 0) >= MCP_MAX_ACTIVE_TOKENS_PER_PERSON) {
+            yield* recordEvent("token", "token_limit")
+            return errorJson(403, "token_limit", "access_denied", undefined, TOKEN_RESPONSE_HEADERS)
+          }
+          const clientRows = yield* sql<{ readonly clientName: string }>`
+            SELECT client_name AS "clientName"
+            FROM mcp_oauth_clients
+            WHERE client_id = ${consumed.clientId}`
+          const clientName = clientRows[0]?.clientName
+          if (clientName === undefined) {
+            yield* recordEvent("token", "invalid_client")
+            return errorJson(400, "invalid_client", "invalid_client", undefined, TOKEN_RESPONSE_HEADERS)
+          }
 
-        const ttlSeconds = MCP_TOKEN_TTL_DAYS * 24 * 60 * 60
-        const tokenId = globalThis.crypto.randomUUID()
-        const rawToken = generateMcpToken()
-        const tokenSha256 = digestSync(rawToken)
-
-        // Serialize per-person active token count + insertion under a transaction-scoped advisory lock.
-        const outcome = yield* withDb(
-          Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient
-            return yield* sql.withTransaction(
-              Effect.gen(function* () {
-                yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${`mcp-tokens:${consumed.personId}`}, 0))`
-                const countRows = yield* sql<{ readonly count: number | string }>`
-                  SELECT count(*)::int AS count
-                  FROM mcp_tokens
-                  WHERE person_id = ${consumed.personId}::uuid
-                    AND revoked_at IS NULL
-                    AND expires_at > clock_timestamp()`
-                if (Number(countRows[0]?.count ?? 0) >= MCP_MAX_ACTIVE_TOKENS_PER_PERSON) {
-                  return "token_limit" as const
-                }
-                const clientRows = yield* sql<{ readonly clientName: string }>`
-                  SELECT client_name AS "clientName"
-                  FROM mcp_oauth_clients
-                  WHERE client_id = ${consumed.clientId}`
-                const clientName = clientRows[0]?.clientName
-                if (clientName === undefined) return "invalid_client" as const
-
-                yield* sql`
-                  INSERT INTO mcp_tokens (
-                    id,
-                    person_id,
-                    client_id,
-                    client_name,
-                    token_sha256,
-                    repo_scope,
-                    scopes,
-                    expires_at
-                  )
-                  VALUES (
-                    ${tokenId}::uuid,
-                    ${consumed.personId}::uuid,
-                    ${consumed.clientId},
-                    ${clientName},
-                    ${tokenSha256},
-                    ${effectiveRepoScope},
-                    ${validScopes}::text[],
-                    clock_timestamp() + make_interval(secs => ${ttlSeconds})
-                  )`
-                return "issued" as const
-              }),
+          yield* sql`
+            INSERT INTO mcp_tokens (
+              id,
+              person_id,
+              client_id,
+              client_name,
+              token_sha256,
+              repo_scope,
+              scopes,
+              expires_at
             )
-          }),
-        )
-
-        if (outcome === "token_limit") {
-          yield* recordEvent("token", "token_limit")
-          return errorJson(
-            403,
-            "token_limit",
-            "access_denied",
-            `Maximum active MCP tokens (${MCP_MAX_ACTIVE_TOKENS_PER_PERSON}) reached.`,
-            TOKEN_RESPONSE_HEADERS,
+            VALUES (
+              ${tokenId}::uuid,
+              ${consumed.personId}::uuid,
+              ${consumed.clientId},
+              ${clientName},
+              ${tokenSha256},
+              ${effectiveRepoScope},
+              ${validScopes}::text[],
+              clock_timestamp() + make_interval(secs => ${ttlSeconds})
+            )`
+          yield* recordEvent("token", "issued", { hasRepoScope: effectiveRepoScope !== null, scopeCount: validScopes.length })
+          return HttpServerResponse.jsonUnsafe(
+            {
+              access_token: rawToken,
+              token_type: "Bearer",
+              expires_in: ttlSeconds,
+              scope: validScopes.join(" "),
+              repo_scope: effectiveRepoScope,
+            },
+            { status: 200, headers: TOKEN_RESPONSE_HEADERS },
           )
-        }
-        if (outcome === "invalid_client") {
-          yield* recordEvent("token", "invalid_client")
-          return errorJson(400, "invalid_client", "invalid_client", undefined, TOKEN_RESPONSE_HEADERS)
-        }
-
-        yield* recordEvent("token", "issued", { hasRepoScope: effectiveRepoScope !== null, scopeCount: validScopes.length })
-        return HttpServerResponse.jsonUnsafe(
-          {
-            access_token: rawToken,
-            token_type: "Bearer",
-            expires_in: ttlSeconds,
-            scope: validScopes.join(" "),
-            repo_scope: effectiveRepoScope,
-          },
-          { status: 200, headers: TOKEN_RESPONSE_HEADERS },
-        )
+        }))))
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.as(

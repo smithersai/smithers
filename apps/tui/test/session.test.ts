@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { inspect } from "node:util"
+import * as Flows from "../src/flows.ts"
 import * as Session from "../src/session.ts"
 
 let previousSessionDirectory: string | undefined
@@ -347,7 +348,7 @@ describe("credentials in a saved session", () => {
     for (const secret of [key, pat]) expect(saved).not.toContain(secret)
   })
 
-  it("keeps the bytes the TUI re-executes: a patch undo applies, a flow input and a worker prompt retry relaunches, a monitor's source", () => {
+  it("redacts what the TUI re-executes and marks it, so a restore never relaunches a placeholder", () => {
     const writer = Session.create(mkdtempSync(join(tmpdir(), "tui-cwd-")))
     const patch: Session.Record = {
       type: "patch",
@@ -397,13 +398,75 @@ describe("credentials in a saved session", () => {
         createdAt: 1
       }
     }
-    for (const record of [patch, flow, tab, monitor]) writer.append(record)
+    const queued: Session.Record = { type: "queued", at: 2, prompt: { id: "q", text: `use ${pat}`, scope: "chat" } }
+    const command: Session.Record = {
+      type: "flow-command",
+      command: { id: "c", flow: "deploy", argument: pat, request: `/deploy ${pat}`, at: 3 }
+    }
+    const running = { ...flow, run: { ...flow.run, id: "r2", status: "running" as const } }
+    for (const record of [patch, flow, tab, monitor, queued, command, running]) writer.append(record)
+    const raw = readFileSync(writer.file, "utf8")
+    for (const secret of [key, pat]) expect(raw).not.toContain(secret)
     expect(Session.load(writer.file).slice(1)).toEqual([
-      patch,
-      { ...flow, run: { ...flow.run, message: "401 for [REDACTED]" } },
-      { ...tab, tab: { ...tab.tab, answer: "new token [REDACTED]" } },
-      { ...monitor, monitor: { ...monitor.monitor, seen: "token=[REDACTED]" } }
+      {
+        ...patch,
+        receipt: {
+          call: "[]",
+          patches: [{
+            path: ".env",
+            patch: "-ANTHROPIC_API_KEY=[REDACTED]\n+ANTHROPIC_API_KEY=[REDACTED]\n",
+            redacted: true
+          }]
+        }
+      },
+      {
+        ...flow,
+        redacted: true,
+        run: {
+          ...flow.run,
+          input: { token: "[REDACTED]", message: "[REDACTED]" },
+          requested: JSON.stringify({ token: "[REDACTED]" }),
+          message: "401 for [REDACTED]"
+        }
+      },
+      { ...tab, redacted: true, tab: { ...tab.tab, prompt: "rotate [REDACTED]", answer: "new token [REDACTED]" } },
+      {
+        ...monitor,
+        redacted: true,
+        monitor: {
+          ...monitor.monitor,
+          source: { kind: "shell", command: "curl -H 'Authorization: Bearer [REDACTED_TOKEN]' https://example.com" },
+          seen: "token=[REDACTED]"
+        }
+      },
+      { type: "queued", at: 2, prompt: { id: "q", text: "use [REDACTED]", scope: "chat" } },
+      {
+        type: "flow-command",
+        redacted: true,
+        command: { id: "c", flow: "deploy", argument: "[REDACTED]", request: "/deploy [REDACTED]", at: 3 }
+      },
+      {
+        ...running,
+        redacted: true,
+        run: {
+          ...running.run,
+          input: { token: "[REDACTED]", message: "[REDACTED]" },
+          requested: JSON.stringify({ token: "[REDACTED]" }),
+          message: "401 for [REDACTED]"
+        }
+      }
     ])
+
+    const restored = Session.restore(Session.load(writer.file))
+    // No placeholder relaunches: the monitor stops, the command never dispatches, an unsettled run fails.
+    expect(restored.monitors.map((each) => each.status)).toEqual(["stopped"])
+    expect(restored.flowCommands).toEqual([])
+    expect(restored.flows.map((run) => [run.id, run.status, run.redacted])).toEqual([
+      ["r", "failed", true],
+      ["r2", "failed", true]
+    ])
+    expect(restored.flows.find((run) => run.id === "r2")?.message).toBe(Session.notResumed)
+    expect(restored.flows.every((run) => !Flows.actions(run).retry)).toBe(true)
   })
 
   it("keeps every view's, card's, status item's and key's action and redacts only their shown text (#2645)", () => {

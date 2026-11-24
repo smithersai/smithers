@@ -1,6 +1,6 @@
 import { expect, it } from "bun:test"
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Debug from "../src/debug.ts"
@@ -191,16 +191,16 @@ it("with SMITHERS_DEBUG=true writes JSON lines to the log file and stderr, and a
     const run = (env: Record<string, string>) =>
       spawnSync(process.execPath, ["-e", script], {
         encoding: "utf8",
-        env: { ...process.env, TMPDIR: folder, ...env }
+        env: { ...process.env, SMITHERS_TUI_SESSION_DIR: folder, ...env }
       })
     const off = run({ SMITHERS_DEBUG: "1" })
     expect(off.status).toBe(0)
     expect(off.stderr).toBe("")
-    expect(() => readFileSync(join(folder, "smthrs-tui-debug.log"))).toThrow()
+    expect(() => readFileSync(join(folder, "debug.log"))).toThrow()
 
     const on = run({ SMITHERS_DEBUG: "true" })
     expect(on.status).toBe(0)
-    const text = readFileSync(join(folder, "smthrs-tui-debug.log"), "utf8")
+    const text = readFileSync(join(folder, "debug.log"), "utf8")
     expect(on.stderr).toBe(text)
     const types = text.trim().split("\n").map((line) => (JSON.parse(line) as { type: string }).type)
     expect(types.slice(0, 4)).toEqual(["event", "render", "key", "sync"])
@@ -208,10 +208,44 @@ it("with SMITHERS_DEBUG=true writes JSON lines to the log file and stderr, and a
     expect(types).toContain("blocked")
     expect(types.at(-1)).toBe("summary")
 
-    rmSync(join(folder, "smthrs-tui-debug.log"))
+    rmSync(join(folder, "debug.log"))
     const quiet = run({ SMITHERS_DEBUG: "true", SMTHRS_DEBUG_STDERR: "false" })
     expect(quiet.stderr).toBe("")
-    expect(readFileSync(join(folder, "smthrs-tui-debug.log"), "utf8")).toContain("\"type\":\"summary\"")
+    expect(readFileSync(join(folder, "debug.log"), "utf8")).toContain("\"type\":\"summary\"")
+  } finally {
+    rmSync(folder, { recursive: true, force: true })
+  }
+})
+
+it("the trace is owner-only beside the TUI log, and a pre-planted symlink there gets nothing", () => {
+  const folder = mkdtempSync(join(tmpdir(), "tui-debug-private-"))
+  try {
+    const script = `
+      import * as Debug from ${JSON.stringify(join(import.meta.dir, "../src/debug.ts"))}
+      console.log(Debug.path())
+      Debug.keypress("char")
+      Debug.finish()
+    `
+    const run = (home: string) =>
+      spawnSync(process.execPath, ["-e", script], {
+        encoding: "utf8",
+        env: { ...process.env, SMITHERS_TUI_SESSION_DIR: home, SMITHERS_DEBUG: "true", SMTHRS_DEBUG_STDERR: "false" }
+      })
+    const home = join(folder, "tui")
+    const fresh = run(home)
+    expect(fresh.status).toBe(0)
+    expect(fresh.stdout.trim()).toBe(join(home, "debug.log"))
+    expect(statSync(home).mode & 0o777).toBe(0o700)
+    expect(statSync(join(home, "debug.log")).mode & 0o777).toBe(0o600)
+    expect(readFileSync(join(home, "debug.log"), "utf8")).toContain("\"type\":\"summary\"")
+
+    const planted = join(folder, "planted")
+    mkdirSync(planted, { mode: 0o700 })
+    const victim = join(folder, "victim.txt")
+    writeFileSync(victim, "")
+    symlinkSync(victim, join(planted, "debug.log"))
+    expect(run(planted).status).toBe(0)
+    expect(readFileSync(victim, "utf8")).toBe("")
   } finally {
     rmSync(folder, { recursive: true, force: true })
   }

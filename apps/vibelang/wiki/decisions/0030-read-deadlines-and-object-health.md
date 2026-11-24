@@ -132,3 +132,15 @@ The earlier draft/reviewer tests failed the first parent release and expected th
 Their fault now targets the final run-key settlement only: parent release and physical charge succeed, final
 settlement fails once, and the engine retries that step. Exact phase counts (three run-key attempts, one physical
 charge) and one model request distinguish the engine settlement policy from the removed callback retry.
+
+## Review R1 D4, 2026-11-23 (Astra-D4-033, Fable-D4-037, Fable-D4-012)
+
+- A public `GET /api/health/objects` probes five fixed objects; its conversation is always `health`. Naming another
+  with `?conversation=` is a maintainer's own browser session's: anyone else gets 403, and a name longer than a
+  conversation id gets 400, before any object is reached.
+- One probe runs per isolate at a time. A read that arrives while it runs waits for its answer; nothing is cached
+  after it ends, so a read never reports an older state.
+- A signed-out post is counted in the day's Budget object before its conversation is reached: 20 a day per visitor
+  (a SHA-256 of the address Cloudflare saw; the ledger holds no address) and 500 a day for all visitors. Over either,
+  the post answers 429 `rate limit`. Signed-in posts are not counted. The limit is a count of posts, not of tokens:
+  500 signed-out posts can still spend the day's token budget if each runs to its ceiling.

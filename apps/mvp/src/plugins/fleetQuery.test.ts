@@ -3,6 +3,7 @@
 import { Deferred, Effect, Fiber, Layer, type Scope, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
+import { availabilityOf, type FleetAvailability } from "../features/fleet/globalContract"
 import type { FleetStore } from "../features/fleet/store"
 import { Plugins, queryOf } from "./plugins"
 
@@ -103,3 +104,43 @@ test("two reads of one query answer the same view, and each read decides again",
     expect(first.current()).toEqual([{ key: "t1#g1" }])
   })))
 
+// Astra-D4-003: `core/fleet-nodes` answered its cached snapshot whatever became of the reader's authority, so an open
+// plugin kept the last admin-only rows after a 401. Each read asks the store's gate.
+test("a deployment-wide fleet query hides its cached rows in the change that puts authority in doubt", () =>
+  scoped(Effect.gen(function* () {
+    const scope = yield* Effect.scope
+    const gate = { visible: true, availability: "ready" as FleetAvailability, listeners: new Set<() => void>() }
+    const rows = [{ nodeId: "host-1" }]
+    const fleet = {
+      globalNodes: Effect.succeed({ rows: Stream.make(rows) }),
+      global: {
+        visible: () => gate.visible,
+        availability: () => gate.visible ? gate.availability : "unavailable",
+        subscribe: (_shape: string, listener: () => void) => {
+          gate.listeners.add(listener)
+          return () => void gate.listeners.delete(listener)
+        },
+      },
+    } as unknown as FleetStore["Service"]
+    const layer = Layer.succeed(Plugins, Plugins.of({ core: new Map(), fleet, fleetOpen: new Map(), scope } as unknown as Plugins["Service"]))
+    const live = yield* queryOf("core/fleet-nodes", undefined).pipe(Effect.provide(layer))
+    expect(yield* queryOf("core/fleet-nodes", undefined).pipe(Effect.provide(layer))).toBe(live)
+    yield* Effect.yieldNow
+    expect(live.current()).toEqual(rows)
+    expect(availabilityOf(live)).toBe("ready")
+    let told = 0
+    const stop = live.subscribe(() => { told++ })
+    // The 401: the gate closes and tells its listeners; the session check has answered nothing yet.
+    gate.visible = false
+    for (const listener of gate.listeners) listener()
+    expect(told).toBe(1)
+    expect(live.current()).toEqual([])
+    expect(live.current()).toBe(live.current())
+    expect(availabilityOf(live)).toBe("unavailable")
+    // Authority confirmed again, its first snapshot still on its way: no rows are not an empty fleet.
+    gate.visible = true
+    gate.availability = "loading"
+    expect(availabilityOf(live)).toBe("loading")
+    stop()
+    expect(gate.listeners.size).toBe(0)
+  })))

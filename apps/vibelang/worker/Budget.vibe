@@ -18,6 +18,14 @@ export const SPENT = "spent"
 export const RESERVED = "reserved"
 /** The sum of every charge beyond its call's reservation. */
 export const OVER = "over"
+/** How many signed-out posts one visitor may make in a day, and all visitors together (review R1 D4, Fable-D4-012). */
+export const VISITOR_POSTS = 20
+export const ANONYMOUS_POSTS = 500
+/** The day's count of signed-out posts. */
+export const VISITS = "visits"
+const visitorKey = (visitor: string) => `visitor/${visitor}`
+/** Signed-out posts by outcome: `admitted`, `visitor-spent` or `day-spent`. */
+export const visits = Metric.counter("vibelang_budget_visits", { incremental: true })
 const replyKey = (reply: string) => `reply/${reply}`
 const holdKey = (reply: string) => `hold/${reply}`
 
@@ -51,6 +59,19 @@ export effect function make(ledger: Ledger, limit: number) {
     return { spent, reserved, over }
   }
   return {
+    /**
+     * Counts one signed-out post for `visitor`: admitted while that visitor made fewer than `each` today and all
+     * visitors together fewer than `everyone`. A refused post counts nothing. The log names no visitor.
+     */
+    visit: (visitor: string, each: number, everyone: number) => Semaphore.withPermits(lock, 1)(effect {
+      const own = (try ledger.read(visitorKey(visitor))) ?? 0
+      const all = (try ledger.read(VISITS)) ?? 0
+      const outcome = own >= each ? "visitor-spent" : all >= everyone ? "day-spent" : "admitted"
+      if (outcome === "admitted") try ledger.write({ [visitorKey(visitor)]: own + 1, [VISITS]: all + 1 })
+      try Metric.update(Metric.withAttributes(visits, { outcome }), 1)
+      try Effect.logInfo("vibelang.budget.visit").pipe(Effect.annotateLogs({ outcome, visits: all }))
+      return outcome === "admitted"
+    }),
     /** Reserves `ceiling` tokens for `reply` when the day's charges and open reservations leave room for it. */
     admit: effect (reply: string, ceiling: number) => {
       return try Semaphore.withPermits(lock, 1)(effect {

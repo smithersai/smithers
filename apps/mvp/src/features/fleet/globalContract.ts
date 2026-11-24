@@ -6,6 +6,27 @@ export const FLEET_NODES_SHAPE_ROUTE = "/api/shapes/fleet/nodes"
 export const FLEET_SESSIONS_SHAPE_ROUTE = "/api/shapes/fleet/sessions"
 export const FLEET_ACCOUNTS_SHAPE_ROUTE = "/api/shapes/fleet/accounts"
 
+/** The deployment-wide sources, as the browser names them. */
+export type GlobalFleetShape = "nodes" | "sessions" | "accounts"
+
+/**
+ * What a deployment-wide source says of itself: `loading` until its first whole snapshot arrives, `unavailable` while
+ * its rows are withheld (a refusal, or a session in doubt), `ready` once delivered. Only `ready` rows count: no rows
+ * while `loading` or `unavailable` never mean an empty fleet.
+ */
+export type FleetAvailability = "loading" | "unavailable" | "ready"
+
+/** A live source that says whether its rows were delivered. */
+export interface Available {
+  readonly availability: () => FleetAvailability
+}
+
+/** `source`'s availability; a source that doesn't say is `ready`, as every repository query is once it answers. */
+export const availabilityOf = (source: object): FleetAvailability => {
+  const read = (source as Partial<Available>).availability
+  return typeof read === "function" ? read() : "ready"
+}
+
 export const HOST_KINDS = ["macbook", "mac-mini", "bare-metal", "cloudflare", "lan", "browser"] as const
 export type HostKind = (typeof HOST_KINDS)[number]
 

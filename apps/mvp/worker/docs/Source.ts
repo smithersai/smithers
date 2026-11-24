@@ -17,7 +17,7 @@ import type * as RepoAbout from "../RepoAbout.ts"
 // A page is read only when the repository's own index lists its path (`Docs.find`), and the index keeps only links on
 // its own origin, so a request never names a URL: ChatApi fetches only from the host the repository named (SSRF).
 // The index and each page are kept in the immutable cache for `DOCS_KEPT` (5 minutes), by URL, in windows of that
-// length; a refusal is never kept. Nothing here records a URL, a path or a page's text.
+// length; a refusal is never kept, and `DOCS_KEPT=0` keeps nothing. Nothing here records a URL, a path or a page's text.
 
 /** How long an index or a page is kept, unless `DOCS_KEPT` says otherwise. */
 export const KEPT = Duration.minutes(5)
@@ -121,24 +121,27 @@ export const make = <R = never>({ kept }: { readonly kept: number }, options: Op
      */
     const text = (namespace: string, url: string, maxBytes?: number) =>
       Effect.gen(function* () {
-        const window = Math.floor((yield* Clock.currentTimeMillis) / kept)
         let fresh = false
-        const entry = yield* ImmutableCache.readThrough(
-          ImmutableCache.key(namespace, url, String(window)),
-          Effect.gen(function* () {
-            const fetched = yield* Docs.fetchText(url, {
-              privateHosts,
-              ...(maxBytes === undefined ? {} : { maxBytes }),
-            })
-            if (fetched._tag === "Refused") {
-              const busy = fetched.reason === "status" && (fetched.status === 429 || (fetched.status ?? 0) >= 500)
-              return yield* new Unreachable({ reason: busy ? "busy" : fetched.reason })
-            }
-            if (new URL(fetched.url).origin !== new URL(url).origin) return yield* new Unreachable({ reason: "redirects" })
-            fresh = true
-            return { bytes: encoder.encode(fetched.text), metadata: {} }
-          }),
-        )
+        const load = Effect.gen(function* () {
+          const fetched = yield* Docs.fetchText(url, {
+            privateHosts,
+            ...(maxBytes === undefined ? {} : { maxBytes }),
+          })
+          if (fetched._tag === "Refused") {
+            const busy = fetched.reason === "status" && (fetched.status === 429 || (fetched.status ?? 0) >= 500)
+            return yield* new Unreachable({ reason: busy ? "busy" : fetched.reason })
+          }
+          if (new URL(fetched.url).origin !== new URL(url).origin) return yield* new Unreachable({ reason: "redirects" })
+          fresh = true
+          return { bytes: encoder.encode(fetched.text), metadata: {} }
+        })
+        // Zero (or less) keeps nothing: dividing by it would give every read the one `Infinity` window, forever.
+        const entry = yield* kept > 0
+          ? ImmutableCache.readThrough(
+            ImmutableCache.key(namespace, url, String(Math.floor((yield* Clock.currentTimeMillis) / kept))),
+            load,
+          )
+          : load
         return { text: decoder.decode(entry.bytes), cached: !fresh }
       })
 

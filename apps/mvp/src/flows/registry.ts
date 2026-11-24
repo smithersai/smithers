@@ -94,7 +94,7 @@ export interface Entry {
    * The flow's tag and schemas: the declaration itself, or a reference to one only an engine's host imports. A
    * declaration carries its description too.
    */
-  readonly flow: BrowserEngine.FlowReference & { readonly description?: string }
+  readonly flow: BrowserEngine.FlowReference & { readonly description?: string | undefined }
   /** Why the agent may not run it; absent when it may. */
   readonly userOnlyReason?: string
   /**
@@ -244,7 +244,7 @@ export const registry = {
   },
   // A flow's code (decision 0014 §1): Code on the Flows page reads it and Save writes it, and the agent can too.
   "flow/read": { flow: FlowReadReference },
-  "flow/write": { flow: FlowWriteReference, changes: "saves new code for the person's flow" },
+  "flow/write": { flow: FlowWriteReference, changes: "saves new code for the person's flow", confirm: "Save these changes to your flow?" },
   "flow/run": {
     flow: FlowRunReference,
     changes: "runs the person's flow, and whatever it does",
@@ -309,8 +309,6 @@ export const registry = {
     changes: "brings the published branch's working copy to its GitHub branch's head, keeping its own changes",
     slash: { command: "branch.resync", description: "Resync this branch", minimum: "member", fields: [], hints: { fields: { repo: { hidden: true }, branch: { hidden: true } } } },
   },
-  // Your conversations (docs/features/conversations.md): one per branch, so `/new` makes a branch and opens it; the
-  // list's Archive and Restore change only the person's own list. The agent can do both.
   "conversation/archive": { flow: ConversationArchive, changes: "archives one of the person's conversations, or brings it back" },
   "branch/share": {
     flow: BranchShare,
@@ -422,7 +420,6 @@ export const registry = {
     minimum: "member",
     changes: "makes one tiny call with the person's own model, which spends a few of their tokens",
   },
-  // Anyone signed in removes their own model, a person who lost their role included (decision 0096).
   // Bug reports (docs/features/bugs.md): `/bug`, the header's Report a bug and the agent file one; an Admin and
   // the agent read them. Anyone signed in reports; only an Admin reads every report.
   "app/bug/report": {
@@ -438,6 +435,7 @@ export const registry = {
     minimum: "maintainer",
     userOnlyReason: "Only the person answers what a repository's feed asks its Maintainers; the agent never answers for them.",
   },
+  // Anyone signed in removes their own model, a person who lost their role included (decision 0096).
   "model/remove": {
     flow: ModelRemove,
     changes: "removes the person's own model, so the deployment's model answers them",

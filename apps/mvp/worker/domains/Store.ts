@@ -1,5 +1,8 @@
 import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
+import type { Role } from "../Actor.ts"
+import * as ProtectedAuthority from "../ProtectedAuthority.ts"
+import type * as WriteAuthority from "../WriteAuthority.ts"
 import type {
   CertificateState,
   DnsRecord,
@@ -22,9 +25,32 @@ export interface Row {
 
 /**
  * What a claim did: `add` a domain, `refresh` this repository's, find it another's (`taken`), being removed
- * (`removing`) or, for a refresh, already removed (`missing`), or nothing again (`repeat`).
+ * (`removing`) or, for a refresh, already removed (`missing`), or nothing again (`repeat`). `stale` when the person who
+ * asked no longer holds the session or the role the route admitted.
  */
-export type Claim = "add" | "refresh" | "taken" | "removing" | "missing" | "repeat"
+export type Claim = "add" | "refresh" | "taken" | "removing" | "missing" | "repeat" | "stale"
+
+/** The roles that may change a repository's domains (0007 `repo:domain-write`). */
+export const MANAGERS: ReadonlyArray<Role> = ["maintainer", "admin"]
+
+/** The authority a domain step runs under: the session the route admitted, `null` for sessionless local development. */
+export type Authority = WriteAuthority.Session | null | undefined
+
+/**
+ * Whether the person who started the flow still holds the session and a managing role, read under the session and
+ * person locks (`ProtectedAuthority.check`). A payload recorded before steps carried authority is `denied`: it fails
+ * closed rather than guess. Call inside the transaction whose writes depend on it.
+ */
+export const authorized = (
+  authority: Authority,
+): Effect.Effect<"held" | "unavailable" | "denied", unknown, SqlClient.SqlClient> =>
+  authority === undefined ? Effect.succeed("denied" as const) : ProtectedAuthority.check(authority, MANAGERS)
+
+/** `authorized` in its own transaction: what a step asks before it calls the provider. */
+export const authorizedNow = (
+  authority: Authority,
+): Effect.Effect<"held" | "unavailable" | "denied", unknown, SqlClient.SqlClient> =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(authorized(authority)))
 
 const repeated = (invocationKey: string) =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
@@ -81,12 +107,14 @@ export const claim = (write: {
   readonly invocationKey: string
   /** A refresh of a domain the route saw: one removed since stays removed. */
   readonly refresh: boolean
+  readonly authority?: Authority
 }): Effect.Effect<Claim, unknown, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
       yield* lockHostname(write.hostname)
       if (yield* repeated(write.invocationKey)) return "repeat" as const
+      if ((yield* authorized(write.authority)) !== "held") return "stale" as const
       const [held] = yield* sql<{ readonly repoId: string; readonly state: string }>`
         SELECT repo_id AS "repoId", state FROM domains WHERE hostname = ${write.hostname} FOR UPDATE`
       if (held !== undefined && held.repoId !== write.repoId) return "taken" as const
@@ -108,6 +136,7 @@ export const claim = (write: {
       yield* sql`
         INSERT INTO domain_events (hostname, repo_id, action, actor_id, invocation_key, state)
         VALUES (${write.hostname}, ${write.repoId}, ${action}, ${write.actorId}, ${write.invocationKey}, 'pending')`
+      yield* ProtectedAuthority.requireAtCommit(write.authority)
       return action
     }))
   })
@@ -122,17 +151,24 @@ export interface Check {
   readonly certificate?: CertificateState
   readonly records?: ReadonlyArray<DnsRecord>
   readonly problem: string | null
+  /** Who the poll acts for: the row changes only while they still hold their session and a managing role. */
+  readonly authority?: Authority
 }
 
 /**
  * Writes what `check` found, if poll `check.pollId` still owns the row and it isn't being removed, and records a
  * `check` event when the state or the problem changed: `written`; `removed` when the row is gone or being removed;
- * `superseded` when another poll owns it.
+ * `superseded` when another poll owns it. `denied` or `unavailable`, and nothing written, when the poll's person no
+ * longer holds the authority: a domain is never promoted for someone demoted or signed out since the provider answered.
  */
-export const record = (check: Check): Effect.Effect<"written" | "removed" | "superseded", unknown, SqlClient.SqlClient> =>
+export const record = (
+  check: Check,
+): Effect.Effect<"written" | "removed" | "superseded" | "denied" | "unavailable", unknown, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
+      const held = yield* authorized(check.authority)
+      if (held !== "held") return held
       const [before] = yield* sql<{
         readonly repoId: string
         readonly pollId: string
@@ -155,6 +191,7 @@ export const record = (check: Check): Effect.Effect<"written" | "removed" | "sup
           INSERT INTO domain_events (hostname, repo_id, action, state, problem)
           VALUES (${check.hostname}, ${before.repoId}, 'check', ${check.state}, ${check.problem})`
       }
+      yield* ProtectedAuthority.requireAtCommit(check.authority)
       return "written" as const
     }))
   })
@@ -162,17 +199,20 @@ export const record = (check: Check): Effect.Effect<"written" | "removed" | "sup
 /**
  * Marks `hostname` of `repoId` as being removed and records `remove` once. Its provider id, `null` when it was never
  * registered; none when the repository holds no such domain. A retry under the same invocation key finds only the row
- * it marked, never one added again after it was erased.
+ * it marked, never one added again after it was erased. `stale`, on a first try or a retry, when the person who asked
+ * no longer holds the authority: the caller then leaves the provider alone.
  */
 export const withdraw = (write: {
   readonly hostname: string
   readonly repoId: string
   readonly actorId: string
   readonly invocationKey: string
-}): Effect.Effect<Option.Option<{ readonly providerId: string | null }>, unknown, SqlClient.SqlClient> =>
+  readonly authority?: Authority
+}): Effect.Effect<Option.Option<{ readonly providerId: string | null }> | "stale", unknown, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
+      if ((yield* authorized(write.authority)) !== "held") return "stale" as const
       const [receipt] = yield* sql<{ readonly id: string }>`
         SELECT id FROM domain_events WHERE invocation_key = ${write.invocationKey}`
       if (receipt !== undefined) {
@@ -193,14 +233,26 @@ export const withdraw = (write: {
       yield* sql`
         INSERT INTO domain_events (hostname, repo_id, action, actor_id, invocation_key, state)
         VALUES (${write.hostname}, ${write.repoId}, 'remove', ${write.actorId}, ${write.invocationKey}, 'removing')`
+      yield* ProtectedAuthority.requireAtCommit(write.authority)
       return Option.some(row)
     }))
   })
 
-/** Deletes `hostname`'s row once it is being removed. */
-export const erase = (hostname: string): Effect.Effect<void, unknown, SqlClient.SqlClient> =>
+/**
+ * Deletes `hostname`'s row once it is being removed: `erased`, or `stale` with the row kept when the person who asked
+ * lost the authority while the provider was forgetting it, or none was given. A later removal by someone who holds it finishes the job.
+ */
+export const erase = (
+  hostname: string,
+  authority?: Authority,
+): Effect.Effect<"erased" | "stale", unknown, SqlClient.SqlClient> =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    Effect.asVoid(sql`DELETE FROM domains WHERE hostname = ${hostname} AND state = 'removing'`))
+    sql.withTransaction(Effect.gen(function* () {
+      if ((yield* authorized(authority)) !== "held") return "stale" as const
+      yield* sql`DELETE FROM domains WHERE hostname = ${hostname} AND state = 'removing'`
+      yield* ProtectedAuthority.requireAtCommit(authority)
+      return "erased" as const
+    })))
 
 /** The repository that holds `hostname`, if any: what a route checks before it starts a claim. */
 export const holder = (hostname: string): Effect.Effect<Option.Option<string>, unknown, SqlClient.SqlClient> =>

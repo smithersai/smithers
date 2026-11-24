@@ -1,6 +1,8 @@
-// The desktop composition over a real data directory: an undecodable file is set aside, and a save is synced before and after its rename.
+// The desktop composition over a real data directory: an undecodable file is set aside, a save is synced before and
+// after its rename, and a conversation is a journal each event is appended to.
 import { expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
 import { BunHost } from "@smthrs/platform-bun"
 import { HttpClient, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ConversationRead, Factory } from "../../vibelang/src/core/Factory.vibe"
@@ -11,27 +13,65 @@ import { clientLayer, DesktopClient } from "../src/view/Client.vibe"
 import { Actions } from "../../vibelang/src/actions/Actions.vibe"
 import { handler } from "../src/host/Http.vibe"
 import { init, Message, update } from "../src/view/main.vibe"
-import { localModelsLayer } from "../src/host/LocalModel.vibe"
+import { LocalModels, localModelsLayer, ModelUnavailable } from "../src/host/LocalModel.vibe"
 
 const initial = { mock: true, folder: null, model: null, tools: [] }
 
+interface Observed {
+  /** Each file the host reads whole, by name. */
+  readonly reads?: Array<string>
+  /** The size of each write to a conversation file, in bytes. */
+  readonly written?: Array<number>
+  /** Each flow the engine is asked to execute, by tag. */
+  readonly executed?: Array<string>
+  /** Each address handed to the person's browser. */
+  readonly opened?: Array<string>
+  /** The model service, in place of the real one over an offline HTTP client. */
+  readonly models?: LocalModels.Shape
+}
+
 /** Builds registration over `directory`; the host filesystem reports each write, sync and rename to `operations`. */
-effect function start(directory: string, operations: Array<string>) {
+effect function start(directory: string, operations: Array<string>, observed: Observed = {}) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
   const label = (name: string) => name === directory ? "directory" : path.basename(name)
   const recorded: FileSystem.FileSystem = {
     ...fs,
-    writeFileString: (name, text, options) => { operations.push(`write ${label(name)}`); return fs.writeFileString(name, text, options) },
+    readFileString: (name, encoding) => { observed.reads?.push(label(name)); return fs.readFileString(name, encoding) },
+    writeFileString: (name, text, options) => {
+      operations.push(`write ${label(name)}`)
+      if (label(name).startsWith("conversation-")) observed.written?.push(new TextEncoder().encode(text).length)
+      return fs.writeFileString(name, text, options)
+    },
     rename: (from, to) => { operations.push(`rename ${label(from)} ${label(to)}`); return fs.rename(from, to) },
-    open: (name, options) => map(fs.open(name, options), (file) => Object.create(file, { sync: { value: Effect.andThen(Effect.sync(() => operations.push(`sync ${label(name)}`)), file.sync) } })),
+    open: (name, options) => map(fs.open(name, options), (file) => Object.create(file, {
+      sync: { value: Effect.andThen(Effect.sync(() => operations.push(`sync ${label(name)}`)), file.sync) },
+      writeAll: { value: (bytes: Uint8Array) => { if (label(name).startsWith("conversation-")) observed.written?.push(bytes.length); return file.writeAll(bytes) } },
+    })),
   }
   const offline = HttpClient.make(() => Effect.die("No model provider in this test"))
   const host = Layer.mergeAll(Layer.succeed(FileSystem.FileSystem, recorded), Layer.succeed(Path.Path, path), BunHost.BunCrypto.layer, Layer.succeed(HttpClient.HttpClient, offline))
-  const preferences = Layer.succeed(Preferences, { directory, chooseDirectory: () => succeed(null), openExternal: () => Effect.void })
-  const composed = registration.pipe(Layer.provide(Layer.mergeAll(folderLayer, localModelsLayer, preferences)), Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(host))
+  const preferences = Layer.succeed(Preferences, { directory, chooseDirectory: () => succeed(null), openExternal: (url: string) => Effect.sync(() => { observed.opened?.push(url) }) })
+  const engine = Layer.effect(FlowRuntime.FlowRuntime, effect {
+    const runtime = try FlowRuntime.FlowRuntime
+    const execute: typeof runtime.execute = (flow, options) => { observed.executed?.push(flow._tag); return runtime.execute(flow, options) }
+    return { ...runtime, execute }
+  }).pipe(Layer.provide(FlowEngine.layerMemory))
+  const models = observed.models === undefined ? localModelsLayer : Layer.succeed(LocalModels, observed.models)
+  const composed = registration.pipe(Layer.provide(Layer.mergeAll(folderLayer, models, preferences)), Layer.provideMerge(engine), Layer.provide(host))
   const context = try Layer.build(composed)
   return { desktop: Context.get(context, Desktop), factory: Context.get(context, Factory), reader: Context.get(context, ConversationRead) }
+}
+
+/** A journal's lines as events. */
+function eventsOf(journal: string): ReadonlyArray<{ readonly type: string; readonly seq: number; readonly clientId?: string }> {
+  // A line that is not JSON reads as an event no assertion expects.
+  return journal.split("\n").filter((line) => line !== "").map((line) => { try { return JSON.parse(line) } catch { return { type: "unparseable", seq: -1 } } })
+}
+/** Posts and waits until `count` replies have finished. */
+effect function ask(factory: Factory.Shape, conversation: string, clientId: string, count: number) {
+  try factory.post(conversation, clientId, "Ada", "hello")
+  try factory.events(conversation, 0).pipe(Stream.filter((event) => event.type === "ReplyFinished"), Stream.take(count), Stream.runDrain)
 }
 
 it.effect("sets an undecodable settings file aside, starts from the default and syncs the next save", () => (effect {
@@ -64,17 +104,21 @@ it.effect("sets an undecodable conversation aside; it still reads and takes the 
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
   const directory = try fs.makeTempDirectoryScoped()
-  const conversation = path.join(directory, "conversation-home.json")
-  try fs.writeFileString(conversation, "[{")
+  // Both an older whole-array file and a journal with an undecodable line.
+  try fs.writeFileString(path.join(directory, "conversation-home.json"), "[{")
+  try fs.writeFileString(path.join(directory, "conversation-other.jsonl"), "{\"type\":\"Unknown\"}\n")
   const { factory, reader } = try start(directory, [])
   const read = try reader.read("home", 0)
-  const aside = (try fs.readDirectory(directory)).filter((name) => name.startsWith("conversation-home.json.corrupt-"))
+  const other = try reader.read("other", 0)
+  const names = try fs.readDirectory(directory)
   try factory.post("home", "first", "Ada", "hello")
-  const log = try fs.readFileString(conversation)
+  const log = try fs.readFileString(path.join(directory, "conversation-home.jsonl"))
   try Effect.try(() => {
     expect(read.entries).toEqual([])
-    expect(aside).toHaveLength(1)
-    expect(JSON.parse(log)).toEqual(expect.arrayContaining([expect.objectContaining({ clientId: "first", text: "hello" })]))
+    expect(other.entries).toEqual([])
+    expect(names.filter((name) => name.startsWith("conversation-home.json.corrupt-"))).toHaveLength(1)
+    expect(names.filter((name) => name.startsWith("conversation-other.jsonl.corrupt-"))).toHaveLength(1)
+    expect(eventsOf(log)).toEqual(expect.arrayContaining([expect.objectContaining({ clientId: "first", text: "hello" })]))
   })
 }).pipe(Effect.provide(BunHost.layer), Effect.scoped))
 
@@ -304,5 +348,201 @@ it.effect("local project services refuse cloud authority without losing the View
     expect(failures.every((outcome) => outcome._tag === "Failure")).toBe(true)
     const refused = failures[0]!
     if (Exit.isFailure(refused)) expect(Cause.squash(refused.cause)).toMatchObject({ _tag: "Refused", refusal: "not-replying" })
+  })
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("appends each event to the conversation's journal without reading or rewriting what it holds", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const directory = try fs.makeTempDirectoryScoped()
+  const journal = path.join(directory, "conversation-home.jsonl")
+  const operations: Array<string> = []
+  const reads: Array<string> = []
+  const written: Array<number> = []
+  const { factory } = try start(directory, operations, { reads, written })
+  const texts: Array<string> = []
+  for (const [index, clientId] of ["one", "two", "three", "four"].entries()) {
+    try ask(factory, "home", clientId, index + 1)
+    texts.push(try fs.readFileString(journal))
+  }
+  try Effect.try(() => {
+    // Every write is an append: each later journal starts with the one before it, byte for byte.
+    for (const [index, text] of texts.slice(1).entries()) expect(text.startsWith(texts[index]!)).toBe(true)
+    // Disk work is linear in the history: every byte of the journal was written exactly once, one event a write.
+    expect(written.reduce((total, bytes) => total + bytes, 0)).toBe(new TextEncoder().encode(texts.at(-1)!).length)
+    expect(written).toHaveLength(eventsOf(texts.at(-1)!).length)
+    expect(eventsOf(texts.at(-1)!).map((event) => event.seq)).toEqual(eventsOf(texts.at(-1)!).map((_, index) => index + 1))
+    // The host never read the journal back, never replaced it and synced each line it appended.
+    expect(reads.filter((name) => name.startsWith("conversation-"))).toEqual([])
+    expect(operations.filter((operation) => operation.includes("conversation-") && !operation.startsWith("sync "))).toEqual([])
+    expect(operations.filter((operation) => operation === "sync conversation-home.jsonl")).toHaveLength(eventsOf(texts.at(-1)!).length)
+  })
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("reopens an older whole-array history as a journal with its order and its duplicate refusals", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const source = try fs.makeTempDirectoryScoped()
+  const directory = try fs.makeTempDirectoryScoped()
+  // A real history, stored as the app stored it before journals: one JSON array.
+  const recorded = try scoped(effect {
+    const first = try start(source, [])
+    try ask(first.factory, "home", "one", 1)
+    try ask(first.factory, "home", "two", 2)
+    return eventsOf(try fs.readFileString(path.join(source, "conversation-home.jsonl")))
+  })
+  const legacy = path.join(directory, "conversation-home.json")
+  const journal = path.join(directory, "conversation-home.jsonl")
+  try fs.writeFileString(legacy, JSON.stringify(recorded))
+  const reopened = try scoped(effect {
+    const { factory, reader } = try start(directory, [])
+    const read = try reader.read("home", 0)
+    const migrated = eventsOf(try fs.readFileString(journal))
+    const array = try fs.exists(legacy)
+    const repeated = try exit(factory.post("home", "one", "Ada", "hello"))
+    try ask(factory, "home", "three", 3)
+    return { read, migrated, array, repeated }
+  })
+  // A migration that stopped after publishing the journal, before removing the array: the journal is the history.
+  try fs.writeFileString(legacy, JSON.stringify(recorded.slice(0, 1)))
+  const again = try start(directory, [])
+  const resumed = try again.reader.read("home", 0)
+  const after = eventsOf(try fs.readFileString(journal))
+  const leftover = try fs.exists(legacy)
+  try Effect.try(() => {
+    expect(reopened.migrated).toEqual(recorded)
+    expect(reopened.array).toBe(false)
+    expect(reopened.read.seq).toBe(recorded.at(-1)!.seq)
+    expect(reopened.read.entries.filter((entry) => entry.author === "person")).toHaveLength(2)
+    expect(Exit.isFailure(reopened.repeated)).toBe(true)
+    if (Exit.isFailure(reopened.repeated)) expect(Cause.squash(reopened.repeated.cause)).toMatchObject({ _tag: "Refused", refusal: "duplicate" })
+    expect(after.slice(0, recorded.length)).toEqual(recorded)
+    expect(after.map((event) => event.seq)).toEqual(after.map((_, index) => index + 1))
+    expect(after.filter((event) => event.type === "Posted").map((event) => event.clientId)).toEqual(["one", "two", "three"])
+    expect(resumed.seq).toBe(after.at(-1)!.seq)
+    expect(leftover).toBe(false)
+  })
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("drops a line a crash cut short, and a write never sets the journal aside", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const directory = try fs.makeTempDirectoryScoped()
+  const journal = path.join(directory, "conversation-home.jsonl")
+  const whole = try scoped(effect {
+    const { factory } = try start(directory, [])
+    try ask(factory, "home", "one", 1)
+    return try fs.readFileString(journal)
+  })
+  // The process stopped inside an append: the last line has no end.
+  try fs.writeFileString(journal, whole + "{\"type\":\"Pos")
+  const { factory, reader } = try start(directory, [])
+  const read = try reader.read("home", 0)
+  const repaired = try fs.readFileString(journal)
+  // Another program damages the file under the running app. The next write appends; it reads and renames nothing.
+  try fs.writeFileString(journal, repaired + "{\"type\":\"Unknown\"}\n")
+  try ask(factory, "home", "two", 2)
+  const written = try fs.readFileString(journal)
+  const aside = (try fs.readDirectory(directory)).filter((name) => name.includes(".corrupt-"))
+  try Effect.try(() => {
+    expect(read.seq).toBe(eventsOf(whole).at(-1)!.seq)
+    expect(repaired).toBe(whole)
+    expect(aside).toEqual([])
+    expect(written.startsWith(repaired + "{\"type\":\"Unknown\"}\n")).toBe(true)
+    expect(eventsOf(written).filter((event) => event.type === "Posted").map((event) => event.clientId)).toEqual(["one", "two"])
+  })
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("keeps at most 32 idle conversations live and never drops one that is being followed", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const directory = try fs.makeTempDirectoryScoped()
+  const before = try scoped(effect {
+    const { factory, reader } = try start(directory, [])
+    try ask(factory, "kept", "one", 1)
+    return try reader.read("kept", 0)
+  })
+  const reads: Array<string> = []
+  const journalReads = () => reads.filter((name) => name === "conversation-kept.jsonl").length
+  const { factory, reader } = try start(directory, [], { reads })
+  try reader.read("kept", 0)
+  try reader.read("kept", 0)
+  const cached = journalReads()
+  // 32 other conversations make 33 live rooms: the least recently used idle one leaves.
+  for (let index = 0; index < 32; index++) try reader.read(`idle-${index}`, 0)
+  const reloaded = try reader.read("kept", 0)
+  const evicted = journalReads()
+  // A follower holds its room however many others open.
+  const following = try Deferred.make<void>()
+  const follower = fork factory.events("kept", 0).pipe(Stream.tap(() => Deferred.succeed(following, undefined)), Stream.runDrain)
+  try Deferred.await(following)
+  for (let index = 0; index < 64; index++) try reader.read(`more-${index}`, 0)
+  try reader.read("kept", 0)
+  const held = journalReads()
+  try Fiber.interrupt(follower)
+  try Effect.try(() => {
+    expect(cached).toBe(1)
+    expect(evicted).toBe(2)
+    expect(reloaded).toEqual(before)
+    expect(held).toBe(2)
+  })
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+for (const fault of ["tool", "provider"] as const) {
+  it.effect(`a failed reply disables the selected model only when the model failed (${fault})`, () => (effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const directory = try fs.makeTempDirectoryScoped()
+    const selected = { endpoint: "http://localhost:11434", model: "local", state: "ready" as const, selection: "choice" }
+    try fs.writeFileString(path.join(directory, "settings.json"), JSON.stringify({ snapshot: { ...initial, mock: false, model: selected }, edits: [] }))
+    // The reply stops before any model call: once as a defect of the host's own code, once as the provider refusing.
+    const models: LocalModels.Shape = {
+      models: () => succeed(["local"]),
+      select: () => succeed(selected),
+      restore: (info) => succeed(info),
+      resolve: () => fault === "tool" ? Effect.die("a tool defect") : fail(new ModelUnavailable({ code: "unavailable" })),
+    }
+    const { desktop, factory } = try start(directory, [], { models })
+    try factory.post("home", "one", "Ada", "hello")
+    const failed = Option.getOrThrow(try factory.events("home", 0).pipe(Stream.filter((event) => event.type === "ReplyFailed"), Stream.runHead))
+    const state = try desktop.snapshot()
+    const settings = try fs.readFileString(path.join(directory, "settings.json"))
+    const saved = try Effect.try(() => JSON.parse(settings) as { readonly snapshot: { readonly model: { readonly state: string } } })
+    try Effect.try(() => {
+      expect(failed).toMatchObject({ type: "ReplyFailed", reason: fault === "tool" ? "Reply failed. Send again." : "Model unavailable. Choose a model." })
+      expect(state.model?.state).toBe(fault === "tool" ? "ready" : "failed")
+      expect(saved.snapshot.model.state).toBe(fault === "tool" ? "ready" : "failed")
+    })
+  }).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+}
+
+it.effect("journals no execution for a refused link or a model discovery", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const directory = try fs.makeTempDirectoryScoped()
+  const executed: Array<string> = []
+  const opened: Array<string> = []
+  let discoveries = 0
+  const models: LocalModels.Shape = {
+    models: (endpoint) => endpoint === "http://localhost:11434" ? Effect.sync(() => { discoveries += 1; return ["local"] }) : fail(new ModelUnavailable({ code: "endpoint" })),
+    select: () => fail(new ModelUnavailable({ code: "model" })),
+    restore: (info) => succeed(info),
+    resolve: () => fail(new ModelUnavailable({ code: "model" })),
+  }
+  const { desktop } = try start(directory, [], { executed, opened, models })
+  executed.length = 0
+  const refused = try all(["javascript:alert(1)", "http://example.com/", "file:///etc/passwd", "https://user:secret@example.com/", "not a link", ""].map((url) => exit(desktop.external(url))))
+  const listed: Array<ReadonlyArray<string>> = []
+  for (let index = 0; index < 20; index++) listed.push(try desktop.models("http://localhost:11434"))
+  const unreachable = try exit(desktop.models("https://elsewhere.invalid"))
+  const quiet = [...executed]
+  try desktop.external("https://example.com/a b")
+  try Effect.try(() => {
+    expect(refused.every((outcome) => outcome._tag === "Failure")).toBe(true)
+    expect(listed.every((names) => names.length === 1 && names[0] === "local")).toBe(true)
+    expect(discoveries).toBe(20)
+    expect(Exit.isFailure(unreachable)).toBe(true)
+    if (Exit.isFailure(unreachable)) expect(Cause.squash(unreachable.cause)).toMatchObject({ _tag: "Unavailable", reason: "Model unavailable" })
+    expect(quiet).toEqual([])
+    expect(executed).toEqual(["vibelang/desktop/External"])
+    expect(opened).toEqual(["https://example.com/a%20b"])
   })
 }).pipe(Effect.provide(BunHost.layer), Effect.scoped))

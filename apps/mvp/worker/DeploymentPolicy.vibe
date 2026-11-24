@@ -1,38 +1,31 @@
 /**
- * Deployment-wide and per-repository authorization policy.
+ * Deployment-wide authorization policy.
  *
- * Only configured deployment admins (default: `roninjin10`) hold deployment
- * admin authority (global fleet, host nodes, provider accounts, deployment
- * settings). Every other signed-in person is a contributor except on projects
- * they own (`repository.owner === login`).
+ * Deployment admins hold deployment authority: the global fleet, host nodes and provider accounts. They are the
+ * GitHub logins `DEPLOYMENT_ADMIN_LOGINS` names. An unset, blank or unreadable value names nobody, so a fresh
+ * installation grants deployment authority to no account.
+ *
+ * Deployment authority is separate from a repository role. A person's role on a repository is GitHub's own answer for
+ * that repository, never more and never less: being a deployment admin grants no repository role, and GitHub's admins
+ * and maintainers keep theirs.
  */
 
-import type { Role } from "../src/features/auth/contract.ts"
 import type { Actor } from "./Actor.ts"
 
-export const DEFAULT_DEPLOYMENT_ADMIN = "roninjin10"
-export const DEFAULT_ADMINS: ReadonlySet<string> = new Set([DEFAULT_DEPLOYMENT_ADMIN])
-
-export type RepoRef = string | { readonly owner: string; readonly name?: string }
-
-export function ownerOf(repository: RepoRef): string {
-  if (typeof repository === "string") {
-    const clean = repository.startsWith("github/") ? repository.slice("github/".length) : repository
-    return (clean.split("/")[0] ?? "").trim().toLowerCase()
-  }
-  return repository.owner.trim().toLowerCase()
-}
+/** Nobody: the deployment admins of an installation that names none. */
+export const DEFAULT_ADMINS: ReadonlySet<string> = new Set()
 
 export function parseAdminLogins(raw: string): ReadonlySet<string> {
-  const entries = raw
-    .split(",")
-    .map((entry) => entry.trim().toLowerCase())
-    .filter((entry) => entry.length > 0)
-  return entries.length === 0 ? DEFAULT_ADMINS : new Set(entries)
+  return new Set(
+    raw
+      .split(",")
+      .map((entry) => entry.trim().toLowerCase())
+      .filter((entry) => entry.length > 0)
+  )
 }
 
 export effect function configuredAdmins() {
-  const raw = try Config.withDefault(Config.String("DEPLOYMENT_ADMIN_LOGINS"), DEFAULT_DEPLOYMENT_ADMIN)
+  const raw = try Config.withDefault(Config.String("DEPLOYMENT_ADMIN_LOGINS"), "")
   return parseAdminLogins(raw)
 }
 
@@ -43,27 +36,15 @@ export function isDeploymentAdmin(
   return login !== undefined && login.trim().length > 0 && admins.has(login.trim().toLowerCase())
 }
 
-export function isProjectOwner(
-  login: string | undefined,
-  repository: RepoRef
-): boolean {
-  return (
-    login !== undefined &&
-    login.trim().length > 0 &&
-    ownerOf(repository) === login.trim().toLowerCase()
-  )
-}
-
-export function effectiveRole(
-  login: string | undefined,
-  repository: RepoRef,
-  rawRole: Role | null,
+/**
+ * Whether `actor` is a deployment admin acting in person. A delegated credential (a run, flow, sandbox or agent acting
+ * for the person, `act` set) never carries deployment authority, whatever its person holds.
+ */
+export function holdsDeploymentAuthority(
+  actor: Actor,
   admins: ReadonlySet<string> = DEFAULT_ADMINS
-): Role | null {
-  if (isDeploymentAdmin(login, admins)) return "admin"
-  if (isProjectOwner(login, repository) && rawRole === "admin") return "admin"
-  if (rawRole === "admin" || rawRole === "maintainer") return "member"
-  return rawRole
+): boolean {
+  return actor.act === undefined && isDeploymentAdmin(actor.login, admins)
 }
 
 export schema error DeploymentAdminRequired {
@@ -75,11 +56,11 @@ export effect function requireDeploymentAdmin(
   actor: Actor,
   admins: ReadonlySet<string> = DEFAULT_ADMINS
 ): string!DeploymentAdminRequired {
-  if (!isDeploymentAdmin(actor.login, admins)) {
+  if (!holdsDeploymentAuthority(actor, admins) || actor.login === undefined) {
     throw new DeploymentAdminRequired({
       code: "forbidden",
-      message: "Deployment admin access is restricted to the deployment owner.",
+      message: "Deployment admin access is restricted to a deployment admin signed in as a person.",
     })
   }
-  return actor.login!
+  return actor.login
 }

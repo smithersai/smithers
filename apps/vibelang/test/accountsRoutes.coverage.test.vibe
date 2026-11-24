@@ -4,7 +4,7 @@
 // smithers.sh connection forgotten on a wiki read, a chat draft the engine can't record, and a broker the site can't
 // trust. GitHub is the in-memory fuzz GitHub behind smithers.sh's real per-person connection host; nothing intercepts.
 import { describe, expect, it } from "@effect/vitest"
-import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import { pages } from "../src/core/wiki.vibe"
 import * as Accounts from "../worker/Accounts.vibe"
@@ -179,5 +179,111 @@ describe("the principal behind a wiki request", () => {
     expect(try w.accounts.draftWiki("1", PAGE, "ask", "k1")).toBe("unavailable")
     w.store.fail(/^\s*CREATE TABLE IF NOT EXISTS "flows_migrations"/)
     expect(try w.accounts.draftWiki("1", PAGE, "ask", "k2")).toBe("unavailable")
+  }))
+})
+
+// Review R1 D4 (Neon-D4-002, Fable-D4-001, 002, 017, 036): what a device session may not do, whose token signs in,
+// what the accounts lock no longer waits on, and what the object no longer keeps.
+describe("a person's agent and the roles ledger", () => {
+  it.live("a device session grants and revokes nothing, while the person's browser session does", () => scoped(effect {
+    const w = try world()
+    try w.signIn(7)
+    const agent = try w.device(1)
+    const granted = try w.call("POST", "/api/roles", agent, { id: "7", role: "maintainer" })
+    expect([granted.status, try body(granted)]).toEqual([403, { refusal: "forbidden" }])
+    // Its own role too: an agent never demotes the person it acts for.
+    const demoted = try w.call("POST", "/api/roles", agent, { id: "1", role: "new" })
+    expect([demoted.status, try body(demoted)]).toEqual([403, { refusal: "forbidden" }])
+    // Refused before the body is read: a malformed body is still a 403, never a 400.
+    const malformed = try w.call("POST", "/api/roles", agent, { nonsense: true })
+    expect(malformed.status).toBe(403)
+    expect([try w.accounts.role("7"), try w.accounts.role("1")]).toEqual(["new", "maintainer"])
+    const person = try w.call("POST", "/api/roles", try w.signIn(1), { id: "7", role: "maintainer" })
+    expect([person.status, try w.accounts.role("7")]).toEqual([200, "maintainer"])
+  }))
+})
+
+describe("a device sign-in's token", () => {
+  it.live("signs nobody in when GitHub knows the person but this App did not issue the token", () => scoped(effect {
+    const revoked: Array<string> = []
+    const known = github([{ id: 1, login: "will" }, { id: 7, login: "ada" }])
+    const w = try world({ issuedHere: () => succeed(false), github: { ...known, revoke: (token) => Effect.sync(() => { revoked.push(Redacted.value(token)) }) } })
+    const foreign = try w.call("POST", "/api/auth/device", "", { token: "token-7" })
+    expect([foreign.status, try body(foreign)]).toEqual([401, { error: "sign-in" }])
+    expect([...(try promise(() => w.store.storage.list({ prefix: "session/" }))).keys()]).toEqual([])
+    // Another app's token is never revoked through this App.
+    expect(revoked).toEqual([])
+    const own = try world()
+    const issued = try own.call("POST", "/api/auth/device", "", { token: "token-7" })
+    expect(issued.status).toBe(200)
+    expect((try promise(() => own.store.storage.list({ prefix: "session/" }))).size).toBe(1)
+  }))
+
+  it.live("the App check asks GitHub as the App and fails closed", () => effect {
+    const asked: Array<{ readonly url: string; readonly authorization: string; readonly body: string }> = []
+    const answering = (status: number, answer: unknown) => HttpClient.make((request) => effect {
+      asked.push({ url: request.url, authorization: request.headers["authorization"] ?? "", body: request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "" })
+      return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(answer, { status })))
+    })
+    const options = { apiBaseUrl: "https://api.github.test", clientId: "Iv1.fixture", clientSecret: Redacted.make("app-secret") }
+    const token = Redacted.make("ghu_person")
+    const check = (http: HttpClient.HttpClient) => Accounts.appTokenCheck(http, options)(token)
+    expect(try check(answering(200, { app: { client_id: "Iv1.fixture" } }))).toBe(true)
+    expect(asked).toEqual([{ url: "https://api.github.test/applications/Iv1.fixture/token", authorization: "Basic " + btoa("Iv1.fixture:app-secret"), body: JSON.stringify({ access_token: "ghu_person" }) }])
+    // GitHub answers 404 for a personal access token or another app's token.
+    expect(try check(answering(404, { message: "Not Found" }))).toBe(false)
+    expect(try check(answering(200, { app: { client_id: "Iv1.other" } }))).toBe(false)
+    expect(try check(answering(200, {}))).toBe(false)
+    expect(try check(answering(503, {}))).toBe(false)
+    const down = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "down" }) })))
+    expect(try check(down)).toBe(false)
+  })
+})
+
+describe("the accounts lock", () => {
+  it.live("a session read answers while a device sign-in waits on GitHub", () => scoped(effect {
+    const asked = try Deferred.make<void>()
+    const release = try Deferred.make<void>()
+    const w = try world({ issuedHere: () => effect { try Deferred.succeed(asked, undefined); try Deferred.await(release); return true } })
+    const ada = try w.signIn(7)
+    const signing = try Effect.forkScoped(w.call("POST", "/api/auth/device", "", { token: "token-1" }))
+    try Deferred.await(asked)
+    // GitHub has not answered: a read and another person's write both finish.
+    const read = try w.call("GET", "/api/auth/session", ada).pipe(Effect.timeout("2 seconds"))
+    expect([read.status, try body(read)]).toMatchObject([200, { id: "7" }])
+    const signedOut = try w.call("POST", "/api/auth/sign-out", ada).pipe(Effect.timeout("2 seconds"))
+    expect(signedOut.status).toBe(204)
+    try Deferred.succeed(release, undefined)
+    expect((try Fiber.join(signing)).status).toBe(200)
+  }))
+})
+
+describe("what the accounts object keeps", () => {
+  it.live("the next sign-in start deletes an expired session and keeps a live one", () => scoped(effect {
+    const w = try world()
+    const ada = try w.signIn(7)
+    try promise(() => w.store.storage.put("session/expired", { id: "9", login: "old", expires: 1 }))
+    try promise(() => w.store.storage.put("session/malformed", { id: "9", login: "old" }))
+    try w.call("GET", "/api/auth/sign-in")
+    const kept = [...(try promise(() => w.store.storage.list({ prefix: "session/" }))).keys()]
+    expect(kept).toHaveLength(1)
+    expect((try body(try w.call("GET", "/api/auth/session", ada)))).toMatchObject({ id: "7" })
+  }))
+
+  it.live("the members route answers one page and names the next", () => scoped(effect {
+    const w = try world()
+    const will = try w.signIn(1)
+    for (let id = 1000; id < 1000 + Accounts.MEMBERS_PAGE + 5; id++) try promise(() => w.store.storage.put("person/" + id, { id: String(id), login: "p" + id }))
+    const first = try w.call("GET", "/api/roles", will)
+    const firstPage = (try body(first)) as ReadonlyArray<{ readonly id: string }>
+    const next = first.headers.get("x-vibelang-next")
+    expect([first.status, firstPage.length, next]).toEqual([200, Accounts.MEMBERS_PAGE, firstPage[firstPage.length - 1]!.id])
+    const second = try w.call("GET", "/api/roles?after=" + next, will)
+    const secondPage = (try body(second)) as ReadonlyArray<{ readonly id: string }>
+    // Will's own row and the 105 seeded: nobody twice, nobody missed.
+    expect([secondPage.length, second.headers.get("x-vibelang-next")]).toEqual([6, null])
+    expect(new Set([...firstPage, ...secondPage].map((member) => member.id)).size).toBe(Accounts.MEMBERS_PAGE + 6)
+    const malformed = try w.call("GET", "/api/roles?after=../x", will)
+    expect(malformed.status).toBe(400)
   }))
 })

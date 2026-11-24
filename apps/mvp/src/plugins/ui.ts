@@ -97,16 +97,25 @@ export class PluginsUi extends Context.Service<PluginsUi, PluginsView>()("@smthr
           core: (name, params) => readable(plugins, name, params ?? null),
           tab: (plugin) => {
             // expected: a tab that can't be built rejects to its Boundary, which records it once (`failed`)
-            const built = tabs.get(plugin) ?? runPromise(Effect.catchDefect(buildTab(plugin), Effect.fail))
+            const known = tabs.get(plugin)
+            if (known !== undefined) return known
+            const built = runPromise(Effect.catchDefect(buildTab(plugin), Effect.fail))
             tabs.set(plugin, built)
+            // A failed build is never kept: a chunk that didn't load offline loads on the next ask (Fable-D4-049).
+            // recorded: plugin.failed, by the Boundary this same promise rejects to (`failed`)
+            built.catch(() => { if (tabs.get(plugin) === built) tabs.delete(plugin) })
             return built
           },
           // Cached, as the tab is: React's `use` reads one promise per chunk, never a new one per render.
           components: (plugin) => {
-            const loaded = chunks.get(plugin) ??
-              plugins.built.get(plugin)?.components() ??
+            const known = chunks.get(plugin)
+            if (known !== undefined) return known
+            const loaded = plugins.built.get(plugin)?.components() ??
               Promise.reject(new Error(`no active plugin ${plugin}`))
             chunks.set(plugin, loaded)
+            // As the tab: a rejected chunk is dropped, so its Boundary's retry asks the network again.
+            // recorded: plugin.failed, by the Boundary this same promise rejects to (`failed`)
+            loaded.catch(() => { if (chunks.get(plugin) === loaded) chunks.delete(plugin) })
             return loaded
           },
           allows: (minimum, viewer) => rankOf(viewer) >= RANKS[minimum],

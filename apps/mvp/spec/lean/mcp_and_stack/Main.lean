@@ -40,6 +40,7 @@ def actorOf (json : Json) : Decode Actor := do
 
 def principalOf (json : Json) : Decode Principal := do
   pure {
+    read := ← (← field json "read").getBool?
     write := ← (← field json "write").getBool?
     actOk := ← (← field json "actOk").getBool?
     pinnedElsewhere := ← (← field json "pinnedElsewhere").getBool? }
@@ -229,7 +230,8 @@ def answer (op : String) (request : Json) : Decode Json := do
       ofOption ofRole spec.minimum]) catalog)
   | "listTools" =>
     pure (ofList ofText (listTools (← nullable principalOf (← field request "principal"))
-      (← (← field request "inRepo").getBool?) (← nullable roleOf (← field request "role"))))
+      (← (← field request "inRepo").getBool?) (← nullable roleOf (← field request "role"))
+      (← (← field request "isPublic").getBool?)))
   | "callOutcome" =>
     pure (ofOutcome (callOutcome (← text (← field request "name"))
       (← nullable principalOf (← field request "principal")) (← nullable roleOf (← field request "role"))

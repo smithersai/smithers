@@ -104,10 +104,11 @@ export const mirrorDraft = (draft: string, generation?: string | null) =>
  */
 const keepDraft = (draft: string, awaitPersistence = false) =>
   Effect.gen(function* () {
-    const { drafts, scope } = yield* ChatStore
+    const { drafts, draftWrites, draftRevision, scope } = yield* ChatStore
     const key = (yield* placeNow) ?? HOME_DRAFT
-    const kept = yield* drafts.get(key)
+    const revision = yield* Ref.get(draftRevision)
     const generation = (yield* composerNow).generation
+    const kept = yield* drafts.get(key)
     const write = Option.isSome(kept)
       ? kept.value.text === draft && kept.value.generation === generation
         ? undefined
@@ -115,11 +116,21 @@ const keepDraft = (draft: string, awaitPersistence = false) =>
       : draft === ""
       ? undefined
       : yield* drafts.insert({ id: key, text: draft, ...(generation === undefined ? {} : { generation }) })
-    // Nothing to write leaves the composer as saved as it was.
-    if (write === undefined) return
-    yield* changeComposer((composer) => { composer.saved = false })
-    const persisted = persistDraft(write, key).pipe(Effect.andThen(changeComposer((composer) => {
-      if (composer.draft === draft) composer.saved = true
+    if (write !== undefined) {
+      const persisted = yield* Effect.cached(persistDraft(write, key))
+      draftWrites.set(key, { generation, text: draft, persisted })
+    }
+    const receipt = draftWrites.get(key)
+    yield* changeComposer((composer) => { composer.saved = receipt === undefined })
+    if (receipt === undefined || receipt.text !== draft || receipt.generation !== generation) return
+    const persisted = receipt.persisted.pipe(Effect.andThen(Effect.gen(function* () {
+      const latest = draftWrites.get(key)
+      if (latest !== undefined && latest !== receipt) return
+      draftWrites.delete(key)
+      if (((yield* placeNow) ?? HOME_DRAFT) !== key || (yield* Ref.get(draftRevision)) !== revision) return
+      yield* changeComposer((composer) => {
+        if (composer.draft === draft && composer.generation === generation) composer.saved = true
+      })
     })))
     // Admission cleanup awaits this actual transaction; ordinary typing continues to save in the background.
     if (awaitPersistence) yield* persisted
@@ -141,6 +152,7 @@ export const restoreDraft = Effect.gen(function* () {
   const draft = yield* keptDraft
   if (draft.text === "" || (yield* composerNow).draft !== "") return
   yield* mirrorDraft(draft.text, draft.generation ?? null)
+  yield* keepDraft(draft.text)
   yield* Effect.logInfo("chat draft restored").pipe(Effect.annotateLogs({ "draft.length": draft.text.length }))
 }).pipe(Effect.annotateLogs({ feature: "chat" }))
 
@@ -237,6 +249,7 @@ export const show = (conversationId: string | null, shared = false) =>
     // and brings its own text. The draft it had stays with its own conversation.
     const draft = yield* keptDraft
     yield* mirrorDraft(draft.text, draft.generation ?? null)
+    yield* keepDraft(draft.text)
     yield* Effect.logInfo("chat conversation shown").pipe(
       Effect.annotateLogs({ conversation: conversationId === null ? "home" : "branch" }),
     )
@@ -265,7 +278,11 @@ const askAdmitted = (question: string, from: FromView | undefined, conversationI
     const questionId = crypto.randomUUID()
     const answerId = crypto.randomUUID()
     const askedAt = yield* Clock.currentTimeMillis
-    const queuedAt = yield* Ref.updateAndGet(store.lastQueuedAt, (last) => Math.max(askedAt, last + 1))
+    // Include rows restored or admitted by another tab. The outbox persists its own admission sequence for delivery.
+    yield* store.unsent.restored.pipe(Effect.orDie)
+    const latestQueued = (rows: ReadonlyArray<{ readonly queuedAt: number }>) => rows.reduce((max, row) => Math.max(max, row.queuedAt), 0)
+    const restored = Math.max(latestQueued(yield* store.asking.toArray), latestQueued(yield* store.unsent.toArray))
+    const queuedAt = yield* Ref.updateAndGet(store.lastQueuedAt, (last) => Math.max(askedAt, restored + 1, last + 1))
     const queued = Option.getOrThrow(yield* store.connection.get(CONNECTION)).status !== "up"
     yield* admit({
       id: questionId,

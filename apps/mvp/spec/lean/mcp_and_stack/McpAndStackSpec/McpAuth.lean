@@ -46,6 +46,8 @@ def catalog : List ToolSpec := [
 
 /-- The token a call came with: its scope, whether its actor is the token's own agent, and where it is pinned. -/
 structure Principal where
+  /-- It carries `mcp:read`. -/
+  read : Bool
   /-- It carries `mcp:write`. -/
   write : Bool
   /-- Its actor's `act` is `{ kind: "agent", id: "mcp:<tokenId>" }`. -/
@@ -66,38 +68,58 @@ inductive Outcome where
 /-- Whether `role` reaches `minimum`; no minimum admits everyone. -/
 def meets (role minimum : Option Role) : Bool := decide (rankOf minimum ≤ rankOf role)
 
-/-- `visible`: a write is listed for a token with `mcp:write`; every tool for its least role and above. -/
-def visible (spec : ToolSpec) (role : Option Role) (principal : Option Principal) : Bool :=
+/-- Public ungated data needs no grant; every other read requires the person's explicit `mcp:read` permission. -/
+def readPermitted (principal : Option Principal) (isPublic : Bool) (minimum : Option Role) : Bool :=
+  (isPublic && decide (minimum = none)) ||
+    match principal with
+    | none => false
+    | some token => token.read
+
+/-- `visible`: a read needs read permission and repository access; a write needs `mcp:write`; every tool needs its least role. -/
+def visible (spec : ToolSpec) (role : Option Role) (principal : Option Principal) (isPublic : Bool) : Bool :=
   (match spec.access, principal with
     | .write, none => false
     | .write, some token => token.write
-    | .read, _ => true) && meets role spec.minimum
+    | .read, _ => !(!isPublic && decide (role = none)) && readPermitted principal isPublic spec.minimum) &&
+    meets role spec.minimum
 
 /-- The catalog's tool of that name. -/
 def toolOf (name : Text) : Option ToolSpec := catalog.find? fun spec => decide (spec.name = name)
 
 /--
-The role a listing reads: Admin when no repository is named or the token is pinned elsewhere (each call checks the
-live role), else the live role, none for a visitor.
+The role a listing reads: Admin when no repository is named (each call checks the live role), none when a visitor or
+a token is pinned elsewhere on the named repository, else the live role.
 -/
 def listingRole (principal : Option Principal) (inRepo : Bool) (role : Option Role) : Option Role :=
   if !inRepo then some .admin
   else match principal with
     | none => none
-    | some token => if token.pinnedElsewhere then some .admin else role
+    | some token => if token.pinnedElsewhere then none else role
+
+/-- The visibility a listing sees: public when no repository is named, false when a token is pinned elsewhere, else `isPublic`. -/
+def listingPublic (principal : Option Principal) (inRepo : Bool) (isPublic : Bool) : Bool :=
+  if !inRepo then true
+  else match principal with
+    | none => isPublic
+    | some token => if token.pinnedElsewhere then false else isPublic
 
 /-- `listTools`: the names listed, in catalog order. -/
-def listTools (principal : Option Principal) (inRepo : Bool) (role : Option Role) : List Text :=
+def listTools (principal : Option Principal) (inRepo : Bool) (role : Option Role) (isPublic : Bool) : List Text :=
   (catalog.filter fun spec =>
-    !isBlockedName spec.name && visible spec (listingRole principal inRepo role) principal).map (·.name)
+    !isBlockedName spec.name &&
+      visible spec (listingRole principal inRepo role) principal (listingPublic principal inRepo isPublic)).map (·.name)
 
-/-- `readAccess` over `resolveRepoAccess`: the token's repository, a role on a private one, the least role. -/
+/-- `readAccess` over `resolveRepoAccess`: the token's repository, `mcp:read` consent, a role on a private one, the least role. -/
 def readOutcome (principal : Option Principal) (role : Option Role) (isPublic : Bool) (minimum : Option Role) :
     Outcome :=
   match principal with
-  | none => if !isPublic then .forbidden else if meets none minimum then .ok else .forbidden
+  | none =>
+    if !readPermitted none isPublic minimum then .forbidden
+    else if !isPublic then .forbidden
+    else if meets none minimum then .ok else .forbidden
   | some token =>
     if token.pinnedElsewhere then .forbidden
+    else if !readPermitted (some token) isPublic minimum then .forbidden
     else if !isPublic && decide (role = none) then .forbidden
     else if meets role minimum then .ok
     else .forbidden

@@ -8,7 +8,8 @@ import * as ActionsHttp from "./ActionsHttp.vibe"
 // the event stream and the tour (0014), each answered by the conversation's Durable Object. It logs, traces and counts every request
 // by route and status, never a body: posts are people's words.
 import * as Sse from "effect/encoding/Sse"
-import { HttpIncomingMessage, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { boundedText } from "./BoundedBody.vibe"
 import type { Event } from "../src/core/conversation.vibe"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
 import { HEALTH_PATH, MAX_NAME, MAX_POST_BYTES, PostBody, WikiBody, TourControlBody } from "../src/core/wire.vibe"
@@ -53,6 +54,12 @@ export const requests = Metric.counter("vibelang_api_requests", {
   incremental: true,
 })
 
+/**
+ * What `Conversations.post` answers for a post over its sender's allowance: the route answers 429, never the
+ * sequencer's 409, so a client reads it as the service refusing, not as a conversation's own refusal.
+ */
+export const RATE_LIMITED = "rate-limited"
+
 const encoder = new TextEncoder()
 const decodePost = Schema.decodeUnknownEffect(Schema.fromJsonString(PostBody))
 
@@ -85,7 +92,8 @@ effect function answer(route: Route, url: URL, conversations: Conversations) {
   if (route.kind === "wiki") {
     const length = Number(request.headers["content-length"] ?? "0")
     if (!validBodyLength(length, 1024)) return json({ error: "body size" }, 413)
-    const text = request.text catch () => ""
+    const text = try boundedText(request, 1024)
+    if (text === undefined) return json({ error: "body size" }, 413)
     const body = Schema.decodeUnknownEffect(Schema.fromJsonString(WikiBody))(text) catch () => undefined
     if (body === undefined) return json({ error: "body" }, 400)
     const refusal = try conversations.openWiki(route.conversation, body.page)
@@ -94,17 +102,21 @@ effect function answer(route: Route, url: URL, conversations: Conversations) {
   if (route.kind === "post") {
     const length = Number(request.headers["content-length"] ?? "0")
     if (!validBodyLength(length, MAX_POST_BYTES)) return json({ error: "body size" }, 413)
-    const text = request.text catch () => ""
+    // The declared length admits the read; the read itself stops at the same limit (review R1 D4).
+    const text = try boundedText(request, MAX_POST_BYTES)
+    if (text === undefined) return json({ error: "body size" }, 413)
     const body = decodePost(text) catch () => undefined
     if (body === undefined || !withinBodyLimit(body.name.length, MAX_NAME)) return json({ error: "body" }, 400)
     const refusal = try conversations.post(route.conversation, body)
+    if (refusal === RATE_LIMITED) return json({ error: "rate limit" }, 429)
     return json(refusal === null ? {} : { refusal }, writeStatus(refusal !== null))
   }
   if (route.kind === "tour-control") {
     // Refused by its declared length before any byte is read, as every other write route is.
     const length = Number(request.headers["content-length"] ?? "0")
     if (!validBodyLength(length, bodyLimit("tour-control"))) return json({ error: "body size" }, 413)
-    const text = request.text catch () => ""
+    const text = try boundedText(request, bodyLimit("tour-control"))
+    if (text === undefined) return json({ error: "body size" }, 413)
     const body = Schema.decodeUnknownEffect(Schema.fromJsonString(TourControlBody))(text) catch () => undefined
     if (body === undefined || !validTourStep(body.step, 11)) return json({ error: "body" }, 400)
     const refusal = conversations.controlTour === undefined ? "not-replying" : try conversations.controlTour(route.conversation, body.action, body.step)
@@ -143,8 +155,7 @@ effect function answerHistory(route: HistoryRoute, url: URL, histories: Historie
   const length = Number(request.headers["content-length"] ?? "0")
   if (!validWriteLength(length, MAX_WRITE_BYTES)) return json({ error: "body size" }, 413)
   // A chunked body has no Content-Length: Effect counts its bytes and stops reading at the limit.
-  const text = Effect.provideService(request.text, HttpIncomingMessage.MaxBodySize, ByteSize.bytes(MAX_WRITE_BYTES)) catch (error) =>
-    error.reason._tag === "RequestParseError" && error.reason.reason === "BodyTooLarge" ? undefined : ""
+  const text = try boundedText(request, MAX_WRITE_BYTES)
   if (text === undefined) return json({ error: "body size" }, 413)
   const body = decodeWrite(route.write, text === "" ? "{}" : text) catch () => undefined
   if (body === undefined) return json({ error: "body" }, 400)

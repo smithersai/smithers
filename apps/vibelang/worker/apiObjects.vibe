@@ -30,10 +30,13 @@ import * as HistoryObject from "./HistoryObject.vibe"
 import { type Exporter, off } from "./HistoryExport.vibe"
 import { chargeKeyOf } from "./budgetDecision.vibe"
 import { alarmAgent, bootstrapsHistory, alarmName, alarmOwner, crossOriginRefused, draftForbidden, pendingPost, readsPostOwner, recordsParticipation, sandboxRole, signedOutRoute, writeActor } from "./apiObjectDecision.vibe"
-import { afterOf, eventStream, handle, type Conversations, type Histories } from "./Http.vibe"
+import { afterOf, eventStream, handle, RATE_LIMITED, type Conversations, type Histories } from "./Http.vibe"
 import { githubMain } from "./MainLog.vibe"
 import { publicReads, readSetup, type ReadSetup } from "./PublicReads.vibe"
 import * as Objects from "./Objects.vibe"
+import * as Budget from "./Budget.vibe"
+import { MAX_CONVERSATION } from "../src/core/wire.vibe"
+import { validConversationLength } from "../src/core/clientProtocolDecision.vibe"
 import { SandboxIdentity } from "./accountObject.vibe"
 import type { Gateway } from "./SandboxHttp.vibe"
 import { Unreachable } from "./Unreachable.vibe"
@@ -67,6 +70,8 @@ export interface ConversationShape extends ObjectStartup.Health {
 }
 
 export interface BudgetShape extends ObjectStartup.Health {
+  /** Counts one signed-out post for `visitor` today: false once that visitor's, or every visitor's, allowance is used. */
+  readonly visit: (visitor: string) => boolean!!RuntimeContext
   readonly admit: (reply: string, ceiling: number) => boolean!!RuntimeContext
   readonly spend: (reply: string, tokens: number, reported: boolean, ceiling: number) => void!!RuntimeContext
 }
@@ -132,7 +137,7 @@ function actionIdentity(namespace: Namespace<AccountsShape>, runtime: RuntimeCon
 function budgetBody(state: ObjectState, limit: number) {
   return effect {
     const budget = try ObjectStartup.step("storage", Objects.budget(state.raw.storage, limit))
-    return { admit: budget.admit, spend: budget.spend }
+    return { admit: budget.admit, spend: budget.spend, visit: (visitor: string) => budget.visit(visitor, Budget.VISITOR_POSTS, Budget.ANONYMOUS_POSTS) }
   }
 }
 
@@ -346,10 +351,28 @@ effect function accountFetch(accounts: Namespace<AccountsShape>, runtime: Runtim
 /** How long a health read waits for an object's start-up to settle, and its whole budget per object. */
 export const HEALTH_PATIENCE = "2 seconds"
 export const HEALTH_BUDGET = "4500 millis"
+/** The one conversation a public health read probes. Only a maintainer's own session names another (review R1 D4). */
+export const HEALTH_CONVERSATION = "health"
+
+type ObjectHealth = ObjectStartup.Status | { readonly objectClass: string; readonly objectId: null; readonly codeVersion: null; readonly startup: "unreachable" }
+type HealthReport = Readonly<Record<"Budget" | "ProjectAccounts" | "History" | "ActionIndex" | "Conversation", ObjectHealth>>
+
+/**
+ * Who a signed-out post is counted for: the SHA-256 of the address Cloudflare saw, so the day's ledger holds no
+ * address. Requests with no such header (local development, a service binding) share one visitor.
+ */
+effect function visitorOf(request: HttpServerRequest.HttpServerRequest) {
+  const address = request.headers["cf-connecting-ip"] ?? "unknown"
+  provide Digest.layerWebCrypto {
+    return try (try Digest.Digest).digestHex(Digest.sha256, new TextEncoder().encode(`vibelang/visitor/v1/${address}`))
+  }
+}
 
 /** The API Worker's fetch: account routes reach ProjectAccounts, the rest the HTTP protocol. */
 export function apiFetch(namespaces: { readonly conversations: Namespace<ConversationShape>; readonly accounts: Namespace<AccountsShape>; readonly actions: Namespace<ActionDirectoryShape>; readonly histories: Namespace<HistoryShape>; readonly budgets: Namespace<BudgetShape> }, gateway: Gateway<RuntimeContext>, commit: string | undefined, executionProps: Record<string, unknown>!!) {
   const { conversations, accounts, actions, histories, budgets } = namespaces
+  /** The public health probe in flight in this isolate, if any; later callers share its answer. */
+  const health: { probing: Deferred.Deferred<HealthReport | undefined> | undefined } = { probing: undefined }
   return effect {
     const runtime = try RuntimeContext
     const incoming = try HttpServerRequest.HttpServerRequest
@@ -365,17 +388,49 @@ export function apiFetch(namespaces: { readonly conversations: Namespace<Convers
         const outcome = result._tag === "Success" ? "observed" : "unreachable"
         try Metric.update(Metric.withAttributes(Metric.counter("vibelang_object_health_reads", { incremental: true }), { objectClass, outcome }), 1)
         try Effect.logInfo("vibelang.object.health").pipe(Effect.annotateLogs({ objectClass, outcome }))
-        return result._tag === "Success" ? result.value : { objectClass, objectId: null, codeVersion: null, startup: "unreachable" }
+        const status: ObjectHealth = result._tag === "Success" ? result.value : { objectClass, objectId: null, codeVersion: null, startup: "unreachable" }
+        return status
       }, "vibelang.object.health")
-      const checks = {
-        Budget: inspect(budgets, new Date(try Clock.currentTimeMillis).toISOString().slice(0, 10), "Budget"),
-        ProjectAccounts: inspect(accounts, "project", "ProjectAccounts"),
-        History: inspect(histories, REPOSITORY, "History"),
-        ActionIndex: inspect(actions, "vibelang", "ActionIndex"),
-        Conversation: inspect(conversations, healthUrl.searchParams.get("conversation") ?? "health", "Conversation"),
+      const probe = effect (conversation: string) => {
+        const checks = {
+          Budget: inspect(budgets, new Date(try Clock.currentTimeMillis).toISOString().slice(0, 10), "Budget"),
+          ProjectAccounts: inspect(accounts, "project", "ProjectAccounts"),
+          History: inspect(histories, REPOSITORY, "History"),
+          ActionIndex: inspect(actions, "vibelang", "ActionIndex"),
+          Conversation: inspect(conversations, conversation, "Conversation"),
+        }
+        const report: HealthReport = try all(checks, { concurrency: "unbounded" })
+        return report
       }
-      const objects = try all(checks, { concurrency: "unbounded" })
-      return HttpServerResponse.jsonUnsafe({ commit: commit ?? null, objects }, { headers: { "cache-control": "no-store" } })
+      const answered = (objects: HealthReport) => HttpServerResponse.jsonUnsafe({ commit: commit ?? null, objects }, { headers: { "cache-control": "no-store" } })
+      const refusedHealth = (error: string, status: number) => HttpServerResponse.jsonUnsafe({ error }, { status, headers: { "cache-control": "no-store" } })
+      const named = healthUrl.searchParams.get("conversation")
+      if (named !== null && named !== HEALTH_CONVERSATION) {
+        // Naming a conversation wakes, or creates, that conversation's object: a malformed name reaches nothing, and
+        // only a maintainer's own browser session (never their agent) may ask.
+        if (!validConversationLength(named.length, MAX_CONVERSATION)) return refusedHealth("conversation", 400)
+        const operator = effect {
+          const account = try objectOf(accounts, "project", "accounts")
+          return try reached(runtime, "accounts", account.current(Accounts.cookieOf(incoming)))
+        } catch () => undefined
+        if (operator === undefined || operator.role !== "maintainer" || operator.agent === true) {
+          try Metric.update(Metric.withAttributes(Metric.counter("vibelang_object_health_reads", { incremental: true }), { objectClass: "Conversation", outcome: "refused" }), 1)
+          return refusedHealth("forbidden", 403)
+        }
+        return answered(try probe(named))
+      }
+      // Public reads share one probe of the five fixed objects per isolate: a caller that arrives while it runs waits
+      // for its answer and starts none of its own.
+      const running = health.probing
+      const shared = running === undefined ? undefined : try Deferred.await(running)
+      if (shared !== undefined) return answered(shared)
+      const mine = try Deferred.make<HealthReport | undefined>()
+      health.probing = mine
+      const report = try onExit(probe(HEALTH_CONVERSATION), (result) => effect {
+        if (health.probing === mine) health.probing = undefined
+        try Deferred.succeed(mine, result._tag === "Success" ? result.value : undefined)
+      })
+      return answered(report)
     }
 
     const request = try HttpServerRequest.HttpServerRequest
@@ -384,10 +439,17 @@ export function apiFetch(namespaces: { readonly conversations: Namespace<Convers
     if (accountRoute(path)) return accountFetch(accounts, runtime, request) catch (error) => HttpServerResponse.jsonUnsafe({ error: error.what }, { status: 503, headers: { "cache-control": "no-store" } })
     const api: Conversations = {
       post: (conversation, body) => effect {
-        const object = try objectOf(conversations, conversation, "conversation")
         const account = try objectOf(accounts, "project", "accounts")
         const identity = try reached(runtime, "accounts", account.current(Accounts.cookieOf(request)))
         if (crossOriginRefused(identity.id, Accounts.sameOrigin(request))) return "forbidden"
+        // A signed-out post spends the day's shared model budget (review R1 D4, Fable-D4-012): each visitor, and all
+        // visitors together, have a daily allowance of posts, counted in the day's Budget object before the
+        // conversation's object is reached. A signed-in person's post is never counted here.
+        if (identity.id === "") {
+          const day = try objectOf(budgets, new Date(try Clock.currentTimeMillis).toISOString().slice(0, 10), "budget")
+          if (!(try reached(runtime, "budget", day.visit(try visitorOf(request))))) return RATE_LIMITED
+        }
+        const object = try objectOf(conversations, conversation, "conversation")
         const refusal = try reached(runtime, "conversation", object.post(body.clientId, postName(identity), body.text, identity.id))
         if (recordsParticipation(refusal !== null, identity.id)) try reached(runtime, "accounts", account.participation(Accounts.cookieOf(request)))
         return refusal
@@ -474,7 +536,7 @@ export function apiFetch(namespaces: { readonly conversations: Namespace<Convers
 }
 
 
-export const budgetObject = (...args: Parameters<typeof budgetBody>) => ObjectStartup.make("Budget", args[0], budgetBody(...args), { admit: true, spend: true })
+export const budgetObject = (...args: Parameters<typeof budgetBody>) => ObjectStartup.make("Budget", args[0], budgetBody(...args), { admit: true, spend: true, visit: true })
 export const historyObject = (...args: Parameters<typeof historyBody>) => ObjectStartup.make("History", args[0], historyBody(...args), { page: true, write: true, act: true, fetch: true, alarm: true })
 export const accountsObject = (...args: Parameters<typeof accountsBody>) => ObjectStartup.make("ProjectAccounts", args[0], accountsBody(...args), { draftWiki: true, current: true, role: true, allowed: true, participation: true, fetch: true })
 export const conversationObject = (...args: Parameters<typeof conversationBody>) => ObjectStartup.make("Conversation", args[0], conversationBody(...args), { startAction: true, actionRequest: true, actionRuns: true, cancelAction: true, post: true, read: true, openWiki: true, controlTour: true, tour: true, endTour: true, fetch: true, alarm: true })

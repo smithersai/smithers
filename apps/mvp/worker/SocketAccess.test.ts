@@ -1636,3 +1636,37 @@ describe("authoritative renewal at the cached session end", () => {
     }
   }
 })
+
+test("coalescing releases the pending renewal when a runtime refuses to start it", () => {
+  let attempts = 0
+  let renewals = 0
+  const notify = SocketAccess.coalesced(Effect.sync(() => { renewals++ }), work => {
+    if (++attempts === 1) throw new Error("runtime closed")
+    Effect.runSync(work)
+  })
+  expect(notify).toThrow("runtime closed")
+  notify()
+  expect(renewals).toBe(1)
+})
+
+test("a gated socket independently detaches message and close handlers sharing a listener", () => {
+  const events = new EventTarget()
+  const raw: SocketAccess.RawSocket<Event> = {
+    send() {}, close() {},
+    addEventListener: (kind, listener) => events.addEventListener(kind, listener),
+    removeEventListener: (kind, listener) => events.removeEventListener(kind, listener),
+  }
+  const gate = SocketAccess.gate(raw, () => true, () => {})
+  const received: string[] = []
+  const listener = (event: Event) => { received.push(event.type) }
+  gate.addEventListener("message", listener)
+  gate.addEventListener("message", listener)
+  gate.addEventListener("close", listener)
+  events.dispatchEvent(new Event("message"))
+  gate.removeEventListener("message", listener)
+  events.dispatchEvent(new Event("message"))
+  events.dispatchEvent(new Event("close"))
+  gate.addEventListener("message", listener)
+  events.dispatchEvent(new Event("message"))
+  expect(received).toEqual(["message", "close", "message"])
+})

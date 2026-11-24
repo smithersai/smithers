@@ -16,11 +16,11 @@ import type { ChatHost } from "./store"
 export const OUTBOX_LOCK = "smithers-outbox"
 
 /**
- * What a refused send keeps the question as, by ChatApi's status: 400, 401 (signed out) and 403 (not a Member) are
+ * What a refused send keeps the question as, by ChatApi's status: 400, 401 (signed out) and 403 (not a Member) and 404 (conversation gone) are
  * `refused`, 409 `conflict`, 413 `too_large`. Any other failure is sent again.
  */
 const refusal = (status: number | undefined): UnsentReason | undefined =>
-  status === 400 || status === 401 || status === 403
+  status === 400 || status === 401 || status === 403 || status === 404
     ? "refused"
     : status === 409
       ? "conflict"
@@ -142,7 +142,7 @@ const make = (host: ChatHost) => Effect.gen(function* () {
       )
     })
 
-  // Sends one queued question. A refusal (400, 401, 403, 409, 413) keeps it as unsent and stops; anything else is sent
+  // Sends one queued question. A refusal (400, 401, 403, 404, 409, 413) keeps it as unsent and stops; anything else is sent
   // again. It is done once ChatApi took it, this device's engine recorded the run that answers it, and Electric
   // delivered it.
   const send = ({ rows }: { readonly rows: ReadonlyArray<unknown> }) => {

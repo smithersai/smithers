@@ -1,6 +1,6 @@
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, Clock, Effect, Layer, Metric, Ref, Schema } from "effect"
+import { Cause, Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
 import * as FeedLocks from "../FeedLocks.ts"
@@ -8,9 +8,12 @@ import * as Flows from "../Flows.ts"
 
 // `ops/RedactFeed` (docs/features/notifications.md#rows-written-before): one pass over the feed, after a barrier the
 // deploy owner confirmed (`feed_barriers`, ops/feed-barrier/confirm.ts) once every Worker that wrote private text to
-// people's feeds had drained, so no writer is left to put it back behind the cursor. The barrier row is the durable
-// request to run it: ChatApi's requests and each `FlowExecution` alarm claim it (`launch`) and start
-// `redact-feed-<barrier id>` once, and again only if it stalls; the pass records `completed_at` at its end.
+// people's feeds had drained, so no writer is left to put it back behind the cursor. Confirming a barrier starts its
+// pass (`confirm`): the row, then the durable execution `redact-feed-<barrier id>`, whose host then owns its retries,
+// deadlines and handoffs. A start is idempotent, so a confirmation interrupted between the row and the start is
+// repeated safely, and the execution host's alarm (`dispatch`) starts any barrier whose start was never acknowledged
+// (`launched_at`). No request starts a pass, and nothing here claims, fences or wakes one. The pass records
+// `completed_at` at its end.
 //
 // A round is one batch, its own step and transaction: up to `BATCH` rows in the primary key's order from the last key,
 // read without locks; then everyone those rows belong to locked as every writer of a feed locks them
@@ -212,7 +215,7 @@ export const batch = (round: Round, size: number = BATCH) =>
       return (yield* change(sql, round.phase, keys)).length
     }))
     if (changed > 0) yield* Metric.update(Metric.withAttributes(redacted, { phase: round.phase }), changed)
-    // The pass is moving: no claim wakes it again while it does.
+    // When the pass last moved, for whoever watches it.
     yield* sql`UPDATE feed_barriers SET progressed_at = now() WHERE id = ${round.barrier}`
     const last = keys[keys.length - 1]!
     return { ...round, recipient: last.recipient, subject: last.subject } satisfies Round
@@ -248,7 +251,7 @@ const decodeRound = (value: unknown): Round | undefined => {
 
 /**
  * Records, on its barrier, the round a pass handed off to and the execution it runs as, when `intent` is a round of
- * `ops/RedactFeed`: where a claim wakes a stalled pass. Anything else changes nothing.
+ * `ops/RedactFeed`: where the pass stands. Anything else changes nothing.
  */
 export const recordHandoff = (intent: { readonly flow: string; readonly executionId: string; readonly payload: unknown }) =>
   Effect.gen(function* () {
@@ -289,95 +292,91 @@ export const recordingHandoffs = <
     ),
   )
 
-/** Launches the claims made, by `outcome`: `launched` (a first start), `woken` (a stalled pass), `not_started`. */
+/** Starts of a barrier's pass, by `outcome`: `launched` (its host holds it) or `not_started`. */
 export const launches = Metric.counter("smithers_feed_redact_launches", {
-  description: "Feed redaction pass starts, by outcome: launched, woken or not_started",
+  description: "Feed redaction pass starts, by outcome: launched or not_started",
   incremental: true,
 })
 
-/** How long a launched pass may go without a batch before a claim wakes it again. */
-export const STALL_SECONDS = 15 * 60
-
-/** How often one isolate claims: ChatApi's requests and the alarms each look at most this often. */
-export const LOOK_EVERY_MS = 60_000
+/** The most unacknowledged barriers one `dispatch` starts. */
+export const DISPATCH_LIMIT = 10
 
 /**
- * Claims, in one statement, the barriers whose pass was never launched, or whose last claim and last batch are both
- * older than `STALL_SECONDS`
- * (`feed_barriers_open`), skipping any another isolate is claiming, and marks them launched; then starts each one's
- * pass. A host accepts a start of an execution it already has and wakes it, so a start is made only under a claim:
- * once for a new barrier (`launched`), and again only for a stalled one (`woken`). A start that fails gives its claim
- * back, fenced by the claim's token, so it never undoes a newer claimant's. Any failure is counted and logged, never the request's.
+ * Starts barrier `barrier`'s pass as its one execution, `redact-feed-<barrier>`, through `FlowStarter`, then records
+ * on the row that its host holds it (`launched_at`, kept as first written). The host owns the pass from the start on:
+ * its retries, its deadlines and each round's handoff. A start the host already holds is the same pass, so repeating
+ * this, from anywhere and however often, runs the pass once. The acknowledgement follows the start, never precedes it:
+ * an interruption between the two leaves a barrier that reads as not started, and the repeat is harmless. Fails as the
+ * start or the acknowledgement failed, counted and logged `not_started`.
  */
-export const launch = Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient
-  // The newer of the last claim and the last batch: a claim renews it as a batch does (greatest() skips a null).
-  const claimed = yield* sql<{
-    readonly id: string
-    readonly before: string | null
-    readonly token: string
-    readonly currentExecution: string | null
-    readonly currentRound: unknown
-  }>`
-    UPDATE feed_barriers b SET launched_at = now(), launch_token = gen_random_uuid()
-    FROM (
-      SELECT id, launched_at FROM feed_barriers
-      WHERE completed_at IS NULL
-        AND (launched_at IS NULL OR greatest(launched_at, progressed_at) < now() - make_interval(secs => ${STALL_SECONDS}))
-      ORDER BY confirmed_at, id LIMIT 10 FOR UPDATE SKIP LOCKED
-    ) AS open
-    WHERE b.id = open.id
-    RETURNING b.id, open.launched_at::text AS before, b.launch_token::text AS token,
-      b.current_execution AS "currentExecution", b.current_round AS "currentRound"`
-  const starter = yield* Flows.FlowStarter
-  for (const { id, before, token, currentExecution, currentRound } of claimed) {
-    const outcome = before === null ? "launched" : "woken"
-    // The round the pass is on: each round hands off to its own execution (`.to()`), so a stalled pass is woken at the
-    // last one its handoffs recorded (`recordingHandoffs`), with that round's own intent; before any, the first.
-    const round = currentExecution === null ? undefined : decodeRound(currentRound)
-    const target = round === undefined
-      ? { executionId: executionIdOf(id), payload: startOf(id) }
-      : { executionId: currentExecution!, payload: round }
-    const started = yield* starter.start(RedactFeed, target).pipe(
-      // A start the host already holds is the same pass: it is running, or now woken.
-      Effect.catchTag("@smthrs/mvp/flows/StartConflict", () => Effect.void),
-      Effect.as(true),
-      Effect.catchCause((cause) =>
-        Effect.andThen(
-          // Only this claim's own: a newer claimant's stands.
-          sql`UPDATE feed_barriers SET launched_at = ${before}::timestamptz, launch_token = NULL
-            WHERE id = ${id} AND launch_token = ${token}::uuid`.pipe(Effect.ignore),
-          Effect.logWarning("feed.redact").pipe(
-            Effect.annotateLogs({ barrier: id, outcome: "not_started", errorCode: codeOf(Cause.squash(cause)) }),
-            Effect.as(false),
-          ),
-        )
-      ),
-    )
-    yield* Metric.update(Metric.withAttributes(launches, { outcome: started ? outcome : "not_started" }), 1)
-    if (started) yield* Effect.logInfo("feed.redact").pipe(Effect.annotateLogs({ barrier: id, outcome }))
-  }
-  return claimed.length
-})
-
-/**
- * `launch`, at most once every `LOOK_EVERY_MS` in this isolate, and never failing: what ChatApi runs on its requests
- * and each `FlowExecution` alarm runs once it is done, so a barrier confirmed while nothing else runs starts with the
- * next request.
- */
-export const launcher = Effect.map(Ref.make<number | undefined>(undefined), (looked) =>
+export const start = (barrier: string) =>
   Effect.gen(function* () {
-    const now = yield* Clock.currentTimeMillis
-    const last = yield* Ref.get(looked)
-    if (last !== undefined && now - last < LOOK_EVERY_MS) return
-    yield* Ref.set(looked, now)
-    yield* launch
+    const sql = yield* SqlClient.SqlClient
+    const starter = yield* Flows.FlowStarter
+    yield* starter.start(RedactFeed, { executionId: executionIdOf(barrier), payload: startOf(barrier) }).pipe(
+      Effect.catchTag("@smthrs/mvp/flows/StartConflict", () => Effect.void),
+    )
+    yield* sql`UPDATE feed_barriers SET launched_at = now() WHERE id = ${barrier} AND launched_at IS NULL`
+    yield* Metric.update(Metric.withAttributes(launches, { outcome: "launched" }), 1)
+    yield* Effect.logInfo("feed.redact").pipe(Effect.annotateLogs({ barrier, outcome: "launched" }))
   }).pipe(
-    Effect.catchCause((cause) =>
+    Effect.tapCause((cause) =>
       Effect.andThen(
         Metric.update(Metric.withAttributes(launches, { outcome: "not_started" }), 1),
-        Effect.logError("feed.redact").pipe(Effect.annotateLogs({ outcome: "not_started", errorCode: codeOf(Cause.squash(cause)) })),
+        Effect.logWarning("feed.redact").pipe(
+          Effect.annotateLogs({ barrier, outcome: "not_started", errorCode: codeOf(Cause.squash(cause)) }),
+        ),
       )
     ),
-  ))
+    Effect.withSpan("feed.redact.start", { attributes: { "smithers.feed_redact.barrier": barrier } }),
+  )
 
+/**
+ * Confirms a feed barrier and starts its pass: the durable launch trigger. Writes the row unless it is there
+ * (`written` or `existing`), then starts the pass unless its host already acknowledged it. Idempotent throughout: a
+ * confirmation that failed after its row is repeated, and the repeat starts the pass the first one could not.
+ */
+export const confirm = (barrier: { readonly id: string; readonly release: string; readonly by: string }) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const written = yield* sql`
+      INSERT INTO feed_barriers (id, release, confirmed_by) VALUES (${barrier.id}, ${barrier.release}, ${barrier.by})
+      ON CONFLICT (id) DO NOTHING RETURNING 1`
+    const [open] = yield* sql`
+      SELECT 1 FROM feed_barriers WHERE id = ${barrier.id} AND completed_at IS NULL AND launched_at IS NULL`
+    if (open !== undefined) yield* start(barrier.id)
+    return { outcome: written.length > 0 ? "written" : "existing" } as const
+  })
+
+/**
+ * Starts each confirmed barrier whose start no host acknowledged (`launched_at` null, oldest first, `DISPATCH_LIMIT`
+ * at most, by the partial index `feed_barriers_open`): one written straight to Postgres
+ * (ops/feed-barrier/confirm.ts), or one whose confirmation was cut off before its start. What the execution host runs
+ * after each of its alarms (worker/Executions.ts). It takes no claim and keeps nothing between runs: two hosts that
+ * start the same barrier start the same execution. A barrier that fails to start stays unacknowledged for the next
+ * alarm; nothing here fails. Answers how many it started.
+ */
+export const dispatch = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const open = yield* sql<{ readonly id: string }>`
+    SELECT id FROM feed_barriers WHERE completed_at IS NULL AND launched_at IS NULL
+    ORDER BY confirmed_at, id LIMIT ${DISPATCH_LIMIT}`
+  let started = 0
+  for (const { id } of open) {
+    if (yield* start(id).pipe(Effect.as(true), Effect.catchCause(() => Effect.succeed(false)))) started += 1
+  }
+  return started
+}).pipe(
+  Effect.catchCause((cause) =>
+    Effect.andThen(
+      Metric.update(Metric.withAttributes(launches, { outcome: "not_started" }), 1),
+      Effect.logError("feed.redact").pipe(
+        Effect.annotateLogs({ outcome: "not_started", errorCode: codeOf(Cause.squash(cause)) }),
+        Effect.as(0),
+      ),
+    )
+  ),
+)
+
+/** `dispatch`, under the name the execution host composes its alarm from (worker/Executions.ts). It holds no state. */
+export const launcher = Effect.succeed(Effect.asVoid(dispatch))

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { DEMO_REQUESTS_PER_HOUR, RATE_LIMIT_PER_HOUR } from "../src/checkRateLimit.ts";
 import type { BugKv, BugWorkerEnv } from "../src/env.ts";
-import { createBugWorker } from "../src/worker.ts";
+import { createBugWorker, DEMO_REQUEST_TTL_SECONDS } from "../src/worker.ts";
 import { memoryKv } from "./helpers/memoryKv.ts";
 import { memoryRateLimits } from "./helpers/memoryDurableObjects.ts";
 
@@ -17,16 +17,19 @@ const fields = [...page.matchAll(/<(?:input|textarea) name="([^"]+)"/g)].map((ma
 
 const clock = Date.parse("2026-11-12T10:00:00Z");
 const worker = createBugWorker({ now: () => clock });
-const env = (): BugWorkerEnv & { BUGS: ReturnType<typeof memoryKv> } => ({
+const env = (): BugWorkerEnv & { BUGS: ReturnType<typeof memoryKv>; RATE_LIMITS: ReturnType<typeof memoryRateLimits> } => ({
   BUGS: memoryKv(), RATE_LIMITS: memoryRateLimits(), BUG_ADMIN_TOKEN: "admin",
 });
 const formValues: Record<string, string> = {
   firstName: "Jane", lastName: "Smith", workEmail: "jane@example.com", message: "A demo, please",
 };
+/** A fresh idempotency key per call, as the page draws one per submission. */
+const submission = () => crypto.randomUUID();
 const post = (body: unknown, ip = "203.0.113.7") => new Request(endpoint, {
   method: "POST",
   headers: { "content-type": "application/json", "cf-connecting-ip": ip },
-  body: typeof body === "string" ? body : JSON.stringify(body),
+  body: typeof body === "string" ? body
+    : JSON.stringify(typeof body === "object" && body !== null && !("submissionId" in body) ? { ...body, submissionId: submission() } : body),
 });
 const statuses = async (responses: Promise<Response>[]) => (await Promise.all(responses)).map((response) => response.status);
 const stored = (e: ReturnType<typeof env>) => [...e.BUGS.dump().keys()].filter((key) => key.startsWith("demo:"));
@@ -34,7 +37,11 @@ const stored = (e: ReturnType<typeof env>) => [...e.BUGS.dump().keys()].filter((
 let errors: ReturnType<typeof spyOn<Console, "error">>;
 beforeEach(() => { errors = spyOn(console, "error").mockImplementation(() => {}); });
 afterEach(() => { errors.mockRestore(); });
+let infos: ReturnType<typeof spyOn<Console, "log">>;
+beforeEach(() => { infos = spyOn(console, "log").mockImplementation(() => {}); });
+afterEach(() => { infos.mockRestore(); });
 const logged = () => errors.mock.calls.map((args) => JSON.parse(String(args[0])) as Record<string, unknown>);
+const accepted = () => infos.mock.calls.map((args) => JSON.parse(String(args[0])) as Record<string, unknown>);
 
 describe("demo requests", () => {
   test("the page posts to this worker and asks for exactly the fields it stores", () => {
@@ -69,6 +76,8 @@ describe("demo requests", () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "invalid demo request", fields: ["workEmail", "message"] });
     expect((await worker.fetch(post("not json"), e)).status).toBe(400);
+    const keyless = await worker.fetch(post(JSON.stringify(formValues)), e);
+    expect(await keyless.json()).toEqual({ error: "invalid demo request", fields: ["submissionId"] });
     expect(stored(e)).toEqual([]);
   });
 
@@ -102,7 +111,7 @@ describe("demo requests", () => {
 
   test("a storage failure answers 503 and logs the route", async () => {
     const fail = async (): Promise<never> => { throw new Error("KV namespace unavailable"); };
-    const offline: BugKv = { get: fail, put: fail, delete: fail };
+    const offline: BugKv = { get: fail, put: fail, delete: fail, list: fail };
     const res = await worker.fetch(post(formValues), { ...env(), BUGS: offline });
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ error: "storage unavailable" });
@@ -111,8 +120,69 @@ describe("demo requests", () => {
     });
     expect(limiterDown.status).toBe(503);
     expect(logged()).toEqual([
-      { event: "demo_request.failed", route: "POST /api/demo-requests", error: "KV namespace unavailable" },
-      { event: "demo_request.failed", route: "POST /api/demo-requests", error: "Rate limiter answered 500" },
+      { event: "demo_request.failed", route: "POST /api/demo-requests", code: "storage_unavailable" },
+      { event: "demo_request.failed", route: "POST /api/demo-requests", code: "rate_limiter_unavailable" },
     ]);
+  });
+
+  test("a retry after a lost response answers the original id, stores one request, and spends one admission", async () => {
+    const e = env();
+    const body = { ...formValues, submissionId: submission() };
+    const first = await worker.fetch(post(body), e);
+    expect(first.status).toBe(201);
+    const { id } = (await first.json()) as { id: string };
+    // The response was lost; the page resends the same submission.
+    const retry = await worker.fetch(post(body), e);
+    expect(retry.status).toBe(201);
+    expect(await retry.json()).toEqual({ id });
+    expect(stored(e)).toEqual([`demo:${id}`]);
+    expect(e.RATE_LIMITS.stored("demo:203.0.113.7").get("window")).toMatchObject({ count: 1 });
+    expect(accepted()).toEqual([
+      { event: "demo_request.accepted", route: "POST /api/demo-requests", id },
+      { event: "demo_request.replayed", route: "POST /api/demo-requests", id },
+    ]);
+  });
+
+  test("a retry after the request write failed stores it under the receipt's id", async () => {
+    const kv = memoryKv();
+    let failNext = true;
+    const flaky: BugKv = { ...kv, put: async (key, value, options) => {
+      if (key.startsWith("demo:") && failNext) { failNext = false; throw new Error("write lost"); }
+      await kv.put(key, value, options);
+    } };
+    const e = { ...env(), BUGS: Object.assign(flaky, { dump: kv.dump }) };
+    const body = { ...formValues, submissionId: submission() };
+    expect((await worker.fetch(post(body), e)).status).toBe(503);
+    const retry = await worker.fetch(post(body), e);
+    expect(retry.status).toBe(201);
+    const { id } = (await retry.json()) as { id: string };
+    expect(stored(e)).toEqual([`demo:${id}`]);
+    expect(JSON.parse((await kv.get(`demo:${id}`))!).request).toEqual(formValues);
+  });
+
+  test("stored requests and receipts expire", async () => {
+    let now = clock;
+    const kv = memoryKv(() => now);
+    const e = { ...env(), BUGS: kv };
+    const body = { ...formValues, submissionId: submission() };
+    const { id } = (await (await worker.fetch(post(body), e)).json()) as { id: string };
+    now += (DEMO_REQUEST_TTL_SECONDS - 1) * 1000;
+    expect(await kv.get(`demo:${id}`)).not.toBeNull();
+    now += 1000;
+    expect(await kv.get(`demo:${id}`)).toBeNull();
+    expect(await kv.get(`demo-receipt:${body.submissionId}`)).toBeNull();
+  });
+
+  test("an operator lists and reads demo requests; anyone else gets 401", async () => {
+    const e = env();
+    const { id } = (await (await worker.fetch(post(formValues), e)).json()) as { id: string };
+    const admin = { "x-bug-admin": "admin" };
+    expect((await worker.fetch(new Request(endpoint), e)).status).toBe(401);
+    expect((await worker.fetch(new Request(`${endpoint}/${id}`), e)).status).toBe(401);
+    const listed = await worker.fetch(new Request(endpoint, { headers: admin }), e);
+    expect(listed.headers.get("cache-control")).toBe("private, no-store");
+    expect(await listed.json()).toEqual({ ids: [id] });
+    const read = await worker.fetch(new Request(`${endpoint}/${id}`, { headers: admin }), e);
+    expect((await read.json()).request).toEqual(formValues);
   });
 });

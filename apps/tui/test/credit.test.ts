@@ -757,3 +757,11 @@ describe("a worker whose model has no credit", () => {
     }
   })
 })
+
+describe("credit ledger with prototype-named seats", () => {
+  test.each(["constructor", "claude-code:__proto__", "toString"])("spending %s by model never throws", (seat) => {
+    const ledger = Credit.make([])
+    expect(() => ledger.spend(seat, "model")).not.toThrow()
+    expect(ledger.spent(seat)).toBe(true)
+  })
+})

@@ -224,3 +224,15 @@ pnpm destroy:sandboxes-test --yes                                      # removes
 The Viewer's `Sign in` button dispatches the same `ClickedSignIn` message as the header. It stays disabled during an
 account request. Mock mode chooses the offline New identity; Live mode uses the existing sign-in availability check
 before navigating. The sandbox scene and browser tests cover the pane's sign-in path (VL-13, VL-30).
+
+## Review R1 D4, 2026-11-23 (Fable-D4-013, 014, 015, 038, 039)
+
+- A command whose checkpoint fails after it ran keeps its output and its `done` receipt. The last good checkpoint
+  stays and `checkpointFailed` is recorded, as a failed stop records it.
+- Starting a generation deletes the receipts of every other generation; the fence already refuses them.
+- The meter no longer arms a 1-second alarm before each round. A round that fails after the engine's own retries is
+  logged (`vibelang.sandbox.meter.failed`), counted (`vibelang_sandbox_meter_failures`) and tried again after 1 second,
+  doubling to 5 minutes; a round that succeeds forgets the failures.
+- The machine and account objects read time from `Clock`. Only the probe Worker binds the benchmark counter export
+  around its objects; the production API Worker's import graph reaches no `bench/` file
+  (`test/apiImportGraph.test.vibe`).

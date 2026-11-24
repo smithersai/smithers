@@ -5,7 +5,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { RuntimeContext } from "alchemy"
 import { HttpServerRequest } from "effect/http"
-import { accountObject, gatewayOf, identityFromPolicy, noIdentity, SandboxIdentity } from "../worker/accountObject.vibe"
+import { accountObject, gatewayOf, identityFromPolicy, METER_FAILURES, meterFailures, meterRetryDelay, noIdentity, SandboxIdentity } from "../worker/accountObject.vibe"
 import { machineObject, type MachineBox, type ObjectState } from "../worker/SandboxMachine.vibe"
 import { makeBox, namespaceOf } from "../fuzz/machine-box.ts"
 import { objectStorage } from "./support/objectStorage.ts"
@@ -129,9 +129,42 @@ describe("a person's sandbox account", () => {
       expect(answers.map((answer) => answer.ok ? answer : answer.failure)).toMatchObject([
         { _tag: "Refused", refusal: "unavailable" }, { _tag: "Unavailable", reason: "sandbox-binding" }, { _tag: "Refused", refusal: "unavailable" },
       ])
-      // The alarm arms its retry before metering; with nothing running, the meter clears it.
+      // With nothing running the meter arms no alarm, and a round that succeeds arms no retry.
       expect(clock.alarmAt).toBeUndefined()
       expect(unused.storage.kv.get("owner")).toBeUndefined()
     })
   }), 60_000)
+
+  // Review R1 D4 (Fable-D4-015): a metering round that fails is counted and retried later each time, never at 1 Hz.
+  it.live("counts a failing metering round and waits longer before each retry, then forgets the failures", () => provided(effect {
+    const real = try Effect.try(() => objectStorage())
+    let broken = false
+    const storage = { ...real, sql: { exec: (query: string, ...bindings: ReadonlyArray<unknown>) => {
+      if (broken && query.includes("vibelang_sandbox_state")) return (undefined as never as { fail(): never }).fail()
+      return real.sql.exec(query, ...bindings)
+    } } }
+    const local = try Effect.acquireRelease(sync(() => makeBox()), (made) => sync(() => made.dispose()))
+    const machine = try machineObject(local.box as unknown as MachineBox, stateOf(try Effect.try(() => objectStorage()), "m"))
+    const account = try accountObject(stateOf(storage as never, "a"), (try Effect.try(() => namespaceOf(() => true, machine))) as never, try Effect.provide(effect { return try SandboxIdentity }, noIdentity))
+    const counted = effect () => (try Metric.value(meterFailures)).count
+    const before = try counted()
+    broken = true
+    const waits: Array<number> = []
+    for (let round = 0; round < 3; round++) {
+      const asked = Date.now()
+      try account.alarm()
+      waits.push((real.alarmAt ?? 0) - asked)
+    }
+    expect(real.kv.get(METER_FAILURES)).toBe(3)
+    expect((try counted()) - before).toBe(3)
+    // 1, 2 and 4 seconds, each measured from just before its round.
+    expect(waits.map((wait, round) => wait >= 1000 * 2 ** round && wait < 1000 * 2 ** round + 900)).toEqual([true, true, true])
+    broken = false
+    try account.meter()
+    expect([real.kv.has(METER_FAILURES), (try counted()) - before]).toEqual([false, 3])
+  }), 30_000)
+
+  it("the wait before a metering retry doubles from one second to five minutes", () => {
+    expect([1, 2, 3, 9, 10, 40].map(meterRetryDelay)).toEqual([1000, 2000, 4000, 256_000, 300_000, 300_000])
+  })
 })

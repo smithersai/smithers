@@ -289,6 +289,57 @@ describe("POST /api/bugs", () => {
     expect(h.line("bug.request")).toMatchObject([{ level: "WARN", annotations: { code: "conflict", status: 409 } }])
   })
 
+  test("a person's daily allowance: the next new report is refused 429, storing and starting nothing; a retry of a filed one still answers", async () => {
+    const h = await open({ actor: member, config: { [BugsApi.DAILY_LIMIT_VARIABLE]: "2" } })
+    const [first, second, third] = [report(), report(), report()]
+    expect((await post(h, first)).status).toBe(200)
+    // Whoever acts for the person spends the person's allowance.
+    const agent = await open({ actor: agentForMember, config: { [BugsApi.DAILY_LIMIT_VARIABLE]: "2" } })
+    expect((await post(agent, second)).status).toBe(200)
+
+    const refused = await post(h, third)
+
+    expect(refused.headers.get("cache-control")).toBe("no-store")
+    expect(await json(refused)).toEqual([429, { code: "rate_limited" }])
+    expect(await json(await post(agent, report()))).toEqual([429, { code: "rate_limited" }])
+    expect((await rows()).map((row) => row.id).sort()).toEqual([first.id, second.id].sort())
+    expect(h.starts.map((start) => start.executionId)).toEqual([`bug-report-${first.id}`])
+    expect(agent.starts.map((start) => start.executionId)).toEqual([`bug-report-${second.id}`])
+    expect(h.line("bug.request").at(-1)).toMatchObject({
+      level: "WARN",
+      annotations: { op: "file", code: "rate_limited", outcome: "rate_limited", status: 429 },
+    })
+    expect(h.count(BugsApi.requests, { op: "file", outcome: "rate_limited" })).toBe(1)
+    expect(leaks(h)).toEqual([])
+    // Filing a stored report again spends nothing and answers as filed; another person's allowance is their own.
+    expect(await json(await post(h, first))).toEqual([200, { id: first.id, txid: null }])
+    expect((await post(await open({ actor: admin, config: { [BugsApi.DAILY_LIMIT_VARIABLE]: "2" } }), report())).status).toBe(200)
+  })
+
+  test("the allowance counts the last 24 hours only, and concurrent filings can't share its last place", async () => {
+    const h = await open({ actor: member, config: { [BugsApi.DAILY_LIMIT_VARIABLE]: "2" } })
+    const [old, recent] = [report(), report()]
+    expect((await post(h, old)).status).toBe(200)
+    expect((await post(h, recent)).status).toBe(200)
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE bug_reports SET created_at = now() - interval '25 hours' WHERE id = ${old.id}`))
+
+    // One place is left: of four filed together, exactly one lands.
+    const together = await Promise.all([report(), report(), report(), report()].map((body) => post(h, body)))
+
+    expect(together.map((response) => response.status).sort()).toEqual([200, 429, 429, 429])
+    expect(await rows()).toHaveLength(3)
+    expect(h.starts).toHaveLength(3)
+  })
+
+  test("without the variable a person files DAILY_ALLOWANCE new reports a day", async () => {
+    const h = await open({ actor: roleless })
+    for (let n = 0; n < BugsApi.DAILY_ALLOWANCE; n++) expect((await post(h, report())).status).toBe(200)
+    expect(await json(await post(h, report()))).toEqual([429, { code: "rate_limited" }])
+    expect(await rows()).toHaveLength(BugsApi.DAILY_ALLOWANCE)
+    expect(h.starts).toHaveLength(BugsApi.DAILY_ALLOWANCE)
+  })
+
   test("a start the host can't record is 503 with the row kept; the browser's retry starts it and answers as filed", async () => {
     let calls = 0
     const starts: Array<string> = []
@@ -464,6 +515,22 @@ describe("GET /api/bugs", () => {
     const response = await list(h)
 
     expect([response.status, (await reportsOf(response)).length]).toEqual([200, 3])
+  })
+
+  test.each(["sandbox", "flow", "app"] as const)("a %s credential running for an Admin is refused 403 and reads no report", async (kind) => {
+    await filed()
+    const h = await open({ actor: { ...admin, act: { kind, id: `${kind}-run-1` } } })
+
+    const response = await list(h)
+
+    expect(response.headers.get("cache-control")).toBe("no-store")
+    expect(await json(response)).toEqual([403, { code: "forbidden" }])
+    expect(h.line("bug.request")).toMatchObject([{
+      level: "WARN",
+      annotations: { op: "list", by: kind, code: "forbidden", outcome: "forbidden", status: 403 },
+    }])
+    expect(h.count(BugsApi.requests, { op: "list", outcome: "forbidden" })).toBe(1)
+    expect(leaks(h)).toEqual([])
   })
 
   test("a bearer of the deployment's read token reads them without a session; the token is never recorded", async () => {

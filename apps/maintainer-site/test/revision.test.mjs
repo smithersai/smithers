@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs"
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
@@ -38,6 +38,17 @@ test("slice files and outlines use recorded jj history, including deleted files"
   const base = await server.ready
   const get = async (endpoint, path, slice) => fetch(`${base}/api/${endpoint}?path=${encodeURIComponent(path)}&slice=${slice}`)
   try {
+    const cards = await (await fetch(base + "/api/queue")).json()
+    const viewed = cards.items.find((item) => item.id === "covered")
+    assert.equal(viewed.commit, revision)
+    const pinned = (endpoint) => fetch(`${base}/api/${endpoint}?slice=covered&path=code.ts&digest=${viewed.digest}`)
+    assert.match(await (await pinned("file")).text(), /original/)
+    assert.equal((await (await pinned("outline")).json()).symbols[0].name, "original")
+    const coverageFile = join(queueDir, "coverage.json")
+    const originalCoverage = readFileSync(coverageFile)
+    writeFileSync(coverageFile, JSON.stringify({ slices: { covered: { commit: newer, files: ["code.ts"] } } }))
+    for (const endpoint of ["file", "outline"]) assert.equal((await pinned(endpoint)).status, 409)
+    writeFileSync(coverageFile, originalCoverage)
     for (const slice of ["old", "covered", "coverageOnly"]) {
       assert.match(await (await get("file", "code.ts", slice)).text(), /original/)
       const outline = await (await get("outline", "code.ts", slice)).json()

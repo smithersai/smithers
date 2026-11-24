@@ -310,7 +310,6 @@ src/history/pages.vibe	commitPageOf/callback	filter real.mythical === id	Lookup:
 src/history/pages.vibe	commitPageOf/callback	find commit.id === id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/history/pages.vibe	epicPageOf/callback	filter commit.epic === epic	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/history/pages.vibe	matchesOf	needle === ""	Emptiness: an empty search matches nothing
-src/history/routes.vibe	pageOf	switch request.what	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
 src/history/pages.vibe	stacked/callback	?? epicA	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/history/pages.vibe	stacked/callback	?? epicB	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/history/publish.vibe	batch	skip.has(each.oid)	Host boundary: Set membership drops an object id written by an earlier batch (done) or listed twice in the plan; which objects to write is the planner's pending list
@@ -321,6 +320,7 @@ src/history/publish.vibe	pacedExport/callback	?? answer.refusal	Default: an answ
 src/history/publish.vibe	runPublish	?? answer.refusal	Default: an answer with no refusal reads as none; the proved refusal wording decides what it says
 src/history/publish.vibe	runPublish	read.available	Forwards readMain's answer that main's log was read; an unread main folds nothing and the export still runs
 src/history/routes.vibe	historyRouteOf	default params: URLSearchParams = new URLSearchParams()	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/routes.vibe	pageOf	switch request.what	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
 src/history/routes.vibe	pageRequestOf	?? params.get("from")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
 src/history/routes.vibe	pageRequestOf	?? params.get("q")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
 src/history/seed.vibe	bucketsOf/callback/callback	?? index.get(sha)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -999,11 +999,17 @@ worker/accountObject.vibe	accountObject/callback/call	!answer.ok	Host boundary: 
 worker/accountObject.vibe	accountObject/callback/call	default command = ""	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/accountObject.vibe	accountObject/callback/call	default operationId = ""	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/accountObject.vibe	accountObject/callback/current	?? try promise(() => state.raw.storage.get<string>("owner"))	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
+worker/accountObject.vibe	accountObject/callback/meter	?? try promise(() => state.raw.storage.get<number>(METER_FAILURES))	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
+worker/accountObject.vibe	accountObject/callback/meter	Cause.hasInterrupts(round.cause)	Host boundary: an interrupted metering round is passed on as an interruption, never counted as a failure (review R1 D4, Fable-D4-015)
 worker/accountObject.vibe	gatewayOf/request	!answer.ok	Host boundary: the account object's RPC answer
 worker/accountObject.vibe	identityFromPolicy/request	admitted	Forwards the policy object's admission, decided by the proved role policy on its host
 worker/accountObject.vibe	identityFromPolicy/request	catch () => false	Fail closed: a refused or failed authorization, or an unparsable cookie origin, reads as not permitted (batch 73)
 worker/accountObject.vibe	identityFromPolicy/role	admitted	Forwards the policy object's admission, decided by the proved role policy on its host
 worker/accountObject.vibe	identityFromPolicy/role	catch () => false	Fail closed: a refused or failed authorization, or an unparsable cookie origin, reads as not permitted (batch 73)
+worker/Accounts.vibe	appTokenCheck/callback/callback	catch () => false	Fail closed: any GitHub failure, timeout or malformed check-token answer reads as a token this App did not issue (review R1 D4, Fable-D4-001)
+worker/Accounts.vibe	appTokenCheck/callback/callback	issued	Observation: names the metric outcome of the check already decided; the device route decides on the boolean
+worker/Accounts.vibe	appTokenCheck/callback/callback/callback	response.status !== 200	Host boundary: GitHub answers 200 only for the App's own token (404 for any other); the status is GitHub's decision (review R1 D4, Fable-D4-001)
+worker/Accounts.vibe	appTokenCheck/callback/callback/callback	value answer.app.client_id === options.clientId	Host boundary: the App GitHub names in its check-token answer is compared with the configured client id; tested in accountsRoutes.coverage (review R1 D4, Fable-D4-001)
 worker/Accounts.vibe	configured	catch () => Effect.succeed(undefined)	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
 worker/Accounts.vibe	cookieOf	value origin.startsWith("https:")	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 worker/Accounts.vibe	make	?? setup.delegate	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -1023,24 +1029,35 @@ worker/Accounts.vibe	make/cookie	value setup.origin.startsWith("https:")	Observa
 worker/Accounts.vibe	make/current	live.value.agent === true	Variant test: an agent session
 worker/Accounts.vibe	make/current	live.value.agent === true	Variant test: an agent session
 worker/Accounts.vibe	make/current	value live.value.agent === true	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
+worker/Accounts.vibe	make/handle	"refusal" in claimed	Sequencing: the broker is asked only for a claimed pending start; the claim under the lock decided by the proved brokerStateAccepted and brokerPendingAccepted (review R1 D4, Fable-D4-017)
+worker/Accounts.vibe	make/handle	&& token !== undefined && (try setup.issuedHere(token))	Host boundary: only a decoded token is checked, and GitHub's answer (appTokenCheck) decides whether this App issued it (review R1 D4, Fable-D4-001)
+worker/Accounts.vibe	make/handle	after !== null && !/^[1-9][0-9]{0,19}$/.test(after)	Observation: a pattern test of the members cursor (a GitHub id, as the proved personId admits); a malformed cursor is a bad request and lists nothing (review R1 D4, Fable-D4-036)
 worker/Accounts.vibe	make/handle	catch () => false	Fail closed: a refused or failed authorization, or an unparsable cookie origin, reads as not permitted (batch 73)
 worker/Accounts.vibe	make/handle	catch () => false	Fail closed: a refused or failed authorization, or an unparsable cookie origin, reads as not permitted (batch 73)
+worker/Accounts.vibe	make/handle	catch () => null	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
+worker/Accounts.vibe	make/handle	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
+worker/Accounts.vibe	make/handle	people.length > MEMBERS_PAGE && last !== undefined	Paging: names the next cursor only while more members remain; no admission (review R1 D4, Fable-D4-036)
+worker/Accounts.vibe	make/handle	token !== undefined && issued	Sequencing: GitHub is asked who the person is, and the token revoked, only for a token this App issued; the session step decides on the result (review R1 D4, Fable-D4-001)
+worker/Accounts.vibe	make/handle	token !== undefined && issued	Sequencing: GitHub is asked who the person is, and the token revoked, only for a token this App issued; the session step decides on the result (review R1 D4, Fable-D4-001)
 worker/Accounts.vibe	make/handle	value url.searchParams.has("code")	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 worker/Accounts.vibe	make/handle	value url.searchParams.has("state")	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
+worker/Accounts.vibe	make/handle/callback	!issued	Observation: names the log outcome of a device sign-in already decided; nothing is admitted here
 worker/Accounts.vibe	make/handle/callback	?? live?.key	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Accounts.vibe	make/handle/callback	?? live?.value.id	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Accounts.vibe	make/handle/callback	?? url.searchParams.get("resume-key")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
 worker/Accounts.vibe	make/handle/callback	?? url.searchParams.get("resume-op")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
 worker/Accounts.vibe	make/handle/callback	?? url.searchParams.get("resume-recovery")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
 worker/Accounts.vibe	make/handle/callback	?? url.searchParams.get("wiki-page")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
+worker/Accounts.vibe	make/handle/callback	"refusal" in claimed	Forwards the refusal the claim under the lock already decided (proved brokerStateAccepted, brokerPendingAccepted); no second decision (review R1 D4, Fable-D4-017)
+worker/Accounts.vibe	make/handle/callback	"refusal" in claimed || person === undefined	Forwards the refusal the claim under the lock already decided (proved brokerStateAccepted, brokerPendingAccepted); no second decision (review R1 D4, Fable-D4-017)
 worker/Accounts.vibe	make/handle/callback	"session" in pending	Variant test: a pending sign-in or a pending Connect
+worker/Accounts.vibe	make/handle/callback	|| after === null || key !== "person/" + after	Paging: the cursor's own row is the previous page's last and is left out; no admission (review R1 D4, Fable-D4-036)
 worker/Accounts.vibe	make/handle/callback	catch () => false	Fail closed: a refused or failed authorization, or an unparsable cookie origin, reads as not permitted (batch 73)
-worker/Accounts.vibe	make/handle/callback	catch () => null	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
 worker/Accounts.vibe	make/handle/callback	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
 worker/Accounts.vibe	make/handle/callback	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
 worker/Accounts.vibe	make/handle/callback	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
 worker/Accounts.vibe	make/handle/callback	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
-worker/Accounts.vibe	make/handle/callback	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
+worker/Accounts.vibe	make/handle/callback	filter after === null || key !== "person/" + after	Paging: the cursor's own row is the previous page's last and is left out; no admission (review R1 D4, Fable-D4-036)
 worker/Accounts.vibe	make/handle/callback	value live.value.agent === true	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
 worker/Accounts.vibe	make/json	default status = 200	Host boundary: a JSON response helper answers 200 unless its caller names the status the proved route decision chose (batch 72)
 worker/Accounts.vibe	make/mutation/callback/callback	result !== null && typeof result === "object" && "status" in result	Variant test: a mutation that answered an HTTP status
@@ -1050,6 +1067,7 @@ worker/Accounts.vibe	make/readResponse	default budget: Duration.Input = "6 secon
 worker/Accounts.vibe	make/readResponse	method !== "GET"	Variant dispatch: a GET answers the read, any other method the write's receipt
 worker/Accounts.vibe	make/session	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
 worker/Accounts.vibe	readSetup	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
+worker/Accounts.vibe	readSetup	default () => GitHub.Auth.GITHUB_API	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/ActionDirectory.vibe	directory	default authority: Pick<ActionIdentity.Shape, "role"> = signedOut	Least privilege: an absent authority, gateway, principal or role is the signed-out viewer, and an absent kind a person (the proved actorKind); a caller grants more only by passing it (batch 72)
 worker/ActionDirectory.vibe	directory/cancel	default owner = ""	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/ActionDirectory.vibe	directory/cancel	value request.flow === "vibelang/Post"	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
@@ -1120,10 +1138,15 @@ worker/ActionsHttp.vibe	handle/callback	find run.id === id	Lookup: finds the rec
 worker/ActionsHttp.vibe	json	default status = 200	Host boundary: a JSON response helper answers 200 unless its caller names the status the proved route decision chose (batch 72)
 worker/AgentModel.vibe	chatModel	match { onFailure: (error): ChatModel.Shape => ({ model: undefined, unusable: error.reason }), onSuccess: (model): ChatMode...	Result: a chat model that fails to build is unusable with its reason; no reply runs on it (batch 75)
 worker/apiObjects.vibe	actionIndexBody/callback/request	exact === true	Forwards the caller's exact-match flag to the index read
-worker/apiObjects.vibe	apiFetch/callback	?? commit	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-worker/apiObjects.vibe	apiFetch/callback	?? healthUrl.searchParams.get("conversation")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
+worker/apiObjects.vibe	apiFetch/callback	catch () => undefined	Fail closed: a refused or failed authorization, or an unparsable cookie origin, reads as not permitted (batch 73)
 worker/apiObjects.vibe	apiFetch/callback	catch (error) => HttpServerResponse.jsonUnsafe({ error: error.what }, { status: 503, headers: { "cache-control": "no-store"...	Host boundary: an unreachable service answers unavailable (503 or its code), never a partial result (batch 73)
 worker/apiObjects.vibe	apiFetch/callback	healthUrl.pathname === "/api/health/objects" && incoming.method === "GET"	Variant dispatch: the objects health route
+worker/apiObjects.vibe	apiFetch/callback	named !== null && named !== HEALTH_CONVERSATION	Host boundary: a public health read probes the fixed diagnostic conversation; any other name takes the operator path below (review R1 D4, Astra-D4-033)
+worker/apiObjects.vibe	apiFetch/callback	operator === undefined || operator.role !== "maintainer" || operator.agent === true	Fail closed: only a maintainer's own browser session names a conversation to probe; the role is the proved roleOf's answer from the accounts object (review R1 D4, Astra-D4-033, Fable-D4-037)
+worker/apiObjects.vibe	apiFetch/callback/answered	?? commit	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/apiObjects.vibe	apiFetch/callback/callback/callback	health.probing === mine	Bookkeeping: a finished probe clears the in-flight marker only if it is still its own; no admission
+worker/apiObjects.vibe	apiFetch/callback/post/callback	!(try reached(runtime, "budget", day.visit(try visitorOf(request))))	Forwards the day's Budget object's answer (Budget.visit); a refused visit answers rate-limited before any conversation is reached (review R1 D4, Fable-D4-012)
+worker/apiObjects.vibe	apiFetch/callback/post/callback	identity.id === ""	Observation: the signed-out viewer has the empty id (proved signedIn); only its posts are counted against a visitor allowance (review R1 D4, Fable-D4-012)
 worker/apiObjects.vibe	conversationBody/callback/alarm/callback	?? request?.actor	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/apiObjects.vibe	conversationBody/callback/callback	?? afterOf(new URL(request.url, "http://conversation.invalid"))	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/apiObjects.vibe	historyBody	default exporter: Exporter = off	Seam: the production dependency, policy or store by default; the parameter exists so a test injects a faulty or fixture one (AGENTS.md, no mocks); no product choice (batch 72)
@@ -1131,6 +1154,9 @@ worker/apiObjects.vibe	historyBody/callback/callback	?? afterOf(new URL(request.
 worker/apiObjects.vibe	historyBody/callback/callback	exporter !== off	Variant: the history export runs only when configured on
 worker/apiObjects.vibe	sandboxIdentityOf/request	admitted	Forwards the account host's admission, decided by the proved role policy on its host
 worker/apiObjects.vibe	sandboxIdentityOf/role	allowed	Forwards the account host's admission, decided by the proved role policy on its host
+worker/apiObjects.vibe	visitorOf	?? request.headers["cf-connecting-ip"]	Default: a request with no Cloudflare address header (local development, a service binding) is counted as one shared visitor
+worker/BoundedBody.vibe	boundedText/callback	catch (error) => error.reason._tag === "RequestParseError" && error.reason.reason === "BodyTooLarge" ? undefined : ""	Host boundary: Effect's bounded body read; over the limit is undefined (413 at the route), any other read failure an empty body the route's decoder refuses
+worker/BoundedBody.vibe	boundedText/callback/callback	error.reason._tag === "RequestParseError" && error.reason.reason === "BodyTooLarge"	Host boundary: Effect's bounded body read; over the limit is undefined (413 at the route), any other read failure an empty body the route's decoder refuses
 worker/Budget.vibe	make/admit/callback	?? try ledger.read(holdKey(reply))	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
 worker/Budget.vibe	make/spend/callback	?? try ledger.read(holdKey(reply))	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
 worker/Budget.vibe	make/spend/callback	recorded	Forwards: for a recorded reply the proved settle leaves charges, overshoot and receipt unchanged (added 0), so only the reservation and hold are written
@@ -1138,6 +1164,12 @@ worker/Budget.vibe	make/spend/callback	result.over > over	Metric only: the overs
 worker/Budget.vibe	make/totals	?? try ledger.read(OVER)	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
 worker/Budget.vibe	make/totals	?? try ledger.read(RESERVED)	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
 worker/Budget.vibe	make/totals	?? try ledger.read(SPENT)	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
+worker/Budget.vibe	make/visit/callback	?? try ledger.read(visitorKey(visitor))	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
+worker/Budget.vibe	make/visit/callback	?? try ledger.read(VISITS)	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
+worker/Budget.vibe	make/visit/callback	all >= everyone	Open: the visitor allowance comparison (a visitor's, then the day's, count of signed-out posts against its limit); tested in budget.coverage, to extract into budgetDecision and prove (review R1 D4, Fable-D4-012)
+worker/Budget.vibe	make/visit/callback	outcome === "admitted"	Forwards the allowance outcome decided on the line above: only an admitted post is counted and answered true
+worker/Budget.vibe	make/visit/callback	own >= each	Open: the visitor allowance comparison (a visitor's, then the day's, count of signed-out posts against its limit); tested in budget.coverage, to extract into budgetDecision and prove (review R1 D4, Fable-D4-012)
+worker/Budget.vibe	make/visit/callback	value outcome === "admitted"	Forwards the allowance outcome decided on the line above: only an admitted post is counted and answered true
 worker/CallBudget.vibe	callBudget/reserveCall/callback	!admitted	Forwards: Budget.admit returns the proved reserve’s admission
 worker/GitHubDelegate.vibe	asPerson	default reads: Option.Option<PublicReads["Service"]> = Option.none()	Seam: the production dependency, policy or store by default; the parameter exists so a test injects a faulty or fixture one (AGENTS.md, no mocks); no product choice (batch 72)
 worker/HistoryActions.vibe	intentOf	switch invocation.kind	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
@@ -1161,12 +1193,10 @@ worker/HistoryObject.vibe	write/callback	name === "start"	Variant dispatch on th
 worker/Http.vibe	answer	?? request.headers["content-length"]	Default: a missing content-length reads as 0, which the proved validBodyLength refuses (no body is read)
 worker/Http.vibe	answer	?? request.headers["content-length"]	Default: a missing content-length reads as 0, which the proved validBodyLength refuses (no body is read)
 worker/Http.vibe	answer	?? request.headers["content-length"]	Default: a missing content-length reads as 0, which the proved validBodyLength refuses (no body is read)
-worker/Http.vibe	answer	catch () => ""	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
-worker/Http.vibe	answer	catch () => ""	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
-worker/Http.vibe	answer	catch () => ""	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
 worker/Http.vibe	answer	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
 worker/Http.vibe	answer	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
 worker/Http.vibe	answer	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
+worker/Http.vibe	answer	refusal === RATE_LIMITED	Forwards the gateway's rate-limit answer as HTTP 429; the allowance is Budget.visit's decision (review R1 D4, Fable-D4-012)
 worker/Http.vibe	answer	route.kind === "post"	Variant dispatch on the route the proved routeKind named
 worker/Http.vibe	answer	route.kind === "read"	Variant dispatch on the route the proved routeKind named
 worker/Http.vibe	answer	route.kind === "tour-control"	Variant dispatch on the route the proved routeKind named
@@ -1175,11 +1205,9 @@ worker/Http.vibe	answer	route.kind === "tour" || route.kind === "end-tour"	Varia
 worker/Http.vibe	answer	route.kind === "wiki"	Variant dispatch on the route the proved routeKind named
 worker/Http.vibe	answerHistory	?? request.headers["content-length"]	Default: a missing content-length reads as 0, which the proved validBodyLength refuses (no body is read)
 worker/Http.vibe	answerHistory	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
-worker/Http.vibe	answerHistory	catch (error) => error.reason._tag === "RequestParseError" && error.reason.reason === "BodyTooLarge" ? undefined : ""	Body limit: a body over MAX_WRITE_BYTES reads as undefined, which the route refuses as 413; any other read failure as empty text, which the proved readers refuse (batch 73)
 worker/Http.vibe	answerHistory	route.kind !== "history-write"	Variant dispatch on the route the proved routeKind named
 worker/Http.vibe	answerHistory	route.kind === "history-events"	Variant dispatch on the route the proved routeKind named
 worker/Http.vibe	answerHistory	text === ""	Forwards: an empty history write decodes as the schema's default body
-worker/Http.vibe	answerHistory/callback	error.reason._tag === "RequestParseError" && error.reason.reason === "BodyTooLarge"	Variant test: the bounded read's too-large error answers 413
 worker/Http.vibe	decodeWrite	switch write	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
 worker/Http.vibe	handle	default sandboxes: Gateway<R> = signedOutGateway	Least privilege: an absent authority, gateway, principal or role is the signed-out viewer, and an absent kind a person (the proved actorKind); a caller grants more only by passing it (batch 72)
 worker/Http.vibe	handle	url.pathname === "/api/actions" || url.pathname.startsWith("/api/actions/")	Variant dispatch on the path prefix: health, sandboxes and actions go to their own handlers, each admitting its routes
@@ -1351,6 +1379,7 @@ worker/Reply.vibe	tagOf	catch { return "defect" }	Refusal code: a failed step an
 worker/Reply.vibe	tagOf	typeof error !== "object" || error === null || !("_tag" in error)	Host boundary: reading _tag off an unknown error
 worker/ReplyAccounting.vibe	alarm	receipts.length > 0	Emptiness: an alarm with no receipts has nothing to settle
 worker/ReplyAccounting.vibe	tracked/admit	admitted	Forwards the budget meter's admission (the proved reserve)
+worker/SandboxAccounts.vibe	accountWithMachines	default bind: (object: AccountShape) => AccountShape = unchanged	Default: production binds the object unchanged; only the probe supplies its counter export (review R1 D4, Fable-D4-038)
 worker/SandboxAccounts.vibe	gatewayWithAccounts	default machines: typeof machineLive = machineLive	Seam: the production dependency, policy or store by default; the parameter exists so a test injects a faulty or fixture one (AGENTS.md, no mocks); no product choice (batch 72)
 worker/Sandboxes.vibe	execute	kind === "command"	Variant dispatch on the sandbox operation; admission is the proved sandboxHostDecision
 worker/Sandboxes.vibe	execute	kind === "command"	Variant dispatch on the sandbox operation; admission is the proved sandboxHostDecision
@@ -1370,8 +1399,8 @@ worker/SandboxHttp.vibe	json	default status = 200	Host boundary: a JSON response
 worker/SandboxHttp.vibe	sandboxRequest	!match	Absence: the path matched no sandbox route
 worker/SandboxHttp.vibe	sandboxRequest	?? action	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/SandboxHttp.vibe	sandboxRequest/callback	?? request.headers["content-length"]	Default: a missing content-length reads as 0, which the proved validBodyLength refuses (no body is read)
-worker/SandboxHttp.vibe	sandboxRequest/callback	catch () => ""	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
 worker/SandboxHttp.vibe	sandboxRequest/callback	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
+worker/SandboxMachine.vibe	machineWithBody	default bind: (object: MachineShape) => MachineShape = unchanged	Default: production binds the object unchanged; only the probe supplies its counter export (review R1 D4, Fable-D4-038)
 worker/sandboxProbeContainer.vibe	probeBox	mode === "passthrough"	Variant dispatch on the probe's mode (an operator diagnostic)
 worker/sandboxProbeContainer.vibe	probeMachine	default max = MAX_CALLS	Limit: the module's named bound (MAX_SEED_NOTE, MAX_CALLS, a read's 6-second budget, the export pace) unless a test passes another (batch 72)
 worker/sandboxProbeFetch.vibe	authorized/callback	?? header	Default: an absent Authorization header is empty, which never matches the configured token's digest

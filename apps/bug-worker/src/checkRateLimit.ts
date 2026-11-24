@@ -1,5 +1,5 @@
 import type { BugWorkerEnv } from "./env.ts";
-import type { RateLimitRequest } from "./RateLimiter.ts";
+import type { RateLimitAnswer, RateLimitRequest } from "./RateLimiter.ts";
 
 /**
  * Accepted bug reports per hour across all clients. Rotating addresses defeats
@@ -35,14 +35,51 @@ export function clientAddress(request: Request): string {
   return `${groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/, "")).join(":")}::/64`;
 }
 
+/** The rate limiter could not answer: its Durable Object threw or answered a non-2xx status. */
+export class RateLimiterUnavailable extends Error {
+  constructor() {
+    super("rate limiter unavailable");
+  }
+}
+
+async function call(env: BugWorkerEnv, bucket: string, body: RateLimitRequest): Promise<unknown> {
+  let answer: Response;
+  try {
+    answer = await env.RATE_LIMITS.getByName(bucket).fetch(new Request("https://rate-limiter/", { method: "POST", body: JSON.stringify(body) }));
+  } catch {
+    throw new RateLimiterUnavailable();
+  }
+  if (!answer.ok) throw new RateLimiterUnavailable();
+  return answer.json();
+}
+
 /**
  * Admit one request against `bucket`'s hourly budget. The count lives in the
  * `RateLimiter` Durable Object named by the bucket, which increments it
- * atomically, so a concurrent burst gets exactly `limit` admissions.
+ * atomically, so a concurrent burst gets exactly `limit` admissions. Answers
+ * the hour the admission was charged to, which a refund names.
  */
-export async function checkRateLimit(env: BugWorkerEnv, bucket: string, now: number, limit = RATE_LIMIT_PER_HOUR): Promise<boolean> {
-  const body: RateLimitRequest = { hour: Math.floor(now / 3_600_000), limit };
-  const answer = await env.RATE_LIMITS.getByName(bucket).fetch(new Request("https://rate-limiter/", { method: "POST", body: JSON.stringify(body) }));
-  if (!answer.ok) throw new Error(`Rate limiter answered ${answer.status}`);
-  return (await answer.json() as { allowed: boolean }).allowed;
+export async function checkRateLimit(env: BugWorkerEnv, bucket: string, now: number, limit = RATE_LIMIT_PER_HOUR): Promise<RateLimitAnswer> {
+  return await call(env, bucket, { hour: Math.floor(now / 3_600_000), limit }) as RateLimitAnswer;
+}
+
+/** Return one admission charged to `hour` after a later budget refused the request. */
+export async function refundRateLimit(env: BugWorkerEnv, bucket: string, hour: number): Promise<void> {
+  await call(env, bucket, { op: "refund", hour });
+}
+
+/**
+ * Charge the all-clients cap, then the client's budget. A request the cap
+ * refuses spends none of the client's budget, so a flood cannot use up a
+ * legitimate reporter's hour. A request the client's budget refuses has its
+ * cap admission refunded, so one client cannot spend the cap either.
+ * Throws `RateLimiterUnavailable`.
+ */
+export async function admit(env: BugWorkerEnv, route: "bugs" | "demo", request: Request, now: number, cap: number): Promise<"yes" | "client" | "all"> {
+  const all = await checkRateLimit(env, `${route}:all`, now, cap);
+  if (!all.allowed) return "all";
+  const client = await checkRateLimit(env, `${route}:${clientAddress(request)}`, now);
+  if (client.allowed) return "yes";
+  await refundRateLimit(env, `${route}:all`, all.hour);
+  return "client";
 }

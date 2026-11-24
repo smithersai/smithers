@@ -2,8 +2,9 @@
  * Postgres persistence for deployment-wide fleet telemetry (`host_nodes`,
  * `observed_sessions`, `provider_accounts`) backed by ElectricSQL replication.
  *
- * Defense in depth (OBS-5): titles and diagnostic fields are scrubbed before
- * storage so credentials or tokens never enter Postgres or Electric shapes.
+ * Defense in depth (OBS-5): every free-form text a reporter sends is scrubbed before storage, provider grant telemetry
+ * is reduced to an allowlist of fields, and every list is bounded, so credentials or tokens never enter Postgres or
+ * Electric shapes. Each report commits whole or not at all.
  */
 
 import { SqlClient } from "effect/sql"
@@ -25,11 +26,90 @@ export function scrubText(value: string | null | undefined, maxLen: number): str
   return cleaned.length === 0 ? null : cleaned.slice(0, maxLen)
 }
 
+/** A required display text, scrubbed: `fallback` when nothing is left of it. */
+function scrubRequired(value: string, maxLen: number, fallback: string): string {
+  return scrubText(value, maxLen) ?? fallback.slice(0, maxLen)
+}
+
+/** Free-form tags (a host's labels, an account's pools), each scrubbed, without repeats. */
+function scrubTags(values: ReadonlyArray<string> | undefined): Array<string> {
+  const kept = new Set<string>()
+  for (const value of values ?? []) {
+    const tag = scrubText(value, MAX_TAG_LENGTH)
+    if (tag !== null) kept.add(tag)
+  }
+  return [...kept]
+}
+
+/** The most sessions one report carries, and the most accounts. A larger report is refused whole. */
+export const MAX_SESSIONS_PER_REPORT = 500
+export const MAX_ACCOUNTS_PER_REPORT = 200
+/** The most labels a host carries, and pools an account. */
+export const MAX_TAGS = 32
+const MAX_TAG_LENGTH = 64
+/** The most entries an account's `grants` list keeps. */
+export const MAX_GRANTS = 32
+
+/**
+ * The fields a provider's grant telemetry may carry (R1-Astra-D4-011). Everything else a reporter sends, at any depth,
+ * is dropped before it is stored and again before a stored row is read, so a token, an email or a prompt in a
+ * provider's raw answer never reaches Postgres, the overview or a device.
+ */
+const GRANT_NUMBERS = ["pct", "limit", "used", "remaining"] as const
+const GRANT_TEXTS = ["name", "kind", "resetsAt"] as const
+
+const quantity = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined
+
+function projectGrant(raw: unknown): Record<string, string | number> | string | null {
+  if (typeof raw === "string") return scrubText(raw, MAX_TAG_LENGTH)
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null
+  const entry: Record<string, string | number> = {}
+  for (const key of GRANT_NUMBERS) {
+    const value = quantity(Object.hasOwn(raw, key) ? (raw as Record<string, unknown>)[key] : undefined)
+    if (value !== undefined) entry[key] = value
+  }
+  for (const key of GRANT_TEXTS) {
+    const value = Object.hasOwn(raw, key) ? (raw as Record<string, unknown>)[key] : undefined
+    const text = typeof value === "string" ? scrubText(value, MAX_TAG_LENGTH) : null
+    if (text !== null) entry[key] = text
+  }
+  return Object.keys(entry).length === 0 ? null : entry
+}
+
+/** A reported or stored `grantsJson`, reduced to its approved fields: `null` when none is left. */
+export function projectGrants(raw: unknown): Record<string, unknown> | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null
+  const source = raw as Record<string, unknown>
+  const kept: Record<string, unknown> = {}
+  const policy = Object.hasOwn(source, "policy") && typeof source["policy"] === "string"
+    ? scrubText(source["policy"], MAX_TAG_LENGTH)
+    : null
+  if (policy !== null) kept["policy"] = policy
+  const credits = quantity(Object.hasOwn(source, "resetCreditsAvailable") ? source["resetCreditsAvailable"] : undefined)
+  if (credits !== undefined) kept["resetCreditsAvailable"] = credits
+  if (Object.hasOwn(source, "grants") && Array.isArray(source["grants"])) {
+    const grants = source["grants"].slice(0, MAX_GRANTS).map(projectGrant).filter((grant) => grant !== null)
+    if (grants.length > 0) kept["grants"] = grants
+  }
+  return Object.keys(kept).length === 0 ? null : kept
+}
+
+/** A timestamp a report carries: refused with the report unless a date reads from it. */
+const Timestamp = Schema.String.check(
+  Schema.isMaxLength(64),
+  Schema.makeFilter((value: string) => !Number.isNaN(Date.parse(value))),
+)
+
+/** The timestamp as Postgres stores it, so no row of an admitted report fails its cast. */
+const instant = (value: string | null | undefined): string | null =>
+  value === undefined || value === null ? null : new Date(Date.parse(value)).toISOString()
+
 export const HostHeartbeatInput = Schema.Struct({
   nodeId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
   name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
   kind: Schema.Literals(HOST_KINDS),
-  labels: Schema.optional(Schema.Array(Schema.String.check(Schema.isMaxLength(64)))),
+  labels: Schema.optional(Schema.Array(Schema.String.check(Schema.isMaxLength(MAX_TAG_LENGTH))).check(Schema.isMaxLength(MAX_TAGS))),
   online: Schema.optional(Schema.Boolean),
   held: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(120)))),
   load1: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
@@ -57,16 +137,16 @@ export const ObservedSessionInput = Schema.Struct({
   pid: Schema.optional(Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))),
   cpuSeconds: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
   tokensUsed: Schema.optional(Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))),
-  startedAt: Schema.optional(Schema.NullOr(Schema.String)),
-  lastActivityAt: Schema.optional(Schema.NullOr(Schema.String)),
-  endedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  startedAt: Schema.optional(Schema.NullOr(Timestamp)),
+  lastActivityAt: Schema.optional(Schema.NullOr(Timestamp)),
+  endedAt: Schema.optional(Schema.NullOr(Timestamp)),
 })
 export type ObservedSessionInput = typeof ObservedSessionInput.Type
 
 export const SessionsReportInput = Schema.Struct({
   nodeId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
   replaceActive: Schema.optional(Schema.Boolean),
-  sessions: Schema.Array(ObservedSessionInput),
+  sessions: Schema.Array(ObservedSessionInput).check(Schema.isMaxLength(MAX_SESSIONS_PER_REPORT)),
 })
 export type SessionsReportInput = typeof SessionsReportInput.Type
 
@@ -79,26 +159,28 @@ export const ProviderAccountInput = Schema.Struct({
   fiveHourPct: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 200 })))),
   weeklyPct: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 200 })))),
   scopedPct: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 200 })))),
-  resetsAt: Schema.optional(Schema.NullOr(Schema.String)),
+  resetsAt: Schema.optional(Schema.NullOr(Timestamp)),
+  // Any object decodes; only its approved fields are kept (`projectGrants`).
   grantsJson: Schema.optional(Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown))),
   creditsBalance: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
   activeSessions: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-  pools: Schema.optional(Schema.Array(Schema.String.check(Schema.isMaxLength(64)))),
+  pools: Schema.optional(Schema.Array(Schema.String.check(Schema.isMaxLength(MAX_TAG_LENGTH))).check(Schema.isMaxLength(MAX_TAGS))),
   coolReason: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(120)))),
-  coolUntil: Schema.optional(Schema.NullOr(Schema.String)),
-  checkedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  coolUntil: Schema.optional(Schema.NullOr(Timestamp)),
+  checkedAt: Schema.optional(Schema.NullOr(Timestamp)),
 })
 export type ProviderAccountInput = typeof ProviderAccountInput.Type
 
 export const AccountsReportInput = Schema.Struct({
   sourceNode: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
-  accounts: Schema.Array(ProviderAccountInput),
+  accounts: Schema.Array(ProviderAccountInput).check(Schema.isMaxLength(MAX_ACCOUNTS_PER_REPORT)),
 })
 export type AccountsReportInput = typeof AccountsReportInput.Type
 
 export effect function upsertHostNode(input: HostHeartbeatInput) {
   const sql = try SqlClient.SqlClient
-  const labels = [...(input.labels ?? [])]
+  const name = scrubRequired(input.name, 128, input.nodeId)
+  const labels = scrubTags(input.labels)
   const held = scrubText(input.held, 120)
   const version = scrubText(input.version, 64)
   try sql`
@@ -108,7 +190,7 @@ export effect function upsertHostNode(input: HostHeartbeatInput) {
       disk_free_gb, disk_total_gb, active_sessions, runner_capacity,
       version, seen_at, updated_at
     ) VALUES (
-      ${input.nodeId}, ${input.name}, ${input.kind}, ${labels}, ${input.online ?? true}, ${held},
+      ${input.nodeId}, ${name}, ${input.kind}, ${labels}, ${input.online ?? true}, ${held},
       ${input.load1 ?? null}, ${input.cpuCores ?? null}, ${input.memUsedGb ?? null}, ${input.memTotalGb ?? null},
       ${input.diskFreeGb ?? null}, ${input.diskTotalGb ?? null}, ${input.activeSessions ?? 0}, ${input.runnerCapacity ?? 0},
       ${version}, now(), now()
@@ -134,112 +216,143 @@ export effect function upsertHostNode(input: HostHeartbeatInput) {
   return { nodeId: input.nodeId, ok: true }
 }
 
+/**
+ * A host's report of its sessions, committed whole or not at all (R1-Astra-D4-014): its rows, the sessions it ends and
+ * the host's count are one transaction, and reports for one host run one after another. A session key named twice
+ * counts once, as its last entry. The count is read from the host's rows after the report, so a report of one changed
+ * session leaves the host's other active sessions counted.
+ */
 export effect function reportSessions(input: SessionsReportInput) {
   const sql = try SqlClient.SqlClient
-  const seenKeys: Array<string> = []
-  for (const s of input.sessions) {
-    seenKeys.push(s.sessionKey)
-    const title = scrubText(s.title, 160)
-    const lane = scrubText(s.lane, 120)
-    const repo = scrubText(s.repo, 160)
-    const model = scrubText(s.model, 120)
-    const accountLabel = scrubText(s.accountLabel, 64)
-    try sql`
-      INSERT INTO observed_sessions (
-        session_key, node_id, managed, harness, model, account_label,
-        repo, lane, title, status, pid, cpu_seconds, tokens_used,
-        started_at, last_activity_at, ended_at, updated_at
-      ) VALUES (
-        ${s.sessionKey}, ${input.nodeId}, ${s.managed ?? false}, ${s.harness}, ${model}, ${accountLabel},
-        ${repo}, ${lane}, ${title}, ${s.status}, ${s.pid ?? null}, ${s.cpuSeconds ?? null}, ${s.tokensUsed ?? null},
-        ${s.startedAt ?? null}::timestamptz, ${s.lastActivityAt ?? null}::timestamptz, ${s.endedAt ?? null}::timestamptz, now()
-      )
-      ON CONFLICT (session_key) DO UPDATE SET
-        node_id = EXCLUDED.node_id,
-        managed = EXCLUDED.managed,
-        harness = EXCLUDED.harness,
-        model = EXCLUDED.model,
-        account_label = EXCLUDED.account_label,
-        repo = EXCLUDED.repo,
-        lane = EXCLUDED.lane,
-        title = EXCLUDED.title,
-        status = EXCLUDED.status,
-        pid = EXCLUDED.pid,
-        cpu_seconds = EXCLUDED.cpu_seconds,
-        tokens_used = EXCLUDED.tokens_used,
-        started_at = COALESCE(EXCLUDED.started_at, observed_sessions.started_at),
-        last_activity_at = COALESCE(EXCLUDED.last_activity_at, observed_sessions.last_activity_at),
-        ended_at = EXCLUDED.ended_at,
-        updated_at = now()
-    `
-  }
-  if (input.replaceActive === true) {
-    if (seenKeys.length === 0) {
+  const byKey = new Map<string, ObservedSessionInput>()
+  for (const s of input.sessions) byKey.set(s.sessionKey, s)
+  const seenKeys = [...byKey.keys()]
+  const active = try sql.withTransaction(effect {
+    try sql`SELECT pg_advisory_xact_lock(hashtextextended(${`fleet-sessions:${input.nodeId}`}, 0))`
+    for (const s of byKey.values()) {
+      const title = scrubText(s.title, 160)
+      const lane = scrubText(s.lane, 120)
+      const repo = scrubText(s.repo, 160)
+      const model = scrubText(s.model, 120)
+      const accountLabel = scrubText(s.accountLabel, 64)
       try sql`
-        UPDATE observed_sessions
-        SET status = 'ended', ended_at = COALESCE(ended_at, now()), updated_at = now()
-        WHERE node_id = ${input.nodeId} AND status <> 'ended'
-      `
-    } else {
-      try sql`
-        UPDATE observed_sessions
-        SET status = 'ended', ended_at = COALESCE(ended_at, now()), updated_at = now()
-        WHERE node_id = ${input.nodeId} AND status <> 'ended' AND NOT (session_key = ANY(${seenKeys}))
+        INSERT INTO observed_sessions (
+          session_key, node_id, managed, harness, model, account_label,
+          repo, lane, title, status, pid, cpu_seconds, tokens_used,
+          started_at, last_activity_at, ended_at, updated_at
+        ) VALUES (
+          ${s.sessionKey}, ${input.nodeId}, ${s.managed ?? false}, ${s.harness}, ${model}, ${accountLabel},
+          ${repo}, ${lane}, ${title}, ${s.status}, ${s.pid ?? null}, ${s.cpuSeconds ?? null}, ${s.tokensUsed ?? null},
+          ${instant(s.startedAt)}::timestamptz, ${instant(s.lastActivityAt)}::timestamptz, ${instant(s.endedAt)}::timestamptz, now()
+        )
+        ON CONFLICT (session_key) DO UPDATE SET
+          node_id = EXCLUDED.node_id,
+          managed = EXCLUDED.managed,
+          harness = EXCLUDED.harness,
+          model = EXCLUDED.model,
+          account_label = EXCLUDED.account_label,
+          repo = EXCLUDED.repo,
+          lane = EXCLUDED.lane,
+          title = EXCLUDED.title,
+          status = EXCLUDED.status,
+          pid = EXCLUDED.pid,
+          cpu_seconds = EXCLUDED.cpu_seconds,
+          tokens_used = EXCLUDED.tokens_used,
+          started_at = COALESCE(EXCLUDED.started_at, observed_sessions.started_at),
+          last_activity_at = COALESCE(EXCLUDED.last_activity_at, observed_sessions.last_activity_at),
+          ended_at = EXCLUDED.ended_at,
+          updated_at = now()
       `
     }
-  }
-  const activeCount = input.sessions.filter((s) => s.status !== "ended").length
-  try sql`
-    UPDATE host_nodes
-    SET active_sessions = ${activeCount}, seen_at = now(), updated_at = now()
-    WHERE node_id = ${input.nodeId}
-  `
-  return { nodeId: input.nodeId, reported: input.sessions.length, active: activeCount }
+    if (input.replaceActive === true) {
+      if (seenKeys.length === 0) {
+        try sql`
+          UPDATE observed_sessions
+          SET status = 'ended', ended_at = COALESCE(ended_at, now()), updated_at = now()
+          WHERE node_id = ${input.nodeId} AND status <> 'ended'
+        `
+      } else {
+        try sql`
+          UPDATE observed_sessions
+          SET status = 'ended', ended_at = COALESCE(ended_at, now()), updated_at = now()
+          WHERE node_id = ${input.nodeId} AND status <> 'ended' AND NOT (session_key = ANY(${seenKeys}))
+        `
+      }
+    }
+    const counted = try sql<{ active: number }>`
+      SELECT count(*)::int AS active FROM observed_sessions
+      WHERE node_id = ${input.nodeId} AND status <> 'ended'
+    `
+    const activeCount = counted[0]?.active ?? 0
+    try sql`
+      UPDATE host_nodes
+      SET active_sessions = ${activeCount}, seen_at = now(), updated_at = now()
+      WHERE node_id = ${input.nodeId}
+    `
+    return activeCount
+  })
+  return { nodeId: input.nodeId, reported: seenKeys.length, active }
 }
 
+/**
+ * A node's report of provider accounts, committed whole or not at all. An account keeps its newest observation
+ * (R1-Astra-D4-015): a report older than the stored one (`checkedAt`) changes nothing, and of two observations made
+ * at the same instant the one from the node whose name sorts last stands, so the outcome never depends on arrival
+ * order. `applied` counts the accounts this report changed.
+ */
 export effect function reportAccounts(input: AccountsReportInput) {
   const sql = try SqlClient.SqlClient
-  for (const acct of input.accounts) {
-    const pools = [...(acct.pools ?? [])]
-    const coolReason = scrubText(acct.coolReason, 120)
-    const grantsText = acct.grantsJson === undefined || acct.grantsJson === null
-      ? null
-      : JSON.stringify(acct.grantsJson)
-    try sql`
-      INSERT INTO provider_accounts (
-        account_key, provider, label, plan, status,
-        five_hour_pct, weekly_pct, scoped_pct, resets_at,
-        grants_json, credits_balance, active_sessions, pools,
-        cool_reason, cool_until, source_node, checked_at, updated_at
-      ) VALUES (
-        ${acct.accountKey}, ${acct.provider}, ${acct.label}, ${acct.plan ?? null}, ${acct.status},
-        ${acct.fiveHourPct ?? null}, ${acct.weeklyPct ?? null}, ${acct.scopedPct ?? null},
-        ${acct.resetsAt ?? null}::timestamptz,
-        ${grantsText}::jsonb, ${acct.creditsBalance ?? null}, ${acct.activeSessions ?? 0}, ${pools},
-        ${coolReason}, ${acct.coolUntil ?? null}::timestamptz, ${input.sourceNode},
-        COALESCE(${acct.checkedAt ?? null}::timestamptz, now()), now()
-      )
-      ON CONFLICT (account_key) DO UPDATE SET
-        provider = EXCLUDED.provider,
-        label = EXCLUDED.label,
-        plan = EXCLUDED.plan,
-        status = EXCLUDED.status,
-        five_hour_pct = EXCLUDED.five_hour_pct,
-        weekly_pct = EXCLUDED.weekly_pct,
-        scoped_pct = EXCLUDED.scoped_pct,
-        resets_at = EXCLUDED.resets_at,
-        grants_json = EXCLUDED.grants_json,
-        credits_balance = EXCLUDED.credits_balance,
-        active_sessions = EXCLUDED.active_sessions,
-        pools = EXCLUDED.pools,
-        cool_reason = EXCLUDED.cool_reason,
-        cool_until = EXCLUDED.cool_until,
-        source_node = EXCLUDED.source_node,
-        checked_at = EXCLUDED.checked_at,
-        updated_at = now()
-    `
-  }
-  return { sourceNode: input.sourceNode, reported: input.accounts.length }
+  const applied = try sql.withTransaction(effect {
+    let changed = 0
+    for (const acct of input.accounts) {
+      const label = scrubRequired(acct.label, 64, acct.accountKey)
+      const plan = scrubText(acct.plan, 64)
+      const pools = scrubTags(acct.pools)
+      const coolReason = scrubText(acct.coolReason, 120)
+      const grants = projectGrants(acct.grantsJson)
+      const grantsText = grants === null ? null : JSON.stringify(grants)
+      const written = try sql`
+        INSERT INTO provider_accounts (
+          account_key, provider, label, plan, status,
+          five_hour_pct, weekly_pct, scoped_pct, resets_at,
+          grants_json, credits_balance, active_sessions, pools,
+          cool_reason, cool_until, source_node, checked_at, updated_at
+        ) VALUES (
+          ${acct.accountKey}, ${acct.provider}, ${label}, ${plan}, ${acct.status},
+          ${acct.fiveHourPct ?? null}, ${acct.weeklyPct ?? null}, ${acct.scopedPct ?? null},
+          ${instant(acct.resetsAt)}::timestamptz,
+          ${grantsText}::jsonb, ${acct.creditsBalance ?? null}, ${acct.activeSessions ?? 0}, ${pools},
+          ${coolReason}, ${instant(acct.coolUntil)}::timestamptz, ${input.sourceNode},
+          COALESCE(${instant(acct.checkedAt)}::timestamptz, now()), now()
+        )
+        ON CONFLICT (account_key) DO UPDATE SET
+          provider = EXCLUDED.provider,
+          label = EXCLUDED.label,
+          plan = EXCLUDED.plan,
+          status = EXCLUDED.status,
+          five_hour_pct = EXCLUDED.five_hour_pct,
+          weekly_pct = EXCLUDED.weekly_pct,
+          scoped_pct = EXCLUDED.scoped_pct,
+          resets_at = EXCLUDED.resets_at,
+          grants_json = EXCLUDED.grants_json,
+          credits_balance = EXCLUDED.credits_balance,
+          active_sessions = EXCLUDED.active_sessions,
+          pools = EXCLUDED.pools,
+          cool_reason = EXCLUDED.cool_reason,
+          cool_until = EXCLUDED.cool_until,
+          source_node = EXCLUDED.source_node,
+          checked_at = EXCLUDED.checked_at,
+          updated_at = now()
+        WHERE EXCLUDED.checked_at > provider_accounts.checked_at
+          OR (EXCLUDED.checked_at = provider_accounts.checked_at
+            AND EXCLUDED.source_node >= COALESCE(provider_accounts.source_node, ''))
+        RETURNING account_key
+      `
+      changed += written.length
+    }
+    return changed
+  })
+  return { sourceNode: input.sourceNode, reported: input.accounts.length, applied }
 }
 
 export effect function readOverview(includeEnded: boolean = false) {
@@ -282,6 +395,8 @@ export effect function readOverview(includeEnded: boolean = false) {
     FROM provider_accounts
     ORDER BY provider ASC, label ASC
   `
+  // A row stored before the allowlist is read through it too.
+  const projectedAccounts = accounts.map((row: Record<string, unknown>) => ({ ...row, grantsJson: projectGrants(row["grantsJson"]) }))
   const sandboxes = try sql`
     SELECT id::text AS id, branch_id AS "branchId", generation, kind, instance,
       started_at AS "startedAt", seen_at AS "seenAt", ended_at AS "endedAt"
@@ -319,7 +434,7 @@ export effect function readOverview(includeEnded: boolean = false) {
       ...nodes,
       {
         nodeId: "cloudflare-branch-sandbox",
-        name: "Cloudflare BranchSandbox (smithers.sh)",
+        name: "Cloudflare BranchSandbox",
         kind: "cloudflare",
         labels: ["cloudflare", "serverless", "branch-sandbox"],
         online: true,
@@ -337,5 +452,5 @@ export effect function readOverview(includeEnded: boolean = false) {
       },
     ]
     : nodes
-  return { nodes: allNodes, sessions: [...sessions, ...cfSessions], accounts }
+  return { nodes: allNodes, sessions: [...sessions, ...cfSessions], accounts: projectedAccounts }
 }

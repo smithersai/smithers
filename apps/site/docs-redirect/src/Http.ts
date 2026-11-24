@@ -9,7 +9,7 @@ import type { BodyFailure, UpstreamFailure } from "./Failures"
  * Worker's Effects.
  *
  * `Transport` is the one service that performs `fetch`. Every upstream call
- * (the shared backend, the site assets) goes through it, so a test injects a
+ * (the pass-through origin, the DNS-over-HTTPS lookup) goes through it, so a test injects a
  * transport instead of patching `globalThis.fetch`, and the live layer
  * resolves `globalThis.fetch` at call time.
  *
@@ -20,7 +20,7 @@ import type { BodyFailure, UpstreamFailure } from "./Failures"
  * A redirect is never followed, whatever the caller or its Request asked for.
  * A forwarded request carries the caller's credentials, and a followed
  * redirect forwards them to whatever host a Location names. A 3xx comes back
- * as the answer, so the backend's OAuth redirects reach the browser.
+ * as the answer, so an origin's own redirect reaches the browser unchanged.
  * `manual`, not `error`: workerd throws on `error` before the request is sent.
  */
 
@@ -57,18 +57,6 @@ export const transportFrom = (fetchImpl: FetchImplementation): TransportShape =>
 /** The deployed transport: the platform `fetch`, looked up per call. */
 export const TransportLive: Layer.Layer<Transport> = Layer.succeed(Transport, transportFrom((input, init) => globalThis.fetch(input, init)))
 
-/** The default any-upstream deadline, in ms: bounds the wait for HEADERS only. */
-export const DEFAULT_UPSTREAM_TIMEOUT_MS = 20_000
-
-/**
- * Git's deadline, in ms. A push is answered only after the backend has read
- * and run the whole pack, which it bounds itself (repohost.ReceivePackMaxDuration:
- * 10 minutes by default, for the wait for the repository and again for the
- * push). The default would cut every push that takes longer, so git waits past
- * the backend's bound and this is only a backstop.
- */
-export const GIT_UPSTREAM_TIMEOUT_MS = 30 * 60_000
-
 /**
  * `fetch` under a deadline. The timer covers the headers only, so a streaming
  * answer is never cut off mid-body; when it wins, the underlying request is
@@ -88,7 +76,7 @@ export const fetchWithDeadline = (
   )
 
 /** Discard a response body we will not read, so the connection is released. */
-export const discardBody = (response: Request | Response): Effect.Effect<void> =>
+const discardBody = (response: Request | Response): Effect.Effect<void> =>
   Effect.promise(() => response.body?.cancel().catch(() => undefined) ?? Promise.resolve())
 
 /**

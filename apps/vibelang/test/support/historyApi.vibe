@@ -85,7 +85,7 @@ export effect function serveApi() {
   // Another person, whose grants the page must not take as its own.
   try session({ id: "8", login: "bo" })
   const accounts = try Accounts.make("history-startup", storage, {
-    origin, signingSecret, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), initialMaintainer: "1", clientId: "fixture-client-id", github,
+    origin, signingSecret, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), initialMaintainer: "1", clientId: "fixture-client-id", github, issuedHere: () => succeed(true),
   })
   const history = try histories()
   try HttpServer.serveEffect(effect {

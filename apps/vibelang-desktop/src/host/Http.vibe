@@ -1,12 +1,16 @@
 import { sandboxRequest, signedOutGateway } from "../../../vibelang/worker/SandboxHttp.vibe"
 // Loopback desktop API and bundled assets. Local privileges never follow web navigation, and only the window
 // launched with this run's secret holds the cookie that admits /desktop/* and /api/* requests.
-import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { HttpIncomingMessage, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ConversationRead, Factory } from "../../../vibelang/src/core/Factory.vibe"
 import { viewer } from "../../../vibelang/src/core/roles.vibe"
 import { handleConversations as factoryHttp, eventStream, afterOf } from "../../../vibelang/worker/Http.vibe"
+import { externalUrl } from "../policy.vibe"
 import { Desktop } from "./Factory.vibe"
 
+/** The most bytes a /desktop/* write may send: its body is counted while it is read, declared length or not. */
+export const MAX_DESKTOP_BODY = 4096
+schema ExternalBody { readonly url: string }
 schema ChangeBody { readonly operation: "open" | "close" | "model" | "mock"; readonly endpoint?: string; readonly model?: string }
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; connect-src 'self'; frame-src https://vibelang.sh; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 const LAUNCH_COOKIE = "vibelang-desktop-launch"
@@ -18,6 +22,20 @@ function launched(presented: string | null | undefined, launch: string) {
   let difference = 0
   for (let index = 0; index < launch.length; index++) difference |= presented.charCodeAt(index) ^ launch.charCodeAt(index)
   return difference === 0
+}
+
+/**
+ * A desktop write's JSON body as text, or the status that refuses it: 415 unless it is declared JSON, 413 once it
+ * declares or sends more than `MAX_DESKTOP_BODY` bytes. A chunked body has no Content-Length: Effect counts its bytes
+ * and stops reading at the limit, so nothing larger is ever buffered.
+ */
+effect function boundedJson(request: HttpServerRequest.HttpServerRequest) {
+  if (!(request.headers["content-type"] ?? "").startsWith("application/json")) return 415
+  const declared = Number(request.headers["content-length"] ?? "0")
+  if (!(declared >= 0 && declared <= MAX_DESKTOP_BODY)) return 413
+  const text = Effect.provideService(request.text, HttpIncomingMessage.MaxBodySize, ByteSize.bytes(MAX_DESKTOP_BODY)) catch (error) =>
+    error.reason._tag === "RequestParseError" && error.reason.reason === "BodyTooLarge" ? undefined : ""
+  return text === undefined ? 413 : text
 }
 
 effect function handle(origin: string, assets: string, launch: string) {
@@ -47,15 +65,17 @@ effect function handle(origin: string, assets: string, launch: string) {
     return listed === undefined ? json({ error: "Model unavailable" }, 503) : json({ models: listed })
   }
   if (url.pathname === "/desktop/external" && request.method === "POST") {
-    const body = request.json catch () => undefined
-    if (typeof body !== "object" || body === null || !("url" in body) || typeof body.url !== "string" || body.url.length > 4096) return json({ error: "body" }, 400)
+    const raw = try boundedJson(request)
+    if (typeof raw === "number") return json({ error: "body" }, raw)
+    const body = Schema.decodeUnknownEffect(Schema.fromJsonString(ExternalBody))(raw) catch () => undefined
+    // Only a plain https link reaches the desktop service, so a refused address starts no durable execution.
+    if (body === undefined || externalUrl(body.url) === "") return json({ error: "body" }, 400)
     const opened = try exit(desktop.external(body.url))
     return Exit.isSuccess(opened) ? json({}) : json({ error: "Unavailable" }, 503)
   }
   if (url.pathname === "/desktop/change" && request.method === "POST") {
-    if (!(request.headers["content-type"] ?? "").startsWith("application/json")) return json({ error: "body" }, 415)
-    const raw = request.text catch () => ""
-    if (raw.length > 4096) return json({ error: "body" }, 413)
+    const raw = try boundedJson(request)
+    if (typeof raw === "number") return json({ error: "body" }, raw)
     const body = Schema.decodeUnknownEffect(Schema.fromJsonString(ChangeBody))(raw) catch () => undefined
     if (body === undefined) return json({ error: "body" }, 400)
     const changed = try exit(desktop.change(body.operation, body.endpoint, body.model))

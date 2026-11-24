@@ -40,27 +40,16 @@ export const ALLOWED = "Allowed via MCP"
 /** What no agent may do, whatever its person's role. */
 export const BLOCKED = "Always Blocked (Person-Only)"
 
-/** Under the blocked list: why. */
-export const PERSON_ONLY_GUARD =
-  "Your agent acts with your live GitHub role on this repository, checked on every call. Person-only actions need you, in the browser, whatever your role."
-
-/** Shown in the dialog to a signed-out visitor. */
-export const SIGNED_OUT_NOTE = "Signed out, an agent reads only what the public can. Sign in so it acts as you."
-
 // Connected agents, on /app/settings.
 
 /** The section's title. */
 export const CONNECTED_AGENTS = "Connected agents"
-
-/** Under the title. */
-export const CONNECTED_AGENTS_ABOUT = "Agents you authorized over MCP. Each acts as you, never past your role, and stops at once when revoked."
 
 export const REFRESH = "Refresh"
 export const REVOKE = "Revoke"
 export const REVOKING = "Revoking"
 export const LOADING = "Loading"
 export const NO_AGENTS = "No connected agents"
-export const NO_AGENTS_ABOUT = "Open a repository and press Connect agent to add one."
 
 /** A token's state. */
 export const TOKEN_STATUS = { active: "Active", revoked: "Revoked", expired: "Expired" } as const
@@ -86,7 +75,6 @@ export const consentHeading = (clientName: string) => `${clientName} wants to co
 
 /** A signed-out visitor's heading. */
 export const SIGN_IN_TO_AUTHORIZE = "Sign in to authorize this agent"
-export const SIGN_IN_TO_AUTHORIZE_ABOUT = "You return here after signing in with GitHub."
 
 export const CLIENT = "Client"
 export const REPOSITORY = "Repository"
@@ -102,8 +90,7 @@ export const CANCEL = "Cancel"
 export const REVIEW_REQUEST = "Review request"
 export const REDIRECTING = "Returning to your agent"
 
-/** How long an authorization lasts. */
-export const tokenLifetime = (days: number) => `Access lasts ${days} days. Revoke it any time in Settings.`
+export { BACK_TO_CHAT } from "../views/contract"
 
 /** Why a request failed, by its code. */
 export const errorText = (code: string | null): string => {

@@ -1,0 +1,12 @@
+// A request body read under its route's own byte limit (review R1 D4): the declared Content-Length is a first refusal,
+// never the bound. Effect counts the bytes as they arrive and stops reading at the limit, so a chunked body, or one
+// longer than it declared, is never buffered whole.
+import { HttpIncomingMessage, HttpServerRequest } from "effect/http"
+
+/** `request`'s body as text: `undefined` once it passes `limit` bytes, and "" when the read fails any other way. */
+export function boundedText(request: HttpServerRequest.HttpServerRequest, limit: number): (string | undefined)!! {
+  return effect {
+    return Effect.provideService(request.text, HttpIncomingMessage.MaxBodySize, ByteSize.bytes(limit)) catch (error) =>
+      error.reason._tag === "RequestParseError" && error.reason.reason === "BodyTooLarge" ? undefined : ""
+  }
+}

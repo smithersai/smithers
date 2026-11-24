@@ -35,7 +35,8 @@ import { Transcripts } from "./RunContent.ts"
 //   and the steers the agent read since the last heartbeat that reported them. A change over the job's limits is
 //   recorded `too_large`.
 // - `POST /api/runners/events { key, claim, events }`: a job's transcript events (decision 0141), from the runner that
-//   holds or held its claim, so the end of a settled job's transcript still arrives. Scrubbed again, they go to the
+//   holds its claim, or held it until the job ended at most `EVENTS_AFTER_SETTLE_SECONDS` ago, so the end of a settled
+//   job's transcript still arrives; any other claim is `409 not_held`. Scrubbed again, they go to the
 //   job's run's `RunContent` (`Transcripts`); the answer is the next `seq` that run lacks of the job's generation. The
 //   job's row keeps when its first event arrived, and, at most every 30 seconds, its last and the run's totals.
 //
@@ -126,6 +127,12 @@ const decodeGitCredential = Schema.decodeUnknownEffect(Schema.fromJsonString(Age
 const decodeTask = Schema.decodeUnknownEffect(AgentRunner.Task)
 const scrubShapes = Transcript.scrubber()
 const isUuid = Schema.is(Schema.String.check(Schema.isUUID()))
+
+/**
+ * How long after a job ended its runner may still send the end of its transcript: the settlement can arrive before the
+ * last events do. Past it the events route answers `not_held`, so a job long settled never grows.
+ */
+export const EVENTS_AFTER_SETTLE_SECONDS = 15 * 60
 
 /** A fresh claim id. */
 const newClaim = SecureRandom.SecureRandom.use((random) => random.uuidV4()).pipe(
@@ -605,16 +612,25 @@ export const make = <E, R>(
     Effect.gen(function*() {
       const sent = yield* bodyOf(request, decodeEvents)
       if (sent._tag === "Refused") return refuse(fields, sent.status, "invalid")
-      const { key } = sent.value
+      const { key, claim } = sent.value
       fields.key = key
       fields.events = sent.value.events.length
+      if (!isUuid(claim)) return refuse(fields, 409, "not_held")
       const sql = yield* SqlClient.SqlClient
       // One transaction, the runner held current through it, the transcript's append included (decision 0148).
       return yield* sql.withTransaction(Effect.gen(function*() {
         if (!(yield* lockCurrent(runner))) return refuse(fields, 403, "not_authorized")
-        // The runner that holds or held the job's claim: its settlement may come before its last events.
+        // The runner that holds the job under this claim, or held it until the job ended a moment ago: its settlement
+        // may come before its last events. A job has one claim in its life (a retry is a new generation's own row and
+        // key), and settling clears it; a Stop keeps it as `stopped_claim`, which must then match. A claim that never
+        // held the job, and a job that ended long ago, store nothing.
         const [row] = yield* sql<{ readonly task: unknown; readonly generation: number }>`
-          SELECT task, generation FROM agent_jobs WHERE key = ${key} AND runner_id = ${runner.id}::uuid`
+          SELECT task, generation FROM agent_jobs
+          WHERE key = ${key} AND runner_id = ${runner.id}::uuid AND (
+            (status = 'claimed' AND claim = ${claim}::uuid)
+            OR (status IN ('done', 'failed', 'cancelled', 'retryable')
+              AND (stopped_claim IS NULL OR stopped_claim = ${claim}::uuid)
+              AND settled_at > now() - ${EVENTS_AFTER_SETTLE_SECONDS}::int * interval '1 second'))`
         if (row === undefined) return refuse(fields, 409, "not_held")
         const task = yield* decodeTask(row.task).pipe(Effect.orDie)
         const runId = options.runOf(task)

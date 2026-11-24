@@ -62,7 +62,8 @@ export effect function start(hostId: string, storage: Objects.Storage, sequencer
     const accepted = request.flow === Tour._tag ? snapshot.entries.some(entry => openRootReply(entry.author, entry.done, entry.inReplyTo)) : snapshot.entries.some(entry => entry.clientId === request.id)
     if (accepted) {
       try sequencer.ensureDispatched()
-      try promise(() => storage.setAlarm(Date.now()))
+      const now = try Clock.currentTimeMillis
+      try promise(() => storage.setAlarm(now))
       if (request.flow === Post._tag) try sequencer.action({ type: "SettleAction", id: request.id, state: "passed", result: "null", at: try Clock.currentTimeMillis })
       return null
     }

@@ -203,7 +203,7 @@ export type Checked = Verdict | {
   readonly capped: boolean
   /** The authoritative session end mapped from the check's start onto this Worker's clock. */
   readonly expiresAt?: number | null
-  readonly serverExpiresAt?: number
+  readonly serverExpiresAt?: number | undefined
 }
 
 /**
@@ -337,7 +337,12 @@ export const coalesced = <R>(
   return () => {
     if (pending) return
     pending = true
-    fork(Effect.ensuring(renewal, Effect.sync(() => void (pending = false))))
+    try {
+      fork(Effect.ensuring(renewal, Effect.sync(() => void (pending = false))))
+    } catch (error) {
+      pending = false
+      throw error
+    }
   }
 }
 
@@ -398,13 +403,21 @@ export const gate = <E>(raw: RawSocket<E>, live: () => boolean, lapsed: () => vo
     },
     close: (code, reason) => raw.close(code, reason),
     addEventListener: (type, listener) => {
-      const gated = type !== "message" ? listener : (event: E) => {
+      if (type !== "message") return raw.addEventListener(type, listener)
+      if (wrapped.has(listener)) return
+      const gated = (event: E) => {
         if (live()) listener(event)
         else lapsed()
       }
       wrapped.set(listener, gated)
       raw.addEventListener(type, gated)
     },
-    removeEventListener: (type, listener) => raw.removeEventListener(type, wrapped.get(listener) ?? listener),
+    removeEventListener: (type, listener) => {
+      if (type !== "message") return raw.removeEventListener(type, listener)
+      const gated = wrapped.get(listener)
+      if (gated === undefined) return
+      raw.removeEventListener(type, gated)
+      wrapped.delete(listener)
+    },
   }
 }

@@ -12,7 +12,11 @@ Compose `qualifiedWorkerHost("bug-worker", artifact, ports)` from
 must authenticate its own passing `//apps/bug-worker/...` gate and immutable
 artifact at the exact main revision, and retain adoption evidence for that
 artifact. Preserve the Worker, KV namespace, custom domains and the rate-limit Durable
-Object namespace; a resource replacement refuses qualification. The review
+Object namespace; a resource replacement refuses qualification. The host
+supplies `ALCHEMY_STAGE` and the installation's
+[deployment configuration](../README.md#deployment-configuration) from the
+private deployment repository: without them the stack plans fresh generic
+resources, not the live ones. The review
 Worker's D1 migration requirements do not apply to this Worker.
 
 Before publication, reconcile interrupted releases and verify the exclusive

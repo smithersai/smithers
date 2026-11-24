@@ -1,9 +1,12 @@
 // The shipped fleet tab loaded by the public plugin host, reading live rows over the real API and Electric.
-import { Effect } from "effect"
+import { ShapeSource } from "@smthrs/effect-electric"
+import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
+import { AuthStore, SESSION } from "../../../src/features/auth/store"
+import { FleetStore } from "../../../src/features/fleet/store"
 import { PluginsUi } from "../../../src/plugins/ui"
-import { member, openTestApp, TestChatApi } from "../../../src/test/chatApi"
+import { member, openFaultyApp, openTestApp, TestChatApi } from "../../../src/test/chatApi"
 import type { FleetTab, Watched } from "./tab"
 
 const changed = <A>(live: Watched<A>, ready: (value: A) => boolean, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
@@ -15,6 +18,12 @@ const changed = <A>(live: Watched<A>, ready: (value: A) => boolean, signal: Abor
   signal.addEventListener("abort", aborted, { once: true })
   check()
 })
+
+/** A deployment that names its one admin, signed in in person: no login is an admin unless the deployment says so. */
+const admin = {
+  deploymentAdmins: "fleet-admin",
+  actor: { subject: { kind: "person", id: "p-fleet-admin" }, role: "admin", login: "fleet-admin" },
+} as const
 
 test("the shipped plugin subscribes to run and machine changes, and unsubscribe stops notifications", async ({ signal }) => {
   const app = openTestApp({ answers: false }, { actor: { ...member, role: "maintainer" } })
@@ -62,7 +71,7 @@ test("the shipped plugin subscribes to run and machine changes, and unsubscribe 
 test("global fleet shapes sync host_nodes, observed_sessions, and provider_accounts live through ElectricSQL for deployment admin", async ({ signal }) => {
   const app = openTestApp(
     { answers: false },
-    { actor: { subject: { kind: "person", id: "p-will" }, role: "admin", login: "roninjin10" } },
+    admin,
   )
   try {
     const api = await app.runPromise(Effect.service(TestChatApi))
@@ -125,3 +134,75 @@ test("global fleet shapes sync host_nodes, observed_sessions, and provider_accou
     })
   } finally { await app.dispose() }
 })
+
+// Astra-D4-003: a fleet shape's 401 stopped its requests and asked for a session check, and the tab went on showing
+// the last admin-only snapshot for as long as that check took. Here nothing answers the check at all.
+test("a 401 hides the synced fleet at once, keeps it hidden for another person, and only a fresh answer shows it again", async ({ signal }) => {
+  const app = openFaultyApp({ answers: false, sessionLifecycle: false }, undefined, admin)
+  try {
+    const api = await app.runPromise(Effect.service(TestChatApi))
+    const query = <A>(body: (sql: SqlClient.SqlClient) => Effect.Effect<A, unknown>) =>
+      Effect.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, body)))
+    await query((sql) => sql`INSERT INTO host_nodes (node_id, name, kind, labels, online, active_sessions, runner_capacity)
+      VALUES ('host-1', 'Host one', 'bare-metal', ${["bare-metal"]}, true, 0, 1)`)
+    const ui = await app.runPromise(Effect.service(PluginsUi))
+    const store = await app.runPromise(Effect.service(FleetStore))
+    const auth = await app.runPromise(Effect.service(AuthStore))
+    const switches = await app.runPromise(Effect.service(ShapeSource.Faults))
+    await app.runPromise(auth.session.update(SESSION, (row) => { row.status = "signed_in"; row.login = "fleet-admin"; row.role = "admin" }))
+    const tab = await ui.actions.tab("fleet") as FleetTab
+    const nodes = tab.queries.globalNodes()
+    await changed(nodes, (value) => value._tag === "Ready" && value.rows.some((row) => row.nodeId === "host-1"), signal)
+    const cached = await app.runPromise(store.globalNodes)
+
+    // Every request from here is answered 401; the change makes the waiting long poll return and the next one ask.
+    await app.runPromise(switches.refuse(401))
+    await query((sql) => sql`UPDATE host_nodes SET name = 'Host one renamed' WHERE node_id = 'host-1'`)
+    await changed(nodes, (value) => value._tag === "Refused", signal)
+    expect(nodes.current()).toEqual({ _tag: "Refused", reason: "unavailable" })
+    expect(store.global.visible("nodes")).toBe(false)
+    // The gate hides them, not an eviction: the rows are still in memory, and no session check has answered.
+    expect(await app.runPromise(cached.toArray)).toHaveLength(1)
+    expect(Option.getOrThrow(await app.runPromise(auth.session.get(SESSION))).status).toBe("signed_in")
+
+    // Another person signs in on this tab while requests are still refused: the last person's rows go.
+    await app.runPromise(auth.session.update(SESSION, (row) => { row.login = "someone-else"; row.role = "member" }))
+    await expect.poll(async () => (await app.runPromise(cached.toArray)).length, { timeout: 20_000 }).toBe(0)
+    expect(nodes.current()).toEqual({ _tag: "Refused", reason: "unavailable" })
+
+    // The admin again, confirmed by the server, and the source answers: the rows come back from a fresh sync.
+    await app.runPromise(auth.session.update(SESSION, (row) => { row.login = "fleet-admin"; row.role = "admin" }))
+    await app.runPromise(switches.heal)
+    await app.runPromise(auth.sessionConfirmed)
+    await changed(nodes, (value) => value._tag === "Ready" && value.rows.some((row) => row.name === "Host one renamed"), signal)
+    expect(store.global.visible("nodes")).toBe(true)
+  } finally { await app.dispose() }
+}, 90_000)
+
+// Astra-D4-031: before its first snapshot the hosts query answered no rows, which the view counted as "hosts 0/0" and
+// drew as "No hosts connected". Held, refused and delivered-empty are three different answers.
+test("a fleet whose first sync is held is loading, a refused one is unavailable, and only a delivered one is empty", async ({ signal }) => {
+  const app = openFaultyApp({ answers: false, sessionLifecycle: false }, (switches) => switches.stall("all"), admin)
+  try {
+    const ui = await app.runPromise(Effect.service(PluginsUi))
+    const store = await app.runPromise(Effect.service(FleetStore))
+    const switches = await app.runPromise(Effect.service(ShapeSource.Faults))
+    const tab = await ui.actions.tab("fleet") as FleetTab
+    const nodes = tab.queries.globalNodes()
+    const asked = async () => (await app.runPromise(switches.sent)).some((url) => url.pathname.endsWith("/fleet/nodes"))
+    await expect.poll(asked, { timeout: 20_000 }).toBe(true)
+    expect(nodes.current()).toEqual({ _tag: "Loading" })
+    expect(store.global.availability("nodes")).toBe("loading")
+    // The held answers go through, and every request after them is refused.
+    await app.runPromise(Effect.andThen(switches.heal, switches.refuse(403)))
+    await changed(nodes, (value) => value._tag === "Refused", signal)
+    expect(store.global.availability("nodes")).toBe("unavailable")
+    // Sessions were never refused here: their own first snapshot arrives, and holds nothing.
+    await app.runPromise(switches.heal)
+    const sessions = tab.queries.globalSessions()
+    await changed(sessions, (value) => value._tag === "Ready", signal)
+    expect(sessions.current()).toEqual({ _tag: "Ready", rows: [] })
+    expect(store.global.availability("sessions")).toBe("ready")
+    expect(nodes.current()).toEqual({ _tag: "Refused", reason: "unavailable" })
+  } finally { await app.dispose() }
+}, 90_000)

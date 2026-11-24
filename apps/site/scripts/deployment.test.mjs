@@ -16,9 +16,6 @@ import { docsRoutes, workerDomain } from "../../mvp/infra/Domain.ts"
 const root = resolve(import.meta.dirname, "../../..")
 const appEntries = ["bug-worker"].map((name) => join(root, "apps", name, "alchemy.run.ts"))
 
-/** The smithers.sh zone on account dd3525a4132493566aeb38de533c8827. */
-const SMITHERS_ZONE_ID = "8ebd98d2f0dc7d8db2e61f31ebc19c14"
-
 test("all deployment entry points import as Alchemy 2 stack effects", async () => {
   const entryPoints = [
     ...appEntries
@@ -60,30 +57,43 @@ test("stack properties and shared implementation typecheck against the declared 
   )
 })
 
-test("app stacks retain their Worker routing and defer required redacted credentials", async () => {
+/** A fixture installation of the bug Worker: its deployment configuration as the environment supplies it. */
+const BUG_WORKER_FIXTURE = {
+  BUG_WORKER_NAME: "fixture-bug-worker",
+  BUG_REPORTS_NAMESPACE: "fixture-bug-reports",
+  BUG_WORKER_DOMAIN: "bug.example.com",
+  BUG_WORKER_DOMAIN_ALIASES: "bugs.example.com"
+}
+const bugWorkerDeployment = async (env) => {
+  const { BugWorkerDeployment } = await import(pathToFileURL(join(root, "apps/bug-worker/infra/Deployment.ts")).href)
+  return Effect.runSync(BugWorkerDeployment.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env)))))
+}
+
+test("app stacks take Worker routing from deployment configuration and defer required redacted credentials", async () => {
   const [bugs] = await Promise.all(appEntries.map((path) => import(pathToFileURL(path).href)))
-  // The live Worker, KV namespace and hostnames observed on Cloudflare 2026-09-23.
-  // Another name creates a second Worker and an empty namespace; a declared
-  // domain detaches every live hostname it does not list.
-  assert.equal(bugs.workerProps.name, "smithers-bug-worker-smithers-bug-worker-williamcory")
-  assert.equal(bugs.bugReportsProps.title, "smithers-bug-worker-bug-reports-williamcory")
-  assert.equal(bugs.workerProps.main, "src/worker.ts")
-  assert.deepEqual(bugs.workerProps.domain, {
-    name: "bug.smithers.sh",
-    aliases: ["bugs.smithers.sh"],
-    zoneId: SMITHERS_ZONE_ID
-  })
-  // A workers.dev origin would serve the same routes outside the smithers.sh zone's rules.
-  assert.equal(bugs.workerProps.workersDev, false)
-  assert.equal(bugs.workerProps.crons, undefined)
+  // The physical names and hostnames are the installation's configuration,
+  // never a hosted account's literals: another installation plans its own.
+  const configured = bugs.workerProps(await bugWorkerDeployment(BUG_WORKER_FIXTURE))
+  assert.equal(configured.name, "fixture-bug-worker")
+  assert.equal(bugs.bugReportsProps(await bugWorkerDeployment(BUG_WORKER_FIXTURE)).title, "fixture-bug-reports")
+  assert.equal(configured.main, "src/worker.ts")
+  assert.deepEqual(configured.domain, { name: "bug.example.com", aliases: ["bugs.example.com"] })
+  // A workers.dev origin would serve the same routes outside the custom domain's zone rules.
+  assert.equal(configured.workersDev, false)
+  assert.equal(configured.env.PUBLIC_BASE_URL, "https://bug.example.com")
+  const generic = bugs.workerProps(await bugWorkerDeployment({}))
+  assert.equal(generic.name, "smithers-bug-worker")
+  assert.equal(generic.domain, undefined)
+  assert.equal(generic.workersDev, true)
+  assert.equal("PUBLIC_BASE_URL" in generic.env, false)
+  assert.equal(configured.crons, undefined)
   for (const retired of ["REPO_COMPLETIONS", "RESEND_API_KEY", "NOTIFICATION_FROM", "GITHUB_FORK_TOKEN"]) {
-    assert.equal(retired in bugs.workerProps.env, false)
+    assert.equal(retired in configured.env, false)
   }
-  assert.equal(bugs.workerProps.env.PUBLIC_BASE_URL, "https://bug.smithers.sh")
-  assert.ok(Effect.isEffect(bugs.workerProps.env.BUGS))
+  assert.ok(Effect.isEffect(configured.env.BUGS))
 
   // A deploy from a shell without a binding's variable must fail, not delete the binding.
-  const credentials = [[bugs.workerProps.env.BUG_ADMIN_TOKEN, "BUG_ADMIN_TOKEN"]]
+  const credentials = [[configured.env.BUG_ADMIN_TOKEN, "BUG_ADMIN_TOKEN"]]
   for (const [config, name] of credentials) {
     assert.ok(Config.isConfig(config), `${name}: resolve credentials only while evaluating the stack`)
     assert.equal(Effect.runSyncExit(config.parse(ConfigProvider.fromUnknown({})))._tag, "Failure")
@@ -101,9 +111,10 @@ test("app stacks retain their Worker routing and defer required redacted credent
  * aliases and redirects) and each route `pattern` in every file of the stack's relative import graph that imports
  * `@alchemy.run/cloudflare`. Running a stack would load its whole app under Node; Vite and Alchemy bundle that code, and
  * Node's loader rejects its extensionless imports. Configured claims are resolved through their pure routing helpers
- * with an injected deployment hostname. Any other nonliteral claim still fails closed.
+ * with an injected deployment hostname; `bindingModules` names the module each stack's helper must be imported from.
+ * Any other nonliteral claim still fails closed.
  */
-const stackHostnames = (stackPath, bindings = new Map()) => {
+const stackHostnames = (stackPath, bindings = new Map(), bindingModules = new Map()) => {
   const claims = []
   const seen = new Set()
   const pending = [stackPath]
@@ -150,7 +161,7 @@ const stackHostnames = (stackPath, bindings = new Map()) => {
           ts.isCallExpression(expression) &&
             source.statements.some((statement) =>
               ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) &&
-              resolve(dirname(path), statement.moduleSpecifier.text) === join(root, "apps/mvp/infra/Domain.ts") &&
+              resolve(dirname(path), statement.moduleSpecifier.text) === bindingModules.get(path) &&
               statement.importClause?.namedBindings && ts.isNamedImports(statement.importClause.namedBindings) &&
               statement.importClause.namedBindings.elements.some((entry) =>
                 entry.name.text === expression.expression.getText(source) &&
@@ -231,7 +242,7 @@ const conflicts = (claims) =>
     })
   )
 
-test("each hostname and route has one owning Worker in this repository", () => {
+test("each hostname and route has one owning Worker in this repository", async () => {
   const owners = new Map()
   const claims = []
   const claim = (entry) => {
@@ -244,9 +255,19 @@ test("each hostname and route has one owning Worker in this repository", () => {
     redirects: ["www.example.com"],
     aliases: [{ host: "factory.example.com", path: "/acme/widgets/-/factory" }]
   }
+  const { bugWorkerDomain } = await import(pathToFileURL(join(root, "apps/bug-worker/infra/Deployment.ts")).href)
   const bindings = new Map([
     [join(root, "apps/mvp/alchemy.run.ts"), new Map([["workerDomain(domain.value)", workerDomain(host)]])],
-    [join(root, "apps/mvp/infra/DocsSite.ts"), new Map([["docsRoutes(domain)", docsRoutes(host.name)]])]
+    [join(root, "apps/mvp/infra/DocsSite.ts"), new Map([["docsRoutes(domain)", docsRoutes(host.name)]])],
+    [
+      join(root, "apps/bug-worker/alchemy.run.ts"),
+      new Map([["bugWorkerDomain(deployment)", bugWorkerDomain(await bugWorkerDeployment(BUG_WORKER_FIXTURE))]])
+    ]
+  ])
+  const bindingModules = new Map([
+    [join(root, "apps/mvp/alchemy.run.ts"), join(root, "apps/mvp/infra/Domain.ts")],
+    [join(root, "apps/mvp/infra/DocsSite.ts"), join(root, "apps/mvp/infra/Domain.ts")],
+    [join(root, "apps/bug-worker/alchemy.run.ts"), join(root, "apps/bug-worker/infra/Deployment.ts")]
   ])
   const apps = join(root, "apps")
   // The site's docs redirect Worker (apps/site/docs-redirect) is the one
@@ -273,12 +294,12 @@ test("each hostname and route has one owning Worker in this repository", () => {
   for (const app of readdirSync(apps)) {
     const stackPath = join(apps, app, "alchemy.run.ts")
     if (existsSync(stackPath)) {
-      for (const entry of stackHostnames(stackPath, bindings)) claim(entry)
+      for (const entry of stackHostnames(stackPath, bindings, bindingModules)) claim(entry)
     }
   }
-  // An empty static read must not pass for "no conflicts": it sees bug-worker's declared domain.
-  for (const host of ["bug.smithers.sh", "bugs.smithers.sh"]) {
-    assert.deepEqual([...owners.get(host) ?? []], ["smithers-bug-worker-smithers-bug-worker-williamcory"], host)
+  // An empty static read must not pass for "no conflicts": it sees bug-worker's configured domain.
+  for (const host of ["bug.example.com", "bugs.example.com"]) {
+    assert.equal(owners.get(host)?.size, 1, host)
   }
   // The docs redirect Worker's routes are read too: one retired docs site.
   assert.deepEqual([...owners.get("flows.smithers.sh") ?? []], ["smithers-docs-redirect"])
@@ -322,11 +343,13 @@ test("an unknown dynamic domain or route cannot disappear from the inventory", (
   }
 })
 
-test("every shared-state stack plans against one record under stage prod", () => {
+test("every shared-state stack plans against one record under the configured stage", () => {
   const read = (path) => readFileSync(join(root, path), "utf8")
   // Local state lives in a gitignored .alchemy/ on whichever machine deployed
   // last, and the CLI's default stage is dev_$USER, so either one gives each
-  // machine its own view of production.
+  // machine its own view of production. The stage is deployment
+  // configuration: a command without ALCHEMY_STAGE stops instead of falling
+  // back to dev_$USER or to a hosted stage.
   const stacks = [
     { stack: "apps/bug-worker/alchemy.run.ts", pkg: "apps/bug-worker/package.json", qualifiedOnly: true }
   ]
@@ -342,9 +365,9 @@ test("every shared-state stack plans against one record under stage prod", () =>
     assert.deepEqual(
       scripts.sort(),
       [
-        "alchemy deploy --dry-run --stage prod",
-        ...(qualifiedOnly ? [] : ["alchemy deploy --stage prod"]),
-        "alchemy destroy --stage prod"
+        "alchemy deploy --dry-run --stage \"${ALCHEMY_STAGE:?set ALCHEMY_STAGE to the stage to plan}\"",
+        ...(qualifiedOnly ? [] : ["alchemy deploy --stage \"${ALCHEMY_STAGE:?set ALCHEMY_STAGE to the stage to deploy}\""]),
+        "alchemy destroy --stage \"${ALCHEMY_STAGE:?set ALCHEMY_STAGE to the stage to destroy}\""
       ].sort(),
       pkg
     )
@@ -352,7 +375,7 @@ test("every shared-state stack plans against one record under stage prod", () =>
       packageScripts.deploy,
       qualifiedOnly
         ? "node ../../.smithers/flows/rollout/refuse-unqualified.mjs"
-        : "alchemy deploy --stage prod",
+        : "alchemy deploy --stage \"${ALCHEMY_STAGE:?set ALCHEMY_STAGE to the stage to deploy}\"",
       pkg
     )
     if (qualifiedOnly) {
@@ -366,6 +389,28 @@ test("every shared-state stack plans against one record under stage prod", () =>
         }
       }
     }
+  }
+})
+
+test("bug-worker plan runs only under an explicit ALCHEMY_STAGE", () => {
+  const directory = mkdtempSync(join(tmpdir(), "smithers-plan-stage-"))
+  try {
+    const marker = join(directory, "argv")
+    writeFileSync(join(directory, "alchemy"),
+      `#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(marker)}, process.argv.slice(2).join(" "))\n`,
+      { mode: 0o755 })
+    const plan = JSON.parse(readFileSync(join(root, "apps/bug-worker/package.json"), "utf8")).scripts.plan
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== "ALCHEMY_STAGE"))
+    env.PATH = `${directory}:${env.PATH}`
+    const unset = spawnSync("/bin/sh", ["-c", plan], { env, encoding: "utf8" })
+    assert.notEqual(unset.status, 0)
+    assert.match(unset.stderr, /set ALCHEMY_STAGE/)
+    assert.equal(existsSync(marker), false)
+    const staged = spawnSync("/bin/sh", ["-c", plan], { env: { ...env, ALCHEMY_STAGE: "fixture" }, encoding: "utf8" })
+    assert.equal(staged.status, 0, staged.stderr)
+    assert.equal(readFileSync(marker, "utf8"), "deploy --dry-run --stage fixture")
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
   }
 })
 

@@ -1,0 +1,30 @@
+// The desktop reply's pure decisions: what the model reads, and whether a failed reply was the model's failure.
+import { promptWindow } from "../../vibelang/src/core/sequenceDecision.vibe"
+
+/** The most turns of the conversation the agent reads, as the hosted reply's window (apps/vibelang worker/Reply.vibe). */
+export const MAX_TURNS = 24
+
+export interface PromptTurn { readonly author: "person" | "agent"; readonly text: string }
+
+/** The agent's prompt: the last `MAX_TURNS` turns, oldest first, each on a line named by its author. */
+export function promptOf(turns: ReadonlyArray<PromptTurn>): string {
+  return promptWindow(turns, MAX_TURNS).map((turn) => `${turn.author}: ${turn.text}`).join("\n")
+}
+
+/** How the reply's latest model call stands: none asked yet, one asked or answered, or one the provider or transport failed. */
+export type ModelCall = "none" | "asked" | "failed"
+
+/** Folds one agent event's tag into the latest model call's standing; every other event leaves it unchanged. */
+export function modelCallAfter(call: ModelCall, event: string): ModelCall {
+  if (event === "model-failed") return "failed"
+  if (event === "model-requested" || event === "model-retried" || event === "model-settled") return "asked"
+  return call
+}
+
+/**
+ * Whether a failed reply was the selected model's failure: the provider could not be resolved, or its latest call
+ * failed. A tool defect, a folder refusal, the frame limit and a cell timeout are not: the model stays ready.
+ */
+export function modelFault(tag: string, call: ModelCall): boolean {
+  return tag === "ModelUnavailable" || call === "failed"
+}

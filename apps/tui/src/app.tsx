@@ -264,7 +264,8 @@ export function App(props: AppProps) {
         tab: tabs.read,
         run: flows.read,
         shell: (command, signal) => {
-          const running = Shell.run({ command, cwd: props.host.cwd, onOutput: () => {} })
+          // A tick every few seconds must not leave a full-output file each time.
+          const running = Shell.run({ command, cwd: props.host.cwd, onOutput: () => {}, spill: false })
           const deadline = Timer.after(30_000, running.cancel)
           signal?.addEventListener("abort", running.cancel, { once: true })
           if (signal?.aborted) running.cancel()
@@ -1353,6 +1354,8 @@ export function App(props: AppProps) {
     const running = Shell.run({
       command,
       cwd: props.host.cwd,
+      // Owner-only, beside this folder's sessions; files older than a day are pruned.
+      spillDir: Shell.spillFolder(Session.directory(props.host.cwd)),
       onOutput: (text) => setTranscript((current) => Transcript.shellOutput(current, id, text))
     })
     // Claimed before the next render: a second `!cmd` or `/new` in the same input batch sees it.

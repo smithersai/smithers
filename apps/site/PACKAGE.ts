@@ -567,6 +567,7 @@ const docsRuntimeTests = Smithers.Shell.Test({
     Smithers.file("docs-redirect/wrangler.jsonc"),
     Smithers.file("//apps/patterns-site/wrangler.jsonc"),
     Smithers.file("//apps/bug-worker/alchemy.run.ts"),
+    Smithers.file("//apps/bug-worker/infra/Deployment.ts"),
     Smithers.file("//apps/bug-worker/README.md"),
     Smithers.file("//apps/bug-worker/package.json"),
     mvpPackage.deploymentSources,
@@ -677,6 +678,7 @@ const securityReview = Smithers.SecurityReview({
         "A visitor's name, work email and message reach a third party, or a script on the page rewrites where the form posts.",
       lookFor: [
         "An intake endpoint taken from a query parameter, env var, or page data instead of the literal bug.smithers.sh URL.",
+        "The page shows success without a 201 receipt whose id matches the intake's ID format, or draws a new submissionId per retry.",
         "Error handling that renders the server's response body into the page with innerHTML.",
         "The fetch sending credentials or extra headers (cookies, tokens) to the cross-origin intake worker."
       ],
@@ -782,8 +784,15 @@ const bench = Smithers.NodeBench({
   cwd
 })
 
+/** API reference Markdown pages checked by the patterns catalog link suite. */
+const apiReferenceSources = Smithers.Filegroup({
+  srcs: [Smithers.glob("src/content/docs/docs/reference/api/*.mdx")],
+  cwd
+})
+
 export const Package = Smithers.Package({
   targets: {
+    apiReferenceSources,
     bench,
     check,
     build,

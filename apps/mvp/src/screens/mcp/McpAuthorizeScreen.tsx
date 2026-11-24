@@ -19,7 +19,7 @@ import {
   REVIEW_REQUEST,
   ROLE,
   SIGN_IN_TO_AUTHORIZE,
-  SIGN_IN_TO_AUTHORIZE_ABOUT,
+  BACK_TO_CHAT,
 } from "../../features/mcp/copy"
 import { consentView } from "../../features/mcp/view"
 import "./mcp-authorize-screen.css"
@@ -56,13 +56,13 @@ export function McpAuthorizeScreen() {
     })
   return (
     <main className="mcp-authorize-screen" aria-label={AUTHORIZE_AGENT}>
-      <PageHeader width="narrow" back={<Link to="/app">Back to chat</Link>} title={AUTHORIZE_AGENT} />
+      <PageHeader width="narrow" back={<Link to="/app">{BACK_TO_CHAT}</Link>} title={AUTHORIZE_AGENT} />
       <PageBody width="narrow">
         {signedOut
           ? (
             <Card>
               <CardContent>
-                <EmptyState title={SIGN_IN_TO_AUTHORIZE} description={SIGN_IN_TO_AUTHORIZE_ABOUT} action={<SignInButton />} />
+                <EmptyState title={SIGN_IN_TO_AUTHORIZE} action={<SignInButton />} />
               </CardContent>
             </Card>
           )
@@ -101,7 +101,6 @@ export function McpAuthorizeScreen() {
                         blocked={view.blocked}
                         who={<strong>{view.actor}</strong>}
                       />
-                      <p>{view.lifetime}</p>
                       <p role="status">{leaving ? REDIRECTING : errorText(consent?.error ?? null)}</p>
                       <div className="mcp-authorize-actions">
                         <Button variant="outline" disabled={submitting !== null || leaving} onClick={() => decide("deny")}>{CANCEL}</Button>

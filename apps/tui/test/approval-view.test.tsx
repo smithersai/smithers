@@ -39,3 +39,29 @@ test.each([
   expect(rows[1]?.trim()).toBe(`+ ${visible}`)
   expect(rows[2]).toContain("y Allow once  n Deny change  a Allow edits this run")
 })
+
+test("a bash approval shows each line the shell runs on its own row, never one joined command", async () => {
+  setup = await testRender(
+    <View.Approval
+      request={{ flow: "bash", subject: "echo ok\nrm -rf x" }}
+      width={80}
+      choices={Approvals.choices({ action: "proc:spawn", flow: "bash", always: true })}
+      armed
+      more={0}
+      lines={1}
+    />,
+    { width: 80, height: 24 }
+  )
+  await setup.renderOnce()
+  const rows = setup.captureCharFrame().split("\n").filter((row) => row.trim() !== "")
+  expect(rows[0]?.trim()).toBe("? run echo ok⏎")
+  expect(rows[1]?.trim()).toBe("rm -rf x")
+  expect(rows.join("\n")).not.toContain("echo ok rm -rf x")
+})
+
+test("a bash approval shows bidi overrides and zero-width characters as �, and keeps spacing", () => {
+  expect(Approvals.legible("echo ‮abc​")).toBe("echo �abc�")
+  expect(Approvals.legible("a  b\tc")).toBe("a  b⇥c")
+  expect(Approvals.legible("a b\r\nc")).toBe("a�b�⏎\nc")
+  expect(Approvals.refusal({ flow: "bash", subject: "echo ‮ok" })).toContain("bash echo �ok.")
+})

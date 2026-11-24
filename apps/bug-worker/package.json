@@ -2,14 +2,14 @@
   "name": "@smthrs/bug-worker",
   "version": "0.0.1",
   "private": true,
-  "description": "Cloudflare Worker behind bug.smithers.sh that receives smithers bug reports and stores them in KV",
+  "description": "Cloudflare Worker that receives smithers bug reports and demo requests and stores them in KV",
   "type": "module",
   "scripts": {
     "test": "bun test tests",
     "typecheck": "vibelang -p tsconfig.json --noEmit",
-    "plan": "alchemy deploy --dry-run --stage prod",
+    "plan": "alchemy deploy --dry-run --stage \"${ALCHEMY_STAGE:?set ALCHEMY_STAGE to the stage to plan}\"",
     "deploy": "node ../../.smithers/flows/rollout/refuse-unqualified.mjs",
-    "destroy": "alchemy destroy --stage prod"
+    "destroy": "alchemy destroy --stage \"${ALCHEMY_STAGE:?set ALCHEMY_STAGE to the stage to destroy}\""
   },
   "dependencies": {
     "zod": "4.6.7"

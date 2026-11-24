@@ -23,6 +23,7 @@ export function Composer({ docked = true, readOnly = false }: { readonly docked?
   const { data: menu } = useLiveQuery(commands.queries.menu)
   const { data: texts } = useLiveQuery(coedit.queries.texts)
   const prompt = promptOf(texts)
+  const saved = prompt === undefined ? composer?.saved === true : prompt.stored && prompt.text === composer?.draft
   if (readOnly) {
     return (
       <ChatComposer
@@ -39,7 +40,7 @@ export function Composer({ docked = true, readOnly = false }: { readonly docked?
   }
   if (composer?.open !== true) {
     return (
-      <Button variant="outline" aria-keyshortcuts={SHORTCUT} data-draft={(prompt === undefined ? composer?.saved !== false : prompt.stored) ? "saved" : "unsaved"} onClick={() => actions.openComposer("button")}>
+      <Button variant="outline" aria-keyshortcuts={SHORTCUT} data-draft={saved ? "saved" : "unsaved"} onClick={() => actions.openComposer("button")}>
         Chat <kbd>⌘K</kbd>
       </Button>
     )
@@ -51,8 +52,8 @@ export function Composer({ docked = true, readOnly = false }: { readonly docked?
       onValueChange={commands.actions.type}
       onSubmit={commands.actions.submit}
       collaborators={prompt?.collaborators ?? []}
-      selection={prompt?.selection ?? undefined}
-      onSelectionChange={prompt === undefined ? undefined : (selection) => coedit.actions.select(prompt.id, selection)}
+      {...(prompt?.selection == null ? {} : { selection: prompt.selection })}
+      {...(prompt === undefined ? {} : { onSelectionChange: (selection) => coedit.actions.select(prompt.id, selection) })}
       completions={{
         label: menu?.label ?? "",
         items: menu?.items ?? [],
@@ -78,7 +79,7 @@ export function Composer({ docked = true, readOnly = false }: { readonly docked?
           // request focus, even when Suspense has left it on the document body.
           if (element !== null && actions.takeComposerFocus()) element.focus()
         },
-        "data-draft": (prompt === undefined ? composer.saved : prompt.stored) ? "saved" : "unsaved",
+        "data-draft": saved ? "saved" : "unsaved",
       }}
       actions={
         <Button variant="ghost" size="sm" aria-keyshortcuts={SHORTCUT} onClick={actions.closeComposer}>

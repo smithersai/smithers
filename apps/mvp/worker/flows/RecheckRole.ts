@@ -4,7 +4,6 @@ import { Clock, Effect, Layer, Metric, Option, Redacted, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { ROLES } from "../../src/features/auth/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
-import * as DeploymentPolicy from "../DeploymentPolicy.vibe"
 import { type GitHubAuth, GitHubRefused, roleOf } from "../GitHubAuth.ts"
 import { digest, type SessionKeys } from "../SessionKeys.ts"
 import * as SessionStore from "../SessionStore.ts"
@@ -276,9 +275,7 @@ export const check = (sessionId: string, redemption: Redemption, services: Servi
       Effect.catchIf(isRejected, () => Effect.succeedNone),
     )
     if (Option.isNone(permission)) return yield* end("github_refused")
-    const admins = yield* DeploymentPolicy.configuredAdmins().pipe(Effect.orElseSucceed(() => DeploymentPolicy.DEFAULT_ADMINS))
-    const effective = DeploymentPolicy.effectiveRole(held.login ?? undefined, repository, roleOf(permission.value), admins)
-    const role = yield* SessionStore.setRole(sessionId, effective, generation, held.tokenGen)
+    const role = yield* SessionStore.setRole(sessionId, roleOf(permission.value), generation, held.tokenGen)
     return { outcome: "checked", role } satisfies Checked
   })
 

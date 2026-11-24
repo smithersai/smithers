@@ -21,7 +21,8 @@ import * as Sequencer from "../../../vibelang/worker/Sequencer.vibe"
 import { Folder, FolderInfo, FolderFailure } from "./Folder.vibe"
 import { LocalModels, ModelInfo, ModelUnavailable } from "./LocalModel.vibe"
 
-import { choiceCurrent, editAllowed } from "../policy.vibe"
+import { choiceCurrent, editAllowed, externalUrl } from "../policy.vibe"
+import { modelCallAfter, modelFault, promptOf, type ModelCall } from "../reply.vibe"
 import { Snapshot, ToolReceipt } from "../protocol.vibe"
 import { receiptOf } from "../receipts.vibe"
 export { Snapshot } from "../protocol.vibe"
@@ -35,14 +36,17 @@ export service Preferences { readonly directory: string; chooseDirectory(): (str
 
 schema EditIntent { readonly key: string; readonly folder: FolderInfo; readonly receipt: ToolReceipt; readonly done: boolean }
 schema Stored { readonly snapshot: Snapshot; readonly edits: ReadonlyArray<EditIntent> }
+/** The older whole-array conversation file, read once to migrate it into a journal. */
 const Log = Schema.fromJsonString(Schema.Array(EventSchema))
+/** One line of a conversation journal. */
+const EventLine = Schema.fromJsonString(EventSchema)
+const encoder = new TextEncoder()
 schema ReplyConfig { readonly mock: boolean; readonly folder: FolderInfo | null; readonly model: ModelInfo | null }
 
 const Post = Flow.make("vibelang/desktop/Post", { payload: { conversation: Schema.String, clientId: Schema.String, name: Schema.String, text: Schema.String }, success: Schema.NullOr(Schema.String), body: () => Node.succeed(null) })
 const Reply = Flow.make("vibelang/desktop/Reply", { payload: { conversation: Schema.String, post: Schema.String }, success: Schema.Null, body: () => Node.succeed(null) })
 const Change = Flow.make("vibelang/desktop/Change", { payload: { operation: Schema.String, endpoint: Schema.String, model: Schema.String }, success: Snapshot, body: () => Node.succeed({ mock: true, folder: null, model: null, tools: [] }) })
 const External = Flow.make("vibelang/desktop/External", { payload: { url: Schema.String }, success: Schema.Void, body: () => Node.succeed(undefined) })
-const Models = Flow.make("vibelang/desktop/Models", { payload: { endpoint: Schema.String }, success: Schema.Array(Schema.String), body: () => Node.succeed([]) })
 const Search = Flow.make("fs.search", { description: "Search the selected folder for literal text with the standard search service. At most 100 matching lines are returned.", payload: { query: Schema.String }, success: Grep.Output, body: () => Node.succeed({ matches: [], files: [], filesSearched: 0, skippedBinary: 0, truncated: false }) })
 const Read = Flow.make("fs.read", { description: "Read one relative file in the person's open folder.", payload: { path: Schema.String }, success: Schema.String, body: () => Node.succeed("") })
 const Write = Flow.make("fs.edit", { description: "Replace a relative file only if before still matches its exact content. Read it first and pass the original as before. False means no edit was applied.", payload: { path: Schema.String, before: Schema.String, text: Schema.String }, success: Schema.Boolean, body: () => Node.succeed(false) })
@@ -70,7 +74,9 @@ export const registration = Layer.effectContext(effect {
   const initial: Snapshot = { mock: true, folder: null, model: null, tools: [] }
   const state = try Ref.make(initial)
   const edits = try Ref.make<ReadonlyArray<EditIntent>>([])
-  const rooms = new Map<string, Sequencer.Sequencer>()
+  /** Live sequencers, least recently used first. A room is evicted only while nothing holds it. */
+  const rooms = new Map<string, { readonly seq: Sequencer.Sequencer; holds: number }>()
+  const roomLimit = Math.max(1, try Config.withDefault(Config.Int("VIBELANG_DESKTOP_ROOMS"), 32))
   const roomGate = try Semaphore.make(1)
   const settingsGate = try Semaphore.make(1)
   const settingsFile = path.join(preferences.directory, "settings.json")
@@ -86,15 +92,18 @@ export const registration = Layer.effectContext(effect {
     try fs.rename(`${name}.new`, name).pipe(Effect.orDie)
     try sync(preferences.directory)
   }
-  // A torn write or an older format is set aside for the person and never stops the app.
+  effect function setAside(name: string) {
+    try fs.rename(name, `${name}.corrupt-${try Clock.currentTimeMillis}`).pipe(Effect.orDie)
+    try Effect.logWarning("vibelang.desktop.corrupt").pipe(Effect.annotateLogs({ file: path.basename(name) }))
+    try Metric.update(Metric.counter("vibelang_desktop_files_set_aside", { incremental: true }), 1)
+  }
+  // A torn write or an older format is set aside for the person and never stops the app. Only a read sets a file aside.
   effect function load<S extends Schema.Codec<unknown, string>>(name: string, schema: S, empty: S["Type"]) {
     if (!(try fs.exists(name).pipe(Effect.orDie))) return empty
     const text = try fs.readFileString(name).pipe(Effect.orDie)
     const decoded = try exit(Schema.decodeUnknownEffect(schema)(text))
     if (Exit.isSuccess(decoded)) return decoded.value
-    try fs.rename(name, `${name}.corrupt-${try Clock.currentTimeMillis}`).pipe(Effect.orDie)
-    try Effect.logWarning("vibelang.desktop.corrupt").pipe(Effect.annotateLogs({ file: path.basename(name) }))
-    try Metric.update(Metric.counter("vibelang_desktop_files_set_aside", { incremental: true }), 1)
+    try setAside(name)
     return empty
   }
   try fs.makeDirectory(preferences.directory, { recursive: true }).pipe(Effect.orDie)
@@ -107,7 +116,57 @@ export const registration = Layer.effectContext(effect {
   const pending = try load(intentsFile, Schema.fromJsonString(Schema.Array(EditIntent)), [])
   try Ref.set(edits, [...storedState.edits.filter((intent) => !pending.some((item) => item.key === intent.key)), ...pending])
   effect function saveEdits() { try publish(intentsFile, JSON.stringify(try Ref.get(edits))) }
-  const conversationFile = (conversation: string) => path.join(preferences.directory, `conversation-${encodeURIComponent(conversation)}.json`)
+  const legacyFile = (conversation: string) => path.join(preferences.directory, `conversation-${encodeURIComponent(conversation)}.json`)
+  const journalFile = (conversation: string) => path.join(preferences.directory, `conversation-${encodeURIComponent(conversation)}.jsonl`)
+  const linesOf = (events: ReadonlyArray<Event>) => events.map((event) => `${JSON.stringify(event)}\n`).join("")
+  /**
+   * A conversation's events, oldest first, from its journal: one JSON event per line. An older whole-array file
+   * becomes a journal once, published before the array is removed. A final line a crash cut short was never
+   * acknowledged and is dropped; any other undecodable line sets the journal aside, as `load` does.
+   */
+  effect function readJournal(conversation: string) {
+    const name = journalFile(conversation)
+    const legacy = legacyFile(conversation)
+    if (!(try fs.exists(name).pipe(Effect.orDie))) {
+      const events = try load(legacy, Log, [])
+      // Absent, or just set aside: nothing to migrate.
+      if (!(try fs.exists(legacy).pipe(Effect.orDie))) return events
+      try publish(name, linesOf(events))
+      try fs.remove(legacy).pipe(Effect.orDie)
+      try Effect.logInfo("vibelang.desktop.journal").pipe(Effect.annotateLogs({ outcome: "migrated", events: events.length }))
+      return events
+    }
+    // A journal beside its older array: the migration stopped before the removal, and the journal is complete.
+    if (try fs.exists(legacy).pipe(Effect.orDie)) try fs.remove(legacy).pipe(Effect.orDie)
+    const lines = (try fs.readFileString(name).pipe(Effect.orDie)).split("\n")
+    const tail = lines.pop() ?? ""
+    const events: Array<Event> = []
+    for (const line of lines) {
+      const decoded = try exit(Schema.decodeUnknownEffect(EventLine)(line))
+      if (Exit.isFailure(decoded)) {
+        try setAside(name)
+        return []
+      }
+      events.push(decoded.value)
+    }
+    if (tail !== "") {
+      // The next append must start on its own line.
+      try publish(name, linesOf(events))
+      try Effect.logWarning("vibelang.desktop.journal").pipe(Effect.annotateLogs({ outcome: "repaired", events: events.length }))
+    }
+    return events
+  }
+  /** Appends one event without reading the journal: its line is written and synced, and a new file's directory entry too. */
+  effect function appendJournal(conversation: string, event: Event) {
+    const name = journalFile(conversation)
+    const created = !(try fs.exists(name).pipe(Effect.orDie))
+    try scoped(effect {
+      const file = try fs.open(name, { flag: "a", mode: 0o600 })
+      try file.writeAll(encoder.encode(`${JSON.stringify(event)}\n`))
+      try file.sync
+    }).pipe(Effect.orDie)
+    if (created) try sync(preferences.directory)
+  }
   const receiptsFile = (conversation: string) => path.join(preferences.directory, `tools-${encodeURIComponent(conversation)}.json`)
   effect function receipts(conversation: string) {
     return try load(receiptsFile(conversation), Schema.fromJsonString(Schema.Array(ToolReceipt)), [])
@@ -137,7 +196,7 @@ export const registration = Layer.effectContext(effect {
   for (const intent of try Ref.get(edits)) {
     let events = terminal.get(intent.receipt.conversation)
     if (events === undefined) {
-      events = try load(conversationFile(intent.receipt.conversation), Log, [])
+      events = try readJournal(intent.receipt.conversation)
       terminal.set(intent.receipt.conversation, events)
     }
     const settled = events.some((event) => (event.type === "ReplyFinished" || event.type === "ReplyFailed") && event.id === intent.receipt.reply)
@@ -148,24 +207,41 @@ export const registration = Layer.effectContext(effect {
     try Ref.set(edits, outstanding)
     try saveEdits()
   }
-  effect function room(conversation: string): Sequencer.Sequencer!! {
-    return try Semaphore.withPermits(roomGate, 1)(effect {
-      const previous = rooms.get(conversation)
-      if (previous !== undefined) return previous
-      const filename = conversationFile(conversation)
-      const seq = try Sequencer.make({
-        read: () => load(filename, Log, []),
-        write: effect (event: Event) => { try publish(filename, JSON.stringify([...(try load(filename, Log, [])), event])) },
-      }, {
-        start: effect (posts) => {
-          const post = posts[0]
-          if (post !== undefined) try engine.execute(Reply, { executionId: `desktop/reply/${conversation}/${post}`, payload: { conversation, post }, discard: true }).pipe(Effect.orDie)
-        },
-        tour: () => Effect.void,
-      })
-      rooms.set(conversation, seq)
-      return seq
-    })
+  /**
+   * The conversation's sequencer, held for the caller's scope. Every state a sequencer keeps is in its journal, so an
+   * idle one is dropped once more than `roomLimit` are live; a room with a reader, a follower or a running flow stays.
+   */
+  effect function room(conversation: string) {
+    const held = try acquireRelease(Semaphore.withPermits(roomGate, 1)(effect {
+      let entry = rooms.get(conversation)
+      if (entry === undefined) {
+        const seq = try Sequencer.make({
+          read: () => readJournal(conversation),
+          write: (event: Event) => appendJournal(conversation, event),
+        }, {
+          start: effect (posts) => {
+            const post = posts[0]
+            if (post !== undefined) try engine.execute(Reply, { executionId: `desktop/reply/${conversation}/${post}`, payload: { conversation, post }, discard: true }).pipe(Effect.orDie)
+          },
+          tour: () => Effect.void,
+        })
+        entry = { seq, holds: 0 }
+      }
+      entry.holds += 1
+      // Most recently used last.
+      rooms.delete(conversation)
+      rooms.set(conversation, entry)
+      let evicted = 0
+      for (const [name, idle] of rooms) {
+        if (rooms.size <= roomLimit) break
+        if (idle.holds > 0) continue
+        rooms.delete(name)
+        evicted += 1
+      }
+      if (evicted > 0) try Metric.update(Metric.counter("vibelang_desktop_rooms_evicted", { incremental: true }), evicted)
+      return entry
+    }), (entry) => Effect.sync(() => { entry.holds -= 1 }))
+    return held.seq
   }
   effect function toolsOf(conversation: string, reply: string, captured: FolderInfo | null, model: string) {
     effect function bound() {
@@ -233,7 +309,7 @@ export const registration = Layer.effectContext(effect {
       FlowBinding.make({ flow: declared(Write), handler: writeHandler }),
     ])))
   }
-  effect function respond(text: string, conversation: string, reply: string, config: ReplyConfig) {
+  effect function respond(text: string, conversation: string, reply: string, config: ReplyConfig, sink: EventSink.Service) {
     const tools = try toolsOf(conversation, reply, config.folder, config.model?.model ?? "")
     if (config.model === null) throw new ModelUnavailable({ code: "model" })
     const selected = try models.resolve(config.model)
@@ -241,7 +317,7 @@ export const registration = Layer.effectContext(effect {
     const layer = Respond.layer.pipe(
       Layer.provide(Layer.mergeAll(
         AgentAction.layerHost({ registry: try orDie(Effect.try(() => Registry.makeNoop())), flows: [tools], limits: { calls: 24, memoryBytes: 32 * 1024 * 1024, timeMs: 5000 }, capabilityEnvelope: [], maxFrames: 8 }),
-        SeatResolver.layer({ resolve: () => Effect.succeed(seat) }), Agent.layer, EventSink.layer({ emit: () => Effect.void }),
+        SeatResolver.layer({ resolve: () => Effect.succeed(seat) }), Agent.layer, EventSink.layer(sink),
       )),
       Layer.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded(), Agent.layerDefaults, Evaluator.layerUnavailable())),
     )
@@ -249,16 +325,20 @@ export const registration = Layer.effectContext(effect {
       return try (try Respond.requirement).action({ text })
     }
   }
-  try engine.register(Reply, (payload) => effect {
+  try engine.register(Reply, (payload) => scoped(effect {
     const seq = try room(payload.conversation)
     const reply = replyIdOf(payload.post)
     const started = try Action.make({ name: "vibelang/desktop/reply/start", success: Schema.String, execute: seq.start(payload.post) })
     if (started !== "done") return null
     const history = try Action.make({ name: "vibelang/desktop/reply/history", success: Schema.Array(Sequencer.Turn), execute: seq.history(payload.post) })
     const config = try Action.make({ name: "vibelang/desktop/reply/selection", success: ReplyConfig, execute: map(Ref.get(state), (value) => ({ mock: value.mock, folder: value.folder, model: value.model })) })
-    const question = history.map((turn) => `${turn.author}: ${turn.text}`).join("\n")
-    const answer = config.mock ? succeed(mockReply(history.at(-1)?.text ?? "")) : respond(question, payload.conversation, reply, config)
+    // The latest model call's standing: a failed reply disables the model only when the model itself failed.
+    const call = try Ref.make<ModelCall>("none")
+    const sink: EventSink.Service = { emit: (event) => Ref.update(call, (current) => modelCallAfter(current, event._tag)) }
+    const answer = config.mock ? succeed(mockReply(history.at(-1)?.text ?? "")) : respond(promptOf(history), payload.conversation, reply, config, sink)
     const outcome = try exit(answer)
+    const failure = Exit.isFailure(outcome) ? Cause.squash(outcome.cause) : undefined
+    const tag = typeof failure === "object" && failure !== null && "_tag" in failure && typeof failure._tag === "string" ? failure._tag : "defect"
     if (Exit.isFailure(outcome) && Cause.hasInterrupts(outcome.cause)) return try Effect.failCause(outcome.cause).pipe(Effect.orDie)
     try Action.make({ name: "vibelang/desktop/reply/settle", execute: effect {
       if (Exit.isSuccess(outcome)) try seq.finish(reply, typeof outcome.value === "string" ? outcome.value : "")
@@ -267,14 +347,16 @@ export const registration = Layer.effectContext(effect {
           const current = try Ref.get(state)
           if ((current.folder?.token ?? "") !== (config.folder?.token ?? "")) return "Folder changed. Send again."
           if (!choiceCurrent(current.model?.selection ?? "", config.model?.selection ?? "")) return "Model changed. Send again."
+          if (!modelFault(tag, try Ref.get(call))) return "Reply failed. Send again."
           try Ref.update(state, (value) => ({ ...value, model: value.model === null ? null : { ...value.model, state: "failed" as const } }))
           try save()
           return "Model unavailable. Choose a model."
         })
         try seq.fail(reply, reason)
       }
-      try Effect.logInfo("vibelang.desktop.reply").pipe(Effect.annotateLogs({ outcome: Exit.isSuccess(outcome) ? "done" : "failed" }))
-      try Metric.update(Metric.counter("vibelang_desktop_replies", { incremental: true }), 1)
+      // The failure's tag only: never its message, which could hold a file's or a provider's text.
+      try Effect.logInfo("vibelang.desktop.reply").pipe(Effect.annotateLogs(Exit.isSuccess(outcome) ? { outcome: "done" } : { outcome: "failed", error: tag, model: try Ref.get(call) }))
+      try Metric.update(Metric.withAttributes(Metric.counter("vibelang_desktop_replies", { incremental: true }), { outcome: Exit.isSuccess(outcome) ? "done" : "failed" }), 1)
     } })
     // Tool calls have returned and the reply has a durable terminal receipt.
     // Keep full originals only until this point, including across an interrupted call.
@@ -289,15 +371,14 @@ export const registration = Layer.effectContext(effect {
       }
     }) })
     return null
-  })
-  try engine.register(Post, (payload) => effect {
+  }))
+  try engine.register(Post, (payload) => scoped(effect {
     const seq = try room(payload.conversation)
     const refusal = try Action.make({ name: "vibelang/desktop/post/record", success: Schema.NullOr(Schema.String), execute: seq.post(payload.clientId, payload.name, payload.text) })
     if (refusal === null) try Action.make({ name: "vibelang/desktop/post/dispatch", execute: seq.ensureDispatched() })
     return refusal
-  })
+  }))
   try engine.register(External, (payload) => Action.make({ name: "vibelang/desktop/external/open", execute: preferences.openExternal(payload.url).pipe(Effect.orDie) }))
-  try engine.register(Models, (payload) => Action.make({ name: "vibelang/desktop/models", success: Schema.Array(Schema.String), execute: models.models(payload.endpoint).pipe(Effect.orDie) }))
   try engine.register(Change, (payload) => effect {
     // Every cached action includes persistence. Recovery restores capabilities from this
     // same record before the engine replays it; a cached result never mutates a Ref.
@@ -328,12 +409,18 @@ export const registration = Layer.effectContext(effect {
   })
   effect function id() { return `desktop/${try Clock.currentTimeMillis}/${try random.uuidV4()}` }
   const desktop: Desktop.Shape = {
-    external: effect (url) => { try engine.execute(External, { executionId: try id(), payload: { url } }).pipe(Effect.orDie) },
+    // An address that is not a plain https link is refused before any execution is journaled for it.
+    external: effect (url) => {
+      const target = externalUrl(url)
+      if (target === "") throw new Unavailable({ reason: "Link unavailable" })
+      try engine.execute(External, { executionId: try id(), payload: { url: target } }).pipe(Effect.orDie)
+    },
     snapshot: (conversation) => Semaphore.withPermits(settingsGate, 1)(effect {
       return { ...(try Ref.get(state)), tools: conversation === undefined || conversation === "" ? [] : (try receipts(conversation)) }
     }),
     change: effect (operation, endpoint = "", model = "") => { try engine.execute(Change, { executionId: try id(), payload: { operation, endpoint, model } }).pipe(Effect.orDie); return try Ref.get(state) },
-    models: (endpoint) => effect { return try engine.execute(Models, { executionId: try id(), payload: { endpoint } }).pipe(Effect.orDie) },
+    // Discovery only reads the provider's list: it journals nothing, so asking again never grows the flow store.
+    models: (endpoint) => models.models(endpoint).pipe(Effect.mapError(() => new Unavailable({ reason: "Model unavailable" }))),
   }
   const factory: Factory.Shape = {
     ...signedOutGateway,
@@ -360,13 +447,14 @@ export const registration = Layer.effectContext(effect {
       const refusal = try engine.execute(Post, { executionId: `desktop/post/${conversation}/${clientId}`, payload: { conversation, clientId, name, text } }).pipe(Effect.orDie)
       if (refusal !== null) throw new Refused({ refusal })
     },
+    // The stream's own scope holds the room for as long as it is followed.
     events: (conversation, after) => Stream.unwrap(effect { const seq = try room(conversation); try seq.ensureDispatched(); return seq.follow(after) }),
     openWiki: effect () => { throw new Refused({ refusal: "not-replying" }) },
     tour: () => Effect.fail(new Refused({ refusal: "not-replying" })),
     endTour: () => Effect.fail(new Refused({ refusal: "not-replying" })),
   }
   const reader: ConversationRead.Shape = {
-    read: effect (conversation, after) => { return try (try room(conversation)).read(after) },
+    read: (conversation, after) => scoped(effect { return try (try room(conversation)).read(after) }),
   }
   return Context.make(Factory, factory).pipe(Context.add(ConversationRead, reader), Context.add(Desktop, desktop))
 })

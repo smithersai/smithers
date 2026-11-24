@@ -5,7 +5,7 @@
 // 1's host contract and its trust boundaries at run time (docs/features/plugins.md).
 import { Host } from "@smthrs/plugin"
 import { createMemoryHistory } from "@tanstack/react-router"
-import { Cause, Effect, Exit, Fiber, Metric, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Metric, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import queue from "../../plugins/queue/plugin.json" with { type: "json" }
 import type { QueueTab } from "../../plugins/queue/src/tab"
@@ -467,5 +467,49 @@ describe("how a plugin's run ended (Dispatched.settled)", () => {
     expect(settledOf(Exit.fail({ reason: "unavailable" }))).toEqual({ _tag: "Failed", code: "unavailable" })
     expect(settledOf(Exit.failCause(Cause.interrupt()))).toEqual({ _tag: "Failed", code: "interrupted" })
     expect(settledOf(Exit.die(new Error("a secret")))).toEqual({ _tag: "Failed", code: "defect" })
+  })
+})
+
+// Fable-D4-049: the host kept a tab's or chunk's promise whatever became of it, so one `import()` that failed offline
+// broke the plugin's views until a full reload.
+describe("a plugin's tab and components that failed to load", () => {
+  test("are asked again on the next read, and kept once they load", async () => {
+    const api = await openApi()
+    const a = await openDevice(api)
+    const asks = { tab: 0, components: 0 }
+    const components = { Home: () => null }
+    const probe: BuiltIn = {
+      manifest: {
+        ...queue, id: "probe", uses: ["app/navigate"], $defs: {},
+        contributes: {
+          views: [{
+            id: "probe/home", title: "Probe", scope: "repository", path: "", sizes: ["full"], minimum: "anyone",
+            render: { kind: "component", export: "Home" },
+          }],
+        },
+      },
+      tab: () => ++asks.tab === 1 ? Promise.reject(new Error("offline")) : Promise.resolve({ tab: Effect.succeed({ built: asks.tab }) }),
+      components: () => ++asks.components === 1 ? Promise.reject(new Error("offline")) : Promise.resolve(components),
+    }
+    await a.runtime.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const ui = yield* PluginsUi
+          yield* Effect.promise(async () => {
+            await expect(ui.actions.components("probe")).rejects.toThrow("offline")
+            const loaded = ui.actions.components("probe")
+            await expect(loaded).resolves.toBe(components)
+            // React's `use` needs one promise per chunk: a loaded chunk is never asked for again.
+            expect(ui.actions.components("probe")).toBe(loaded)
+            await expect(ui.actions.tab("probe")).rejects.toBeDefined()
+            const built = ui.actions.tab("probe")
+            await expect(built).resolves.toEqual({ built: 2 })
+            expect(ui.actions.tab("probe")).toBe(built)
+          })
+        // Fresh: the tab already built this layer over the shipped plugins, and a built layer is shared.
+        }).pipe(Effect.provide(Layer.fresh(PluginsUi.layer).pipe(Layer.provide(Plugins.layer([probe]))))),
+      ),
+    )
+    expect(asks).toEqual({ tab: 2, components: 2 })
   })
 })

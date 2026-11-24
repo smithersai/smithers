@@ -144,7 +144,7 @@ done
 Deploying the Worker from pushed `main` is routine and needs no approval
 (`AGENTS.md`, Maintainer workflow). Destroying a Worker or a DNS record is not
 routine; ask the owner first. With a token that has Workers Scripts and Workers
-Routes edit on account `dd3525a4132493566aeb38de533c8827`, run from a clean
+Routes edit on the account that holds the `smithers.sh` zone, run from a clean
 `apps/site/docs-redirect` checkout of origin/main:
 
 ```sh
@@ -154,7 +154,7 @@ node scripts/probe.mjs   # 11/12: the unknown slug needs DNS
 ```
 
 Then rerun the snapshot above and compare it with the inventory. After the probe
-passes, the old site Workers (`smithers-docs-<slug>-smithers-docs-<slug>-williamcory`)
+passes, the old site Workers (one `smithers-docs-<slug>` Worker per slug)
 can be destroyed. **Before destroying one, keep a DNS record for its hostname:**
 removing a Worker Custom Domain may remove the record it created, and a route alone
 needs a proxied record. Give each slug a proxied `AAAA 100::` record first, or keep the
@@ -163,7 +163,7 @@ Custom Domains attached to the retired Workers.
 `plan-store` needs the same record before its redirect answers:
 
 ```sh
-curl -X POST "https://api.cloudflare.com/client/v4/zones/8ebd98d2f0dc7d8db2e61f31ebc19c14/dns_records" \
+curl -X POST "https://api.cloudflare.com/client/v4/zones/<smithers.sh zone ID>/dns_records" \
   -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
   --data '{"type":"AAAA","name":"plan-store","content":"100::","proxied":true,"comment":"T-DOC-04 docs redirect"}'
 ```
@@ -194,6 +194,6 @@ quota and failure modes. That is a product call for the token holder, not a defa
 To turn it on, in one change:
 
 1. DNS: proxied `AAAA * 100::` and `TXT * "smithers-unclaimed=docs-redirect"`.
-2. `wrangler.jsonc`: add `{ "pattern": "*.smithers.sh/*", "zone_id": "8ebd98d2f0dc7d8db2e61f31ebc19c14" }`
+2. `wrangler.jsonc`: add `{ "pattern": "*.smithers.sh/*", "zone_name": "smithers.sh" }`
    and set `UNKNOWN_SLUGS` to `"txt-marker"`; update the config test.
 3. Deploy, run the probe (12/12), rerun the snapshot and compare every inventoried host.

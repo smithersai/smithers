@@ -5,6 +5,7 @@ import { monthOf, nextMonth, millisecondOf } from "../src/core/sandboxMeter.vibe
 import { observed } from "../src/core/sandboxHost.vibe"
 import { validBodyLength } from "../src/core/protocolDecision.vibe"
 import { refusalStatus, sandboxVerb, sandboxWrite } from "./sandboxWorkerDecision.vibe"
+import { boundedText } from "./BoundedBody.vibe"
 
 export interface Gateway<R = never> {
   sandbox(conversation: string): SandboxSnapshot!(Unavailable | Refused)!(HttpServerRequest.HttpServerRequest | R)
@@ -40,7 +41,8 @@ export effect function sandboxRequest<R>(gateway: Gateway<R>) {
     if (verb === "not-found" || action === undefined) return json({ error: "not found" }, 404)
     const length = Number(request.headers["content-length"] ?? "0")
     if (!Number.isSafeInteger(length) || !validBodyLength(length, 20000)) return json({ error: "body size" }, 413)
-    const text = request.text catch () => ""
+    const text = try boundedText(request, 20000)
+    if (text === undefined) return json({ error: "body size" }, 413)
     const body = decode(text) catch () => undefined
     if (body === undefined) return json({ error: "body" }, 400)
     const write = sandboxWrite(action, body.generation !== undefined, body.command !== undefined)

@@ -180,6 +180,8 @@ export class ChatStore extends Context.Service<
     readonly pageSize: number
     /** When this tab last queued a question: each takes a later `queuedAt`, so questions asked in one millisecond keep their order. */
     readonly lastQueuedAt: Ref.Ref<number>
+    /** Latest private draft storage transaction per conversation, including deletions. */
+    readonly draftWrites: Map<string, { readonly generation: string | undefined; readonly text: string; readonly persisted: Effect.Effect<void, unknown> }>
     readonly draftRevision: Ref.Ref<number>
     readonly pendingAsks: Ref.Ref<ReadonlyMap<string, Deferred.Deferred<QuestionSubmitted>>>
     /** The browser went offline (`true`) or online (`false`). */
@@ -566,6 +568,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     scope,
     pageSize,
     lastQueuedAt: yield* Ref.make(0),
+    draftWrites: new Map(),
     draftRevision: yield* Ref.make(0),
     pendingAsks: yield* Ref.make<ReadonlyMap<string, Deferred.Deferred<QuestionSubmitted>>>(new Map()),
     lead: leader.take,

@@ -180,7 +180,7 @@ export class HostedSite {
   async fetch(request: Request): Promise<Response> {
     const origin = origins(request)
     this.service ??= runPromise(Accounts.make(this.state.id.toString(), this.state.storage, {
-      origin: origin.site, initialMaintainer: "1", signingSecret: Redacted.make("hosted-site-private-cookie-key-32chars"), encryptionKey, clientId: "fixture",
+      origin: origin.site, initialMaintainer: "1", signingSecret: Redacted.make("hosted-site-private-cookie-key-32chars"), encryptionKey, clientId: "fixture", issuedHere: () => succeed(true),
       github: await runPromise(scoped(GitHub.Auth.GitHubAuth.pipe(Effect.provide(GitHub.Auth.layer({ clientId: "fixture", clientSecret: Redacted.make("unused") }).pipe(Layer.provide(FetchHttpClient.layer)))))),
       broker: { origin: origin.broker, secret, localDevelopment: true },
     }).pipe(Effect.provide(FetchHttpClient.layer)))

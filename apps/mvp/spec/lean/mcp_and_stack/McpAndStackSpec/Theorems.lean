@@ -210,19 +210,23 @@ theorem toolOf_some (name : Text) (spec : ToolSpec) (found : toolOf name = some 
   unfold toolOf at found
   exact ⟨List.mem_of_find?_eq_some found, by simpa using List.find?_some found⟩
 
-/-- A read that runs: the token is not pinned elsewhere, a private repository's caller has a role, the role is met. -/
+/-- A read that runs: the token is not pinned elsewhere, non-public or role-gated reads carry `mcp:read`, a private repository's caller has a role, and the role is met. -/
 theorem readOutcome_ok (principal : Option Principal) (role : Option Role) (isPublic : Bool) (minimum : Option Role)
     (ran : readOutcome principal role isPublic minimum = .ok) :
     (∀ token, principal = some token → token.pinnedElsewhere = false) ∧
+    ((isPublic = false ∨ minimum ≠ none) → ∃ token, principal = some token ∧ token.read = true) ∧
     (isPublic = false → ∃ token, principal = some token ∧ role ≠ none) ∧
     rankOf minimum ≤ rankOf (principal.bind fun _ => role) := by
   unfold readOutcome at ran
   cases principal with
   | none =>
-    cases isPublic <;> simp [meets] at ran ⊢
-    exact ran
+    cases isPublic <;> cases minimum <;> simp [readPermitted, meets] at ran ⊢
   | some token =>
-    cases pinned : token.pinnedElsewhere <;> cases isPublic <;> simp [pinned, meets] at ran ⊢
+    cases pinned : token.pinnedElsewhere <;> cases read : token.read <;> cases isPublic <;>
+      simp [pinned, read, readPermitted, meets] at ran ⊢
+    · by_cases minNone : minimum = none <;> simp [minNone] at ran ⊢
+      subst minNone
+      simp [rankOf]
     · by_cases norole : role = none <;> simp [norole] at ran ⊢
       exact ran
     · by_cases met : rankOf minimum ≤ rankOf role <;> simp [met] at ran ⊢
@@ -262,7 +266,7 @@ theorem ok_sound (name : Text) (principal : Option Principal) (role : Option Rol
       obtain ⟨member, named⟩ := toolOf_some name spec found
       refine ⟨spec, member, named, ?_⟩
       cases access : spec.access <;> simp only [access] at ran
-      · obtain ⟨pinned, _, met⟩ := readOutcome_ok _ _ _ _ ran
+      · obtain ⟨pinned, _, _, met⟩ := readOutcome_ok _ _ _ _ ran
         exact ⟨met, pinned, by simp⟩
       · obtain ⟨token, rfl, act, write, pinned, met⟩ := writeOutcome_ok _ _ _ ran
         exact ⟨by simpa using met, by simpa using pinned, fun _ => ⟨token, rfl, act, write⟩⟩
@@ -293,11 +297,22 @@ theorem roleless_never_writes (name : Text) (token : Principal) (isPublic : Bool
     have zero : rankOf (none : Option Role) = 0 := rfl
     omega
 
+/-- A private or role-gated read never runs without explicit `mcp:read` consent. -/
+theorem private_or_gated_read_needs_scope (principal : Option Principal) (role : Option Role) (isPublic : Bool)
+    (minimum : Option Role) (restricted : isPublic = false ∨ minimum ≠ none)
+    (noRead : ∀ token, principal = some token → token.read = false) :
+    readOutcome principal role isPublic minimum ≠ .ok := by
+  intro ran
+  obtain ⟨_, needsRead, _, _⟩ := readOutcome_ok _ _ _ _ ran
+  obtain ⟨token, eq, hasRead⟩ := needsRead restricted
+  have := noRead token eq
+  simp [this] at hasRead
+
 /-- A private repository is read only with a role. -/
 theorem private_needs_role (principal : Option Principal) (isPublic : Bool) (minimum : Option Role)
     (closed : isPublic = false) : readOutcome principal none isPublic minimum ≠ .ok := by
   intro ran
-  obtain ⟨_, role, _⟩ := readOutcome_ok _ _ _ _ ran
+  obtain ⟨_, _, role, _⟩ := readOutcome_ok _ _ _ _ ran
   obtain ⟨_, _, absurd⟩ := role closed
   exact absurd rfl
 
@@ -313,7 +328,9 @@ theorem readOutcome_mono (principal : Option Principal) (low high : Option Role)
   cases principal with
   | none => exact ran
   | some token =>
-    cases pinned : token.pinnedElsewhere <;> simp only [pinned] at ran ⊢
+    cases pinned : token.pinnedElsewhere <;> cases perm : readPermitted (some token) isPublic minimum <;>
+      simp only [pinned, perm] at ran ⊢
+    · simp at ran
     · cases isPublic <;> simp [meets] at ran ⊢
       · by_cases norole : low = none <;> simp [norole] at ran
         by_cases met : rankOf minimum ≤ rankOf low <;> simp [met] at ran
@@ -321,6 +338,7 @@ theorem readOutcome_mono (principal : Option Principal) (low high : Option Role)
         omega
       · by_cases met : rankOf minimum ≤ rankOf low <;> simp [met] at ran
         omega
+    · simp at ran
     · simp at ran
 
 /-- Writes are monotone in role. -/
@@ -349,14 +367,26 @@ theorem callOutcome_mono (name : Text) (principal : Option Principal) (low high 
       · exact writeOutcome_mono _ _ _ _ le ran
 
 /-- A listing is monotone in role: a tool listed for a role is listed for every role above it. -/
-theorem visible_mono (spec : ToolSpec) (low high : Option Role) (principal : Option Principal)
-    (le : rankOf low ≤ rankOf high) (seen : visible spec low principal = true) : visible spec high principal = true := by
-  simp only [visible, meets, Bool.and_eq_true, decide_eq_true_eq] at seen ⊢
-  exact ⟨seen.1, by omega⟩
+theorem visible_mono (spec : ToolSpec) (low high : Option Role) (principal : Option Principal) (isPublic : Bool)
+    (le : rankOf low ≤ rankOf high) (seen : visible spec low principal isPublic = true) :
+    visible spec high principal isPublic = true := by
+  have some_high : low ≠ none → high ≠ none := by
+    intro has none_
+    subst none_
+    exact has ((rankOf_eq_zero low).mp (by simp [rankOf] at le; exact le))
+  unfold visible at seen ⊢
+  simp only [meets, Bool.and_eq_true, decide_eq_true_eq] at seen ⊢
+  refine ⟨?_, by omega⟩
+  cases access : spec.access <;> simp only [access] at seen ⊢
+  · cases isPublic <;> simp only [Bool.not_true, Bool.not_false, Bool.false_and, Bool.true_and,
+      Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at seen ⊢
+    · exact ⟨some_high seen.1.1, seen.1.2⟩
+    · exact seen.1
+  · cases principal <;> exact seen.1
 
 /-- A listing names only catalog tools, and never a person-only act. -/
-theorem listTools_sound (principal : Option Principal) (inRepo : Bool) (role : Option Role) (name : Text)
-    (listed : name ∈ listTools principal inRepo role) :
+theorem listTools_sound (principal : Option Principal) (inRepo : Bool) (role : Option Role) (isPublic : Bool)
+    (name : Text) (listed : name ∈ listTools principal inRepo role isPublic) :
     isBlockedName name = false ∧ ∃ spec ∈ catalog, spec.name = name := by
   unfold listTools at listed
   obtain ⟨spec, kept, rfl⟩ := List.mem_map.mp listed
@@ -365,8 +395,8 @@ theorem listTools_sound (principal : Option Principal) (inRepo : Bool) (role : O
   exact ⟨shown.1, spec, member, rfl⟩
 
 /-- A write tool is listed only for a token with `mcp:write`. -/
-theorem write_listed_needs_scope (spec : ToolSpec) (role : Option Role) (principal : Option Principal)
-    (writes : spec.access = .write) (seen : visible spec role principal = true) :
+theorem write_listed_needs_scope (spec : ToolSpec) (role : Option Role) (principal : Option Principal) (isPublic : Bool)
+    (writes : spec.access = .write) (seen : visible spec role principal isPublic = true) :
     ∃ token, principal = some token ∧ token.write = true := by
   cases principal with
   | none => simp [visible, writes] at seen

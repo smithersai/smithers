@@ -35,7 +35,7 @@ for (const [id, files] of Object.entries({
 }
 mkdirSync(shots, { recursive: true })
 
-const server = startServer({ port: 0, repo, gifs: join(repo, "gifs"), site: repo, queueDir })
+const server = startServer({ writeToken: "fixture", port: 0, repo, gifs: join(repo, "gifs"), site: repo, queueDir })
 const base = await server.ready
 const url = `${base}/queue`
 
@@ -55,7 +55,7 @@ const answers = () =>
 
 const browser = await playwright.chromium.launch()
 const open = async (options = {}) => {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, ...options })
+  const context = await browser.newContext({ httpCredentials: { username: "maintainer", password: "fixture" }, viewport: { width: 1440, height: 900 }, ...options })
   const page = await context.newPage()
   page.on("console", (message) => {
     if (expectedRefusal && message.type() === "error" && message.text().includes(expectedRefusal)) return
@@ -502,7 +502,7 @@ for (const [id, priority] of [["decision:race-first", 1001], ["decision:race-sec
   raced.items.push({ id, kind: "decision", title: id, priority, why: "Race", area: "process", addedAt: new Date().toISOString(), context: "Race.", options: [{ key: "1", label: "Yes" }] })
 writeFileSync(join(queueDir, "queue.json.tmp"), JSON.stringify(raced))
 renameSync(join(queueDir, "queue.json.tmp"), join(queueDir, "queue.json"))
-const raceContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+const raceContext = await browser.newContext({ httpCredentials: { username: "maintainer", password: "fixture" }, viewport: { width: 1440, height: 900 } })
 const race = await raceContext.newPage()
 race.on("pageerror", (error) => problems.push(`page error: ${error.message}`))
 let releaseFirst

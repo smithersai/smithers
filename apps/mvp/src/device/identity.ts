@@ -7,11 +7,12 @@ import {
   NO_DEVICE_DATA,
   SESSION_CHECK_HEADER,
   SESSION_ROUTE,
-  type SessionState as State,
   SIGN_OUT_ROUTE,
 } from "../features/auth/contract"
 import { Confirmed, SessionState } from "../features/auth/schema"
 import { codeOf } from "../errorCode"
+
+type State = typeof SessionState.Type
 
 // Whose data this device holds (decision 0021, "Device ownership"; docs/features/sign-in.md#the-devices-owner). The
 // leading engine worker checks it before the engine starts (`BrowserRuntime.run({ authorize })`), on every activation,
@@ -332,6 +333,8 @@ export interface Binding {
    * reopens anything. The request signal carries its caller's Effect deadline through the adoption wait.
    */
   readonly adopt?: ((session: State, signal: AbortSignal) => Promise<Adoption>) | undefined
+  /** Wall clock in epoch milliseconds for Retry-After gating; defaults to Date.now. */
+  readonly now?: (() => number) | undefined
 }
 
 /**
@@ -375,7 +378,7 @@ export const reopenDue = (marks: Pick<Storage, "getItem" | "setItem">, mark: str
  * tagged session reread verifies its bound person.
  */
 export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typeof globalThis.fetch => {
-  const { origin, principal, ready = Promise.resolve(), reauthorize, reopensOnSignIn = () => false, adopt } = binding
+  const { origin, principal, ready = Promise.resolve(), reauthorize, reopensOnSignIn = () => false, adopt, now = Date.now } = binding
   let recovering: Promise<boolean> | undefined
   let adopting: Promise<Adoption> | undefined
   let credential: string | null = null
@@ -388,6 +391,9 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
     get: async (_key: string) => credential,
     set: async (_key: string, value: string) => { credential = value },
   }
+  const decodeGate = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct({
+    until: Schema.Finite, personId: Schema.optional(Schema.String), revision: Schema.optional(Schema.String),
+  })))
   const withCredential: NonNullable<Binding["withCredential"]> = binding.withCredential ?? (<A>(action: () => Promise<A>) => action())
   // Sign-outs this page sent that ChatApi hasn't answered, and whether ChatApi took one: its wipe comes next, and a
   // reopen now would stop the sign-out before it marks the wipe (decision 0023).
@@ -432,7 +438,14 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
     const readCredential = async () => {
       const signal = AbortSignal.any([request.signal, AbortSignal.timeout(CREDENTIAL_LOCK_WAIT_MS)])
       try {
-        return await withCredential(() => credentialStorage.get(credentialKey), signal)
+        return await withCredential(async () => {
+          const stored = await credentialStorage.get(credentialKey)
+          if (stored === null || Option.isSome(decodeGate(stored))) return stored
+          // A damaged fence needs a fresh session check. Repair it under the same lock as publication.
+          const repaired = JSON.stringify({ until: 0, revision: crypto.randomUUID() })
+          await credentialStorage.set(credentialKey, repaired)
+          return repaired
+        }, signal)
       } catch (error) {
         if (signal.aborted) throw new DeviceIdentityRefused({ reason: "credential_stale", stage: "credential_lock",
           wait: request.signal.aborted ? "cancelled" : "deadline" })
@@ -457,7 +470,7 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
             const pending = pendingCredentials.get(credentialKey)
             if (pending !== undefined) {
               const prior = await credentialStorage.get(credentialKey)
-              const previous = prior === null ? undefined : JSON.parse(prior) as { until: number; personId?: string }
+              const previous = Option.getOrUndefined(decodeGate(prior))
               await credentialStorage.set(credentialKey, JSON.stringify({
                 until: Math.max(previous?.until ?? 0, pending.until), revision: crypto.randomUUID(),
                 personId: previous?.personId ?? pending.personId,
@@ -491,7 +504,7 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
       if (response.status === 503 && response.headers.get("x-smithers-credential") === "stale") {
         const after = response.headers.get("retry-after")
         const seconds = after === null ? NaN : Number(after)
-        const until = Number.isFinite(seconds) && seconds >= 0 ? Date.now() + seconds * 1000 : Date.parse(after ?? "")
+        const until = Number.isFinite(seconds) && seconds >= 0 ? now() + seconds * 1000 : Date.parse(after ?? "")
         pendingCredentials.set(credentialKey, {
           until: Math.max(pendingCredentials.get(credentialKey)?.until ?? 0, Number.isFinite(until) ? until : 0),
           personId: bound === NO_DEVICE_DATA ? transientPerson : undefined,
@@ -548,9 +561,9 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
     // A successor respects an unpublished refusal, but a failed publisher cannot strand its request or lock waiter.
     const held = writing ? await readCredential() : null
     if (held !== null && held !== verifiedCredential) {
-      const gate = JSON.parse(held) as { until: number; personId?: string }
+      const gate = Option.getOrThrow(decodeGate(held))
       const expected = bound === NO_DEVICE_DATA ? gate.personId ?? transientPerson : bound
-      if (Date.now() < gate.until) throw new DeviceIdentityRefused({ reason: "credential_stale" })
+      if (now() < gate.until) throw new DeviceIdentityRefused({ reason: "credential_stale" })
       const checked = await readCurrent()
       // expected: non-JSON session response is treated as unreadable session
       const session = checked?.ok ? readSession(await checked.json().catch(() => undefined)) : undefined

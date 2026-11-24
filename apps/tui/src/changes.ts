@@ -17,6 +17,11 @@ import * as Timer from "./timer.ts"
 export interface Patch {
   readonly path: string
   readonly patch: string
+  /**
+   * The session journal replaced a credential in `patch` with a placeholder:
+   * undo would write the placeholder, so it refuses this patch.
+   */
+  readonly redacted?: true
 }
 export interface Receipt {
   readonly call: string
@@ -177,6 +182,7 @@ const command = async (
 const git = (cwd: string, args: Array<string>, env?: Record<string, string>) => command("git", cwd, args, env)
 /** A receipt's one-file patch, parsed; undefined for a binary, large or truncated change, which is labeled, not diffed. */
 export const structured = (patch: Patch): StructuredPatch | undefined => {
+  if (patch.redacted === true) return undefined
   const all = parsePatch(patch.patch)
   if (all.length !== 1) return undefined
   const one = all[0]!

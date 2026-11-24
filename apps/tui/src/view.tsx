@@ -923,18 +923,28 @@ export function Approval(
   const preview = props.request.preview
   const shown = preview === undefined ? [] : preview.lines.slice(0, Math.max(1, props.lines))
   const hidden = preview === undefined ? 0 : preview.added + preview.removed - shown.length
+  // Never reflowed: a newline the shell runs as a second command stays a second line.
   const head = `${props.worker === undefined ? "" : `↳ ${props.worker} `}? ${Approvals.verb(props.request.flow)} ${
-    props.request.subject.replace(/\s+/g, " ").replace(/\p{Cc}/gu, "\ufffd")
+    Approvals.legible(props.request.subject)
   }`
+  const headLines = head.split("\n")
   const more = props.more > 0 ? ` +${props.more}` : ""
   const alt = props.alt === true ? "alt+" : ""
   const keys = props.choices.map((choice) => `${alt}${choice.key} ${choice.label}`).join("  ")
   // Keys beside the request only when both fit whole: a wrapped command reads as another one.
-  const column = preview !== undefined || stringWidth(`${head}${more}  ${keys}`) > props.width - 2
+  const column = preview !== undefined || headLines.length > 1 ||
+    stringWidth(`${head}${more}  ${keys}`) > props.width - 2
   const requestWidth = Math.max(1, props.width - 2 - (column || !props.armed ? 0 : stringWidth(keys) + 2))
   const counts = preview === undefined ? "" : `  +${preview.added} −${preview.removed}`
-  const requestRows = Math.max(1, Math.ceil(stringWidth(`${head}${counts}${more}`) / requestWidth)) +
-    shown.length + (hidden > 0 ? 1 : 0)
+  const requestRows = headLines.reduce(
+    (rows, each, index) =>
+      rows +
+      Math.max(
+        1,
+        Math.ceil(stringWidth(index === headLines.length - 1 ? `${each}${counts}${more}` : each) / requestWidth)
+      ),
+    0
+  ) + shown.length + (hidden > 0 ? 1 : 0)
   const keyRows = column && props.armed ? Math.max(1, Math.ceil(stringWidth(keys) / Math.max(1, props.width - 2))) : 0
   const height = props.maxHeight === undefined
     ? requestRows

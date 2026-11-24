@@ -70,7 +70,8 @@ measure("@smthrs/bug-worker", "clientAddress (IPv4 + IPv6 /64)", () => {
   clientAddress(ipv6Request)
 })
 
+const bugRequest = new Request("https://bug.example.com/api/bugs", { method: "POST" })
 measure("@smthrs/bug-worker", "newBugId + publicBaseUrl", () => {
   newBugId(1_763_800_000_000)
-  publicBaseUrl({ PUBLIC_BASE_URL: "https://bug.smithers.sh" } as never)
+  publicBaseUrl({} as never, bugRequest)
 })

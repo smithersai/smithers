@@ -1,7 +1,6 @@
 import { type Role, SIGN_IN } from "../auth/contract"
 import {
   MCP_BLOCKED_ACTS,
-  MCP_TOKEN_TTL_DAYS,
   type McpClientId,
   type McpConsentDetails,
   type McpScope,
@@ -11,7 +10,7 @@ import {
   mcpPermissionsFor,
   repoMcpUrl,
 } from "./contract"
-import { ACTING_AS, ALL_REPOSITORIES, consentHeading, SCOPE_LABEL, TOKEN_STATUS, tokenLifetime } from "./copy"
+import { ACTING_AS, ALL_REPOSITORIES, consentHeading, SCOPE_LABEL, TOKEN_STATUS } from "./copy"
 
 // What Bring Your Own Agent's views show, from the contract and the store's rows. Nothing here imports a library, so
 // the web app and later the TUI share it.
@@ -127,7 +126,6 @@ export interface ConsentView {
   readonly blocked: ReadonlyArray<string>
   /** Where the browser goes after the decision: the callback's host, or its scheme for a native client. */
   readonly returnsTo: string
-  readonly lifetime: string
   /** One sentence saying all of it. */
   readonly summary: string
 }
@@ -145,7 +143,7 @@ const returnsToOf = (redirectUri: string): string => {
 
 /** The consent screen for `details`: who asks, as whom, on what, and what the role allows and never allows. */
 export const consentView = (details: McpConsentDetails): ConsentView => {
-  const permissions = mcpPermissionsFor(details.effectiveRole)
+  const permissions = mcpPermissionsFor(details.effectiveRole, details.scopes)
   const repoScope = repoScopeLabel(details.repoScope)
   const scopes = scopeLabels(details.scopes)
   const actor = `${ACTING_AS} ${mcpAgentLabel(details.login)}`
@@ -159,7 +157,6 @@ export const consentView = (details: McpConsentDetails): ConsentView => {
     allowed: permissions.allowed,
     blocked: permissions.blocked,
     returnsTo: returnsToOf(details.redirectUri),
-    lifetime: tokenLifetime(MCP_TOKEN_TTL_DAYS),
     summary: `${details.clientName} · ${actor} · ${repoScope} · ${scopes.join(" + ")} · ${permissions.roleLabel}`,
   }
 }

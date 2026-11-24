@@ -9,6 +9,7 @@ import { registration, Preferences } from "./Factory.vibe"
 import { folderLayer } from "./Folder.vibe"
 import { localModelsLayer } from "./LocalModel.vibe"
 import { handler } from "./Http.vibe"
+import { storeKeeper } from "./Retention.vibe"
 
 export effect function main() {
   try Effect.logInfo("vibelang.desktop.start")
@@ -29,6 +30,8 @@ export effect function main() {
     const origin = try orDie(Effect.try(() => HttpServer.formatAddress(server.address)))
     const random = try SecureRandom.SecureRandom
     const launch = Array.from(try random.randomBytes(32), (byte) => byte.toString(16).padStart(2, "0")).join("")
+    // Bound flows.sqlite: settled executions leave a day after they finish.
+    fork.scoped storeKeeper
     try server.serve(handler(origin, assets, launch))
     try window.open(`${origin}/desktop/launch?key=${launch}`, { title: "VibeLang", frame: { x: 80, y: 80, width: 1280, height: 800 } })
     try Effect.logInfo("vibelang.desktop.ready")

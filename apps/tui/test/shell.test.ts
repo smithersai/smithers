@@ -1,5 +1,16 @@
 import { describe, expect, it } from "bun:test"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import * as Shell from "../src/shell.ts"
@@ -280,4 +291,88 @@ describe("Transcript.shellOutput", () => {
     const item = transcript.items[0] as Extract<Transcript.Item, { kind: "shell" }>
     expect(item.output).toBe(Shell.tail("y\n".repeat(400_000)).text)
   })
+})
+
+describe("shell redaction and full-output files", () => {
+  const secret = "Zq9Lm2Vb9Tz4Rk8W"
+
+  it("redacts a secret split across stdout writes with a stderr write between them", async () => {
+    const streamed: Array<string> = []
+    const dir = mkdtempSync(join(tmpdir(), "tui-spill-"))
+    const result = await Shell.run({
+      command: `printf %s ${secret.slice(0, 6)}; sleep 0.2; printf ERR >&2; sleep 0.2; printf '%s\\n' ${
+        secret.slice(6)
+      }; head -c 60000 /dev/zero | tr '\\0' x`,
+      cwd: tmpdir(),
+      env: { PATH: process.env.PATH, TEST_API_KEY: secret },
+      spillDir: dir,
+      onOutput: (text) => streamed.push(text)
+    }).done
+    const spilled = readFileSync(result.fullOutputPath!, "utf8")
+    for (const text of [result.output, streamed.join(""), spilled]) {
+      expect(text).not.toContain(secret.slice(0, 6))
+      expect(text).not.toContain(secret.slice(6))
+    }
+    expect(streamed.join("")).toContain("[redacted $TEST_API_KEY]")
+    expect(streamed.join("")).toContain("ERR")
+  }, 20_000)
+
+  it("caps a full-output file at maxSpillBytes with a marker", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tui-spill-"))
+    const result = await Shell.run({
+      command: `head -c ${Shell.maxSpillBytes + 2_000_000} /dev/zero | tr '\\0' x`,
+      cwd: tmpdir(),
+      spillDir: dir,
+      onOutput: () => {}
+    }).done
+    const size = statSync(result.fullOutputPath!).size
+    expect(size).toBeGreaterThanOrEqual(Shell.maxSpillBytes)
+    expect(size).toBeLessThan(Shell.maxSpillBytes + 100)
+    expect(readFileSync(result.fullOutputPath!, "utf8").endsWith("[output cut at 10 MiB]\n")).toBe(true)
+  }, 30_000)
+
+  it("writes no file for a monitor observation, however long its output", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tui-spill-"))
+    const result = await Shell.run({
+      command: "head -c 60000 /dev/zero | tr '\\0' x",
+      cwd: tmpdir(),
+      spillDir: dir,
+      spill: false,
+      onOutput: () => {}
+    }).done
+    expect(result.fullOutputPath).toBeUndefined()
+    expect(readdirSync(dir)).toEqual([])
+  }, 20_000)
+
+  it("creates the spill folder owner-only and prunes its day-old full-output files", async () => {
+    const nested = Shell.spillFolder(join(mkdtempSync(join(tmpdir(), "tui-spill-")), "session"))
+    mkdirSync(nested, { recursive: true })
+    const stale = join(nested, `smithers-bash-${crypto.randomUUID()}.log`)
+    const fresh = join(nested, `smithers-bash-${crypto.randomUUID()}.log`)
+    const other = join(nested, "notes.txt")
+    for (const path of [stale, fresh, other]) writeFileSync(path, "old")
+    const old = (Date.now() - Shell.spillAgeMs - 60_000) / 1000
+    utimesSync(stale, old, old)
+    utimesSync(other, old, old)
+    const result = await Shell.run({
+      command: "head -c 60000 /dev/zero | tr '\\0' x",
+      cwd: tmpdir(),
+      spillDir: nested,
+      onOutput: () => {}
+    }).done
+    expect(result.fullOutputPath?.startsWith(nested)).toBe(true)
+    expect(existsSync(stale)).toBe(false)
+    expect(existsSync(fresh)).toBe(true)
+    expect(existsSync(other)).toBe(true)
+
+    const created = join(mkdtempSync(join(tmpdir(), "tui-spill-")), "new", "spill")
+    const second = await Shell.run({
+      command: "head -c 60000 /dev/zero | tr '\\0' x",
+      cwd: tmpdir(),
+      spillDir: created,
+      onOutput: () => {}
+    }).done
+    expect(second.fullOutputPath?.startsWith(created)).toBe(true)
+    expect(statSync(created).mode & 0o777).toBe(0o700)
+  }, 20_000)
 })

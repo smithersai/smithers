@@ -7,6 +7,14 @@ export function endpointOf(input: string): string {
   } catch { return "" }
 }
 
+/** A link the desktop hands to the person's browser: an https address with no embedded credential, as its canonical text. */
+export function externalUrl(input: string): string {
+  try {
+    const url = new URL(input)
+    return url.protocol === "https:" && url.username === "" && url.password === "" && url.hostname !== "" ? url.href : ""
+  } catch { return "" }
+}
+
 /** The origin is loopback, with no embedded credential, query, fragment, or unrelated endpoint path. */
 //@ verify
 //@ ensures \result ==> (host === "localhost" || host === "127.0.0.1" || host === "[::1]")

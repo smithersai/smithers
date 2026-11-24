@@ -29,7 +29,7 @@ it("a failed object startup stays inspectable and a new call recovers its real b
       const api = try Startup.make("Budget", identity, effect {
         try Startup.step("storage", faulty.read(Budget.SPENT))
         return try Budget.make(faulty, 10)
-      }, { admit: true, spend: true })
+      }, { admit: true, spend: true, visit: true })
       const refused = try exit(api.admit("answer", 5))
       const failed = try api.health()
       const beforeHealth = reads
@@ -80,7 +80,7 @@ it("a call expires while startup is held in a storage critical section, then rec
       const api = try Startup.make("Budget", identity, effect {
         try Startup.step("storage", held.read(Budget.SPENT))
         return try Budget.make(ledger, 10)
-      }, { admit: true, spend: true })
+      }, { admit: true, spend: true, visit: true })
       const refused = try exit(api.admit("deadline", 1))
       const waiting = try api.health()
       // Release before assertions so even a failed assertion closes the initializer's scope.

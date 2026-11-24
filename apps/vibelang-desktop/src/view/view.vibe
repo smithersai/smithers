@@ -2,7 +2,7 @@
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import { view as webView } from "../../../vibelang/src/web/view.vibe"
 import { modelReady } from "../policy.vibe"
-import { canSend, Message, type Model, type Message as Msg } from "./main.vibe"
+import { busy, canSend, Message, type Model, type Message as Msg } from "./main.vibe"
 type H = HtmlBuilder<Msg>
 type Children = NonNullable<Parameters<H["div"]>[1]>
 
@@ -22,11 +22,10 @@ function chips(model: Model, h: H): Html {
         h.div([h.Class("sui-select-label")], ["Local"]),
         ...model.available.map((name, index) => h.button([h.Type("button"), h.Role("option"), h.AriaSelected(!state.mock && state.model?.model === name), h.Class("sui-select-item"), h.DataAttribute("highlighted", String(index === model.highlighted)), h.OnClick(Message.Select({ model: name }))], [name])),
         h.button([h.Type("button"), h.Role("option"), h.AriaSelected(state.mock), h.DataAttribute("highlighted", String(model.highlighted === model.available.length)), h.Class("sui-select-item"), h.OnClick(Message.Mock())], ["Mock"]),
-        button(h, "Manage models…", Message.OpenModels(), "sui-select-item"),
       ])] : []),
     ]),
     ...(model.offline ? [h.span([h.Class("sui-chat-composer-status")], ["Offline · local models only"])] : []),
-    ...(model.busy ? [h.span([h.Class("sui-chat-composer-status"), h.Role("status")], ["Loading…"])] : []),
+    ...(busy(model) ? [h.span([h.Class("sui-chat-composer-status"), h.Role("status")], ["Loading…"])] : []),
   ])
 }
 
@@ -38,13 +37,12 @@ function models(model: Model, h: H): Html {
       h.form([h.Class("dt-connect"), h.OnSubmit(Message.Connect())], [
         h.label([h.For("dt-endpoint")], ["Endpoint"]),
         h.input([h.Id("dt-endpoint"), h.Class("sui-input"), h.Type("url"), h.Value(model.endpoint), h.Placeholder("http://localhost:11434"), h.OnInput((value) => Message.UpdatedEndpoint({ value }))]),
-        h.button([h.Type("submit"), h.Class("sui-button sui-button-default"), h.Disabled(model.busy)], ["Connect"]),
+        h.button([h.Type("submit"), h.Class("sui-button sui-button-default"), h.Disabled(model.discovering !== null)], ["Connect"]),
       ]),
       ...(model.available.length === 0 ? [h.div([h.Class("sui-empty")], ["No model loaded"])] : [h.div([h.Class("sui-table-container"), h.DataAttribute("variant", "card")], [
         h.table([h.Class("sui-table")], [h.tbody([], model.available.map((name) => h.tr([h.Class("dt-model-row")], [
           h.td([], [h.span([h.Class("dt-model-name")], [name])]), h.td([], [h.span([h.Class("sui-badge sui-badge-secondary")], ["Local"])]), h.td([], [button(h, model.desktop.model?.model === name && model.desktop.model.state === "ready" && !model.desktop.mock ? "Selected" : "Use model", Message.Select({ model: name }))]),
         ])))])])]),
-      button(h, "Mock", Message.Mock()),
       ...(model.error === "" ? [] : [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [model.error])]),
     ]),
   ])
@@ -95,7 +93,7 @@ export function view(model: Model, h: H): Document {
         return toolbar === undefined ? child : h.div(toolbar.attributes, [h.div([h.Class("dt-composer-left")], [chips(model, h), toolbar.children[0] ?? null]), ...toolbar.children.slice(1)])
       }))
     },
-    textarea: (attributes) => h.textarea([...attributes.filter((attribute) => !("_tag" in attribute && attribute._tag === "Placeholder")), h.Placeholder(model.desktop.folder === null ? "Ask about VibeLang" : `Describe what to change in ${model.desktop.folder.path}`), h.Disabled(!modelReady(model.desktop.mock, model.desktop.model?.model ?? "", model.desktop.model?.state ?? "failed"))]),
+    textarea: (attributes) => h.textarea([...attributes.filter((attribute) => !("_tag" in attribute && attribute._tag === "Placeholder")), h.Placeholder(model.desktop.folder === null ? "Ask about VibeLang" : "Describe what to change"), h.Disabled(!modelReady(model.desktop.mock, model.desktop.model?.model ?? "", model.desktop.model?.state ?? "failed"))]),
     button: (attributes, children) => h.button([...attributes, ...(attributes.some((attribute) => "_tag" in attribute && attribute._tag === "Type" && attribute.value === "submit") ? [h.Disabled(!canSend(model) || model.draft.trim() === "")] : [])], children),
     div: (attributes, children = []) => {
       if (attributes.some((attribute) => "_tag" in attribute && attribute._tag === "Class" && attribute.value === "sui-chat-composer-toolbar")) {
@@ -108,7 +106,7 @@ export function view(model: Model, h: H): Document {
         ...(model.desktop.folder === null && model.client.conversation.entries.length === 0 ? [h.div([h.Class("sui-empty dt-empty")], [h.div([h.Class("sui-empty-title")], ["No folder open"]), button(h, "Open folder ⌘O", Message.OpenFolder(), "sui-button sui-button-default")])] : []),
         ...(model.desktop.folder === null ? [] : [h.div(
           [h.Class("sui-chat-message"), h.DataAttribute("role", "system")],
-          [h.div([h.Class("sui-chat-bubble")], [`Opened ${model.desktop.folder.path} · ${model.desktop.folder.files} ${model.desktop.folder.files === 1 ? "file" : "files"}`])],
+          [h.div([h.Class("sui-chat-bubble")], [`${model.desktop.folder.files} ${model.desktop.folder.files === 1 ? "file" : "files"}`])],
         )]),
         ...children,
         ...(model.error !== "" && !model.manager ? [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [model.error])] : []),
@@ -120,7 +118,7 @@ export function view(model: Model, h: H): Document {
   const web = webView(model, decorated as unknown as HtmlBuilder<import("../../../vibelang/src/web/main.vibe").Message>)
   return { title: "VibeLang", body: h.div([h.Class("dt-host")], [
     h.header([h.Class("dt-titlebar electrobun-webkit-app-region-drag")], [
-      h.span([h.Class("dt-title")], ["VibeLang", ...(model.desktop.folder === null ? [] : [h.span([h.Class("dt-dot")], [" · "]), h.code([], [model.desktop.folder.path])])]),
+      h.span([h.Class("dt-title")], ["VibeLang"]),
       h.span([h.Class("dt-side")], [...(localTour ? [h.span([h.Class("sui-badge sui-badge-secondary")], ["Mock"])] : []), ...(model.offline ? [h.span([h.Class("sui-badge sui-badge-warning")], ["Offline"])] : []), ...(!model.desktop.mock && model.desktop.model !== null ? [h.span([h.Class("sui-model-badge")], [model.desktop.model.model, " local"])] : [])]),
     ]), web.body,
     ...(model.manager ? [models(model, h)] : []),

@@ -184,6 +184,8 @@ export interface Run {
    * interrupted before its receipt was saved plans under it again.
    */
   readonly launchKey?: string
+  /** Restored from a session journal that replaced a credential in `input`: it never relaunches. */
+  readonly redacted?: true
 }
 export interface Request {
   readonly id?: string
@@ -259,8 +261,9 @@ const active = (run: Run) => running(run) || run.status === "input"
  * approves its open request and resumes it, in place of Resume.
  */
 export const actions = (run: Run | undefined): { retry: boolean; continue: boolean; stop: boolean } => ({
-  retry: run !== undefined && !run.pendingCommand && (run.status === "failed" || run.status === "cancelled"),
-  continue: run?.status === "parked",
+  retry: run !== undefined && !run.pendingCommand && run.redacted !== true &&
+    (run.status === "failed" || run.status === "cancelled"),
+  continue: run?.status === "parked" && run.redacted !== true,
   stop: run !== undefined && (active(run) || run.status === "queued" || run.status === "parked")
 })
 

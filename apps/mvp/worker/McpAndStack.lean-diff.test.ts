@@ -472,7 +472,7 @@ const principalOf = (token: typeof Token.Type): Option.Option<McpPrincipal> => {
 const principalWire = (token: typeof Token.Type) =>
   token.anonymous
     ? null
-    : { write: token.write, actOk: token.act === "own", pinnedElsewhere: token.pin === "elsewhere" }
+    : { read: token.read, write: token.write, actOk: token.act === "own", pinnedElsewhere: token.pin === "elsewhere" }
 
 /** `ok`, the tool error's code, or `defect` for a failure that is no McpToolError. */
 const outcomeOf = (exit: Exit.Exit<unknown, McpToolError>): string =>
@@ -536,7 +536,8 @@ describe("the MCP tool gate against the Lean specification", () => {
           const listing = yield* ask<ReadonlyArray<ReadonlyArray<number>>>("listTools", {
             principal: principalWire(input.token),
             inRepo: input.inRepo,
-            role
+            role,
+            isPublic: input.isPublic
           })
           agree(`listTools with ${JSON.stringify(request)}`, listed.map(units), listing)
           must(listed.every((tool) => !isBlockedName(tool) && !isBlockedMcpAct(tool)), "a person-only act is listed")

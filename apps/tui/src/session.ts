@@ -67,9 +67,10 @@ export type Record =
     readonly owner: string
     readonly contribution: Extract<Extension.Contribution, { kind: "status" | "key" }>
   }
-  | { readonly type: "tab"; readonly tab: Workspace.Tab }
-  | { readonly type: "flow"; readonly run: Flows.Run }
-  | { readonly type: "flow-command"; readonly command: FlowCommand }
+  /** `redacted`: the journal replaced a credential in what a relaunch would send. */
+  | { readonly type: "tab"; readonly tab: Workspace.Tab; readonly redacted?: true }
+  | { readonly type: "flow"; readonly run: Flows.Run; readonly redacted?: true }
+  | { readonly type: "flow-command"; readonly command: FlowCommand; readonly redacted?: true }
   | { readonly type: "flow-command-dispatched"; readonly id: string }
   /** A run a person started, placed in the chat: its card follows the `flow` records. */
   | {
@@ -79,7 +80,7 @@ export type Record =
     readonly title: string
     readonly request?: string
   }
-  | { readonly type: "monitor"; readonly monitor: Monitors.Monitor }
+  | { readonly type: "monitor"; readonly monitor: Monitors.Monitor; readonly redacted?: true }
   /** A delivered monitor update, or its failure. */
   | {
     readonly type: "monitor-update"
@@ -232,19 +233,29 @@ const contributed = (
     ? { ...contribution, status: { ...contribution.status, text: text(contribution.status.text) } }
     : { ...contribution, key: { ...contribution.key, label: text(contribution.key.label) } }
 
+/** `value` with every string redacted. */
+const redacted = <A>(value: A): A => JSON.parse(strings(value)) as A
+
+/** Marks a record whose re-executable bytes lost a credential to redaction. */
+const marked = <A extends object>(record: A, before: unknown, after: unknown): A =>
+  JSON.stringify(before) === JSON.stringify(after) ? record : { ...record, redacted: true as const }
+
 /**
  * A record as a session file holds it: the journal's textual credential rules
  * applied to its text, so `!printenv` or an agent reading `~/.ssh` leaves
  * `[REDACTED]` on disk, not the secret. Field names are not judged, because a
  * call identity's `session` is not a credential and undo matches on it.
  *
- * What the TUI re-executes keeps its bytes: a placeholder in a `patch` is what
- * undo would write into the file, one in a flow run's input or a worker tab's
- * prompt is what retry would relaunch, one in a monitor's source is what its
- * next tick would run, and one in a view's, a card's, a status item's or a
- * key's action is what invoking it would send; a queued follow-up is the
- * prompt its turn will send. `session` and `undo` hold ids and paths, which a rule could mistake for
- * a key (`~/sk-demo-project`).
+ * What the TUI re-executes is redacted too: a `patch` undo would reverse, a
+ * flow run's input, a direct flow command, a worker tab's prompt, a monitor's
+ * source, and a queued follow-up. A credential lives only in memory, for the
+ * life of the process that saw it. When redaction changes such bytes the
+ * record is marked `redacted`, and `restore` keeps it inert: undo refuses the
+ * patch, and a run, command, tab or monitor is not relaunched with a
+ * placeholder. A view's, a card's, a status item's or a key's action keeps
+ * its bytes: it holds ids and operands a person invokes, not captured output.
+ * `session` and `undo` hold ids and paths, which a rule could mistake for a
+ * key (`~/sk-demo-project`).
  */
 const line = (record: Record): string => {
   switch (record.type) {
@@ -254,28 +265,53 @@ const line = (record: Record): string => {
       return strings({ ...record, event }) + "\n"
     }
     case "session":
-    case "patch":
     case "undo":
-    case "queued":
-    case "flow-command":
       return JSON.stringify(record) + "\n"
+    case "patch": {
+      const patches = record.receipt.patches.map((patch) => {
+        const clean = text(patch.patch)
+        return clean === patch.patch ? patch : { ...patch, patch: clean, redacted: true as const }
+      })
+      return JSON.stringify({ ...record, receipt: { ...record.receipt, patches } }) + "\n"
+    }
+    case "queued":
+      return JSON.stringify({ ...record, prompt: { ...record.prompt, text: text(record.prompt.text) } }) + "\n"
+    case "flow-command": {
+      const command = {
+        ...record.command,
+        argument: text(record.command.argument),
+        request: text(record.command.request)
+      }
+      return JSON.stringify(marked({ ...record, command }, record.command, command)) + "\n"
+    }
     case "panel":
     case "card":
       return JSON.stringify({ ...record, panel: view(record.panel) }) + "\n"
     case "contribution":
       return JSON.stringify({ ...record, contribution: contributed(record.contribution) }) + "\n"
-    case "tab":
-      return JSON.stringify({ ...record, tab: said(record.tab) }) + "\n"
-    case "flow":
-      return JSON.stringify({ ...record, run: said(record.run) }) + "\n"
+    case "tab": {
+      const tab = { ...said(record.tab), prompt: text(record.tab.prompt) }
+      return JSON.stringify(marked({ ...record, tab }, record.tab.prompt, tab.prompt)) + "\n"
+    }
+    case "flow": {
+      const input = redacted(record.run.input)
+      const requested = text(record.run.requested)
+      const run = { ...said(record.run), input, requested }
+      return JSON.stringify(
+        marked({ ...record, run }, [record.run.input, record.run.requested], [input, requested])
+      ) + "\n"
+    }
     case "monitor": {
-      const { source, ...rest } = record.monitor
-      return JSON.stringify({ ...record, monitor: { ...(JSON.parse(strings(rest)) as typeof rest), source } }) + "\n"
+      const monitor = redacted(record.monitor)
+      return JSON.stringify(marked({ ...record, monitor }, record.monitor.source, monitor.source)) + "\n"
     }
     default:
       return strings(record) + "\n"
   }
 }
+
+/** Why a restored run or tab whose input lost a credential to redaction did not relaunch. */
+export const notResumed = "Not resumed: its input held a credential"
 
 export interface Writer {
   readonly file: string
@@ -657,6 +693,9 @@ export const fork = (source: string, cwd: string, turn: Turn): Fork => {
 
 type Outcome = Extract<Record, { readonly type: "outcome" }>
 
+const settledTab: ReadonlySet<Workspace.Tab["status"]> = new Set(["done", "failed", "cancelled"])
+const settledRun: ReadonlySet<Flows.Run["status"]> = new Set(["done", "failed", "cancelled"])
+
 /** The outcome of a chat turn whose process ended before the turn settled. */
 export const interrupted = { _tag: "interrupted", headline: "Interrupted" } as const
 
@@ -748,13 +787,26 @@ export const restore = (records: ReadonlyArray<Record>): {
         break
       }
       case "tab":
-        tabs.set(record.tab.id, record.tab)
+        tabs.set(
+          record.tab.id,
+          record.redacted === true && !settledTab.has(record.tab.status)
+            ? { ...record.tab, status: "failed", message: notResumed }
+            : record.tab
+        )
         break
       case "flow":
-        flows.set(record.run.id, record.run)
+        flows.set(
+          record.run.id,
+          record.redacted !== true
+            ? record.run
+            : settledRun.has(record.run.status)
+            ? { ...record.run, redacted: true }
+            : { ...record.run, status: "failed", message: notResumed, redacted: true }
+        )
         break
       case "flow-command":
-        flowCommands.set(record.command.id, record.command)
+        // A command whose argument lost a credential never dispatches with the placeholder.
+        if (record.redacted !== true) flowCommands.set(record.command.id, record.command)
         transcript = Transcript.run(transcript, {
           surface: `flow:${record.command.id}`,
           title: record.command.flow,
@@ -775,7 +827,12 @@ export const restore = (records: ReadonlyArray<Record>): {
         }, record.at)
         break
       case "monitor":
-        monitors.set(record.monitor.id, record.monitor)
+        monitors.set(
+          record.monitor.id,
+          record.redacted === true && record.monitor.status === "active"
+            ? { ...record.monitor, status: "stopped", endedAt: record.monitor.endedAt ?? Date.now() }
+            : record.monitor
+        )
         break
       case "monitor-update":
         transcript = record.failed === true

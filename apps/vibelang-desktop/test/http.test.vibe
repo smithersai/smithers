@@ -67,3 +67,57 @@ it.effect("admits only the window that presented this launch's secret", () => (e
     })
   }
 }).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("counts a desktop write's bytes while reading it and refuses what it will not open", () => (effect {
+  const calls: Array<string> = []
+  const desktop = Layer.succeed(Desktop, {
+    external: effect (url) => { calls.push(`external ${url}`) },
+    snapshot: effect () => empty,
+    change: effect (operation, _endpoint, model) => { calls.push(`change ${operation} ${model?.length ?? 0}`); return empty },
+    models: effect () => [],
+  })
+  const fs = try FileSystem.FileSystem
+  const assets = try fs.makeTempDirectoryScoped()
+  const encoder = new TextEncoder()
+  // The launched window's own requests. `chunks` sends a streamed body, which declares no Content-Length.
+  effect function post(path: string, body: string | ReadonlyArray<string>, type = "application/json") {
+    const base = HttpClientRequest.post(`${origin}${path}`)
+    const filled = typeof body === "string" ? base.pipe(HttpClientRequest.bodyText(body, type)) : base.pipe(HttpClientRequest.bodyStream(Stream.fromIterable(body.map((chunk) => encoder.encode(chunk))), { contentType: type }))
+    const admitted = filled.pipe(HttpClientRequest.setHeaders({ host: "127.0.0.1:44509", origin, cookie: `vibelang-desktop-launch=${launch}` }))
+    const request = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(admitted))
+    const response = try handler(origin, assets, launch).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
+    return response.status
+  }
+  // A change body of exactly `bytes` bytes: the model name pads it.
+  const sized = (bytes: number) => {
+    const shell = JSON.stringify({ operation: "mock", model: "" })
+    return JSON.stringify({ operation: "mock", model: "x".repeat(bytes - encoder.encode(shell).length) })
+  }
+  const link = JSON.stringify({ url: "https://example.com/a" })
+  const large = JSON.stringify({ url: `https://example.com/${"a".repeat(8192)}` })
+  // 2,040 two-byte characters: under 4,096 UTF-16 units, over 4,096 bytes.
+  const multibyte = JSON.stringify({ operation: "mock", model: "é".repeat(2040) })
+  provide desktop, MockFactory {
+    const plain = try post("/desktop/external", link, "text/plain")
+    const chunked = try post("/desktop/external", [link.slice(0, 9), link.slice(9)])
+    const oversizedLink = try post("/desktop/external", [large.slice(0, 3000), large.slice(3000, 6000), large.slice(6000)])
+    const script = try post("/desktop/external", JSON.stringify({ url: "javascript:alert(1)" }))
+    const http = try post("/desktop/external", JSON.stringify({ url: "http://example.com/" }))
+    const credentialed = try post("/desktop/external", JSON.stringify({ url: "https://user:secret@example.com/" }))
+    const untyped = try post("/desktop/external", JSON.stringify({ url: 5 }))
+    const atLimit = try post("/desktop/change", sized(4096))
+    const overLimit = try post("/desktop/change", sized(4097))
+    const chunkedAtLimit = try post("/desktop/change", [sized(4096).slice(0, 1000), sized(4096).slice(1000)])
+    const chunkedOverLimit = try post("/desktop/change", [sized(8192).slice(0, 4000), sized(8192).slice(4000)])
+    const wide = try post("/desktop/change", multibyte)
+    const wideChunked = try post("/desktop/change", [multibyte.slice(0, 500), multibyte.slice(500)])
+    try Effect.try(() => {
+      expect(multibyte.length).toBeLessThan(4096)
+      expect(encoder.encode(multibyte).length).toBeGreaterThan(4096)
+      expect([plain, chunked, oversizedLink, script, http, credentialed, untyped]).toEqual([415, 200, 413, 400, 400, 400, 400])
+      expect([atLimit, overLimit, chunkedAtLimit, chunkedOverLimit, wide, wideChunked]).toEqual([200, 413, 200, 413, 413, 413])
+      // Only the admitted bodies reached the desktop service.
+      expect(calls).toEqual(["external https://example.com/a", `change mock ${JSON.parse(sized(4096)).model.length}`, `change mock ${JSON.parse(sized(4096)).model.length}`])
+    })
+  }
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))

@@ -189,7 +189,7 @@ it("the API Worker's production object bodies answer through workerd", { timeout
           expect((await call(api.origin, `/api/actions/runs/${id}`, { method: "DELETE", headers: props })).status).toBe(200)
         })
         const health = workload(bench, "api-objects-health", "async", async () => {
-          const answer = await call(api.origin, "/api/health/objects?conversation=health-bench")
+          const answer = await call(api.origin, "/api/health/objects")
           expect(answer.status).toBe(200)
           const body = JSON.parse(answer.body)
           expect(Object.keys(body.objects).sort()).toEqual(["ActionIndex", "Budget", "Conversation", "History", "ProjectAccounts"])
@@ -199,7 +199,7 @@ it("the API Worker's production object bodies answer through workerd", { timeout
           }
         })
         const warmHealth = workload(bench, "api-objects-health-warm", "async", async () => {
-          const first = await call(api.origin, "/api/health/objects?conversation=bench-api-1")
+          const first = await call(api.origin, "/api/health/objects")
           expect(first.status).toBe(200)
           const report = JSON.parse(first.body) as { commit: string; objects: Record<string, { objectClass: string; objectId: string; codeVersion: string; startup: string; step: string }> }
           expect(report.commit).toBe("bench-commit")
@@ -210,7 +210,7 @@ it("the API Worker's production object bodies answer through workerd", { timeout
             if (name === "History") expect(status.step).toBe("publish")
             else expect(["initialize", "begin", "storage", "sequencer", "bootstrap", "accounts"]).toContain(status.step)
           }
-          const again = await call(api.origin, "/api/health/objects?conversation=bench-api-1")
+          const again = await call(api.origin, "/api/health/objects")
           expect(again.status).toBe(200)
           expect(JSON.parse(again.body)).toEqual(report)
         })

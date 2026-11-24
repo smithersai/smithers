@@ -32,6 +32,14 @@ export interface AccountShape {
   alarm(): void!!RuntimeContext
 }
 type Named<Shape> = Pick<Cloudflare.DurableObject<Shape>, "getByName">
+/** How many metering rounds in a row failed; absent while the meter is healthy. */
+export const METER_FAILURES = "meter/failures"
+/** Metering rounds that failed after the engine's own retries. */
+export const meterFailures = Metric.counter("vibelang_sandbox_meter_failures", { incremental: true })
+/** The wait before the round after `failures` failed ones: 1 second, doubling, at most 5 minutes. */
+export function meterRetryDelay(failures: number): number {
+  return Math.min(300_000, 1000 * 2 ** Math.min(Math.max(failures, 1) - 1, 9))
+}
 /** The object's body, apart from Alchemy's binding of it. */
 export function accountObject(state: ObjectState, namespace: Named<MachineShape>, identity: SandboxIdentity.Shape) {
   return effect {
@@ -51,10 +59,27 @@ export function accountObject(state: ObjectState, namespace: Named<MachineShape>
     const host = try Effect.provide(Sandboxes.open(state.raw.storage, machines), policy)
     const id = try Effect.orDie(Effect.try(() => state.id.toString()))
     const gate = try Semaphore.make(1)
+    /**
+     * One metering round. The SandboxMeter flow arms the next alarm itself when a machine still runs
+     * (`Sandboxes.open`'s `alarm`), and the engine retries its steps. A round that still fails is logged, counted and
+     * tried again after a delay that doubles from 1 second to 5 minutes, so a machine whose stop failed is never left
+     * running unmetered, and a lasting failure is never a silent 1 Hz loop (review R1 D4, Fable-D4-015).
+     */
     const meter = effect () => {
-      // Arm the retry BEFORE work: a failed container stop must not strand a running machine.
-      try promise(() => state.raw.storage.setAlarm(Date.now() + 1000))
-      try Semaphore.withPermits(gate, 1)(Effect.ignore(Sandboxes.execute(id, state.raw.storage, host, "meter", "", `alarm/${Date.now()}`, 0, "")))
+      const started = try Clock.currentTimeMillis
+      const round = try exit(Semaphore.withPermits(gate, 1)(Sandboxes.execute(id, state.raw.storage, host, "meter", "", `alarm/${started}`, 0, "")))
+      if (round._tag === "Success") {
+        if ((try promise(() => state.raw.storage.get<number>(METER_FAILURES))) !== undefined) try promise(() => state.raw.storage.delete(METER_FAILURES))
+        return
+      }
+      if (Cause.hasInterrupts(round.cause)) return try Effect.interrupt
+      const failures = ((try promise(() => state.raw.storage.get<number>(METER_FAILURES))) ?? 0) + 1
+      const delayMs = meterRetryDelay(failures)
+      try promise(() => state.raw.storage.put(METER_FAILURES, failures))
+      const retryAt = (try Clock.currentTimeMillis) + delayMs
+      try promise(() => state.raw.storage.setAlarm(retryAt))
+      try Metric.update(meterFailures, 1)
+      try Effect.logWarning("vibelang.sandbox.meter.failed").pipe(Effect.annotateLogs({ failures, delayMs, reason: failureReason(Cause.squash(round.cause)) }))
     }
     return {
       run: effect (owner: string, kind: "read" | "start" | "stop" | "command", conversation: string, operationId: string, generation: number, command: string) => {
@@ -90,7 +115,7 @@ export function gatewayOf(namespace: Named<AccountShape>, identity: SandboxIdent
   }
   // Resolve the current principal for every HTTP operation, before any journal replay can return a result.
   const gateway: Gateway<RuntimeContext> = {
-    sandbox: (c) => Effect.map(request("read", c, `read/${Date.now()}`, 0, ""), (r) => r.snapshot),
+    sandbox: (c) => Effect.flatMap(Clock.currentTimeMillis, (now) => Effect.map(request("read", c, `read/${now}`, 0, ""), (r) => r.snapshot)),
     startSandbox: (c, op) => Effect.map(request("start", c, op, 0, ""), (r) => r.snapshot),
     stopSandbox: (c, op, gen) => Effect.map(request("stop", c, op, gen, ""), (r) => r.snapshot),
     sandboxCommand: (c, op, command, gen) => Effect.map(request("command", c, op, gen, command), (r) => r.output),

@@ -206,6 +206,8 @@ export interface Host {
   /** Absent on hosts that approve nothing, such as test fakes. */
   readonly approvals?: {
     readonly mode: Approvals.Mode
+    /** `all` was named (`Approvals.explicitAll`): only then may a wrapped vendor worker bypass its permissions. */
+    readonly explicit?: boolean
     readonly authorize: (requests: ReadonlyArray<Approvals.Request>, signal?: AbortSignal) => Promise<void>
     readonly pending: () => Promise<ReadonlyArray<Approvals.Pending>>
     /** Resolves with the store's error code when it refused the answer. */
@@ -293,6 +295,8 @@ export const make = (options: {
   readonly available?: Available
   /** How consequential flow calls are approved; see `approvals.ts`. Default `ask`. */
   readonly approvals?: Approvals.Mode
+  /** `all` was named, not defaulted; see `Approvals.explicitAll`. */
+  readonly explicitApprovals?: boolean
   /** Test seam for the ordinary flow-call ceiling. */
   readonly callMs?: number
   /** Test seam for the frame backstop. */
@@ -867,6 +871,7 @@ export const make = (options: {
 
   const approvals: NonNullable<Host["approvals"]> = {
     mode: approvalMode,
+    explicit: options.explicitApprovals === true,
     authorize: (requests, signal) =>
       approvalMode === "all" ?
         Promise.resolve() :

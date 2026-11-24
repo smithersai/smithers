@@ -4,7 +4,7 @@ import { ContainerSession, ContainerTerminal, SandboxObject as SandboxHost } fro
 import type { SandboxTools } from "@smthrs/sandbox"
 import { RuntimeContext } from "alchemy"
 import { Cause, Clock, Config, Effect, Fiber, Layer, Option, Ref, Schema, Scope } from "effect"
-import { FetchHttpClient, HttpBody, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { FetchHttpClient, HttpBody, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
 import { BranchSandbox } from "../infra/BranchSandbox.ts"
@@ -49,6 +49,7 @@ import { SecretKeys } from "./secrets/Keys.ts"
 import * as SandboxEgress from "./secrets/SandboxEgress.ts"
 import * as SocketAccess from "./SocketAccess.ts"
 import * as SocketHost from "./durable/SocketHost.ts"
+import * as SocketPumps from "./durable/SocketPumps.ts"
 import * as SocketChecks from "./SocketChecks.ts"
 
 // Branch sandboxes on Cloudflare (decision 0013 §3, decision 0005 §2, docs/features/branch-workspace.md#the-machine):
@@ -243,6 +244,12 @@ interface MachineSpec<CR, BR> {
   readonly artifacts: Effect.Effect<Effect.Effect<Artifacts.Bucket, never, RuntimeContext>, never, BR> | undefined
 }
 
+/**
+ * The HTTP client an object's outbound calls go out on (its forge proxy, its egresses, its registries), injected by the
+ * program that hosts the namespace (`live`, `gateLive`); Effect's fetch client unless it names another.
+ */
+export type ObjectHttp = Layer.Layer<HttpClient.HttpClient>
+
 const isBranch = Schema.is(SandboxBranch)
 
 /**
@@ -252,14 +259,15 @@ const isBranch = Schema.is(SandboxBranch)
 export const live = <E, R, CE, CR>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
   checks: SocketChecks.Options,
-  checkConnection: Effect.Effect<Cloudflare.Hyperdrive.Connection, CE, CR>
+  checkConnection: Effect.Effect<Cloudflare.Hyperdrive.Connection, CE, CR>,
+  http: ObjectHttp = FetchHttpClient.layer
 ) =>
   SandboxObject.make(implementation(connection, checks, checkConnection, {
     machine: undefined,
     container: BranchSandbox,
     instance: sandboxInstance,
     artifacts: undefined
-  }))
+  }, http))
 
 /**
  * The gate machine's objects (`GateObject`) when the deployment declares it (GATE_IMAGE), on GATE_INSTANCE, their
@@ -268,7 +276,8 @@ export const live = <E, R, CE, CR>(
 export const gateLive = <E, R, CE, CR>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
   checks: SocketChecks.Options,
-  checkConnection: Effect.Effect<Cloudflare.Hyperdrive.Connection, CE, CR>
+  checkConnection: Effect.Effect<Cloudflare.Hyperdrive.Connection, CE, CR>,
+  http: ObjectHttp = FetchHttpClient.layer
 ) =>
   Layer.unwrap(Effect.map(JobMachines.declared.pipe(Effect.orDie), (machines) => {
     const layer = GateObject.make(implementation(connection, checks, checkConnection, {
@@ -279,7 +288,7 @@ export const gateLive = <E, R, CE, CR>(
         Cloudflare.R2.ReadWriteBucket(CiArtifacts),
         (bucket) => bucket.raw as unknown as Effect.Effect<Artifacts.Bucket, never, RuntimeContext>
       )
-    }))
+    }, http))
     // Undeclared, the namespace is never bound: the program yields `GateObject` only for a declared gate.
     return machines.includes(JobMachines.GATE) ? layer : (Layer.empty as unknown as typeof layer)
   }))
@@ -289,7 +298,9 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
   checkOptions: SocketChecks.Options,
   /** The config its sockets' leases renew through: the request path's (worker/DatabaseRoutes.ts). */
   checkConnection: Effect.Effect<Cloudflare.Hyperdrive.Connection, CE, CCR>,
-  spec: MachineSpec<CR, BR>
+  spec: MachineSpec<CR, BR>,
+  /** The client every outbound call of the object uses, built once here: no handler provides its own. */
+  objectHttp: ObjectHttp
 ) =>
   Effect.gen(function*() {
     const box = yield* spec.container
@@ -299,9 +310,10 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
         Effect.succeed({ exitCode: SandboxHost.run(box, argv, options) })
     }
     const state = yield* Cloudflare.DurableObjectState
+    const http = Layer.succeed(HttpClient.HttpClient, yield* HttpClient.HttpClient.pipe(Effect.provide(objectHttp)))
     const forge = yield* Effect.service(Forge).pipe(
       Effect.provide(Forge.layerConfig),
-      Effect.provide(FetchHttpClient.layer)
+      Effect.provide(http)
     )
     const secretsOn = yield* sandboxSecrets.pipe(Effect.orDie)
     const egressAllowHosts = yield* SandboxEgress.allowHosts.pipe(Effect.orDie)
@@ -347,8 +359,6 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
       >()
       /** One renewal at a time: a gate or the loop that finds one running waits for it. */
       const flight = SocketHost.singleFlight()
-      /** Every gate's one pending renewal: frames on lapsed leases start at most one fiber for the whole object. */
-      let lapsed: (() => void) | undefined
       // The box's forge requests go to ChatApi's own entrypoint with props naming this object, and come back to it
       // (`answerBox`), which answers them as the forge proxy; every other request it makes does too, as its egress:
       // the package registries (worker/branch/RegistryEgress.ts), or with SANDBOX_SECRETS on, the secrets egress,
@@ -595,7 +605,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
             egressAllowHosts
           ).pipe(
             Effect.provideService(SecretKeys, secretKeys),
-            Effect.provide(Layer.merge(database, FetchHttpClient.layer))
+            Effect.provide(Layer.merge(database, http))
           )
         })
 
@@ -709,7 +719,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
             egressAllowHosts
           ).pipe(
             Effect.provideService(SecretKeys, secretKeys),
-            Effect.provide(Layer.merge(database, FetchHttpClient.layer))
+            Effect.provide(Layer.merge(database, http))
           )
         })
 
@@ -851,29 +861,31 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
           const [client, server] = [pair[0], pair[1]]
           server.accept()
           const lease = { until: SocketAccess.leaseFrom(admission, admission.admittedAt) }
-          // The gate is called from the socket's own events, outside any effect: it renews with this object's services.
-          const runFork = Effect.runForkWith(yield* Effect.context<RuntimeContext>())
-          const clock = yield* Effect.clockWith(Effect.succeed)
           // The terminal reads and writes through the lease: input and output both stop the moment it lapses or the
-          // session ends, and the object's one renewal is asked for.
-          const leased = terminalGate(
-            server,
-            () => attached.get(server),
-            lapsed ??= SocketAccess.coalesced(renewDue, runFork)
-          )
-          const fiber = yield* Effect.forkIn(
-            ContainerTerminal.attach(box, leased, { name: terminalId, user, access, cols: 80, rows: 24, env })
-              .pipe(Effect.ensuring(Effect.sync(() => attached.delete(server))), Effect.ensuring(saveNow)),
+          // session ends, and the object's one renewal is asked for (`lapsed`, the object's own notifier: the gate is
+          // called from the socket's own events, outside any effect).
+          const leased = terminalGate(server, () => attached.get(server), lapsed)
+          // The viewer is in `attached` before its terminal starts, so one that closes at once removes its own entry.
+          yield* SocketPumps.attachRegistered(
+            (registered) =>
+              Effect.andThen(
+                registered,
+                ContainerTerminal.attach(box, leased, { name: terminalId, user, access, cols: 80, rows: 24, env })
+              ).pipe(
+                Effect.ensuring(Effect.sync(() => attached.delete(server))),
+                Effect.ensuring(saveNow)
+              ),
+            (fiber) =>
+              void attached.set(server, {
+                principal,
+                role: roleOf(request.headers[ROLE_HEADER]),
+                access,
+                admission,
+                lease,
+                fiber
+              }),
             pumps
           )
-          attached.set(server, {
-            principal,
-            role: roleOf(request.headers[ROLE_HEADER]),
-            access,
-            admission,
-            lease,
-            fiber
-          })
           // Both loops run while anyone is attached; a lease acted on before a running one's wake wakes it then.
           yield* loop.ensure(pumps, { admission, leaseUntil: lease.until })
           return HttpServerResponse.setBody(
@@ -892,7 +904,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
         if (branch === undefined || generation === undefined) return HttpServerResponse.empty({ status: 403 })
         return yield* SandboxEgress.forward(SandboxEgress.guestOf(branch, generation), egressAllowHosts).pipe(
           Effect.provideService(SecretKeys, secretKeys),
-          Effect.provide(Layer.merge(database, FetchHttpClient.layer))
+          Effect.provide(Layer.merge(database, http))
         )
       })
 
@@ -907,7 +919,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
             yield* Effect.logWarning("sandbox.forge").pipe(Effect.annotateLogs({ status: 403, outcome: "no_branch" }))
             return HttpServerResponse.empty({ status: 403 })
           }
-          const response = yield* proxy(request, forge, branch).pipe(Effect.provide(FetchHttpClient.layer))
+          const response = yield* proxy(request, forge, branch).pipe(Effect.provide(http))
           yield* Effect.logInfo("sandbox.forge").pipe(
             Effect.annotateLogs({ branchId: branch.branchId, status: response.status, outcome: "answered" })
           )
@@ -982,6 +994,16 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
       const loop = terminalLoops(
         () => [...attached.values()].map((viewer) => ({ admission: viewer.admission, leaseUntil: viewer.lease.until })),
         renewDue
+      )
+
+      /**
+       * Every gate's one pending renewal, started with the object and run by its own fiber in `pumps`: frames on lapsed
+       * leases ask for at most one renewal for the whole object, whichever request attached their sockets.
+       */
+      const lapsed = yield* SocketPumps.lapsedRenewals(
+        renewDue,
+        pumps,
+        (cause) => logged(Effect.logWarning("sandbox.renew").pipe(Effect.annotateLogs(failureFields(cause))))
       )
 
       /**
@@ -1064,7 +1086,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
             return yield* egressSubscription(held)
           }
           if (RegistryEgress.secretsEgress(yield* branchOf, secretsOn)) return yield* egressOut
-          return yield* RegistryEgress.forward(request).pipe(Effect.provide(FetchHttpClient.layer))
+          return yield* RegistryEgress.forward(request).pipe(Effect.provide(http))
         }))
       }
     })

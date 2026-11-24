@@ -6,7 +6,10 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 // (Legacy)" runs from its server (`/api/openai-chatgpt/oauth/start`). The person types a code at OpenAI; we hold the
 // tokens sealed and refresh them here. No token leaves this Worker except through a box's egress, as a substitution.
 //
-// Everything here is a plain HTTP call over the injected `FetchHttpClient.Fetch`, so tests script OpenAI at the network.
+// Everything here is a plain HTTP call on the client `CodexAuth` names (`http`): the program that builds `CodexAuth`
+// injects its host's client, so that client (its user agent, a test's failing service) is the one these calls use. A
+// program that names none gets Effect's fetch client over the injected `FetchHttpClient.Fetch`, so tests script OpenAI
+// at the network.
 
 /**
  * `CODEX_AUTH_ORIGIN` and `CODEX_OAUTH_CLIENT_ID`: OpenAI's auth server and the public OAuth client of the Codex CLI,
@@ -18,8 +21,16 @@ export const config = Effect.gen(function* () {
   return { origin, clientId }
 }).pipe(Effect.orDie)
 
-/** `config`, read where a program builds: a request or a step reading it would bind nothing (tests/worker-config.test.ts). */
-export class CodexAuth extends Context.Service<CodexAuth, { readonly origin: string; readonly clientId: string }>()("@smthrs/mvp/personal/CodexAuth") {}
+/**
+ * `config`, read where a program builds: a request or a step reading it would bind nothing (tests/worker-config.test.ts).
+ * `http` is the client every call here goes out on, injected by the program that builds this; Effect's fetch client
+ * when it names none.
+ */
+export class CodexAuth extends Context.Service<CodexAuth, {
+  readonly origin: string
+  readonly clientId: string
+  readonly http?: HttpClient.HttpClient
+}>()("@smthrs/mvp/personal/CodexAuth") {}
 
 /** OpenAI's code a person types, and the handle polling it. */
 export const UserCode = Schema.Struct({
@@ -91,9 +102,13 @@ const decoded = <A, I>(schema: Schema.Codec<A, I>, json: Effect.Effect<unknown, 
     Effect.mapError(() => new CodexAuthFailed({ reason: "refused", status: 200 })),
   )
 
+/** The client these calls go out on: the one `CodexAuth` names, else Effect's fetch client. */
+const hostClient = Effect.flatMap(CodexAuth, ({ http }) =>
+  http === undefined ? HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer)) : Effect.succeed(http))
+
 const post = <A, I>(body: HttpClientRequest.HttpClientRequest, schema: Schema.Codec<A, I>, pending = false) =>
   Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient
+    const client = yield* hostClient
     const answer = yield* client.execute(body).pipe(
       Effect.mapError(() => new CodexAuthFailed({ reason: "unreachable", status: null })),
     )
@@ -108,7 +123,6 @@ const post = <A, I>(body: HttpClientRequest.HttpClientRequest, schema: Schema.Co
     // Keep the body and decoding inside the deadline: a refresh holds a database row until this finishes.
     Effect.timeout(REQUEST_TIMEOUT),
     Effect.catchTag("TimeoutError", () => Effect.fail(new CodexAuthFailed({ reason: "unreachable", status: null }))),
-    Effect.provide(FetchHttpClient.layer),
   )
 
 const jsonTo = <A, I>(url: string, value: unknown, schema: Schema.Codec<A, I>, pending = false) =>

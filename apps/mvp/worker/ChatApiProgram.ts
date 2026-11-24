@@ -53,7 +53,6 @@ import * as Executions from "./Executions.ts"
 import * as FeedsApi from "./feeds/Api.ts"
 import * as Flows from "./Flows.ts"
 import { recheckExecutionId, RecheckRole } from "./flows/RecheckRole.ts"
-import * as RedactFeed from "./flows/RedactFeed.ts"
 import * as Todo from "./flows/Todo.ts"
 import * as TodoSession from "./flows/TodoSession.ts"
 import * as GitHubApi from "./github/Api.ts"
@@ -475,9 +474,6 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const taskAnswerer = Executions.answerer(executions)
     // An agent's questions to people (worker/Asks.ts), started on `FlowExecution` as `queue/ask`.
     const asks = Asks.make(database, options.askToken === undefined ? {} : { developmentToken: options.askToken })
-    // A confirmed feed barrier's pass starts with the next request, whatever else runs
-    // (docs/features/notifications.md#rows-written-before): at most one indexed read a minute per isolate.
-    const launchFeedRedaction = yield* RedactFeed.launcher
 
     return {
       fetch: Effect.gen(function*() {
@@ -520,14 +516,6 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                 checks,
                 (options.sessions === undefined ? signIn.sessions : options.sessions.pipe(Layer.provideMerge(signIn.sessions))).pipe(Layer.provide(checks)),
                 BranchRoles.layer(roles)
-              )
-              // After the response, never before it: no request waits on a claim or a start (ctx.waitUntil).
-              yield* RequestBackground.inBackground(
-                launchFeedRedaction.pipe(
-                  Effect.provideService(Flows.FlowStarter, starter),
-                  Effect.provide(database),
-                  Effect.ignore
-                )
               )
               const path = request.url.split("?")[0]!
               // Before sign-in, which answers every other `/api/auth/` path: the person's connected sites and their
@@ -731,15 +719,18 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
       ...(options.hostedModel === undefined ? {} : { hostedModel: options.hostedModel })
     })),
+    // The sandbox objects take their HTTP client from this composition root (R1-Fable-D4-034).
     Effect.provide(BranchSandboxes.live(
       DatabaseRoutes.route(pools, "SandboxObject"),
       socketChecks(options),
       DatabaseRoutes.route(pools, "SocketChecks"),
+      FetchHttpClient.layer,
     )),
     Effect.provide(BranchSandboxes.gateLive(
       DatabaseRoutes.route(pools, "GateObject"),
       socketChecks(options),
       DatabaseRoutes.route(pools, "SocketChecks"),
+      FetchHttpClient.layer,
     )),
     Effect.provide(BranchRooms.live(DatabaseRoutes.route(pools, "RoomObject"), socketChecks(options))),
     Effect.provide(RunContent.live(DatabaseRoutes.route(pools, "RunContent"), socketChecks(options))),

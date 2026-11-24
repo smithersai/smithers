@@ -1,0 +1,27 @@
+// Settled executions in the desktop's flow store are forgotten a day after they finish. Every post, reply, settings
+// change and opened link journals one, so without a pass flows.sqlite grows for as long as the app is used.
+import { Retention } from "@smthrs/engine-store"
+
+/** How long a settled execution stays: a day outlasts any retried post or reply, which resumes within minutes. */
+export const EXECUTION_RETENTION_MS = 86_400_000
+/** How often the running app collects. */
+export const RETENTION_INTERVAL = "1 hour"
+
+const passes = Metric.counter("vibelang_desktop_retention_passes", { incremental: true })
+
+/** One pass over the flow store: `collect` deletes terminal runs older than the cutoff. A failed pass is logged and counted, never raised. */
+export effect function retain<E, R>(collect: (options: { readonly olderThanMs: number }) => { readonly runs: ReadonlyArray<string> }!E!R) {
+  const cutoff = (try Clock.currentTimeMillis) - EXECUTION_RETENTION_MS
+  const result = try exit(collect({ olderThanMs: cutoff }))
+  const outcome = Exit.isFailure(result) ? "failed" : result.value.runs.length > 0 ? "deleted" : "none"
+  try Metric.update(Metric.withAttributes(passes, { outcome }), 1)
+  try Effect.logInfo("vibelang.desktop.retention").pipe(Effect.annotateLogs({ outcome, runs: Exit.isSuccess(result) ? result.value.runs.length : 0 }))
+}
+
+/** Collects when the app starts and every `RETENTION_INTERVAL` after, until its scope closes. */
+export function keeper<E, R>(collect: (options: { readonly olderThanMs: number }) => { readonly runs: ReadonlyArray<string> }!E!R) {
+  return withSpan(retain(collect), "vibelang.desktop.retention") |> Effect.repeat(%, Schedule.spaced(RETENTION_INTERVAL)) |> Effect.asVoid(%)
+}
+
+/** The keeper over the engine store's own retention pass, the one `smithers gc` runs. */
+export const storeKeeper = keeper(Retention.collect)

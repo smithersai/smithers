@@ -257,11 +257,14 @@ export interface McpToolDeps {
 const unavailable = (what: string) => () =>
   Effect.fail(new McpToolError({ code: "unavailable", message: `${what} is not available on this server` }))
 
+const noDraftStorage = unavailable("todo_draft")
+
 /**
  * Completes a partial set of live deps: ChatApiProgram.ts binds what it has (RepoApi reads, the IssueList projection,
  * `github/Write` admission, the stack, WorkLinks.write) and every missing one fails `unavailable` instead of crashing.
  */
 export const makeLiveToolDeps = (deps: Partial<McpToolDeps>): McpToolDeps => ({
+  ...(deps.fleet === undefined ? {} : { fleet: deps.fleet }),
   readTree: deps.readTree ?? unavailable("repo_tree"),
   readFile: deps.readFile ?? unavailable("repo_read_file"),
   listRefs: deps.listRefs ?? unavailable("repo_refs"),
@@ -275,7 +278,7 @@ export const makeLiveToolDeps = (deps: Partial<McpToolDeps>): McpToolDeps => ({
   createIssue: deps.createIssue ?? unavailable("issue_create"),
   commentIssue: deps.commentIssue ?? unavailable("issue_comment"),
   listTodos: deps.listTodos ?? unavailable("todo_list"),
-  draftTodo: deps.draftTodo ?? unavailable("todo_draft"),
+  draftTodo: deps.draftTodo ?? noDraftStorage,
   postWorkLink: deps.postWorkLink ?? unavailable("work_link_post"),
 })
 
@@ -635,8 +638,13 @@ const descriptorOf = (spec: ToolSpec): McpToolDescriptor => ({
   },
 })
 
+/** Public data needs no grant. Other reads must use the person's explicit read permission. */
+const readPermitted = (principal: Option.Option<McpPrincipal>, isPublic: boolean, minimum: Role | null) =>
+  (isPublic && minimum === null) || (Option.isSome(principal) && principal.value.scopes.includes("mcp:read"))
+
 /** Whether a principal with `role` and `scopes` may see `spec` listed. */
-const visible = (spec: ToolSpec, role: Role | null, principal: Option.Option<McpPrincipal>): boolean => {
+const visible = (spec: ToolSpec, role: Role | null, principal: Option.Option<McpPrincipal>, isPublic: boolean): boolean => {
+  if (spec.access === "read" && ((!isPublic && role === null) || !readPermitted(principal, isPublic, spec.minimum))) return false
   if (spec.access === "write") {
     if (Option.isNone(principal) || !principal.value.scopes.includes("mcp:write")) return false
   }
@@ -729,6 +737,9 @@ export const makeMcpToolRegistry = (deps: McpToolDeps) =>
       Effect.gen(function* () {
         const access = yield* auth.resolveRepoAccess(ctx.principal, repo.owner, repo.name)
         seen.role = access.role
+        if (!readPermitted(ctx.principal, access.isPublic, minimum)) {
+          return yield* forbidden("This read requires the mcp:read permission")
+        }
         if (!access.isPublic && access.role === null) return yield* forbidden("This repository is private")
         if (minimum !== null && rankOf(access.role) < rankOf(minimum)) {
           return yield* forbidden(`Requires the ${minimum} role or above on ${repo.owner}/${repo.name}`)
@@ -1087,8 +1098,10 @@ export const makeMcpToolRegistry = (deps: McpToolDeps) =>
         Effect.gen(function* () {
           const access = yield* roleFor(principal, defaultRepo)
           // An unknown role (no default repository) lists every tool the scopes allow; each call checks the live role.
-          const role: Role | null = Option.match(access, { onNone: () => "admin" as const, onSome: (a) => a.role })
-          const base = TOOL_SPECS.filter((spec) => !isBlockedName(spec.name) && visible(spec, role, principal)).map(descriptorOf)
+          const role: Role | null = Option.match(access, { onNone: () => defaultRepo === undefined ? "admin" as const : null, onSome: (a) => a.role })
+          const isPublic = Option.isSome(access) ? access.value.isPublic : defaultRepo === undefined
+          const base = TOOL_SPECS.filter((spec) => !isBlockedName(spec.name) &&
+            (spec.name !== "todo_draft" || deps.draftTodo !== noDraftStorage) && visible(spec, role, principal, isPublic)).map(descriptorOf)
           const fleetTools = deps.fleet === undefined ? [] : FleetMcpTools.visibleDescriptors(principal, deps.fleet.admins ?? DeploymentPolicy.DEFAULT_ADMINS)
           return [...base, ...fleetTools]
         }),

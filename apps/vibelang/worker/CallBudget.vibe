@@ -54,11 +54,13 @@ export function callBudget(meter: Budget.Service, ledger: Ledger, parent: string
       if (!admitted) return yield* Effect.fail(new HarnessError.HarnessError({ code: "engine_failed", cause: { _tag: "vibelang/DailyBudgetExceeded" }, message: "The daily model budget is spent" }))
       return yield* Schema.encodeEffect(Receipt)({ day, key, ceiling }).pipe(Effect.mapError(unavailable))
     }),
+    // A checkpoint that cannot reach the ledger is the same outage an admission or a charge meets (review R1 D4,
+    // Astra-D4-027): one attempt through `steady`, so the reply fails as the budget's and its outage is counted.
     checkpointCall: ledger.checkpoint === undefined ? undefined : effect (receipt, usage, settled) => {
       const call = try Schema.decodeUnknownEffect(Receipt)(receipt).pipe(Effect.mapError(unavailable))
       const usable = try Effect.try(() => usableCall(settled, Budget.reportsTokens(usage))).pipe(Effect.mapError(unavailable))
       const used = try Effect.try(() => usable ? Budget.tokensOf(usage) : 0).pipe(Effect.mapError(unavailable))
-      try ledger.checkpoint!(call.day, call.key, used, usable, call.ceiling).pipe(Effect.mapError(unavailable))
+      try steady(ledger.checkpoint!(call.day, call.key, used, usable, call.ceiling))
     },
     recordCall: (receipt, usage, settled) => Effect.gen(function*() {
       const call = yield* Schema.decodeUnknownEffect(Receipt)(receipt).pipe(Effect.mapError(unavailable))

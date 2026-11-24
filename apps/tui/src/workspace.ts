@@ -1210,7 +1210,10 @@ export class Workspace {
             brief,
             ...(session === undefined ? {} : { session }),
             resume,
-            approve: this.options.host.approvals?.mode ?? "all"
+            approve: Wrapped.approval(
+              this.options.host.approvals?.mode,
+              this.options.host.approvals?.explicit === true
+            )
           }, (folded) => {
             if (!own()) return
             if (folded.error === undefined && (folded.settled === true || folded.answer !== undefined)) accepted()
@@ -1516,7 +1519,7 @@ export class Workspace {
       tab.harness.session,
       this.options.host.cwd,
       brief,
-      this.options.host.approvals?.mode ?? "all"
+      Wrapped.approval(this.options.host.approvals?.mode, this.options.host.approvals?.explicit === true)
     )
   }
 

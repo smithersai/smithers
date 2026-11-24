@@ -1,0 +1,40 @@
+// @vitest-environment node
+// Review R1 D4 (Fable-D4-038): the production API Worker loads no benchmark code. This walks the value imports the
+// Worker's entry (worker/Api.vibe) reaches, static and dynamic, and names every file under bench/ it finds. Type-only
+// imports are erased by the compiler and are not followed. The probe Worker is the one entry that does reach bench/.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+
+const VALUE_IMPORT = /(?:^|\n)\s*(?:import|export)\s+(?!type\b)[^"\n]*?\bfrom\s+"(\.[^"]+)"/g
+const SIDE_EFFECT_IMPORT = /(?:^|\n)\s*import\s+"(\.[^"]+)"/g
+const DYNAMIC_IMPORT = /\bimport\("(\.[^"]+)"\)/g
+
+/** Every app file `entry` reaches through relative value imports, by path from the app's root. */
+effect function reached(entry: string) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = path.resolve(import.meta.dirname, "..")
+  const seen = new Set<string>()
+  const queue = [path.resolve(root, entry)]
+  while (queue.length > 0) {
+    const file = queue.pop()!
+    if (seen.has(file) || !(try fs.exists(file))) continue
+    seen.add(file)
+    const text = try fs.readFileString(file)
+    for (const pattern of [VALUE_IMPORT, SIDE_EFFECT_IMPORT, DYNAMIC_IMPORT]) {
+      for (const match of text.matchAll(pattern)) queue.push(path.resolve(path.dirname(file), match[1]!))
+    }
+  }
+  return [...seen].map((file) => path.relative(root, file)).sort()
+}
+
+it.live("the API Worker's import graph reaches no benchmark code; the probe's does", () => effect {
+  const api = try reached("worker/Api.vibe")
+  const probe = try reached("worker/SandboxProbe.vibe")
+  try Effect.try(() => {
+    // The walk is real: it follows the lazy runtime into the object bodies and the sandbox bindings.
+    expect(api).toEqual(expect.arrayContaining(["worker/apiRuntime.vibe", "worker/apiObjects.vibe", "worker/SandboxAccounts.vibe", "worker/SandboxMachine.vibe", "worker/machineObject.vibe"]))
+    expect(api.filter((file) => file.startsWith("bench/") || file === "worker/benchmarkCounters.vibe")).toEqual([])
+    expect(probe).toEqual(expect.arrayContaining(["worker/benchmarkCounters.vibe", "bench/sandbox-counters.ts"]))
+  })
+}.pipe(Effect.provide(NodeServices.layer)))

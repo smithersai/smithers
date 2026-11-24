@@ -1,20 +1,24 @@
 // The shared Smithers container host, as apps/mvp/worker/BranchSandboxes.ts uses it, with native filesystem snapshots.
 import * as Cloudflare from "@alchemy.run/cloudflare"
+import { identity as unchanged } from "effect/Function"
 import { SandboxImage } from "../infra/SandboxImage.vibe"
 import { machineObject, type MachineShape } from "./machineObject.vibe"
 import type { SandboxCounters } from "../bench/sandbox-counters.ts"
-import { withCounters } from "./benchmarkCounters.vibe"
 
 export { machineObject } from "./machineObject.vibe"
 export type { MachineBox, MachineShape, ObjectState } from "./machineObject.vibe"
+/** The probe's binding: the object with its test-stage counter export. Production's object has no such member. */
 export interface MachineBindingShape extends MachineShape { benchmarkCoverage(): SandboxCounters!! }
-export class SandboxMachine extends Cloudflare.DurableObject<SandboxMachine, MachineBindingShape>()("VibelangSandboxMachine") {}
+export class SandboxMachine extends Cloudflare.DurableObject<SandboxMachine, MachineShape>()("VibelangSandboxMachine") {}
 
-/** The probe supplies its existing recording body; production supplies machineObject unchanged. */
-export const machineWithBody = (body: Effect.Effect<typeof machineObject>) => SandboxMachine.make(effect {
+/**
+ * The probe supplies its existing recording body and `bind`s its counter export around it; production supplies
+ * machineObject and binds it unchanged, so no benchmark code reaches a production object (review R1 D4, Fable-D4-038).
+ */
+export const machineWithBody = (body: Effect.Effect<typeof machineObject>, bind: (object: MachineShape) => MachineShape = unchanged) => SandboxMachine.make(effect {
   const box = try SandboxImage
   const state = try Cloudflare.DurableObjectState
   const open = try body
-  return Effect.map(open(box, state), withCounters)
+  return Effect.map(open(box, state), bind)
 })
 export const machineLive = machineWithBody(Effect.succeed(machineObject))

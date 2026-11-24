@@ -1,11 +1,10 @@
 import { digestSync } from "@smthrs/crypto"
-import { Effect, Layer, Logger, Option, References } from "effect"
+import { Effect, Logger, Option, Redacted, References } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
-import { describe, expect, test } from "vitest"
+import { beforeEach, describe, expect, test } from "vitest"
 import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../../src/features/auth/contract.ts"
 import {
-  MCP_AUTH_CODE_TTL_SECONDS,
   MCP_CONSENT_PATH,
   MCP_MAX_ACTIVE_TOKENS_PER_PERSON,
   MCP_OAUTH_AUTH_SERVER_ROUTE,
@@ -19,6 +18,12 @@ import {
   MCP_TOKEN_TTL_DAYS,
   MCP_TOKENS_ROUTE,
 } from "../../src/features/mcp/contract.ts"
+import { testFile } from "../test/harness.ts"
+import { Scratch } from "../../db/TestDatabase.ts"
+import { SECRET, signInHarness } from "../test/signIn.ts"
+import * as SessionKeys from "../SessionKeys.ts"
+import * as RepoRoles from "../github/RepoRoles.ts"
+import { repositoryOf } from "../github/Config.ts"
 import { verifiedRedirect } from "../../src/features/mcp/view.ts"
 import { type Actor, type Role, Sessions } from "../Actor.ts"
 import { makeMcpAuthService } from "./Auth.ts"
@@ -39,320 +44,32 @@ const CALLBACK = "http://127.0.0.1:43123/callback?keep=1"
 const RFC_VERIFIER = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
 const RFC_CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
 
-const utf8Bytes = (value: string) => new TextEncoder().encode(value).byteLength
+const runtime = testFile("mcp_oauth")
+const queryDb = <A>(query: (sql: SqlClient.SqlClient) => Effect.Effect<A, unknown>) =>
+  runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, query))
+beforeEach(async () => {
+  await queryDb(sql => sql`TRUNCATE mcp_oauth_clients CASCADE`)
+  await queryDb(sql => sql`INSERT INTO people (id, github_id, github_login)
+    VALUES (${ALICE_ID}::uuid, 101, 'alice'), (${BOB_ID}::uuid, 102, 'bob') ON CONFLICT DO NOTHING`)
+})
 
-interface StoredClient {
-  readonly clientId: string
-  readonly clientName: string
-  readonly redirectUris: ReadonlyArray<string>
-}
-
-interface StoredCode {
-  readonly codeSha256: string
-  readonly personId: string
-  readonly clientId: string
-  readonly redirectUri: string
-  readonly repoScope: string | null
-  readonly scopes: ReadonlyArray<string>
-  readonly codeChallenge: string
-  readonly createdAtMs: number
-  readonly expiresAtMs: number
-  usedAtMs: number | null
-}
-
-interface StoredToken {
-  readonly id: string
-  readonly personId: string
-  readonly clientId: string
-  readonly clientName: string
-  readonly tokenSha256: string
-  readonly repoScope: string | null
-  readonly scopes: ReadonlyArray<string>
-  readonly createdAtMs: number
-  readonly expiresAtMs: number
-  lastUsedAtMs: number | null
-  revokedAtMs: number | null
-}
-
-/**
- * In-memory Postgres test harness executing the exact SQL queries of `OAuth.ts` and `Auth.ts`
- * while enforcing the exact constraints of `db/migrations/0126_mcp_tokens.ts`.
- */
-const createSchemaDb = () => {
-  let nowMs = Date.UTC(2026, 10, 22, 12, 0, 0)
-  const people = new Map<string, string>([
-    [ALICE_ID, "alice"],
-    [BOB_ID, "bob"],
-  ])
-  const clients = new Map<string, StoredClient>()
-  const codes = new Map<string, StoredCode>()
-  const tokens = new Map<string, StoredToken>()
-
-  const normalize = (strings: TemplateStringsArray) =>
-    strings.join(" $ ").replace(/\s+/g, " ").trim()
-
-  const tag = <A extends object = Record<string, unknown>>(
-    strings: TemplateStringsArray,
-    ...values: ReadonlyArray<unknown>
-  ): Effect.Effect<ReadonlyArray<A>, Error> =>
-    Effect.try(() => {
-      const q = normalize(strings)
-
-      if (q.startsWith("SELECT pg_advisory_xact_lock")) {
-        return [] as ReadonlyArray<A>
-      }
-
-      if (q.startsWith("INSERT INTO mcp_oauth_clients")) {
-        const [clientId, clientName, redirectUris] = values as [string, string, ReadonlyArray<string>]
-        if (utf8Bytes(clientId) < 1 || utf8Bytes(clientId) > 128) throw new Error("CHECK client_id")
-        if (utf8Bytes(clientName) < 1 || utf8Bytes(clientName) > 120) throw new Error("CHECK client_name")
-        if (redirectUris.length < 1 || redirectUris.length > 8) throw new Error("CHECK redirect_uris")
-        if (clients.has(clientId)) throw new Error("PK mcp_oauth_clients")
-        clients.set(clientId, { clientId, clientName, redirectUris: [...redirectUris] })
-        return [] as ReadonlyArray<A>
-      }
-
-      if (q.includes("FROM mcp_oauth_clients") && q.includes("redirect_uris")) {
-        const clientId = values[0] as string
-        const found = clients.get(clientId)
-        return (found === undefined ? [] : [found]) as unknown as ReadonlyArray<A>
-      }
-
-      if (q.includes("FROM mcp_oauth_clients") && q.includes("client_name")) {
-        const clientId = values[0] as string
-        const found = clients.get(clientId)
-        return (found === undefined ? [] : [{ clientName: found.clientName }]) as unknown as ReadonlyArray<A>
-      }
-
-      if (q.includes("SELECT github_login AS login FROM people")) {
-        const personId = values[0] as string
-        const login = people.get(personId)
-        return (login === undefined ? [] : [{ login }]) as unknown as ReadonlyArray<A>
-      }
-
-      if (q.startsWith("INSERT INTO mcp_oauth_codes")) {
-        const [codeSha256, personId, clientId, redirectUri, repoScope, scopes, codeChallenge, ttlSeconds] = values as [
-          string,
-          string,
-          string,
-          string,
-          string | null,
-          ReadonlyArray<string>,
-          string,
-          number,
-        ]
-        if (!/^[0-9a-f]{64}$/.test(codeSha256)) throw new Error("CHECK code_sha256")
-        if (!people.has(personId)) throw new Error("FK people")
-        if (!clients.has(clientId)) throw new Error("FK mcp_oauth_clients")
-        if (utf8Bytes(redirectUri) < 1 || utf8Bytes(redirectUri) > 2048) throw new Error("CHECK redirect_uri")
-        if (repoScope !== null && (utf8Bytes(repoScope) < 1 || utf8Bytes(repoScope) > 256)) throw new Error("CHECK repo_scope")
-        if (scopes.length < 1 || scopes.length > 4) throw new Error("CHECK scopes")
-        if (utf8Bytes(codeChallenge) < 43 || utf8Bytes(codeChallenge) > 128) throw new Error("CHECK code_challenge")
-        codes.set(codeSha256, {
-          codeSha256,
-          personId,
-          clientId,
-          redirectUri,
-          repoScope,
-          scopes: [...scopes],
-          codeChallenge,
-          createdAtMs: nowMs,
-          expiresAtMs: nowMs + ttlSeconds * 1000,
-          usedAtMs: null,
-        })
-        return [] as ReadonlyArray<A>
-      }
-
-      if (q.startsWith("UPDATE mcp_oauth_codes SET used_at")) {
-        const codeSha256 = values[0] as string
-        const row = codes.get(codeSha256)
-        if (row === undefined || row.usedAtMs !== null || row.expiresAtMs <= nowMs) {
-          return [] as ReadonlyArray<A>
-        }
-        row.usedAtMs = nowMs
-        return [
-          {
-            personId: row.personId,
-            clientId: row.clientId,
-            redirectUri: row.redirectUri,
-            repoScope: row.repoScope,
-            scopes: [...row.scopes],
-            codeChallenge: row.codeChallenge,
-          },
-        ] as unknown as ReadonlyArray<A>
-      }
-
-      if (q.includes("FROM mcp_oauth_codes") && q.includes("used_at IS NOT NULL")) {
-        const codeSha256 = values[0] as string
-        const row = codes.get(codeSha256)
-        if (row === undefined || row.usedAtMs === null) return [] as ReadonlyArray<A>
-        return [
-          {
-            personId: row.personId,
-            clientId: row.clientId,
-            usedAt: new Date(row.usedAtMs).toISOString(),
-          },
-        ] as unknown as ReadonlyArray<A>
-      }
-
-      if (q.includes("SELECT count(*)::int AS count FROM mcp_tokens")) {
-        const personId = values[0] as string
-        let count = 0
-        for (const t of tokens.values()) {
-          if (t.personId === personId && t.revokedAtMs === null && t.expiresAtMs > nowMs) count++
-        }
-        return [{ count }] as unknown as ReadonlyArray<A>
-      }
-
-      if (q.startsWith("INSERT INTO mcp_tokens")) {
-        const [id, personId, clientId, clientName, tokenSha256, repoScope, scopes, ttlSeconds] = values as [
-          string,
-          string,
-          string,
-          string,
-          string,
-          string | null,
-          ReadonlyArray<string>,
-          number,
-        ]
-        if (!people.has(personId)) throw new Error("FK people")
-        if (!clients.has(clientId)) throw new Error("FK mcp_oauth_clients")
-        if (utf8Bytes(clientName) < 1 || utf8Bytes(clientName) > 120) throw new Error("CHECK client_name")
-        if (!/^[0-9a-f]{64}$/.test(tokenSha256)) throw new Error("CHECK token_sha256")
-        if (scopes.length < 1 || scopes.length > 4) throw new Error("CHECK scopes")
-        for (const existing of tokens.values()) {
-          if (existing.tokenSha256 === tokenSha256) throw new Error("UNIQUE token_sha256")
-        }
-        tokens.set(id, {
-          id,
-          personId,
-          clientId,
-          clientName,
-          tokenSha256,
-          repoScope,
-          scopes: [...scopes],
-          createdAtMs: nowMs,
-          expiresAtMs: nowMs + ttlSeconds * 1000,
-          lastUsedAtMs: null,
-          revokedAtMs: null,
-        })
-        return [] as ReadonlyArray<A>
-      }
-
-      if (q.startsWith("UPDATE mcp_tokens SET revoked_at") && q.includes("created_at >=")) {
-        const [personId, clientId, usedAtIso] = values as [string, string, string]
-        const threshold = Date.parse(usedAtIso) - 5_000
-        for (const t of tokens.values()) {
-          if (
-            t.personId === personId &&
-            t.clientId === clientId &&
-            t.revokedAtMs === null &&
-            t.createdAtMs >= threshold
-          ) {
-            t.revokedAtMs = nowMs
-          }
-        }
-        return [] as ReadonlyArray<A>
-      }
-
-      if (q.startsWith("UPDATE mcp_tokens SET revoked_at") && q.includes("RETURNING id::text AS id")) {
-        const [tokenId, personId] = values as [string, string]
-        const found = tokens.get(tokenId)
-        if (found === undefined || found.personId !== personId || found.revokedAtMs !== null) {
-          return [] as ReadonlyArray<A>
-        }
-        found.revokedAtMs = nowMs
-        return [{ id: found.id }] as unknown as ReadonlyArray<A>
-      }
-
-      if (q.includes("FROM mcp_tokens") && q.includes("ORDER BY created_at DESC")) {
-        const personId = values[0] as string
-        const rows = [...tokens.values()]
-          .filter((t) => t.personId === personId)
-          .sort((a, b) => b.createdAtMs - a.createdAtMs || a.id.localeCompare(b.id))
-          .slice(0, 100)
-          .map((t) => ({
-            id: t.id,
-            clientName: t.clientName,
-            repoScope: t.repoScope,
-            scopes: [...t.scopes],
-            createdAt: new Date(t.createdAtMs).toISOString(),
-            expiresAt: new Date(t.expiresAtMs).toISOString(),
-            lastUsedAt: t.lastUsedAtMs === null ? null : new Date(t.lastUsedAtMs).toISOString(),
-            revokedAt: t.revokedAtMs === null ? null : new Date(t.revokedAtMs).toISOString(),
-          }))
-        return rows as unknown as ReadonlyArray<A>
-      }
-
-      if (q.includes("FROM mcp_tokens t INNER JOIN people p")) {
-        const tokenSha256 = values[0] as string
-        for (const t of tokens.values()) {
-          if (t.tokenSha256 === tokenSha256) {
-            const login = people.get(t.personId)
-            if (login === undefined) return [] as ReadonlyArray<A>
-            return [
-              {
-                id: t.id,
-                tokenSha256: t.tokenSha256,
-                personId: t.personId,
-                login,
-                clientName: t.clientName,
-                repoScope: t.repoScope,
-                scopes: [...t.scopes],
-                revoked: t.revokedAtMs !== null,
-                expired: t.expiresAtMs <= nowMs,
-              },
-            ] as unknown as ReadonlyArray<A>
-          }
-        }
-        return [] as ReadonlyArray<A>
-      }
-
-      if (q.startsWith("UPDATE mcp_tokens SET last_used_at")) {
-        const tokenId = values[0] as string
-        const t = tokens.get(tokenId)
-        if (t !== undefined && t.revokedAtMs === null && (t.lastUsedAtMs === null || t.lastUsedAtMs < nowMs - 60_000)) {
-          t.lastUsedAtMs = nowMs
-        }
-        return [] as ReadonlyArray<A>
-      }
-
-      throw new Error(`Unhandled SQL in OAuth.test.ts: ${q}`)
-    })
-
-  const sqlClient = Object.assign(tag, {
-    withTransaction: <A, E, R>(eff: Effect.Effect<A, E, R>) => eff,
-  }) as unknown as SqlClient.SqlClient
-
-  return {
-    database: Layer.succeed(SqlClient.SqlClient, sqlClient),
-    clients,
-    codes,
-    tokens,
-    advanceMs: (ms: number) => {
-      nowMs += ms
-    },
-  }
-}
-
-const createHarness = (options: { readonly role?: Role | null } = {}) => {
-  const db = createSchemaDb()
-  let currentActor: Option.Option<Actor> = Option.some({
-    subject: { kind: "person", id: ALICE_ID },
-    role: "maintainer",
-    login: "alice",
-  })
+const createHarness = async (options: { readonly role?: Role } = {}) => {
+  const { database } = runtime.runSync(Effect.service(Scratch))
+  const signIn = await signInHarness(runtime, { origin: ORIGIN })
+  const realSessions = await runtime.runPromise(Effect.service(Sessions).pipe(Effect.provide(signIn.sessions)))
+  const keys = await runtime.runPromise(SessionKeys.make(Redacted.make(SECRET)))
+  const token = await runtime.runPromise(keys.token)
+  const cookie = "__Host-smithers_session=" + await runtime.runPromise(keys.sign("session", token))
+  const sessionId = crypto.randomUUID()
+  await queryDb(sql => sql`INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, role_verified_at, expires_at)
+    VALUES (${sessionId}::uuid, ${digestSync(token)}, ${ALICE_ID}::uuid, ${options.role ?? "maintainer"}, now(), now(), now() + interval '1 day')`)
+  // Only tests for signed-out, delegated and changed identities override the signed cookie.
+  let override: Option.Option<Actor> | undefined
   const sessions: Sessions["Service"] = {
-    resolve: Effect.suspend(() => Effect.succeed(currentActor)),
+    resolve: Effect.suspend(() => override === undefined ? realSessions.resolve : Effect.succeed(override)),
   }
-  const service = Effect.runSync(
-    makeMcpAuthService({
-      database: db.database,
-      sessions,
-      resolveRole: () => Effect.succeed(options.role ?? "maintainer"),
-      isRepoPublic: () => Effect.succeed(true),
-    }),
-  )
+  const roles = await Effect.runPromise(RepoRoles.make(database, { repository: repositoryOf("evmts/voltaire"), app: Option.none() }))
+  const service = await Effect.runPromise(makeMcpAuthService({ database, sessions, roles }))
 
   const logs: Array<string> = []
   const captureLogger = Logger.make((opts) => {
@@ -367,8 +84,8 @@ const createHarness = (options: { readonly role?: Role | null } = {}) => {
     const req = HttpServerRequest.fromWeb(
       new Request(`${ORIGIN}${path}`, {
         method,
-        headers: init.headers,
-        body: init.body,
+        ...init,
+        headers: { cookie, ...init.headers },
       }),
     )
     const result = await Effect.runPromise(
@@ -388,18 +105,17 @@ const createHarness = (options: { readonly role?: Role | null } = {}) => {
   }
 
   return {
-    db,
     service,
     logs,
     send,
     setActor: (actor: Option.Option<Actor>) => {
-      currentActor = actor
+      override = Option.map(actor, current => current.subject.id === ALICE_ID ? { ...current, session: sessionId } : current)
     },
   }
 }
 
 const registerClient = async (
-  h: ReturnType<typeof createHarness>,
+  h: Awaited<ReturnType<typeof createHarness>>,
   redirectUris: ReadonlyArray<string> = [CALLBACK],
   clientName = "Claude Code",
 ) => {
@@ -502,7 +218,7 @@ describe("OAuth 2.1 validation primitives", () => {
 
 describe("RFC 9728 & RFC 8414 discovery metadata", () => {
   test("serves protected resource metadata for root and repo-scoped paths, and 404 for unknown paths", async () => {
-    const h = createHarness()
+    const h = await createHarness()
 
     const root = await h.send("GET", MCP_OAUTH_PROTECTED_RESOURCE_ROUTE)
     expect(root.status).toBe(200)
@@ -527,7 +243,7 @@ describe("RFC 9728 & RFC 8414 discovery metadata", () => {
   })
 
   test("serves RFC 8414 authorization server metadata advertising S256, public clients, and RFC 9207 iss", async () => {
-    const h = createHarness()
+    const h = await createHarness()
     const res = await h.send("GET", MCP_OAUTH_AUTH_SERVER_ROUTE)
     expect(res.status).toBe(200)
     expect(res.json).toEqual({
@@ -547,7 +263,7 @@ describe("RFC 9728 & RFC 8414 discovery metadata", () => {
 
 describe("RFC 7591 Dynamic Client Registration", () => {
   test("registers a public client and enforces 1..8 redirect URIs and client_name bounds", async () => {
-    const h = createHarness()
+    const h = await createHarness()
     const res = await h.send("POST", MCP_OAUTH_REGISTER_ROUTE, {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -563,7 +279,7 @@ describe("RFC 7591 Dynamic Client Registration", () => {
       redirect_uris: [CALLBACK, "cursor://anysphere.cursor-deeplink/mcp/cb"],
       token_endpoint_auth_method: "none",
     })
-    expect(h.db.clients.size).toBe(1)
+    expect(await queryDb(sql => sql`SELECT client_id FROM mcp_oauth_clients`)).toHaveLength(1)
 
     const tooMany = await h.send("POST", MCP_OAUTH_REGISTER_ROUTE, {
       headers: { "content-type": "application/json" },
@@ -595,7 +311,7 @@ describe("RFC 7591 Dynamic Client Registration", () => {
 
 describe("OAuth 2.1 Authorize (GET HTML redirect + GET JSON + POST consent)", () => {
   test("GET with Accept: text/html redirects 302 to /app/mcp/authorize preserving query", async () => {
-    const h = createHarness()
+    const h = await createHarness()
     h.setActor(Option.none())
     const query = authorizeParams("smc_any").toString()
     const res = await h.send("GET", `${MCP_OAUTH_AUTHORIZE_ROUTE}?${query}`, {
@@ -607,7 +323,7 @@ describe("OAuth 2.1 Authorize (GET HTML redirect + GET JSON + POST consent)", ()
   })
 
   test("GET with Accept: application/json returns ConsentDetails compatible with store.ts, and enforces person-only auth", async () => {
-    const h = createHarness({ role: "maintainer" })
+    const h = await createHarness({ role: "maintainer" })
     const clientId = await registerClient(h)
     const query = authorizeParams(clientId).toString()
 
@@ -660,16 +376,17 @@ describe("OAuth 2.1 Authorize (GET HTML redirect + GET JSON + POST consent)", ()
   })
 
   test("POST matches McpClient.decide wire protocol, verifies CSRF/device binding, and handles deny vs approve", async () => {
-    const h = createHarness()
+    const h = await createHarness()
     const clientId = await registerClient(h)
     const query = authorizeParams(clientId).toString()
 
-    // Missing CSRF/device-person binding -> 403
+    // Sign-in refuses an unbound write before OAuth sees a person.
     const unbound = await h.send("POST", `${MCP_OAUTH_AUTHORIZE_ROUTE}?${query}`, {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ decision: "approve" }),
     })
-    expect(unbound.status).toBe(403)
+    expect(unbound.status).toBe(401)
+    expect(unbound.json).toMatchObject({ code: "authentication" })
 
     // Cross-site -> 403
     const crossSite = await h.send("POST", `${MCP_OAUTH_AUTHORIZE_ROUTE}?${query}`, {
@@ -698,7 +415,7 @@ describe("OAuth 2.1 Authorize (GET HTML redirect + GET JSON + POST consent)", ()
     expect(denyUrl.searchParams.get("iss")).toBe(ORIGIN)
     expect(denyUrl.searchParams.get("state")).toBe("csrf-state-123")
     expect(denyUrl.searchParams.get("keep")).toBe("1")
-    expect(h.db.codes.size).toBe(0)
+    expect(await queryDb(sql => sql`SELECT code_sha256 FROM mcp_oauth_codes`)).toEqual([])
 
     // Approve -> stores ONLY SHA-256(code), never plaintext code
     const approved = await h.send("POST", `${MCP_OAUTH_AUTHORIZE_ROUTE}?${query}`, {
@@ -715,14 +432,13 @@ describe("OAuth 2.1 Authorize (GET HTML redirect + GET JSON + POST consent)", ()
     const rawCode = approveUrl.searchParams.get("code")!
     expect(rawCode).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(approveUrl.searchParams.get("iss")).toBe(ORIGIN)
-    expect(h.db.codes.has(rawCode)).toBe(false)
-    expect(h.db.codes.has(digestSync(rawCode))).toBe(true)
+    expect(await queryDb(sql => sql`SELECT code_sha256 FROM mcp_oauth_codes`)).toEqual([{ code_sha256: digestSync(rawCode) }])
   })
 })
 
 describe("OAuth 2.1 Token Exchange (PKCE S256, replay revocation, token cap, OBS-5)", () => {
   test("exchanges code via form-urlencoded and JSON, hashes token, and never logs secrets", async () => {
-    const h = createHarness()
+    const h = await createHarness()
     const clientId = await registerClient(h)
     const query = authorizeParams(clientId).toString()
 
@@ -755,8 +471,8 @@ describe("OAuth 2.1 Token Exchange (PKCE S256, replay revocation, token cap, OBS
     })
 
     // DB holds ONLY token_sha256, never raw token.
-    const stored = [...h.db.tokens.values()][0]!
-    expect(stored.tokenSha256).toBe(digestSync(accessToken))
+    const [stored] = await queryDb(sql => sql<{ tokenSha256: string }>`SELECT token_sha256 AS "tokenSha256" FROM mcp_tokens`)
+    expect(stored?.tokenSha256).toBe(digestSync(accessToken))
     expect(JSON.stringify(stored)).not.toContain(accessToken)
 
     // OBS-5: logs contain zero raw codes, tokens, verifiers, or logins.
@@ -767,49 +483,68 @@ describe("OAuth 2.1 Token Exchange (PKCE S256, replay revocation, token cap, OBS
     expect(allLogs).not.toContain("alice")
   })
 
-  test("replaying a consumed authorization code fails with invalid_grant AND revokes the issued token", async () => {
-    const h = createHarness()
+  test("a write-only consent issues exactly that scope", async () => {
+    const h = await createHarness()
     const clientId = await registerClient(h)
-    const query = authorizeParams(clientId).toString()
-
-    const approveRes = await h.send("POST", `${MCP_OAUTH_AUTHORIZE_ROUTE}?${query}`, {
+    const url = `${MCP_OAUTH_AUTHORIZE_ROUTE}?${authorizeParams(clientId, { scope: "mcp:write" })}`
+    const details = await h.send("GET", url, { headers: { accept: "application/json" } })
+    expect(details.json?.["scopes"]).toEqual(["mcp:write"])
+    const decision = await h.send("POST", url, {
       headers: { "content-type": "application/json", [DEVICE_PERSON_HEADER]: ALICE_ID, origin: ORIGIN },
       body: JSON.stringify({ decision: "approve" }),
     })
-    const code = new URL(approveRes.json!["redirectTo"] as string).searchParams.get("code")!
-
-    const first = await h.send("POST", MCP_OAUTH_TOKEN_ROUTE, {
+    const code = new URL(String(decision.json?.["redirectTo"])).searchParams.get("code")
+    const issued = await h.send("POST", MCP_OAUTH_TOKEN_ROUTE, {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        grant_type: "authorization_code",
-        code,
-        client_id: clientId,
-        redirect_uri: CALLBACK,
-        code_verifier: RFC_VERIFIER,
-      }),
+      body: JSON.stringify({ grant_type: "authorization_code", code, client_id: clientId, redirect_uri: CALLBACK, code_verifier: RFC_VERIFIER }),
     })
-    expect(first.status).toBe(200)
-    const issued = [...h.db.tokens.values()][0]!
-    expect(issued.revokedAtMs).toBeNull()
+    expect(issued.json).toMatchObject({ scope: "mcp:write" })
+    expect(await queryDb(sql => sql`SELECT scopes FROM mcp_tokens`)).toEqual([{ scopes: ["mcp:write"] }])
+  })
 
-    // Replay -> 400 invalid_grant + revokes token issued from that code!
-    const replay = await h.send("POST", MCP_OAUTH_TOKEN_ROUTE, {
+  test("concurrent redemption revokes exactly the replayed grant", async () => {
+    const h = await createHarness()
+    const clientId = await registerClient(h)
+    const approve = async () => {
+      const result = await h.send("POST", `${MCP_OAUTH_AUTHORIZE_ROUTE}?${authorizeParams(clientId)}`, {
+        headers: { "content-type": "application/json", [DEVICE_PERSON_HEADER]: ALICE_ID, origin: ORIGIN },
+        body: JSON.stringify({ decision: "approve" }),
+      })
+      return new URL(String(result.json?.["redirectTo"])).searchParams.get("code")!
+    }
+    const exchange = (code: string) => h.send("POST", MCP_OAUTH_TOKEN_ROUTE, {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        grant_type: "authorization_code",
-        code,
-        client_id: clientId,
-        redirect_uri: CALLBACK,
-        code_verifier: RFC_VERIFIER,
-      }),
+      body: JSON.stringify({ grant_type: "authorization_code", code, client_id: clientId, redirect_uri: CALLBACK, code_verifier: RFC_VERIFIER }),
     })
-    expect(replay.status).toBe(400)
-    expect(replay.json).toMatchObject({ error: "invalid_grant", code: "invalid_grant" })
-    expect(issued.revokedAtMs).not.toBeNull()
+    const code = await approve()
+    const pair = await Promise.all([exchange(code), exchange(code)])
+    expect(pair.map(r => r.status).sort()).toEqual([200, 400])
+    const independent = await exchange(await approve())
+    expect(independent.status).toBe(200)
+    expect((await exchange(code)).json).toMatchObject({ error: "invalid_grant" })
+    expect(await queryDb(sql => sql`SELECT token_sha256 FROM mcp_tokens WHERE revoked_at IS NULL`)).toEqual([
+      { token_sha256: digestSync(String(independent.json?.["access_token"])) },
+    ])
+  })
+
+  test("registration expires unused clients and bounds concurrent registrations", async () => {
+    const h = await createHarness()
+    const expired = await registerClient(h)
+    await queryDb(sql => sql`UPDATE mcp_oauth_clients SET created_at = now() - interval '31 days' WHERE client_id = ${expired}`)
+    const expiredConsent = await h.send("GET", `${MCP_OAUTH_AUTHORIZE_ROUTE}?${authorizeParams(expired)}`, {
+      headers: { accept: "application/json" },
+    })
+    expect(expiredConsent.json).toMatchObject({ error: "invalid_client" })
+    const statuses = await Promise.all(Array.from({ length: 31 }, () => h.send("POST", MCP_OAUTH_REGISTER_ROUTE, {
+      headers: { "content-type": "application/json" }, body: JSON.stringify({ client_name: "Client", redirect_uris: [CALLBACK] }),
+    })))
+    expect(statuses.filter(r => r.status === 201)).toHaveLength(30)
+    expect(statuses.find(r => r.status === 429)?.headers.get("retry-after")).toBe("60")
+    expect(await queryDb(sql => sql`SELECT 1 FROM mcp_oauth_clients WHERE client_id = ${expired}`)).toEqual([])
   })
 
   test("wrong PKCE code_verifier burns the authorization code permanently and expired codes fail", async () => {
-    const h = createHarness()
+    const h = await createHarness()
     const clientId = await registerClient(h)
     const query = authorizeParams(clientId).toString()
 
@@ -853,7 +588,7 @@ describe("OAuth 2.1 Token Exchange (PKCE S256, replay revocation, token cap, OBS
       body: JSON.stringify({ decision: "approve" }),
     })
     const code2 = new URL(approve2.json!["redirectTo"] as string).searchParams.get("code")!
-    h.db.advanceMs((MCP_AUTH_CODE_TTL_SECONDS + 1) * 1000)
+    await queryDb(sql => sql`UPDATE mcp_oauth_codes SET expires_at = now() - interval '1 second' WHERE code_sha256 = ${digestSync(code2)}`)
 
     const expired = await h.send("POST", MCP_OAUTH_TOKEN_ROUTE, {
       headers: { "content-type": "application/json" },
@@ -870,7 +605,7 @@ describe("OAuth 2.1 Token Exchange (PKCE S256, replay revocation, token cap, OBS
   })
 
   test("enforces MCP_MAX_ACTIVE_TOKENS_PER_PERSON cap on approve and token exchange", async () => {
-    const h = createHarness()
+    const h = await createHarness()
     const clientId = await registerClient(h)
     const query = authorizeParams(clientId).toString()
 
@@ -925,7 +660,7 @@ describe("OAuth 2.1 Token Exchange (PKCE S256, replay revocation, token cap, OBS
 
 describe("Person-only Token Management (/api/me/mcp-tokens)", () => {
   test("lists summaries without token_sha256, rejects MCP bearers, and enforces strict ownership on DELETE", async () => {
-    const h = createHarness()
+    const h = await createHarness()
     const clientId = await registerClient(h)
     const query = authorizeParams(clientId).toString()
 

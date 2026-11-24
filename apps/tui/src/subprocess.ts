@@ -4,11 +4,11 @@
  * `spawn` exposes stdout as a web stream with an `exited` status like
  * `Bun.spawn`.
  */
-import { Effect } from "effect"
 import { spawn as spawnChild } from "node:child_process"
 import { accessSync, constants, statSync } from "node:fs"
 import { delimiter, join } from "node:path"
 import { Readable } from "node:stream"
+import * as Timer from "./timer.ts"
 
 /** Stop an owned POSIX process group, including children that closed their pipes. */
 export const stopGroup = async (pid: number, graceMs = 1000): Promise<void> => {
@@ -28,7 +28,10 @@ export const stopGroup = async (pid: number, graceMs = 1000): Promise<void> => {
       signal("SIGKILL")
       return
     }
-    await Effect.runPromise(Effect.sleep(20))
+    // The TUI timer, not a nested Effect run: this loop is Promise code.
+    await new Promise<void>((resolve) => {
+      Timer.after(20, resolve)
+    })
   }
 }
 

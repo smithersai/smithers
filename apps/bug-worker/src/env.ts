@@ -6,7 +6,7 @@ export interface BugKv {
   get(key: string): Promise<string | null>;
   put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
   delete(key: string): Promise<void>;
-  list?(options: { prefix: string; limit?: number; cursor?: string }): Promise<{
+  list(options: { prefix: string; limit?: number; cursor?: string }): Promise<{
     keys: { name: string }[]; list_complete: boolean; cursor?: string;
   }>;
 }
@@ -21,8 +21,8 @@ export interface BugWorkerEnv {
   RATE_LIMITS: {
     getByName(name: string): { fetch(request: Request): Promise<Response> };
   };
-  /** Shared secret required in the x-bug-admin header for GET /api/bugs/:id. */
+  /** Shared secret required in the x-bug-admin header for every operator read. */
   BUG_ADMIN_TOKEN: string;
-  /** Public origin used for the returned bug URL, e.g. https://bug.smithers.sh */
+  /** Public origin used for the returned bug URL; the request's origin when unset. */
   PUBLIC_BASE_URL?: string;
 }

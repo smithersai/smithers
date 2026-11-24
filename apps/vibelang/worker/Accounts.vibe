@@ -8,7 +8,7 @@ import { IssueAuthority, serveIssues, repository } from "./Issues.vibe"
 import { WikiAuthority, serveWiki, executeWiki, wikiFilePath } from "./Wiki.vibe"
 import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { IssueFailure } from "../src/core/issueSchemas.vibe"
-import { HttpClient } from "effect/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { Core, GitHub } from "@smthrs/integrations"
 import { WebCryptoCipher } from "@smthrs/control"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -22,7 +22,7 @@ import * as Sequencer from "./Sequencer.vibe"
 import { afterOf, eventStream } from "./Http.vibe"
 import { bodyLimit, withinBodyLimit } from "./workerDecision.vibe"
 import { logOver } from "./ObjectStorage.vibe"
-import { accountRoute, bootstrapGrant, mayConnect, openOperation, ownOrigin, signedIn, brokerPendingAccepted, brokerStateAccepted, callbackAccepted, connectConfirmed, connectRefused, connectReturn, failureAnswer, grantNeedsAuthority, grantUnchanged, originAccepted, personId, pruned, sameSiteRequest, sandboxOriginAdmitted, secretsAccepted, stepOutcome, unexpired, writeOriginAdmitted, admittedRole } from "./accountsDecision.vibe"
+import { accountRoute, bootstrapGrant, mayConnect, openOperation, ownOrigin, signedIn, brokerPendingAccepted, brokerStateAccepted, callbackAccepted, connectConfirmed, connectRefused, connectReturn, failureAnswer, grantActor, grantNeedsAuthority, grantUnchanged, originAccepted, personId, pruned, sameSiteRequest, sandboxOriginAdmitted, secretsAccepted, stepOutcome, unexpired, writeOriginAdmitted, admittedRole } from "./accountsDecision.vibe"
 
 export const CALLBACK = "/api/auth/callback"
 /** Alchemy preserves the original origin; loopback hosts use an unprefixed cookie over HTTP. */
@@ -54,9 +54,45 @@ export interface Setup {
   /** Test seam: a real delegation server in-process. Production derives it from `broker`. */
   readonly delegate?: Delegate
   readonly github: GitHub.Auth.GitHubAuth["Service"]
+  /**
+   * Whether GitHub confirms `token` is a user access token this App issued (`appTokenCheck`). A device sign-in mints a
+   * session only for one: a personal access token, or a token another app holds for the person, signs nobody in.
+   */
+  readonly issuedHere: (token: Redacted.Redacted<string>) => boolean!!
 }
 
-const MutationStep = Schema.Literals(["start", "connect", "disconnect", "migrate", "callback", "sign-out", "grant", "participation", "device"])
+/** How many members one `GET /api/roles` page answers; the next page starts `after` its last id. */
+export const MEMBERS_PAGE = 100
+
+/** GitHub's check-token answer, as far as this host reads it: the App the token was issued to. */
+const CheckedToken = Schema.Struct({ app: Schema.Struct({ client_id: Schema.String }) })
+
+/**
+ * Asks GitHub, as the App (HTTP Basic), whether it issued `token`: `POST /applications/<client id>/token` answers 200
+ * with the App only for the App's own token, and 404 for any other. Every other answer, a transport failure, a
+ * malformed body and a 10-second silence included, is false. The request carries no trace headers and is never
+ * redirected by this host; nothing about the token is logged.
+ */
+export function appTokenCheck(http: HttpClient.HttpClient, options: { readonly apiBaseUrl: string; readonly clientId: string; readonly clientSecret: Redacted.Redacted<string> }) {
+  return (token: Redacted.Redacted<string>): boolean!! => withSpan(effect {
+    const request = HttpClientRequest.post(`${options.apiBaseUrl}/applications/${encodeURIComponent(options.clientId)}/token`).pipe(
+      HttpClientRequest.basicAuth(options.clientId, Redacted.value(options.clientSecret)),
+      HttpClientRequest.setHeaders({ accept: "application/vnd.github+json", "user-agent": "vibelang-factory", "x-github-api-version": "2022-11-28" }),
+      HttpClientRequest.bodyJsonUnsafe({ access_token: Redacted.value(token) }),
+    )
+    const checked = effect {
+      const response = try http.execute(request)
+      if (response.status !== 200) return false
+      const answer = try Schema.decodeUnknownEffect(CheckedToken)(try response.json)
+      return answer.app.client_id === options.clientId
+    }.pipe(Effect.provideService(HttpClient.TracerPropagationEnabled, false), Effect.timeout("10 seconds"))
+    const issued = checked catch () => false
+    try Metric.update(Metric.withAttributes(Metric.counter("vibelang_account_device_tokens", { incremental: true }), { outcome: issued ? "issued-here" : "foreign" }), 1)
+    return issued
+  }, "vibelang.account.device.check")
+}
+
+const MutationStep = Schema.Literals(["start", "connect", "disconnect", "migrate", "callback", "sign-out", "grant", "participation", "device", "revoke"])
 const ApplyMutation = Action.make("vibelang/account/step", { payload: { step: MutationStep }, success: Schema.Null })
 const Mutation = Flow.make("vibelang/Account", {
   description: "Changes a sign-in session or a project role through one journaled account step.",
@@ -83,6 +119,7 @@ effect function readSetup() {
   if (validated === undefined) return undefined
   // The device flow needs only the client id; the API base is injectable for the integration fixture.
   const apiBase = try Config.option(Config.String("GITHUB_API_URL"))
+  const http = try HttpClient.HttpClient
   const github = try Layer.build(GitHub.Auth.layer({
     clientId: id.value, clientSecret: secret.value,
     ...(Option.isNone(apiBase) ? {} : { apiBaseUrl: apiBase.value }),
@@ -97,6 +134,7 @@ effect function readSetup() {
     clientId: id.value,
     ...(Option.isNone(appSlug) ? {} : { appSlug: appSlug.value }),
     github: Context.get(github, GitHub.Auth.GitHubAuth),
+    issuedHere: appTokenCheck(http, { apiBaseUrl: Option.getOrElse(apiBase, () => GitHub.Auth.GITHUB_API), clientId: id.value, clientSecret: secret.value }),
   }
   return setup
 }
@@ -130,7 +168,9 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
     return delegate === undefined ? read : Effect.provideService(read, GitHubDelegate, delegate)
   }
   const sequencer = try Sequencer.make(logOver(storage))
+  // Serializes the object's storage writes. No request holds it while GitHub or smithers.sh answers, and no read takes it.
   const lock = try Semaphore.make(1)
+  const locked = <A, E, R>(work: A!E!R) => Semaphore.withPermits(lock, 1)(work)
   const issueLock = try Semaphore.make(1)
   const policy: Policy.Shape = {
     authorize: effect (actor, action) => {
@@ -224,12 +264,13 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
 
   /**
    * A sign-in nobody finished leaves its row; the next start deletes every expired one, as the broker's own store
-   * does, so an unauthenticated caller can hold at most ten minutes of rows.
+   * does, so an unauthenticated caller can hold at most ten minutes of rows. A session nobody signed out of goes the
+   * same way once its 30 days pass.
    */
   effect function pruneExpired() {
     const now = try Clock.currentTimeMillis
     let count = 0
-    for (const [prefix, expiresOf] of [["broker/", (value: unknown) => (value as { readonly claims?: { readonly expires?: unknown } } | undefined)?.claims?.expires], ["sign-in/", (value: unknown) => (value as { readonly expires?: unknown } | undefined)?.expires]] as const) {
+    for (const [prefix, expiresOf] of [["broker/", (value: unknown) => (value as { readonly claims?: { readonly expires?: unknown } } | undefined)?.claims?.expires], ["sign-in/", (value: unknown) => (value as { readonly expires?: unknown } | undefined)?.expires], ["session/", (value: unknown) => (value as { readonly expires?: unknown } | undefined)?.expires]] as const) {
       for (const [key, value] of try promise(() => storage.list({ prefix }))) {
         const expires = expiresOf(value)
         if (pruned(typeof expires === "number" ? expires : undefined, now)) { try remove(key); count += 1 }
@@ -250,24 +291,30 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
     if (route === "device-id") return json({ clientId: setup.clientId })
     // A device flow's access token becomes a session marked as the person's agent (decision 0028). The token is
     // used for this one identity lookup and discarded, as the browser callback's is.
-    if (route === "device") return try mutation("device", effect {
+    if (route === "device") {
       const body = decodeDeviceToken(bodyText) catch () => undefined
-      if (body === undefined) return json({ error: "body" }, 400)
-      // Any GitHub failure closes the sign-in; the journal and logs carry only the outcome. The CLI keeps the session
-      // cookie, never the token, so the token is revoked once read: it must not evict the person's GitHub connection.
-      const token = Redacted.make(body.token)
-      const person = setup.github.user(token) catch () => null
-      try GitHub.Auth.Broker.discard(setup.github, token)
-      try Effect.logInfo("vibelang.account.device").pipe(Effect.annotateLogs({ outcome: person === null ? "refused" : "issued" }))
-      if (person === null || !personId(Number.isSafeInteger(person.id), person.id)) return json({ error: "sign-in" }, 401)
-      const id = String(person.id)
-      const sessionId = try keys.token
-      try put("session/" + sessionId, { id, login: person.login, expires: (try Clock.currentTimeMillis) + AGE, agent: true })
-      try put("person/" + id, { id, login: person.login })
-      return json({ cookie: SESSION + "=" + (try keys.sign("session", sessionId)), id, login: person.login })
-    })
+      // GitHub answers before the accounts lock is taken (review R1 D4): a slow exchange delays only this sign-in.
+      // The token signs in only when GitHub says this App issued it. Any GitHub failure closes the sign-in; the
+      // journal and logs carry only the outcome. The CLI keeps the session cookie, never the token, so the App's own
+      // token is revoked once read: it must not evict the person's GitHub connection.
+      const token = body === undefined ? undefined : Redacted.make(body.token)
+      const issued = token !== undefined && (try setup.issuedHere(token))
+      const person = token !== undefined && issued ? (setup.github.user(token) catch () => null) : null
+      // The revocation is a durable action, so it runs as its own journaled step, also outside the lock.
+      if (token !== undefined && issued) try mutation("revoke", GitHub.Auth.Broker.discard(setup.github, token))
+      return try locked(mutation("device", effect {
+        if (body === undefined) return json({ error: "body" }, 400)
+        try Effect.logInfo("vibelang.account.device").pipe(Effect.annotateLogs({ outcome: !issued ? "foreign" : person === null ? "refused" : "issued" }))
+        if (person === null || !personId(Number.isSafeInteger(person.id), person.id)) return json({ error: "sign-in" }, 401)
+        const id = String(person.id)
+        const sessionId = try keys.token
+        try put("session/" + sessionId, { id, login: person.login, expires: (try Clock.currentTimeMillis) + AGE, agent: true })
+        try put("person/" + id, { id, login: person.login })
+        return json({ cookie: SESSION + "=" + (try keys.sign("session", sessionId)), id, login: person.login })
+      }))
+    }
     if (route === "install") return setup.appSlug === undefined ? json({ error: "install unavailable" }, 503) : redirect(`https://github.com/apps/${encodeURIComponent(setup.appSlug)}/installations/new`)
-    if (route === "connect") return try mutation("connect", effect {
+    if (route === "connect") return try locked(mutation("connect", effect {
       const live = try session(presented(request))
       if (live === undefined) return json({ error: "sign-in" }, 401)
       // Device sessions remain agents through every role/credential check.
@@ -283,19 +330,22 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       const verifier = try Effect.orDie(cipher.seal(Redacted.make(pending.verifier), contextOf(pending.claims.nonce, "pkce")))
       try put("broker/" + pending.claims.nonce, { claims: pending.claims, verifier, session: live.key, returnTo })
       return cookie(HttpServerResponse.empty({ status: 303, headers: { ...noStore, location: pending.location } }), STATE, try keys.sign("broker_site", pending.claims.nonce), GitHub.Auth.Broker.REQUEST_TTL)
-    })
-    if (route === "disconnect") return try mutation("disconnect", effect {
-      const live = try session(presented(request))
-      if (live === undefined) return json({ error: "sign-in" }, 401)
+    }))
+    if (route === "disconnect") {
+      // smithers.sh is asked outside the lock; the site's row goes even if it is unreachable, and the person can still
+      // Disconnect there.
       const principal = try connections.current(presented(request))
-      // The site's row goes even if smithers.sh is unreachable; the person can still Disconnect there.
       if (principal?.connection !== undefined && delegate !== undefined) {
         try Effect.ignore(Effect.provideService(delegate.revoke(principal.connection.person, principal.connection.delegation), HttpClient.HttpClient, http))
       }
-      try connections.forget(live.value.id)
-      return HttpServerResponse.empty({ status: 303, headers: { ...noStore, location: "/?issues=1" } })
-    })
-    if (route === "sign-in") return try mutation("start", effect {
+      return try locked(mutation("disconnect", effect {
+        const live = try session(presented(request))
+        if (live === undefined) return json({ error: "sign-in" }, 401)
+        try connections.forget(live.value.id)
+        return HttpServerResponse.empty({ status: 303, headers: { ...noStore, location: "/?issues=1" } })
+      }))
+    }
+    if (route === "sign-in") return try locked(mutation("start", effect {
       try pruneExpired()
       if (setup.broker !== undefined && broker === undefined) return json({ error: "sign-in unavailable" }, 503)
       if (broker !== undefined) {
@@ -309,65 +359,84 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       const verifier = try Effect.orDie(cipher.seal(Redacted.make(pair.codeVerifier), contextOf(id, "pkce")))
       try put("sign-in/" + id, { expires: (try Clock.currentTimeMillis) + 600_000, verifier })
       return cookie(redirect(setup.github.authorizeUrl({ state: id, codeChallenge: pair.codeChallenge, redirectUri: setup.origin + CALLBACK })), STATE, try keys.sign("sign_in", id), 600_000)
-    })
+    }))
     if (route === "handoff") {
       return HttpServerResponse.text(GitHub.Auth.Broker.HANDOFF_PAGE, { contentType: "text/html; charset=utf-8", headers: { ...GitHub.Auth.Broker.HEADERS, "content-security-policy": GitHub.Auth.Broker.HANDOFF_CSP } })
     }
-    if (route === "broker-callback") return try mutation("callback", effect {
-      if (broker === undefined) return json({ error: "sign-in" }, 503)
-      const body = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ code: Schema.String, state: Schema.String })))(bodyText) catch () => undefined
-      const verified = try keys.verify("broker_site", request.cookies[STATE])
-      if (body === undefined || !brokerStateAccepted(Option.isSome(verified), body.state, Option.isSome(verified) ? verified.value.value : "")) return json({ error: "sign-in" }, 400)
-      const pending = Schema.decodeUnknownEffect(PendingBroker)(try get("broker/" + body.state)) catch () => undefined
-      if (pending === undefined || !brokerPendingAccepted(pending.claims.origin, setup.origin, pending.claims.nonce, body.state, pending.claims.expires, try Clock.currentTimeMillis)) return json({ error: "sign-in" }, 400)
-      try remove("broker/" + body.state)
-      const verifier = Redacted.value(try Effect.orDie(cipher.open(pending.verifier, contextOf(body.state, "pkce"))))
-      const signed = try broker.redemption({ claims: pending.claims, verifier }, body.code)
-      const person = try Effect.orDie(broker.exchange(signed).pipe(Effect.provideService(HttpClient.HttpClient, http)))
-      const id = String(person.id)
-      if ("session" in pending) {
-        // Connect: the browser must still hold the session that pressed it, and the broker confirmed the same person.
-        const live = try session(presented(request))
-        if (!connectConfirmed(live !== undefined, live?.key ?? "", pending.session, live?.value.id ?? "", id, person.delegation !== undefined, person.expires !== undefined)) return cookie(json({ error: "identity" }, 403), STATE, "", 0)
-        try put(connectionKey(id), { person: person.id, delegation: person.delegation, expires: person.expires })
-        return cookie(json({ location: pending.returnTo }), STATE, "", 0)
-      }
-      const sessionId = try keys.token
-      try put("session/" + sessionId, { id, login: person.login, expires: (try Clock.currentTimeMillis) + AGE })
-      try put("person/" + id, { id, login: person.login })
-      return cookie(cookie(json({}), SESSION, try keys.sign("session", sessionId), AGE), STATE, "", 0)
-    })
-    if (route === "callback") return try mutation("callback", effect {
-      const verified = try keys.verify("sign_in", request.cookies[STATE])
-      const state = url.searchParams.get("state")
-      const code = url.searchParams.get("code")
-      if (state === null || code === null || !callbackAccepted(Option.isSome(verified), state, Option.isSome(verified) ? verified.value.value : "", code.length)) return json({ error: "sign-in" }, 400)
-      const pending = signInDecoder(try get("sign-in/" + state)) catch () => undefined
-      if (pending === undefined || !unexpired(pending.expires, try Clock.currentTimeMillis)) return json({ error: "sign-in" }, 400)
-      try remove("sign-in/" + state)
-      const verifier = try Effect.orDie(cipher.open(pending.verifier, contextOf(state, "pkce")))
-      const tokens = try Effect.orDie(setup.github.exchange({ code: Redacted.make(code), codeVerifier: verifier, redirectUri: setup.origin + CALLBACK }))
-      const person = try Effect.orDie(setup.github.user(tokens.accessToken))
-      if (!personId(Number.isSafeInteger(person.id), person.id)) return json({ error: "sign-in" }, 400)
-      const id = String(person.id)
-      const sessionId = try keys.token
-      try put("session/" + sessionId, { id, login: person.login, expires: (try Clock.currentTimeMillis) + AGE })
-      try put("person/" + id, { id, login: person.login })
-      return cookie(cookie(redirect(setup.origin + "/"), SESSION, try keys.sign("session", sessionId), AGE), STATE, "", 0)
-    })
-    if (route === "sign-out") return try mutation("sign-out", effect {
+    if (route === "broker-callback") {
+      // Three parts (review R1 D4): the pending start is claimed under the lock, once; the broker answers outside it;
+      // the session or connection is then written under it. A slow broker or GitHub delays only this sign-in.
+      const claimed = try locked(effect {
+        if (broker === undefined) return { refusal: json({ error: "sign-in" }, 503) }
+        const body = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ code: Schema.String, state: Schema.String })))(bodyText) catch () => undefined
+        const verified = try keys.verify("broker_site", request.cookies[STATE])
+        if (body === undefined || !brokerStateAccepted(Option.isSome(verified), body.state, Option.isSome(verified) ? verified.value.value : "")) return { refusal: json({ error: "sign-in" }, 400) }
+        const pending = Schema.decodeUnknownEffect(PendingBroker)(try get("broker/" + body.state)) catch () => undefined
+        if (pending === undefined || !brokerPendingAccepted(pending.claims.origin, setup.origin, pending.claims.nonce, body.state, pending.claims.expires, try Clock.currentTimeMillis)) return { refusal: json({ error: "sign-in" }, 400) }
+        try remove("broker/" + body.state)
+        const verifier = Redacted.value(try Effect.orDie(cipher.open(pending.verifier, contextOf(body.state, "pkce"))))
+        return { broker, pending, signed: try broker.redemption({ claims: pending.claims, verifier }, body.code) }
+      })
+      const person = "refusal" in claimed ? undefined : try Effect.orDie(claimed.broker.exchange(claimed.signed).pipe(Effect.provideService(HttpClient.HttpClient, http)))
+      return try locked(mutation("callback", effect {
+        if ("refusal" in claimed || person === undefined) return "refusal" in claimed ? claimed.refusal : json({ error: "sign-in" }, 400)
+        const pending = claimed.pending
+        const id = String(person.id)
+        if ("session" in pending) {
+          // Connect: the browser must still hold the session that pressed it, and the broker confirmed the same person.
+          const live = try session(presented(request))
+          if (!connectConfirmed(live !== undefined, live?.key ?? "", pending.session, live?.value.id ?? "", id, person.delegation !== undefined, person.expires !== undefined)) return cookie(json({ error: "identity" }, 403), STATE, "", 0)
+          try put(connectionKey(id), { person: person.id, delegation: person.delegation, expires: person.expires })
+          return cookie(json({ location: pending.returnTo }), STATE, "", 0)
+        }
+        const sessionId = try keys.token
+        try put("session/" + sessionId, { id, login: person.login, expires: (try Clock.currentTimeMillis) + AGE })
+        try put("person/" + id, { id, login: person.login })
+        return cookie(cookie(json({}), SESSION, try keys.sign("session", sessionId), AGE), STATE, "", 0)
+      }))
+    }
+    if (route === "callback") {
+      // As the broker's callback: claim under the lock, GitHub outside it, the session under it.
+      const claimed = try locked(effect {
+        const verified = try keys.verify("sign_in", request.cookies[STATE])
+        const state = url.searchParams.get("state")
+        const code = url.searchParams.get("code")
+        if (state === null || code === null || !callbackAccepted(Option.isSome(verified), state, Option.isSome(verified) ? verified.value.value : "", code.length)) return undefined
+        const pending = signInDecoder(try get("sign-in/" + state)) catch () => undefined
+        if (pending === undefined || !unexpired(pending.expires, try Clock.currentTimeMillis)) return undefined
+        try remove("sign-in/" + state)
+        return { code, verifier: try Effect.orDie(cipher.open(pending.verifier, contextOf(state, "pkce"))) }
+      })
+      const person = claimed === undefined ? undefined : try Effect.orDie(effect {
+        const tokens = try setup.github.exchange({ code: Redacted.make(claimed.code), codeVerifier: claimed.verifier, redirectUri: setup.origin + CALLBACK })
+        return try setup.github.user(tokens.accessToken)
+      })
+      return try locked(mutation("callback", effect {
+        if (person === undefined || !personId(Number.isSafeInteger(person.id), person.id)) return json({ error: "sign-in" }, 400)
+        const id = String(person.id)
+        const sessionId = try keys.token
+        try put("session/" + sessionId, { id, login: person.login, expires: (try Clock.currentTimeMillis) + AGE })
+        try put("person/" + id, { id, login: person.login })
+        return cookie(cookie(redirect(setup.origin + "/"), SESSION, try keys.sign("session", sessionId), AGE), STATE, "", 0)
+      }))
+    }
+    if (route === "sign-out") return try locked(mutation("sign-out", effect {
       const live = try session(presented(request))
       if (live !== undefined) try remove("session/" + live.key)
       return cookie(HttpServerResponse.empty({ status: 204, headers: noStore }), SESSION, "", 0)
-    })
+    }))
     if (route === "role-events") {
       const permitted = policy.authorize((try current(presented(request))).id, "people").pipe(Effect.as(true)) catch () => false
       if (!permitted) return json({ refusal: "forbidden" }, 403)
       const after = afterOf(url)
       return after === undefined ? json({ error: "after" }, 400) : eventStream(sequencer.follow(after))
     }
-    if (route === "grant") return try mutation("grant", effect {
-      const actor = try current(presented(request))
+    if (route === "grant") return try locked(mutation("grant", effect {
+      const actor: Identity = try current(presented(request))
+      // Roles change only by a person (0028; review R1 D4): a device session is the person's agent, so it grants and
+      // revokes nothing, its own role included. The sequencer is told who really acts, never a fixed "person".
+      const by = grantActor(actor.agent === true)
+      if (by === "agent") return json({ refusal: "forbidden" }, 403)
       const body = decodeGrant(bodyText) catch () => undefined
       if (body === undefined) return json({ error: "body" }, 400)
       if (grantNeedsAuthority(actor.id, body.id)) {
@@ -375,20 +444,26 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
         if (!permitted) return json({ refusal: "forbidden" }, 403)
       }
       if (grantUnchanged(try sequencer.role(body.id), body.role)) return json({})
-      const refusal = try sequencer.grant(body.id, actor.id, body.role, "person")
+      const refusal = try sequencer.grant(body.id, actor.id, body.role, by)
       return refusal === null ? json({}) : json({ refusal }, 403)
-    })
+    }))
     if (route === "members") {
       const actor = try current(presented(request))
       const permitted = policy.authorize(actor.id, "people").pipe(Effect.as(true)) catch () => false
       if (!permitted) return json({ refusal: "forbidden" }, 403)
-      const rows = try promise(() => storage.list({ prefix: "person/" }))
+      // One page of at most MEMBERS_PAGE people in id-key order; `after` is the last id of the page before, and
+      // `x-vibelang-next` names this page's last id while more remain.
+      const after = url.searchParams.get("after")
+      if (after !== null && !/^[1-9][0-9]{0,19}$/.test(after)) return json({ error: "after" }, 400)
+      const rows = try promise(() => storage.list({ prefix: "person/", limit: MEMBERS_PAGE + 2, ...(after === null ? {} : { start: "person/" + after }) }))
+      const people = [...rows.entries()].filter(([key]) => after === null || key !== "person/" + after).map(([, row]) => row as { readonly id: string; readonly login: string })
+      const page = people.slice(0, MEMBERS_PAGE)
       const members: Array<Identity> = []
-      for (const row of rows.values()) {
-        const person = row as { readonly id: string; readonly login: string }
-        members.push({ ...person, role: try sequencer.role(person.id) })
-      }
-      return json(members)
+      for (const person of page) members.push({ ...person, role: try sequencer.role(person.id) })
+      const last = page[page.length - 1]
+      return people.length > MEMBERS_PAGE && last !== undefined
+        ? HttpServerResponse.jsonUnsafe(members, { headers: { ...noStore, "x-vibelang-next": last.id } })
+        : json(members)
     }
     return json({ error: "not found" }, 404)
   }
@@ -475,8 +550,9 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       }
       if (url.pathname === "/api/roles" && request.method === "POST") {
         if (!sameSiteRequest(url.origin, setup.origin, request.method, request.headers.origin)) return json({ error: "origin" }, 403)
-        const actor = try Semaphore.withPermits(lock, 1)(current(presented(request)))
-        if (!signedIn(actor.id)) return json({ refusal: "forbidden" }, 403)
+        const actor: Identity = try current(presented(request))
+        // Refused before a byte of the body is read: a visitor, and a person's agent (a device session).
+        if (!signedIn(actor.id) || grantActor(actor.agent === true) === "agent") return json({ refusal: "forbidden" }, 403)
         if (!withinBodyLimit(Number(request.headers["content-length"]), bodyLimit("account"))) return json({ error: "body size" }, 413)
         const bounded = request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(bodyLimit("account"))), Effect.timeoutOption("3 seconds"))
         const read = bounded catch () => undefined
@@ -484,7 +560,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
         if (Option.isNone(read)) return json({ error: "body timeout" }, 408)
         body = read.value
       }
-      return try Semaphore.withPermits(lock, 1)(handle(body ?? "")).pipe(Effect.catchCause(() => effect {
+      return try handle(body ?? "").pipe(Effect.catchCause(() => effect {
         try Metric.update(Metric.withAttributes(Metric.counter("vibelang_account_steps", { incremental: true }), { step: "request", outcome: "failed" }), 1)
         try Effect.logWarning("vibelang.account").pipe(Effect.annotateLogs({ outcome: "failed" }))
         const answer = failureAnswer(url.pathname, request.method)

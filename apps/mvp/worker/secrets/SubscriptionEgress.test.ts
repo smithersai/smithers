@@ -73,6 +73,10 @@ describe("forwardSubscription", () => {
     const answer = await h.subscriptionEgress(guest, subscription)(bearer(placeholder))
     expect([answer.status, await answer.text()]).toEqual([503, "unavailable"])
     expect(upstream.seen).toEqual([])
+    // The refusal leaves a record of why (OBS-4), as the repository egress's does.
+    expect(h.line("secrets.egress").map((line) => line.annotations)).toEqual([
+      expect.objectContaining({ egress: "subscription", outcome: "unavailable", errorCode: "policy" }),
+    ])
   })
   test("swaps the placeholder for the Claude token on the bound host, and the box never sees it", async () => {
     const subscription = await claude()

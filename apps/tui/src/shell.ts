@@ -6,7 +6,7 @@
  */
 import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { accessSync, appendFileSync, constants, writeFileSync } from "node:fs"
+import { accessSync, appendFileSync, constants, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import * as Log from "./log.ts"
@@ -17,6 +17,33 @@ import * as Timer from "./timer.ts"
 /** The kept tail, and past it the full output goes to a file (pi's limits). */
 export const maxLines = 2000
 export const maxBytes = 50 * 1024
+/** A full-output file stops here, with a marker, so a noisy command cannot fill the disk. */
+export const maxSpillBytes = 10 * 1024 * 1024
+/** Full-output files older than this are deleted when the next one is written. */
+export const spillAgeMs = 24 * 60 * 60 * 1000
+const spillName = /^smithers-bash-[0-9a-f-]{36}\.log$/
+
+/** A session folder's full-output folder. */
+export const spillFolder = (sessionFolder: string): string => join(sessionFolder, "spill")
+
+/** Deletes this folder's full-output files older than `spillAgeMs`; best effort. */
+export const prune = (dir: string, now = Date.now()): void => {
+  let names: ReadonlyArray<string>
+  try {
+    names = readdirSync(dir)
+  } catch {
+    return
+  }
+  for (const name of names) {
+    if (!spillName.test(name)) continue
+    const path = join(dir, name)
+    try {
+      if (now - statSync(path).mtimeMs > spillAgeMs) rmSync(path, { force: true })
+    } catch {
+      // Gone already, or not ours to remove.
+    }
+  }
+}
 
 export interface Result {
   readonly command: string
@@ -69,6 +96,9 @@ export const tail = (text: string): { readonly text: string; readonly truncated:
  */
 export const redact = Output.redact
 
+/** Ends a full-output file cut at `maxSpillBytes`. */
+const spillCut = `\n[output cut at ${maxSpillBytes / 1024 / 1024} MiB]\n`
+
 /** Output kept in memory while a command runs; past it, only the tail stays and the rest streams to a file. */
 const memory = 4 * maxBytes
 /** Output reaches the screen at most this often. */
@@ -96,8 +126,13 @@ export const run = (options: {
   readonly cwd: string
   readonly onOutput: (text: string) => void
   readonly env?: NodeJS.ProcessEnv
-  /** Where over-limit output goes; the temp directory unless a test says otherwise. */
+  /**
+   * Where over-limit output goes, created owner-only; the temp directory
+   * unless the caller says otherwise. Older full-output files there are pruned.
+   */
   readonly spillDir?: string
+  /** `false` keeps only the tail and writes no file: a monitor's repeated observation. */
+  readonly spill?: boolean
 }): Running => {
   const env = options.env ?? process.env
   const shell = env.SHELL || bashOnPath(env.PATH) || "/bin/sh"
@@ -110,13 +145,45 @@ export const run = (options: {
   let kept = ""
   let bytes = 0
   let spill: string | undefined
-  let unwritable = false
+  let unwritable = options.spill === false
+  let spilled = 0
+  /** The full-output file reached `maxSpillBytes` and ends with its marker. */
+  let capped = false
   let pending = ""
   let timer: Timer.Cancel | undefined
   let cancelled = false
   let settled = false
   let stopping: Promise<void> | undefined
   const spillDir = options.spillDir ?? tmpdir()
+  /** A new full-output file holding `text`, capped at `maxSpillBytes`. */
+  const open = (text: string): string | undefined => {
+    const path = join(spillDir, `smithers-bash-${randomUUID()}.log`)
+    const ok = written(() => {
+      if (options.spillDir !== undefined) mkdirSync(spillDir, { recursive: true, mode: 0o700 })
+      prune(spillDir)
+      writeFileSync(path, "", { mode: 0o600 })
+    })
+    if (!ok) return undefined
+    spill = path
+    if (!append(text)) return undefined
+    return path
+  }
+  /** Appends within the cap; past it, one marker and nothing more. */
+  const append = (text: string): boolean => {
+    if (spill === undefined || capped || text === "") return true
+    const room = maxSpillBytes - spilled
+    const bytes = Buffer.from(text)
+    capped = bytes.length > room
+    const ok = written(() =>
+      appendFileSync(spill!, capped ? Buffer.concat([bytes.subarray(0, room), Buffer.from(spillCut)]) : bytes)
+    )
+    spilled += Math.min(bytes.length, room)
+    if (!ok) {
+      spill = undefined
+      unwritable = true
+    }
+    return ok
+  }
   /** A full-output file that cannot be written costs only the file; the command and its tail go on. */
   const written = (write: () => void): boolean => {
     try {
@@ -138,37 +205,32 @@ export const run = (options: {
     if (text === "") return
     bytes += Buffer.byteLength(text)
     if (spill === undefined && bytes > maxBytes && !unwritable) {
-      const path = join(spillDir, `smithers-bash-${randomUUID()}.log`)
-      if (written(() => writeFileSync(path, kept + text, { mode: 0o600 }))) spill = path
-      else unwritable = true
-    } else if (spill !== undefined && !written(() => appendFileSync(spill!, text))) {
-      spill = undefined
-      unwritable = true
-    }
+      if (open(kept + text) === undefined) unwritable = true
+    } else if (spill !== undefined) append(text)
     kept = (kept + text).slice(-memory)
     if (kept.charCodeAt(0) >= 0xdc00 && kept.charCodeAt(0) <= 0xdfff) kept = kept.slice(1)
     pending += text
     timer ??= Timer.after(flushMs, flush)
   }
+  // One redactor per stream: a held secret prefix on stdout must never be joined to stderr's next chunk.
   const redactor = Output.redactor(env)
-  for (const pipe of [child.stdout, child.stderr]) {
+  const streams = [child.stdout, child.stderr].map((pipe) => {
     const decoder = Output.decoder()
-    pipe.on("data", (chunk: Buffer) => receive(redactor.write(decoder.write(chunk))))
-    pipe.on("end", () => receive(redactor.write(decoder.end())))
-  }
+    const own = Output.redactor(env)
+    pipe.on("data", (chunk: Buffer) => receive(own.write(decoder.write(chunk))))
+    pipe.on("end", () => receive(own.write(decoder.end()) + own.end()))
+    return own
+  })
   const done = new Promise<Result>((resolve) => {
     const settle = async (exitCode: number | null) => {
       if (settled) return
       settled = true
       await stopping
-      receive(redactor.end())
+      for (const own of [...streams, redactor]) receive(own.end())
       flush()
       const cut = tail(kept)
-      let fullOutputPath = spill
-      if (cut.truncated && fullOutputPath === undefined && !unwritable) {
-        const path = join(spillDir, `smithers-bash-${randomUUID()}.log`)
-        if (written(() => writeFileSync(path, kept, { mode: 0o600 }))) fullOutputPath = path
-      }
+      if (cut.truncated && spill === undefined && !unwritable) open(kept)
+      const fullOutputPath = spill
       resolve({
         command: options.command,
         output: cut.text.replace(/\n+$/, ""),

@@ -17,18 +17,23 @@ import { Smithers } from "@smthrs/targets"
 
 const cwd = "apps/bug-worker"
 
-/** The worker, its schema, and the deployment description beside them. */
+/** The worker, its schema, and the deployment description and configuration beside them. */
 const sources = [
   Smithers.glob("//apps/bug-worker/src/**/*.ts"),
+  Smithers.glob("//apps/bug-worker/infra/**/*.ts"),
   Smithers.file("//apps/bug-worker/alchemy.run.ts")
 ]
 
 /**
- * The suite and its in-memory KV double, plus the site's demo page: the
- * demo-request contract test reads its endpoint and field names.
+ * The suite and its in-memory KV double, plus what the suite reads: the
+ * site's demo page (the demo-request contract's endpoint and field names),
+ * and the README and package manifest (deploy instructions and hosted
+ * identifiers).
  */
 const suiteSources = [
   Smithers.glob("//apps/bug-worker/tests/**/*.ts"),
+  Smithers.file("//apps/bug-worker/README.md"),
+  Smithers.file("//apps/bug-worker/package.json"),
   Smithers.file("//apps/site/src/pages/demo/index.astro")
 ]
 
@@ -83,14 +88,15 @@ const workerDeployQualification = Smithers.NodeTest({
 /** Security review of anonymous intake and authenticated report retrieval. */
 const securityReview = Smithers.SecurityReview({
   cwd,
-  include: ["src/**", "alchemy.run.ts"],
+  include: ["src/**", "infra/**", "alchemy.run.ts"],
   checks: [
     {
       id: "operator-gate",
-      title: "Stored reports require the x-bug-admin token before any read",
+      title: "Stored reports and demo requests require the x-bug-admin token before any read",
       threat: "An anonymous caller reads private bug report contents.",
       lookFor: [
-        "GET /api/bugs/:id reads storage before isOperator succeeds.",
+        "GET /api/bugs, /api/bugs/:id, /api/demo-requests or /api/demo-requests/:id reads storage before isOperator succeeds.",
+        "An operator answer is cacheable, lacks nosniff, or carries a wildcard CORS origin.",
         "A missing admin token admits a caller or comparison leaks the secret length."
       ],
       paths: ["src/worker.ts", "src/isOperator.ts"]
@@ -127,9 +133,10 @@ const securityReview = Smithers.SecurityReview({
       threat: "Deployment leaks BUG_ADMIN_TOKEN into plain bindings or exposes intake outside the configured domain.",
       lookFor: [
         "The admin token uses a literal or plaintext Config instead of requireSecret.",
-        "workersDev is enabled, a domain alias escapes smithers.sh, or a missing token defaults to an empty value."
+        "workersDev is enabled while a custom domain is declared, a configured hostname or alias is not validated, or a missing token defaults to an empty value.",
+        "A hosted account, zone, resource name or hostname is a literal instead of deployment configuration."
       ],
-      paths: ["alchemy.run.ts"]
+      paths: ["alchemy.run.ts", "infra/Deployment.ts"]
     }
   ]
 })

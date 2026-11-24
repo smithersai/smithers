@@ -28,11 +28,14 @@ it("rebuilds the pending follow-ups oldest first, less the ones that left", () =
   expect(Session.restore(Session.load(writer.file)).queued.map((each) => each.id)).toEqual(["b"])
 })
 
-it("keeps a queued prompt's bytes: they are what its turn sends", () => {
+it("keeps a queued prompt's credential out of the journal; a restored queue sends the placeholder", () => {
   const writer = Session.create(scratch())
   const secret = "use sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789"
   writer.append({ type: "queued", at: 1, prompt: prompt("a", secret) })
-  expect(Session.restore(Session.load(writer.file)).queued[0]!.text).toBe(secret)
+  expect(readFileSync(writer.file, "utf8")).not.toContain("abcdefghijklmnopqrstuvwxyz0123456789")
+  const restored = Session.restore(Session.load(writer.file)).queued[0]!
+  expect(restored.id).toBe("a")
+  expect(restored.text).toStartWith("use [REDACTED")
 })
 
 it("settles a turn with no outcome as interrupted and returns its receipt", () => {

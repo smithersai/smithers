@@ -85,7 +85,8 @@ const ActionIndexLive = ActionIndex.make(effect {
 export const props = {
   main: "worker/Api.vibe",
   compatibility: { date: "2026-10-01" },
-  observability: { enabled: true, logs: { enabled: true, invocationLogs: true, persist: true } },
+  // Every `withSpan("vibelang.*")` runs in this Worker and its objects, so its traces are kept as the site's are.
+  observability: { enabled: true, logs: { enabled: true, invocationLogs: true, persist: true }, traces: { enabled: true, persist: true } },
   // An alarm drives a reply, its model call included; waiting on the model costs no CPU.
   limits: { cpuMs: 300_000 },
   // The site reaches it by service binding, so locally it takes any free port.

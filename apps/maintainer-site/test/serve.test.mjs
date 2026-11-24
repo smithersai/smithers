@@ -27,7 +27,7 @@ let server
 function call(path, { method = "GET", headers = {}, body } = {}) {
   const { port } = new URL(base)
   return new Promise((resolve, reject) => {
-    const req = request({ host: "127.0.0.1", port, path, method, headers: { host: `localhost:${port}`, ...headers } }, (res) => {
+    const req = request({ host: "127.0.0.1", port, path, method, headers: { authorization: "Bearer fixture", "x-maintainer-write": "1", host: `localhost:${port}`, ...headers } }, (res) => {
       const chunks = []
       res.on("data", (chunk) => chunks.push(chunk))
       res.on("end", () => {
@@ -45,12 +45,11 @@ function call(path, { method = "GET", headers = {}, body } = {}) {
   })
 }
 // An answer names the version of the item Will opened, as the queue page does: here, the version queue.json holds now.
-const seen = (itemId) => {
-  const item = JSON.parse(readFileSync(join(queueDir, "queue.json"), "utf8")).items.find((candidate) => candidate.id === itemId)
-  return Object.fromEntries(VERSION_FIELDS.map((field) => [field, item?.[field] ?? null]))
+const seen = async (itemId) => {
+  const item = (await call("/api/queue")).json.items.find((candidate) => candidate.id === itemId)
+  return Object.fromEntries([...VERSION_FIELDS, "digest"].map((field) => [field, item?.[field] ?? null]))
 }
-const answer = (body) => (body && typeof body === "object" && body.action !== "undo" ? { ...seen(body.itemId), ...body } : body)
-const post = (body, headers = {}) => call("/api/answer", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: answer(body) })
+const post = async (body, headers = {}) => call("/api/answer", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: body && typeof body === "object" ? { ...await seen(body.itemId), ...body } : body })
 const visibleIds = async () => (await call("/api/queue")).json.items.map((item) => item.id)
 const answersText = () => readFileSync(join(queueDir, "answers.jsonl"), "utf8")
 
@@ -59,7 +58,7 @@ function events() {
   const { port } = new URL(base)
   let buffer = ""
   let waiters = []
-  const req = request({ host: "127.0.0.1", port, path: "/api/events", headers: { host: `localhost:${port}` } }, (res) => {
+  const req = request({ host: "127.0.0.1", port, path: "/api/events", headers: { authorization: "Bearer fixture", "x-maintainer-write": "1", host: `localhost:${port}` } }, (res) => {
     res.setEncoding("utf8")
     res.on("data", (chunk) => {
       buffer += chunk
@@ -129,7 +128,7 @@ before(async () => {
   symlinkSync(join(repo, ".env"), join(repo, "env-link.txt"))
 
   clock = { now: Date.parse("2026-10-20T15:00:00.000Z") }
-  server = startServer({ port: 0, repo, gifs, videos, site, queueDir, now: () => clock.now, tickMs: 60_000 })
+  server = startServer({ writeToken: "fixture", port: 0, repo, gifs, videos, site, queueDir, now: () => clock.now, tickMs: 60_000 })
   base = await server.ready
 })
 
@@ -161,7 +160,7 @@ describe("GET /api/queue", () => {
     const other = startServer({ port: 0, repo, gifs: repo, site: repo, queueDir: empty })
     try {
       const url = await other.ready
-      const response = await fetch(`${url.replace("localhost", "127.0.0.1")}/api/queue`, { headers: { host: new URL(url).host } })
+      const response = await fetch(`${url.replace("localhost", "127.0.0.1")}/api/queue`, { headers: { authorization: "Bearer fixture", "x-maintainer-write": "1", host: new URL(url).host } })
       const body = await response.json()
       assert.equal(body.items.length, 0)
       assert.equal(body.missing, true)
@@ -180,7 +179,7 @@ describe("POST /api/answer", () => {
     const after = answersText()
     assert.ok(after.startsWith(before), "the file is appended to, never rewritten")
     const line = JSON.parse(after.slice(before.length))
-    assert.deepEqual(Object.keys(line), ["itemId", "at", "action", "option", "text", "revision", "addedAt", "title"])
+    assert.deepEqual(Object.keys(line), ["itemId", "at", "action", "option", "text", "digest", "commit", "revision", "addedAt", "title"])
     assert.equal(line.at, new Date(clock.now).toISOString())
     assert.equal(line.title, "Read rows through Electric shapes, not polling")
     assert.equal(line.text, "Shapes, with a retry.")
@@ -202,7 +201,7 @@ describe("POST /api/answer", () => {
     const response = await post({ itemId: "code:shape-stream@3f2a", action: "changes", scope: "all", kind: "design", text: "Show a diagram first." })
     assert.equal(response.status, 200)
     const line = JSON.parse(answersText().slice(before.length))
-    assert.deepEqual(Object.keys(line), ["itemId", "at", "action", "scope", "kind", "text", "revision", "addedAt", "title"])
+    assert.deepEqual(Object.keys(line), ["itemId", "at", "action", "scope", "kind", "text", "digest", "commit", "revision", "addedAt", "title"])
     assert.equal(line.scope, "all")
     assert.equal(line.kind, "code", "the kind comes from the item, not the client")
     assert.ok(!(await visibleIds()).includes("code:shape-stream@3f2a"))
@@ -299,7 +298,7 @@ describe("POST /api/answer", () => {
   })
 
   test("an answer to a version the curator replaced is refused with the new version, and writes nothing", async () => {
-    const opened = seen("code:shape-stream@3f2a")
+    const opened = await seen("code:shape-stream@3f2a")
     let queueMtime = statSync(join(queueDir, "queue.json")).mtimeMs
     const replace = (change) => {
       const queue = JSON.parse(readFileSync(join(fixtures, "queue.json"), "utf8"))
@@ -322,7 +321,7 @@ describe("POST /api/answer", () => {
         assert.ok((await visibleIds()).includes("code:shape-stream@3f2a"), "nobody reviewed the new version")
       }
       replace({ revision: "new-digest" })
-      const response = await post({ itemId: "code:shape-stream@3f2a", action: "approve", ...opened, revision: "new-digest" })
+      const response = await post({ itemId: "code:shape-stream@3f2a", action: "approve", revision: "new-digest" })
       assert.equal(response.status, 200, response.text)
       assert.equal(response.json.answer.revision, "new-digest")
       await post({ itemId: "code:shape-stream@3f2a", action: "undo" })
@@ -349,7 +348,7 @@ describe("POST /api/answer", () => {
       const response = await call("/api/answer", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: { itemId: "review-atomic", action: "approve", revision: "bbbbbbbbbb", commit: null, addedAt: null },
+        body: { ...await seen("review-atomic"), itemId: "review-atomic", action: "approve", revision: "bbbbbbbbbb", commit: null, addedAt: null },
       })
       assert.equal(response.status, 200, response.text)
       assert.equal(response.json.answer.revision, "bbbbbbbbbb")
@@ -398,7 +397,7 @@ describe("POST /api/answer", () => {
     const before = answersText()
     assert.equal((await post({ itemId: "x", action: "approve" }, { origin: "https://evil.example" })).status, 403)
     assert.equal((await post({ itemId: "x", action: "approve" }, { origin: "null" })).status, 403)
-    assert.equal((await call("/api/queue", { headers: { host: "evil.example" } })).status, 403)
+    assert.equal((await call("/api/queue", { headers: { authorization: "Bearer fixture", "x-maintainer-write": "1", host: "evil.example" } })).status, 403)
     assert.equal(answersText(), before)
   })
 
@@ -427,7 +426,7 @@ describe("GET /api/events", () => {
   test("tells a new page the client's version, so open pages reload between items after an update", async () => {
     const { port } = new URL(base)
     const text = await new Promise((resolve, reject) => {
-      const req = request({ host: "127.0.0.1", port, path: "/api/events", headers: { host: `localhost:${port}` } }, (res) => {
+      const req = request({ host: "127.0.0.1", port, path: "/api/events", headers: { authorization: "Bearer fixture", "x-maintainer-write": "1", host: `localhost:${port}` } }, (res) => {
         res.setEncoding("utf8")
         res.once("data", (chunk) => {
           req.destroy()
@@ -495,7 +494,7 @@ describe("GET /api/file", () => {
   test("serves HTML as HTML, sandboxed, and by path so its relative styles resolve", async () => {
     const page = await file("design/status.html")
     assert.match(page.headers["content-type"], /^text\/html/)
-    assert.equal(page.headers["content-security-policy"], "sandbox allow-scripts")
+    assert.match(page.headers["content-security-policy"], /sandbox; default-src 'none'/)
     const byPath = await call("/api/file/design/status.html")
     assert.equal(byPath.status, 200)
     assert.equal((await call("/api/file/design/status.css")).headers["content-type"], "text/css; charset=utf-8")
@@ -847,4 +846,60 @@ describe("pages", () => {
     assert.match((await call("/")).text, /<title>Site<\/title>/)
     assert.notEqual((await call("/../repo/.env")).status, 200)
   })
+})
+
+test("credentials and the write header are required for answers and undo", async () => {
+  const before = answersText()
+  for (const action of ["approve", "undo"]) {
+    for (const headers of [{ authorization: "" }, { authorization: "Bearer wrong" }, { "x-maintainer-write": "" }]) {
+      assert.equal((await post({ itemId: "decision:electric-shapes", action }, headers)).status, 403)
+    }
+  }
+  assert.equal(answersText(), before)
+  const readOnly = startServer({ port: 0, repo, queueDir, writeToken: "" })
+  try {
+    const res = await fetch((await readOnly.ready) + "/api/answer", { method: "POST", headers: { authorization: "Bearer fixture", "x-maintainer-write": "1" } })
+    assert.equal(res.status, 403)
+    assert.equal(answersText(), before)
+  } finally { await readOnly.close() }
+})
+
+test("replacing content invalidates open cards, file and outline reads, and standing approvals", async () => {
+  const queue = join(queueDir, "queue.json")
+  const original = readFileSync(queue)
+  const item = { id: "pin", title: "Original", commit: null, files: [{ path: "pin.ts" }] }
+  const publish = (items) => writeFileSync(queue, JSON.stringify({ items }))
+  writeFileSync(join(repo, "pin.ts"), "export const original = 1")
+  try {
+    publish([item])
+    const opened = await seen(item.id)
+    const read = (endpoint) => call(`/api/${endpoint}?slice=pin&path=pin.ts&digest=${opened.digest}`)
+    assert.match((await read("file")).text, /original/)
+    assert.equal((await read("outline")).json.symbols[0].name, "original")
+    await post({ itemId: item.id, action: "approve", ...opened })
+    assert.ok(!(await visibleIds()).includes(item.id))
+    publish([{ ...item, title: "Edited" }])
+    assert.ok((await visibleIds()).includes(item.id))
+    for (const change of [() => {}, () => { publish([item]); writeFileSync(join(repo, "pin.ts"), "export const replaced = 2") }, () => publish([])]) {
+      change()
+      const before = answersText()
+      for (const endpoint of ["file", "outline"]) assert.equal((await read(endpoint)).status, 409)
+      assert.equal((await post({ itemId: item.id, action: "approve", ...opened })).status, 409)
+      assert.equal(answersText(), before)
+    }
+  } finally { writeFileSync(queue, original) }
+})
+
+test("uploaded documents get an opaque scriptless sandbox and uppercase raster images retain their MIME", async () => {
+  for (const name of ["sample.html", "sample.svg", "sample.PNG"]) {
+    writeFileSync(join(dir, "site", name), "sample")
+    const res = await call("/" + name)
+    assert.equal(res.headers["x-content-type-options"], "nosniff")
+    assert.match(res.headers["content-security-policy"], /sandbox;/)
+    assert.doesNotMatch(res.headers["content-security-policy"], /allow-scripts|allow-same-origin/)
+    if (name.endsWith("PNG")) assert.equal(res.headers["content-type"], "image/png")
+  }
+  const { safeUrl } = await import("../markdown.mjs")
+  assert.equal(safeUrl("file:///etc/passwd"), null)
+  assert.equal(safeUrl("fi\nle:///etc/passwd"), null)
 })

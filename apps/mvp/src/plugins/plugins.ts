@@ -8,7 +8,8 @@ import { isFeedName, isIndexName, parseFeedRepo } from "../features/feeds/contra
 import { itemsOf } from "../features/feeds/items"
 import { FeedItem } from "../features/feeds/schema"
 import { FeedsStore } from "../features/feeds/store"
-import { FleetStore } from "../features/fleet/store"
+import type { Available, GlobalFleetShape } from "../features/fleet/globalContract"
+import { FleetStore, type GlobalAccess } from "../features/fleet/store"
 import { AuthStore } from "../features/auth/store"
 import { repoId } from "../features/repo/contract"
 import { RepoStore } from "../features/repo/store"
@@ -70,6 +71,21 @@ export const gateLive = <R>(plugins: { readonly visible: (id: string) => boolean
   gatedViews.set(live, gated as Host.Live<unknown>)
   return gated
 }
+
+/**
+ * A deployment-wide fleet query as a plugin reads it: `current` asks the store's gate each time, so rows a 401 or 403
+ * put in doubt are gone from the next read, while the session check is still out (Astra-D4-003). `availability` says
+ * whether no rows means none (`ready`) or not known (`loading`, `unavailable`).
+ */
+export const globalLive = <R>(access: GlobalAccess, shape: GlobalFleetShape, live: Host.Live<R>): Host.Live<R> & Available => ({
+  current: () => access.visible(shape) ? live.current() : EMPTY_ROWS,
+  subscribe: (listener) => {
+    const rows = live.subscribe(listener)
+    const gate = access.subscribe(shape, listener)
+    return () => { rows(); gate() }
+  },
+  availability: () => access.availability(shape),
+})
 
 export const liveOf = <R>(rows: Stream.Stream<ReadonlyArray<R>>, initial: ReadonlyArray<R> = []) =>
   Effect.gen(function* () {
@@ -504,7 +520,9 @@ export const queryOf = (name: string, params: Host.QueryParams | undefined) =>
               : name === FLEET_SESSIONS
               ? yield* plugins.fleet.globalSessions
               : yield* plugins.fleet.globalAccounts
-          return (yield* liveOf(query.rows as unknown as Stream.Stream<ReadonlyArray<Readonly<Record<string, unknown>>>>))
+          const shape: GlobalFleetShape = name === FLEET_NODES ? "nodes" : name === FLEET_SESSIONS ? "sessions" : "accounts"
+          const live = yield* liveOf(query.rows as unknown as Stream.Stream<ReadonlyArray<Readonly<Record<string, unknown>>>>)
+          return globalLive(plugins.fleet.global, shape, live)
         }).pipe(Scope.provide(plugins.scope), Effect.orDie)
       )
       plugins.fleetOpen.set(key, open)

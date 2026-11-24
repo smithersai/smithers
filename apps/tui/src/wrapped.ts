@@ -40,6 +40,16 @@ export interface Launch {
 const instructions = (brief: string): string => `developer_instructions=${codexConfigString(brief)}`
 
 /**
+ * The approval a wrapped Claude Code or Codex worker launches under, from the
+ * TUI's mode and whether `all` was named (`Approvals.explicitAll`). The
+ * default `all` becomes `ask`: headless it only reads, interactive it lets the
+ * vendor ask. A coordinator picking the harness never gets a sandbox-free
+ * vendor agent unless the person named `all`.
+ */
+export const approval = (mode: Launch["approve"] | undefined, explicit: boolean): Launch["approve"] =>
+  mode === "deny" ? "deny" : mode === "all" && explicit ? "all" : "ask"
+
+/**
  * The headless command. The prompt is never an argument: it goes to the vendor on stdin, so a
  * prompt shaped like a flag stays text.
  */

@@ -32,7 +32,7 @@ const github: GitHub.Auth.GitHubAuth["Service"] = {
 
 function setup(broker?: Accounts.Setup["broker"]): Accounts.Setup {
   return {
-    origin: ORIGIN, initialMaintainer: "1", clientId: "fixture-client-id", github,
+    origin: ORIGIN, initialMaintainer: "1", clientId: "fixture-client-id", github, issuedHere: () => succeed(true),
     signingSecret: Redacted.make("fixture-only-signing-secret-32-chars"),
     encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
     ...(broker === undefined ? {} : { broker }),

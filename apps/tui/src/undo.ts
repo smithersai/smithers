@@ -21,10 +21,17 @@ export type Failure =
   | { readonly _tag: "Outside"; readonly paths: ReadonlyArray<string> }
   /** The files changed between the plan and the write. */
   | { readonly _tag: "Conflict"; readonly paths: ReadonlyArray<string> }
-  | { readonly _tag: "WriteFailed"; readonly path: string; readonly message: string; readonly restored: boolean }
+  | {
+    readonly _tag: "WriteFailed"
+    readonly path: string
+    readonly message: string
+    readonly restored: boolean
+    /** Files rollback left alone because another writer changed them after this undo wrote them. */
+    readonly kept?: ReadonlyArray<string>
+  }
 
 /** Why a file of the run stays as it is. */
-export type Refusal = "changed" | "outside" | "unrendered"
+export type Refusal = "changed" | "outside" | "unrendered" | "redacted"
 
 /** `new` the run created it; `deleted` the run removed it. */
 export type State = "new" | "deleted"
@@ -206,7 +213,8 @@ export const plan = async (
     for (const path of Changes.ends(patch)) touch(path)
     const [first, second] = Changes.ends(patch)
     if (second !== undefined) link(first!, second)
-    if (Changes.structured(patch) === undefined) refuse(patch.path, "unrendered")
+    if (patch.redacted === true) refuse(patch.path, "redacted")
+    else if (Changes.structured(patch) === undefined) refuse(patch.path, "unrendered")
   }
   for (const path of order) {
     if (outside(cwd, path)) refuse(path, "outside")
@@ -256,7 +264,13 @@ export const plan = async (
   }
   const reason = (path: string): Refusal | undefined => {
     const all = [...group(path)].flatMap((each) => refused.get(resolve(cwd, each)) ?? [])
-    return all.includes("outside") ? "outside" : all.includes("unrendered") ? "unrendered" : all[0]
+    return all.includes("outside")
+      ? "outside"
+      : all.includes("redacted")
+      ? "redacted"
+      : all.includes("unrendered")
+      ? "unrendered"
+      : all[0]
   }
   const ready: Array<Entry> = []
   const kept: Array<Entry> = []
@@ -350,7 +364,16 @@ const modeOf = async (path: string): Promise<number | undefined> => {
   }
 }
 
-/** Writes the files; refuses if one moved since `plan` read it, and rolls back on an IO error. */
+/**
+ * Writes the files; refuses if one moved since `plan` read it, and rolls back on an IO error.
+ *
+ * Each file is checked again just before its write: still inside the workspace
+ * and still holding the bytes `plan` read. Another writer between two writes
+ * stops the undo as a `Conflict` and rolls back. Rollback puts a file back only
+ * while it still holds what this undo wrote (or, for the write that failed, a
+ * truncated prefix of it); a file another writer changed meanwhile is kept and
+ * named in `kept`.
+ */
 export const commit = async (
   cwd: string,
   spelled: ReadonlyArray<File>,
@@ -378,34 +401,73 @@ export const commit = async (
   }
   if (moved.length > 0) return { _tag: "Conflict", paths: moved.sort() }
   const applied: Array<File> = []
+  /** Puts back what this undo wrote; `failed` is the file whose write threw, if any. */
+  const rollback = async (failed: File | undefined) => {
+    let restored = true
+    const kept: Array<string> = []
+    for (const done of [...(failed === undefined ? [] : [failed]), ...applied.toReversed()]) {
+      const path = resolve(cwd, done.path)
+      const mode = modes.get(done.path)
+      try {
+        if (outside(cwd, done.path)) {
+          restored = false
+          continue
+        }
+        const now = await read(path)
+        if (now === done.current) {
+          if ((await modeOf(path)) !== mode) await write(path, done.current, mode)
+        } else if (ours(now, done, done === failed)) {
+          await write(path, done.current, mode)
+        } else {
+          // Another writer changed it after this undo did: its bytes win.
+          kept.push(done.path)
+          restored = false
+          continue
+        }
+        if ((await read(path)) !== done.current || (await modeOf(path)) !== mode) restored = false
+      } catch {
+        restored = false
+      }
+    }
+    return { restored, kept: kept.sort() }
+  }
   for (const file of files) {
+    const path = resolve(cwd, file.path)
+    // Checked at publication time: a path component may have changed since the plan.
+    const escapedNow = outside(cwd, file.path)
+    const changedNow = !escapedNow && (await read(path)) !== file.current
+    if (escapedNow || changedNow) {
+      const { kept } = await rollback(undefined)
+      return escapedNow
+        ? { _tag: "Outside", paths: [file.path] }
+        : { _tag: "Conflict", paths: [...new Set([file.path, ...kept])].sort() }
+    }
     try {
-      await write(resolve(cwd, file.path), file.next, file.mode)
+      await write(path, file.next, file.mode)
       applied.push(file)
     } catch (error) {
-      let restored = true
       // The failed write may have truncated its file before throwing.
-      for (const done of [file, ...applied.toReversed()]) {
-        const path = resolve(cwd, done.path)
-        const mode = modes.get(done.path)
-        try {
-          if ((await read(path)) !== done.current || (await modeOf(path)) !== mode) {
-            await write(path, done.current, mode)
-          }
-          if ((await read(path)) !== done.current || (await modeOf(path)) !== mode) restored = false
-        } catch {
-          restored = false
-        }
-      }
+      const { restored, kept } = await rollback(file)
       return {
         _tag: "WriteFailed",
         path: file.path,
         message: errno(error),
-        restored
+        restored,
+        ...(kept.length === 0 ? {} : { kept })
       }
     }
   }
   return undefined
+}
+
+/**
+ * Whether `now` is what this undo left in `file`: its planned bytes, or for the
+ * write that threw, a truncated prefix of them.
+ */
+const ours = (now: string | null | undefined, file: File, failed: boolean): boolean => {
+  if (now === undefined) return false
+  if (now === file.next) return true
+  return failed && typeof now === "string" && typeof file.next === "string" && file.next.startsWith(now)
 }
 
 /** The failed write's errno code, the one fact `message` words; the rest goes to the log. */
@@ -430,7 +492,8 @@ const because: Readonly<Record<string, string>> = {
 export const words: Readonly<Record<Refusal, string>> = {
   changed: "changed since",
   outside: "outside workspace",
-  unrendered: "binary or large"
+  unrendered: "binary or large",
+  redacted: "held a credential"
 }
 
 /** Toast text. */
@@ -447,14 +510,16 @@ export const message = (failure: Failure): string => {
     case "WriteFailed":
       return `Undo failed${failure.path === "" ? "" : ` · ${failure.path}`}: ${
         because[failure.message] ?? "could not write"
-      }${failure.restored ? "" : " · files partly changed"}`
+      }${failure.restored ? "" : " · files partly changed"}${
+        failure.kept === undefined || failure.kept.length === 0 ? "" : ` · kept newer edits: ${failure.kept.join(", ")}`
+      }`
   }
 }
 
 /** Toast text when every file of a plan is refused. */
 export const refusal = (plan: Plan): string =>
   `Not undone · ${
-    (["changed", "outside", "unrendered"] as const).flatMap((why) => {
+    (["changed", "outside", "unrendered", "redacted"] as const).flatMap((why) => {
       const paths = plan.entries.filter((entry) => entry.refused === why).map((entry) => entry.path)
       return paths.length === 0 ? [] : [`${words[why]}: ${paths.join(", ")}`]
     }).join(" · ")

@@ -26,6 +26,8 @@ it.live(`declares the bound resource graph: ${dev ? "dev" : image ? "offline con
         expect(compiled.name).toBe("smithers-vibelang")
         expect(STATE_STORE).toBe("smithers-vibelang-state")
         expect(compiled.resources.VibelangApi!.Props).toMatchObject({ main: "worker/Api.vibe", limits: { cpuMs: 300_000 }, build: { input: { plugins: expect.any(Array) } } })
+        // Review R1 D4 (Fable-D4-035): the Worker that creates the spans keeps them.
+        expect(compiled.resources.VibelangApi!.Props.observability).toMatchObject({ enabled: true, logs: { enabled: true, persist: true }, traces: { enabled: true, persist: true } })
         expect(compiled.resources["vibelang-site"]!.Props).toMatchObject({ vite: { main: "worker/index.vibe" }, assets: { notFoundHandling: "single-page-application" }, observability: { enabled: true } })
         expect(compiled.resources["vibelang-site"]!.Props.domain).toBe(domain)
         expect(compiled.resources["vibelang-site"]!.Props.env.API).toBeDefined()

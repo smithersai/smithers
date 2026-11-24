@@ -1,0 +1,27 @@
+// The desktop reply's pure decisions: the prompt's window of turns and which failures are the model's.
+import { expect, it } from "@effect/vitest"
+import { MAX_TURNS, modelCallAfter, modelFault, promptOf, type ModelCall } from "../src/reply.vibe"
+
+it("bounds the prompt to the latest window of turns, oldest first", () => {
+  const turns = Array.from({ length: MAX_TURNS + 16 }, (_, index) => ({ author: index % 2 === 0 ? "person" as const : "agent" as const, text: `turn ${index}` }))
+  const lines = promptOf(turns).split("\n")
+  expect(lines).toHaveLength(MAX_TURNS)
+  expect(lines[0]).toBe("person: turn 16")
+  expect(lines.at(-1)).toBe(`agent: turn ${MAX_TURNS + 15}`)
+  expect(promptOf(turns.slice(0, 3)).split("\n")).toEqual(["person: turn 0", "agent: turn 1", "person: turn 2"])
+  expect(promptOf([])).toBe("")
+})
+
+it("calls a failed reply the model's only when the provider or its latest call failed", () => {
+  const after = (events: ReadonlyArray<string>) => events.reduce<ModelCall>(modelCallAfter, "none")
+  // A tool defect, a folder refusal, the frame limit and a cell timeout leave the model ready.
+  for (const tag of ["defect", "FolderFailure", "@smthrs/harness/HarnessError", "TimeoutError"]) {
+    expect(modelFault(tag, after([]))).toBe(false)
+    expect(modelFault(tag, after(["model-requested", "model-delta", "model-settled", "tool-called"]))).toBe(false)
+    // An earlier failed call that a retry answered is not the reply's failure.
+    expect(modelFault(tag, after(["model-requested", "model-failed", "model-retried", "model-settled"]))).toBe(false)
+    expect(modelFault(tag, after(["model-requested", "model-failed"]))).toBe(true)
+    expect(modelFault(tag, after(["model-requested", "model-settled", "model-requested", "model-failed", "tool-called"]))).toBe(true)
+  }
+  expect(modelFault("ModelUnavailable", after([]))).toBe(true)
+})

@@ -330,6 +330,12 @@ describe("DeviceIdentityDeep fuzz suite", () => {
         const sessionTag = "abcdef0123456789abcdef0123456789"
         let reopenCalls = 0
         let signOutHookCalls = 0
+        let nowMs = 1_700_000_000_000
+        const advanceClock = async (ms: number) => {
+          nowMs += ms
+          await Promise.resolve()
+          await Promise.resolve()
+        }
         let postCount = 0
 
         const nextFetch: typeof globalThis.fetch = async (reqInput) => {
@@ -394,7 +400,7 @@ describe("DeviceIdentityDeep fuzz suite", () => {
                 status: 503,
                 headers: {
                   "x-smithers-credential": "stale",
-                  "retry-after": new Date(Date.now() + 60_000).toUTCString(),
+                  "retry-after": new Date(nowMs + 60_000).toUTCString(),
                 },
               })
             }
@@ -411,6 +417,7 @@ describe("DeviceIdentityDeep fuzz suite", () => {
 
         const bound = Identity.boundFetch(nextFetch, {
           origin: ORIGIN,
+          now: () => nowMs,
           principal: () => currentPrincipal,
           sessionTag: () => sessionTag,
           credentialStorage: {
@@ -482,7 +489,7 @@ describe("DeviceIdentityDeep fuzz suite", () => {
           await expect(bound(`${ORIGIN}/api/write`, { method: "POST" })).rejects.toMatchObject({
             reason: "credential_stale",
           })
-          await new Promise((r) => setTimeout(r, 5))
+          await advanceClock(5)
           const okRes = await bound(`${ORIGIN}/api/write`, { method: "POST" })
           expect(okRes.status).toBe(200)
           return
@@ -492,7 +499,7 @@ describe("DeviceIdentityDeep fuzz suite", () => {
           await expect(bound(`${ORIGIN}/api/write`, { method: "POST" })).rejects.toMatchObject({
             reason: "credential_stale",
           })
-          await new Promise((r) => setTimeout(r, 5))
+          await advanceClock(5)
           await expect(bound(`${ORIGIN}/api/write`, { method: "POST" })).rejects.toMatchObject({
             reason: "credential_stale",
           })
@@ -503,7 +510,7 @@ describe("DeviceIdentityDeep fuzz suite", () => {
           await expect(bound(`${ORIGIN}/api/write`, { method: "POST" })).rejects.toMatchObject({
             reason: "credential_stale",
           })
-          await new Promise((r) => setTimeout(r, 5))
+          await advanceClock(5)
           await expect(bound(`${ORIGIN}/api/write`, { method: "POST" })).rejects.toMatchObject({
             reason: "signed_out",
           })
@@ -515,7 +522,7 @@ describe("DeviceIdentityDeep fuzz suite", () => {
           await expect(bound(`${ORIGIN}/api/write`, { method: "POST" })).rejects.toMatchObject({
             reason: "credential_stale",
           })
-          await new Promise((r) => setTimeout(r, 5))
+          await advanceClock(5)
           await expect(bound(`${ORIGIN}/api/write`, { method: "POST" })).rejects.toMatchObject({
             _tag: "DeviceIdentityRefused",
           })
@@ -526,10 +533,10 @@ describe("DeviceIdentityDeep fuzz suite", () => {
           await expect(bound(`${ORIGIN}/api/write`, { method: "POST" })).rejects.toMatchObject({
             reason: "credential_stale",
           })
-          await new Promise((r) => setTimeout(r, 5))
+          await advanceClock(5)
           const getRes = await bound(`${ORIGIN}/api/read`)
           expect(getRes.status).toBe(200)
-          await new Promise((r) => setTimeout(r, 5))
+          await advanceClock(5)
           const writeRes = await bound(`${ORIGIN}/api/write`, { method: "POST" })
           expect(writeRes.status).toBe(200)
           return

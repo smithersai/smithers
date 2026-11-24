@@ -21,6 +21,7 @@ import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
+import * as WriteAuthority from "../WriteAuthority.ts"
 import * as DomainFlows from "./DomainFlows.ts"
 import { DomainProvider } from "./Provider.ts"
 import * as Store from "./Store.ts"
@@ -43,6 +44,12 @@ export const requests = Metric.counter("smithers_domain_requests", {
 /** `GET /api/shapes/domains` requests, by `status` and `live`. */
 export const shapes = Metric.counter("smithers_domain_shape_requests", {
   description: "GET /api/shapes/domains requests, by status and live",
+  incremental: true,
+})
+
+/** `GET /api/domains/resolve` requests, by `outcome` (`found`, `not_found`, `invalid`, `method`, `unavailable`). */
+export const resolves = Metric.counter("smithers_domain_resolves", {
+  description: "GET /api/domains/resolve requests, by outcome",
   incremental: true,
 })
 
@@ -122,7 +129,8 @@ export const make = <E, R>(repository: { readonly id: string }, database: Layer.
           if (hostname === undefined) return refuse(400, "invalid_hostname")
           const started = yield* starter.start(DomainFlows.Remove, {
             executionId,
-            payload: { repoId: repo, hostname, actorId: actor.value.subject.id },
+            // The flow asks again before it touches the provider or the row (DomainFlows.ts).
+            payload: { authority: WriteAuthority.protectedOf(actor.value), repoId: repo, hostname, actorId: actor.value.subject.id },
           }).pipe(Effect.result)
           if (started._tag === "Failure") return refuse(503, "unavailable")
           fields.outcome = "removing"
@@ -143,6 +151,7 @@ export const make = <E, R>(repository: { readonly id: string }, database: Layer.
         const started = yield* starter.start(DomainFlows.Verify, {
           executionId,
           payload: {
+            authority: WriteAuthority.protectedOf(actor.value),
             repoId: repo,
             hostname,
             actorId: actor.value.subject.id,
@@ -172,27 +181,56 @@ export const make = <E, R>(repository: { readonly id: string }, database: Layer.
       return response
     }).pipe(Effect.withSpan("domain.request", { kind: "server" }))
 
-    /** `GET /api/domains/resolve?host=<hostname>`: resolves an active custom domain to its repository path. */
+    /**
+     * `GET /api/domains/resolve?host=<hostname>`: resolves an active custom domain to its repository path. Every answer
+     * is one `domain.resolve` span, log line and `smithers_domain_resolves` count by outcome. They carry the repository
+     * of a hit and codes, never the hostname asked for: a pending domain is its Maintainer's until it is published.
+     */
     const resolve = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
-      if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: noStore })
-      const raw = new URL(request.url, "http://localhost").searchParams.get("host")
-      const hostname = raw === null ? undefined : normalizeHostname(raw)
-      if (hostname === undefined) return HttpServerResponse.empty({ status: 400, headers: noStore })
-      const row = yield* Store.read(hostname).pipe(
-        Effect.provide(database),
-        Effect.map((found) => ({ ok: true as const, found })),
-        Effect.catchCause(() => Effect.succeed({ ok: false as const })),
-      )
-      if (!row.ok) return HttpServerResponse.empty({ status: 503, headers: noStore })
-      if (Option.isNone(row.found) || row.found.value.state !== "active" || !row.found.value.repoId.startsWith("github/")) {
-        return HttpServerResponse.empty({ status: 404, headers: noStore })
+      const startedAt = yield* Clock.currentTimeMillis
+      const fields: Fields = {}
+      const refuse = (status: number, outcome: "method" | "invalid" | "unavailable" | "not_found") => {
+        fields.outcome = outcome
+        return HttpServerResponse.empty({ status, headers: noStore })
       }
-      return HttpServerResponse.jsonUnsafe(
-        { path: `/${row.found.value.repoId.slice("github/".length)}` },
-        { status: 200, headers: { "cache-control": "public, max-age=60" } },
+      const response = yield* Effect.gen(function* () {
+        if (request.method !== "GET") return refuse(405, "method")
+        const raw = new URL(request.url, "http://localhost").searchParams.get("host")
+        const hostname = raw === null ? undefined : normalizeHostname(raw)
+        if (hostname === undefined) return refuse(400, "invalid")
+        const row = yield* Store.read(hostname).pipe(
+          Effect.provide(database),
+          Effect.map((found) => ({ ok: true as const, found })),
+          Effect.catchCause((cause) =>
+            Effect.sync(() => {
+              fields.errorCode = codeOf(Cause.squash(cause))
+              return { ok: false as const }
+            })
+          ),
+        )
+        if (!row.ok) return refuse(503, "unavailable")
+        if (
+          Option.isNone(row.found) || row.found.value.state !== "active" || !row.found.value.repoId.startsWith("github/")
+        ) return refuse(404, "not_found")
+        fields.outcome = "found"
+        fields.repoId = row.found.value.repoId
+        return HttpServerResponse.jsonUnsafe(
+          { path: `/${row.found.value.repoId.slice("github/".length)}` },
+          { status: 200, headers: { "cache-control": "public, max-age=60" } },
+        )
+      })
+      const outcome = String(fields.outcome)
+      fields.status = response.status
+      fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+      yield* Metric.update(Metric.withAttributes(resolves, { outcome }), 1)
+      yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+      // A miss or a malformed host is the caller's ordinary answer; only a database failure is the route's fault.
+      yield* Effect.logWithLevel(response.status >= 500 ? "Error" : "Info")("domain.resolve").pipe(
+        Effect.annotateLogs(fields),
       )
-    })
+      return response
+    }).pipe(Effect.withSpan("domain.resolve", { kind: "server" }))
 
     const fetch = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest

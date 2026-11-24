@@ -64,7 +64,8 @@ export const make = (models: ReadonlyArray<Model>, routed: ReadonlyArray<string>
   const route = (seat: string) => routeOf(seat, models)
   const model = (seat: string) => {
     const alias = seat.startsWith("claude-code:") ? seat.slice("claude-code:".length) : seat
-    return `${route(seat)}:${(Providers.seatAliases[alias] ?? delegateSeat(alias)).split(":").at(-1)}`
+    const named = Object.hasOwn(Providers.seatAliases, alias) ? Providers.seatAliases[alias] : undefined
+    return `${route(seat)}:${(named ?? delegateSeat(alias)).split(":").at(-1)}`
   }
   const spent = (seat: string) => seat !== Seat.auto && (spentRoutes.has(route(seat)) || spentModels.has(model(seat)))
   return {

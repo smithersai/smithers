@@ -170,9 +170,8 @@ test("native mock, folder picker and local model run the shared Foldkit conversa
   await expect(page.getByRole("button", { name: "Close folder" })).toBeVisible()
   await expect(page.getByRole("button", { name: "Model", exact: true })).toContainText("local-test")
   // A persisted Mock choice starts without consulting an unavailable saved provider.
-  await page.getByRole("button", { name: "Models", exact: true }).click()
-  await page.getByRole("button", { name: "Mock", exact: true }).click()
-  await page.getByRole("button", { name: "Minimize Models" }).click()
+  await page.getByRole("button", { name: "Model", exact: true }).click()
+  await page.getByRole("option", { name: "Mock", exact: true }).click()
   const discoveries = await fetch("http://127.0.0.1:24509/stats").then(r => r.json()).then(b => b.discoveries)
   await fetch("http://127.0.0.1:24509/stall-discovery")
   await crashAndRestart()
@@ -213,8 +212,9 @@ test("native mock, folder picker and local model run the shared Foldkit conversa
   await expect(page.getByRole("button", { name: "Choose a model", exact: true })).toBeVisible()
   await expect(message).toBeDisabled()
   await page.getByRole("button", { name: "Choose a model", exact: true }).click()
-  await page.getByRole("button", { name: "Mock", exact: true }).click()
   await page.getByRole("button", { name: "Minimize Models" }).click()
+  await page.getByRole("button", { name: "Model", exact: true }).click()
+  await page.getByRole("option", { name: "Mock", exact: true }).click()
   await expect(message).toBeEnabled()
   await expect(page.goto("http://127.0.0.1:24509/v1/models", { waitUntil: "domcontentloaded" })).rejects.toThrow(/ERR_ABORTED|blocked/i)
   await expect(page).toHaveURL("http://127.0.0.1:44509/")
@@ -309,7 +309,7 @@ test("shared project sandboxes keep the signed-out policy in the local host", as
   expect(response).toMatchObject({ status: 200, body: { role: "viewer", status: "stopped", remaining: 0 }, refused: 403 })
 })
 
-test("Command-K keeps the model picker in the active composer and opens Models", async () => {
+test("Command-K keeps the model picker in the active composer; Models opens from the navigation", async () => {
   await page.keyboard.press("Control+k")
   const palette = page.getByRole("dialog", { name: "Ask the agent", exact: true })
   await expect(palette).toBeVisible()
@@ -318,9 +318,9 @@ test("Command-K keeps the model picker in the active composer and opens Models",
   await expect(palette.getByRole("listbox", { name: "Models", exact: true })).toBeFocused()
   await page.keyboard.press("Escape")
   await expect(palette.getByRole("textbox", { name: "Message", exact: true })).toBeFocused()
-  await palette.getByRole("button", { name: "Model", exact: true }).click()
-  await palette.getByRole("button", { name: "Manage models…", exact: true }).click()
+  await page.keyboard.press("Escape")
   await expect(palette).not.toBeVisible()
+  await page.getByRole("button", { name: "Models", exact: true }).click()
   const manager = page.getByRole("region", { name: "Models", exact: true })
   await expect(manager).toBeVisible()
   await manager.getByRole("textbox", { name: "Endpoint", exact: true }).fill("http://127.0.0.1:24509")
@@ -353,10 +353,9 @@ test("a stale expected original cannot overwrite the person's edit", async () =>
 
 test("Mock project identities work and a local model restores Viewer without a second sign-in", async () => {
   await page.goto("http://127.0.0.1:44509/")
-  await page.getByRole("button", { name: "Models", exact: true }).click()
+  await page.getByRole("button", { name: "Model", exact: true }).click()
+  await page.getByRole("option", { name: "Mock", exact: true }).click()
   const manager = page.getByRole("region", { name: "Models", exact: true })
-  await manager.getByRole("button", { name: "Mock", exact: true }).click()
-  await page.getByRole("button", { name: "Minimize Models" }).click()
   await page.getByRole("combobox", { name: "Visit as", exact: true }).selectOption("maintainer")
   await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible()
   await page.getByRole("button", { name: "Account", exact: true }).click()

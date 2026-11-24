@@ -1883,3 +1883,10 @@ describe("poll", () => {
     expect(calls).toBe(2)
   })
 })
+
+describe("approval flow names are own keys only", () => {
+  it.each(["constructor", "toString", "__proto__"])("shows %s's input without reading Object.prototype", (flow) => {
+    expect(Approvals.shownInput(flow, { a: "x" })).toBe("x")
+    expect(Approvals.shownInput(flow, { a: 1, b: 2 })).toBe("{\"a\":1,\"b\":2}")
+  })
+})

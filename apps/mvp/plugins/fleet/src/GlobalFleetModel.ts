@@ -5,6 +5,7 @@
 
 import type { HostNode, ObservedSession, ProviderAccount } from "../../../src/features/fleet/globalSchema"
 import { durationOf, tokensOf, type Tone, UNREACHABLE_MS } from "./model"
+import type { Rows } from "./tab"
 
 export interface HostRow {
   readonly nodeId: string
@@ -59,13 +60,70 @@ export interface GlobalSummary {
   readonly onlineHosts: number
   readonly totalHosts: number
   readonly activeSessions: number
-  readonly claudeSessions: number
-  readonly codexSessions: number
-  readonly agySessions: number
-  readonly cloudflareSessions: number
+  /** Active sessions by the harness each row reported, by name: the labels are the data's, never the app's. */
+  readonly harnesses: ReadonlyArray<HarnessCount>
   readonly readyAccounts: number
   readonly totalAccounts: number
   readonly alertsCount: number
+}
+
+export interface HarnessCount {
+  readonly harness: string
+  readonly sessions: number
+}
+
+/** Which sessions the table shows: one host's, one harness's, or `ALL` of either. */
+export interface SessionFilters {
+  readonly host: string
+  readonly harness: string
+}
+
+/** The filter value that keeps every row. */
+export const ALL = "all"
+
+/**
+ * What one part of the view draws: `Pending` while its source hasn't delivered a first snapshot or is withheld, so
+ * nothing is known; `Empty` only when a delivered snapshot holds no rows; else its rows.
+ */
+export type Section<A> =
+  | { readonly _tag: "Pending"; readonly title: string }
+  | { readonly _tag: "Empty"; readonly title: string }
+  | { readonly _tag: "Rows"; readonly rows: ReadonlyArray<A> }
+
+/** The words a part shows for each state that isn't rows. */
+export interface SectionWords {
+  readonly loading: string
+  readonly unavailable: string
+  readonly empty: string
+}
+
+/** `source` as the view draws it: only a delivered snapshot may say there is nothing. */
+export function sectionOf<A, B>(
+  source: Rows<A>,
+  words: SectionWords,
+  project: (rows: ReadonlyArray<A>) => ReadonlyArray<B>,
+): Section<B> {
+  if (source._tag === "Loading") return { _tag: "Pending", title: words.loading }
+  if (source._tag === "Refused") return { _tag: "Pending", title: words.unavailable }
+  const rows = project(source.rows)
+  return rows.length === 0 ? { _tag: "Empty", title: words.empty } : { _tag: "Rows", rows }
+}
+
+/** The rows of a part, none unless it has some. */
+export const rowsOf = <A>(section: Section<A>): ReadonlyArray<A> => section._tag === "Rows" ? section.rows : []
+
+/** The harnesses the sessions reported, each once, by name. */
+export function harnessesOf(sessions: ReadonlyArray<SessionRow>): ReadonlyArray<HarnessCount> {
+  const counts = new Map<string, number>()
+  for (const session of sessions) counts.set(session.harness, (counts.get(session.harness) ?? 0) + 1)
+  return [...counts].map(([harness, count]) => ({ harness, sessions: count })).sort((a, b) => a.harness.localeCompare(b.harness))
+}
+
+/** The sessions `filters` keeps. */
+export function filterSessions(sessions: ReadonlyArray<SessionRow>, filters: SessionFilters): ReadonlyArray<SessionRow> {
+  return sessions.filter((s) =>
+    (filters.host === ALL || s.nodeId === filters.host) && (filters.harness === ALL || s.harness === filters.harness)
+  )
 }
 
 function parseMs(iso: string | null | undefined): number | null {
@@ -196,10 +254,6 @@ export function summarizeGlobal(
   accounts: ReadonlyArray<AccountRow>
 ): GlobalSummary {
   const onlineHosts = hosts.filter((h) => h.stateWord !== "Offline").length
-  const claudeSessions = sessions.filter((s) => s.harness === "claude").length
-  const codexSessions = sessions.filter((s) => s.harness === "codex").length
-  const agySessions = sessions.filter((s) => s.harness === "agy-cli" || s.harness === "agy-ide").length
-  const cloudflareSessions = sessions.filter((s) => s.harness === "cfbox" || s.harness === "cf-sandbox").length
   const readyAccounts = accounts.filter((a) => a.tone === "ok").length
   const alertsCount =
     hosts.filter((h) => h.tone === "bad" || h.diskLow).length +
@@ -209,12 +263,22 @@ export function summarizeGlobal(
     onlineHosts,
     totalHosts: hosts.length,
     activeSessions: sessions.length,
-    claudeSessions,
-    codexSessions,
-    agySessions,
-    cloudflareSessions,
+    harnesses: harnessesOf(sessions),
     readyAccounts,
     totalAccounts: accounts.length,
     alertsCount,
   }
+}
+
+/**
+ * The counts line, only once every source delivered a snapshot: a count over rows still loading or withheld would
+ * read as hosts and sessions gone (Astra-D4-031).
+ */
+export function summaryOfGlobal(
+  hosts: Section<HostRow>,
+  sessions: Section<SessionRow>,
+  accounts: Section<AccountRow>,
+): GlobalSummary | undefined {
+  if (hosts._tag === "Pending" || sessions._tag === "Pending" || accounts._tag === "Pending") return undefined
+  return summarizeGlobal(rowsOf(hosts), rowsOf(sessions), rowsOf(accounts))
 }

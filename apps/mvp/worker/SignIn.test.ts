@@ -620,10 +620,11 @@ describe("the callback", () => {
 const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
 
 describe("roles", () => {
-  test("each GitHub permission maps to the role with no more power over the repository (decision 0007 + roninjin10 admin policy)", async () => {
+  test("each GitHub permission maps to the role with no more power over the repository (decision 0007)", async () => {
     const cases = [
-      ["admin", "member"],
-      ["maintain", "member"],
+      // R1-NEON-D4-001: GitHub's admins and maintainers keep their roles, on an organization's repository too.
+      ["admin", "admin"],
+      ["maintain", "maintainer"],
       ["write", "member"],
       ["triage", "guest"],
       ["read", "guest"],
@@ -636,13 +637,15 @@ describe("roles", () => {
       const { cookies } = await h.signInAs()
       expect(await h.session(cookies), permission).toEqual({ signedIn: true, homeConversationId: expect.any(String), personId: expect.any(String), login: "octocat", role, hostedModel: false, install: "https://github.com/apps/smithers/installations/new", expiresAt: expect.any(Number), deadline: expect.any(Number), session: expect.stringMatching(/^[a-f0-9]{32}$/), serverNow: expect.any(Number) })
     }
-    // Deployment admin roninjin10 holds admin on the deployment repository.
-    const adminGh = scriptedGitHub()
-    adminGh.person = { id: 101, login: "roninjin10" }
-    adminGh.permission = "admin"
-    const adminH = await signInHarness(runtime, { github: adminGh })
-    const { cookies: adminCookies } = await adminH.signInAs()
-    expect(await adminH.session(adminCookies)).toMatchObject({ signedIn: true, login: "roninjin10", role: "admin" })
+  })
+
+  // R1-Astra-D4-004, R1-NEON-D4-001: deployment authority grants no repository role.
+  test.each([["none", null], ["read", "guest"]] as const)("a deployment admin GitHub answers %s for holds %s on the repository", async (permission, role) => {
+    const github = scriptedGitHub()
+    github.permission = permission
+    const h = await signInHarness(runtime, { github, config: { ...configured, DEPLOYMENT_ADMIN_LOGINS: "octocat" } })
+    const { cookies } = await h.signInAs()
+    expect(await h.session(cookies)).toMatchObject({ signedIn: true, login: "octocat", role })
   })
 
   test("reads the role on the configured repository", async () => {
@@ -687,7 +690,6 @@ describe("roles", () => {
   test.each(["write", "admin"] as const)("expired %s preserves identity and retries protected reads during a real failed recheck", async (permission) => {
     const pending: Array<string> = []
     const h = await signInHarness(runtime, { roleChecks: { start: (id) => Effect.sync(() => void pending.push(id)) } })
-    if (permission === "admin") h.github.person = { id: 101, login: "roninjin10" }
     h.github.permission = permission
     const { cookies } = await h.signInAs()
     const [session] = await sessionRows()

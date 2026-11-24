@@ -33,6 +33,7 @@ export effect function world() {
     signingSecret: Redacted.make("fixture-only-signing-secret-32-chars"),
     encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
     github: githubService(revoked),
+    issuedHere: () => succeed(true),
   })
   try HttpServer.serveEffect(effect {
     const request = try HttpServerRequest.HttpServerRequest

@@ -9,7 +9,8 @@
 // Environment: PORT (4747), QUEUE_DIR (./queue), MAINTAINER_SITE_REPO (the repository root),
 // MAINTAINER_SITE_GIFS (~/Desktop/smithers-mvp/gifs), MAINTAINER_SITE_VIDEOS (~/Desktop/smithers-mvp/videos),
 // MAINTAINER_SITE_OUT (~/Desktop/smithers-maintainer).
-import { closeSync, constants, createReadStream, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readlinkSync, readSync, realpathSync, statSync, watch, writeSync } from "node:fs"
+import { closeSync, createReadStream, existsSync, fstatSync, fsyncSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync, watch, writeSync } from "node:fs"
+import { createHash, timingSafeEqual } from "node:crypto"
 import { execFileSync } from "node:child_process"
 import { createServer } from "node:http"
 import { homedir } from "node:os"
@@ -31,25 +32,8 @@ const MAX_FILE = 64 * 1024 * 1024
 // ---------------------------------------------------------------------------------------------------------
 // Files: read-only, inside the allowed roots, never secrets.
 
-const FORBIDDEN_SEGMENTS = new Set([".jj", ".git", "node_modules", ".ssh", ".gnupg", ".aws", ".docker", ".kube"])
-const SECRET_FILE =
-  /^(\.env.*|\.dev\.vars.*|\.npmrc|\.yarnrc.*|\.netrc|\.pypirc|\.htpasswd|\.pgpass|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|credentials(\.[\w-]+)?|.*\.(pem|key|p12|pfx|jks|keystore|tfstate|tfstate\.backup|tfvars|kdbx|gpg|asc|age)|service[-_]?account.*\.json|.*private[-_]?key.*)$/i
-const CODE_EXT = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs", ".md", ".mdx", ".css", ".html", ".swift", ".zig", ".py", ".sql"])
-// Recordings and their chapter lists are named after tests ("auth-token-expires.mp4"), never secret stores.
-const MEDIA_EXT = new Set([".gif", ".png", ".jpg", ".jpeg", ".webp", ".avif", ".svg", ".mp4", ".webm", ".mov", ".m4v"])
-// "secret", "token" or "password" in a file name marks a secret store unless the file is source code, docs or media
-// (packages/secrets/src/Secret.ts is code; secrets.json is not).
-const isSecretFileName = (name) =>
-  /secret|token|passw(or)?d/i.test(name) && !CODE_EXT.has(extname(name).toLowerCase()) && !MEDIA_EXT.has(extname(name).toLowerCase()) && !/\.chapters\.json$/i.test(name)
-
-export function refusalFor(segments) {
-  for (const [index, segment] of segments.entries()) {
-    if (FORBIDDEN_SEGMENTS.has(segment)) return `refused: ${segment}`
-    if (SECRET_FILE.test(segment) || (index === segments.length - 1 && isSecretFileName(segment))) return "refused: secret name"
-  }
-  return null
-}
-
+import { resolveFile, refusalFor } from "./checked-file.mjs"
+export { resolveFile, refusalFor }
 const TYPES = {
   ".gif": "image/gif",
   ".png": "image/png",
@@ -74,71 +58,6 @@ const TYPES = {
   ".pdf": "application/pdf",
 }
 const isBinary = (buffer) => buffer.subarray(0, 8192).includes(0)
-
-// Opens a checked file under the roots, or returns { status, error }. The caller owns the returned fd.
-export function resolveFile(requested, roots) {
-  if (typeof requested !== "string" || requested === "" || requested.includes("\0")) return { status: 400, error: "path required" }
-  if (process.platform !== "linux" && process.platform !== "darwin")
-    return { status: 403, error: "refused: secure file reads unavailable" }
-  // Snapshot lazy root paths once for this authorization.
-  roots = roots.map(({ path, real }) => ({ path, real }))
-  const expanded = requested.startsWith("~/") ? join(homedir(), requested.slice(2)) : requested
-  const candidates = isAbsolute(expanded) ? [resolve(expanded)] : [resolve(roots[0].path, expanded)]
-  const target = candidates[0]
-  // The path as asked must already sit inside a root, before symlinks are followed.
-  const asked = roots.find((root) => target === root.path || target.startsWith(root.path + sep) || target === root.real || target.startsWith(root.real + sep))
-  if (!asked) return { status: 403, error: "refused: outside the allowed roots" }
-  const askedBase = target.startsWith(asked.real + sep) || target === asked.real ? asked.real : asked.path
-  const askedRefusal = refusalFor(relative(askedBase, target).split(sep))
-  if (askedRefusal) return { status: 403, error: askedRefusal }
-  let real
-  try {
-    real = realpathSync(target)
-  } catch {
-    return { status: 404, error: "not found" }
-  }
-  // Symlinks are followed, so the real file must sit inside a root too.
-  const root = roots.find((root) => real === root.real || real.startsWith(root.real + sep))
-  if (!root) return { status: 403, error: "refused: outside the allowed roots" }
-  const refusal = refusalFor(relative(root.real, real).split(sep))
-  if (refusal) return { status: 403, error: refusal }
-  let fd
-  try {
-    // Do not follow a symlink swapped in after realpath, including before the identity check.
-    const checked = lstatSync(real)
-    if (checked.isSymbolicLink()) return { status: 403, error: "refused: file changed" }
-    if (!checked.isFile()) return { status: 404, error: "not a file" }
-    if (checked.size > MAX_FILE) return { status: 413, error: "too large" }
-    // Darwin's O_NOFOLLOW_ANY rejects a symlink in any component of the canonical path, including
-    // the final component; combining it with O_NOFOLLOW returns EINVAL on macOS.
-    // Node does not expose O_NOFOLLOW_ANY; its value is defined in Darwin's sys/fcntl.h.
-    const noFollow = process.platform === "darwin" ? 0x20000000 : constants.O_NOFOLLOW
-    fd = openSync(real, constants.O_RDONLY | noFollow | constants.O_NONBLOCK)
-    const stat = fstatSync(fd)
-    if (!stat.isFile() || stat.dev !== checked.dev || stat.ino !== checked.ino)
-      return { status: 403, error: "refused: file changed" }
-    if (stat.size > MAX_FILE) return { status: 413, error: "too large" }
-    if (process.platform === "linux") {
-      // Inspect the held inode's kernel path, not a pathname that an ancestor swap can redirect.
-      const opened = readlinkSync(`/proc/self/fd/${fd}`)
-      if (!isAbsolute(opened) || opened.endsWith(" (deleted)"))
-        return { status: 403, error: "refused: file changed" }
-      const openedRoot = roots.find((root) => opened === root.real || opened.startsWith(root.real + sep))
-      if (!openedRoot) return { status: 403, error: "refused: outside the allowed roots" }
-      const openedRefusal = refusalFor(relative(openedRoot.real, opened).split(sep))
-      if (openedRefusal) return { status: 403, error: openedRefusal }
-    }
-    const found = { real, fd, stat, size: stat.size }
-    fd = undefined
-    return found
-  } catch (error) {
-    return error.code === "ENOENT" || error.code === "ENOTDIR"
-      ? { status: 404, error: "not found" }
-      : { status: 403, error: "refused: file changed or unreadable" }
-  } finally {
-    if (fd !== undefined) closeSync(fd)
-  }
-}
 
 // ---------------------------------------------------------------------------------------------------------
 // The queue: queue.json as the curator wrote it, minus what answers.jsonl hides.
@@ -176,7 +95,7 @@ export function replay(answers) {
 // An answered item stays hidden until the curator re-adds it (a newer addedAt); `later` hides it for 24 hours.
 export function isHidden(item, stacks, now) {
   const top = stacks.get(item.id)?.at(-1)
-  if (!top) return false
+  if (!top || (top.digest && top.digest !== item.digest)) return false
   const at = Date.parse(top.at)
   // Explicit generations survive clock skew; historical records use their save time.
   if (item.addedAt && (top.addedAt ? item.addedAt !== top.addedAt : Date.parse(item.addedAt) > at)) return false
@@ -207,10 +126,24 @@ let typescript = null
 const loadTypeScript = () => (typescript ??= import("typescript").then((module) => module.default ?? module))
 const OUTLINE_CACHE = 64
 
+const hash = (value) => createHash("sha256").update(value).digest("hex")
+const assetPolicy = { "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'", "X-Content-Type-Options": "nosniff" }
+const assetType = (file) => {
+  const ext = extname(file).toLowerCase()
+  if ([".html", ".htm", ".css", ".json", ".gif", ".png", ".jpg", ".jpeg", ".avif", ".webp", ".mp4", ".webm", ".mov", ".m4v"].includes(ext)) return TYPES[ext]
+  return "text/plain; charset=utf-8"
+}
+
 const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 
 export function startServer(options = {}) {
   const port = options.port ?? Number(process.env.PORT ?? 4747)
+  const writeToken = options.writeToken ?? process.env.MAINTAINER_WRITE_TOKEN
+  const authorized = (request) => {
+    const header = request.headers.authorization ?? ""
+    const expected = "Basic " + Buffer.from("maintainer:" + writeToken).toString("base64")
+    return Boolean(writeToken) && [expected, "Bearer " + writeToken].some((value) => timingSafeEqual(Buffer.from(hash(header)), Buffer.from(hash(value))))
+  }
   const host = "127.0.0.1"
   const repo = resolve(options.repo ?? process.env.MAINTAINER_SITE_REPO ?? resolve(here, "../.."))
   const gifs = resolve(options.gifs ?? process.env.MAINTAINER_SITE_GIFS ?? join(homedir(), "Desktop/smithers-mvp/gifs"))
@@ -270,6 +203,7 @@ export function startServer(options = {}) {
     let coverage
     try { coverage = JSON.parse(readFileSync(coverageFile, "utf8")).slices?.[id] } catch {}
     const commit = item?.commit || coverage?.commit
+    if (url.searchParams.has("expectedCommit") && (!item || commit !== url.searchParams.get("expectedCommit"))) return { status: 409, error: "review changed" }
     if (!commit) return null
     const entries = item?.files ?? coverage?.files ?? []
     if (typeof path !== "string" || !entries.some((file) => (typeof file === "string" ? file.replace(/:\d+(?:-\d+)?$/, "") : file.path) === path))
@@ -293,8 +227,9 @@ export function startServer(options = {}) {
     const answers = readAnswers(answersFile)
     const { stacks, last } = replay(answers)
     const at = now()
-    const visible = queue.items.filter((item) => !isHidden(item, stacks, at))
-    return { queue, answers, stacks, last, visible, at }
+    const reviewed = queue.items.map((item) => reviewedItem(item, answers))
+    const visible = reviewed.filter((item) => !isHidden(item, stacks, at))
+    return { queue: { ...queue, items: reviewed }, answers, stacks, last, visible, at }
   }
 
   // Outlines by real path and the checked descriptor's identity and change times.
@@ -400,11 +335,11 @@ export function startServer(options = {}) {
     send(response, 200, body, type, extraHeaders)
   }
   // A file from the allowed roots, streamed, with byte ranges so a video can seek.
-  const sendRange = (request, response, { real, fd, size }, extraHeaders) => {
+  const sendRange = (request, response, { real, fd, size, bytes }, extraHeaders) => {
     let streaming = false
     try {
       const ext = extname(real).toLowerCase()
-      let type = TYPES[ext]
+      let type = extraHeaders?.["Content-Type"] ?? TYPES[ext]
       if (!type) {
         const head = Buffer.alloc(Math.min(size, 8192))
         readSync(fd, head, 0, head.length, 0)
@@ -433,6 +368,7 @@ export function startServer(options = {}) {
       headers["Content-Length"] = size === 0 ? 0 : end - start + 1
       response.writeHead(status, headers)
       if (request.method === "HEAD" || size === 0) return response.end()
+      if (bytes) return response.end(bytes.subarray(start, end + 1))
       const stream = createReadStream(null, { fd, start, end })
       streaming = true
       stream.on("error", () => response.destroy())
@@ -440,7 +376,7 @@ export function startServer(options = {}) {
       stream.pipe(response)
     } finally {
       // A stream owns and closes its descriptor. All responses without one close it here.
-      if (!streaming) closeSync(fd)
+      if (!streaming && fd !== undefined) closeSync(fd)
     }
   }
   const staticUnder = (response, base, path) => {
@@ -453,9 +389,16 @@ export function startServer(options = {}) {
     } catch {
       return send(response, 404, { error: "not found" })
     }
-    const realBase = realpathSync(base)
-    if (real !== realBase && !real.startsWith(realBase + sep)) return send(response, 403, { error: "refused" })
-    return sendFile(response, real)
+    const root = rootOf(base)
+    const found = resolveFile(real, [root])
+    if (found.error) return send(response, found.status, { error: found.error })
+    try {
+      const name = relative(root.real, found.real)
+      const trusted = ["index.html", "assets/site.js", "assets/data.js", "assets/site.css"].includes(name)
+        && relative(base, target) === name
+      const body = readFileSync(found.fd)
+      return trusted ? send(response, 200, body, TYPES[extname(name)]) : send(response, 200, body, assetType(name), assetPolicy)
+    } finally { closeSync(found.fd) }
   }
 
   const readBody = (request) =>
@@ -496,7 +439,44 @@ export function startServer(options = {}) {
   }
 
   // An item as the page receives it: a verify item carries the answer it verifies.
-  const queued = (item, answers) => (item.kind === "verify" ? { ...item, verifies: verifies(item.answerRef, answers) } : item)
+  const withAnswer = (item, answers) => (item.kind === "verify" ? { ...item, verifies: verifies(item.answerRef, answers) } : item)
+
+  const fingerprints = new Map()
+  function reviewedItem(raw, answers) {
+    const item = { ...withAnswer(raw, answers) }
+    let coverage
+    if (!item.commit && item.files?.length) {
+      try { coverage = JSON.parse(readFileSync(coverageFile, "utf8")).slices?.[item.id] } catch {}
+      if (coverage?.commit) item.commit = coverage.commit
+    }
+    const assets = Object.create(null)
+    const capture = (path) => {
+      if (typeof path !== "string" || Object.hasOwn(assets, path)) return
+      const found = resolveFile(path, roots)
+      if (found.error) { assets[path] = null; return }
+      try {
+        const { dev, ino, size, ctimeNs } = fstatSync(found.fd, { bigint: true })
+        const key = [dev, ino, size, ctimeNs].join(":")
+        let digest = fingerprints.get(key)
+        if (!digest) {
+          digest = hash(readFileSync(found.fd))
+          if (fingerprints.size >= 2048) fingerprints.delete(fingerprints.keys().next().value)
+          fingerprints.set(key, digest)
+        }
+        assets[path] = digest
+      } finally { closeSync(found.fd) }
+    }
+    if (!item.commit) for (const file of item.files ?? []) capture(typeof file === "string" ? file.replace(/:\d+(?:-\d+)?$/, "") : file.path)
+    function captureMedia(value) {
+      if (Array.isArray(value)) return value.forEach(captureMedia)
+      if (!value || typeof value !== "object") return
+      capture(value.path)
+      capture(value.chapters)
+      captureMedia(value.media)
+    }
+    for (const value of [item.media, item.before, item.after, item.links]) captureMedia(value)
+    return { ...item, assets, digest: hash(JSON.stringify([item, assets])) }
+  }
 
   const answer = async (request, response) => {
     if (!/^application\/json\b/i.test(request.headers["content-type"] ?? "")) return send(response, 415, { error: "send application/json" })
@@ -520,11 +500,12 @@ export function startServer(options = {}) {
     if (action === "undo" && !current.stacks.get(itemId)?.length) return send(response, 409, { error: "nothing to undo" })
     const undone = action === "undo" ? current.stacks.get(itemId).at(-1) : null
     // The curator replaced the item after Will opened it: refuse, and send the version now queued.
-    if (item && action !== "undo" && VERSION_FIELDS.some((field) => (input[field] ?? null) !== (item[field] ?? null)))
-      return send(response, 409, { error: "changed since you opened it", item: queued(item, current.answers) })
+    if (action !== "undo" && (!item || cached.error)) return send(response, 409, { error: "item unavailable" })
     // The check and fsynced append run without yielding: another tab or a retry cannot add a second answer.
     if (action !== "undo" && isHidden(item ?? { id: itemId }, current.stacks, current.at))
       return send(response, 409, { error: "already answered" })
+    if (item && action !== "undo" && (input.digest !== item.digest || VERSION_FIELDS.some((field) => (input[field] ?? null) !== (item[field] ?? null))))
+      return send(response, 409, { error: "changed since you opened it", item })
     const record = {
       itemId,
       at: new Date(now()).toISOString(),
@@ -532,6 +513,8 @@ export function startServer(options = {}) {
       ...(action === "option" ? { option: input.option } : {}),
       ...(input.scope === "all" && action !== "undo" ? { scope: "all", kind: item?.kind ?? (typeof input.kind === "string" ? input.kind.slice(0, 40) : null) } : {}),
       text,
+      digest: undone?.digest ?? item?.digest,
+      commit: undone?.commit ?? item?.commit ?? null,
       revision: item?.revision ?? (typeof input.revision === "string" ? input.revision : undone?.revision ?? null),
       ...(item?.addedAt ? { addedAt: item.addedAt } : {}),
       title: item?.title ?? (typeof input.title === "string" ? input.title.slice(0, 200) : undone?.title ?? ""),
@@ -547,15 +530,18 @@ export function startServer(options = {}) {
     const path = url.pathname
     if (request.method === "POST") {
       const origin = request.headers.origin
-      if (origin !== undefined && !allowedHosts().has(origin.replace(/^http:\/\//, "").toLowerCase())) return send(response, 403, { error: "refused: origin" })
-      if (path === "/api/answer") return answer(request, response)
+      if (origin !== undefined && origin !== url.origin) return send(response, 403, { error: "refused: origin" })
+      if (path === "/api/answer") {
+        if (!authorized(request) || request.headers["x-maintainer-write"] !== "1") return send(response, 403, { error: "maintainer credentials required" })
+        return answer(request, response)
+      }
       return send(response, 404, { error: "not found" })
     }
     if (request.method !== "GET" && request.method !== "HEAD") return send(response, 405, { error: "method not allowed" })
 
     if (path === "/api/queue") {
       const { queue, visible, last, answers } = state()
-      const items = visible.map((item) => queued(item, answers))
+      const items = visible
       return send(response, 200, { version: queue.version, generatedAt: queue.generatedAt, missing: Boolean(queue.missing), error: cached.error, items, last: last ? { itemId: last.itemId, title: last.title ?? "", action: last.action, at: last.at } : null })
     }
     if (path === "/api/stats") return send(response, 200, stats())
@@ -565,6 +551,28 @@ export function startServer(options = {}) {
       listeners.add(response)
       request.on("close", () => listeners.delete(response))
       return
+    }
+    if (url.searchParams.has("digest") && ["/api/file", "/api/outline", "/api/markdown"].includes(path)) {
+      const id = url.searchParams.get("slice")
+      const raw = readQueue().items.find((entry) => entry.id === id)
+      const item = raw && reviewedItem(raw, readAnswers(answersFile))
+      if (!item || cached.error || item.digest !== url.searchParams.get("digest")) return send(response, 409, { error: "review changed" })
+      const requested = url.searchParams.get("path")
+      const recordedCode = item.commit && item.files?.some((file) => (typeof file === "string" ? file.replace(/:\d+(?:-\d+)?$/, "") : file.path) === requested)
+      if (!recordedCode && Object.hasOwn(item.assets, requested)) {
+        const found = resolveFile(requested, roots)
+        if (found.error) return send(response, found.status, { error: found.error })
+        let bytes
+        try { bytes = readFileSync(found.fd) } finally { closeSync(found.fd) }
+        if (hash(bytes) !== item.assets[requested]) return send(response, 409, { error: "asset changed" })
+        if (path === "/api/outline") return send(response, 200, OUTLINE_EXT.has(extname(requested).toLowerCase())
+          ? { supported: true, ...outlineOf(await loadTypeScript(), bytes.toString("utf8"), requested) } : { supported: false })
+        if (path === "/api/markdown") return send(response, 200, renderDocument(found.real, roots[0].real, bytes))
+        return sendRange(request, response, { real: found.real, bytes, size: bytes.length }, { ...assetPolicy, "Content-Type": assetType(found.real) })
+      }
+      if (!item.commit || path === "/api/markdown") return send(response, 403, { error: "file outside review" })
+      if (!/^[a-f0-9]{40,64}$/i.test(item.commit)) return send(response, 409, { error: "immutable commit required" })
+      url.searchParams.set("expectedCommit", item.commit)
     }
     if (path === "/api/file" || path.startsWith("/api/file/")) {
       let requested = url.searchParams.get("path")
@@ -578,13 +586,12 @@ export function startServer(options = {}) {
       const recorded = recordedFile(url, requested)
       if (recorded?.error) return send(response, recorded.status, { error: recorded.error })
       if (recorded) {
-        response.writeHead(200, { "Content-Type": TYPES[extname(recorded.path)] ?? "text/plain; charset=utf-8", "Cache-Control": "no-store", "Content-Security-Policy": "sandbox allow-scripts" })
-        return response.end(recorded.body)
+        return send(response, 200, recorded.body, assetType(recorded.path), assetPolicy)
       }
       const found = resolveFile(requested, roots)
       if (found.error) return send(response, found.status, { error: found.error })
       // A design renders in a sandboxed frame; opened directly, the page is sandboxed too.
-      return sendRange(request, response, found, { "Content-Security-Policy": "sandbox allow-scripts" })
+      return sendRange(request, response, found, { ...assetPolicy, "Content-Type": assetType(found.real) })
     }
     if (path === "/api/markdown") {
       const found = resolveFile(url.searchParams.get("path"), roots)
@@ -609,6 +616,7 @@ export function startServer(options = {}) {
         closeSync(found.fd)
       }
     }
+    if ((path === "/queue" || path === "/queue/") && writeToken && !authorized(request)) return send(response, 401, "Sign in to review", "text/plain", { "WWW-Authenticate": 'Basic realm="Maintainer queue"' })
     if (path === "/queue" || path === "/queue/") return sendFile(response, join(clientDir, "queue.html"))
     if (path.startsWith("/queue/")) {
       const name = path.slice("/queue/".length)
@@ -666,7 +674,7 @@ export function renderDocument(file, repoReal, source = file) {
     const inRepo = relative(repoReal, absolute)
     return { path: inRepo && !inRepo.startsWith("..") && !isAbsolute(inRepo) ? inRepo.split(sep).join("/") : absolute, anchor: hash < 0 ? "" : href.slice(hash) }
   }
-  const { html, title } = renderMarkdown(readFileSync(source, "utf8"), {
+  const { html, title } = renderMarkdown(Buffer.isBuffer(source) ? source.toString("utf8") : readFileSync(source, "utf8"), {
     link(href) {
       if (href.startsWith("#")) return { href }
       if (external(href)) {

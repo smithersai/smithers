@@ -83,6 +83,7 @@ const host = Host.make({
   environment: available.environment,
   available,
   approvals,
+  explicitApprovals: Approvals.explicitAll(process.env, values.approve),
   // Replay is an explicit offline fixture; its claims still receive evidence checks.
   ...(seat.startsWith("replay:") ? { judge: ScriptedJudge.layerAll } : {}),
   ...(box === undefined ? {} : { box: Box.workspace(process.env, box) }),

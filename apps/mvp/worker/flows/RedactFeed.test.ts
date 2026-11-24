@@ -1,7 +1,7 @@
 // `ops/RedactFeed` on the Node host's durable engine over the compose Postgres: only after its barrier, every phase,
 // a role restored while a batch waits on its lock, the engine's retry of a failed batch, a resume by the next
-// incarnation after a crash, and each alarm's start of each open barrier's pass.
-import * as Cloudflare from "@alchemy.run/cloudflare"
+// incarnation after a crash, and the durable start: a confirmation starts the pass and its host finishes it with no
+// request after, and the host's alarm starts a barrier whose start was never acknowledged.
 import { TestSchemas } from "@smthrs/database"
 import { Action, Interpreter } from "@smthrs/flow"
 import { Effect, Exit, Fiber, Layer, Metric } from "effect"
@@ -11,7 +11,6 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import * as FeedLocks from "../FeedLocks.ts"
 import * as Flows from "../Flows.ts"
-import * as RequestBackground from "../RequestBackground.ts"
 import { incarnation, runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as RedactFeed from "./RedactFeed.ts"
@@ -95,23 +94,34 @@ test("a role restored while the denied batch waits on its lock keeps the person'
     `INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('github/acme/widgets', 'restored', NULL)`
   )
   await barrier("b3")
-  // A read that restores her Member role holds her feed lock, as `remember` does, and commits a moment later.
+  // A read that restores her Member role holds her feed lock, as `remember` does, and commits once the batch waits.
   let onLocked!: () => void
   const locked = new Promise<void>((resolve) => { onLocked = resolve })
+  let commit!: () => void
+  const waited = new Promise<void>((resolve) => { commit = resolve })
   const restoring = runtime.runPromise(
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql.withTransaction(Effect.gen(function*() {
         yield* FeedLocks.lock(sql, [{ repoId: "github/acme/widgets", personId: "restored" }])
         yield* sql`UPDATE github_repo_roles SET role = 'member', checked_at = now() WHERE person_id = 'restored'`
         onLocked()
-        yield* Effect.sleep(300)
+        yield* Effect.promise(() => waited)
       })))
   )
   await Promise.race([locked, restoring])
   const db = await database()
-  const denied = await Effect.runPromise(
+  const batching = Effect.runPromise(
     RedactFeed.observedBatch({ ...RedactFeed.startOf("b3"), phase: "denied" }, db, 10)
   )
+  // The batch is queued behind her lock before the read commits.
+  await expect.poll(
+    async () =>
+      ((await query(`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`))[0]!
+        .n as number) > 0,
+    { timeout: 20_000 }
+  ).toBe(true)
+  commit()
+  const denied = await batching
   await restoring
   expect(denied).toMatchObject({ phase: "denied", recipient: "restored" })
   expect(await query(`SELECT recipient FROM notifications`)).toEqual([{ recipient: "restored" }])
@@ -284,77 +294,50 @@ test("a last round whose completion committed but whose receipt was lost ends th
   expect(await query(`SELECT completed_at FROM feed_barriers WHERE id = 'b9'`)).toEqual([completed])
 }, 120_000)
 
-/** A starter that records each start, as `ExecutionHost` takes one: a start of a held execution is accepted. */
-const accepting = () => {
-  const started: Array<string> = []
-  return {
-    started,
-    starter: Flows.FlowStarter.of({
-      start: (_flow, { executionId }) => Effect.sync(() => void started.push(executionId))
-    })
-  }
-}
-
-test("a confirmed barrier is launched once by the first look, from however many isolates; a look a minute later starts nothing", async () => {
-  await barrier("b6")
-  await barrier("b7")
-  await query(`UPDATE feed_barriers SET completed_at = now() WHERE id = 'b7'`)
-  const db = await database()
-  const { started, starter } = accepting()
-  const registry: Metric.MetricRegistry = new Map()
-  const count = (outcome: string) =>
-    Effect.runSync(
-      Metric.value(Metric.withAttributes(RedactFeed.launches, { outcome })).pipe(
-        Effect.provideService(Metric.MetricRegistry, registry)
-      )
-    ).count
-  // Three isolates' first looks at once, as three requests in three isolates make them.
-  await Promise.all([1, 2, 3].map(() =>
-    Effect.runPromise(
-      Effect.flatMap(RedactFeed.launcher, (look) => look).pipe(
-        Effect.provideService(Flows.FlowStarter, starter),
-        Effect.provide(db),
-        Effect.provideService(Metric.MetricRegistry, registry)
-      )
-    )
-  ))
-  expect(started).toEqual([RedactFeed.executionIdOf("b6")])
-  expect(count("launched")).toBe(1)
-  // Later looks find it launched and moving: no start, so a host never wakes a pass that is running.
-  await Effect.runPromise(RedactFeed.launch.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(db)))
-  expect(started).toHaveLength(1)
-})
-
-test("through ExecutionHost: the launched pass is held; a stalled one is woken, counted as woken, not launched", async () => {
-  await barrier("b10")
-  const db = await database()
-  // The host's engine on a schema of its own, dropped afterwards.
+/**
+ * Production's execution hosts over the compose Postgres: one Durable Object per execution, each with its own storage
+ * and alarm, the router worker/Executions.ts composes, and the starter Executions.starter hands ChatApi. `fire` is the
+ * platform firing every armed alarm once; nothing else drives a pass.
+ */
+const hosts = async (db: Awaited<ReturnType<typeof database>>) => {
   const url = (await runtime.runPromise(TestDatabase.serverUrl)).toString()
   const engineSchema = TestSchemas.schemaName("flows")
   onTestFinished(() => query(`DROP SCHEMA IF EXISTS "${engineSchema}" CASCADE`).then(() => undefined))
-  const intents: Array<string> = []
-  const object = new Map<string, unknown>()
-  let alarm: number | null = null
-  const host = ExecutionHost.make({
-    get: <A>(key: string) => Effect.sync(() => structuredClone(object.get(key)) as A | undefined),
-    put: (key, value) => Effect.sync(() => void object.set(key, structuredClone(value))),
-    delete: (key) => Effect.sync(() => object.delete(key)),
-    setAlarm: (at) => Effect.sync(() => void (alarm = at)),
-    deleteAlarm: () => Effect.sync(() => void (alarm = null))
-  }, {
-    hostId: "redact-feed-object",
-    database: ExecutionHost.database(url, engineSchema),
-    flows: { flows: [RedactFeed.RedactFeed], registration: RedactFeed.registration(db) },
-    router: { start: () => Effect.void, wake: () => Effect.void }
-  })
-  // The production starter: the execution's own object takes the intent, as Executions.starter hands it.
+  const objects = new Map<string, { readonly host: ReturnType<typeof ExecutionHost.make>; alarm: number | null }>()
+  const objectFor = (executionId: string) => {
+    const existing = objects.get(executionId)
+    if (existing !== undefined) return existing
+    const values = new Map<string, unknown>()
+    const object: { host: ReturnType<typeof ExecutionHost.make>; alarm: number | null } = {
+      host: undefined as never,
+      alarm: null
+    }
+    object.host = ExecutionHost.make({
+      get: <A>(key: string) => Effect.sync(() => structuredClone(values.get(key)) as A | undefined),
+      put: (key, value) => Effect.sync(() => void values.set(key, structuredClone(value))),
+      delete: (key) => Effect.sync(() => values.delete(key)),
+      setAlarm: (at) => Effect.sync(() => void (object.alarm = at)),
+      deleteAlarm: () => Effect.sync(() => void (object.alarm = null))
+    }, {
+      hostId: `object-${executionId}`,
+      database: ExecutionHost.database(url, engineSchema),
+      flows: { flows: [RedactFeed.RedactFeed], registration: RedactFeed.registration(db, 2) },
+      router: {
+        start: RedactFeed.recordingHandoffs((intent) => objectFor(intent.executionId).host.start(intent), db),
+        wake: (executionId) => Effect.asVoid(objectFor(executionId).host.wake())
+      }
+    })
+    objects.set(executionId, object)
+    return object
+  }
+  const starts: Array<string> = []
   const starter = Flows.FlowStarter.of({
     start: (flow, { executionId, payload }) =>
       ExecutionHost.intent(flow, { executionId, payload: payload as never }).pipe(
-        Effect.flatMap((intent) => host.start(intent)),
-        Effect.tap(() => Effect.sync(() => void intents.push(executionId))),
+        Effect.flatMap((intent) => objectFor(executionId).host.start(intent)),
+        Effect.tap(() => Effect.sync(() => void starts.push(executionId))),
         Effect.orDie
-      )
+      ) as Effect.Effect<void>
   })
   const registry: Metric.MetricRegistry = new Map()
   const count = (outcome: string) =>
@@ -363,189 +346,132 @@ test("through ExecutionHost: the launched pass is held; a stalled one is woken, 
         Effect.provideService(Metric.MetricRegistry, registry)
       )
     ).count
-  const look = () =>
-    Effect.runPromise(RedactFeed.launch.pipe(
-      Effect.provideService(Flows.FlowStarter, starter),
+  const run = <A, E>(
+    effect: Effect.Effect<A, E, SqlClient.SqlClient | Flows.FlowStarter>,
+    using: typeof starter = starter
+  ) =>
+    Effect.runPromiseExit(effect.pipe(
+      Effect.provideService(Flows.FlowStarter, using),
       Effect.provide(db),
       Effect.provideService(Metric.MetricRegistry, registry)
     ))
-  await look()
-  const armed = alarm
-  expect(intents).toEqual([RedactFeed.executionIdOf("b10")])
-  expect(armed).not.toBeNull()
-  // Its object holds it, parked until its alarm drives it. Another look leaves it be.
-  await look()
-  expect(intents).toHaveLength(1)
-  // No batch for longer than the stall: the next look wakes it, and the host takes the same intent again.
-  await query(`UPDATE feed_barriers SET launched_at = now() - interval '1 hour' WHERE id = 'b10'`)
-  await look()
-  expect(intents).toEqual([RedactFeed.executionIdOf("b10"), RedactFeed.executionIdOf("b10")])
-  expect([count("launched"), count("woken")]).toEqual([1, 1])
-})
-
-test("a stale pass whose last batch is old is woken once: the claim renews it, from however many isolates", async () => {
-  await barrier("b11")
-  // Launched and moved once, both long ago.
-  await query(
-    `UPDATE feed_barriers SET launched_at = now() - interval '2 hours', progressed_at = now() - interval '1 hour' WHERE id = 'b11'`
-  )
-  const db = await database()
-  const { started, starter } = accepting()
-  const look = () =>
-    Effect.runPromise(RedactFeed.launch.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(db)))
-  await Promise.all([look(), look(), look()])
-  expect(started).toEqual([RedactFeed.executionIdOf("b11")])
-  // The claim renewed it though its last batch is still an hour old: the next looks leave it be.
-  await look()
-  await look()
-  expect(started).toHaveLength(1)
-})
-
-test("a start that fails gives back only its own claim, never a newer claimant's", async () => {
-  await barrier("b12")
-  const db = await database()
-  // While this start fails, another isolate claims the barrier after this claim went stale.
-  const failing = Flows.FlowStarter.of({
-    start: () =>
-      Effect.andThen(
-        Effect.promise(() =>
-          query(
-            `UPDATE feed_barriers SET launched_at = now() + interval '1 minute', launch_token = gen_random_uuid() WHERE id = 'b12'`
-          )
-        ),
-        Effect.fail(new Flows.StartUnavailable({ errorCode: "unreachable" }))
-      )
-  })
-  await Effect.runPromise(RedactFeed.launch.pipe(Effect.provideService(Flows.FlowStarter, failing), Effect.provide(db)))
-  const [row] = await query(`SELECT launched_at > now() AS newer FROM feed_barriers WHERE id = 'b12'`)
-  expect(row).toEqual({ newer: true })
-  // Alone, a failed start gives its claim back, and the next look tries again.
-  await barrier("b13")
-  const plain = Flows.FlowStarter.of({
-    start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "unreachable" }))
-  })
-  await Effect.runPromise(RedactFeed.launch.pipe(Effect.provideService(Flows.FlowStarter, plain), Effect.provide(db)))
-  expect(await query(`SELECT launched_at, launch_token FROM feed_barriers WHERE id = 'b13'`)).toEqual([{
-    launched_at: null,
-    launch_token: null
-  }])
-})
-
-test("the request path hands the look to the request's background: a host that never answers delays no request", async () => {
-  await barrier("b14")
-  const db = await database()
-  const attempted: Array<string> = []
-  const hung = Flows.FlowStarter.of({
-    start: (_flow, { executionId }) => Effect.andThen(Effect.sync(() => void attempted.push(executionId)), Effect.never)
-  })
-  const background: Array<Promise<unknown>> = []
-  // workerd's ctx.waitUntil, as the request's execution context offers it: the effect runs after the response.
-  const context = Cloudflare.WorkerExecutionContext.of({
-    waitUntil: (effect: Effect.Effect<unknown, unknown>) =>
-      Effect.sync(() => void background.push(Effect.runPromise(effect)))
-  } as never)
-  const look = await Effect.runPromise(RedactFeed.launcher)
-  const began = Date.now()
-  await Effect.runPromise(
-    RequestBackground.inBackground(
-      look.pipe(Effect.provideService(Flows.FlowStarter, hung), Effect.provide(db), Effect.ignore)
-    ).pipe(
-      Effect.provideService(Cloudflare.WorkerExecutionContext, context)
-    ) as Effect.Effect<void>
-  )
-  expect(Date.now() - began).toBeLessThan(200)
-  // The look did run, behind the response, and is still waiting on the host.
-  await expect.poll(() => attempted, { timeout: 5_000 }).toEqual([RedactFeed.executionIdOf("b14")])
-  void background
-})
+  const fire = async () => {
+    for (const object of [...objects.values()]) {
+      if (object.alarm !== null) await Effect.runPromise(object.host.alarm() as Effect.Effect<unknown>)
+    }
+  }
+  const completed = async (id: string) =>
+    (await query(`SELECT completed_at IS NOT NULL AS done FROM feed_barriers WHERE id = $1`, id))[0]!.done === true
+  /** The hosts' own alarms, and nothing else, until barrier `id`'s pass records its end. */
+  const drive = async (id: string) => {
+    for (let rounds = 0; rounds < 40 && !(await completed(id)); rounds++) await fire()
+    return completed(id)
+  }
+  return { starts, starter, count, run, drive, objects }
+}
 
 test(
-  "through ExecutionHost: a pass stalled after handing off to its next round's object is woken there, and finishes",
+  "confirming a barrier starts its pass once; with no request and no look after it, the host's alarms finish it",
   async () => {
     await seed()
-    await barrier("b20")
     const db = await database()
-    const url = (await runtime.runPromise(TestDatabase.serverUrl)).toString()
-    const engineSchema = TestSchemas.schemaName("flows")
-    onTestFinished(() => query(`DROP SCHEMA IF EXISTS "${engineSchema}" CASCADE`).then(() => undefined))
-    // One Durable Object per execution, as production names them, each with its own storage and alarm.
-    const objects = new Map<string, { readonly host: ReturnType<typeof ExecutionHost.make>; alarm: number | null }>()
-    const objectFor = (executionId: string) => {
-      const existing = objects.get(executionId)
-      if (existing !== undefined) return existing
-      const values = new Map<string, unknown>()
-      const object: { host: ReturnType<typeof ExecutionHost.make>; alarm: number | null } = {
-        host: undefined as never,
-        alarm: null
-      }
-      object.host = ExecutionHost.make({
-        get: <A>(key: string) => Effect.sync(() => structuredClone(values.get(key)) as A | undefined),
-        put: (key, value) => Effect.sync(() => void values.set(key, structuredClone(value))),
-        delete: (key) => Effect.sync(() => values.delete(key)),
-        setAlarm: (at) => Effect.sync(() => void (object.alarm = at)),
-        deleteAlarm: () => Effect.sync(() => void (object.alarm = null))
-      }, {
-        hostId: `object-${executionId}`,
-        database: ExecutionHost.database(url, engineSchema),
-        flows: { flows: [RedactFeed.RedactFeed], registration: RedactFeed.registration(db, 2) },
-        // The remote host's router, as worker/Executions.ts composes it: a round's handoff starts its own object and is
-        // recorded on the barrier.
-        router: {
-          start: RedactFeed.recordingHandoffs((intent) => objectFor(intent.executionId).host.start(intent), db),
-          wake: (executionId) => Effect.asVoid(objectFor(executionId).host.wake())
-        }
-      })
-      objects.set(executionId, object)
-      return object
-    }
-    const woken: Array<string> = []
-    const starter = Flows.FlowStarter.of({
-      start: (flow, { executionId, payload }) =>
-        ExecutionHost.intent(flow, { executionId, payload: payload as never }).pipe(
-          Effect.flatMap((intent) => objectFor(executionId).host.start(intent)),
-          Effect.tap(() => Effect.sync(() => void woken.push(executionId))),
-          Effect.orDie
-        ) as Effect.Effect<void>
-    })
-    const look = () =>
-      Effect.runPromise(RedactFeed.launch.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(db)))
-    /** Fires every armed alarm once, but `skip`'s. */
-    const fire = async (skip?: string) => {
-      for (const [executionId, object] of [...objects]) {
-        if (object.alarm === null || executionId === skip) continue
-        await Effect.runPromise(object.host.alarm() as Effect.Effect<unknown>)
-      }
-    }
-
-    await look()
+    const { starts, count, run, drive, objects } = await hosts(db)
+    const confirmed = await run(RedactFeed.confirm({ id: "b20", release: "abc123", by: "test" }))
+    expect(Exit.isSuccess(confirmed) && confirmed.value).toEqual({ outcome: "written" })
     const first = RedactFeed.executionIdOf("b20")
-    // The first round runs on its object and hands the next round to that round's own object.
-    await fire()
-    const [, successor] = [...objects.keys()]
-    expect(successor).toBeDefined()
-    expect(successor).not.toBe(first)
-    expect(await query(`SELECT current_execution FROM feed_barriers WHERE id = 'b20'`)).toEqual([{
-      current_execution: successor
-    }])
-    // That object never runs: an alarm lost. Long after, a claim finds the pass stalled.
-    await query(
-      `UPDATE feed_barriers SET launched_at = now() - interval '2 hours', progressed_at = now() - interval '1 hour' WHERE id = 'b20'`
-    )
-    await look()
-    // It woke the round the pass is on, with that round's own intent, not the first round's finished object.
-    expect(woken).toEqual([first, successor])
-    for (let rounds = 0; rounds < 40; rounds++) {
-      const [done] = await query(`SELECT completed_at IS NOT NULL AS done FROM feed_barriers WHERE id = 'b20'`)
-      if (done!.done === true) break
-      await fire()
-    }
-    expect(await query(`SELECT completed_at IS NOT NULL AS done FROM feed_barriers WHERE id = 'b20'`)).toEqual([{
-      done: true
-    }])
+    expect(starts).toEqual([first])
+    expect(count("launched")).toBe(1)
+    expect(await query(`SELECT launched_at IS NOT NULL AS held, launch_token FROM feed_barriers WHERE id = 'b20'`))
+      .toEqual([{ held: true, launch_token: null }])
+    // Nothing but the pass's own objects' alarms from here: each round hands off to the next round's object.
+    expect(await drive("b20")).toBe(true)
+    expect(objects.size).toBeGreaterThan(1)
+    expect(starts).toEqual([first])
+    expect(await shown()).toEqual(EXPECTED)
+    // Confirming it again finds it, and starts nothing.
+    const again = await run(RedactFeed.confirm({ id: "b20", release: "abc123", by: "test" }))
+    expect(Exit.isSuccess(again) && again.value).toEqual({ outcome: "existing" })
+    expect(starts).toEqual([first])
+  },
+  120_000
+)
+
+test(
+  "a confirmation cut off before its start is repeated safely, or started by the host's next alarm, to the same end",
+  async () => {
+    await seed()
+    const db = await database()
+    const { starts, count, run, drive } = await hosts(db)
+    const unreachable = Flows.FlowStarter.of({
+      start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "unreachable" }))
+    })
+    // The row commits; the host never takes the start. The confirmation fails, and nothing claims the barrier.
+    const cut = await run(RedactFeed.confirm({ id: "b21", release: "abc123", by: "test" }), unreachable)
+    expect(Exit.isFailure(cut)).toBe(true)
+    expect(count("not_started")).toBe(1)
+    expect(await query(`SELECT launched_at, launch_token, completed_at FROM feed_barriers WHERE id = 'b21'`)).toEqual([
+      { launched_at: null, launch_token: null, completed_at: null }
+    ])
+    // A host's alarm that can't reach the object either fails nothing and leaves it for the next.
+    const missed = await run(RedactFeed.dispatch, unreachable)
+    expect(Exit.isSuccess(missed) && missed.value).toBe(0)
+    expect(starts).toEqual([])
+    // The next alarm starts it: no request, no stall to wait out.
+    const dispatched = await run(RedactFeed.dispatch)
+    expect(Exit.isSuccess(dispatched) && dispatched.value).toBe(1)
+    const first = RedactFeed.executionIdOf("b21")
+    expect(starts).toEqual([first])
+    // Acknowledged: later alarms start nothing, and a repeated confirmation finds it held.
+    const later = await run(RedactFeed.dispatch)
+    expect(Exit.isSuccess(later) && later.value).toBe(0)
+    const repeated = await run(RedactFeed.confirm({ id: "b21", release: "abc123", by: "test" }))
+    expect(Exit.isSuccess(repeated) && repeated.value).toEqual({ outcome: "existing" })
+    expect(starts).toEqual([first])
+    expect(await drive("b21")).toBe(true)
     expect(await shown()).toEqual(EXPECTED)
   },
   120_000
 )
+
+test(
+  "a start repeated while its host holds the pass is the same pass; a completed barrier is never started",
+  async () => {
+    await seed()
+    await barrier("b22")
+    await barrier("b23")
+    await query(`UPDATE feed_barriers SET completed_at = now() WHERE id = 'b23'`)
+    const db = await database()
+    const { starts, run, drive, objects } = await hosts(db)
+    // Two hosts' alarms that both read the barrier before either acknowledged it: each starts the same execution.
+    expect(Exit.isSuccess(await run(RedactFeed.start("b22")))).toBe(true)
+    const [acknowledged] = await query(`SELECT launched_at FROM feed_barriers WHERE id = 'b22'`)
+    expect(Exit.isSuccess(await run(RedactFeed.start("b22")))).toBe(true)
+    const first = RedactFeed.executionIdOf("b22")
+    expect(starts).toEqual([first, first])
+    expect([...objects.keys()]).toEqual([first])
+    // The acknowledgement stands as first written.
+    expect(await query(`SELECT launched_at FROM feed_barriers WHERE id = 'b22'`)).toEqual([acknowledged])
+    const dispatched = await run(RedactFeed.dispatch)
+    expect(Exit.isSuccess(dispatched) && dispatched.value).toBe(0)
+    expect(await drive("b22")).toBe(true)
+    expect(await shown()).toEqual(EXPECTED)
+    expect(starts).toEqual([first, first])
+  },
+  120_000
+)
+
+test("the execution host's alarm composes the dispatch under `launcher`, and it holds nothing between alarms", async () => {
+  await barrier("b24")
+  const db = await database()
+  const { starts, run } = await hosts(db)
+  const afterAlarm = await Effect.runPromise(RedactFeed.launcher)
+  expect(Exit.isSuccess(await run(afterAlarm))).toBe(true)
+  expect(starts).toEqual([RedactFeed.executionIdOf("b24")])
+  // The very next alarm looks again, with no window to wait out: a barrier confirmed in between is started at once.
+  await barrier("b25")
+  expect(Exit.isSuccess(await run(afterAlarm))).toBe(true)
+  expect(starts).toEqual([RedactFeed.executionIdOf("b24"), RedactFeed.executionIdOf("b25")])
+})
 
 test("a failed successor receipt keeps the predecessor retryable before it settles", async () => {
   await barrier("handoff-fault")

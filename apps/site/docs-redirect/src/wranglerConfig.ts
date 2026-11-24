@@ -12,7 +12,7 @@ export interface WranglerConfig {
   readonly main: string
   readonly compatibility_date: string
   readonly compatibility_flags: ReadonlyArray<string>
-  readonly routes: ReadonlyArray<{ readonly pattern: string; readonly zone_id?: string }>
+  readonly routes: ReadonlyArray<{ readonly pattern: string; readonly zone_name?: string }>
   readonly vars: Readonly<Record<string, string>>
   readonly observability?: { readonly enabled: boolean }
 }

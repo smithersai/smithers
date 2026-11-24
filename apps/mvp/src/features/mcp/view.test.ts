@@ -55,15 +55,15 @@ describe("connectDialogView: what the viewer's role discloses", () => {
     expect(view.actor).toBe("roninjin10 (agent)")
     expect(view.signedIn).toBe(true)
     expect(view.roleLabel).toBe("Maintainer")
-    expect(view.allowed).toContain("Draft TODOs on the stack and post live work links")
+    expect(view.allowed).toContain("Post live work links")
     expect(view.blocked.join("\n")).toContain("Merge pull requests")
     expect(view.blockedActs).toEqual(MCP_BLOCKED_ACTS)
   })
 
-  test("a Member's agent may draft TODOs and open issues, and never commits them", () => {
+  test("a Member's agent may open issues, and never commits them", () => {
     const view = dialog("claude", "member")
     expect(view.roleLabel).toBe("Member")
-    expect(view.allowed).toContain("Draft TODOs on the stack")
+    expect(view.allowed).toContain("Open issues and post comments attributed as your agent")
     expect(view.blocked.join("\n")).toContain("Commit TODOs")
   })
 
@@ -196,7 +196,9 @@ describe("consentView", () => {
     expect(view.roleLabel).toBe("Maintainer")
     expect(view.returnsTo).toBe("127.0.0.1:53682")
     expect(view.blocked.join("\n")).toContain("person-only")
-    expect(view.lifetime).toContain("30 days")
+    expect(view).not.toHaveProperty("lifetime")
+    const writeOnly = consentView(details({ scopes: ["mcp:write"] }))
+    expect(writeOnly.allowed).toEqual(["Open issues and post comments attributed as your agent", "Post live work links"])
     expect(view.summary).toBe("Claude Code · Acting as roninjin10 (agent) · evmts/voltaire · Read + Write · Maintainer")
   })
 
@@ -252,7 +254,7 @@ test("searchOf keeps a query as a query and an empty one empty", () => {
 
 describe("copy", () => {
   test("every client preset has its label", () => {
-    expect(MCP_CLIENTS.map((client) => CLIENT_LABEL[client])).toEqual(["Claude Code", "Codex", "Cursor", "Streamable HTTP", "CLI / Stdio"])
+    expect(MCP_CLIENTS.map((client) => CLIENT_LABEL[client])).toEqual(["Claude Code", "Codex", "Antigravity (agy)", "Cursor", "Streamable HTTP", "CLI / Stdio"])
     expect(connectTitle("evmts", "voltaire")).toBe("Connect your agent to evmts/voltaire")
     expect(revokeLabel("Claude Code")).toBe("Revoke Claude Code")
   })

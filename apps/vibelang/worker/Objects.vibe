@@ -340,7 +340,8 @@ export effect function executionResult(hostId: string, storage: Storage, intent:
 /** The same wiki flow as the mock and agent tools, journaled in the conversation object's store. */
 export effect function openWiki(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, page: string) {
   const executionId = try postExecutionId("wiki")
-  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: OpenWiki._tag }, wikiRegistration).pipe(
+  // An unauthenticated route with a fresh execution id per call: forgotten a day after it settles, as every other is.
+  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: OpenWiki._tag, retention: EXECUTION_RETENTION }, wikiRegistration).pipe(
     Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(Tours, toursOf(sequencer, tourWaker(hostId, storage)))),
   )
   const opened = try Effect.orDie(effect {

@@ -5,10 +5,11 @@
 //
 // Writes ~/Desktop/smithers-maintainer/ (MAINTAINER_SITE_OUT) from the GIFs in ~/Desktop/smithers-mvp/gifs
 // (MAINTAINER_SITE_GIFS) and prints the path to index.html. No dependencies.
-import { closeSync, constants, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { closeSync, realpathSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
-import { basename, dirname, join, posix, resolve, sep } from "node:path"
+import { extname, basename, dirname, join, posix, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { resolveFile } from "./checked-file.mjs"
 import { escapeHtml, renderMarkdown, safeUrl, slugify, splitFrontmatter } from "./markdown.mjs"
 
 const check = process.argv[2] === "--check"
@@ -19,6 +20,25 @@ const repo = resolve(here, "../..")
 const out = resolve(process.env.MAINTAINER_SITE_OUT ?? join(homedir(), "Desktop/smithers-maintainer"))
 const gifSource = resolve(process.env.MAINTAINER_SITE_GIFS ?? join(homedir(), "Desktop/smithers-mvp/gifs"))
 const specDir = join(repo, "apps/mvp/e2e")
+
+function checkedBytes(root, path) {
+  const found = resolveFile(path, [{ path: root, real: realpathSync(root) }])
+  if (found.error) throw new Error(`Rejected build input ${path}: ${found.error}`)
+  try {
+    if (extname(found.real).toLowerCase() !== extname(path).toLowerCase()) throw new Error(`Rejected file type: ${path}`)
+    return readFileSync(found.fd)
+  } finally { closeSync(found.fd) }
+}
+function imageBytes(root, path) {
+  const bytes = checkedBytes(root, path)
+  const hex = bytes.subarray(0, 12).toString("hex")
+  const type = extname(path).toLowerCase()
+  const valid = {
+    ".gif": /^47494638(3761|3961)/, ".png": /^89504e470d0a1a0a/, ".jpg": /^ffd8ff/, ".jpeg": /^ffd8ff/, ".webp": /^52494646.{8}57454250/,
+  }
+  if (!valid[type]?.test(hex)) throw new Error(`Rejected image: ${path}`)
+  return bytes
+}
 
 const toPosix = (path) => path.split(sep).join("/")
 const markdownUnder = (dir) =>
@@ -47,7 +67,7 @@ const invalid = (message) => {
 // ---------------------------------------------------------------------------------------------------------
 // Notes: render once to learn titles, then again with every link resolved.
 
-const raw = new Map(sources.map((path) => [path, readFileSync(join(repo, path), "utf8")]))
+const raw = new Map(sources.map((path) => [path, checkedBytes(repo, path).toString("utf8")]))
 // Front matter (`---` key: value lines) becomes the note's properties; the Markdown after it is the body.
 const front = new Map(sources.map((path) => [path, splitFrontmatter(raw.get(path))]))
 for (const path of selected) for (const error of front.get(path).errors) invalid(`front matter in ${path}: ${error}`)
@@ -105,7 +125,7 @@ const resolverFor = (from) => {
         invalid(`missing image in ${from}: ${src}`)
         return null
       }
-      copiedFiles.set(target, join(repo, target))
+      copiedFiles.set(target, imageBytes(repo, target))
       return { href: `files/${encodeURI(target)}` }
     },
     wikilink(name) {
@@ -296,7 +316,7 @@ const specs = existsSync(specDir)
       .sort()
       .map((file) => {
         const name = file.replace(/\.spec\.ts$/, "")
-        const source = readFileSync(join(specDir, file), "utf8")
+        const source = checkedBytes(repo, join(specDir, file)).toString("utf8")
         const tests = []
         for (const match of source.matchAll(/\btest(?:\.(?:only|skip|fixme|fail|slow))?\(\s*(["'`])((?:\\.|(?!\1)[^\\])*)\1/g)) {
           const title = unquote(match[2])
@@ -308,13 +328,6 @@ const specs = existsSync(specDir)
 const specNames = specs.map((spec) => spec.name).sort((a, b) => b.length - a.length)
 const testsByFlow = new Map(specs.flatMap((spec) => spec.tests.map((test) => [test.flow, { ...test, spec: spec.name }])))
 
-const gifSize = (file) => {
-  const header = Buffer.alloc(10)
-  const fd = openSync(file, "r")
-  readSync(fd, header, 0, 10, 0)
-  closeSync(fd)
-  return header.toString("latin1", 0, 3) === "GIF" ? { width: header.readUInt16LE(6), height: header.readUInt16LE(8) } : { width: 0, height: 0 }
-}
 const gifs = existsSync(gifSource) ? readdirSync(gifSource).filter((file) => file.toLowerCase().endsWith(".gif")) : []
 if (gifs.length === 0) warnings.push(`no GIFs in ${gifSource}`)
 
@@ -327,8 +340,9 @@ const flows = gifs.map((file) => {
   const test = testsByFlow.get(name)
   const spec = test?.spec ?? specNames.find((spec) => name.startsWith(`${spec}-`)) ?? "other"
   if (!test) warnings.push(`no test matches ${file}`)
-  const { width, height } = gifSize(join(gifSource, file))
-  const bytes = statSync(join(gifSource, file)).size
+  const gif = imageBytes(gifSource, file)
+  const width = gif.readUInt16LE(6), height = gif.readUInt16LE(8)
+  const bytes = gif.length
   return {
     name,
     spec,
@@ -397,12 +411,12 @@ const site = {
 for (const owned of ["index.html", "assets", "gifs", "files"]) rmSync(join(out, owned), { recursive: true, force: true })
 mkdirSync(join(out, "assets"), { recursive: true })
 mkdirSync(join(out, "gifs"), { recursive: true })
-for (const file of gifs) copyFileSync(join(gifSource, file), join(out, "gifs", file), constants.COPYFILE_FICLONE)
+for (const file of gifs) writeFileSync(join(out, "gifs", file), imageBytes(gifSource, file))
 for (const [target, file] of copiedFiles) {
   mkdirSync(dirname(join(out, "files", target)), { recursive: true })
-  copyFileSync(file, join(out, "files", target), constants.COPYFILE_FICLONE)
+  writeFileSync(join(out, "files", target), file)
 }
-for (const asset of ["site.css", "site.js"]) copyFileSync(join(here, "client", asset), join(out, "assets", asset))
+for (const asset of ["site.css", "site.js"]) writeFileSync(join(out, "assets", asset), checkedBytes(repo, join(here, "client", asset)))
 writeFileSync(join(out, "assets", "data.js"), `window.SITE = ${JSON.stringify(site)};\n`)
 
 const icon =

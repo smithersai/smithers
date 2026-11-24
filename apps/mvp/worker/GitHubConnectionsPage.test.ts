@@ -105,3 +105,17 @@ run("says Retry when the connection object is unavailable, and refuses other met
   expect([down.status, posted.status, put.status]).toEqual([503, 503, 405])
   expect(down.text).toContain("Retry")
 }))
+run("refuses a form larger than its one field (413), declared or streamed, and disconnects nothing", Effect.gen(function*() {
+  const { id, github } = yield* seeded
+  const calls: Calls = { revoked: [] }
+  const large = `origin=${encodeURIComponent(site)}&pad=${"x".repeat(5 * 1024)}`
+  const streamed = yield* answer(calls, person(id), request("POST", form, large))
+  const declared = yield* answer(calls, person(id), request("POST", { ...form, "content-length": String(large.length) }, large))
+  expect([streamed.status, declared.status]).toEqual([413, 413])
+  expect(calls.revoked).toEqual([])
+  // At the cap exactly, the form still disconnects.
+  const field = `origin=${encodeURIComponent(site)}&pad=`
+  const atCap = yield* answer(calls, person(id), request("POST", form, field + "x".repeat(Page.MAX_FORM_BYTES - field.length)))
+  expect(atCap.status).toBe(303)
+  expect(calls.revoked).toEqual([[github, site]])
+}))

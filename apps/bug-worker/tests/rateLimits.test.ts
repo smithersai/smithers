@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { BUG_REPORTS_PER_HOUR, clientAddress, RATE_LIMIT_PER_HOUR } from "../src/checkRateLimit.ts";
+import { BUG_REPORTS_PER_HOUR, checkRateLimit, clientAddress, RATE_LIMIT_PER_HOUR } from "../src/checkRateLimit.ts";
 import type { BugWorkerEnv } from "../src/env.ts";
 import { createBugWorker } from "../src/worker.ts";
 import { memoryKv } from "./helpers/memoryKv.ts";
 import { memoryRateLimits } from "./helpers/memoryDurableObjects.ts";
 
 const worker = createBugWorker({ now: () => 1788500000000 });
-const env = (): BugWorkerEnv & { BUGS: ReturnType<typeof memoryKv> } => ({
+const env = (): BugWorkerEnv & { BUGS: ReturnType<typeof memoryKv>; RATE_LIMITS: ReturnType<typeof memoryRateLimits> } => ({
   BUGS: memoryKv(), RATE_LIMITS: memoryRateLimits(), BUG_ADMIN_TOKEN: "admin",
 });
 const report = (headers: Record<string, string>) => new Request("https://bug.smithers.sh/api/bugs", {
@@ -116,6 +116,52 @@ describe("rate limits", () => {
     }
     expect(logged.map((line) => JSON.parse(line).event)).toEqual(global.map(() => "bug_report.global_limit"));
     expect(stored(e)).toBe(BUG_REPORTS_PER_HOUR);
+  });
+
+  test("refusals during a flood spend none of a reporter's budget", async () => {
+    let clock = Date.parse("2026-07-02T10:00:00.000Z");
+    const timed = createBugWorker({ now: () => clock });
+    const e = env();
+    const flood = await statuses(Array.from({ length: BUG_REPORTS_PER_HOUR }, (_, i) =>
+      timed.fetch(report({ "cf-connecting-ip": `10.${i >> 8}.${i & 255}.1` }), e)));
+    expect(flood.every((code) => code === 201)).toBe(true);
+    const original = console.error;
+    console.error = () => {};
+    try {
+      for (let i = 0; i < RATE_LIMIT_PER_HOUR; i++) {
+        expect((await timed.fetch(report({ "cf-connecting-ip": "198.51.100.9" }), e)).status).toBe(429);
+      }
+    } finally {
+      console.error = original;
+    }
+    expect(e.RATE_LIMITS.stored("bugs:198.51.100.9").size).toBe(0);
+    clock += 3_600_000;
+    const next = await statuses(Array.from({ length: RATE_LIMIT_PER_HOUR }, () =>
+      timed.fetch(report({ "cf-connecting-ip": "198.51.100.9" }), e)));
+    expect(next.every((code) => code === 201)).toBe(true);
+  });
+
+  test("one client's refusals give its all-clients admissions back", async () => {
+    const e = env();
+    const codes = await statuses(Array.from({ length: 3 * RATE_LIMIT_PER_HOUR }, () =>
+      worker.fetch(report({ "cf-connecting-ip": "203.0.113.5" }), e)));
+    expect(codes.filter((code) => code === 201)).toHaveLength(RATE_LIMIT_PER_HOUR);
+    expect(e.RATE_LIMITS.stored("bugs:all").get("window")).toMatchObject({ count: RATE_LIMIT_PER_HOUR });
+  });
+
+  test("a bucket's storage is deleted when its hour ends, and the next request counts one", async () => {
+    const e = env();
+    const now = Date.parse("2026-07-02T10:15:00.000Z");
+    expect((await checkRateLimit(e, "bugs:203.0.113.5", now)).allowed).toBe(true);
+    expect((await checkRateLimit(e, "bugs:203.0.113.5", now)).allowed).toBe(true);
+    const end = Date.parse("2026-07-02T11:00:00.000Z");
+    expect(e.RATE_LIMITS.alarmAt("bugs:203.0.113.5")).toBe(end);
+    await e.RATE_LIMITS.fireAlarms(end - 1);
+    expect(e.RATE_LIMITS.stored("bugs:203.0.113.5").size).toBe(1);
+    await e.RATE_LIMITS.fireAlarms(end);
+    expect(e.RATE_LIMITS.stored("bugs:203.0.113.5").size).toBe(0);
+    expect(await checkRateLimit(e, "bugs:203.0.113.5", end)).toEqual({ allowed: true, hour: end / 3_600_000 });
+    expect(e.RATE_LIMITS.stored("bugs:203.0.113.5").get("window")).toEqual({ hour: end / 3_600_000, count: 1 });
   });
 
   test("the all-clients cap takes at least 100 per-client budgets to spend", () => {

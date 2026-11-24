@@ -170,6 +170,27 @@ describe("the API's HTTP routes", () => {
     })
   }
 
+  // Review R1 D4 (Neon-D4-005): a body that declares a length inside the limit and then sends more is cut off by the
+  // read's own byte count, never buffered whole.
+  for (const [route, declared, sent] of [["wiki", "64", 4096], ["posts", "64", 1_048_576], ["tour-control", "64", 4096]] as const) {
+    it.effect(`stops reading a ${route} body that outgrows its declared length, reaching no conversation`, () => effect {
+      provide MockFactory {
+        const lying = HttpClientRequest.post(`http://api.invalid/api/conversations/lying/${route}`).pipe(
+          HttpClientRequest.bodyStream(Stream.make(new TextEncoder().encode("x".repeat(sent))), { contentType: "application/json" }),
+          HttpClientRequest.setHeader("content-length", declared),
+        )
+        const request = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(lying))
+        const response = try Effect.provideService(handle(try conversations(true), unavailableHistory), HttpServerRequest.HttpServerRequest, request)
+        const snapshot = try (try ConversationRead).read("lying", 0)
+        try Effect.try(() => {
+          expect(request.headers["content-length"]).toBe(declared)
+          expect(response.status).toBe(413)
+          expect(snapshot.seq).toBe(0)
+        })
+      }
+    })
+  }
+
   // A tour control declared over its 1 KiB limit is refused before its body is read (0018 batch 62).
   it.effect("refuses a tour control declared over its limit without reading the body", () => effect {
     provide MockFactory {

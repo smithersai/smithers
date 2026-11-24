@@ -11,6 +11,21 @@ effect function ledger() {
 }
 
 describe("daily budget", () => {
+  // Review R1 D4 (Fable-D4-012): the count of signed-out posts, per visitor and for the day.
+  it.effect("counts signed-out posts per visitor and for the day, and a refused post counts nothing", () => effect {
+    const log = try ledger()
+    const budget = try Budget.make(log.service, 100)
+    const first = try all(Array.from({ length: 5 }, () => budget.visit("a", 3, 4)), { concurrency: "unbounded" })
+    const other = [try budget.visit("b", 3, 4), try budget.visit("b", 3, 4)]
+    const state = try Ref.get(log.data)
+    try Effect.sync(() => {
+      expect(first.filter(Boolean)).toHaveLength(3)
+      // The day's fourth post is b's; its second passes the day's allowance.
+      expect(other).toEqual([true, false])
+      expect(state).toEqual({ "visitor/a": 3, "visitor/b": 1, [Budget.VISITS]: 4 })
+    })
+  })
+
   for (const limit of [0, 9, 10, 25]) {
     it.effect(`admits a 10-token call only while its ceiling fits under the ${limit}-token limit`, () => effect {
       const log = try ledger()

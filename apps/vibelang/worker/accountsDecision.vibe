@@ -274,6 +274,16 @@ export function mayConnect(agent: boolean): boolean {
   return !agent
 }
 
+/**
+ * Who a role grant is recorded for: a device session is the person's agent (0028), every other session the person.
+ * Only a person grants or revokes a role; the host refuses an agent before the sequencer sees the grant.
+ */
+//@ verify
+//@ ensures \result == (agent ? "agent" : "person")
+export function grantActor(agent: boolean): "person" | "agent" {
+  return agent ? "agent" : "person"
+}
+
 /** A signed-in person has an id; the signed-out viewer's is empty: it may not write roles and gets no participation grant. */
 //@ verify
 //@ ensures \result == (id != "")

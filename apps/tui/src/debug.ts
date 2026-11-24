@@ -14,8 +14,9 @@
  * was called from), `blocked` (the event loop held longer than 5 ms),
  * `timer`, and `summary` on exit.
  */
-import { appendFileSync } from "node:fs"
-import { join } from "node:path"
+import { appendFileSync, chmodSync, closeSync, lstatSync, mkdirSync, openSync } from "node:fs"
+import { homedir } from "node:os"
+import { dirname, join } from "node:path"
 import * as Timer from "./timer.ts"
 
 /** What asked for a render: a streamed worker or model event, the person's input, or anything else. */
@@ -276,17 +277,42 @@ export const make = (options: Options): Tracker => {
   }
 }
 
-/** Where the records go. */
-export const path = (): string => join(process.env.TMPDIR ?? "/tmp", "smthrs-tui-debug.log")
+/**
+ * Where the records go: beside `Log.path()`, in the owner-only TUI folder,
+ * never a shared temp directory another user could pre-create the file in.
+ */
+export const path = (): string =>
+  join(process.env.SMITHERS_TUI_SESSION_DIR ?? join(homedir(), ".smithers", "tui"), "debug.log")
+
+/** The trace file, created owner-only in an owner-only folder; `false` when it cannot be. */
+const prepare = (target: string): boolean => {
+  try {
+    mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
+    chmodSync(dirname(target), 0o700)
+    // `wx` refuses a pre-created file or symlink; an existing regular file of ours is narrowed to 0600.
+    try {
+      closeSync(openSync(target, "wx", 0o600))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+      if (!lstatSync(target).isFile()) return false
+      chmodSync(target, 0o600)
+    }
+    return true
+  } catch {
+    return false
+  }
+}
 
 const file = path()
+let ready: boolean | undefined
 const mirror = process.env.SMTHRS_DEBUG_STDERR !== "false"
 const tracker = make({
   enabled: process.env.SMITHERS_DEBUG === "true",
   now: () => performance.now(),
   sink: (text) => {
     try {
-      appendFileSync(file, text, { mode: 0o600 })
+      ready ??= prepare(file)
+      if (ready) appendFileSync(file, text, { mode: 0o600 })
       if (mirror) process.stderr.write(text)
     } catch {
       // Tracing must never take the terminal down.

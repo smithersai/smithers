@@ -31,18 +31,35 @@ const post = (path: string, body: unknown, headers: Record<string, string> = {})
   new Request(`https://bug.smithers.sh${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
 
 describe("failure logs", () => {
-  const cases: [string, () => Request, string][] = [
-    ["bug report post", () => post("/api/bugs", { summary: "x" }), "bug_report.failed"],
-    ["bug report read", () => new Request("https://bug.smithers.sh/api/bugs/abc123", { headers: { "x-bug-admin": ADMIN } }), "bug_report.failed"],
+  const cases: [string, () => Request, string, string][] = [
+    ["bug report post", () => post("/api/bugs", { summary: "x" }), "bug_report.failed", "POST /api/bugs"],
+    ["bug report read", () => new Request("https://bug.smithers.sh/api/bugs/abc123", { headers: { "x-bug-admin": ADMIN } }), "bug_report.failed", "GET /api/bugs/:id"],
+    ["bug report list", () => new Request("https://bug.smithers.sh/api/bugs", { headers: { "x-bug-admin": ADMIN } }), "bug_report.failed", "GET /api/bugs"],
+    ["demo request list", () => new Request("https://bug.smithers.sh/api/demo-requests", { headers: { "x-bug-admin": ADMIN } }), "demo_request.failed", "GET /api/demo-requests"],
   ];
-  for (const [name, request, event] of cases) {
-    test(`${name} logs the route and cause before answering 503`, async () => {
-      const req = request();
-      const response = await answer(req, { BUGS: offline(), RATE_LIMITS: memoryRateLimits(), BUG_ADMIN_TOKEN: ADMIN });
+  for (const [name, request, event, route] of cases) {
+    test(`${name} logs the route template and a stable code before answering 503`, async () => {
+      const response = await answer(request(), { BUGS: offline(), RATE_LIMITS: memoryRateLimits(), BUG_ADMIN_TOKEN: ADMIN });
       expect(response.status).toBe(503);
-      expect(logged()).toEqual([{ event, route: `${req.method} ${new URL(req.url).pathname}`, error: "KV namespace unavailable" }]);
+      expect(logged()).toEqual([{ event, route, code: "storage_unavailable" }]);
     });
   }
+
+  test("an exception's own text never reaches the log", async () => {
+    const secret = "https://user:token-abc123@internal.example/kv?email=jane@example.com";
+    const leaky = (): BugKv => {
+      const fail = async (): Promise<never> => { throw new Error(secret); };
+      return { get: fail, put: fail, delete: fail, list: fail };
+    };
+    const limiter = { getByName: () => ({ fetch: async (): Promise<never> => { throw new Error(secret); } }) };
+    await answer(post("/api/bugs", { summary: "x" }), { BUGS: leaky(), RATE_LIMITS: memoryRateLimits(), BUG_ADMIN_TOKEN: ADMIN });
+    await answer(post("/api/bugs", { summary: "x" }), { BUGS: memoryKv(), RATE_LIMITS: limiter, BUG_ADMIN_TOKEN: ADMIN });
+    expect(logged()).toEqual([
+      { event: "bug_report.failed", route: "POST /api/bugs", code: "storage_unavailable" },
+      { event: "bug_report.failed", route: "POST /api/bugs", code: "rate_limiter_unavailable" },
+    ]);
+    expect(JSON.stringify(errors.mock.calls)).not.toContain("token-abc123");
+  });
 
   test("a report write failure after rate-limit admission returns one storage refusal", async () => {
     const kv = memoryKv();
@@ -63,7 +80,7 @@ describe("failure logs", () => {
     const reports = writes.filter(key => key.startsWith("bug:"));
     expect(reports).toHaveLength(1);
     expect(await kv.get(reports[0]!)).toBeNull();
-    expect(logged()).toEqual([{ event: "bug_report.failed", route: "POST /api/bugs", error: "report write unavailable" }]);
+    expect(logged()).toEqual([{ event: "bug_report.failed", route: "POST /api/bugs", code: "storage_unavailable" }]);
   });
 
 });

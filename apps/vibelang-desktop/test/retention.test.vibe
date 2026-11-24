@@ -1,0 +1,34 @@
+// The flow store's retention keeper on a test clock: a pass at start and every hour, each a day behind now.
+import { expect, it } from "@effect/vitest"
+import { EXECUTION_RETENTION_MS, keeper, retain } from "../src/host/Retention.vibe"
+
+it.effect("collects settled executions a day old at start and every hour, and outlives a failed pass", () => effect {
+  const cutoffs: Array<number> = []
+  const collect = effect (options: { readonly olderThanMs: number }) => {
+    cutoffs.push(options.olderThanMs)
+    // The second pass fails as a locked store does.
+    if (cutoffs.length === 2) return try Effect.die("database is locked")
+    return { runs: cutoffs.length === 1 ? ["desktop/old"] : [] }
+  }
+  try TestClock.setTime(10 * EXECUTION_RETENTION_MS)
+  const running = fork keeper(collect)
+  try Effect.yieldNow
+  const atStart = [...cutoffs]
+  try TestClock.adjust("59 minutes")
+  const beforeHour = cutoffs.length
+  try TestClock.adjust("1 minute")
+  const afterHour = cutoffs.length
+  try TestClock.adjust("1 hour")
+  try Fiber.interrupt(running)
+  try Effect.try(() => {
+    expect(atStart).toEqual([9 * EXECUTION_RETENTION_MS])
+    expect(beforeHour).toBe(1)
+    expect(afterHour).toBe(2)
+    expect(cutoffs).toEqual([9 * EXECUTION_RETENTION_MS, 9 * EXECUTION_RETENTION_MS + 3_600_000, 9 * EXECUTION_RETENTION_MS + 7_200_000])
+  })
+})
+
+it.effect("a pass that fails is reported, never raised", () => effect {
+  const outcome = try exit(retain(() => Effect.die("database is locked")))
+  try Effect.try(() => expect(Exit.isSuccess(outcome)).toBe(true))
+})

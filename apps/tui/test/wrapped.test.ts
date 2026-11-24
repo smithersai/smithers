@@ -6,6 +6,7 @@ import { Effect } from "effect"
 import { existsSync, mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import * as Approvals from "../src/approvals.ts"
 import * as Budget from "../src/budget.ts"
 import * as Context from "../src/context.ts"
 import * as Host from "../src/host.ts"
@@ -134,6 +135,38 @@ describe("vendor argv", () => {
   })
 })
 
+describe("wrapped approval default", () => {
+  const bypass = ["bypassPermissions", "--dangerously-bypass-approvals-and-sandbox"]
+  const flags = (args: ReadonlyArray<string>) => args.filter((arg) => bypass.includes(arg))
+
+  it("launches no bypass under the TUI's default mode, headless or interactive", () => {
+    const mode = Approvals.mode({}, { print: false })
+    if (typeof mode === "object") throw new Error(mode.error)
+    const approve = Wrapped.approval(mode, Approvals.explicitAll({}))
+    expect(approve).toBe("ask")
+    for (const vendor of Wrapped.vendors) {
+      expect(flags(Wrapped.headless(launch({ vendor, approve })).args)).toEqual([])
+      expect(flags(Wrapped.interactive(vendor, "s-1", "/repo", "BRIEF", approve).args)).toEqual([])
+    }
+    expect(Wrapped.headless(launch({ approve })).args.at(-1)).toBe("plan")
+    expect(Wrapped.headless(launch({ vendor: "codex", approve })).args.slice(-3)).toEqual(["-s", "read-only", "-"])
+  })
+
+  it("bypasses only when the person named all, by flag or environment", () => {
+    expect(Approvals.explicitAll({ SMITHERS_TUI_APPROVE: "all" })).toBe(true)
+    expect(Approvals.explicitAll({}, "all")).toBe(true)
+    expect(Approvals.explicitAll({ SMITHERS_TUI_APPROVE: "all" }, "ask")).toBe(false)
+    expect(Approvals.explicitAll({ SMITHERS_TUI_APPROVE: "" })).toBe(false)
+    expect(Wrapped.approval("all", true)).toBe("all")
+    expect(Wrapped.approval("deny", true)).toBe("deny")
+    expect(Wrapped.approval("ask", true)).toBe("ask")
+    expect(Wrapped.approval(undefined, false)).toBe("ask")
+    for (const vendor of Wrapped.vendors) {
+      expect(flags(Wrapped.headless(launch({ vendor, approve: Wrapped.approval("all", true) })).args)).toHaveLength(1)
+    }
+  })
+})
+
 describe("stream fold", () => {
   it("draws Claude Code's rows in its own glyphs and reads its session, usage and answer", () => {
     expect(Wrapped.fold("claude", "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s-1\"}")).toEqual({
@@ -241,7 +274,8 @@ it("runs a Claude Code worker on its session with memory and the shared brief, a
   expect(brief).toBe(`${SmithersPlugin.brief}\n\n${Context.noVcsRule}\n\nREMEMBER for Fix the session.`)
   expect(tui).toEqual({
     command: "claude",
-    args: ["--resume", session, "--append-system-prompt", brief, "--permission-mode", "bypassPermissions"]
+    // A host that never named `all` hands over without bypassing the vendor's own permissions.
+    args: ["--resume", session, "--append-system-prompt", brief]
   })
   expect(tab().status).toBe("running")
   workspace.release("c")

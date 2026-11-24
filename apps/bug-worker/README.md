@@ -74,7 +74,9 @@ title-only report.
   `x-bug-admin` token skips both budgets, and an all-clients refusal logs
   `bug_report.global_limit`. Each budget is an atomic
   `RateLimiter` Durable Object counter, so a concurrent burst cannot race past
-  it. A client is Cloudflare's `cf-connecting-ip` (`x-forwarded-for` is
+  it. The all-clients cap is charged first, so its refusals spend no client's
+  budget; a client refusal refunds its cap admission. Each counter's storage
+  is deleted by an alarm when its hour ends. A client is Cloudflare's `cf-connecting-ip` (`x-forwarded-for` is
   ignored), charged per /64 for IPv6.
   Stores `bug:<id>` and returns `{ id, url }`. No auth: reporting must be
   zero-friction. CORS allows POST from anywhere.
@@ -84,12 +86,33 @@ title-only report.
   dropped. 16KB cap, rate limits of 20 valid requests/hour per client and
   200/hour across all clients, in buckets separate from bug reports; a 400 or
   413 never spends the budget, and an all-clients refusal logs
-  `demo_request.global_limit`. Stores `demo:<id>` and returns `{ id }`.
+  `demo_request.global_limit`. The body also carries `submissionId`, an
+  idempotency key the page draws once per submission and resends on retry.
+  Stores `demo-receipt:<submissionId>` and then `demo:<id>`, both for 90 days,
+  and returns the receipt `201 { id }`. A retry with the same key returns the
+  same `id`, spends no budget, and stores nothing new.
   `tests/demoRequests.test.ts` reads the endpoint and field names from
   `apps/site/src/pages/demo/index.astro` and posts that payload.
-- `GET /api/bugs/:id` — maintainers only; requires the `x-bug-admin` header
-  to match the `BUG_ADMIN_TOKEN` binding.
+- `GET /api/bugs`, `GET /api/demo-requests` — maintainers only: one page of
+  stored IDs, `{ ids, cursor? }`; pass `?cursor=` for the next page.
+- `GET /api/bugs/:id`, `GET /api/demo-requests/:id` — maintainers only; the
+  stored record.
+- Every maintainer route requires the `x-bug-admin` header to match the
+  `BUG_ADMIN_TOKEN` binding, answers `cache-control: private, no-store` and
+  `x-content-type-options: nosniff`, and sends no CORS headers.
 - `GET /healthz`
+
+## Logs
+
+Each line is JSON with the event, the route template, and either the stored
+`id` or a stable failure `code`; submitted content and exception text never
+reach a log.
+
+| Event | Stream | Fields |
+| --- | --- | --- |
+| `bug_report.accepted`, `demo_request.accepted`, `demo_request.replayed` | stdout | `route`, `id` |
+| `bug_report.failed`, `demo_request.failed` | stderr | `route`, `code`: `storage_unavailable` or `rate_limiter_unavailable` |
+| `bug_report.global_limit`, `demo_request.global_limit` | stderr | `route`, `code`: `global_limit` |
 
 ## Test
 
@@ -129,9 +152,24 @@ For later plans, omit the adoption flag:
 pnpm -C apps/bug-worker run plan
 ```
 
-Both plans run stage `prod` against the account's shared `alchemy-state-store`
-Worker. The stack pins the live physical names: Worker
-`smithers-bug-worker-smithers-bug-worker-williamcory`, KV namespace
-`smithers-bug-worker-bug-reports-williamcory`, and hostnames
-`bug.smithers.sh` and `bugs.smithers.sh`. Alchemy detaches any live hostname
-the stack does not declare.
+Both plans run the stage named by `ALCHEMY_STAGE` against the account's shared
+`alchemy-state-store` Worker; a plan without it stops before reading state.
+
+### Deployment configuration
+
+The stack reads every installation-specific value from the environment, so
+the same source plans an independent installation. Keep a hosted
+installation's values with its other private deployment configuration.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ALCHEMY_STAGE` | required | The Alchemy stage, and so the state record, a plan or destroy uses. |
+| `BUG_WORKER_NAME` | `smithers-bug-worker` | The Worker's physical name. |
+| `BUG_REPORTS_NAMESPACE` | `smithers-bug-reports` | The KV namespace title. |
+| `BUG_WORKER_DOMAIN` | none | The custom domain. Without one the Worker answers on `workers.dev`. |
+| `BUG_WORKER_DOMAIN_ALIASES` | none | Comma-separated extra hostnames of the same Worker. |
+| `BUG_WORKER_ZONE_ID` | none | The domain's Cloudflare zone, when Alchemy cannot find it by name. |
+
+A changed name creates a second Worker or an empty namespace, and a declared
+domain detaches every live hostname it does not list. Plan against an
+existing installation with its current values.

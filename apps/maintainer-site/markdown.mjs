@@ -42,9 +42,10 @@ export const slugify = (text) =>
 const SAFE_URL = /^(?:[a-z][a-z0-9+.-]*:)/i
 export const safeUrl = (url) => {
   const trimmed = String(url).trim()
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return null
   const scheme = trimmed.match(SAFE_URL)?.[0].toLowerCase()
   if (!scheme) return trimmed
-  if (["http:", "https:", "mailto:", "file:", "tel:"].includes(scheme)) return trimmed
+  if (["http:", "https:", "mailto:", "tel:"].includes(scheme)) return trimmed
   if (scheme === "data:" && /^data:image\/(?:png|gif|jpe?g|webp);/i.test(trimmed)) return trimmed
   return null
 }

@@ -1,0 +1,31 @@
+// @vitest-environment node
+// Review R1 D4 (Fable-D4-016): opening a wiki page is an unauthenticated route that names a fresh execution each call.
+// Its settled executions are forgotten a day after they finish, as every other execution in the object's SQLite is.
+import { expect, it } from "@effect/vitest"
+import { TestClock } from "effect/testing"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { pages } from "../src/core/wiki.vibe"
+import * as Objects from "../worker/Objects.vibe"
+
+it.effect("a conversation object forgets wiki executions a day after they settle", () => scoped(effect {
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  const storage = raw as unknown as Objects.Storage
+  const sequencer = try Objects.conversation(storage)
+  const runs = () => storage.sql.exec("SELECT run_id FROM flows_runs").toArray().map((row) => String(row["run_id"]))
+  const open = Objects.openWiki("wiki-retention", storage, sequencer, pages[0]!.id)
+  const first = try open
+  try TestClock.adjust("1 hour")
+  const second = try open
+  const young = runs()
+  try TestClock.adjust("25 hours")
+  const third = try open
+  const kept = runs()
+  try Effect.try(() => {
+    expect([first, second, third]).toEqual([null, null, null])
+    expect(young).toHaveLength(2)
+    expect(young.every((run) => run.startsWith("wiki/"))).toBe(true)
+    // Only the execution that just ran is left: both older ones settled more than a day ago.
+    expect(kept).toHaveLength(1)
+    expect(young).not.toContain(kept[0])
+  })
+}))

@@ -235,7 +235,8 @@ const knownProviders = new Set([
  */
 export const seatOf = (declared: string, available: ReadonlyArray<Model>): string | undefined => {
   const value = declared.trim()
-  const alias = aliases[value.toLowerCase()]
+  // Own keys only: `constructor` or `__proto__` is an unknown seat, not an Object.prototype member.
+  const alias = Object.hasOwn(aliases, value.toLowerCase()) ? aliases[value.toLowerCase()] : undefined
   if (alias !== undefined) return alias.startsWith("anthropic:") ? value.toLowerCase() : alias
   const colon = value.indexOf(":")
   if (colon <= 0 || colon === value.length - 1) return undefined
@@ -259,7 +260,7 @@ export const delegable = (available: ReadonlyArray<Model>): ReadonlyArray<Delega
       ...available.map((model) => model.seat)
     ])
   ].filter((name) => {
-    const seat = aliases[name] ?? delegateSeat(name)
+    const seat = (Object.hasOwn(aliases, name) ? aliases[name] : undefined) ?? delegateSeat(name)
     const provider = providerOf(seat)
     return providers.has(provider) || (provider === "anthropic" && providers.has("claude-code"))
   })

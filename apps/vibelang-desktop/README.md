@@ -72,3 +72,12 @@ characters by default (`VIBELANG_DESKTOP_RECEIPT_CHARS`, clamped to 128–65,536
 Search receipt text uses the same limit. The state endpoint includes receipts only for its `conversation` query.
 Full edit originals remain in `edit-intents.json` until the reply settles and its receipt is archived, preserving crash recovery.
 Startup migrates older settings and reclaims completed intents for replies with persisted completion or failure events. Uncertain edits keep their originals for recovery.
+
+Each conversation is a journal, `conversation-<conversation>.jsonl`: one JSON event per line, appended and synced
+as it is recorded. The app never rereads or rewrites it while running. An older `conversation-<conversation>.json`
+array becomes a journal the first time it is read. A final line a crash cut short is dropped; a journal with any
+other undecodable line is renamed `.corrupt-<time>` when it is read, never when it is written. At most 32 idle
+conversations stay in memory (`VIBELANG_DESKTOP_ROOMS`); one being read, followed or answered is never dropped.
+
+Settled executions leave `flows.sqlite` a day after they finish; the app collects at start and every hour. Model
+discovery and a refused link journal no execution.

@@ -1,6 +1,8 @@
 // The desktop wrapper's behavior independent of the native runtime and model server.
 import { describe, expect, it } from "@effect/vitest"
-import { canSend, init, Message, update } from "../src/view/main.vibe"
+import * as Scene from "foldkit/scene"
+import { busy, canSend, init, Message, update } from "../src/view/main.vibe"
+import { view } from "../src/view/view.vibe"
 import { endpointOf, relativeFile } from "../src/policy.vibe"
 const initial = () => init({ session: "desktop", name: "Guest", mode: "mock" }).model
 
@@ -13,14 +15,77 @@ describe("desktop controls", () => {
     const keyboard = update({ ...model, available: ["local"], picker: true }, Message.PickerKey({ key: "Enter" })).model
     expect(keyboard.conversation).toBe("home")
   })
-  it("starts in mock without a model; a pending picker never sends a post", () => {
-    const model = initial()
+  it("starts in mock without a model; a pending folder picker and a held discovery never block a send", () => {
+    const model = { ...initial(), draft: "hello" }
     expect(canSend(model)).toBe(true)
+    const direct = update(model, Message.SubmittedDraft())
+    expect(direct.commands?.length).toBeGreaterThan(0)
     const opened = update(model, Message.OpenFolder())
-    expect(opened.model.busy).toBe(true)
-    expect(canSend(opened.model)).toBe(false)
-    expect(update(opened.model, Message.SubmittedDraft()).commands).toBeUndefined()
+    expect(opened.model.folderOps).toBe(1)
     expect(opened.commands?.[0]?.name).toBe("Desktop.Change")
+    // Neither native operation has answered: both are still busy, and the ready chat admits exactly one post.
+    const held = update({ ...opened.model, endpoint: "http://localhost:1111" }, Message.Connect()).model
+    expect(held.discovering).toBe("http://localhost:1111")
+    expect(busy(held)).toBe(true)
+    expect(canSend(held)).toBe(true)
+    const sent = update(held, Message.SubmittedDraft())
+    expect(sent.commands?.map((command) => command.name)).toEqual(direct.commands?.map((command) => command.name))
+    expect(sent.model.folderOps).toBe(1)
+    expect(sent.model.discovering).toBe("http://localhost:1111")
+  })
+  it("holds a send only while the model that would answer is being chosen", () => {
+    const model = { ...initial(), draft: "hello" }
+    const choosing = update(model, Message.Select({ model: "local" })).model
+    expect(choosing.modelOps).toBe(1)
+    expect(canSend(choosing)).toBe(false)
+    expect(update(choosing, Message.SubmittedDraft()).commands).toBeUndefined()
+    const state = { mock: false, folder: null, tools: [], model: { endpoint: "http://localhost:1234", model: "local", state: "ready" as const } }
+    const chosen = update(choosing, Message.Snapshot({ state, operation: "model" })).model
+    expect(chosen.modelOps).toBe(0)
+    expect(canSend(chosen)).toBe(true)
+  })
+  it("settles each native operation on its own answer; a refresh settles none and keeps the error", () => {
+    const opened = update(initial(), Message.OpenFolder()).model
+    const choosing = update(opened, Message.Mock()).model
+    expect([choosing.folderOps, choosing.modelOps]).toEqual([1, 1])
+    const refreshed = update({ ...choosing, error: "Model unavailable" }, Message.Snapshot({ conversation: choosing.conversation, state: choosing.desktop })).model
+    expect([refreshed.folderOps, refreshed.modelOps, refreshed.error]).toEqual([1, 1, "Model unavailable"])
+    const mocked = update(refreshed, Message.Snapshot({ state: choosing.desktop, operation: "mock" })).model
+    expect([mocked.folderOps, mocked.modelOps, mocked.error]).toEqual([1, 0, ""])
+    const failed = update(mocked, Message.Failed({ reason: "Unavailable", operation: "open" })).model
+    expect([failed.folderOps, failed.modelOps, failed.error]).toEqual([0, 0, "Unavailable"])
+    expect(busy(failed)).toBe(false)
+  })
+  it("discards a discovery answer for an endpoint the person has since edited", () => {
+    const a = "http://localhost:1111"
+    const b = "http://localhost:2222"
+    const asked = update({ ...initial(), endpoint: a }, Message.Connect())
+    expect(asked.commands?.[0]?.args).toEqual({ endpoint: a, generation: 1 })
+    // A is held. The person edits the endpoint to B, then A answers.
+    const edited = update(asked.model, Message.UpdatedEndpoint({ value: b })).model
+    expect(edited.discovering).toBeNull()
+    expect(update(edited, Message.Listed({ models: ["from-a"], endpoint: a, generation: 1 })).model).toBe(edited)
+    expect(update(edited, Message.DiscoveryFailed({ endpoint: a, generation: 1 })).model).toBe(edited)
+    // B's own request fails. A's late list replaces neither B's empty list nor its error.
+    const askedB = update(edited, Message.Connect())
+    expect(askedB.commands?.[0]?.args).toEqual({ endpoint: b, generation: 3 })
+    const failedB = update(askedB.model, Message.DiscoveryFailed({ endpoint: b, generation: 3 })).model
+    expect([failedB.error, failedB.discovering, failedB.available]).toEqual(["Model unavailable", null, []])
+    expect(update(failedB, Message.Listed({ models: ["from-a"], endpoint: a, generation: 1 })).model).toBe(failedB)
+    // Editing back to A does not revive the answer to the abandoned request.
+    const back = update(failedB, Message.UpdatedEndpoint({ value: a })).model
+    expect(update(back, Message.Listed({ models: ["from-a"], endpoint: a, generation: 1 })).model).toBe(back)
+    // The current request's answer applies.
+    const listed = update(askedB.model, Message.Listed({ models: ["from-b"], endpoint: b, generation: 3 })).model
+    expect([listed.available, listed.discovering, listed.error]).toEqual([["from-b"], null, ""])
+  })
+  it("keeps the endpoint the person named when the host reports another server's model", () => {
+    const ready = (endpoint: string) => ({ mock: false, folder: null, tools: [], model: { endpoint, model: "local", state: "ready" as const } })
+    const typed = update(initial(), Message.UpdatedEndpoint({ value: "http://localhost:2222" })).model
+    expect(update(typed, Message.Snapshot({ conversation: typed.conversation, state: ready("http://localhost:1111") })).model.endpoint).toBe("http://localhost:2222")
+    const versioned = update(initial(), Message.UpdatedEndpoint({ value: "http://localhost:1111/v1" })).model
+    expect(update(versioned, Message.Snapshot({ state: ready("http://localhost:1111"), operation: "model" })).model.endpoint).toBe("http://localhost:1111")
+    expect(update(initial(), Message.Snapshot({ state: ready("http://localhost:1111") })).model.endpoint).toBe("http://localhost:1111")
   })
   it("selects a model, restarts the stream at zero and preserves the draft", () => {
     const model = { ...initial(), draft: "keep this" }
@@ -49,10 +114,10 @@ describe("desktop controls", () => {
     expect(update(up, Message.PickerKey({ key: "Escape" })).model.picker).toBe(false)
   })
   it("shows selection failures without breaking mock chat", () => {
-    const model = update(initial(), Message.Connect()).model
-    const failed = update(model, Message.Failed({ reason: "Model unavailable" })).model
+    const asked = update(initial(), Message.Connect())
+    const failed = update(asked.model, Message.DiscoveryFailed({ endpoint: "", generation: 1 })).model
     expect(failed.error).toBe("Model unavailable")
-    expect(failed.busy).toBe(false)
+    expect(busy(failed)).toBe(false)
     expect(canSend(failed)).toBe(true)
   })
 })
@@ -127,4 +192,30 @@ it("retains shared wiki and actions commands in the desktop update", () => {
   expect(wiki.commands?.[0]?.args).toMatchObject({ conversation: model.conversation, page: "index" })
   const actions = update(model, Message.ClickedActions())
   expect(actions.commands?.map((command) => command.name)).toEqual(["LoadActions"])
+})
+
+describe("desktop chrome", () => {
+  const folder = { path: "/Users/ada/project-under-test", files: 3, token: "token", identity: "identity" }
+  const local = { endpoint: "http://localhost:1234", model: "local", state: "ready" as const }
+  it("offers Mock once, in the model picker, and Models once, in the navigation", () => {
+    const model = { ...initial(), manager: true, picker: true, available: ["local"], desktop: { mock: true, folder, tools: [], model: local } }
+    Scene.scene({ update, view }, Scene.given(model),
+      Scene.expectAll(Scene.all.role("option", { name: "Mock" })).toHaveCount(1),
+      Scene.expectAll(Scene.all.role("button", { name: "Mock" })).toHaveCount(0),
+      Scene.expectAll(Scene.all.role("button", { name: "Models" })).toHaveCount(1),
+      Scene.expectAll(Scene.all.role("button", { name: "Manage models…" })).toHaveCount(0),
+      Scene.expect(Scene.role("region", { name: "Models" })).toExist(),
+    )
+  })
+  it("shows the open folder's path once, on its chip", () => {
+    const model = { ...initial(), desktop: { mock: false, folder, tools: [], model: local } }
+    Scene.scene({ update, view }, Scene.given(model),
+      Scene.expectAll(Scene.all.text(folder.path)).toHaveCount(1),
+      Scene.expectAll(Scene.all.selector(".dt-chip code")).toHaveCount(1),
+      Scene.expectAll(Scene.all.selector(".dt-title code")).toHaveCount(0),
+      Scene.expect(Scene.placeholder("Describe what to change")).toExist(),
+      Scene.expect(Scene.text("3 files")).toExist(),
+      Scene.expect(Scene.role("button", { name: "Close folder" })).toExist(),
+    )
+  })
 })

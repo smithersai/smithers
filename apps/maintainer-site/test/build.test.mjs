@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, symlinkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { test } from "node:test"
@@ -21,7 +21,7 @@ function fixture(t) {
   const out = join(root, "site")
   mkdirSync(site, { recursive: true })
   mkdirSync(work, { recursive: true })
-  for (const path of ["build.mjs", "markdown.mjs", "client"]) cpSync(join(siteSource, path), join(site, path), { recursive: true })
+  for (const path of ["checked-file.mjs", "build.mjs", "markdown.mjs", "client"]) cpSync(join(siteSource, path), join(site, path), { recursive: true })
   for (const status of statuses) writeFileSync(join(work, `${status}.md`), note(status))
   mkdirSync(join(work, "evidence"), { recursive: true })
   writeFileSync(join(work, "evidence/historical.md"), note("completed"))
@@ -89,4 +89,27 @@ test("the home screenshot check requires all three positive counts", () => {
   assert.equal(hasHomeCounts([" 12 ", "100", "9"]), true)
   for (const counts of [[], ["1"], ["1", "2"], ["1", "2", "3", "4"], ["1", "0", "3"], ["1", "-2", "3"], ["1", "", "3"], ["1", "notes", "3"]])
     assert.equal(hasHomeCounts(counts), false, JSON.stringify(counts))
+})
+
+test("build rejects external note and asset symlinks, symlinked parents and private image inputs", (t) => {
+  const outside = mkdtempSync(join(tmpdir(), "outside-build-"))
+  t.after(() => rmSync(outside, { recursive: true, force: true }))
+  for (const kind of ["note", "image", "parent", "private"]) {
+    const f = fixture(t)
+    assert.equal(f.build().status, 0)
+    const published = f.read("assets/data.js")
+    writeFileSync(join(outside, "sentinel.md"), "private sentinel")
+    writeFileSync(join(outside, "sentinel.png"), "private sentinel")
+    if (kind === "note") symlinkSync(join(outside, "sentinel.md"), join(f.work, "alias.md"))
+    else {
+      const path = kind === "parent" ? "alias/sentinel.png" : kind === "private" ? ".env.png" : "alias.png"
+      if (kind === "parent") symlinkSync(outside, join(f.work, "alias"))
+      else if (kind === "image") symlinkSync(join(outside, "sentinel.png"), join(f.work, path))
+      else writeFileSync(join(f.work, path), "private sentinel")
+      writeFileSync(join(f.work, "idea.md"), note("idea") + `\n![asset](${path})\n`)
+    }
+    const result = f.build()
+    assert.notEqual(result.status, 0, kind)
+    assert.equal(f.read("assets/data.js"), published)
+  }
 })

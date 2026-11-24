@@ -5,9 +5,11 @@
 import { describe, expect, it } from "@effect/vitest"
 import { TestClock } from "effect/testing"
 import * as ObjectStartup from "../worker/ObjectStartup.vibe"
+import * as BudgetLedger from "../worker/Budget.vibe"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { sandboxIdentityOf } from "../worker/apiObjects.vibe"
+import { apiFetch, sandboxIdentityOf } from "../worker/apiObjects.vibe"
+import { signedOutGateway } from "../worker/SandboxHttp.vibe"
 import { ORIGIN, runtime, UNDRAFTABLE, withAbsentGitHub, world, type Kind } from "./support/apiWorld.vibe"
 
 type World = Effect.Success<ReturnType<typeof world>>
@@ -352,6 +354,68 @@ it.effect("the health route waits for the actual instance while a cold initializ
     expect(body.objects.History?.startup).toBe("unreachable")
   })
 }))
+
+// Review R1 D4 (Astra-D4-033, Fable-D4-037): what a public health read may reach.
+describe("the public object health route", () => {
+  it.live("probes only the diagnostic conversation; a maintainer's session alone names another", () => scoped(effect {
+    const w = try world(true, 1000000, "unusable")
+    const { ask, signIn } = browser(w)
+    const reached = () => w.calls.conversation.bindings
+    const malformed = try ask("GET", "/api/health/objects?conversation=" + "x".repeat(10_000), undefined, { signed: false })
+    const selected = try ask("GET", "/api/health/objects?conversation=room9", undefined, { signed: false })
+    expect([malformed.status, malformed.body, selected.status, selected.body, reached()]).toEqual([400, { error: "conversation" }, 403, { error: "forbidden" }, 0])
+    const fixed = try ask("GET", "/api/health/objects", undefined, { signed: false })
+    expect([fixed.status, fixed.body.objects.Conversation.objectId, reached()]).toEqual([200, "conversation/health", 1])
+    try signIn
+    const operator = try ask("GET", "/api/health/objects?conversation=room9")
+    expect([operator.status, operator.body.objects.Conversation.objectId]).toEqual([200, "conversation/room9"])
+  }))
+
+  it.live("concurrent public reads share one probe of the five objects", () => scoped(effect {
+    const w = try world(false, 1000000, "unusable")
+    // One fetch handler, as the deployed Worker builds once: `w.fetchOf` builds a new one per request.
+    const handler = apiFetch({ conversations: w.namespaces.conversation, accounts: w.namespaces.accounts, actions: w.namespaces.actions, histories: w.namespaces.history, budgets: w.namespaces.budget }, signedOutGateway as never, "fuzz-commit", succeed({}))
+    const request = () => handler.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromClientRequest(HttpClientRequest.get(`${ORIGIN}/api/health/objects`))), Effect.provideService(RuntimeContext, runtime))
+    const answers = try all(Array.from({ length: 8 }, request), { concurrency: "unbounded" })
+    const bodies = try all(answers.map((answer) => promise(() => HttpServerResponse.toWeb(answer).json())))
+    expect(answers.map((answer) => answer.status)).toEqual(Array.from({ length: 8 }, () => 200))
+    expect(new Set(bodies.map((body) => JSON.stringify(body))).size).toBe(1)
+    expect([w.calls.budget.bindings, w.calls.conversation.bindings, w.calls.history.bindings, w.calls.actions.bindings, w.calls.accounts.bindings]).toEqual([1, 1, 1, 1, 1])
+    // The next read probes again: nothing stale is answered.
+    try request()
+    expect(w.calls.budget.bindings).toBe(2)
+  }))
+})
+
+// Review R1 D4 (Fable-D4-012): signed-out posts spend the shared daily budget, so each visitor has an allowance.
+describe("a visitor's daily allowance of posts", () => {
+  it.live("the post after a visitor's last is refused 429 and reaches no conversation, while another visitor and a signed-in person post", () => scoped(effect {
+    const w = try world(true, 1000000, "unusable")
+    let sent = 0
+    const post = effect (address: string) => {
+      const text = JSON.stringify({ clientId: `c${++sent}`, name: "Guest", text: "Hello" })
+      const request = HttpClientRequest.post(`${ORIGIN}/api/conversations/visit${sent}/posts`).pipe(
+        HttpClientRequest.setHeader("cf-connecting-ip", address), HttpClientRequest.bodyText(text, "application/json"), HttpClientRequest.setHeader("content-length", String(text.length)),
+      )
+      const response = HttpServerResponse.toWeb(try w.fetchOf(HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(request)), {}))
+      return [response.status, try promise(() => response.json())] as const
+    }
+    for (let count = 0; count < BudgetLedger.VISITOR_POSTS; count++) expect((try post("203.0.113.7"))[0]).toBe(200)
+    const reachedBefore = w.calls.conversation.bindings
+    expect(try post("203.0.113.7")).toEqual([429, { error: "rate limit" }])
+    expect(w.calls.conversation.bindings).toBe(reachedBefore)
+    expect((try post("203.0.113.8"))[0]).toBe(200)
+    const { ask, signIn } = browser(w)
+    try signIn
+    expect((try ask("POST", "/api/conversations/signed/posts", POST)).status).toBe(200)
+    // The day's ledger names no address.
+    const day = new Date(try Clock.currentTimeMillis).toISOString().slice(0, 10)
+    const ledger = try w.storageOf("budget", day)
+    const keys = [...(try promise(() => ledger.list({ prefix: "visitor/" }))).keys()]
+    expect(keys).toHaveLength(2)
+    expect(keys.every((key) => /^visitor\/[0-9a-f]{64}$/.test(key))).toBe(true)
+  }))
+})
 
 describe("root action ids with the reply suffix", () => {
   for (const flow of ["vibelang/Post", "vibelang/Tour"]) {

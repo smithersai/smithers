@@ -118,3 +118,13 @@ sandboxes keep files, receipts and monthly allowance per identity; switching the
 responses. Mock-agent Post payloads carry the captured owner to an accepted post-ID mapping, so a queued reply
 cannot borrow a later selected identity. Missing owners fail closed. Live agent sandbox tools retain the closed
 binding until an originating post owner is persisted and verified through the live reply flow.
+
+## Review R1 D4, 2026-11-23 (Fable-D4-017, Fable-D4-036)
+
+- The accounts lock serializes storage writes only. Reads (`session`, the members list, role events) take no lock,
+  and a sign-in asks GitHub or the broker between two locked steps: the pending start is claimed once under the lock,
+  the exchange runs outside it, and the session is written under it. A slow GitHub delays one sign-in, not every
+  visitor's session check.
+- The next sign-in start deletes expired `session/` rows with the expired pending starts.
+- `GET /api/roles` answers one page of at most 100 members. `?after=<id>` starts after that id, and
+  `x-vibelang-next` names the page's last id while more remain.

@@ -119,7 +119,7 @@ effect function world(slug: boolean, brokered: boolean, named: boolean, legacy =
     return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(response))
   })
   const accounts = try Effect.provideService(Accounts.make("accounts-broker-fuzz", storage as unknown as Storage, {
-    origin: SITE, initialMaintainer: "1", clientId: "fixture-client-id", github, signingSecret: Redacted.make("fixture-only-signing-secret-32-chars"),
+    origin: SITE, initialMaintainer: "1", clientId: "fixture-client-id", github, issuedHere: () => succeed(true), signingSecret: Redacted.make("fixture-only-signing-secret-32-chars"),
     encryptionKey: KEY, ...(smithers === undefined ? {} : { delegate: smithers.delegate }), ...(brokered ? { broker: { origin: BROKER, secret: SECRET } } : named ? { broker: { origin: BROKER } } : {}), ...(slug ? { appSlug: "vibelang fixture" } : {}),
   }), HttpClient.HttpClient, client)
   const jars = new Map<string, Jar>([[SITE, new Map()], [BROKER, new Map()]])

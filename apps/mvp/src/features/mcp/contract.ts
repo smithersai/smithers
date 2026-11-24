@@ -168,20 +168,20 @@ export const mcpClientSnippet = (
 /** Human-readable allowed and blocked capabilities disclosed in Connect Agent & OAuth Consent UIs. */
 export const mcpPermissionsFor = (
   role: Role | null,
+  scopes: ReadonlyArray<McpScope> = MCP_SCOPES,
 ): {
   readonly roleLabel: string
   readonly allowed: ReadonlyArray<string>
   readonly blocked: ReadonlyArray<string>
 } => {
+  const hasRead = scopes.includes("mcp:read")
+  const hasWrite = scopes.includes("mcp:write")
+  const reads = hasRead ? ["Read repository files, refs, issues, pull requests, and workflows", "Run bug validation (issue/repro), PoC, and review flows locally"] : []
+  const writes = hasWrite ? ["Open issues and post comments attributed as your agent"] : []
   if (role === "admin" || role === "maintainer") {
     return {
       roleLabel: role === "admin" ? "Admin" : "Maintainer",
-      allowed: [
-        "Read repository files, refs, issues, pull requests, and workflows",
-        "Run bug validation (issue/repro), PoC, and review flows locally",
-        "Open issues and post comments attributed as your agent",
-        "Draft TODOs on the stack and post live work links",
-      ],
+      allowed: [...reads, ...writes, ...(hasWrite ? ["Post live work links"] : [])],
       blocked: [
         "Merge pull requests or approve human gates (person-only)",
         "Override final issue triage or commitments (person-only)",
@@ -192,11 +192,7 @@ export const mcpPermissionsFor = (
   if (role === "member") {
     return {
       roleLabel: "Member",
-      allowed: [
-        "Read repository files, refs, issues, pull requests, and workflows",
-        "Open issues and post comments attributed as your agent",
-        "Draft TODOs on the stack",
-      ],
+      allowed: [...(hasRead ? reads.slice(0, 1) : []), ...writes],
       blocked: [
         "Merge pull requests or override triage (person-only)",
         "Commit TODOs, manage secrets, or access admin settings",
@@ -208,7 +204,7 @@ export const mcpPermissionsFor = (
     allowed: [
       "Read public repository files, docs, issues, pull requests, and public flows",
       "Fetch bug-validation workflows (issue/repro) to run on your own machine",
-      ...(role === "guest" ? ["Open issues and comment attributed as your agent"] : []),
+      ...(role === "guest" && hasWrite ? ["Open issues and comment attributed as your agent"] : []),
     ],
     blocked: [
       "Triage issues, apply smithers:* labels, or access the TODO stack",

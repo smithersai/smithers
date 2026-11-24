@@ -331,7 +331,8 @@ export const make = (options: {
         : { kind: "failed", message: `Run ${receipt.status}` }
     },
     watch: (runId, onEvent) => {
-      const seen: Array<ControlEvent> = []
+      // Nothing is retained while the run streams: a long run's history is read
+      // from its journal once, when the answer or error is needed.
       let fiber: Fiber.Fiber<unknown, unknown> | undefined
       let closed = false
       const done = open().then(({ runtime }) => {
@@ -341,7 +342,6 @@ export const make = (options: {
             service.watch({ runId, follow: true }).pipe(
               Stream.tap((event) =>
                 Effect.sync(() => {
-                  seen.push(event)
                   onEvent(event)
                 })
               ),
@@ -352,20 +352,24 @@ export const make = (options: {
         )
         fiber = runtime.runFork(program)
         return Effect.runPromise(Fiber.await(fiber))
-      }).then((exit): Settled => {
+      }).then(async (exit): Promise<Settled> => {
         if (Exit.isFailure(exit)) {
           throw new FlowError("control", `Control watch failed: ${typed(Cause.squash(exit.cause)).message}`)
         }
         const last = exit.value as { _tag: string; value?: ControlEvent }
         const event = last._tag === "Some" ? last.value : undefined
         if (event === undefined) throw new FlowError("control", "Control watch ended")
-        if (event.kind === "control.run.completed") return { kind: "done", answer: answerOf(seen) }
+        if (event.kind === "control.run.completed") return { kind: "done", answer: answerOf(await events(runId)) }
         if (event.kind === "control.run.cancelled") return { kind: "cancelled" }
         if (event.kind === "control.run.pending") return { kind: "failed", message: "Declined" }
         const payload = payloadOf(event)
         // The cause carries a stack; the tab and the coordinator get its first line.
         const cause = Diagnosis.firstLine(String(payload["cause"] ?? payload["message"] ?? "")).trim()
-        return { kind: "failed", message: Diagnosis.clip(cause === "" ? "Failed" : cause, 200), error: errorOf(seen) }
+        return {
+          kind: "failed",
+          message: Diagnosis.clip(cause === "" ? "Failed" : cause, 200),
+          error: errorOf(await events(runId))
+        }
       })
       return {
         done,
