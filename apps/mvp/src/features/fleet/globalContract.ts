@@ -45,6 +45,16 @@ export type SessionHarness = (typeof SESSION_HARNESSES)[number]
 export const SESSION_STATUSES = ["working", "idle", "stalled", "waiting", "error", "ended"] as const
 export type SessionStatus = (typeof SESSION_STATUSES)[number]
 
+export const TRANSCRIPT_ROLES = ["user", "assistant", "tool", "system"] as const
+export type TranscriptRole = (typeof TRANSCRIPT_ROLES)[number]
+
+export interface TranscriptEntry {
+  readonly ts: string | null
+  readonly role: "user" | "assistant" | "tool" | "system"
+  readonly label: string | null
+  readonly text: string
+}
+
 export const ACCOUNT_PROVIDERS = ["claude", "codex", "google-agy"] as const
 export type AccountProvider = (typeof ACCOUNT_PROVIDERS)[number]
 
@@ -78,8 +88,12 @@ export const OBSERVED_SESSION_COLUMNS = [
   "model",
   "account_label",
   "repo",
+  "project",
   "lane",
   "title",
+  "summary",
+  "cwd",
+  "transcript_json",
   "status",
   "pid",
   "cpu_seconds",

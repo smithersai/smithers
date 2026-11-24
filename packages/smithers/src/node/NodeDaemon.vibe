@@ -11,6 +11,13 @@
 import type { HttpClient } from "effect/http"
 import * as McpClient from "./McpClient.vibe"
 
+export interface TranscriptEntry {
+  readonly ts: string | null
+  readonly role: "user" | "assistant" | "tool" | "system"
+  readonly label: string | null
+  readonly text: string
+}
+
 export interface HostSnapshot {
   readonly nodeId: string
   readonly name: string
@@ -36,8 +43,12 @@ export interface SessionSnapshot {
   readonly model: string | null
   readonly accountLabel: string | null
   readonly repo: string | null
+  readonly project: string | null
   readonly lane: string | null
   readonly title: string | null
+  readonly summary: string | null
+  readonly cwd: string | null
+  readonly transcriptJson: ReadonlyArray<TranscriptEntry> | null
   readonly status: "working" | "idle" | "stalled" | "waiting" | "error" | "ended"
   readonly pid: number | null
   readonly cpuSeconds: number | null

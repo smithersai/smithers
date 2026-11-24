@@ -3,7 +3,7 @@
 import { Host } from "@smthrs/plugin"
 import { Effect, Layer, Stream } from "effect"
 import { describe, expect, test, vi } from "vitest"
-import { ALL } from "./GlobalFleetModel"
+import { ACTIVE_STATUS, ALL, DEFAULT_SESSION_FILTERS } from "./GlobalFleetModel"
 import { FLEET_NODES, MACHINES, RUNS, tab } from "./tab"
 
 const widgets = { owner: "Acme", name: "Widgets" }
@@ -104,19 +104,42 @@ describe("the fleet's tab", () => {
   })
 
   // Neon-D4-014: the session filters are the tab's own state, read and written through it, never React's.
-  test("the session filters start at all, and each action changes its own and tells the view", async () => {
+  test("the session filters start at active defaults, and each action changes its own facet and tells the view", async () => {
     await withTab(hostWith(), async (built) => {
       const filters = built.queries.filters
-      expect(filters.current()).toEqual({ host: ALL, harness: ALL })
+      expect(filters.current()).toEqual(DEFAULT_SESSION_FILTERS)
+      expect(filters.current()).toEqual({
+        host: ALL,
+        harness: ALL,
+        project: ALL,
+        status: ACTIVE_STATUS,
+        query: "",
+        selectedSessionKey: null,
+      })
       let told = 0
       const stop = filters.subscribe(() => { told++ })
       built.actions.filterHost("host-1")
-      expect(filters.current()).toEqual({ host: "host-1", harness: ALL })
+      expect(filters.current()).toMatchObject({ host: "host-1", harness: ALL, project: ALL, status: ACTIVE_STATUS })
       built.actions.filterHarness("runner")
-      expect(filters.current()).toEqual({ host: "host-1", harness: "runner" })
+      expect(filters.current()).toMatchObject({ host: "host-1", harness: "runner" })
+      built.actions.filterProject("smithersai/smithers")
+      expect(filters.current()).toMatchObject({ project: "smithersai/smithers" })
+      built.actions.filterStatus("idle")
+      expect(filters.current()).toMatchObject({ status: "idle" })
+      built.actions.filterQuery("electric")
+      expect(filters.current()).toMatchObject({ query: "electric" })
+      built.actions.selectSession("mbp:claude:1")
+      expect(filters.current()).toMatchObject({ selectedSessionKey: "mbp:claude:1" })
       built.actions.filterHost(ALL)
-      expect(filters.current()).toEqual({ host: ALL, harness: "runner" })
-      expect(told).toBe(3)
+      expect(filters.current()).toMatchObject({ host: ALL, harness: "runner" })
+      built.actions.resetFilters()
+      expect(filters.current()).toEqual({
+        ...DEFAULT_SESSION_FILTERS,
+        selectedSessionKey: "mbp:claude:1",
+      })
+      built.actions.selectSession(null)
+      expect(filters.current().selectedSessionKey).toBeNull()
+      expect(told).toBe(9)
       stop()
     })
   })

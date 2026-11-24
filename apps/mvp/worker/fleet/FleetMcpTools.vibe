@@ -61,7 +61,7 @@ export const FLEET_TOOL_DESCRIPTORS: ReadonlyArray<McpToolDescriptor> = [
   },
   {
     name: "fleet_sessions_report",
-    description: "Report observed or managed agent sessions running on a host node.",
+    description: "Report observed or managed agent sessions (with canonical project, summary, cwd, and scrubbed transcript entries) running on a host node.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

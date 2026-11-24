@@ -2,7 +2,7 @@ import { Host } from "@smthrs/plugin"
 import { Effect, Scope } from "effect"
 import { availabilityOf } from "../../../src/features/fleet/globalContract"
 import type { HostNode, ObservedSession, ProviderAccount } from "../../../src/features/fleet/globalSchema"
-import { ALL, type SessionFilters } from "./GlobalFleetModel"
+import { DEFAULT_SESSION_FILTERS, type SessionFilters, type SessionStatusFilter } from "./GlobalFleetModel"
 import type { AgentRun, Machine } from "./model"
 
 export const RUNS = "core/agent-runs"
@@ -28,7 +28,7 @@ export interface FleetTab {
     readonly globalNodes: () => Watched<Rows<HostNode>>
     readonly globalSessions: () => Watched<Rows<ObservedSession>>
     readonly globalAccounts: () => Watched<Rows<ProviderAccount>>
-    /** Which sessions the deployment-wide table shows: this tab's own state, kept while the tab lives. */
+    /** Which sessions the deployment-wide table shows and which session is inspected: kept while the tab lives. */
     readonly filters: Watched<SessionFilters>
   }
   readonly actions: {
@@ -39,6 +39,16 @@ export interface FleetTab {
     readonly filterHost: (host: string) => void
     /** Shows only harness `harness`'s sessions, or every harness's (`ALL`). */
     readonly filterHarness: (harness: string) => void
+    /** Shows only canonical project `project`'s sessions, or every project's (`ALL`). */
+    readonly filterProject: (project: string) => void
+    /** Shows sessions matching `status` (`active`, `working`, `waiting`, `idle`, `error`, `all`). */
+    readonly filterStatus: (status: SessionStatusFilter) => void
+    /** Filters sessions by free-text search across project, summary, metadata, and transcript. */
+    readonly filterQuery: (query: string) => void
+    /** Opens or closes the live session inspector for `sessionKey` (`null` closes it). */
+    readonly selectSession: (sessionKey: string | null) => void
+    /** Resets facet filters to defaults while preserving the currently inspected session. */
+    readonly resetFilters: () => void
   }
 }
 
@@ -122,7 +132,7 @@ export const make = (host: Host.PluginHost) =>
       }
     }
 
-    const filters = cell<SessionFilters>({ host: ALL, harness: ALL })
+    const filters = cell<SessionFilters>(DEFAULT_SESSION_FILTERS)
 
     return {
       queries: {
@@ -139,6 +149,11 @@ export const make = (host: Host.PluginHost) =>
         openGlobal: () => void run(host.open(GLOBAL_VIEW)),
         filterHost: (host) => filters.set({ ...filters.current(), host }),
         filterHarness: (harness) => filters.set({ ...filters.current(), harness }),
+        filterProject: (project) => filters.set({ ...filters.current(), project }),
+        filterStatus: (status) => filters.set({ ...filters.current(), status }),
+        filterQuery: (query) => filters.set({ ...filters.current(), query }),
+        selectSession: (selectedSessionKey) => filters.set({ ...filters.current(), selectedSessionKey }),
+        resetFilters: () => filters.set({ ...DEFAULT_SESSION_FILTERS, selectedSessionKey: filters.current().selectedSessionKey }),
       },
     } satisfies FleetTab
   })

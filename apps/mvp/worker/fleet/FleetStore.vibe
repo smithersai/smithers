@@ -3,8 +3,8 @@
  * `observed_sessions`, `provider_accounts`) backed by ElectricSQL replication.
  *
  * Defense in depth (OBS-5): every free-form text a reporter sends is scrubbed before storage, provider grant telemetry
- * is reduced to an allowlist of fields, and every list is bounded, so credentials or tokens never enter Postgres or
- * Electric shapes. Each report commits whole or not at all.
+ * is reduced to an allowlist of fields, transcript entries are bounded and scrubbed, and every list is bounded, so
+ * credentials or tokens never enter Postgres or Electric shapes. Each report commits whole or not at all.
  */
 
 import { SqlClient } from "effect/sql"
@@ -14,6 +14,9 @@ import {
   HOST_KINDS,
   SESSION_HARNESSES,
   SESSION_STATUSES,
+  TRANSCRIPT_ROLES,
+  type TranscriptEntry,
+  type TranscriptRole,
 } from "../../src/features/fleet/globalContract.ts"
 
 const SECRET_PATTERN =
@@ -49,6 +52,52 @@ export const MAX_TAGS = 32
 const MAX_TAG_LENGTH = 64
 /** The most entries an account's `grants` list keeps. */
 export const MAX_GRANTS = 32
+/** The most transcript entries stored per observed session. */
+export const MAX_TRANSCRIPT_ENTRIES = 24
+const MAX_TRANSCRIPT_TEXT_LENGTH = 360
+const MAX_TRANSCRIPT_LABEL_LENGTH = 80
+
+/**
+ * Scrubs and bounds a session's transcript entries (OBS-5): keeps at most the last 24 entries,
+ * validates the role allowlist, scrubs `text` (max 360 chars) and `label` (max 80 chars) through
+ * `scrubText`, and normalizes timestamps so credentials or raw dumps never enter Postgres or Electric.
+ */
+export function scrubTranscript(raw: unknown): ReadonlyArray<TranscriptEntry> | null {
+  let list: unknown = raw
+  if (typeof list === "string") {
+    try {
+      list = JSON.parse(list)
+    } catch {
+      return null
+    }
+  }
+  if (!Array.isArray(list)) return null
+  const kept: Array<TranscriptEntry> = []
+  for (const item of list) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue
+    const obj = item as Record<string, unknown>
+    const rawRole = obj["role"]
+    if (typeof rawRole !== "string" || !(TRANSCRIPT_ROLES as ReadonlyArray<string>).includes(rawRole)) continue
+    const rawText = obj["text"]
+    if (typeof rawText !== "string") continue
+    const text = scrubText(rawText, MAX_TRANSCRIPT_TEXT_LENGTH)
+    if (text === null) continue
+    const rawLabel = obj["label"]
+    const label = typeof rawLabel === "string" ? scrubText(rawLabel, MAX_TRANSCRIPT_LABEL_LENGTH) : null
+    const rawTs = obj["ts"]
+    const ts = typeof rawTs === "string" && rawTs.length <= 64 && !Number.isNaN(Date.parse(rawTs))
+      ? new Date(Date.parse(rawTs)).toISOString()
+      : null
+    kept.push({
+      ts,
+      role: rawRole as TranscriptRole,
+      label,
+      text,
+    })
+  }
+  if (kept.length === 0) return null
+  return kept.slice(-MAX_TRANSCRIPT_ENTRIES)
+}
 
 /**
  * The fields a provider's grant telemetry may carry (R1-Astra-D4-011). Everything else a reporter sends, at any depth,
@@ -131,8 +180,12 @@ export const ObservedSessionInput = Schema.Struct({
   model: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(120)))),
   accountLabel: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(64)))),
   repo: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(160)))),
+  project: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(200)))),
   lane: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(120)))),
   title: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(320)))),
+  summary: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(480)))),
+  cwd: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(512)))),
+  transcriptJson: Schema.optional(Schema.NullOr(Schema.Array(Schema.Unknown).check(Schema.isMaxLength(64)))),
   status: Schema.Literals(SESSION_STATUSES),
   pid: Schema.optional(Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))),
   cpuSeconds: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
@@ -233,16 +286,23 @@ export effect function reportSessions(input: SessionsReportInput) {
       const title = scrubText(s.title, 160)
       const lane = scrubText(s.lane, 120)
       const repo = scrubText(s.repo, 160)
+      const project = scrubText(s.project, 160)
+      const summary = scrubText(s.summary, 320)
+      const cwd = scrubText(s.cwd, 260)
       const model = scrubText(s.model, 120)
       const accountLabel = scrubText(s.accountLabel, 64)
+      const transcript = scrubTranscript(s.transcriptJson)
+      const transcriptText = transcript === null ? null : JSON.stringify(transcript)
       try sql`
         INSERT INTO observed_sessions (
           session_key, node_id, managed, harness, model, account_label,
-          repo, lane, title, status, pid, cpu_seconds, tokens_used,
+          repo, project, lane, title, summary, cwd, transcript_json,
+          status, pid, cpu_seconds, tokens_used,
           started_at, last_activity_at, ended_at, updated_at
         ) VALUES (
           ${s.sessionKey}, ${input.nodeId}, ${s.managed ?? false}, ${s.harness}, ${model}, ${accountLabel},
-          ${repo}, ${lane}, ${title}, ${s.status}, ${s.pid ?? null}, ${s.cpuSeconds ?? null}, ${s.tokensUsed ?? null},
+          ${repo}, ${project}, ${lane}, ${title}, ${summary}, ${cwd}, ${transcriptText}::jsonb,
+          ${s.status}, ${s.pid ?? null}, ${s.cpuSeconds ?? null}, ${s.tokensUsed ?? null},
           ${instant(s.startedAt)}::timestamptz, ${instant(s.lastActivityAt)}::timestamptz, ${instant(s.endedAt)}::timestamptz, now()
         )
         ON CONFLICT (session_key) DO UPDATE SET
@@ -252,8 +312,12 @@ export effect function reportSessions(input: SessionsReportInput) {
           model = EXCLUDED.model,
           account_label = EXCLUDED.account_label,
           repo = EXCLUDED.repo,
+          project = EXCLUDED.project,
           lane = EXCLUDED.lane,
           title = EXCLUDED.title,
+          summary = EXCLUDED.summary,
+          cwd = EXCLUDED.cwd,
+          transcript_json = EXCLUDED.transcript_json,
           status = EXCLUDED.status,
           pid = EXCLUDED.pid,
           cpu_seconds = EXCLUDED.cpu_seconds,
@@ -369,7 +433,8 @@ export effect function readOverview(includeEnded: boolean = false) {
   const sessions = includeEnded
     ? try sql`
       SELECT session_key AS "sessionKey", node_id AS "nodeId", managed, harness, model,
-        account_label AS "accountLabel", repo, lane, title, status, pid,
+        account_label AS "accountLabel", repo, project, lane, title, summary, cwd,
+        transcript_json AS "transcriptJson", status, pid,
         cpu_seconds AS "cpuSeconds", tokens_used::double precision AS "tokensUsed",
         started_at AS "startedAt", last_activity_at AS "lastActivityAt", ended_at AS "endedAt"
       FROM observed_sessions
@@ -378,7 +443,8 @@ export effect function readOverview(includeEnded: boolean = false) {
     `
     : try sql`
       SELECT session_key AS "sessionKey", node_id AS "nodeId", managed, harness, model,
-        account_label AS "accountLabel", repo, lane, title, status, pid,
+        account_label AS "accountLabel", repo, project, lane, title, summary, cwd,
+        transcript_json AS "transcriptJson", status, pid,
         cpu_seconds AS "cpuSeconds", tokens_used::double precision AS "tokensUsed",
         started_at AS "startedAt", last_activity_at AS "lastActivityAt", ended_at AS "endedAt"
       FROM observed_sessions
@@ -386,6 +452,10 @@ export effect function readOverview(includeEnded: boolean = false) {
       ORDER BY updated_at DESC
       LIMIT 300
     `
+  const projectedSessions = sessions.map((row: Record<string, unknown>) => ({
+    ...row,
+    transcriptJson: scrubTranscript(row["transcriptJson"]),
+  }))
   const accounts = try sql`
     SELECT account_key AS "accountKey", provider, label, plan, status,
       five_hour_pct AS "fiveHourPct", weekly_pct AS "weeklyPct", scoped_pct AS "scopedPct",
@@ -405,27 +475,34 @@ export effect function readOverview(includeEnded: boolean = false) {
     ORDER BY seen_at DESC
     LIMIT 60
   `
-  const cfSessions = sandboxes.map((row: Record<string, unknown>) => ({
-    sessionKey: `cloudflare-branch-sandbox:cf-sandbox:${String(row["id"] ?? "")}`,
-    nodeId: "cloudflare-branch-sandbox",
-    managed: true,
-    harness: "cf-sandbox",
-    model: null,
-    accountLabel: null,
-    repo: typeof row["branchId"] === "string" ? row["branchId"].split("#")[0] ?? null : null,
-    lane: typeof row["kind"] === "string" ? row["kind"] : null,
-    title: scrubText(
-      `BranchSandbox ${String(row["branchId"] ?? "")} (gen ${String(row["generation"] ?? "?")})`,
-      160
-    ),
-    status: "working",
-    pid: null,
-    cpuSeconds: null,
-    tokensUsed: null,
-    startedAt: row["startedAt"] ?? null,
-    lastActivityAt: row["seenAt"] ?? null,
-    endedAt: row["endedAt"] ?? null,
-  }))
+  const cfSessions = sandboxes.map((row: Record<string, unknown>) => {
+    const branchId = typeof row["branchId"] === "string" ? row["branchId"] : ""
+    const repo = branchId.length > 0 ? branchId.split("#")[0] ?? null : null
+    const kind = typeof row["kind"] === "string" ? row["kind"] : "branch"
+    const gen = String(row["generation"] ?? "?")
+    return {
+      sessionKey: `cloudflare-branch-sandbox:cf-sandbox:${String(row["id"] ?? "")}`,
+      nodeId: "cloudflare-branch-sandbox",
+      managed: true,
+      harness: "cf-sandbox",
+      model: null,
+      accountLabel: null,
+      repo,
+      project: scrubText(repo, 160),
+      lane: typeof row["kind"] === "string" ? row["kind"] : null,
+      title: scrubText(`BranchSandbox ${branchId} (gen ${gen})`, 160),
+      summary: scrubText(`BranchSandbox ${kind} ${branchId} (gen ${gen})`, 320),
+      cwd: null,
+      transcriptJson: null,
+      status: "working",
+      pid: null,
+      cpuSeconds: null,
+      tokensUsed: null,
+      startedAt: row["startedAt"] ?? null,
+      lastActivityAt: row["seenAt"] ?? null,
+      endedAt: row["endedAt"] ?? null,
+    }
+  })
   const hasCfSandboxNode = nodes.some(
     (n: Record<string, unknown>) => n["nodeId"] === "cloudflare-branch-sandbox"
   )
@@ -452,5 +529,5 @@ export effect function readOverview(includeEnded: boolean = false) {
       },
     ]
     : nodes
-  return { nodes: allNodes, sessions: [...sessions, ...cfSessions], accounts: projectedAccounts }
+  return { nodes: allNodes, sessions: [...projectedSessions, ...cfSessions], accounts: projectedAccounts }
 }

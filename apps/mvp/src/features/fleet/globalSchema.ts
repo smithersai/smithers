@@ -5,11 +5,20 @@ import {
   HOST_KINDS,
   SESSION_HARNESSES,
   SESSION_STATUSES,
+  TRANSCRIPT_ROLES,
 } from "./globalContract"
 
 const When = Schema.NullOr(Schema.String)
 const Num = Schema.NullOr(Schema.Number)
 const Text = Schema.NullOr(Schema.String)
+
+export const TranscriptEntry = Schema.Struct({
+  ts: When,
+  role: Schema.Literals(TRANSCRIPT_ROLES),
+  label: Text,
+  text: Schema.String,
+})
+export type TranscriptEntry = typeof TranscriptEntry.Type
 
 export const HostNode = Schema.Struct({
   nodeId: Schema.String,
@@ -39,8 +48,12 @@ export const ObservedSession = Schema.Struct({
   model: Text,
   accountLabel: Text,
   repo: Text,
+  project: Text,
   lane: Text,
   title: Text,
+  summary: Text,
+  cwd: Text,
+  transcriptJson: Schema.optional(Schema.NullOr(Schema.Unknown)),
   status: Schema.Literals(SESSION_STATUSES),
   pid: Num,
   cpuSeconds: Num,
@@ -108,8 +121,12 @@ export const OBSERVED_SESSION_ROW = {
     model: nullable("string"),
     accountLabel: nullable("string"),
     repo: nullable("string"),
+    project: nullable("string"),
     lane: nullable("string"),
     title: nullable("string"),
+    summary: nullable("string"),
+    cwd: nullable("string"),
+    transcriptJson: {},
     status: { type: "string", enum: [...SESSION_STATUSES] },
     pid: nullable("number"),
     cpuSeconds: nullable("number"),

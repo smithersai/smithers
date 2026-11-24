@@ -147,6 +147,87 @@ describe("FleetStore (real Postgres)", () => {
         expect(String(endedClaude?.["title"])).toContain("[redacted]")
         expect(() => JSON.stringify(withEnded)).not.toThrow()
         expect(typeof endedClaude?.["tokensUsed"]).toBe("number")
+
+        const cfSession = active.sessions.find(
+          (s: Record<string, unknown>) => s["harness"] === "cf-sandbox"
+        ) as Record<string, unknown> | undefined
+        expect(cfSession?.["project"]).toBe("smithersai/smithers")
+        expect(cfSession?.["summary"]).toBe("BranchSandbox branch smithersai/smithers#feat/fleet (gen 1)")
+        expect(cfSession?.["cwd"]).toBeNull()
+        expect(cfSession?.["transcriptJson"]).toBeNull()
+      })
+    )
+  })
+
+  test("persists and reads project, summary, cwd, and OBS-5 scrubbed transcriptJson capped to last 24 entries", async () => {
+    await runtime.runPromise(
+      Effect.gen(function* () {
+        yield* FleetStore.upsertHostNode({
+          nodeId: "node-obs",
+          name: "Mac mini",
+          kind: "mac-mini",
+          labels: ["mac-mini"],
+        })
+
+        const secret = "ghp_SecretToken1234567890abcdef"
+        const rawEntries = Array.from({ length: 30 }, (_, i) => ({
+          ts: `2026-11-24T04:00:${String(i).padStart(2, "0")}Z`,
+          role: i % 3 === 0 ? "user" : i % 3 === 1 ? "tool" : "assistant",
+          label: i === 29 ? `Bash ${secret}` : i % 3 === 1 ? "Edit" : "assistant",
+          text: i === 29
+            ? `Ran deploy with ${secret} and sk-ant-api03-secretvalue and TOKEN=supersecret`
+            : `Step ${i} completed cleanly`,
+        }))
+
+        const reported = yield* FleetStore.reportSessions({
+          nodeId: "node-obs",
+          replaceActive: true,
+          sessions: [
+            {
+              sessionKey: "node-obs:claude:obs-1",
+              managed: false,
+              harness: "claude",
+              model: "claude-opus-4-7",
+              accountLabel: "claude-1",
+              repo: "smithers-fleet-byoa",
+              project: "smithersai/smithers",
+              lane: "feat/observability",
+              title: "Fleet observability upgrade",
+              summary: `Upgrade fleet collectors with ${secret} — running vitest`,
+              cwd: "/Users/williamcory/smithers-fleet-byoa",
+              transcriptJson: rawEntries,
+              status: "working",
+              pid: 9001,
+              cpuSeconds: 12.4,
+              tokensUsed: 98765,
+            },
+          ],
+        })
+        expect(reported).toEqual({ nodeId: "node-obs", reported: 1, active: 1 })
+
+        const overview = yield* FleetStore.readOverview(false)
+        expect(() => JSON.stringify(overview)).not.toThrow()
+        const serialized = JSON.stringify(overview)
+        expect(serialized).not.toContain("ghp_SecretToken")
+        expect(serialized).not.toContain("sk-ant-api03")
+        expect(serialized).not.toContain("TOKEN=supersecret")
+
+        const row = overview.sessions.find(
+          (s: Record<string, unknown>) => s["sessionKey"] === "node-obs:claude:obs-1"
+        ) as Record<string, unknown> | undefined
+        expect(row).toBeDefined()
+        expect(row?.["project"]).toBe("smithersai/smithers")
+        expect(row?.["cwd"]).toBe("/Users/williamcory/smithers-fleet-byoa")
+        expect(String(row?.["summary"])).toContain("[redacted]")
+        expect(String(row?.["summary"])).toContain("running vitest")
+        const transcript = row?.["transcriptJson"] as ReadonlyArray<Record<string, unknown>>
+        expect(Array.isArray(transcript)).toBe(true)
+        expect(transcript).toHaveLength(24)
+        // Keeps the last 24 entries (indices 6..29)
+        expect(transcript[0]?.["text"]).toBe("Step 6 completed cleanly")
+        expect(transcript[23]?.["label"]).toBe("Bash [redacted]")
+        expect(String(transcript[23]?.["text"])).toContain("[redacted]")
+        expect(String(transcript[23]?.["text"])).not.toContain(secret)
       })
     )
   })
