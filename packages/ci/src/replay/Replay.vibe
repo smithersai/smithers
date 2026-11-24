@@ -667,8 +667,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // Every checkout of the replay is in this directory. Under one Biome skips, a lint the CI passes would fail here.
     const work = try orFail(fs.realPath(workName), "could not read a directory")
     const machines = path.join(work, "machines")
-    const baselineMachines = path.join(work, "baseline-machines")
-    const disk = try diskWatch(work, [machines, baselineMachines], progress.say, options.diskTick)
+    const plannerMachines = path.join(work, "planner-machines")
+    const disk = try diskWatch(work, [machines, plannerMachines], progress.say, options.diskTick)
     const skipped = skippedPart(work)
     if (skipped !== undefined) {
       throw failure(
@@ -763,7 +763,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     effect function siteAt(way: Way, commit: string) {
       const copy = path.join(work, way, path.basename(root))
       const base = places[way]
-      const place = base.jail === undefined ? base : { ...base, jail: { ...base.jail, machineMount: [machines, baselineMachines] as const } }
+      const place = base.jail === undefined ? base : { ...base, jail: { ...base.jail, machineMount: [plannerMachines, machines] as const } }
       try cloneAt(copy, commit, place)
       // Not under `kept`, which a baseline step may write: no way reads what another way keeps.
       const cache = path.join(work, "state", way)
@@ -773,10 +773,10 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       return { copy, place, cache, declared } satisfies Site
     }
 
-    // Only the planner writes machines. Its jail mounts that tree over the baseline machine path:
-    // jobs see stable absolute paths without giving the planner the controller's directories.
+    // Only the planner writes plannerMachines. Its jail mounts that tree over machines:
+    // jobs see stable absolute /machines/ paths without giving the planner the controller's directory.
     try orFail(fs.makeDirectory(machines), "could not make a directory")
-    try orFail(fs.makeDirectory(baselineMachines), "could not make a directory")
+    try orFail(fs.makeDirectory(plannerMachines), "could not make a directory")
     const normal = try siteAt("normal", "HEAD")
     const normalCopy = normal.copy
     const checkoutPath = try orFail(fs.realPath(normalCopy), "could not read a directory")
@@ -972,7 +972,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const startEnv = (site: Site) => ({
       ...stepEnvironment({ ...software, ...site.place.daemon }, site.place),
       ...jobHomes(site.place),
-      [machinesVariable]: site.place.jail === undefined ? machines : baselineMachines,
+      [machinesVariable]: machines,
       // What a step leaves where nothing keeps it ends with the step, as in the baseline.
       [leftEndsVariable]: "step",
       // The recorder the person chose, which Smithers build reads itself.
@@ -1010,7 +1010,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const file = path.join(records, `run-${runs}.json`)
       // With a token to give, Smithers build is started by the program that reads it from a pipe.
       const starter = token === undefined ? undefined : options.smthrsWithToken
-      const [command, ...args] = plannerCommand(site.place, [site.copy, records, site.cache, machines], starter ?? options.smthrs, [
+      const [command, ...args] = plannerCommand(site.place, [site.copy, records, site.cache, plannerMachines], starter ?? options.smthrs, [
         "ci",
         ...selected,
         ...pointed(site, own),
@@ -1192,7 +1192,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         // A job is a machine: its home and its temporary directory are its own, and gone when it ends.
         // A job with a machine runs where Smithers build puts that machine in each mode; one with none beside the way.
         const named = sequence[0]?.machine
-        const at = named === undefined ? undefined : machinePaths(baselineMachines, checkoutPath, named)
+        const at = named === undefined ? undefined : machinePaths(machines, checkoutPath, named)
         const home = at?.home ?? path.join(path.dirname(way.home), `${path.basename(way.home)}-job-${name}`)
         const tmp = at?.tmp ?? path.join(path.dirname(way.tmp), `${path.basename(way.tmp)}-job-${name}`)
         const place = try orFail(machine(way, home, tmp, at !== undefined), "could not make the home of a job")

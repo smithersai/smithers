@@ -230,8 +230,8 @@ describe("a job's machine", () => {
           )
           expect(paths[1]).toEqual(paths[0])
           const [baseline, normal, fast] = paths[0]!
-          expect(baseline).toMatch(new RegExp(`^/\\S+/baseline-machines/[0-9a-f]{16}/${name}-[0-9a-f]{8}/${end}$`))
-          expect(normal).toBe(asked === jailed ? baseline : baseline!.replace("/baseline-machines/", "/machines/"))
+          expect(baseline).toMatch(new RegExp(`^/\\S+/machines/[0-9a-f]{16}/${name}-[0-9a-f]{8}/${end}$`))
+          expect(normal).toBe(baseline)
           expect(fast).toBe(normal)
         }
       },

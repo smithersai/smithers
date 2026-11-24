@@ -333,13 +333,13 @@ describe("a step on a machine with no jail", () => {
       expect(lines.length).toBeGreaterThanOrEqual(4)
       expect(readFileSync(join(out, name), "utf8")).not.toContain("Everything up-to-date")
     }
-    // Without a jail the two backing directories are visible by their separate host paths.
+    // Without a jail both baseline and normal run at the stable /machines/ path.
     const homes = [...new Set(readFileSync(join(out, "home"), "utf8").trim().split("\n"))]
-    expect(homes).toHaveLength(2)
-    const baseline = homes.find((home) => home.includes("/baseline-machines/"))!
-    expect(homes).toContain(baseline.replace("/baseline-machines/", "/machines/"))
+    expect(homes).toHaveLength(1)
+    const baseline = homes[0]!
+    expect(baseline).toContain("/machines/")
     expect(basename(baseline)).toBe("home")
-    expect(existsSync(baseline.split("/baseline-machines/")[0]!)).toBe(false)
+    expect(existsSync(baseline.split("/machines/")[0]!)).toBe(false)
     expect(existsSync(join(out, "written"))).toBe(true)
     expect(said.filter((line) => line.includes("jail"))).toEqual([unjailed(refusal)])
   }, 1_200_000)
