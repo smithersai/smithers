@@ -674,7 +674,7 @@ describe("NodeDaemon fleet snapshot byte budget & chunking (R2-Astra-D4-011)", (
 })
 
 describe("NodeDaemon chunkSessionsByBytes", () => {
-  it("splits large session payloads under the MCP byte limit", () => {
+  test("splits large session payloads under the MCP byte limit", () => {
     const mk = (i: number) => ({
       sessionKey: "k-" + i,
       harness: "claude" as const,
