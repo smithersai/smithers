@@ -60,7 +60,8 @@ export const apps = (projectRoot: string): ReadonlyArray<App> => {
   }
   const parsed = Home.parse(text)
   if (typeof parsed === "string") return []
-  return parsed.blocks.flatMap((block) =>
+  const blocks = "blocks" in parsed ? parsed.blocks : parsed.sections.flatMap((section) => section.blocks)
+  return blocks.flatMap((block) =>
     block.type === "app" ? [{ flow: block.flow, title: block.title, picture: block.picture }] : []
   )
 }
