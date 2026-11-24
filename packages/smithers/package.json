@@ -133,6 +133,7 @@
   "files": [
     "bin/**/*.mjs",
     "src/**/*.ts",
+    "src/**/*.vibe",
     "skills/**",
     "dist/**/*.js",
     "dist/**/*.js.map",

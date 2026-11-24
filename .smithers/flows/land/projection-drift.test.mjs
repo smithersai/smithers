@@ -27,6 +27,7 @@ test("landing projection refuses stale docs and API declarations before issuing 
   symlinkSync(join(repo, "packages/smithers/bin/smithers.mjs"), join(root, "packages/smithers/bin/smithers.mjs"))
   for (const path of [api, docs,
     "apps/site/scripts/docs-text.mjs",
+    ".smithers/flows/release/set-release-version.mjs",
     "packages/repo-targets/scripts/workspace-packages.mjs",
     "packages/repo-targets/scripts/build-library.mjs",
     "packages/repo-targets/scripts/private-effect-adapters.mjs"

@@ -40,6 +40,7 @@ const run = (payload: typeof Request.Type, executionId: string) =>
   )
 
 const hygiene = "packages/repo-targets/contracts/check-tracked-hygiene.mjs"
+const workspaceRootScript = "packages/repo-targets/scripts/workspace-root.mjs"
 
 // A Git checkout on main holding the one gate a commit without push runs.
 const inCheckout = async <A>(body: (root: string, git: (...args: Array<string>) => string) => Promise<A>) => {
@@ -51,11 +52,23 @@ const inCheckout = async <A>(body: (root: string, git: (...args: Array<string>) 
     git("config", "user.name", "Land test")
     git("config", "user.email", "land@example.invalid")
     mkdirSync(join(root, "packages/repo-targets/contracts"), { recursive: true })
+    mkdirSync(join(root, "packages/repo-targets/scripts"), { recursive: true })
     copyFileSync(fileURLToPath(new URL(`../../../${hygiene}`, import.meta.url)), join(root, hygiene))
+    copyFileSync(
+      fileURLToPath(new URL(`../../../${workspaceRootScript}`, import.meta.url)),
+      join(root, workspaceRootScript)
+    )
     git("add", ".")
     git("commit", "-q", "-m", "initial")
+    const previousLock = process.env.SMITHERS_LAND_LOCK
+    process.env.SMITHERS_LAND_LOCK = join(root, ".git/main-push.lock")
     process.chdir(root)
-    return await body(root, git)
+    try {
+      return await body(root, git)
+    } finally {
+      if (previousLock === undefined) delete process.env.SMITHERS_LAND_LOCK
+      else process.env.SMITHERS_LAND_LOCK = previousLock
+    }
   } finally {
     process.chdir(previous)
     rmSync(root, { recursive: true, force: true })

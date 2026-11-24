@@ -785,7 +785,7 @@ for (const vcs of ["git", "jj"]) {
         await new Promise((resolveWaiting, reject) => {
           child.stderr.on("data", (chunk) => {
             stderr += chunk
-            if (stderr.includes("WAITING landing queue")) resolveWaiting()
+            if (stderr.includes("AFFECTED receipt=") && stderr.includes(lock) && stderr.slice(stderr.indexOf(lock)).includes("WAITING landing queue")) resolveWaiting()
           })
           child.once("close", () => reject(new Error(`finished before waiting on the lock:\n${stderr}`)))
         })
