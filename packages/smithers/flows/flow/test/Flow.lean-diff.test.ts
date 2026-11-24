@@ -24,7 +24,7 @@ import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process"
-import { existsSync } from "node:fs"
+import { existsSync, rmSync } from "node:fs"
 import { homedir } from "node:os"
 import { delimiter, join } from "node:path"
 import { createInterface } from "node:readline"
@@ -106,6 +106,8 @@ let oracle: Oracle
 beforeAll(() => {
   if (!oracleReady) return
   if (lake !== undefined && current._tag === "Complete" && LeanOracle.stale(specification, current)) {
+    // Force Lake to relink when its own build trace survived a replaced executable.
+    rmSync(binary, { force: true })
     const built = spawnSync(lake, ["build"], {
       cwd: specDir,
       encoding: "utf8",

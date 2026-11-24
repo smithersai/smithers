@@ -177,6 +177,13 @@ describe("DirectorySandbox", () => {
       expect(session.remoteId).toBe(legacy)
       expect(new TextDecoder().decode(yield* session.readFile(`${legacy}/proof`))).toBe("retained")
       expect(yield* fs.exists(`${providerRoot}/${sessionSlug(sessionKey)}`)).toBe(false)
+      const current = providerRoot + "/" + sessionSlug(sessionKey)
+      yield* fs.makeDirectory(current)
+      expect(yield* Effect.flip(Effect.scoped(directory.acquire(sessionKey)))).toMatchObject({ code: "unavailable" })
+      for (const remoteId of [current, legacy]) {
+        expect((yield* Effect.scoped(directory.attach!({ id: sessionKey, remoteId }))).workdir).toBe(remoteId)
+      }
+      yield* fs.remove(current, { recursive: true })
       let lookedUp = false
       const disappearingFs: FileSystem.FileSystem = {
         ...fs,

@@ -920,7 +920,10 @@ jobs:
           retention-days: 30
   installer-publish:
     name: sign and publish installer archives
-    needs: installer-archive
+    # validate-source is a direct need so this job reads the validated commit
+    # itself: the signing checkout and INSTALLER_SOURCE_SHA are that SHA, never
+    # the tag, which can move after the archives were built.
+    needs: [validate-source, installer-archive]
     # The signed archives have one consumer, the Homebrew job below, and a
     # prerelease publishes to npm `next` only. So a suffixed version signs
     # nothing; an unsuffixed release signs at its tag, as before.
@@ -942,10 +945,27 @@ jobs:
           test "$GITHUB_REPOSITORY" = smithersai/smithers
           test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
           test "$GITHUB_WORKFLOW_REF" = "smithersai/smithers/.github/workflows/release.yml@refs/tags/$RELEASE_TAG"
+      # The commit validate-source found on main, by SHA, the one the archives
+      # were built from. The signing scripts below run from this checkout.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ needs.validate-source.outputs.sha }}
           persist-credentials: false
+      - name: Require the validated signing source
+        env:
+          VALIDATED_SHA: ${{ needs.validate-source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$VALIDATED_SHA" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]; then
+            echo "validate-source handed on no commit SHA." >&2
+            exit 1
+          fi
+          actual_source="$(git rev-parse --verify 'HEAD^{commit}')"
+          if [ "$actual_source" != "$VALIDATED_SHA" ]; then
+            echo "The checked-out source $actual_source is not the validated release source $VALIDATED_SHA; nothing is signed." >&2
+            exit 1
+          fi
+        shell: bash
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 26.5.0
@@ -966,6 +986,7 @@ jobs:
         env:
           INSTALLER_DIR: ${{ runner.temp }}/installer
           PACK_DIR: ${{ runner.temp }}/release-packs
+          INSTALLER_SOURCE_SHA: ${{ needs.validate-source.outputs.sha }}
         run: |
           INSTALLER_CANDIDATE_INTEGRITY="$(node --input-type=module -e '
             import { readFile } from "node:fs/promises";
@@ -975,8 +996,6 @@ jobs:
             console.log(candidateIntegrity(candidate));
           ')"
           export INSTALLER_CANDIDATE_INTEGRITY
-          INSTALLER_SOURCE_SHA="$(git rev-parse HEAD)"
-          export INSTALLER_SOURCE_SHA
           node .smithers/flows/release/installer-release.mjs sign "$INSTALLER_DIR" "$RELEASE_TAG"
       - name: Retain signed installer evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

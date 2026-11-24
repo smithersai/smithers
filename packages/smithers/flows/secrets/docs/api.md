@@ -67,6 +67,7 @@ cannot be sent by Fetch; `surrounding_space` rejects spaces Fetch would strip.
 | `Answer`                                    | `{ status, headers, body: Stream<Uint8Array, Broken> }`                                                                                    |
 | `DecodesContent`                            | Optional reference. A predicate over the complete ordered response codings that returns true only when the client has decoded every layer. |
 | `layerFetchDecodesContent`                  | Layer declaring automatic decoding for a single gzip, deflate or Brotli coding on Fetch.                                                   |
+| `layerRawContent`                           | Layer for clients that return raw encoded bytes.                                                                                           |
 | `Vault`                                     | service: `{ reveal: (name) => Effect<Redacted<string>, SecretUnavailable> }`                                                               |
 | `Audit`                                     | service: `{ record: (entry: Entry) => Effect<void, AuditUnavailable> }`                                                                    |
 | `Entry`                                     | `{ host, method, outcome: "forwarded" \| Refusal, secrets: ReadonlyArray<string> }`                                                        |

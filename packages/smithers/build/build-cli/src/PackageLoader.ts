@@ -45,6 +45,7 @@ import { assertDeclarationDependencies } from "./internal/DeclarationDependencie
 import { containedRelative } from "./internal/Path.ts"
 import { byCodeUnit, posix } from "./internal/Text.ts"
 import { isWorkspaceFileName } from "./internal/WorkspaceFiles.ts"
+import * as PackageDiscovery from "./PackageDiscovery.ts"
 import type { Discovery } from "./PackageDiscovery.ts"
 import { PackageError } from "./PackageError.ts"
 import { rootPackageOf, validateWorkspaceModule } from "./WorkspaceLoader.ts"
@@ -863,8 +864,9 @@ export const load = async (discovery: Discovery): Promise<LoadedGraph> => {
 }
 
 /**
- * What a base revision held in place of the files changed since it: every
- * changed path, workspace-relative, and the text of each one the base holds.
+ * A base revision as the declaration graph reads it: every path changed
+ * since it, the text of each changed one the base holds, and every file the
+ * base holds, all workspace-relative.
  *
  * @category models
  * @since 1.0.0
@@ -872,17 +874,25 @@ export const load = async (discovery: Discovery): Promise<LoadedGraph> => {
 export interface Revision {
   readonly changed: ReadonlySet<string>
   readonly texts: ReadonlyMap<string, string>
+  readonly files: ReadonlyArray<string>
 }
 
 /**
- * Evaluates the declaration graph a base revision held, from the checkout's
- * discovery and the files changed since.
+ * Evaluates the declaration graph a base revision held.
  *
- * Every changed module is read as the base held it, a package declaration
- * added since is left out, and one deleted since is evaluated from its base
- * text. An unchanged file is read from the checkout, where it is what the
- * base held. A changed file the base holds no text for is refused, so the
- * graph never mixes in a declaration as the change wrote it.
+ * The base's own workspace declaration is evaluated first, alone, and
+ * `boundaries` reads off it the cache directory, child repositories and
+ * `discovery.prune` paths the base declared. The package inventory is then
+ * the base's file list within those boundaries
+ * ({@link PackageDiscovery.discoverAt}), never the checkout's walk: a marker
+ * file or a prune path the change adds cannot remove a package, a package
+ * declaration added since is left out, and one deleted since is evaluated
+ * from its base text.
+ *
+ * Every changed module is read as the base held it. An unchanged file is
+ * read from the checkout, where it is what the base held. A changed file the
+ * base holds no text for is refused, so the graph never mixes in a
+ * declaration as the change wrote it.
  *
  * What a declaration reads outside module imports (a directory listing, a
  * file read through `node:fs`) is still read from the checkout. The static
@@ -891,38 +901,19 @@ export interface Revision {
  * @category loading
  * @since 1.0.0
  */
-export const loadAt = async (discovery: Discovery, revision: Revision): Promise<LoadedGraph> => {
-  const held = (file: string): boolean => !revision.changed.has(file) || revision.texts.has(file)
-  if (!held(discovery.workspaceFile)) {
-    throw new PackageError(
-      "module_import_failed",
-      `the base revision holds no workspace declaration at ${discovery.workspaceFile}`,
-      { path: discovery.workspaceFile }
-    )
+export const loadAt = async (
+  checkout: Discovery,
+  revision: Revision,
+  boundaries: (workspace: WorkspaceDeclaration.WorkspaceDeclaration) => PackageDiscovery.Boundaries
+): Promise<LoadedGraph> => {
+  const absolute = (file: string): string => NodePath.join(checkout.root, file)
+  const held: DeclarationRevision = {
+    changed: new Set([...revision.changed].map(absolute)),
+    texts: new Map([...revision.texts].map(([file, text]) => [absolute(file), text]))
   }
-  const known = new Set(discovery.packageFiles)
-  // Discovery never entered these, so a declaration under one was never a package.
-  const outside = [discovery.cacheDirectory, ...discovery.pruned, ...discovery.repositories.map((entry) => entry.path)]
-  const deleted = [...revision.texts.keys()].filter((file) =>
-    Input.isDeclarationFileName(declarationName(file)) && !known.has(file) &&
-    !outside.some((directory) => file.startsWith(`${directory}/`))
-  )
-  const absolute = (file: string): string => NodePath.join(discovery.root, file)
-  return importGraph(
-    {
-      ...discovery,
-      factoryFile: discovery.factoryFile !== undefined && held(discovery.factoryFile)
-        ? discovery.factoryFile
-        : undefined,
-      packageFiles: [...discovery.packageFiles.filter(held), ...deleted].sort(byCodeUnit)
-    },
-    [],
-    [],
-    {
-      changed: new Set([...revision.changed].map(absolute)),
-      texts: new Map([...revision.texts].map(([file, text]) => [absolute(file), text]))
-    }
-  )
+  const alone = PackageDiscovery.discoverAt(checkout, revision.files)
+  const { workspace } = await importGraph({ ...alone, factoryFile: undefined, packageFiles: [] }, [], [], held)
+  return importGraph(PackageDiscovery.discoverAt(checkout, revision.files, boundaries(workspace)), [], [], held)
 }
 
 /**

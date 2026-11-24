@@ -468,7 +468,7 @@ interface StaleCycle {
   readonly seen: Set<string>
 }
 
-/** The parked-run sweeps that page through `waitingRuns` with their own cursor. */
+/** The parked-run sweeps that use `waitingRunsPage` with their own cursor. */
 type ParkedLane = "released" | "cancel-requested" | "timer" | "settled-child"
 
 /** Where the pending-cancellation sweep is in its backlog, as for {@link PendingCycle}. */
@@ -3623,16 +3623,12 @@ const sweepParked = (
 ): Effect.Effect<void> =>
   Effect.gen(function*() {
     const afterRunId = driver.parkedCursors.get(lane)
-    const page = yield* driver.engineState.waitingRuns({
+    const page = yield* driver.engineState.waitingRunsPage({
       ...filter,
       page: { limit: staleRunningSweepBatch, afterRunId }
     })
-    for (const waiting of page) yield* visit(waiting)
-    const last = page.at(-1)
-    // Exactly one full page leaves more to read. A short page ends the
-    // cycle, and so does a longer one: an adapter that does not page has
-    // already answered with the whole set.
-    if (last !== undefined && page.length === staleRunningSweepBatch) driver.parkedCursors.set(lane, last.runId)
+    for (const waiting of page.rows) yield* visit(waiting)
+    if (page.nextAfterRunId !== undefined) driver.parkedCursors.set(lane, page.nextAfterRunId)
     else driver.parkedCursors.delete(lane)
   })
 

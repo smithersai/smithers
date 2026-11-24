@@ -166,10 +166,8 @@ describe("a flow carries what its body requires", () => {
     >()
     const afterCrypto = () => withCrypto(unimplemented())
     expectTypeOf<Effect.Services<ReturnType<typeof afterCrypto>>>().toEqualTypeOf<ChargeNeeded>()
-    expectTypeOf(() => {
-      // @ts-expect-error Providing cryptography still leaves the action implementation missing.
-      return Effect.runPromise(afterCrypto())
-    }).returns.toEqualTypeOf<Promise<number>>()
+    // runPromise accepts only an effect whose services have all been provided.
+    expectTypeOf<ReturnType<typeof afterCrypto>>().not.toMatchTypeOf<Parameters<typeof Effect.runPromise>[0]>()
   })
 
   it.effect("has the requirement erased by the action's own layer", () =>

@@ -25,7 +25,7 @@ import { Fuzz } from "@smthrs/fuzz"
 import * as Node from "@smthrs/plan/Node"
 import { Arbitrary, Cause, Deferred, Effect, Exit, Fiber, Logger, Schema } from "effect"
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process"
-import { existsSync } from "node:fs"
+import { existsSync, rmSync } from "node:fs"
 import { homedir } from "node:os"
 import { delimiter, join } from "node:path"
 import { createInterface } from "node:readline"
@@ -105,6 +105,8 @@ beforeAll(() => {
       throw new Error(`the Lean specification in ${specDir} is missing ${current.missing.join(", ")}`)
     }
     if (LeanOracle.stale(specification, current)) {
+      // Force Lake to relink when its own build trace survived a replaced executable.
+      rmSync(binary, { force: true })
       const built = spawnSync(lake, ["build"], {
         cwd: specDir,
         encoding: "utf8",

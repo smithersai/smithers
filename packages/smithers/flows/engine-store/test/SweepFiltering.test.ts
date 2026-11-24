@@ -155,10 +155,13 @@ describe("the parked-run sweep fetches only actionable rows (issue #68)", () => 
             const unbounded: Array<DurableEngineState.WaitingRunsFilter | undefined> = []
             const observed: DurableEngineState.Service = {
               ...state,
-              waitingRuns: (filter) =>
-                state.waitingRuns(filter).pipe(Effect.tap((rows) =>
+              waitingRuns: (filter) => {
+                unbounded.push(filter)
+                return state.waitingRuns(filter)
+              },
+              waitingRunsPage: (filter) =>
+                state.waitingRunsPage(filter).pipe(Effect.tap(({ rows }) =>
                   Effect.sync(() => {
-                    if (filter?.page === undefined) unbounded.push(filter)
                     if (filter?.reason === "released") pages.push(rows.map((row) => row.runId))
                   })
                 ))

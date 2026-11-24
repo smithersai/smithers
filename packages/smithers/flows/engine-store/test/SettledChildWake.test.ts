@@ -268,7 +268,8 @@ describe("a settled child wakes its parked parent (#4774)", () => {
       // below can only be the interrupted settlement's own.
       const home = yield* test.makeDriver("home", (state) => ({
         ...state,
-        waitingRuns: (filter) => filter?.hasChildren === true ? Effect.succeed([]) : state.waitingRuns(filter)
+        waitingRunsPage: (filter) =>
+          filter?.hasChildren === true ? Effect.succeed({ rows: [] }) : state.waitingRunsPage(filter)
       }), journal)
       yield* test.parked(home.driver, home.drained)
 
@@ -302,10 +303,10 @@ describe("a settled child wakes its parked parent (#4774)", () => {
       test.released.add("second")
       const restarted = yield* test.makeDriver("restarted", (state) => ({
         ...state,
-        waitingRuns: (filter) =>
+        waitingRunsPage: (filter) =>
           filter?.hasChildren === true && busyListings-- > 0
             ? Effect.die(new Error("SQLITE_BUSY: database is locked"))
-            : state.waitingRuns(filter),
+            : state.waitingRunsPage(filter),
         runChildren: (parentId) =>
           parentId === "parent" && busyChildReads-- > 0
             ? Effect.die(new Error("SQLITE_BUSY: database is locked"))
@@ -327,8 +328,8 @@ describe("a settled child wakes its parked parent (#4774)", () => {
       let passes = 0
       const survivor = yield* test.makeDriver("survivor", (state) => ({
         ...state,
-        waitingRuns: (filter) =>
-          state.waitingRuns(filter).pipe(Effect.tap(() =>
+        waitingRunsPage: (filter) =>
+          state.waitingRunsPage(filter).pipe(Effect.tap(() =>
             Effect.sync(() => {
               if (filter?.hasChildren === true) passes++
             })

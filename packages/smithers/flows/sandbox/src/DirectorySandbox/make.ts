@@ -107,6 +107,7 @@ export const make = (options: DirectorySandboxOptions): Provider => {
   )
   // `seed` is the workdir a fork copies; a fresh session starts empty.
   const root = options.root.replace(/\/+$/, "")
+  const stateDirectory = (workdir: string) => workdir + ".smthrs-state"
   const matches = (session: Pick<Session, "id" | "remoteId">) =>
     [sessionSlug, legacySessionSlug].some((slug) => session.remoteId === `${root}/${slug(session.id)}`)
   const open = (
@@ -129,6 +130,18 @@ export const make = (options: DirectorySandboxOptions): Provider => {
           Effect.mapError(failure("unavailable", "legacy scratch workspace lookup failed"))
         ))
       const workdir = attachedDirectory ?? (legacyExists ? legacyDirectory : `${root}/${sessionSlug(sessionKey)}`)
+      if (
+        legacyExists && (yield* options.fs.exists(`${root}/${sessionSlug(sessionKey)}`).pipe(
+          Effect.mapError(failure("unavailable", "scratch workspace lookup failed"))
+        ))
+      ) {
+        return yield* Effect.fail(
+          new ProviderError({
+            code: "unavailable",
+            message: "both scratch workspaces exist; attach the recorded handle"
+          })
+        )
+      }
       const attachOnly = attachedDirectory !== undefined || legacyExists
       if (
         attachOnly &&
@@ -176,6 +189,7 @@ export const make = (options: DirectorySandboxOptions): Provider => {
         id: sessionKey,
         remoteId: workdir,
         workdir,
+        ...(options.persistence === "sticky" ? { stateDirectory: stateDirectory(workdir) } : {}),
         spawn: Effect.fnUntraced(function*(command, spawnOptions) {
           yield* checkEnvironmentNames(spawnOptions.env)
           const settings: ChildProcess.CommandOptions = {
@@ -261,7 +275,8 @@ export const make = (options: DirectorySandboxOptions): Provider => {
             ),
         destroy: (session: Pick<Session, "id" | "remoteId">) =>
           matches(session)
-            ? options.fs.remove(session.remoteId, { recursive: true, force: true }).pipe(
+            ? options.fs.remove(stateDirectory(session.remoteId), { recursive: true, force: true }).pipe(
+              Effect.andThen(options.fs.remove(session.remoteId, { recursive: true, force: true })),
               Effect.mapError(failure("unavailable", "scratch workspace could not be removed"))
             )
             : Effect.fail(

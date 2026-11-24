@@ -161,7 +161,7 @@ const wholeNumber = (name: string, value: number, least: number) => {
  *
  * `acquire` asks the service for the session key's machine and destroys it
  * when the acquiring scope closes. `readFile` is one `GET`, so a file is read
- * whole and must fit one response. `writeFile` sends a file over
+ * whole and must fit one response. After negotiation of staged upload v2, `writeFile` sends a file over
  * `chunkBytes` as staged ranges under one upload ID and publishes the complete file once.
  *
  * `spawn` never holds a request for the command's lifetime. One short request
@@ -270,11 +270,15 @@ export const make = (options: HttpSandboxOptions): Provider => {
 
   const sessionUrl = (remoteId: string) => `${base}/v1/sessions/${encodeURIComponent(remoteId)}`
 
-  const destroy = (session: Pick<Session, "id" | "remoteId">) =>
+  const destroy = (session: typeof SessionInfo.Type) =>
     send(
       `destroying ${session.remoteId}`,
       HttpClientRequest.delete(sessionUrl(session.remoteId)).pipe(
-        HttpClientRequest.setUrlParams({ ...limitsQuery, id: session.id })
+        HttpClientRequest.setUrlParams({
+          ...limitsQuery,
+          id: session.id,
+          ...(session.incarnation === undefined ? {} : { incarnation: session.incarnation })
+        })
       ),
       () => Effect.void
     )
@@ -286,7 +290,7 @@ export const make = (options: HttpSandboxOptions): Provider => {
         id: info.id,
         path,
         ...offset === undefined ? {} : { offset: String(offset) },
-        ...upload === undefined ? {} : { upload, total: String(total) }
+        ...upload === undefined ? {} : { upload, total: String(total), incarnation: info.incarnation! }
       })
 
     /** Runs `command` to its end in one request. */
@@ -449,11 +453,16 @@ export const make = (options: HttpSandboxOptions): Provider => {
         ),
       writeFile: (path, content) =>
         Effect.gen(function*() {
+          if (info.uploadVersion !== 2 || !info.incarnation || !/^[a-f0-9]{32}$/.test(info.incarnation)) {
+            return yield* Effect.fail(
+              new ProviderError({ code: "unavailable", message: "server does not advertise staged upload version 2" })
+            )
+          }
           const upload = `${token}-${next++}`
           for (let offset = 0; offset === 0 || offset < content.length; offset += chunkBytes) {
             yield* send(
               `writing ${path} at byte ${offset}`,
-              HttpClientRequest.put(`${sessionUrl(info.remoteId)}/files`).pipe(
+              HttpClientRequest.put(`${sessionUrl(info.remoteId)}/uploads/v2`).pipe(
                 files(path, offset, upload, content.length),
                 HttpClientRequest.bodyUint8Array(
                   content.subarray(offset, offset + chunkBytes),
@@ -486,7 +495,7 @@ export const make = (options: HttpSandboxOptions): Provider => {
           send(
             `acquiring ${key}`,
             HttpClientRequest.post(`${base}/v1/sessions`).pipe(
-              HttpClientRequest.bodyText(encodeAcquire({ key, limits }), "application/json")
+              HttpClientRequest.bodyText(encodeAcquire({ key, limits, uploadVersion: 2 }), "application/json")
             ),
             (response) =>
               Effect.flatMap(

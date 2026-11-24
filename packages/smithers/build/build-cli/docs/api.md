@@ -45,7 +45,8 @@ the call before discovery.
 A workspace that holds `.jj` and no `.git` is read through Jujutsu, where the
 base `HEAD` means `@-`. `baseTexts(root, { base, paths })` returns the text
 each path held at the base, with no entry for a path the base holds no file
-at. `select` reads a backslash as a separator only on Windows, or on the host
+at. `baseFiles(root, { base })` lists every file the base holds; a Git
+submodule is another checkout and is left out. `select` reads a backslash as a separator only on Windows, or on the host
 its `platform` option names; every other host keeps it as a filename
 character.
 
@@ -440,13 +441,20 @@ are reused only while the workspace declaration and its imported configuration
 have the same content digest. Failed probes are retried on the next call;
 `loadWorkspaceDeclaration` remains the rejecting, unmemoized loader.
 
-`PackageLoader.loadAt(discovery, { changed, texts })` evaluates the
-declaration graph a base revision held: every changed module is read from
-`texts`, a package declaration added since is left out, and one deleted since
-is evaluated from its base text. A changed module with no base text is
-refused. `owners --diff` resolves against this graph. It evaluates no factory,
-repeats none of `load`'s static checks, and reads whatever a declaration takes
-from the file system from the checkout.
+`PackageLoader.loadAt(checkout, { changed, texts, files }, boundaries)`
+evaluates the declaration graph a base revision held. It evaluates the base's
+workspace declaration first, and `boundaries` reads the cache directory, the
+child repositories and the `discovery.prune` paths off it.
+`PackageDiscovery.discoverAt(checkout, files, boundaries)` then finds the
+base's packages in `files`, the list of files the base holds, within those
+boundaries. The checkout's walk decides nothing, so a `CACHEDIR.TAG`, a nested
+checkout or a prune path added since removes no package. A package declaration
+added since is left out, and so is one that only the checkout holds because
+version control ignores it. Every changed module is read from `texts`, one
+deleted since included, and a changed module with no base text is refused.
+`owners --diff` resolves against this graph. `loadAt` repeats none of `load`'s
+static checks, and reads whatever a declaration takes from the file system from
+the checkout.
 
 ## Workspace
 

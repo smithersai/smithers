@@ -127,13 +127,13 @@ host. A `401` is `unknown`, because sending it again cannot help.
 
 `writeFile` sends at most `chunkBytes` (16 MiB) per request, each with the same
 upload ID and total byte count, starting at offset zero. Ranges stage beside the
-destination and the last range atomically publishes the file. Completed receipts
-and lock files live outside the workspace under server `processDirectory`
-(default `/tmp/.smthrs-http`), keyed by session and path SHA-256. They remain for
-the retained session's lifetime so redelivery of an earlier upload is harmless.
+destination and the last range atomically publishes the file. In-progress files start with mode `0600`. Publication copies the existing
+destination's owner, group and mode under the lock. The server keeps receipts
+outside the checkout in the provider's session state directory or under
+`processDirectory/uploads`. Destroying the session reclaims them.
 Locks are OS-owned and release if a writer is killed. Linux guests need
 util-linux `flock` 2.23+ with `-E`; BSD guests need `lockf -k -t`. A guest lacking
-both refuses uploads with `spawn_error`. A Worker request body
+both omits the upload advertisement. A Worker request body
 is capped near 100 MiB, so a shipped workspace of hundreds of MiB still
 crosses. `readFile` is one `GET`: the file must fit one response.
 
@@ -143,21 +143,20 @@ Every request carries `Authorization: Bearer <token>`, compared in constant
 time; without it the answer is `401` with no body. Bodies are JSON unless they
 are file bytes.
 
-| Route                                                | Body                                           | Answer                              |
-| ---------------------------------------------------- | ---------------------------------------------- | ----------------------------------- |
-| `POST /v1/sessions`                                  | `{ key, limits? }`                             | `{ id, remoteId, workdir }`         |
-| `POST /v1/sessions/<remoteId>/commands`              | `{ id, command, cwd?, env?, stdin?, limits? }` | `{ exitCode, stdout, stderr }`      |
-| `PUT /v1/sessions/<remoteId>/files?id&path[&offset]` | the file's bytes                               | `204`                               |
-| `GET /v1/sessions/<remoteId>/files?id&path`          | none                                           | the file's bytes                    |
-| `DELETE /v1/sessions/<remoteId>?id`                  | none                                           | `204`, also for a destroyed machine |
+| Route                                                                            | Body                                           | Answer                                                    |
+| -------------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------- |
+| `POST /v1/sessions`                                                              | `{ key, limits?, uploadVersion? }`             | `{ id, remoteId, workdir, uploadVersion?, incarnation? }` |
+| `POST /v1/sessions/<remoteId>/commands`                                          | `{ id, command, cwd?, env?, stdin?, limits? }` | `{ exitCode, stdout, stderr }`                            |
+| `PUT /v1/sessions/<remoteId>/uploads/v2?id&path&incarnation&upload&offset&total` | the file's bytes                               | `204`                                                     |
+| `GET /v1/sessions/<remoteId>/files?id&path`                                      | none                                           | the file's bytes                                          |
+| `DELETE /v1/sessions/<remoteId>?id&incarnation`                                  | none                                           | `204`, also for a destroyed machine                       |
 
 `stdin`, `stdout` and `stderr` are base64. An `env` value of `null` removes the
 variable. A `commands` request runs its command to the end in one request, so
 it is for short commands; `spawn` uses it only to start, poll and signal. A
-`PUT` with `upload=<id>&offset=<n>&total=<bytes>` stages a range and publishes
-only when complete. A legacy PUT without an upload ID still replaces the whole
-file; its `offset=<n>` variant appends to a file holding exactly `n` bytes, accepts
-one that already holds the chunk, and answers `409` otherwise. Routes without
+client writes only after acquire advertises `uploadVersion: 2` and an incarnation.
+Every range carries that incarnation. The old file PUT returns `426` before its
+body is consumed, and stale ranges return `409`. Routes without
 a JSON body carry the limits as `cpus`, `memoryMib` and `timeoutSecs` query
 parameters.
 

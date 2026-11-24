@@ -162,9 +162,9 @@ it.effect("skips deleted, settled and unregistered timer cursors while recoverin
               completionQueries.push(executionId ?? `(every execution of ${flowName ?? "every flow"})`)
             })
           )),
-        waitingRuns: (filter) =>
-          state.waitingRuns(filter).pipe(
-            Effect.tap((rows) =>
+        waitingRunsPage: (filter) =>
+          state.waitingRunsPage(filter).pipe(
+            Effect.tap(({ rows }) =>
               Effect.gen(function*() {
                 if (filter?.reason !== "timer" || selected.length !== 0) return
                 selected = rows.map((row) => row.runId)
@@ -399,17 +399,17 @@ it.effect("serves a due timer beyond a first page that holds a malformed row", (
       const state = yield* DurableEngineState.DurableEngineState
       const sql = yield* SqlClient
       const id = (index: number) => `page-${String(index).padStart(2, "0")}`
-      // Page one is 64 rows: 63 that no worker here can take, and one malformed.
+      // The first raw page decodes to zero rows. Its last raw ID still advances the lane.
       for (let index = 0; index < 64; index++) yield* seed(id(index), "ready", "ReadyTimerSweep/Unregistered")
-      yield* sql`UPDATE flows_runs SET waiting_token = x'00ff' WHERE run_id = ${id(7)}`
+      yield* sql`UPDATE flows_runs SET waiting_token = x'00ff' WHERE run_id < ${id(64)}`
       yield* seed(id(64), "ready")
       const reads: Array<string | undefined> = []
       const observed: DurableEngineState.Service = {
         ...state,
-        waitingRuns: (filter) =>
+        waitingRunsPage: (filter) =>
           Effect.suspend(() => {
             if (filter?.reason === "timer") reads.push(filter.page?.afterRunId)
-            return state.waitingRuns(filter)
+            return state.waitingRunsPage(filter)
           })
       }
       const driver = yield* RunDriver.make({
@@ -432,7 +432,7 @@ it.effect("serves a due timer beyond a first page that holds a malformed row", (
         return false
       }))
       // Two heartbeat sweeps at most: the lane's cursor left page one.
-      expect(reads.length).toBeLessThanOrEqual(2)
+      expect(reads).toEqual([undefined, id(63)])
       expect(executions).toBe(1)
       expect((yield* runs.get(id(0))).status).toBe("suspended")
     }).pipe(Effect.scoped, Effect.provide(sqliteStores))

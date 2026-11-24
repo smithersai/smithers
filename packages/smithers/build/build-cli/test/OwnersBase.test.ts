@@ -9,6 +9,7 @@ import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import * as Affected from "../src/Affected.ts"
+import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -139,6 +140,217 @@ describe.each(["git", "jj"] as const)("owners --diff against a %s base", (vcs) =
       expect(policies(lookup)).toEqual({ "lib/migrations/001.sql": "auto-land" })
     }
   )
+})
+
+/** `data` denies agents at the base, under an owner who answers alone. */
+const guarded = async (): Promise<string> => {
+  const root = await fixture()
+  await write(root, "data/PACKAGE.ts", packageOwnedBy("dan", ", noparent: true, agents: { default: \"deny\" }"))
+  return root
+}
+
+describe.each(["git", "jj"] as const)("owners --diff finds a %s base's packages in the base", (vcs) => {
+  // R3-Neon-D3-002: discovery skips a directory tagged as a cache, so the tag took //data out of the base index.
+  it.skipIf(vcs === "jj" && !hasJj)("keeps a package the change tags as a cache directory", async () => {
+    const root = await guarded()
+    commit[vcs](root)
+    await write(root, "data/CACHEDIR.TAG", "Signature: 8a477f597d28d172789f06886806bc55\n")
+    await write(root, "data/load.ts", "export const changed = true\n")
+
+    const diff = await owners(root, ["--diff", "HEAD"])
+    expect(diff.touched_paths).toMatchObject([
+      { path: "data/CACHEDIR.TAG", package: "//data", agent_policy: "deny" },
+      { path: "data/load.ts", package: "//data", agent_policy: "deny" }
+    ])
+    expect(diff.required_approvers).toEqual(["dan"])
+    // The checkout no longer finds //data, which is what a lookup with no diff reads.
+    expect((await owners(root, ["data/load.ts"])).required_approvers).toEqual(["rooty"])
+  })
+
+  // R3-Neon-D3-002: the checkout's `discovery.prune` decided which base packages were loaded.
+  it.skipIf(vcs === "jj" && !hasJj)("keeps a package the change adds to discovery.prune", async () => {
+    const root = await guarded()
+    commit[vcs](root)
+    await write(root, "WORKSPACE.ts", workspaceModule.replace("[\"vendor\"]", "[\"vendor\", \"data\"]"))
+    await write(root, "data/load.ts", "export const changed = true\n")
+
+    const diff = await owners(root, ["--diff", "HEAD"])
+    expect(diff.touched_paths).toMatchObject([
+      { path: "WORKSPACE.ts", package: "//", agent_policy: "human-approve" },
+      { path: "data/load.ts", package: "//data", agent_policy: "deny" }
+    ])
+    expect(diff.required_approvers).toEqual(["dan", "rooty"])
+    expect((await owners(root, ["data/load.ts"])).required_approvers).toEqual(["rooty"])
+  })
+})
+
+describe("owners --diff base discovery", () => {
+  it("keeps a package the change turns into a nested checkout, and its changed helper as the base held it", async () => {
+    const root = await guarded()
+    await write(root, "data/PACKAGE.ts", libPackage.replace("{ deny: policy.deny }", "{ default: \"deny\" }"))
+    await write(root, "data/team.ts", "export const team: ReadonlyArray<string> = [\"dan\"]\n")
+    await write(root, "data/policy.mjs", "export const policy = { deny: [] }\n")
+    await write(root, "data/extra.json", "{ \"owners\": [] }\n")
+    commit.git(root)
+    // A `.jj` entry marks another checkout; the helper is no module the checkout's index knows.
+    await write(root, "data/.jj", "")
+    await write(root, "data/team.ts", "export const team: ReadonlyArray<string> = [\"mallory\"]\n")
+
+    const diff = await owners(root, ["--diff", "HEAD"])
+    expect(policies(diff)).toEqual({ "data/.jj": "deny", "data/team.ts": "deny" })
+    expect(diff.required_approvers).toEqual(["dan", "rooty"])
+  })
+
+  it("answers from the checkout when no declaration changed and the base holds the same packages", async () => {
+    const root = await guarded()
+    commit.git(root)
+    await write(root, "data/load.ts", "export const changed = true\n")
+    await write(root, "lib/query.sql", "select 2;\n")
+
+    const diff = await owners(root, ["--diff", "HEAD"])
+    expect(policies(diff)).toEqual({ "data/load.ts": "deny", "lib/query.sql": "human-approve" })
+    expect(diff.required_approvers).toEqual(["dan", "libby", "rooty", "team:platform"])
+  })
+
+  it("leaves out what the base itself never entered", async () => {
+    const root = await fixture()
+    await write(root, "tagged/CACHEDIR.TAG", "")
+    await write(root, "tagged/PACKAGE.ts", packageOwnedBy("tagger", ", noparent: true"))
+    await write(root, "tagged/a.ts", "export {}\n")
+    commit.git(root)
+    await Fs.rm(NodePath.join(root, "tagged/CACHEDIR.TAG"))
+    await write(root, "tagged/a.ts", "export const changed = true\n")
+
+    const diff = await owners(root, ["--diff", "HEAD"])
+    expect(diff.touched_paths.map((entry) => [entry.path, entry.package])).toEqual([
+      ["tagged/CACHEDIR.TAG", "//"],
+      ["tagged/a.ts", "//"]
+    ])
+    expect(diff.required_approvers).toEqual(["rooty"])
+    // The checkout lost the tag, so its own discovery finds the package.
+    expect((await owners(root, ["tagged/a.ts"])).required_approvers).toEqual(["tagger"])
+  })
+})
+
+describe("the declaration inventory a base revision held", () => {
+  const checkout: PackageDiscovery.Discovery = {
+    root: "/workspace",
+    workspaceFile: ".smithers/WORKSPACE.ts",
+    packageFiles: [],
+    cacheDirectory: ".flows",
+    repositories: [],
+    pruned: [],
+    directories: 0
+  }
+  const files = [
+    ".smithers/FACTORY.ts",
+    ".smithers/WORKSPACE.ts",
+    "PACKAGE.ts",
+    "a/PACKAGE.vibe",
+    "a/dist/PACKAGE.ts",
+    "a/node_modules/x/PACKAGE.ts",
+    "cache/PACKAGE.ts",
+    ".flows/store/PACKAGE.ts",
+    "child/PACKAGE.ts",
+    "clone/.git",
+    "clone/deep/PACKAGE.ts",
+    "skip/me/PACKAGE.ts",
+    "skip/meet/PACKAGE.ts",
+    "target/CACHEDIR.TAG",
+    "target/PACKAGE.ts",
+    "work/.jj/repo/store",
+    "work/PACKAGE.ts",
+    "z/package.ts"
+  ]
+
+  it("applies the base's boundaries and markers to the base's files", () => {
+    const base = PackageDiscovery.discoverAt(checkout, files, {
+      cacheDirectory: "cache",
+      repositories: { zed: { path: "child" }, alpha: { path: "absent" } },
+      prune: ["skip/me", "nowhere"]
+    })
+    expect(base).toEqual({
+      root: "/workspace",
+      workspaceFile: ".smithers/WORKSPACE.ts",
+      factoryFile: ".smithers/FACTORY.ts",
+      packageFiles: ["PACKAGE.ts", "a/PACKAGE.vibe", "skip/meet/PACKAGE.ts"],
+      cacheDirectory: "cache",
+      repositories: [{ name: "alpha", path: "absent" }, { name: "zed", path: "child" }],
+      pruned: ["clone", "skip/me", "target", "work"],
+      directories: 0
+    })
+  })
+
+  it("defaults the cache directory, and declares no factory the base lacks", () => {
+    const base = PackageDiscovery.discoverAt(checkout, [".smithers/WORKSPACE.ts", ".flows/PACKAGE.ts", "b/PACKAGE.ts"])
+    expect(base.cacheDirectory).toBe(".flows")
+    expect(base.factoryFile).toBeUndefined()
+    expect(base.packageFiles).toEqual(["b/PACKAGE.ts"])
+  })
+
+  it("keeps the file --workspace-file names, which no revision holds", () => {
+    const given = { ...checkout, workspaceFile: "/elsewhere/WORKSPACE.ts" }
+    const base = PackageDiscovery.discoverAt(given, ["WORKSPACE.ts", "FACTORY.ts", "PACKAGE.ts"])
+    expect(base).toMatchObject({ workspaceFile: "/elsewhere/WORKSPACE.ts", packageFiles: ["PACKAGE.ts"] })
+    expect(base.factoryFile).toBeUndefined()
+  })
+
+  it("refuses a base whose workspace declaration is another file", () => {
+    // Both exist at the base, where `.smithers/` wins; the checkout reads the root fallback.
+    expect(() =>
+      PackageDiscovery.discoverAt({ ...checkout, workspaceFile: "WORKSPACE.ts" }, [
+        ".smithers/WORKSPACE.ts",
+        "WORKSPACE.ts"
+      ])
+    ).toThrow("the base revision holds no workspace declaration at WORKSPACE.ts")
+  })
+
+  it("refuses a directory the base declared twice", () => {
+    expect(() => PackageDiscovery.discoverAt(checkout, [".smithers/WORKSPACE.ts", "a/PACKAGE.ts", "a/PACKAGE.vibe"]))
+      .toThrow("a/PACKAGE.ts and a/PACKAGE.vibe both declare //a; keep one of them")
+    expect(() => PackageDiscovery.discoverAt(checkout, [".smithers/WORKSPACE.ts", "PACKAGE.ts", "PACKAGE.vibe"]))
+      .toThrow("PACKAGE.ts and PACKAGE.vibe both declare //; keep one of them")
+  })
+})
+
+describe("the files a base revision held", () => {
+  it("lists a Git base's files, and no file added since", async () => {
+    const root = await fixture()
+    commit.git(root)
+    await write(root, "data/CACHEDIR.TAG", "")
+    await Fs.rm(NodePath.join(root, "lib/query.sql"))
+    const files = await Affected.baseFiles(root, { base: "HEAD" })
+    expect(files).toContain("lib/query.sql")
+    expect(files).toContain("data/PACKAGE.ts")
+    expect(files).not.toContain("data/CACHEDIR.TAG")
+  })
+
+  it("leaves out a submodule, which is another checkout", async () => {
+    const root = await fixture()
+    const child = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-owners-child-")))
+    temporaryDirectories.push(child)
+    await write(child, "a.ts", "export {}\n")
+    commit.git(child)
+    git(root, "init", "-q")
+    git(root, "-c", "protocol.file.allow=always", "submodule", "add", "-q", child, "sub")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "base")
+    const files = await Affected.baseFiles(root, { base: "HEAD" })
+    expect(files).toContain(".gitmodules")
+    expect(files.filter((file) => file === "sub" || file.startsWith("sub/"))).toEqual([])
+  })
+
+  it.skipIf(!hasJj)("lists a Jujutsu base's files, whatever the name holds", async () => {
+    const root = await fixture()
+    const odd = process.platform === "win32" ? "lib/odd name.ts" : "lib/odd \"*\" name.ts"
+    await write(root, odd, "export const odd = 1\n")
+    commit.jj(root)
+    await write(root, "data/CACHEDIR.TAG", "")
+    const files = await Affected.baseFiles(root, { base: "HEAD" })
+    expect(files).toContain(odd)
+    expect(files).toContain("data/PACKAGE.ts")
+    expect(files).not.toContain("data/CACHEDIR.TAG")
+  })
 })
 
 describe("owners --diff base declarations", () => {

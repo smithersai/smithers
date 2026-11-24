@@ -7,12 +7,15 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { spawn, spawnSync } from "node:child_process"
 import {
+  chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync
 } from "node:fs"
@@ -24,7 +27,7 @@ import * as HttpSandbox from "../src/HttpSandbox/index.ts"
 import { uploadScript, uploadStage } from "../src/HttpSandbox/upload.ts"
 import type { RemoteOptions } from "../src/RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
-import type * as Sandbox from "../src/Sandbox/index.ts"
+import * as Sandbox from "../src/Sandbox/index.ts"
 import type { ResourceLimits } from "../src/Sandbox/ResourceLimits.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 import { platform } from "./helpers/containedPlatform.ts"
@@ -251,6 +254,122 @@ describe("HttpSandbox", () => {
       })
       expect(run.stdout).toBe("unset-set")
     }).pipe(Effect.scoped), 120_000)
+
+  it.live("refuses both incompatible writer generations before changing a file", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const handler = HttpSandbox.serve({ provider: machines(), token })
+      let writes = 0
+      const session = yield* client(handler, {
+        fault: (request, forward) =>
+          Effect.gen(function*() {
+            if (request.method === "PUT") writes++
+            const response = yield* forward
+            if (request.method !== "POST") return response
+            const { id, remoteId, workdir } = yield* Effect.promise(() => response.json())
+            return Response.json({ id, remoteId, workdir })
+          })
+      }).acquire("rolling-upgrade")
+      const path = join(session.workdir, "file")
+      writeFileSync(path, "old")
+      expect((yield* failureOf(session.writeFile(path, new TextEncoder().encode("new")))).code).toBe("unavailable")
+      expect(writes).toBe(0)
+      for (const suffix of ["", "&offset=0&total=3&upload=old"]) {
+        const route = "/v1/sessions/" + encodeURIComponent(session.remoteId) + "/files?id=rolling-upgrade&path=" +
+          encodeURIComponent(path)
+        expect((yield* raw(handler, "PUT", route + suffix, { body: "new" })).status).toBe(426)
+      }
+      expect(readFileSync(path, "utf8")).toBe("old")
+    })))
+
+  it.live("reclaims receipts and rejects a late delivery after acquiring the same key again", () =>
+    Effect.gen(function*() {
+      const directory = machines()
+      const handler = HttpSandbox.serve({ provider: directory, token })
+      const acquire = () =>
+        raw(handler, "POST", "/v1/sessions", { body: JSON.stringify({ key: "reuse", uploadVersion: 2 }) }).pipe(
+          Effect.map((answer) => JSON.parse(answer.body) as { workdir: string; remoteId: string; incarnation: string })
+        )
+      const old = yield* acquire()
+      const held = yield* Effect.scoped(directory.attach!({ id: "reuse", remoteId: old.remoteId }))
+      const route = "/v1/sessions/" + encodeURIComponent(old.remoteId)
+      const upload = route + "/uploads/v2?id=reuse&path=" + encodeURIComponent(join(old.workdir, "f")) +
+        "&offset=0&total=3&upload=receipt&incarnation="
+      const remove = route + "?id=reuse&incarnation="
+      expect((yield* raw(handler, "PUT", upload + old.incarnation, { body: "old" })).status).toBe(204)
+      expect(existsSync(join(held.stateDirectory!, old.incarnation))).toBe(true)
+      expect((yield* raw(handler, "DELETE", remove + old.incarnation)).status).toBe(204)
+      expect(existsSync(held.stateDirectory!)).toBe(false)
+      const fresh = yield* acquire()
+      expect(fresh.incarnation).not.toBe(old.incarnation)
+      expect((yield* raw(handler, "PUT", upload + fresh.incarnation, { body: "new" })).status).toBe(204)
+      expect((yield* raw(handler, "PUT", upload + old.incarnation, { body: "old" })).status).toBe(409)
+      expect((yield* raw(handler, "DELETE", remove + old.incarnation)).status).toBe(409)
+      expect(readFileSync(join(fresh.workdir, "f"), "utf8")).toBe("new")
+      yield* directory.destroy!(held)
+      expect(existsSync(held.stateDirectory!)).toBe(false)
+    }))
+
+  it.live("a duplicate delete cannot destroy the next incarnation", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const actual = machines()
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      let destroys = 0
+      const handler = HttpSandbox.serve({
+        token,
+        provider: {
+          ...actual,
+          destroy: (held) =>
+            Effect.gen(function*() {
+              destroys++
+              yield* Deferred.succeed(entered, undefined)
+              yield* Deferred.await(release)
+              yield* actual.destroy!(held)
+            })
+        }
+      })
+      const acquire = () =>
+        raw(handler, "POST", "/v1/sessions", { body: JSON.stringify({ key: "race", uploadVersion: 2 }) })
+      const old = JSON.parse((yield* acquire()).body)
+      const url = "/v1/sessions/" + encodeURIComponent(old.remoteId) + "?id=race&incarnation=" + old.incarnation
+      const deleting = yield* Effect.forkChild(raw(handler, "DELETE", url))
+      yield* Deferred.await(entered)
+      const duplicate = yield* Effect.forkChild(raw(handler, "DELETE", url))
+      yield* Deferred.succeed(release, undefined)
+      expect((yield* Fiber.join(deleting)).status).toBe(204)
+      const next = JSON.parse((yield* acquire()).body)
+      expect(next.incarnation).not.toBe(old.incarnation)
+      expect([204, 409]).toContain((yield* Fiber.join(duplicate)).status)
+      expect(destroys).toBe(1)
+      expect(existsSync(next.workdir)).toBe(true)
+    })), 30_000)
+
+  it.live("private staging preserves the destination owner, group and mode on publication", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const session = yield* machines().acquire("upload-mode")
+      const root = fresh("receipts")
+      const path = join(session.workdir, "existing")
+      writeFileSync(path, "old")
+      for (const mode of [0o600, 0o751]) {
+        chmodSync(path, mode)
+        const { uid, gid } = statSync(path)
+        const id = String(mode)
+        expect((yield* runIn(session, uploadScript(path, root, id, 0, 1, 2), { stdin: new Uint8Array([1]) })).code)
+          .toBe(0)
+        expect(statSync(uploadStage(path, id)).mode & 0o7777).toBe(0o600)
+        expect((yield* runIn(session, uploadScript(path, root, id, 1, 2, 2), { stdin: new Uint8Array([2]) })).code)
+          .toBe(0)
+        expect(statSync(path)).toMatchObject({ uid, gid })
+        expect(statSync(path).mode & 0o7777).toBe(mode)
+        expect([...readFileSync(path)]).toEqual([1, 2])
+      }
+      const http = yield* client(HttpSandbox.serve({ provider: machines(), token })).acquire("fs-modes")
+      const target = join(http.workdir, "tool")
+      writeFileSync(target, "old", { mode: 0o751 })
+      yield* Sandbox.fileSystem(http).writeFileString("tool", "updated")
+      expect(statSync(target).mode & 0o7777).toBe(0o751)
+      expect(readFileSync(target, "utf8")).toBe("updated")
+    })))
 
   it.live("writes a file larger than a chunk in chunks, and a resent chunk lands once", () =>
     Effect.gen(function*() {
@@ -496,16 +615,20 @@ describe("HttpSandbox", () => {
   it.live("bounds requests and combined command output and rejects unsafe offsets", () =>
     Effect.gen(function*() {
       const handler = HttpSandbox.serve({ provider: machines(), token, maxRequestBytes: 128, maxOutputBytes: 5 })
-      const acquired = yield* raw(handler, "POST", "/v1/sessions", { body: JSON.stringify({ key: "bounds" }) })
+      const acquired = yield* raw(handler, "POST", "/v1/sessions", {
+        body: JSON.stringify({ key: "bounds", uploadVersion: 2 })
+      })
       const info = JSON.parse(acquired.body) as { readonly id: string; readonly remoteId: string }
       const session = `/v1/sessions/${encodeURIComponent(info.remoteId)}`
       const file = `${session}/files?id=bounds&path=${encodeURIComponent(info.remoteId + "/f")}`
-      expect((yield* raw(handler, "PUT", file)).status).toBe(204)
+      const upload = file.replace("/files?", "/uploads/v2?") + "&upload=bounded&total=0&incarnation=" +
+        JSON.parse(acquired.body).incarnation
+      expect((yield* raw(handler, "PUT", upload + "&offset=0")).status).toBe(204)
       expect((yield* raw(handler, "GET", file)).body).toBe("")
       for (const offset of ["99999999999999999999999", String(Number.MAX_SAFE_INTEGER)]) {
-        expect((yield* raw(handler, "PUT", file + "&offset=" + offset, { body: "x" })).status).toBe(400)
+        expect((yield* raw(handler, "PUT", upload + "&offset=" + offset, { body: "x" })).status).toBe(400)
       }
-      expect((yield* raw(handler, "PUT", file, { body: "x".repeat(129) })).status).toBe(413)
+      expect((yield* raw(handler, "PUT", upload + "&offset=0", { body: "x".repeat(129) })).status).toBe(413)
       expect((yield* raw(handler, "POST", "/v1/sessions", { body: "x".repeat(129) })).status).toBe(413)
       for (const [payload, status] of [["abc", 413], ["ab", 200]] as const) {
         expect(
@@ -531,15 +654,19 @@ describe("HttpSandbox", () => {
     Effect.gen(function*() {
       const provider = machines()
       const handlers = Array.from({ length: 4 }, () => HttpSandbox.serve({ provider, token }))
-      const acquired = yield* raw(handlers[0]!, "POST", "/v1/sessions", { body: JSON.stringify({ key: "repeat" }) })
+      const acquired = yield* raw(handlers[0]!, "POST", "/v1/sessions", {
+        body: JSON.stringify({ key: "repeat", uploadVersion: 2 })
+      })
       const info = JSON.parse(acquired.body) as { readonly remoteId: string }
       const file = `/v1/sessions/${encodeURIComponent(info.remoteId)}/files?id=repeat&path=${
         encodeURIComponent(info.remoteId + "/f")
       }`
-      yield* raw(handlers[0]!, "PUT", file, { body: "first" })
       const chunk = "last".repeat(1024)
+      const upload = file.replace("/files?", "/uploads/v2?") + "&upload=repeat&total=" + (5 + chunk.length) +
+        "&incarnation=" + JSON.parse(acquired.body).incarnation
+      expect((yield* raw(handlers[0]!, "PUT", upload + "&offset=0", { body: "first" })).status).toBe(204)
       const answers = yield* Effect.forEach(handlers, (handler) =>
-        raw(handler, "PUT", file + "&offset=5", { body: chunk }), { concurrency: "unbounded" })
+        raw(handler, "PUT", upload + "&offset=5", { body: chunk }), { concurrency: "unbounded" })
       expect(answers.map(({ status }) =>
         status
       )).toEqual([204, 204, 204, 204])
@@ -727,10 +854,14 @@ describe("HttpSandbox", () => {
   it.live("destroys a machine idempotently", () =>
     Effect.gen(function*() {
       const handler = HttpSandbox.serve({ provider: machines(), token })
-      const acquired = yield* raw(handler, "POST", "/v1/sessions", { body: "{\"key\":\"doomed\"}" })
+      const acquired = yield* raw(handler, "POST", "/v1/sessions", {
+        body: JSON.stringify({ key: "doomed", uploadVersion: 2 })
+      })
       expect(acquired.status).toBe(200)
       const info = JSON.parse(acquired.body) as { readonly id: string; readonly remoteId: string }
-      const machine = `/v1/sessions/${encodeURIComponent(info.remoteId)}?id=${info.id}`
+      const machine = `/v1/sessions/${encodeURIComponent(info.remoteId)}?id=${info.id}&incarnation=${
+        JSON.parse(acquired.body).incarnation
+      }`
       expect((yield* raw(handler, "DELETE", machine)).status).toBe(204)
       expect((yield* raw(handler, "DELETE", machine)).status).toBe(204)
       const read = yield* raw(
@@ -786,9 +917,13 @@ describe("HttpSandbox", () => {
     () =>
       Effect.gen(function*() {
         const handler = HttpSandbox.serve({ provider: machines(), token })
-        const acquired = yield* raw(handler, "POST", "/v1/sessions", { body: "{\"key\":\"malformed\"}" })
+        const acquired = yield* raw(handler, "POST", "/v1/sessions", {
+          body: JSON.stringify({ key: "malformed", uploadVersion: 2 })
+        })
         const info = JSON.parse(acquired.body) as { readonly id: string; readonly remoteId: string }
         const files = `/v1/sessions/${encodeURIComponent(info.remoteId)}/files?id=${info.id}`
+        const upload = files.replace("/files?", "/uploads/v2?") + "&upload=case&total=8&incarnation=" +
+          JSON.parse(acquired.body).incarnation
         const cut = () =>
           new ReadableStream({
             start(controller) {
@@ -805,9 +940,9 @@ describe("HttpSandbox", () => {
           ["GET", `${files}&path=relative`, undefined, 400, "not absolute"],
           ["GET", `${files}`, undefined, 400, "the query lacks path"],
           ["GET", `${files}&path=/x&cpus=many`, undefined, 400, "the limits are malformed"],
-          ["PUT", `${files}&path=/x&offset=-1`, "x", 400, "not a byte count"],
-          ["PUT", `${files}&path=/tmp/x`, cut(), 400, "could not be read"],
-          ["PUT", `${files}&path=${root}/gap&offset=5`, "x", 409, "does not end at byte 5"]
+          ["PUT", `${upload}&path=/x&offset=-1`, "x", 400, "not a byte count"],
+          ["PUT", `${upload}&path=/tmp/x`, cut(), 400, "could not be read"],
+          ["PUT", `${upload}&path=${root}/gap&offset=5`, "x", 409, "file upload range could not be stored"]
         ]
         for (const [method, path, body, status, message] of cases) {
           const answer = yield* raw(handler, method, path, body === undefined ? {} : { body })

@@ -41,55 +41,59 @@ const withTempDir = async <A>(prefix: string, fn: (dir: string) => Promise<A>): 
 }
 
 describe("@smthrs/build-cli Wave-7A: AnvilExec, FactoryLoader, PathTools, ShellWords, Diagnostic, CacheAdmin & DocsCheckRule", () => {
-  it("AnvilExec.resolveAnvil & serviceSpec cover absent binary, real executable stub, latest & pinned forkBlockNumber", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        present: Schema.Boolean,
-        pinned: Schema.Boolean,
-        port: Schema.Int.check(Schema.isBetween({ minimum: 8545, maximum: 9545 }))
-      })
-    )
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ present, pinned, port }) =>
-          Effect.promise(async () => {
-            await withTempDir("smthrs-w7a-anvil-", async (root) => {
-              const binDir = NodePath.join(root, "bin")
-              await Fs.mkdir(binDir, { recursive: true })
-              if (present) {
-                const stub = NodePath.join(binDir, "anvil")
-                await Fs.writeFile(stub, "#!/bin/sh\necho 'anvil 0.2.0'\n", { mode: 0o755 })
-              }
-              const env = { PATH: present ? binDir : NodePath.join(root, "empty") }
-              const attrs = Schema.decodeUnknownSync(Anvil.ForkAttrs)({
-                port,
-                forkUrl: Secret.Secret("RPC_URL"),
-                forkBlockNumber: pinned ? 123456 : "latest"
-              })
-              const spec = await AnvilExec.serviceSpec({
-                label: "//:fork",
-                cwd: root,
-                attrs,
-                environment: env
-              })
-              if (!present) {
-                expect("error" in spec).toBe(true)
-              } else {
-                expect("argv" in spec).toBe(true)
-                if ("argv" in spec) {
-                  expect(spec.argv).toContain("--port")
-                  if (pinned) expect(spec.argv).toContain("--fork-block-number")
-                }
-              }
-            })
-            return true
-          }),
-        { executions: Math.min(fsExecutions, 8), seed }
+  it(
+    "AnvilExec.resolveAnvil & serviceSpec cover absent binary, real executable stub, latest & pinned forkBlockNumber",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          present: Schema.Boolean,
+          pinned: Schema.Boolean,
+          port: Schema.Int.check(Schema.isBetween({ minimum: 8545, maximum: 9545 }))
+        })
       )
-    )
-    assertPassed(report)
-  }, 30_000)
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ present, pinned, port }) =>
+            Effect.promise(async () => {
+              await withTempDir("smthrs-w7a-anvil-", async (root) => {
+                const binDir = NodePath.join(root, "bin")
+                await Fs.mkdir(binDir, { recursive: true })
+                if (present) {
+                  const stub = NodePath.join(binDir, "anvil")
+                  await Fs.writeFile(stub, "#!/bin/sh\necho 'anvil 0.2.0'\n", { mode: 0o755 })
+                }
+                const env = { PATH: present ? binDir : NodePath.join(root, "empty") }
+                const attrs = Schema.decodeUnknownSync(Anvil.ForkAttrs)({
+                  port,
+                  forkUrl: Secret.Secret("RPC_URL"),
+                  forkBlockNumber: pinned ? 123456 : "latest"
+                })
+                const spec = await AnvilExec.serviceSpec({
+                  label: "//:fork",
+                  cwd: root,
+                  attrs,
+                  environment: env
+                })
+                if (!present) {
+                  expect("error" in spec).toBe(true)
+                } else {
+                  expect("argv" in spec).toBe(true)
+                  if ("argv" in spec) {
+                    expect(spec.argv).toContain("--port")
+                    if (pinned) expect(spec.argv).toContain("--fork-block-number")
+                  }
+                }
+              })
+              return true
+            }),
+          { executions: Math.min(fsExecutions, 8), seed }
+        )
+      )
+      assertPassed(report)
+    },
+    30_000
+  )
 
   it("FactoryLoader.factoryFileBeside & validateFactoryModule cover every valid and invalid module namespace shape", async () => {
     const validFactory = Factory.Factory({ summary: "Demo." })
@@ -143,53 +147,61 @@ describe("@smthrs/build-cli Wave-7A: AnvilExec, FactoryLoader, PathTools, ShellW
     assertPassed(report)
   })
 
-  it("PathTools.directory & undeclared cover creation, idempotence, tool-directory clash & undeclared PATH shims", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        toolCount: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3 })),
-        clash: Schema.Boolean
-      })
-    )
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ toolCount, clash }) =>
-          Effect.promise(async () => {
-            await withTempDir("smthrs-w7a-pt-", async (root) => {
-              const fakeHost = NodePath.join(root, "host-bin")
-              await Fs.mkdir(fakeHost, { recursive: true })
-              await Fs.writeFile(NodePath.join(fakeHost, "alpha"), "#!/bin/sh\n", { mode: 0o755 })
-              await Fs.writeFile(NodePath.join(fakeHost, "beta"), "#!/bin/sh\n", { mode: 0o755 })
-              await Fs.writeFile(NodePath.join(fakeHost, ".hidden"), "#!/bin/sh\n", { mode: 0o755 })
-
-              const parent = NodePath.join(root, "tools")
-              const tools = Array.from({ length: toolCount }, (_, i) => ({
-                name: `tool${i}`,
-                path: NodePath.join(fakeHost, "alpha")
-              }))
-              const dir1 = await PathTools.directory(parent, "k1", tools)
-              const dir2 = await PathTools.directory(parent, "k1", tools)
-              expect(dir2).toBe(dir1)
-
-              if (clash) {
-                await expect(
-                  PathTools.directory(parent, "k1", [{ name: "other", path: NodePath.join(fakeHost, "beta") }])
-                ).rejects.toThrow(/holds other tools/)
-              }
-
-              const und1 = await PathTools.undeclared(parent, `${fakeHost}:relative/ignored:/nonexistent-dir`, ["alpha"])
-              const und2 = await PathTools.undeclared(parent, `${fakeHost}:relative/ignored:/nonexistent-dir`, ["alpha"])
-              expect(und2).toBe(und1)
-              const shimText = await Fs.readFile(NodePath.join(und1, "beta"), "utf8")
-              expect(shimText).toContain(PathTools.undeclaredLine("beta"))
-            })
-            return true
-          }),
-        { executions: Math.min(fsExecutions, 10), seed: seed + 2 }
+  it(
+    "PathTools.directory & undeclared cover creation, idempotence, tool-directory clash & undeclared PATH shims",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          toolCount: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3 })),
+          clash: Schema.Boolean
+        })
       )
-    )
-    assertPassed(report)
-  }, 30_000)
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ toolCount, clash }) =>
+            Effect.promise(async () => {
+              await withTempDir("smthrs-w7a-pt-", async (root) => {
+                const fakeHost = NodePath.join(root, "host-bin")
+                await Fs.mkdir(fakeHost, { recursive: true })
+                await Fs.writeFile(NodePath.join(fakeHost, "alpha"), "#!/bin/sh\n", { mode: 0o755 })
+                await Fs.writeFile(NodePath.join(fakeHost, "beta"), "#!/bin/sh\n", { mode: 0o755 })
+                await Fs.writeFile(NodePath.join(fakeHost, ".hidden"), "#!/bin/sh\n", { mode: 0o755 })
+
+                const parent = NodePath.join(root, "tools")
+                const tools = Array.from({ length: toolCount }, (_, i) => ({
+                  name: `tool${i}`,
+                  path: NodePath.join(fakeHost, "alpha")
+                }))
+                const dir1 = await PathTools.directory(parent, "k1", tools)
+                const dir2 = await PathTools.directory(parent, "k1", tools)
+                expect(dir2).toBe(dir1)
+
+                if (clash) {
+                  await expect(
+                    PathTools.directory(parent, "k1", [{ name: "other", path: NodePath.join(fakeHost, "beta") }])
+                  ).rejects.toThrow(/holds other tools/)
+                }
+
+                const und1 = await PathTools.undeclared(parent, `${fakeHost}:relative/ignored:/nonexistent-dir`, [
+                  "alpha"
+                ])
+                const und2 = await PathTools.undeclared(parent, `${fakeHost}:relative/ignored:/nonexistent-dir`, [
+                  "alpha"
+                ])
+                expect(und2).toBe(und1)
+                const shimText = await Fs.readFile(NodePath.join(und1, "beta"), "utf8")
+                expect(shimText).toContain(PathTools.undeclaredLine("beta"))
+              })
+              return true
+            }),
+          { executions: Math.min(fsExecutions, 10), seed: seed + 2 }
+        )
+      )
+      assertPassed(report)
+    },
+    30_000
+  )
 
   it("ShellWords.commands & Diagnostic rendering cover quotes, escapes, comments, ${...}, $(), backticks, env flags & unexpected logs", async () => {
     const scripts = [
@@ -220,7 +232,11 @@ describe("@smthrs/build-cli Wave-7A: AnvilExec, FactoryLoader, PathTools, ShellW
               const sysErr = Object.assign(new Error("enoent"), { syscall: "open" })
               const taggedErr = Object.assign(new Error("tagged msg"), { _tag: "MyTag" })
               const typeErr = new TypeError("bug\u0007control")
-              const proxyErr = new Proxy({}, { getOwnPropertyDescriptor() { throw new Error("boom") } })
+              const proxyErr = new Proxy({}, {
+                getOwnPropertyDescriptor() {
+                  throw new Error("boom")
+                }
+              })
 
               expect(Diagnostic.present(taggedErr, { verbose })).toContain("tagged msg")
               expect(Diagnostic.present(sysErr, { verbose })).toContain(Diagnostic.unknownFailure)
@@ -242,93 +258,131 @@ describe("@smthrs/build-cli Wave-7A: AnvilExec, FactoryLoader, PathTools, ShellW
     })
   })
 
-  it("CacheAdmin.parseSize, directory, entries, inspect & remove + DocsCheckRule.contract cover cache pruning and docs stamp plans", async () => {
-    expect(CacheAdmin.parseSize("100B")).toBe(100)
-    expect(CacheAdmin.parseSize("2KB")).toBe(2000)
-    expect(CacheAdmin.parseSize("2KiB")).toBe(2048)
-    expect(CacheAdmin.parseSize("3MB")).toBe(3_000_000)
-    expect(CacheAdmin.parseSize("1GB")).toBe(1_000_000_000)
-    expect(() => CacheAdmin.parseSize("nope")).toThrow()
+  it(
+    "CacheAdmin.parseSize, directory, entries, inspect & remove + DocsCheckRule.contract cover cache pruning and docs stamp plans",
+    async () => {
+      expect(CacheAdmin.parseSize("100B")).toBe(100)
+      expect(CacheAdmin.parseSize("2KB")).toBe(2000)
+      expect(CacheAdmin.parseSize("2KiB")).toBe(2048)
+      expect(CacheAdmin.parseSize("3MB")).toBe(3_000_000)
+      expect(CacheAdmin.parseSize("1GB")).toBe(1_000_000_000)
+      expect(() => CacheAdmin.parseSize("nope")).toThrow()
 
-    await withTempDir("smthrs-w7a-ca-", async (root) => {
-      const shardDir = NodePath.join(root, ".cache", "cache", "ab")
-      await Fs.mkdir(shardDir, { recursive: true })
-      await Fs.writeFile(NodePath.join(shardDir, "abentry1.json"), JSON.stringify({ key: "abentry1", label: "//:a", target: "Shell.Build", exitOk: true, storedAt: new Date().toISOString(), pad: "a".repeat(200) }))
-      await Fs.writeFile(NodePath.join(shardDir, "abentry2.json"), JSON.stringify({ key: "abentry2", label: "//:b", target: "Shell.Build", exitOk: true, storedAt: new Date().toISOString(), pad: "b".repeat(200) }))
+      await withTempDir("smthrs-w7a-ca-", async (root) => {
+        const shardDir = NodePath.join(root, ".cache", "cache", "ab")
+        await Fs.mkdir(shardDir, { recursive: true })
+        await Fs.writeFile(
+          NodePath.join(shardDir, "abentry1.json"),
+          JSON.stringify({
+            key: "abentry1",
+            label: "//:a",
+            target: "Shell.Build",
+            exitOk: true,
+            storedAt: new Date().toISOString(),
+            pad: "a".repeat(200)
+          })
+        )
+        await Fs.writeFile(
+          NodePath.join(shardDir, "abentry2.json"),
+          JSON.stringify({
+            key: "abentry2",
+            label: "//:b",
+            target: "Shell.Build",
+            exitOk: true,
+            storedAt: new Date().toISOString(),
+            pad: "b".repeat(200)
+          })
+        )
 
-      const dir = await CacheAdmin.directory(root, ".cache")
-      expect(dir).toBeDefined()
-      const list = await CacheAdmin.entries(root, ".cache")
-      expect(list.length).toBe(2)
-      const info = await CacheAdmin.inspect(root, ".cache", "abentry1")
-      expect(info?.exitOk).toBe(true)
+        const dir = await CacheAdmin.directory(root, ".cache")
+        expect(dir).toBeDefined()
+        const list = await CacheAdmin.entries(root, ".cache")
+        expect(list.length).toBe(2)
+        const info = await CacheAdmin.inspect(root, ".cache", "abentry1")
+        expect(info?.exitOk).toBe(true)
 
-      await expect(CacheAdmin.remove({ root, cacheDirectory: ".cache", maxSizeBytes: 100, dryRun: false, yes: false })).rejects.toThrow(/--yes/)
-      const dry = await CacheAdmin.remove({ root, cacheDirectory: ".cache", maxSizeBytes: 100, dryRun: true, yes: false })
-      expect(dry.candidates).toBeGreaterThan(0)
-      const real = await CacheAdmin.remove({ root, cacheDirectory: ".cache", maxSizeBytes: 100, dryRun: false, yes: true })
-      expect(real.removed).toBeGreaterThan(0)
+        await expect(
+          CacheAdmin.remove({ root, cacheDirectory: ".cache", maxSizeBytes: 100, dryRun: false, yes: false })
+        ).rejects.toThrow(/--yes/)
+        const dry = await CacheAdmin.remove({
+          root,
+          cacheDirectory: ".cache",
+          maxSizeBytes: 100,
+          dryRun: true,
+          yes: false
+        })
+        expect(dry.candidates).toBeGreaterThan(0)
+        const real = await CacheAdmin.remove({
+          root,
+          cacheDirectory: ".cache",
+          maxSizeBytes: 100,
+          dryRun: false,
+          yes: true
+        })
+        expect(real.removed).toBeGreaterThan(0)
 
-      const baseCheck: DocsCheck.Attrs = {
-        output: Input.file("docs/guide.md"),
-        stamp: Input.file("docs/guide.stamp.json"),
-        producer: "//:gen",
-        inputs: [Input.file("src/a.ts")]
-      }
-      const planIncludesOutput = DocsCheckRule.contract.plan({
-        attrs: baseCheck,
-        packagePath: "",
-        docsFiles: () => [{ path: "docs/guide.md", digest: "abc" }]
-      } as never)
-      expect(planIncludesOutput.ok).toBe(false)
-
-      const planIncludesStamp = DocsCheckRule.contract.plan({
-        attrs: baseCheck,
-        packagePath: "",
-        docsFiles: () => [{ path: "docs/guide.stamp.json", digest: "abc" }]
-      } as never)
-      expect(planIncludesStamp.ok).toBe(false)
-
-      const planDupEvidence = DocsCheckRule.contract.plan({
-        attrs: {
-          ...baseCheck,
-          evidence: [
-            { file: Input.file("ev.json"), maxAgeMs: 60_000 },
-            { file: Input.file("ev.json"), maxAgeMs: 60_000 }
-          ]
-        },
-        packagePath: "",
-        docsFiles: () => [{ path: "src/a.ts", digest: "abc" }]
-      } as never)
-      expect(planDupEvidence.ok).toBe(false)
-
-      const planErr = DocsCheckRule.contract.plan({
-        attrs: baseCheck,
-        packagePath: "",
-        docsFiles: () => "refused"
-      } as never)
-      expect(planErr.ok).toBe(false)
-
-      const planOk = DocsCheckRule.contract.plan({
-        attrs: baseCheck,
-        packagePath: "",
-        docsFiles: () => [{ path: "src/a.ts", digest: "abc" }]
-      } as never)
-      expect(planOk.ok).toBe(true)
-
-      const decl = DocsCheck.Check(baseCheck)
-      if (planOk.ok) {
-        const node = {
-          declaration: decl,
+        const baseCheck: DocsCheck.Attrs = {
+          output: Input.file("docs/guide.md"),
+          stamp: Input.file("docs/guide.stamp.json"),
+          producer: "//:gen",
+          inputs: [Input.file("src/a.ts")]
+        }
+        const planIncludesOutput = DocsCheckRule.contract.plan({
+          attrs: baseCheck,
           packagePath: "",
-          mode: "write",
-          lane: planOk.value.lane
-        } as never
-        await expect(DocsCheckRule.contract.execute(node, { root } as never)).rejects.toThrow(/missing/)
-        await Fs.mkdir(NodePath.join(root, "docs"), { recursive: true })
-        await Fs.writeFile(NodePath.join(root, "docs", "guide.md"), "# Guide\nHello\n")
-        await DocsCheckRule.contract.execute(node, { root } as never)
-      }
-    })
-  }, 30_000)
+          docsFiles: () => [{ path: "docs/guide.md", digest: "abc" }]
+        } as never)
+        expect(planIncludesOutput.ok).toBe(false)
+
+        const planIncludesStamp = DocsCheckRule.contract.plan({
+          attrs: baseCheck,
+          packagePath: "",
+          docsFiles: () => [{ path: "docs/guide.stamp.json", digest: "abc" }]
+        } as never)
+        expect(planIncludesStamp.ok).toBe(false)
+
+        const planDupEvidence = DocsCheckRule.contract.plan({
+          attrs: {
+            ...baseCheck,
+            evidence: [
+              { file: Input.file("ev.json"), maxAgeMs: 60_000 },
+              { file: Input.file("ev.json"), maxAgeMs: 60_000 }
+            ]
+          },
+          packagePath: "",
+          docsFiles: () => [{ path: "src/a.ts", digest: "abc" }]
+        } as never)
+        expect(planDupEvidence.ok).toBe(false)
+
+        const planErr = DocsCheckRule.contract.plan({
+          attrs: baseCheck,
+          packagePath: "",
+          docsFiles: () => "refused"
+        } as never)
+        expect(planErr.ok).toBe(false)
+
+        const planOk = DocsCheckRule.contract.plan({
+          attrs: baseCheck,
+          packagePath: "",
+          docsFiles: () => [{ path: "src/a.ts", digest: "abc" }]
+        } as never)
+        expect(planOk.ok).toBe(true)
+
+        const decl = DocsCheck.Check(baseCheck)
+        if (planOk.ok) {
+          const node = {
+            declaration: decl,
+            packagePath: "",
+            mode: "write",
+            lane: planOk.value.lane
+          } as never
+          await expect(DocsCheckRule.contract.execute(node, { root } as never)).rejects.toThrow(/missing/)
+          await Fs.mkdir(NodePath.join(root, "docs"), { recursive: true })
+          await Fs.writeFile(NodePath.join(root, "docs", "guide.md"), "# Guide\nHello\n")
+          await DocsCheckRule.contract.execute(node, { root } as never)
+        }
+      })
+    },
+    30_000
+  )
 })

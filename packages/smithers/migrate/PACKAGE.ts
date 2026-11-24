@@ -51,8 +51,8 @@ const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/
 
 /**
  * The modules `import "@smthrs/migrate"` loads, which must import and run in a
- * browser and a Worker as well as on Node. `src/Checks.ts` is the one root
- * module left out of the first rule: it still hashes with `node:crypto`.
+ * browser and a Worker as well as on Node, so none of them imports a host
+ * module.
  *
  * @since 1.0.0
  * @category lint
@@ -64,6 +64,7 @@ const importRules = ImportRules({
       kind: "forbidHostModules",
       files: [
         "src/index.ts",
+        "src/Checks.ts",
         "src/Constructs.ts",
         "src/Detect.ts",
         "src/Inventory.ts",
@@ -86,16 +87,10 @@ const importRules = ImportRules({
     },
     {
       kind: "forbid",
-      files: ["src/Checks.ts", "src/flow/**/*.ts"],
+      files: ["src/flow/**/*.ts"],
       modules: ["node:sqlite", "bun:sqlite"],
       because:
         "sdk.platform-neutral: SQLite is reached through the SqliteStore service; SqliteStoreNode is its one engine."
-    },
-    {
-      kind: "forbid",
-      files: ["src/Checks.ts"],
-      modules: ["node:path", "node:fs", "node:child_process", "node:os"],
-      because: "sdk.platform-neutral: the root entry reads files and paths through Effect services (SDK-4)."
     }
   ]
 })

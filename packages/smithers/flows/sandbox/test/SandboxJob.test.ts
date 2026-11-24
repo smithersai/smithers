@@ -39,7 +39,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll } from "vitest"
 import * as DirectorySandbox from "../src/DirectorySandbox/index.ts"
-import { sessionSlug } from "../src/internal/sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "../src/internal/sessionSlug.ts"
 import { platform } from "./helpers/containedPlatform.ts"
 import { makeWorkSeed } from "./helpers/workSeed.ts"
 
@@ -402,6 +402,27 @@ describe("retained directory process conformance", () => {
       expect(yield* exited(job, handle, f.key)).toEqual({ _tag: "Exited", exitCode: 7 })
       expect(readFileSync(join(f.checkout, "starts"), "utf8")).toBe("worker")
     })))
+  it.live("waits for a live legacy owner to publish its key and recovers a dead owner's missing key", () =>
+    withPlatform(Effect.gen(function*() {
+      const f = yield* fixture()
+      const job = Sandbox.job(f.provider, f.options)
+      const directory = join(f.options.jobDirectory, legacySessionSlug(f.key))
+      mkdirSync(directory, { recursive: true })
+      writeFileSync(join(directory, "owner"), String(process.pid))
+      const waiting = yield* Effect.forkChild(Effect.flip(job.start(undefined, f.key)))
+      yield* Effect.sleep("100 millis")
+      expect(waiting.pollUnsafe()).toBeUndefined()
+      writeFileSync(join(directory, "key"), "another key")
+      expect(yield* Fiber.join(waiting)).toMatchObject({ code: "unknown" })
+      rmSync(join(directory, "key"))
+      const dead = spawnSync("sh", ["-c", "echo $$"], { encoding: "utf8" }).stdout.trim()
+      writeFileSync(join(directory, "owner"), dead)
+      const handle = yield* job.start(undefined, f.key)
+      expect(handle.directory).toBe(directory)
+      expect(yield* exited(job, handle, f.key)).toMatchObject({ exitCode: 7 })
+      expect(readFileSync(join(f.checkout, "starts"), "utf8")).toBe("worker")
+    })))
+
   it.live("a start takes over a directory whose launcher died before launching", () =>
     withPlatform(Effect.gen(function*() {
       const f = yield* fixture()
@@ -481,7 +502,7 @@ const scriptFixture = () => {
       return Effect.succeed({
         stdout: Stream.make(new TextEncoder().encode(stdout)),
         stderr: Stream.make(new TextEncoder().encode("remote error")),
-        exitCode: Effect.succeed(state.code)
+        exitCode: Effect.succeed(command.startsWith("test -d ") ? 1 : state.code)
       })
     },
     writeFile: () => Effect.void,

@@ -48,9 +48,7 @@ export interface RemoteOptions {
 /**
  * A configured remote provider.
  *
- * An open failure's message is a public provisioning diagnostic. Keep user
- * content, credentials and vendor payloads out of it. The adapter records
- * the message and code and discards the nested cause at the spawner boundary.
+ * The adapter logs the failure code and omits provider diagnostics and nested causes.
  *
  * `session` is the stable provider-neutral session key. `open(session)` must
  * acquire the remote session and register its cancellation or close operation

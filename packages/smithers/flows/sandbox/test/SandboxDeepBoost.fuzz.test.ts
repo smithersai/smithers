@@ -47,81 +47,85 @@ const freshDir = (name: string) => {
 }
 
 describe("@smthrs/sandbox LinuxBatch, CiJob.Graph, SandboxMerge.resolveWith & RemoteChildProcessSpawner pipelines fuzz", () => {
-  it("LinuxBatch.batchedFiles executes snapshot, commit (write/delete/conflict/stale), list & refusals on real sessions", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        bodyA: Schema.Literals(["alpha", "line1\nline2", "special ' \" $ ` chars"]),
-        bodyB: Schema.Literals(["beta", "updated-beta"]),
-        conflict: Schema.Boolean,
-        deleteAfter: Schema.Boolean
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (tc) =>
-          Effect.scoped(
-            Effect.gen(function*() {
-              const base = freshDir("batch")
-              const provider = DirectorySandbox.make({ ...services, root: base })
-              const session = yield* provider.acquire(`b-${seq}`)
-              const batch = LinuxBatch.batchedFiles(session, "linux")
-
-              const pA = `${session.workdir}/a.txt`
-              const pB = `${session.workdir}/sub/b.txt`
-              const pMissing = `${session.workdir}/missing.txt`
-
-              const snap0 = yield* batch.snapshot([pA, pMissing], { read: [pA, pMissing], maxBytes: 65536 })
-              expect(snap0.length).toBe(2)
-              expect(snap0[0]!.info._tag).toBe("Failure")
-
-              const snapB = yield* batch.snapshot([pB])
-              const c1 = yield* batch.commit([
-                { path: pA, version: snap0[0]!.version, content: new TextEncoder().encode(tc.bodyA) },
-                { path: pB, version: snapB[0]!.version, content: new TextEncoder().encode(tc.bodyB) }
-              ])
-              expect(c1.applied).toBe(2)
-
-              const snap1 = yield* batch.snapshot([pA, pB], { read: [pA, pB], maxBytes: 65536 })
-              expect(snap1[0]!.info._tag).toBe("Success")
-              if (snap1[0]!.content?._tag === "Success") {
-                expect(new TextDecoder().decode(snap1[0]!.content.success)).toBe(tc.bodyA)
-              }
-
-              const listed = yield* batch.list(session.workdir)
-              expect(listed.some((e) => e.name === "a.txt")).toBe(true)
-
-              if (tc.conflict) {
-                yield* session.writeFile(pA, new TextEncoder().encode("out-of-band"))
-                const stale = yield* batch.commit([
-                  { path: pA, version: snap1[0]!.version, content: new TextEncoder().encode("new") }
-                ])
-                expect(stale.stopped?.reason).toBe("changed")
-              } else if (tc.deleteAfter) {
-                const del = yield* batch.commit([
-                  { path: pA, version: snap1[0]!.version, content: null }
-                ])
-                expect(del.applied).toBe(1)
-                const snap2 = yield* batch.snapshot([pA])
-                expect(snap2[0]!.info._tag).toBe("Failure")
-              }
-
-              // Helper predicates
-              expect(LinuxBatch.fileType(0o100644)).toBe("File")
-              expect(LinuxBatch.fileType(0o040755)).toBe("Directory")
-              expect(LinuxBatch.fileType(0o120777)).toBe("SymbolicLink")
-              expect(typeof LinuxBatch.statAbsent("stat: cannot stat 'x': No such file or directory")).toBe("boolean")
-              expect(LinuxBatch.statAbsent("Permission denied")).toBe(false)
-              return true
-            })
-          ).pipe(Effect.provide(silentLogger)),
-        { seed, executions: ioExecutions }
+  it(
+    "LinuxBatch.batchedFiles executes snapshot, commit (write/delete/conflict/stale), list & refusals on real sessions",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          bodyA: Schema.Literals(["alpha", "line1\nline2", "special ' \" $ ` chars"]),
+          bodyB: Schema.Literals(["beta", "updated-beta"]),
+          conflict: Schema.Boolean,
+          deleteAfter: Schema.Boolean
+        })
       )
-    )
-    const failure = Fuzz.formatReport(report)
-    if (failure !== undefined) throw new Error(failure)
-  }, 120_000)
+
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (tc) =>
+            Effect.scoped(
+              Effect.gen(function*() {
+                const base = freshDir("batch")
+                const provider = DirectorySandbox.make({ ...services, root: base })
+                const session = yield* provider.acquire(`b-${seq}`)
+                const batch = LinuxBatch.batchedFiles(session, "linux")
+
+                const pA = `${session.workdir}/a.txt`
+                const pB = `${session.workdir}/sub/b.txt`
+                const pMissing = `${session.workdir}/missing.txt`
+
+                const snap0 = yield* batch.snapshot([pA, pMissing], { read: [pA, pMissing], maxBytes: 65536 })
+                expect(snap0.length).toBe(2)
+                expect(snap0[0]!.info._tag).toBe("Failure")
+
+                const snapB = yield* batch.snapshot([pB])
+                const c1 = yield* batch.commit([
+                  { path: pA, version: snap0[0]!.version, content: new TextEncoder().encode(tc.bodyA) },
+                  { path: pB, version: snapB[0]!.version, content: new TextEncoder().encode(tc.bodyB) }
+                ])
+                expect(c1.applied).toBe(2)
+
+                const snap1 = yield* batch.snapshot([pA, pB], { read: [pA, pB], maxBytes: 65536 })
+                expect(snap1[0]!.info._tag).toBe("Success")
+                if (snap1[0]!.content?._tag === "Success") {
+                  expect(new TextDecoder().decode(snap1[0]!.content.success)).toBe(tc.bodyA)
+                }
+
+                const listed = yield* batch.list(session.workdir)
+                expect(listed.some((e) => e.name === "a.txt")).toBe(true)
+
+                if (tc.conflict) {
+                  yield* session.writeFile(pA, new TextEncoder().encode("out-of-band"))
+                  const stale = yield* batch.commit([
+                    { path: pA, version: snap1[0]!.version, content: new TextEncoder().encode("new") }
+                  ])
+                  expect(stale.stopped?.reason).toBe("changed")
+                } else if (tc.deleteAfter) {
+                  const del = yield* batch.commit([
+                    { path: pA, version: snap1[0]!.version, content: null }
+                  ])
+                  expect(del.applied).toBe(1)
+                  const snap2 = yield* batch.snapshot([pA])
+                  expect(snap2[0]!.info._tag).toBe("Failure")
+                }
+
+                // Helper predicates
+                expect(LinuxBatch.fileType(0o100644)).toBe("File")
+                expect(LinuxBatch.fileType(0o040755)).toBe("Directory")
+                expect(LinuxBatch.fileType(0o120777)).toBe("SymbolicLink")
+                expect(typeof LinuxBatch.statAbsent("stat: cannot stat 'x': No such file or directory")).toBe("boolean")
+                expect(LinuxBatch.statAbsent("Permission denied")).toBe(false)
+                return true
+              })
+            ).pipe(Effect.provide(silentLogger)),
+          { seed, executions: ioExecutions }
+        )
+      )
+      const failure = Fuzz.formatReport(report)
+      if (failure !== undefined) throw new Error(failure)
+    },
+    120_000
+  )
 
   it("CiJob.Graph & CiJob.make run multi-job DAGs with needs, skips, failures & parallel branches", async () => {
     const arb = Arbitrary.schema(

@@ -8,7 +8,6 @@ import * as Effect from "effect/Effect"
 import * as PlatformError from "effect/PlatformError"
 import { ProviderError, type ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderError.ts"
 
-import { boundedMessage } from "./boundedMessage.ts"
 import { ProcessStatus } from "./localProcess.ts"
 
 /**
@@ -40,6 +39,15 @@ export const platformReason: Record<ProviderErrorCode, PlatformError.SystemError
   unknown: "Unknown"
 }
 
+const publicStatuses = new Set([
+  "command could not start",
+  "guest command could not start",
+  "command stdout failed",
+  "command stderr failed",
+  "command exit could not be observed",
+  "command could not be observed to completion"
+])
+
 /**
  * Restates a provider failure in the platform vocabulary both spawner-facing
  * adapters share, so a session that refused to open reads the same whether the
@@ -50,11 +58,14 @@ export const platformReason: Record<ProviderErrorCode, PlatformError.SystemError
  */
 export const platformFailure =
   (method: string) => (error: ProviderError): Effect.Effect<never, PlatformError.PlatformError> => {
-    // Command operations may return guest arguments or SDK payloads in an arbitrary
-    // provider's message. Only the open diagnostic and host-authored statuses are public.
-    const message = method === "open" || error instanceof ProcessStatus ? boundedMessage(error.message) : undefined
+    const status = error instanceof ProcessStatus && publicStatuses.has(error.message) ? error.message : undefined
     return Effect.logWarning("sandbox.provider.failed").pipe(
-      Effect.annotateLogs({ method, code: error.code, ...(message === undefined ? {} : { message }) }),
+      Effect.annotateLogs({
+        provider: "remote",
+        method,
+        code: error.code,
+        ...(status === undefined ? {} : { status })
+      }),
       Effect.andThen(Effect.fail(PlatformError.systemError({
         _tag: platformReason[error.code],
         module: "ChildProcess",

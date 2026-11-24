@@ -2,11 +2,12 @@
  * The identity of the Apple SDK or developer directory a command inherits
  * through `SDKROOT` or `DEVELOPER_DIR`.
  *
- * An installed SDK is gigabytes of read-only files whose links reach into the
- * rest of the system, so it is never read whole. Apple writes its version and
- * build into a manifest at a known place, and the manifest's bytes with the
- * resolved path are the identity. A directory with no manifest is read whole
- * only while it is small; a large one has no identity.
+ * The identity is the content of every file a compiler can reach below the
+ * root, with the resolved path and the version manifests Apple writes. A
+ * manifest alone is not an identity: a header changed in place leaves it as it
+ * was. The read is bounded, so a root too large to read whole, or one holding
+ * an entry whose content cannot be read, has no identity and its command is
+ * not cached.
  *
  * @since 1.0.0
  */
@@ -26,7 +27,8 @@ import * as Path from "./Path.ts"
 export const manifests: ReadonlyArray<string> = ["SDKSettings.json", "SDKSettings.plist", "version.plist"]
 
 /**
- * How much of a directory with no manifest is read before it is refused.
+ * How much of a root is read before it is refused. A linked directory's
+ * entries count like any other.
  *
  * @category measuring
  * @since 1.0.0
@@ -37,7 +39,7 @@ export interface Limits {
 }
 
 /**
- * The default bound on a directory with no manifest.
+ * The default bound on a root.
  *
  * @category measuring
  * @since 1.0.0
@@ -62,31 +64,41 @@ const fileBytes = (path: string): Buffer | undefined => {
   }
 }
 
-/** Every name, file and link below a small directory, or nothing once it passes the limits. */
-const smallTree = (root: string, limits: Limits): string | undefined => {
+/**
+ * Every name, file and link reachable below a root, or nothing when the limits
+ * are passed or an entry's content cannot be read.
+ */
+const reachableTree = (root: string, limits: Limits): string | undefined => {
   const hash = createHash("sha256")
   let entries = 0
   let bytes = 0
+  // The resolved directories being read, outermost first: a link back to one
+  // of them is a cycle, whose content the outer read already covers.
+  const open = new Set<string>()
   const visit = (directory: string, prefix: string): boolean => {
-    const children = NodeFs.readdirSync(directory, { withFileTypes: true })
-      .sort((left, right) => left.name < right.name ? -1 : 1)
-    for (const child of children) {
+    const resolved = NodeFs.realpathSync(directory)
+    open.add(resolved)
+    const children = new Map(NodeFs.readdirSync(directory, { withFileTypes: true }).map((child) => [child.name, child]))
+    for (const child of [...children.keys()].sort().map((name) => children.get(name)!)) {
       if (++entries > limits.entries) return false
       const path = NodePath.join(directory, child.name)
       const name = `${prefix}${child.name}`
-      if (child.isDirectory()) {
-        hash.update(`d\0${name}\n`)
+      const link = child.isSymbolicLink() ? NodeFs.readlinkSync(path) : ""
+      // A link is its target's text and its target's content, wherever the
+      // target lives. One that leads nowhere has no content to read.
+      const stats = NodeFs.statSync(path, { throwIfNoEntry: false })
+      if (stats === undefined) return false
+      if (stats.isDirectory()) {
+        if (child.isSymbolicLink() && open.has(NodeFs.realpathSync(path))) {
+          hash.update(`c\0${name}\0${link}\n`)
+          continue
+        }
+        hash.update(`d\0${name}\0${link}\n`)
         if (!visit(path, `${name}/`)) return false
         continue
       }
-      // A link is its target's text, and its target's bytes when that is a
-      // file; where the target lives is not a reason to refuse the tree.
-      const link = child.isSymbolicLink() ? NodeFs.readlinkSync(path) : ""
-      const stats = NodeFs.statSync(path, { throwIfNoEntry: false })
-      if (stats === undefined || !stats.isFile()) {
-        hash.update(`l\0${name}\0${link}\n`)
-        continue
-      }
+      // A socket, a pipe or a device is not content a digest can hold.
+      if (!stats.isFile()) return false
       bytes += stats.size
       if (bytes > limits.bytes) return false
       const executable = (stats.mode & 0o111) === 0 ? "-" : "x"
@@ -94,6 +106,7 @@ const smallTree = (root: string, limits: Limits): string | undefined => {
         `f\0${name}\0${link}\0${executable}\0${createHash("sha256").update(NodeFs.readFileSync(path)).digest("hex")}\n`
       )
     }
+    open.delete(resolved)
     return true
   }
   return visit(root, "") ? hash.digest("hex") : undefined
@@ -101,8 +114,9 @@ const smallTree = (root: string, limits: Limits): string | undefined => {
 
 /**
  * The identity of the SDK or developer directory at `path`, or `null` when it
- * has none: the path is missing, it holds the workspace, or it has no manifest
- * and is too large to read.
+ * has none: the path is missing, it holds the workspace, it is too large to
+ * read whole, or something below it cannot be read. A manifest adds to the
+ * identity and never stands in for the content.
  *
  * @category measuring
  * @since 1.0.0
@@ -112,17 +126,14 @@ export const identify = (path: string, workspaceRoot: string, limits: Limits = d
     const root = NodeFs.realpathSync(path)
     if (Path.contains(root, workspaceRoot)) return null
     const hash = createHash("sha256").update(`${root}\n`)
-    let found = false
     for (const manifest of manifestPaths(root)) {
       const bytes = fileBytes(manifest)
       if (bytes === undefined) continue
-      found = true
       hash.update(
         `manifest\0${NodePath.relative(root, manifest)}\0${createHash("sha256").update(bytes).digest("hex")}\n`
       )
     }
-    if (found) return hash.digest("hex")
-    const tree = smallTree(root, limits)
+    const tree = reachableTree(root, limits)
     return tree === undefined ? null : hash.update(`tree\0${tree}\n`).digest("hex")
   } catch {
     return null

@@ -9,6 +9,29 @@ import * as CommandLine from "@smthrs/kernel/CommandLine"
 
 const q = CommandLine.quote
 
+const safeParents = (path: string) =>
+  path.split("/").slice(2)
+    .map((_, index) => `[ ! -L ${q(path.split("/").slice(0, index + 3).join("/"))} ] || exit 3`).join("\n")
+
+/** Serialize incarnation changes and writes, including the check immediately before publication.
+ * A bounded set of lock inodes outlives all session receipts.
+ * @category utilities
+ * @since 1.0.0-rc.18
+ */
+export const sessionScript = (lock: string, state: string, body: string) => {
+  const parent = lock.slice(0, lock.lastIndexOf("/"))
+  const critical = `umask 077
+${safeParents(state)}
+r=${q(state)}
+${body}`
+  return `umask 077
+${safeParents(lock)}
+mkdir -p -- ${q(parent)} || exit 3
+if command -v flock >/dev/null 2>&1; then exec flock -w 5 -E 75 ${q(lock)} sh -c ${q(critical)}
+elif command -v lockf >/dev/null 2>&1; then exec lockf -k -t 5 ${q(lock)} sh -c ${q(critical)}
+else exit 69; fi`
+}
+
 /**
  * The in-progress file beside a destination, with a bounded basename.
  *
@@ -35,14 +58,24 @@ export const uploadScript = (
   end: number,
   total: number
 ) => {
-  const critical = `r=${q(root)}; f=${q(path)}; u=${q(`${root}/ids/${upload}`)}; d=${q(uploadStage(path, upload))}
+  const critical = `umask 077
+r=${q(root)}; f=${q(path)}; u=${q(`${root}/ids/${upload}`)}; d=${q(uploadStage(path, upload))}
+publish() {
+  [ ! -L "$f" ] && { [ ! -e "$f" ] || [ -f "$f" ]; } || return 1
+  if [ -f "$f" ]; then
+    metadata=$(stat -c '%u %g %a' -- "$f" 2>/dev/null) || metadata=$(stat -f '%u %g %Lp' "$f") || return 1
+    set -- "$1" $metadata
+    [ "$#" = 4 ] && chown "$2:$3" "$1" && chmod "$4" "$1" || return 1
+  fi
+  mv -f -- "$1" "$f"
+}
 [ ! -d "$f" ] || exit 3
 if [ -f "$r/pending" ]; then
   read -r id <"$r/pending" || exit 3
   case "$id" in ''|*[!a-zA-Z0-9-]*) exit 3;; esac
   p="$r/ids/$id"; old=${q(uploadStage(path, ""))}"$id"
   [ ! -L "$p" ] && [ -d "$p" ] && [ ! -L "$old" ] && [ ! -L "$p/done" ] || exit 3
-  [ -f "$old" ] && mv -f -- "$old" "$f"
+  if [ -f "$old" ]; then publish "$old" || exit 3; fi
   [ ! -f "$old" ] || exit 3
   touch "$p/done" && rm -f -- "$r/pending" || exit 3
 fi
@@ -63,12 +96,12 @@ ${
     end !== total ?
       "" :
       `printf '%s\\n' ${q(upload)} >"$r/pending.tmp" && mv -f -- "$r/pending.tmp" "$r/pending" || exit 3
-mv -f -- "$d" "$f" && touch "$u/done" && rm -f -- "$r/pending" || exit 3`
+publish "$d" && touch "$u/done" && rm -f -- "$r/pending" || exit 3`
   }
 `
-  const prefixes = root.split("/").slice(2).map((_, index) => root.split("/").slice(0, index + 3).join("/"))
-  return `r=${q(root)}
-${prefixes.map((prefix) => `[ ! -L ${q(prefix)} ] || exit 3`).join("\n")}
+  return `umask 077
+r=${q(root)}
+${safeParents(root)}
 mkdir -p -m 700 -- "$r" || exit 3
 [ ! -L "$r/ids" ] && [ ! -L "$r/lock" ] && [ ! -L "$r/pending" ] && [ ! -L "$r/pending.tmp" ] || exit 3
 [ -f "$r/lock" ] || (set -C; : >"$r/lock") 2>/dev/null || { [ -f "$r/lock" ] && [ ! -L "$r/lock" ]; } || exit 3

@@ -38,7 +38,11 @@ export const LimitsQuery = Schema.Struct({
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const Acquire = Schema.Struct({ key: Schema.String, limits: Schema.optional(Limits) })
+export const Acquire = Schema.Struct({
+  key: Schema.String,
+  limits: Schema.optional(Limits),
+  uploadVersion: Schema.optional(Schema.Number)
+})
 
 /**
  * The answer to {@link Acquire}: the session every later request names.
@@ -46,7 +50,13 @@ export const Acquire = Schema.Struct({ key: Schema.String, limits: Schema.option
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const SessionInfo = Schema.Struct({ id: Schema.String, remoteId: Schema.String, workdir: Schema.String })
+export const SessionInfo = Schema.Struct({
+  id: Schema.String,
+  remoteId: Schema.String,
+  workdir: Schema.String,
+  uploadVersion: Schema.optional(Schema.Number),
+  incarnation: Schema.optional(Schema.String)
+})
 
 /**
  * `POST /v1/sessions/<remoteId>/commands`: run one command to completion. An

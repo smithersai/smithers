@@ -35,11 +35,10 @@ use a credential against the hosts it was meant for, and can't read it.
   every byte alignment, as the body streams, across chunk boundaries. When
   the policy holds a secret, the egress asks for an uncompressed answer and
   drops `Range` and `If-Range`. An encoded response body fails with `Broken`
-  unless the host provides `Egress.DecodesContent` for its client and the
-  complete list of response codings. With a standard Fetch transport, provide
-  `Egress.layerFetchDecodesContent` for single gzip, deflate and Brotli responses.
-  A raw client forwarding a response under an empty secret policy preserves its
-  encoded bytes and `Content-Encoding` header.
+  unless the client decodes the complete list of codings. The default follows Fetch
+  for single gzip, deflate and Brotli responses. Provide `Egress.layerRawContent`
+  with a raw client to preserve encoded bytes and their `Content-Encoding`
+  header under an empty secret policy.
 - **Bounded.** At most 16 placeholders per request and 64 KiB of headers after
   substitution. A value is 8 bytes to 16 KiB of printable ASCII with no
   leading or trailing spaces, so a header preserves its bytes. Values are
@@ -83,7 +82,7 @@ scope gets new placeholders, and the old ones are refused as
 | Service                 | What it does                                                                                                |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `HttpClient`            | Sends each request with redirects disabled. The egress sets `redirect: "manual"` for Effect's Fetch client. |
-| `Egress.DecodesContent` | Declares which response encodings the client fully decodes. Defaults to none.                               |
+| `Egress.DecodesContent` | Declares which response encodings the client fully decodes. Defaults to the Fetch single-coding predicate.  |
 | `Egress.Vault`          | Reveals a value by name for one request, for example by opening a sealed row                                |
 | `Egress.Audit`          | Records each decision                                                                                       |
 

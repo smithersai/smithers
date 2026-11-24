@@ -50,6 +50,13 @@ describe("LeanOracle", () => {
     write("lean-toolchain", "leanprover/lean4:v4.0.0\n")
   })
 
+  it("rejects a replaced executable with the original source manifest", () => {
+    build()
+    writeFileSync(specification.binary, "different executable")
+    touchOracle()
+    expect(LeanOracle.stale(specification)).toBe(true)
+  })
+
   afterEach(() => rmSync(directory, { recursive: true, force: true }))
 
   it("fingerprints every source at any depth and nothing of the build output", () => {

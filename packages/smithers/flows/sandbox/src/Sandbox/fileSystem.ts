@@ -349,6 +349,7 @@ const derive = (session: Session): FileSystem.FileSystem => {
         description: `\`${path}\`: unsupported write options; derived writes require flag 'w' or no flag, and no mode`
       }))
     }
+    // The transport owns atomic publication and any destination metadata it must preserve.
     return session.writeFile(path, data).pipe(Effect.mapError(providerFailure(method, path)))
   }
   return FileSystem.makeNoop({

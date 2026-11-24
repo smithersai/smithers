@@ -10,7 +10,8 @@ import {
   interpolate,
   localEquivalents,
   parseWorkflow,
-  rehearsalContexts
+  rehearsalContexts,
+  rehearsalSource
 } from "./release-rehearsal.mjs"
 import { repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 import { releaseGateCommand, releaseGates } from "./release-gates.mjs"
@@ -1043,6 +1044,68 @@ for (const format of ["sha1", "sha256"]) {
       assert.ok(steps.indexOf(step("Verify explicit dry-run source")) < steps.indexOf(step("Install pinned Rust toolchain")))
     }))
 }
+
+for (const format of ["sha1", "sha256"]) {
+  test(`a local ${format} rehearsal passes the source guards before the tag is cut and compares the tag once it exists`, () =>
+    withSourceRepository(format, ({ root, git, run, candidate, tip }) => {
+      const tag = "v1.0.0-rc.0"
+      const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" }
+      const contextsFor = (publish = false) => {
+        const contexts = rehearsalContexts({ tag, publish, ...rehearsalSource({ tag, publish, cwd: root, env }) })
+        // The driver runs in a clone whose origin/main is ahead of the tag.
+        contexts.github.ref = "refs/heads/main"
+        return contexts
+      }
+      const guards = ["Validate explicit dry-run source", "Require the validated release source", "Verify explicit dry-run source"]
+
+      // 1. Rehearse comes before 2. Cut: no tag names the candidate yet.
+      assert.equal(git("tag", "--list"), "")
+      assert.deepEqual(rehearsalSource({ tag, cwd: root, env }), { sourceSha: candidate, sourceRef: candidate })
+      const untagged = contextsFor()
+      assert.equal(untagged.inputs.sourceRef, candidate)
+      assert.equal(untagged.needs["validate-source"].outputs.sha, candidate)
+      for (const name of guards) {
+        const result = run(name, untagged)
+        assert.equal(result.status, 0, `${name}: ${result.stderr}`)
+      }
+      // The untagged rehearsal still publishes nothing, by the workflow's own condition.
+      untagged.env = jobEnv(untagged)
+      assert.equal(condition(step("Publish packages in dependency order").if, untagged), false)
+
+      // What the driver passed before: no sourceRef, so the tag comparison stopped the run.
+      const tagRequired = run("Require the validated release source", rehearsalContexts({ tag, sourceSha: candidate }))
+      assert.notEqual(tagRequired.status, 0)
+      assert.match(tagRequired.stderr, /release tag v1\.0\.0-rc\.0 no longer exists/)
+
+      // A publication rehearsal is never a sourceRef run: it needs the tag.
+      assert.deepEqual(rehearsalSource({ tag, publish: true, cwd: root, env }), { sourceSha: candidate, sourceRef: "" })
+      const publishing = run("Require the validated release source", contextsFor(true))
+      assert.notEqual(publishing.status, 0)
+      assert.match(publishing.stderr, /no longer exists/)
+
+      // After the cut the tag is compared, exactly as on the runner.
+      git("tag", tag, candidate)
+      assert.deepEqual(rehearsalSource({ tag, cwd: root, env }), { sourceSha: candidate, sourceRef: "" })
+      const tagged = contextsFor()
+      assert.equal("sourceRef" in tagged.inputs, false)
+      for (const name of guards) assert.equal(run(name, tagged).status, 0, name)
+      git("tag", "--force", tag, tip)
+      const moved = run("Require the validated release source", contextsFor())
+      assert.notEqual(moved.status, 0)
+      assert.match(moved.stderr, /moved to .* after .* was validated/)
+    }))
+}
+
+test("the driver resolves no commit outside a repository and never rehearses an empty sourceRef", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "release-no-repository-")))
+  try {
+    const env = { ...process.env, GIT_CEILING_DIRECTORIES: root, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" }
+    assert.deepEqual(rehearsalSource({ tag: "v1.0.0-rc.0", cwd: root, env }), { sourceSha: "", sourceRef: "" })
+    assert.deepEqual(rehearsalContexts({ tag: "v1.0.0-rc.0" }).inputs, { releaseTag: "v1.0.0-rc.0", dryRun: true })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 test("the actual source guard refuses publication, non-dispatch events, and any archived selection", () =>
   withSourceRepository("sha1", ({ run, candidate }) => {

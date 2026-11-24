@@ -157,6 +157,12 @@ and policy it had, so a change cannot approve itself. Without `--diff`, paths
 resolve against the checkout. The base is a Git revision, or a Jujutsu
 revision in a workspace that has `.jj` and no `.git`; `HEAD` there means `@-`.
 
+The base's packages are the declarations the base revision holds, inside the
+boundaries the base's own workspace declared. A `CACHEDIR.TAG`, a nested
+checkout or a `discovery.prune` path that the change adds takes no package
+out of the answer. A declaration that version control ignores is not in the
+base, so it owns nothing under `--diff`.
+
 The base's declarations are evaluated from its module text. Whatever a
 declaration reads another way, such as a directory listing, is read from the
 checkout, and a changed declaration module the base cannot supply as plain

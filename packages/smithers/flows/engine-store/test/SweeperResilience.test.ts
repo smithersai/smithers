@@ -46,10 +46,10 @@ describe("the cancel sweeper survives transient defects (issue #44)", () => {
       let busyPolls = 1
       const flakyState: DurableEngineState.Service = {
         ...state,
-        waitingRuns: (options) =>
+        waitingRunsPage: (options) =>
           busyPolls-- > 0
             ? Effect.die(new Error("SQLITE_BUSY: database is locked"))
-            : state.waitingRuns(options)
+            : state.waitingRunsPage(options)
       }
 
       const EventFlow = Flow.make("SweeperResilience/Cancel", {

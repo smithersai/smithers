@@ -12,6 +12,9 @@ export default defineConfig({
       fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
       fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))
     ],
+    // The planner reads the inherited SDK from `process.env`, with no seam
+    // to pass another, so each worker drops the host's selection.
+    setupFiles: [fileURLToPath(new URL("test/helpers/HostSdkEnvironment.ts", import.meta.url))],
     environment: "node",
     include: ["test/**/*.test.{ts,vibe}"],
     // Execution fixtures launch real toolchains, containers, and child CLIs;

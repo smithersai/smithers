@@ -59,6 +59,14 @@ const postdate = (spec: LeanOracle.Specification): void => {
 }
 
 describe("LeanOracle freshness", () => {
+  it("rejects a replacement executable with an intact source manifest", () => {
+    const spec = specification()
+    build(spec)
+    writeFileSync(spec.binary, "other")
+    postdate(spec)
+    expect(LeanOracle.stale(spec)).toBe(true)
+  })
+
   it("reads every source at any depth and no build output", () => {
     const spec = specification()
     write(spec.directory, ".lake/build/ir/Main.lean", "generated")

@@ -81,7 +81,7 @@ export interface JobOptions<Payload> {
   readonly jobDirectory?: string | undefined
 }
 const q = CommandLine.quote
-const fail = (message: string, code: "unavailable" | "spawn_error" | "unknown" = "unavailable") =>
+const fail = (message: string, code: ProviderError["code"] = "unavailable") =>
   new ProviderError({ code, message: `sandbox-job: ${message}` })
 const run = (session: Session, command: string) =>
   Effect.scoped(Effect.gen(function*() {
@@ -145,12 +145,6 @@ export const job = <Payload = unknown>(provider: Provider, options: JobOptions<P
           return yield* Effect.fail(fail("could not look up legacy admission"))
         }
         const directory = legacy.code === 0 ? legacyDirectory : `${root}/${sessionSlug(key)}`
-        if (legacy.code === 0) {
-          // A lost start receipt is redelivered with the full key. Never
-          // admit beside its legacy worker or trust a colliding old slug.
-          const owner = yield* readText(session, `${directory}/key`)
-          if (owner !== key) return yield* Effect.fail(fail("job directory belongs to another key", "unknown"))
-        }
         const checkout = options.capture?.checkout ?? session.workdir
         if (directory === checkout || directory.startsWith(`${checkout.replace(/\/$/, "")}/`)) {
           return yield* Effect.fail(fail("job directory must be outside the captured checkout", "spawn_error"))
@@ -214,7 +208,7 @@ exit 125
 }
 prepare() {
 printf '%s\n' "$$" >${at("owner.tmp")} && mv ${at("owner.tmp")} ${at("owner")} || abandon
-printf %s ${q(key)} >${at("key")} || abandon
+printf %s ${q(key)} >${at("key.tmp")} && mv ${at("key.tmp")} ${at("key")} || abandon
 cd ${q(checkout)} && git rev-parse --verify ${q(`${options.capture?.base ?? "HEAD"}^{commit}`)} >${
           at("base")
         } || abandon
@@ -237,7 +231,24 @@ i=0; while test -d ${q(directory)} && test ! -f ${
           at("owner")
         } && ! settled; do i=$((i+1)); test "$i" -lt 200 || break; sleep 0.01; done
 test -d ${q(directory)} || exit 125
-if ! kill -0 "$(cat ${at("owner")} 2>/dev/null)" 2>/dev/null && ! settled; then
+owner=$(cat ${at("owner")} 2>/dev/null)
+${
+          legacy.code === 0 ?
+            `
+i=0
+while test ! -f ${at("key")} && ! settled; do
+  case "$owner" in ''|0*|*[!0-9]*) exit 125;; esac
+  kill -0 "$owner" 2>/dev/null || break
+  i=$((i+1)); test "$i" -lt 200 || exit 125
+  sleep 0.01
+done
+if test -f ${at("key")}; then
+  printf %s ${q(key)} | cmp -s - ${at("key")} || exit 73
+elif settled; then exit 74
+fi` :
+            ""
+        }
+if ! kill -0 "$owner" 2>/dev/null && ! settled; then
 if mkdir ${at("worker")} 2>/dev/null && test ! -e ${at("cancelled")}; then
 rm -rf ${q(directory)} && mkdir ${q(directory)} || exit 125
 prepare
@@ -247,11 +258,15 @@ fi
 fi
 fi`
         const result = yield* run(session, script)
+        if (result.code === 73) return yield* Effect.fail(fail("job directory belongs to another key", "unknown"))
+        if (result.code === 74) return yield* Effect.fail(fail("legacy job has no published key", "not_found"))
         if (result.code !== 0) {
           return yield* Effect.fail(fail(`launcher failed (${result.code}): ${result.stderr}`, "spawn_error"))
         }
         const recorded = yield* readText(session, `${directory}/key`).pipe(
-          Effect.catch((error) => error.code === "not_found" ? Effect.succeed(key) : Effect.fail(error))
+          Effect.catch((error) =>
+            error.code === "not_found" && legacy.code !== 0 ? Effect.succeed(key) : Effect.fail(error)
+          )
         )
         if (recorded !== key) return yield* Effect.fail(fail("job directory belongs to another key", "unknown"))
         return { id: key, remoteId: session.remoteId, workdir: session.workdir, directory } satisfies JobHandle

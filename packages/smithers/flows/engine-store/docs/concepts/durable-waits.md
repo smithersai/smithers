@@ -62,10 +62,13 @@ suspensions.
 `WaitingRunsFilter` narrows a sweep to actionable rows by `reason`,
 `dueBeforeMs`, a `cancelRequested` predicate over the run row, and a
 `hasChildren` predicate over the parent edges, so a sweeper fetches only what it
-can act on instead of scanning every parked run. With `page`, the read is one
-bounded keyset page in run-id order: `{ limit, afterRunId? }`.
+can act on instead of scanning every parked run. The array returned by
+`waitingRuns({ page: { limit, afterRunId } })` fills up to the requested
+number of decodable rows in run-id order. A short array means exhaustion.
 
-Every heartbeat sweep reads at most 64 rows and keeps its place between ticks.
+Every heartbeat lane calls `waitingRunsPage` once and reads at most 64 raw rows.
+Its continuation, `nextAfterRunId`, identifies the last raw row on a full page,
+even when the decoder rejected every row.
 A sweep that reaches the end of its set starts over on the next tick, so a row
 the worker cannot act on, such as a run of a flow it has not registered, never
 holds the front of the next read.

@@ -113,12 +113,10 @@ describe("Kanban tags across the count-to-ids change", () => {
     const named = Kanban.make({ name: "sprint", columns, items: [{ id: "a" }, { id: "b" }], concurrency: 1 })
     const aliases = Kanban.legacyAliases([original, named, original])
 
-    expect(aliases.map((alias) => alias._tag)).toEqual([countEraTag])
-    // The one-card board's own count-era tag is `items=1`, never `items=2`.
-    expect(Kanban.legacyAliases([original, singleton]).map((alias) => alias._tag)).toEqual([
-      countEraTag,
-      "kanban(columns=triage, items=1, concurrency=1)[kanban-legacy/work, ]"
-    ])
+    expect(aliases.map((alias) => alias._tag)).toEqual([countEraTag, original._tag.replace("kanban@2", "kanban")])
+    for (const boards of [[original, singleton], [singleton, original]]) {
+      expect(() => Kanban.legacyAliases(boards)).toThrow(countEraTag)
+    }
     // An alias is a board under its old name: it has no alias of its own.
     expect(Kanban.legacyAliases(aliases)).toEqual([])
   })
@@ -132,7 +130,8 @@ describe("Kanban tags across the count-to-ids change", () => {
     })
 
     expect(Kanban.legacyAliases([board]).map((alias) => alias._tag)).toEqual([
-      "kanban(columns=to do,done, items=1, concurrency=3)[kanban-legacy/work, kanban-legacy/work, kanban-legacy/work]"
+      "kanban(columns=to do,done, items=1, concurrency=3)[kanban-legacy/work, kanban-legacy/work, kanban-legacy/work]",
+      "kanban(columns=\"to do\",done, items=a, concurrency=3)[kanban-legacy/work, kanban-legacy/work, kanban-legacy/work]"
     ])
   })
 
@@ -156,8 +155,7 @@ describe("Kanban tags across the count-to-ids change", () => {
     expect(() => Kanban.legacyAliases([work as never])).toThrow(PatternError)
   })
 
-  it("resumes a run parked under the count-era tag on its own two cards, with the `2` board registered", async () => {
-    const [alias] = Kanban.legacyAliases([original])
+  it.each(Kanban.legacyAliases([original]))("resumes the historical $_tag on its original cards", async (alias) => {
     const calls: Array<string> = []
     let life = 0
     const implementation = (stalled: Deferred.Deferred<void> | undefined) =>

@@ -109,7 +109,15 @@ export const layer = (options: Options): Layer.Layer<Fixer, never, ChildProcessS
                 })
             )
           )
-        }).pipe(Effect.ignore)
+        }).pipe(
+          Effect.ignore,
+          Effect.andThen(Effect.suspend(() =>
+            written(key).pipe(
+              Effect.orElseSucceed(() => undefined),
+              Effect.flatMap((answer) => answer === undefined ? Effect.sleep(options.poll) : Effect.void)
+            )
+          ))
+        )
 
       /** The answer the agent wrote, if it wrote one that reads as an answer. */
       const written = (key: string) =>
@@ -167,20 +175,18 @@ export const layer = (options: Options): Layer.Layer<Fixer, never, ChildProcessS
         wait: (pending) =>
           pending.length === 0 ?
             Effect.void :
-            Effect.forEach(pending, (entry) =>
-              Effect.gen(function*() {
-                const key = name(entry.id, entry.attempt)
-                // A completed process without a valid answer needs another
-                // reconcile. Its completion is news even while every other
-                // queue input is idle.
-                if (agents.get(key)?.fiber.pollUnsafe() !== undefined) return true
-                return (yield* written(key)) !== undefined
-              })).pipe(
-                Effect.map((found) => found.some(Boolean)),
-                Effect.orElseSucceed(() => false),
-                Effect.repeat({ until: (news) => news, schedule: Schedule.spaced(options.poll) }),
+            Effect.raceAll(pending.map((entry) => {
+              const key = name(entry.id, entry.attempt)
+              const answer = written(key).pipe(
+                Effect.orElseSucceed(() => undefined),
+                Effect.repeat({ until: (value) => value !== undefined, schedule: Schedule.spaced(options.poll) }),
                 Effect.asVoid
               )
+              const running = agents.get(key)
+              return running === undefined
+                ? answer
+                : Effect.raceFirst(answer, Fiber.await(running.fiber).pipe(Effect.asVoid))
+            }))
       })
     })
   )

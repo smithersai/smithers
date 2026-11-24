@@ -500,10 +500,10 @@ describe("a hosted driver", () => {
             // with this write; both are counted where they are asked for.
             Effect.provideService(DurableEngineState.DurableEngineState, {
               ...engineState,
-              waitingRuns: (filter) =>
+              waitingRunsPage: (filter) =>
                 Effect.suspend(() => {
                   counted.sweeps++
-                  return engineState.waitingRuns(filter)
+                  return engineState.waitingRunsPage(filter)
                 })
             }),
             Effect.provideService(RunStore.RunStore, {

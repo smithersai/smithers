@@ -253,7 +253,7 @@ export const make = (options: VercelSandboxOptions): Provider => {
                   ...vcpus === undefined ? {} : { resources: { vcpus } },
                   networkPolicy
                 }) :
-                Promise.resolve(legacy),
+                options.sdk.Sandbox.get!({ ...credentials, name, resume: true }),
             "unavailable",
             `could not acquire ${name}`
           ),

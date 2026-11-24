@@ -625,6 +625,18 @@ export const make = (options: JjWorkspaceSandboxOptions): Provider => {
         (yield* options.fs.exists(legacyPath.workdir).pipe(
           Effect.mapError(providerFailure("unavailable", "legacy jj workspace lookup failed"))
         ))
+      if (legacyExists) {
+        const current = yield* confineWorkdir(options.path, options.workspacesRoot, workspaceNameOf(sessionKey, prefix))
+        if (
+          yield* options.fs.exists(current.workdir).pipe(
+            Effect.mapError(providerFailure("unavailable", "jj workspace lookup failed"))
+          )
+        ) {
+          return yield* Effect.fail(
+            new ProviderError({ code: "unavailable", message: "both jj workspaces exist; attach the recorded handle" })
+          )
+        }
+      }
       const workspaceName = attachedName ?? (legacyExists ? legacyName : workspaceNameOf(sessionKey, prefix))
       const { root, workdir } = yield* confineWorkdir(options.path, options.workspacesRoot, workspaceName)
       const lane: Lane = { released: false, activeHandles: new Set() }

@@ -8,6 +8,9 @@ import { digestSync } from "@smthrs/crypto"
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
+import * as Random from "effect/Random"
+import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
@@ -18,7 +21,7 @@ import type { ResourceLimits } from "../Sandbox/ResourceLimits.ts"
 import type { Session } from "../Sandbox/Session.ts"
 import { byteBudget } from "./bytes.ts"
 import { Acquire, Command, CommandResult, Failure, LimitsQuery, SessionInfo, statusOf } from "./protocol.ts"
-import { uploadScript } from "./upload.ts"
+import { sessionScript, uploadScript } from "./upload.ts"
 
 /**
  * What `serve` needs: the provider that holds the machines, and the bearer
@@ -104,24 +107,6 @@ const runToEnd = (session: Session, command: string, options: RemoteOptions, max
   })
 
 /**
- * Every delivery writes the same byte range. A concurrent duplicate or a
- * retry of a partial write cannot extend the file past the chunk's end.
- * The seek and the copy share one open file description, so the copy can use
- * normal block sizes even when the destination offset is unaligned.
- */
-const appendScript = (path: string, offset: number, end: number) =>
-  `f=${CommandLine.quote(path)}
-` +
-  `s=$(wc -c <"$f") || exit 3; [ "$s" -ge ${offset} ] && [ "$s" -le ${end} ] || exit 3
-` +
-  `if [ "$s" -eq ${end} ]; then cat >/dev/null; exit $?; fi\n` +
-  `exec 3<>"$f" || exit 3
-` +
-  `dd bs=1 count=0 seek=${offset} conv=notrunc >&3 2>/dev/null && cat >&3 || exit 3
-` +
-  `s=$(wc -c <"$f") && [ "$s" -eq ${end} ]`
-
-/**
  * Turns a retained `Sandbox.Provider` into an HTTP handler on web-standard
  * `Request` and `Response`, which a Cloudflare Worker or a Node server mounts.
  *
@@ -134,11 +119,11 @@ const appendScript = (path: string, offset: number, end: number) =>
  *
  * | Route                                       | Does                                                          |
  * | ------------------------------------------- | ------------------------------------------------------------- |
- * | `POST /v1/sessions`                         | acquires `{ key, limits? }`; answers `{ id, remoteId, workdir }` |
+ * | `POST /v1/sessions`                         | acquires `{ key, limits?, uploadVersion? }`; answers `{ id, remoteId, workdir, uploadVersion?, incarnation? }` |
  * | `POST /v1/sessions/<remoteId>/commands`     | runs `{ id, command, cwd?, env?, stdin?, limits? }` to its end |
- * | `PUT /v1/sessions/<remoteId>/files?id&path` | writes the body; with `&offset=<n>`, appends it at byte `n`    |
+ * | `PUT /v1/sessions/<remoteId>/uploads/v2?id&path&incarnation&upload&offset&total` | stages one range and publishes the completed file    |
  * | `GET /v1/sessions/<remoteId>/files?id&path` | answers the file's bytes                                      |
- * | `DELETE /v1/sessions/<remoteId>?id`         | destroys the machine; idempotent                              |
+ * | `DELETE /v1/sessions/<remoteId>?id&incarnation`         | destroys the machine; idempotent                              |
  *
  * Routes without a JSON body take the limits as `cpus`, `memoryMib` and
  * `timeoutSecs` query parameters. A request without `Authorization: Bearer
@@ -147,11 +132,10 @@ const appendScript = (path: string, offset: number, end: number) =>
  * `maxFileBytes` before allocation in the server and travel as base64 from the
  * guest so text-only command providers preserve binary files. Upload ranges
  * carry `upload`, `offset` and `total`; their receipts live outside the workdir
- * under `processDirectory`. Linux guests need util-linux `flock` with `-E`
- * support (2.23 or later); BSD guests need `lockf -k -t`. A guest without either
- * refuses uploads with `spawn_error`. A plain PUT still replaces a file for
- * older clients. An append whose file does
- * not end at its offset is `409`, a malformed request `400`, and an unknown
+ * in session-owned storage or under `processDirectory`. The server requires
+ * the advertised incarnation on each range. The legacy file PUT returns
+ * `426`. Linux guests need util-linux `flock` with `-E` support, BSD guests
+ * need `lockf -k -t`. A malformed request returns `400` and an unknown
  * route `404`, in the same shape.
  *
  * @category constructors
@@ -178,8 +162,32 @@ export const serve = (options: ServeOptions): (request: Request) => Effect.Effec
   if (!/^\/[A-Za-z0-9._/-]*$/.test(processDirectory) || processDirectory.split("/").includes("..")) {
     throw new TypeError("http-sandbox: invalid processDirectory")
   }
-  const uploadRoot = (remoteId: string, id: string) =>
-    `${processDirectory}/uploads/${digestSync(JSON.stringify([remoteId, id]))}`
+  const sessionState = (session: Session) =>
+    session.stateDirectory ??
+      `${processDirectory}/uploads/${digestSync(JSON.stringify([session.remoteId, session.id]))}`
+  const guarded = (session: Session, body: string, stdin?: Uint8Array, cwd?: string) =>
+    Effect.gen(function*() {
+      const state = sessionState(session)
+      const lock = `${processDirectory}/locks/${digestSync(state).slice(0, 2)}`
+      const result = yield* runToEnd(session, sessionScript(lock, state, body), { stdin, cwd }, 256)
+      if (result.exitCode === 77) {
+        return yield* Effect.fail(new Refusal({ status: 404, code: "not_found", message: "session is absent" }))
+      }
+      if (result.exitCode === 0) return new TextDecoder().decode(result.stdout).trim()
+      return yield* Effect.fail(
+        new Refusal({
+          status: result.exitCode === 75 ? 503 : result.exitCode === 69 ? 422 : 409,
+          code: result.exitCode === 75 ? "unavailable" : result.exitCode === 69 ? "spawn_error" : "unknown",
+          message: result.exitCode === 75 ? "file upload is busy" : result.exitCode === 69 ?
+            "file uploads require flock or lockf" :
+            result.exitCode === 76
+            ? "session incarnation has ended"
+            : "file upload range could not be stored"
+        })
+      )
+    })
+  const incarnationGuard = (incarnation: string) =>
+    `[ ! -L "$r/current" ] && [ "$(cat "$r/current" 2>/dev/null)" = ${CommandLine.quote(incarnation)} ] || exit 76`
   const maxFileBytes = limit(options.maxFileBytes ?? 4 * 1024 * 1024, "maxFileBytes")
   if (maxFileBytes > Math.floor(Number.MAX_SAFE_INTEGER / 2)) throw new TypeError("http-sandbox: invalid maxFileBytes")
   const bytesOf = (request: Request) =>
@@ -219,22 +227,54 @@ export const serve = (options: ServeOptions): (request: Request) => Effect.Effec
         return new Response(null, { status: 401 })
       }
       const url = new URL(request.url)
-      const match = /^\/v1\/sessions(?:\/([^/]+)(\/commands|\/files)?)?$/.exec(url.pathname)
+      const match = /^\/v1\/sessions(?:\/([^/]+)(\/commands|\/files|\/uploads\/v2)?)?$/.exec(url.pathname)
       const route = `${request.method} ${match?.[1] === undefined ? "" : ":remote"}${match?.[2] ?? ""}`
       if (match !== null && route === "POST ") {
         const acquire = yield* body(request, decodeAcquire)
         const chosen = yield* providerFor(acquire.limits)
-        const session = yield* Effect.scoped(chosen.acquire(acquire.key))
-        return json(200, encodeInfo({ id: session.id, remoteId: session.remoteId, workdir: session.workdir }))
+        return yield* Effect.scoped(Effect.gen(function*() {
+          const session = yield* chosen.acquire(acquire.key)
+          const info = { id: session.id, remoteId: session.remoteId, workdir: session.workdir }
+          if (acquire.uploadVersion !== 2) return json(200, encodeInfo(info))
+          const incarnation = yield* guarded(
+            session,
+            `cd ${CommandLine.quote(session.workdir)} || exit 77
+[ ! -e .smthrs-http-retiring ] || exit 76
+mkdir -p -- "$r" && [ ! -L "$r/current" ] && [ ! -L "$r/next" ] || exit 3
+if [ ! -f "$r/current" ]; then
+  bytes=$(od -An -N16 -tx1 /dev/urandom) || exit 3
+  value=$(printf '%s' "$bytes" | tr -d '[:space:]') && [ "\${#value}" -eq 32 ] || exit 3
+  printf '%s' "$value" >"$r/next" && mv -f -- "$r/next" "$r/current" || exit 3
+fi
+cat "$r/current"`,
+            undefined,
+            "/"
+          ).pipe(Effect.catchIf((error) =>
+            error._tag === "Refusal" && error.code === "spawn_error", () =>
+            Effect.succeed(undefined)))
+          return json(
+            200,
+            encodeInfo({
+              ...info,
+              ...(incarnation === undefined ? {} : { uploadVersion: 2, incarnation })
+            })
+          )
+        }))
+      }
+      if (match !== null && route === "PUT :remote/files") {
+        return yield* Effect.fail(
+          new Refusal({ status: 426, code: "unavailable", message: "staged upload version 2 required" })
+        )
       }
       if (
         match === null ||
-        !["POST :remote/commands", "PUT :remote/files", "GET :remote/files", "DELETE :remote"].includes(route)
+        !["POST :remote/commands", "PUT :remote/uploads/v2", "GET :remote/files", "DELETE :remote"].includes(route)
       ) {
         return yield* Effect.fail(new Refusal({ status: 404, code: "not_found", message: "no such route" }))
       }
       const remoteId = yield* Effect.try({
-        try: () => decodeURIComponent(match[1]!),
+        try: () =>
+          decodeURIComponent(match[1]!),
         catch: () => malformed("the session segment is not URI encoded")
       })
       if (route === "POST :remote/commands") {
@@ -261,7 +301,65 @@ export const serve = (options: ServeOptions): (request: Request) => Effect.Effec
       )
       if (route === "DELETE :remote") {
         const chosen = yield* providerFor(limits)
-        yield* chosen.destroy({ id, remoteId })
+        const incarnation = url.searchParams.get("incarnation")
+        if (incarnation !== null && !/^[a-f0-9]{32}$/.test(incarnation)) {
+          return yield* Effect.fail(malformed("invalid session incarnation"))
+        }
+        yield* Effect.scoped(Effect.gen(function*() {
+          const session = yield* chosen.attach({ id, remoteId })
+          const receipt = session.workdir.replace(/\/$/, "") + "/.smthrs-http-retiring"
+          const ticket = (yield* Random.nextIntBetween(1, 2 ** 31)) + "-" + (yield* Random.nextIntBetween(1, 2 ** 31))
+          const owner = (incarnation ?? "") + ":" + ticket
+          // Keep the guest lock across the provider's destroy call. A second
+          // handler can take over a failed deletion only after that call ends.
+          // The ready file also works on transports that buffer command output.
+          const holding = yield* guarded(
+            session,
+            `
+cd ${CommandLine.quote(session.workdir)} || exit 77
+[ ! -L .smthrs-http-retiring ] || exit 76
+if [ -f .smthrs-http-retiring ]; then
+  read -r previous <.smthrs-http-retiring || exit 3
+  [ "\${previous%%:*}" = ${CommandLine.quote(incarnation ?? "")} ] || exit 76
+elif [ -e "$r/current" ]; then
+  ${incarnation === null ? "exit 76" : incarnationGuard(incarnation)}
+else
+  ${incarnation === null ? ":" : "exit 76"}
+fi
+printf '%s\\n' ${CommandLine.quote((incarnation ?? "") + ":retiring")} >.smthrs-http-retiring || exit 3
+rm -rf -- "$r" || exit 3
+printf '%s\\n' ${CommandLine.quote(owner)} >.smthrs-http-retiring || exit 3
+while [ . -ef ${CommandLine.quote(session.workdir)} ] && [ -f .smthrs-http-retiring ]; do sleep 0.1; done`,
+            undefined,
+            "/"
+          ).pipe(Effect.forkScoped)
+          const ready = Effect.scoped(runToEnd(
+            session,
+            `p=${CommandLine.quote(receipt)}; [ ! -L "$p" ] && [ -f "$p" ] && printf '%s\\n' ${
+              CommandLine.quote(owner)
+            } | cmp -s - "$p"`,
+            { cwd: "/" },
+            256
+          )).pipe(
+            Effect.map((result) =>
+              result.exitCode === 0
+            ),
+            Effect.repeat({
+              until: (owned) =>
+                owned,
+              schedule: Schedule.spaced("20 millis")
+            })
+          )
+          const acquired = yield* Effect.raceFirst(ready, Fiber.join(holding).pipe(Effect.as(false))).pipe(
+            Effect.catchIf(
+              (error) => error._tag === "Refusal" && error.code === "spawn_error" && incarnation === null,
+              () => Effect.succeed(true)
+            )
+          )
+          if (acquired) {
+            yield* Effect.uninterruptible(chosen.destroy({ id, remoteId }))
+          }
+        })).pipe(Effect.catchIf((error) => error.code === "not_found", () => Effect.void))
         return new Response(null, { status: 204 })
       }
       const path = yield* query(url, "path")
@@ -300,9 +398,11 @@ export const serve = (options: ServeOptions): (request: Request) => Effect.Effec
             }
             const decoded = yield* Schema.decodeUnknownEffect(Schema.Uint8ArrayFromBase64)(
               new TextDecoder().decode(bytes).replaceAll(/\s/g, "")
-            ).pipe(Effect.mapError(() =>
-              new Refusal({ status: 422, code: "unknown", message: "remote file encoding failed" })
-            ))
+            ).pipe(
+              Effect.mapError(() =>
+                new Refusal({ status: 422, code: "unknown", message: "remote file encoding failed" })
+              )
+            )
             if (decoded.length > maxFileBytes) {
               return yield* Effect.fail(tooLarge())
             }
@@ -327,46 +427,31 @@ export const serve = (options: ServeOptions): (request: Request) => Effect.Effec
       const totalText = url.searchParams.get("total")
       const total = Number(totalText)
       if (
-        upload !== null && (
+        upload === null || (
           !/^[a-zA-Z0-9-]{1,128}$/.test(upload) || totalText === null || !/^\d+$/.test(totalText) ||
           !Number.isSafeInteger(total) || total < end || offset === null
         )
       ) {
         return yield* Effect.fail(malformed("the upload range is malformed"))
       }
+      const incarnation = yield* query(url, "incarnation")
+      if (!/^[a-f0-9]{32}$/.test(incarnation)) return yield* Effect.fail(malformed("invalid session incarnation"))
       yield* attached(remoteId, id, limits, (session) =>
-        upload !== null ?
-          Effect.gen(function*() {
-            const staged = yield* runToEnd(
-              session,
-              uploadScript(path, `${uploadRoot(remoteId, id)}/${digestSync(path)}`, upload, start, end, total),
-              { stdin: bytes },
-              maxOutputBytes
+        guarded(
+          session,
+          `${incarnationGuard(incarnation)}
+${
+            uploadScript(
+              path,
+              `${sessionState(session)}/${incarnation}/${digestSync(path)}`,
+              incarnation + "-" + upload,
+              start,
+              end,
+              total
             )
-            if (staged.exitCode !== 0) {
-              return yield* Effect.fail(
-                new Refusal({
-                  status: staged.exitCode === 75 ? 503 : staged.exitCode === 69 ? 422 : 409,
-                  code: staged.exitCode === 75 ? "unavailable" : staged.exitCode === 69 ? "spawn_error" : "unknown",
-                  message: staged.exitCode === 75
-                    ? "file upload is busy"
-                    : staged.exitCode === 69
-                    ? "file uploads require flock or lockf"
-                    : "file upload range could not be stored"
-                })
-              )
-            }
-          }) :
-          offset === null ?
-          session.writeFile(path, bytes) :
-          Effect.gen(function*() {
-            const appended = yield* runToEnd(session, appendScript(path, start, end), { stdin: bytes }, maxOutputBytes)
-            if (appended.exitCode !== 0) {
-              return yield* Effect.fail(
-                new Refusal({ status: 409, code: "unknown", message: `file does not end at byte ${start}` })
-              )
-            }
-          }))
+          }`,
+          bytes
+        ))
       return new Response(null, { status: 204 })
     })
 

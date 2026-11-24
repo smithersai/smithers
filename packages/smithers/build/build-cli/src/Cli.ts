@@ -510,11 +510,22 @@ export const openPackageIndex = async (
   runtime: RuntimeConfig = {}
 ): Promise<PackageIndex.PackageIndex> => (await openWorkspace(flags, runtime)).index
 
-/** The package index of the checkout, with the discovery it was loaded from. */
+/**
+ * The package index of the checkout, with the discovery it was loaded from
+ * and the boundaries any declaration of this workspace draws under the same
+ * flags and host.
+ */
+interface OpenedWorkspace {
+  readonly index: PackageIndex.PackageIndex
+  readonly discovery: PackageDiscovery.Discovery
+  readonly boundaries: (workspace: WorkspaceDeclaration.WorkspaceDeclaration) => PackageDiscovery.Boundaries
+}
+
+/** Opens the checkout's package index. */
 const openWorkspace = async (
   flags: WorkspaceFlags,
   runtime: RuntimeConfig
-): Promise<{ readonly index: PackageIndex.PackageIndex; readonly discovery: PackageDiscovery.Discovery }> => {
+): Promise<OpenedWorkspace> => {
   runtime.signal?.throwIfAborted()
   // An overlay repository plans against its materialized mount, never itself.
   const stderr = runtime.stderr ?? Reporter.terminalOf(process.stderr)
@@ -546,24 +557,22 @@ const openWorkspace = async (
       return yield* Effect.fail(new Error("not a workspace; create .smithers/WORKSPACE.ts"))
     }
     const workspace = yield* hostIo(() => PackageLoader.loadWorkspaceDeclaration(root, workspaceFile))
-    const cacheDirectory = CacheLocation.resolve(
-      root,
-      flags.cacheDir,
-      workspace.cache,
-      workspace.name,
-      CacheLocation.ambientHost(environmentOf(runtime))
-    )
+    const boundaries: OpenedWorkspace["boundaries"] = (declared) => ({
+      cacheDirectory: CacheLocation.resolve(
+        root,
+        flags.cacheDir,
+        declared.cache,
+        declared.name,
+        CacheLocation.ambientHost(environmentOf(runtime))
+      ),
+      repositories: declared.repos,
+      prune: declared.discovery?.prune
+    })
     const discovery = yield* hostIo(() =>
-      PackageDiscovery.discover(root, {
-        cacheDirectory,
-        repositories: workspace.repos,
-        prune: workspace.discovery?.prune,
-        signal: runtime.signal,
-        workspaceFile: given
-      })
+      PackageDiscovery.discover(root, { ...boundaries(workspace), signal: runtime.signal, workspaceFile: given })
     )
     const loaded = yield* hostIo(() => PackageLoader.load(discovery))
-    return { index: PackageIndex.PackageIndex.make(loaded, invocation), discovery }
+    return { index: PackageIndex.PackageIndex.make(loaded, invocation), discovery, boundaries }
   }).pipe(Effect.provide(runtime.services ?? Layer.empty))
   try {
     return await Effect.runPromise(opening, { signal: runtime.signal })
@@ -579,28 +588,39 @@ const moduleFile = /\.(?:[cm]?[jt]sx?|json|smithers|vibe)$/
 /**
  * The paths changed since a base revision, and the package index that
  * revision held: the ownership a change is judged under, which the change
- * itself cannot rewrite. A change that touches no declaration module left the
- * index as it was, so the checkout's own is returned.
+ * itself cannot rewrite.
+ *
+ * The base's packages are found in the base's own file list, within the
+ * boundaries its own workspace declared, never in the checkout's walk: a
+ * `CACHEDIR.TAG`, a nested checkout or a `discovery.prune` path the change
+ * adds cannot take a package out of the answer. The checkout's index is
+ * returned only when the change touches no declaration module and the base
+ * holds exactly the packages the checkout found.
  */
 const openBase = async (
-  opened: { readonly index: PackageIndex.PackageIndex; readonly discovery: PackageDiscovery.Discovery },
+  opened: OpenedWorkspace,
   base: string,
   runtime: RuntimeConfig
 ): Promise<{ readonly index: PackageIndex.PackageIndex; readonly paths: ReadonlyArray<string> }> => {
-  const { discovery, index } = opened
+  const { boundaries, discovery, index } = opened
   const bounds = { base, signal: runtime.signal, environment: environmentOf(runtime) }
   const paths = await Affected.changedPaths(index.root, bounds)
+  const files = await Affected.baseFiles(index.root, bounds)
   const modules = new Set(index.modules)
   const declared = (path: string): boolean => {
     const name = NodePath.posix.basename(path)
     return modules.has(path) || Input.isDeclarationFileName(name) || PackageDiscovery.isWorkspaceFileName(name)
   }
-  if (!paths.some(declared)) return { index, paths }
+  if (!paths.some(declared)) {
+    // No declaration module changed, so the checkout's workspace declares the base's boundaries.
+    const held = PackageDiscovery.discoverAt(discovery, files, boundaries(index.workspace)).packageFiles
+    if (held.join("\0") === discovery.packageFiles.join("\0")) return { index, paths }
+  }
   const texts = await Affected.baseTexts(index.root, {
     ...bounds,
     paths: paths.filter((path) => moduleFile.test(path))
   })
-  const graph = await PackageLoader.loadAt(discovery, { changed: new Set(paths), texts })
+  const graph = await PackageLoader.loadAt(discovery, { changed: new Set(paths), texts, files }, boundaries)
   return { index: PackageIndex.PackageIndex.make(graph, index.root), paths }
 }
 

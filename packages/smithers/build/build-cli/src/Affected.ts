@@ -195,6 +195,35 @@ export const baseTexts = async (
   return texts
 }
 
+/**
+ * Every file the base revision holds, workspace-relative: the inventory a
+ * base's package declarations are found in, which no file added to the
+ * checkout since can hide. A Git submodule is a nested checkout, not a file,
+ * and is left out.
+ *
+ * @category querying
+ * @since 1.0.0
+ */
+export const baseFiles = async (
+  root: string,
+  options: DiscoveryOptions,
+  run: typeof ContainedProcess.run = ContainedProcess.run
+): Promise<ReadonlyArray<string>> => {
+  const vcs = repository(root, options, run)
+  if (vcs.jj) {
+    const listed = await vcs.exec("file", ["list", `--revision=${vcs.jjBase}`, "--template", "json(path) ++ \"\\0\""])
+    return listed.split("\0").filter(Boolean).map((record) => JSON.parse(record) as string)
+  }
+  const listed = await vcs.exec("ls-tree", ["-r", "-z", await vcs.gitRevision(options.base)])
+  const files: Array<string> = []
+  for (const record of listed.split("\0").filter(Boolean)) {
+    // `<mode> <type> <object>\t<path>`: only a blob is a file.
+    const tab = record.indexOf("\t")
+    if (record.slice(0, tab).split(" ")[1] === "blob") files.push(record.slice(tab + 1))
+  }
+  return files
+}
+
 const globalPath = (path: string): boolean =>
   !path.includes("/") || path.startsWith(".smithers/") || Input.isDeclarationFileName(Path.posix.basename(path)) ||
   /(^|\/)(?:pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?|Cargo\.lock|flake\.lock|go\.sum|[^/]*\.lock|package\.json|tsconfig[^/]*\.json|\.npmrc|\.yarnrc[^/]*|\.gitignore)$/

@@ -181,6 +181,41 @@ it("concurrent reconciles start one replacement for a cancelled fixer", async ()
   expect(runs()).toBe(2)
 })
 
+it("paces repeated failed spawns and wakes immediately for a published answer", async () => {
+  const directory = mkdtempSync(join(root, "retry-"))
+  const base = ManagedRuntime.make(host)
+  runtimes.push(base)
+  const repository = await base.runPromise(
+    JjRepository.make({ path: directory, bookmark: "main", ledger: join(directory, "ledger"), poll: 5 })
+  )
+  let attempts = 0
+  const runtime = ManagedRuntime.make(
+    CommandFixer.layer({
+      directory,
+      repository,
+      poll: "500 millis",
+      command: () => {
+        attempts++
+        return { command: join(directory, "missing"), args: [] }
+      }
+    }).pipe(Layer.provide(host))
+  )
+  runtimes.push(runtime)
+  await runtime.runPromise(Effect.gen(function*() {
+    const fixer = yield* Fixer
+    yield* fixer.reconcile([brief(1)])
+    yield* Effect.sleep("50 millis")
+    yield* fixer.reconcile([brief(1)])
+    expect(attempts).toBe(1)
+    yield* fixer.wait([brief(1)])
+    yield* fixer.reconcile([brief(1)])
+    yield* Effect.yieldNow
+    expect(attempts).toBe(2)
+    writeFileSync(join(directory, "1-1.answer.json"), JSON.stringify({ _tag: "gaveUp", detail: "done" }))
+    yield* fixer.wait([brief(1)]).pipe(Effect.timeout("150 millis"))
+  }))
+})
+
 it("wakes an idle driver when a fixer exits without an answer", async () => {
   const config: Config = { required: [1], maxAttempts: 2, maxBatch: 1, maxRuns: 1, window: 1, defaultDuration: 1 }
   const world = makeWorld(config, { failing: () => [1], fix: () => undefined })

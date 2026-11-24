@@ -67,6 +67,8 @@ export interface Session {
   readonly remoteId: string
   /** The absolute guest path work happens under; `spawn`'s default `cwd`. */
   readonly workdir: string
+  /** Private guest directory outside the checkout removed when the provider destroys this session. */
+  readonly stateDirectory?: string | undefined
   /** Starts one command on the machine; its scope is the process's lifetime. */
   readonly spawn: (
     command: string,

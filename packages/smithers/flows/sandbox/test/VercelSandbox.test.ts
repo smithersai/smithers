@@ -292,7 +292,12 @@ describe("VercelSandbox", () => {
             ...fake.sdk.Sandbox,
             get: async (input) => {
               lookups.push(input)
-              return held
+              return input.resume ? held : {
+                ...held,
+                update: async () => {
+                  throw new Error("sandbox is stopped")
+                }
+              }
             }
           }
         },
@@ -300,7 +305,7 @@ describe("VercelSandbox", () => {
       })
       const session = yield* acquired(provider, Effect.succeed)
       expect(session.remoteId).toBe(name)
-      expect(lookups).toEqual([{ name, resume: false }])
+      expect(lookups).toEqual([{ name, resume: false }, { name, resume: true }])
       expect(fake.recorded.acquired).toEqual([])
     }))
 

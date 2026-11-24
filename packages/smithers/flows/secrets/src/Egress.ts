@@ -287,6 +287,9 @@ const dropped: ReadonlySet<string> = new Set([
   "content-length"
 ])
 
+const fetchDecodesContent = (encodings: ReadonlyArray<string>) =>
+  encodings.length === 1 && ["gzip", "deflate", "br"].includes(encodings[0]!)
+
 /** The content codings (in wire order) the host guarantees its client already decoded.
  * An encoded body that requires scrubbing fails closed unless its client guarantees decoding.
  *
@@ -295,7 +298,7 @@ const dropped: ReadonlySet<string> = new Set([
  */
 export const DecodesContent = Context.Reference<(encodings: ReadonlyArray<string>) => boolean>(
   "@smthrs/secrets/Egress/DecodesContent",
-  { defaultValue: () => () => false }
+  { defaultValue: () => fetchDecodesContent }
 )
 
 /**
@@ -305,10 +308,15 @@ export const DecodesContent = Context.Reference<(encodings: ReadonlyArray<string
  * @category layers
  * @since 0.1.0
  */
-export const layerFetchDecodesContent = Layer.succeed(
-  DecodesContent,
-  (encodings) => encodings.length === 1 && ["gzip", "deflate", "br"].includes(encodings[0]!)
-)
+export const layerFetchDecodesContent = Layer.succeed(DecodesContent, fetchDecodesContent)
+
+/**
+ * Declares a transport that returns the encoded bytes unchanged.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layerRawContent = Layer.succeed(DecodesContent, () => false)
 
 const forwardable = (headers: Readonly<Record<string, string>>) => {
   const entries = Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value] as const)

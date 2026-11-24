@@ -240,8 +240,8 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => decla
  * replaced.
  */
 interface Declared {
-  readonly legacyTag: string
-  readonly alias: () => KanbanFlow<any>
+  readonly legacyTags: ReadonlyArray<string>
+  readonly alias: (tag: string) => KanbanFlow<any>
 }
 
 // Only an unnamed board is here: a board the caller named keeps the tag it
@@ -256,16 +256,9 @@ const named = new WeakSet<object>()
  * The flows that keep runs recorded before a board's tag was versioned
  * resumable.
  *
- * An unnamed board was once tagged with its card count,
- * `kanban(columns=…, items=2, concurrency=…)[…]`, and is now tagged
- * `kanban@2(…)` with its card ids. A run parked under the old tag resolves no
- * registration on the new build. Pass every board the old build registered
- * and register the flows returned beside them: each is the same board under
- * its old tag, so a parked run resumes its own cards. The `kanban@2` kind
- * means no current tag can equal an old one, whatever the card ids are.
- *
- * A board declared with a `name` kept its tag and yields no alias. A board
- * listed twice yields one.
+ * Older builds used the unversioned kind with either a card count or card IDs.
+ * Pass all previously registered boards together. Register each returned alias
+ * beside the current boards. Named boards retain their names.
  *
  * `legacyAliases` throws a `PatternError` when two different boards had the
  * same old tag: the engine resolves a flow by tag alone, so registering either
@@ -277,7 +270,8 @@ const named = new WeakSet<object>()
  * @since 1.0.0
  */
 export const legacyAliases = (boards: ReadonlyArray<KanbanFlow<any>>): ReadonlyArray<KanbanFlow<any>> => {
-  const claimed = new Map<string, { readonly board: string; readonly declared: Declared }>()
+  const claimed = new Map<string, Declared>()
+  const registered = new Map(boards.map((board) => [board._tag, board]))
   for (const board of boards) {
     const declared = declarations.get(board)
     if (declared === undefined) {
@@ -287,17 +281,20 @@ export const legacyAliases = (boards: ReadonlyArray<KanbanFlow<any>>): ReadonlyA
         message: `Kanban.legacyAliases takes boards Kanban.make declared, and "${board._tag}" is not one`
       })
     }
-    const holder = claimed.get(declared.legacyTag)
-    if (holder === undefined) claimed.set(declared.legacyTag, { board: board._tag, declared })
-    else if (holder.board !== board._tag) {
-      throw new PatternError({
-        code: "invalid_decorator",
-        message:
-          `Kanban boards "${holder.board}" and "${board._tag}" were both tagged "${declared.legacyTag}", so a run parked under that tag cannot be resumed on the right board`
-      })
+    for (const tag of declared.legacyTags) {
+      const holder = registered.get(tag)
+      if (holder !== undefined && holder !== board) {
+        throw new PatternError({
+          code: "invalid_decorator",
+          message:
+            `Kanban boards "${holder._tag}" and "${board._tag}" were both tagged "${tag}", so a run parked under that tag needs a verified board mapping`
+        })
+      }
+      registered.set(tag, board)
+      claimed.set(tag, declared)
     }
   }
-  return [...claimed.values()].map((each) => each.declared.alias())
+  return [...claimed].map(([tag, declared]) => declared.alias(tag))
 }
 
 const declare = <R = never>(options: MakeOptions<R>, legacyTag: string | undefined): KanbanFlow<R> => {
@@ -468,7 +465,8 @@ const declare = <R = never>(options: MakeOptions<R>, legacyTag: string | undefin
     // board this call declared.
     const snapshot: MakeOptions<R> = { description, columns, items, concurrency, onComplete }
     const before = Compose.legacyLabel("kanban", { columns: names, items: ids.length, concurrency }, members)
-    declarations.set(flow, { legacyTag: before, alias: () => declare(snapshot, before) })
+    const unversioned = Compose.label("kanban", { columns: names, items: ids, concurrency }, {}, members).name
+    declarations.set(flow, { legacyTags: [before, unversioned], alias: (tag) => declare(snapshot, tag) })
   }
   return flow
 }

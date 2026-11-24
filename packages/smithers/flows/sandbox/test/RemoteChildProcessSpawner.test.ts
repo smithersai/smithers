@@ -337,7 +337,7 @@ describe("RemoteChildProcessSpawner", () => {
           Effect.provide(Logger.layer([logger]))
         )
       )
-      expect(records).toEqual([{ method: "spawn", code: "spawn_error" }])
+      expect(records).toEqual([{ provider: "remote", method: "spawn", code: "spawn_error" }])
       expect(Exit.isFailure(result)).toBe(true)
       if (Exit.isFailure(result)) {
         expect(Cause.pretty(result.cause)).not.toContain(marker)
@@ -509,7 +509,7 @@ describe("RemoteChildProcessSpawner", () => {
       const provider = RemoteChildProcessSpawner.TestRemote.make({
         openFailure: new RemoteChildProcessSpawner.ProviderError({
           code: "unavailable",
-          message: "quota exceeded",
+          message: "guest stderr: PRIVATE_OPEN_CANARY",
           cause: new Error("private SDK diagnostics")
         })
       })
@@ -525,7 +525,7 @@ describe("RemoteChildProcessSpawner", () => {
         }).pipe(Effect.provide(RemoteChildProcessSpawner.layer(provider)), Effect.provide(Logger.layer([logger])))
       )
 
-      expect(logs).toEqual([{ method: "open", code: "unavailable", message: "quota exceeded" }])
+      expect(logs).toEqual([{ provider: "remote", method: "open", code: "unavailable" }])
       expect(errors.map(reason)).toEqual(["NotFound", "NotFound"])
       expect(errors[0]?.message).toContain("remote open failed (unavailable)")
     }))

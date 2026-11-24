@@ -1,9 +1,10 @@
 /**
- * `import "@smthrs/migrate"` loads no SQLite engine and no host path module.
+ * `import "@smthrs/migrate"` loads no Node or Bun built-in module.
  *
  * The root entry is what a browser or a Worker resolves. This walks the module
  * graph it loads, through every `import`, `export ... from`, `require`, and
- * `import()` that survives type erasure, and pins the host modules in it.
+ * `import()` that survives type erasure, and requires that no host module is
+ * in it.
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
@@ -52,11 +53,20 @@ const hostModules = (reached: ReadonlyMap<string, ReadonlyArray<string>>): Reado
   ).sort()
 
 describe("the root entry's import graph", () => {
-  it.effect("reaches the scanners and the SQLite seam, and neither node:sqlite nor node:path", () =>
+  it.effect("reaches the scanners, the checks and the SQLite seam, and no host module", () =>
     Effect.gen(function*() {
       const reached = yield* graph("src/index.ts")
       // The walk is not vacuous: it reaches the modules that used to load them.
-      for (const file of ["src/RunState.ts", "src/Scan.ts", "src/SqliteStore.ts", "src/flow/Options.ts"]) {
+      for (
+        const file of [
+          "src/Checks.ts",
+          "src/RunState.ts",
+          "src/Scan.ts",
+          "src/SqliteStore.ts",
+          "src/flow/Options.ts",
+          "src/internal/Sha256.ts"
+        ]
+      ) {
         expect([...reached.keys()], file).toContain(file)
       }
       expect([...reached.keys()]).not.toContain("src/SqliteStoreNode.ts")
@@ -64,8 +74,15 @@ describe("the root entry's import graph", () => {
       for (const forbidden of ["node:sqlite", "sqlite", "node:path", "path", "bun:sqlite"]) {
         expect(specifiers, forbidden).not.toContain(forbidden)
       }
-      // Every host module the root entry still loads. A new one fails here.
-      expect(hostModules(reached)).toEqual(["src/Checks.ts -> node:crypto"])
+      expect(specifiers.filter((specifier) => specifier.startsWith("node:"))).toEqual([])
+      // No built-in under any spelling (`crypto` as well as `node:crypto`), and
+      // no Bun module. A new one fails here.
+      expect(hostModules(reached)).toEqual([])
+    }))
+
+  it.effect("finds node:crypto in a module that imports it, so the empty list above is a finding", () =>
+    Effect.gen(function*() {
+      expect(hostModules(yield* graph("src/flow/Checkpoint.ts"))).toContain("src/flow/Checkpoint.ts -> node:crypto")
     }))
 
   it.effect("finds node:sqlite in the Node engine and in the composition that provides it", () =>

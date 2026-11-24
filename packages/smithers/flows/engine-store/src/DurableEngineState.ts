@@ -635,6 +635,11 @@ export interface Service {
   readonly waitingRuns: (
     filter?: WaitingRunsFilter
   ) => Effect.Effect<ReadonlyArray<WaitingRow>>
+  /** One raw page, including the continuation past rows the decoder rejected. */
+  readonly waitingRunsPage: (filter: WaitingRunsFilter & { readonly page: WaitingRunsPage }) => Effect.Effect<{
+    readonly rows: ReadonlyArray<WaitingRow>
+    readonly nextAfterRunId?: string | undefined
+  }>
   /** Pending admissions ordered by creation, strictly after and through optional cursors. */
   readonly pendingRuns: (
     flowName: string,
@@ -1744,38 +1749,32 @@ const waitingTree = (db: Database): Service["waitingTree"] =>
     )
   )
 
-/**
- * One page of decoded parked runs, read past the rows that will not decode.
- *
- * SQL bounds the raw rows and {@link decodeSweep} drops a malformed one, so
- * a full raw page came back short. A caller reads a short page as the end of
- * the set, and one malformed row then hid every later page from its sweep on
- * every tick. The read continues after the last raw row for the rows still
- * owed. It answers a full page while more rows may follow, whose last row is
- * the last one read, and a short page only when storage has no more.
- */
-const waitingRunsDecodedPage = (
-  db: Database,
-  filter: WaitingRunsFilter,
-  page: WaitingRunsPage
-): Effect.Effect<ReadonlyArray<WaitingRow>> =>
+/** One bounded statement per tick, including when every row in its page is malformed. */
+const waitingRunsPage = (db: Database): Service["waitingRunsPage"] => (filter) =>
   Effect.gen(function*() {
-    const decoded: Array<WaitingRow> = []
-    let afterRunId = page.afterRunId
-    while (decoded.length < page.limit) {
-      const limit = page.limit - decoded.length
-      const rows = yield* WaitingRunStatements.page(db.sql, filter, { limit, afterRunId }).pipe(Effect.orDie)
-      decoded.push(...(yield* decodeSweep(rows, "waiting run", waitingRowKey, decodeWaitingRowResult)))
-      const last = rows.at(-1)
-      if (last === undefined || rows.length < limit) break
-      afterRunId = last.runId
-    }
-    return decoded
+    const raw = yield* WaitingRunStatements.page(db.sql, filter, filter.page).pipe(Effect.orDie)
+    const rows = yield* decodeSweep(raw, "waiting run", waitingRowKey, decodeWaitingRowResult)
+    return { rows, nextAfterRunId: raw.length === filter.page.limit ? raw.at(-1)?.runId : undefined }
   })
 
 const waitingRuns = (db: Database): Service["waitingRuns"] =>
   Effect.fn("DurableEngineState.waitingRuns")((filter) => {
-    if (filter?.page !== undefined) return waitingRunsDecodedPage(db, filter, filter.page)
+    if (filter?.page !== undefined) {
+      // Array callers have no raw cursor. Preserve their contract that a short
+      // result means exhaustion. Heartbeats use waitingRunsPage directly.
+      const { afterRunId, limit } = filter.page
+      return Effect.gen(function*() {
+        const rows: Array<WaitingRow> = []
+        let cursor = afterRunId
+        while (rows.length < limit) {
+          const page = yield* waitingRunsPage(db)({ ...filter, page: { limit, afterRunId: cursor } })
+          rows.push(...page.rows.slice(0, limit - rows.length))
+          if (page.nextAfterRunId === undefined) break
+          cursor = page.nextAfterRunId
+        }
+        return rows
+      })
+    }
     // `1 = 0` short-circuits the cancel predicate away when the caller did
     // not ask for it, so the reason/wake filters (and the 0004 index) stay
     // the leading predicates (issue #68).
@@ -2313,6 +2312,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     waiting: waiting(db),
     waitingTree: waitingTree(db),
     waitingRuns: waitingRuns(db),
+    waitingRunsPage: waitingRunsPage(db),
     pendingRuns: pendingRuns(db),
     pendingRunTail: pendingRunTail(db),
     pendingCancellationRuns: pendingCancellationRuns(db),
@@ -3095,6 +3095,11 @@ const memoryMethods = (memory: Memory): Omit<Service, "transaction" | "readTrans
   waiting: memoryWaiting(memory),
   waitingTree: memoryWaitingTree(memory),
   waitingRuns: memoryWaitingRuns(memory),
+  waitingRunsPage: (filter) =>
+    memoryWaitingRuns(memory)(filter).pipe(Effect.map((rows) => ({
+      rows,
+      nextAfterRunId: rows.length === filter.page.limit ? rows.at(-1)?.runId : undefined
+    }))),
   pendingRuns: memoryPendingRuns(memory),
   pendingRunTail: memoryPendingRunTail(memory),
   pendingCancellationRuns: memoryPendingCancellationRuns(memory),
@@ -3151,6 +3156,7 @@ export const makeMemory = (options: MemoryOptions = {}): Service => {
     waiting: (runId) => guard(memory, unguarded.waiting(runId)),
     waitingTree: (runId, options) => guard(memory, unguarded.waitingTree(runId, options)),
     waitingRuns: (filter) => guard(memory, unguarded.waitingRuns(filter)),
+    waitingRunsPage: (filter) => guard(memory, unguarded.waitingRunsPage(filter)),
     pendingRuns: (flowName, limit, after, through, eligibleBeforeMs) =>
       guard(memory, unguarded.pendingRuns(flowName, limit, after, through, eligibleBeforeMs)),
     pendingRunTail: (flowName, eligibleBeforeMs) => guard(memory, unguarded.pendingRunTail(flowName, eligibleBeforeMs)),

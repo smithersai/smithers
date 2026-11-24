@@ -618,13 +618,40 @@ describe("Egress.execute", () => {
               received.push(part)
             }))
         ),
-        Effect.provide(Layer.mergeAll(Layer.succeed(HttpClient.HttpClient, raw), vault(), audit().layer))
+        Effect.provide(
+          Layer.mergeAll(Layer.succeed(HttpClient.HttpClient, raw), Egress.layerRawContent, vault(), audit().layer)
+        )
       )
     ))
     expect(exit).toEqual(Exit.fail(new Egress.Broken()))
     expect(received).toEqual([])
     expect(connection?.aborted).toBe(true)
     expect(recorded.count("broken")).toBe(1)
+  })
+
+  test("Fetch egress serves readable gzip content under an empty secret policy", async () => {
+    const server = createServer((_request, response) =>
+      response.writeHead(200, { "content-encoding": "gzip" }).end(gzipSync("registry data"))
+    )
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    try {
+      const local = "http://127.0.0.1:" + (server.address() as AddressInfo).port
+      const result = await run(
+        Effect.gen(function*() {
+          const response = yield* Egress.execute(HttpClientRequest.get("https://registry.npmjs.org/"), {
+            allow: ["registry.npmjs.org"],
+            secrets: []
+          })
+          return { headers: response.headers, text: yield* Stream.mkString(Stream.decodeText(response.body)) }
+        }),
+        (_input, init) => fetch(local, init)
+      )
+      if (!Exit.isSuccess(result)) throw new Error("missing Fetch response")
+      expect(result.value.text).toBe("registry data")
+      expect(result.value.headers).not.toHaveProperty("content-encoding")
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
   })
 
   test("passes through gzip bytes and their coding when a raw client has no secrets to scrub", async () => {
@@ -642,7 +669,11 @@ describe("Egress.execute", () => {
         const response = yield* Egress.execute(HttpClientRequest.get(`https://${API}/`), { allow: [API], secrets: [] })
         const chunks = yield* Stream.runCollect(response.body)
         return { headers: response.headers, bytes: Buffer.concat([...chunks]) }
-      }).pipe(Effect.provide(Layer.mergeAll(Layer.succeed(HttpClient.HttpClient, raw), vault(), audit().layer)))
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(Layer.succeed(HttpClient.HttpClient, raw), Egress.layerRawContent, vault(), audit().layer)
+        )
+      )
     )
     expect(answer.headers["content-encoding"]).toBe("gzip")
     expect(gunzipSync(answer.bytes).toString()).toBe(json)
@@ -683,8 +714,7 @@ describe("Egress.execute", () => {
                 body: [...parts].join(""),
                 headers: answer.headers
               }))
-            ),
-            Effect.provide(Egress.layerFetchDecodesContent)
+            )
           ),
           (_input, init) => fetch(local, init),
           { API_KEY: VALUE, GH_TOKEN: secret }

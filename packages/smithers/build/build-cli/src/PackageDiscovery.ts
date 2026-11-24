@@ -319,6 +319,103 @@ const walkDirectory = async (walk: Walk, relative: string): Promise<void> => {
   await Promise.all(directories.map((childRelative) => walkDirectory(walk, childRelative)))
 }
 
+/**
+ * The boundaries a workspace declaration draws around its own discovery.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Boundaries {
+  readonly cacheDirectory?: string | undefined
+  readonly repositories?: Readonly<Record<string, { readonly path: string }>> | undefined
+  /** Workspace-relative posix directories the walk never enters (`discovery.prune`). */
+  readonly prune?: ReadonlyArray<string> | undefined
+}
+
+/**
+ * The declaration inventory a base revision held, read from the list of
+ * files that revision holds and the boundaries its own workspace declared.
+ *
+ * Nothing here reads the checkout's tree, so a marker file, a nested
+ * checkout or a `discovery.prune` path added since cannot hide a package the
+ * base declared. The same rules as {@link discover} decide what the base
+ * itself left out: its cache directory, child repositories and prune paths,
+ * `node_modules` and `dist`, and a directory the base tagged with
+ * `CACHEDIR.TAG` or held another checkout in. The workspace declaration must
+ * be where the checkout has it; `--workspace-file` names the checkout's own
+ * file and is kept.
+ *
+ * @category discovery
+ * @since 1.0.0
+ */
+export const discoverAt = (checkout: Discovery, files: ReadonlyArray<string>, options: Boundaries = {}): Discovery => {
+  const held = new Set(files)
+  const given = NodePath.isAbsolute(checkout.workspaceFile)
+  if (!given && workspaceFiles.find((candidate) => held.has(candidate)) !== checkout.workspaceFile) {
+    throw new PackageError(
+      "module_import_failed",
+      `the base revision holds no workspace declaration at ${checkout.workspaceFile}`,
+      { path: checkout.workspaceFile }
+    )
+  }
+  const cacheDirectory = posix(options.cacheDirectory ?? ".flows")
+  const repositories = Object.entries(options.repositories ?? {})
+    .map(([name, repository]) => ({ name, path: repository.path }))
+    .sort((left, right) => byCodeUnit(left.name, right.name))
+  const declaredPrune = new Set(options.prune ?? [])
+  const boundaries = new Set([
+    cacheDirectory,
+    fixedStoreDirectory,
+    ...repositories.map((repository) => repository.path),
+    ...declaredPrune
+  ])
+  /** Every path prefix of a file, shortest first: its ancestor directories, then itself. */
+  const prefixes = (file: string): ReadonlyArray<string> => {
+    const segments = file.split("/")
+    return segments.map((_, index) => segments.slice(0, index + 1).join("/"))
+  }
+  // A marker anywhere below the root makes the directory holding it one the base never entered.
+  const marked = new Set<string>()
+  for (const file of files) {
+    const segments = file.split("/")
+    segments.forEach((segment, index) => {
+      if (index > 0 && prunedMarkers.has(segment)) marked.add(segments.slice(0, index).join("/"))
+    })
+  }
+  const pruned = new Set<string>(marked)
+  const packageFiles: Array<string> = []
+  for (const file of files) {
+    const paths = prefixes(file)
+    for (const path of paths) if (declaredPrune.has(path)) pruned.add(path)
+    if (!Input.isDeclarationFileName(NodePath.posix.basename(file))) continue
+    if (file.split("/").some((segment) => skippedNames.has(segment))) continue
+    if (paths.some((path) => boundaries.has(path) || marked.has(path))) continue
+    packageFiles.push(file)
+  }
+  packageFiles.sort(byCodeUnit)
+  packageFiles.forEach((file, index) => {
+    const next = packageFiles[index + 1]
+    if (next !== undefined && NodePath.posix.dirname(next) === NodePath.posix.dirname(file)) {
+      const directory = NodePath.posix.dirname(file)
+      throw twoDeclarations(
+        directory === "." ? "" : directory,
+        [file, next].map((path) => NodePath.posix.basename(path))
+      )
+    }
+  })
+  const factoryCandidate = given ? undefined : factoryFileBeside(checkout.workspaceFile)
+  return {
+    root: checkout.root,
+    workspaceFile: checkout.workspaceFile,
+    factoryFile: factoryCandidate !== undefined && held.has(factoryCandidate) ? factoryCandidate : undefined,
+    packageFiles,
+    cacheDirectory,
+    repositories,
+    pruned: [...pruned].sort(byCodeUnit),
+    directories: 0
+  }
+}
+
 /** Admits one declaration file: regular, contained, and never a symlink. */
 const admitDeclaration = async (root: string, relative: string): Promise<boolean> => {
   const entry = await SafeFs.resolveFile(NodePath.join(root, relative), {

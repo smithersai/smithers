@@ -143,21 +143,20 @@ export const Package = S.Package({ targets: { command: S.Shell.Build({ shell: "i
   })
 
   it.skipIf(process.platform === "win32")(
-    "keys an SDK by its manifest, without reading the tree or refusing a link that leaves it",
+    "keys an SDK on a header changed in place under an unchanged manifest and link",
     async () => {
       const { root, options } = await fixture(`import { Smithers as S } from "@smthrs/targets"
 export const Package = S.Package({ targets: { command: S.Shell.Test({ shell: "true" }) } })`)
       const outside = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-sdk-outside-")))
       roots.push(outside)
       await write(outside, "libSystem.tbd", "outside")
+      await write(outside, "headers/linked.h", "one")
       const sdk = Path.join(root, "sdk")
-      await write(root, "sdk/SDKSettings.json", "{\"Version\":\"26.0\"}")
+      const manifest = "{\"Version\":\"26.0\"}"
+      await write(root, "sdk/SDKSettings.json", manifest)
       await write(root, "sdk/usr/include/fixture.h", "one")
       await Fs.symlink(Path.join(outside, "libSystem.tbd"), Path.join(sdk, "usr/libSystem.tbd"))
-      await Fs.symlink(Path.join(outside, "absent"), Path.join(sdk, "usr/dangling"))
-      // A file no reader may open: reading the tree whole would fail on it.
-      await write(root, "sdk/usr/unreadable", "sealed")
-      await Fs.chmod(Path.join(sdk, "usr/unreadable"), 0o000)
+      await Fs.symlink(Path.join(outside, "headers"), Path.join(sdk, "usr/linked"))
       const original = process.env["SDKROOT"]
       try {
         process.env["SDKROOT"] = sdk
@@ -165,12 +164,54 @@ export const Package = S.Package({ targets: { command: S.Shell.Test({ shell: "tr
         const first = await node()
         expect(first.uncachedBecause).toBeUndefined()
         expect(first.cacheable).toBe(true)
-        await write(root, "sdk/SDKSettings.json", "{\"Version\":\"26.1\"}")
+        expect((await node()).keyPreview).toBe(first.keyPreview)
+        await write(root, "sdk/usr/include/fixture.h", "two")
         const second = await node()
         expect(second.cacheable).toBe(true)
         expect(second.keyPreview).not.toBe(first.keyPreview)
+        await write(outside, "headers/linked.h", "two")
+        const third = await node()
+        expect(third.cacheable).toBe(true)
+        expect(third.keyPreview).not.toBe(second.keyPreview)
+        // Neither the manifest nor the link's text moved.
+        expect(await Fs.readFile(Path.join(sdk, "SDKSettings.json"), "utf8")).toBe(manifest)
+        expect(await Fs.readlink(Path.join(sdk, "usr/linked"))).toBe(Path.join(outside, "headers"))
+        await write(root, "sdk/SDKSettings.json", "{\"Version\":\"26.1\"}")
+        expect((await node()).keyPreview).not.toBe(third.keyPreview)
       } finally {
-        await Fs.chmod(Path.join(sdk, "usr/unreadable"), 0o644)
+        if (original === undefined) delete process.env["SDKROOT"]
+        else process.env["SDKROOT"] = original
+      }
+    }
+  )
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "declines caching under an SDK whose content it cannot read whole, whatever its manifest says",
+    async () => {
+      const { root, options } = await fixture(`import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { command: S.Shell.Test({ shell: "true" }) } })`)
+      const sdk = Path.join(root, "sdk")
+      await write(root, "sdk/SDKSettings.json", "{\"Version\":\"26.0\"}")
+      await write(root, "sdk/usr/include/fixture.h", "one")
+      const original = process.env["SDKROOT"]
+      const node = async () => (await PackageExec.plan(options)).workList[0]!
+      try {
+        process.env["SDKROOT"] = sdk
+        expect((await node()).cacheable).toBe(true)
+        await Fs.symlink(Path.join(root, "absent"), Path.join(sdk, "usr/dangling"))
+        const dangling = await node()
+        expect(dangling.cacheable).toBe(false)
+        expect(dangling.uncachedBecause).toBe("cannot identify SDKROOT")
+        await Fs.rm(Path.join(sdk, "usr/dangling"))
+        expect((await node()).cacheable).toBe(true)
+        // A file no reader may open.
+        await write(root, "sdk/usr/unreadable", "sealed")
+        await Fs.chmod(Path.join(sdk, "usr/unreadable"), 0o000)
+        const sealed = await node()
+        expect(sealed.cacheable).toBe(false)
+        expect(sealed.uncachedBecause).toBe("cannot identify SDKROOT")
+      } finally {
+        await Fs.chmod(Path.join(sdk, "usr/unreadable"), 0o644).catch(() => undefined)
         if (original === undefined) delete process.env["SDKROOT"]
         else process.env["SDKROOT"] = original
       }

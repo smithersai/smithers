@@ -14,10 +14,10 @@
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Path from "effect/Path"
-import { createHash } from "node:crypto"
 import * as ts from "typescript/unstable/ast"
 import * as Detect from "./Detect.ts"
 import * as Fs from "./internal/Fs.ts"
+import * as Sha256 from "./internal/Sha256.ts"
 import * as Ts from "./internal/Ts.ts"
 import { io, type MigrateError } from "./MigrateError.ts"
 import { defaultFlowsDir, type UnitPlan } from "./Units.ts"
@@ -399,8 +399,6 @@ const findAll = (
   return findings
 }
 
-const digest = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex")
-
 /**
  * Runs every deterministic check for one unit.
  *
@@ -640,7 +638,7 @@ export const runState = (
       const bytes = link !== undefined
         ? Fs.linkRecord(link)
         : yield* fs.readFile(target).pipe(Effect.mapError(io(`could not read "${file}"`)))
-      if (digest(bytes) !== expected) {
+      if (Sha256.hex(bytes) !== expected) {
         findings.push({ file, line: 1, message: "run state changed; the tool must never write to it" })
       }
     }

@@ -198,6 +198,12 @@ describe("JjWorkspaceSandbox", () => {
       const session = yield* Effect.scoped(provider.acquire(key))
       expect(session.remoteId).toBe(name)
       expect(new TextDecoder().decode(yield* session.readFile(join(workdir, "proof")))).toBe("retained")
+      const current = JjWorkspaceSandbox.workspaceNameOf(key, "smthrs-")
+      mkdirSync(join(workspacesRoot, current, ".jj"), { recursive: true })
+      expect(yield* Effect.flip(Effect.scoped(provider.acquire(key)))).toMatchObject({ code: "unavailable" })
+      for (const remoteId of [current, name]) {
+        expect((yield* Effect.scoped(provider.attach!({ id: key, remoteId }))).remoteId).toBe(remoteId)
+      }
       expect(stub.added).toEqual([])
     }))
   describe("construction validation and workspace naming", () => {

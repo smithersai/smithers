@@ -133,7 +133,7 @@ describe("a corrupt row costs its own row and nothing else", () => {
   // R2-Astra-D1-006: SQL bounded the raw page and the decoder then dropped the
   // malformed row, so a full page came back short and its sweep read that as
   // the end of the set on every tick.
-  it.effect("a paged waitingRuns read continues past unreadable rows to fill its page", () =>
+  it.effect("a bounded raw page advances past its last row even when no row decodes", () =>
     Effect.gen(function*() {
       const result = yield* read((sql, state) =>
         Effect.gen(function*() {
@@ -147,25 +147,27 @@ describe("a corrupt row costs its own row and nothing else", () => {
             `.pipe(Effect.orDie)
           }
           const page = (limit: number, afterRunId?: string) =>
-            state.waitingRuns({ reason: "timer", page: { limit, afterRunId } }).pipe(
-              Effect.map((rows) => rows.map((row) => row.runId))
+            state.waitingRunsPage({ reason: "timer", page: { limit, afterRunId } }).pipe(
+              Effect.map(({ rows, nextAfterRunId }) => [rows.map((row) => row.runId), nextAfterRunId])
             )
           return {
             first: yield* page(2),
             afterMalformedPage: yield* page(2, "a"),
             rest: yield* page(2, "d"),
             one: yield* page(1, "a"),
-            whole: yield* page(64)
+            whole: yield* page(64),
+            decoded: (yield* state.waitingRuns({ reason: "timer", page: { limit: 2 } })).map((row) => row.runId)
           }
         })
       )
 
       // A full page: its last row is the last row read, so the cursor resumes after it.
-      expect(result.value.first).toEqual(["a", "d"])
-      expect(result.value.afterMalformedPage).toEqual(["d", "e"])
-      expect(result.value.rest).toEqual(["e"])
-      expect(result.value.one).toEqual(["d"])
-      expect(result.value.whole).toEqual(["a", "d", "e"])
+      expect(result.value.first).toEqual([["a"], "b"])
+      expect(result.value.afterMalformedPage).toEqual([[], "c"])
+      expect(result.value.rest).toEqual([["e"], undefined])
+      expect(result.value.one).toEqual([[], "b"])
+      expect(result.value.whole).toEqual([["a", "d", "e"], undefined])
+      expect(result.value.decoded).toEqual(["a", "d"])
       expect(result.warnings.every((warning) => warning.includes("waiting run"))).toBe(true)
       expect(result.warnings.length).toBeGreaterThanOrEqual(2)
     }))

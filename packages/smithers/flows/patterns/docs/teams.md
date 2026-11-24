@@ -244,13 +244,13 @@ A column joins its batch with `Quarantine.all` under the `quarantine` policy: ev
 
 ### Tags and runs parked before the tag was versioned
 
-An unnamed board is tagged `kanban@2(columns=…, items=<card ids>, concurrency=…)[…]`. An earlier build tagged it with its card count, `kanban(columns=…, items=2, concurrency=…)[…]`, and a run that build parked still holds that tag. `Kanban.legacyAliases(boards)` returns each board under its old tag; register those flows beside the boards and a parked run resumes its own cards. A board declared with a `name` kept its tag and yields no alias.
+An unnamed board is tagged `kanban@2(columns=…, items=<card ids>, concurrency=…)[…]`. Earlier builds used two unversioned tags. The first used the card count and the second used the card IDs. Pass every previously registered board to `Kanban.legacyAliases(boards)` together and register the returned aliases beside the boards. A board declared with a `name` kept its tag and yields no alias.
 
 ```ts
 const aliases = Kanban.legacyAliases([board])
 ```
 
-`legacyAliases` throws a `PatternError` when two of the boards had the same old tag. The engine resolves a flow by its tag alone, so registering either alias could resume a parked run on the other board's cards.
+`legacyAliases` throws a `PatternError` when two boards claim the same tag across either format. A singleton card named `2` can claim the count-era tag of a two-card board. Resuming those runs requires independent evidence of which board each run used. The engine resolves a flow by its tag alone, so registering either alias could resume a parked run on the other board's cards.
 
 ### Execution
 

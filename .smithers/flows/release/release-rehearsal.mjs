@@ -15,6 +15,12 @@
  *
  * Existing `.jj` colocation skips repository initialization automatically.
  *
+ * A rehearsal runs before the tag is cut. While `refs/tags/<tag>` is absent,
+ * the driver rehearses this checkout's commit as the workflow's `sourceRef`
+ * dry run, with the tag as the intended version label. Once the tag exists it
+ * must name this commit, as on the runner. `--publish` never takes the
+ * `sourceRef` path, so it requires the tag.
+ *
  * usage:
  *   node .smithers/flows/release/release-rehearsal.mjs --tag v1.0.0-rc.0 [options]
  *
@@ -362,14 +368,16 @@ const parseArguments = (argv) => {
  * `sourceSha` stands for the `validate-source` job, which no rehearsal runs:
  * the commit that job would hand on is the one this checkout is at. The
  * publish job's `Require the validated release source` step compares it with
- * the tag, so a rehearsal of a tag that is not at this commit stops there
- * unless that step is skipped.
+ * the tag, so a rehearsal of a tag that is at another commit stops there.
+ *
+ * `sourceRef` is the workflow's own input for a dry run of a commit that has
+ * no tag yet; `rehearsalSource` supplies it while the tag is absent.
  */
 export const rehearsalContexts = (
-  { tag, publish = false, runnerTemp = "/tmp/runner", workflowName = "Release", sourceSha = "" }
+  { tag, publish = false, runnerTemp = "/tmp/runner", workflowName = "Release", sourceSha = "", sourceRef = "" }
 ) => ({
   github: { event_name: "workflow_dispatch", ref_name: tag, run_attempt: "1", workflow: workflowName },
-  inputs: { releaseTag: tag, dryRun: !publish },
+  inputs: { releaseTag: tag, dryRun: !publish, ...(sourceRef === "" ? {} : { sourceRef }) },
   needs: { "validate-source": { outputs: { sha: sourceSha } } },
   // A rehearsal runs the `release` lane, every gate and then the candidate,
   // whatever the tag: the lanes of a prerelease exist to stop a red gate from
@@ -379,6 +387,30 @@ export const rehearsalContexts = (
   env: {},
   steps: {}
 })
+
+/**
+ * The commit a rehearsal runs at, and whether it rehearses it as `sourceRef`.
+ *
+ * The documented order is rehearse, then cut, so the tag usually does not
+ * exist yet. An absent tag makes the rehearsal the workflow's `sourceRef` dry
+ * run of this commit: the same guards run, and the tag comparison, which has
+ * no tag to read, is the one the workflow itself exempts. A tag that exists is
+ * compared as on the runner. A `--publish` rehearsal never sets `sourceRef`,
+ * which the workflow refuses outside a dry run.
+ */
+export const rehearsalSource = ({ tag, publish = false, cwd = repoRoot, env = process.env }) => {
+  const commit = (revision) => {
+    const result = spawnSync("git", ["rev-parse", "--verify", "--quiet", "--end-of-options", `${revision}^{commit}`], {
+      cwd,
+      env,
+      encoding: "utf8"
+    })
+    return result.status === 0 ? result.stdout.trim() : ""
+  }
+  const sourceSha = commit("HEAD")
+  const tagged = commit(`refs/tags/${tag}`) !== ""
+  return { sourceSha, sourceRef: tagged || publish ? "" : sourceSha }
+}
 
 export const main = async (argv) => {
   const options = parseArguments(argv)
@@ -400,13 +432,12 @@ export const main = async (argv) => {
   const logPath = resolve(options.log ?? join(runnerTemp, "rehearsal.log"))
   const log = createWriteStream(logPath, { flags: "a" })
 
-  const head = spawnSync("git", ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], { cwd: repoRoot, encoding: "utf8" })
   const contexts = rehearsalContexts({
     tag: options.tag,
     publish: options.publish,
     runnerTemp,
     workflowName: workflow.name,
-    sourceSha: head.status === 0 ? head.stdout.trim() : ""
+    ...rehearsalSource({ tag: options.tag, publish: options.publish })
   })
   for (const [key, value] of Object.entries(job.env ?? {})) {
     contexts.env[key] = interpolate(value, contexts)

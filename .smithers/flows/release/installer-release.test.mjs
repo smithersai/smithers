@@ -179,7 +179,7 @@ test("release workflow builds all four native archives before tag-bound signing 
   // a prerelease's gates lane runs for hours and blocks nothing.
   assert.deepEqual(build.needs, ["validate-source", "candidate-result"])
   assert.equal(release.jobs["candidate-result"].needs, "native-helper")
-  assert.equal(publish.needs, "installer-archive")
+  assert.deepEqual(publish.needs, ["validate-source", "installer-archive"])
   assert.deepEqual(publish.concurrency, { group: "installer-publication", "cancel-in-progress": false })
   assert.equal(publish.permissions["id-token"], "write")
   const steps = publish.steps.map((step) => step.name ?? "")
@@ -192,6 +192,61 @@ test("release workflow builds all four native archives before tag-bound signing 
   assert.match(publish.steps.find((step) => step.name === "Require the exact tag-bound signing identity").run, /GITHUB_WORKFLOW_REF.*refs\/tags/)
   assert.equal(publish.steps.find((step) => step.name === "Install trusted Cosign v3").with["cosign-release"], "v3.0.2")
 })
+
+test("installer signing runs the validated commit, never the tag's current target", async () => {
+  const release = parseWorkflow(await readFile(join(repoRoot, ".github", "workflows", "release.yml"), "utf8"))
+  const publish = release.jobs["installer-publish"]
+  const validated = "${{ needs.validate-source.outputs.sha }}"
+  // A job reads `needs.<job>.outputs` only of a direct need.
+  assert.ok(publish.needs.includes("validate-source"))
+  const checkouts = publish.steps.filter((step) => step.uses?.startsWith("actions/checkout@"))
+  assert.equal(checkouts.length, 1)
+  assert.equal(checkouts[0].with.ref, validated)
+  assert.equal(checkouts[0].with["persist-credentials"], false)
+  const guard = publish.steps.find((step) => step.name === "Require the validated signing source")
+  const sign = publish.steps.find((step) => step.name === "Sign and self-verify the complete archive set")
+  assert.equal(publish.steps.indexOf(guard), publish.steps.indexOf(checkouts[0]) + 1)
+  assert.equal(guard.env.VALIDATED_SHA, validated)
+  assert.equal(sign.env.INSTALLER_SOURCE_SHA, validated)
+  // No step of the signing job resolves the tag or reads the source from the
+  // checkout: a moved tag cannot change what is checked out, run or attested.
+  for (const step of publish.steps) {
+    assert.doesNotMatch(JSON.stringify(step.with ?? {}), /github\.ref(?!_name)|github\.sha/, step.name ?? step.uses)
+    assert.doesNotMatch(step.run ?? "", /INSTALLER_SOURCE_SHA=/, step.name ?? step.uses)
+  }
+})
+
+test("the signing source guard refuses any checkout but the validated commit", () => temp(async (root) => {
+  const release = parseWorkflow(await readFile(join(repoRoot, ".github", "workflows", "release.yml"), "utf8"))
+  const guard = release.jobs["installer-publish"].steps.find((step) => step.name === "Require the validated signing source")
+  const env = {
+    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_"))),
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1"
+  }
+  const git = (...args) => execFileSync("git", args, { cwd: root, env, encoding: "utf8" }).trim()
+  git("init", "-b", "main")
+  git("config", "user.name", "Installer source fixture")
+  git("config", "user.email", "installer-source@example.invalid")
+  git("commit", "--allow-empty", "-m", "Validated candidate")
+  const validated = git("rev-parse", "HEAD")
+  git("tag", tag)
+  const check = (sha) => spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", guard.run], {
+    cwd: root, env: { ...env, VALIDATED_SHA: sha }, encoding: "utf8", timeout: 10_000
+  })
+  assert.equal(check(validated).status, 0)
+  for (const missing of ["", validated.slice(0, 12), validated.toUpperCase(), `refs/tags/${tag}`]) {
+    const refused = check(missing)
+    assert.notEqual(refused.status, 0, JSON.stringify(missing))
+    assert.match(refused.stderr, /handed on no commit SHA/)
+  }
+  // The tag moved after validation and the job ended up on its new target.
+  git("commit", "--allow-empty", "-m", "Moved tag target")
+  git("tag", "--force", tag)
+  const moved = check(validated)
+  assert.notEqual(moved.status, 0)
+  assert.match(moved.stderr, /is not the validated release source .*nothing is signed/)
+}))
 
 test("the signing step's inline imports resolve from the checkout root and export what it imports", async () => {
   const release = parseWorkflow(await readFile(join(repoRoot, ".github", "workflows", "release.yml"), "utf8"))

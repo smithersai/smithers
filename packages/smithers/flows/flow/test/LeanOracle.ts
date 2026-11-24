@@ -5,7 +5,7 @@
  * another checkout is newer than every source and older than none. So freshness is decided by content. The
  * specification's whole source tree (every `.lean` file at any depth, the toolchain pin and the lakefile) is hashed
  * into one fingerprint, and a build records the fingerprint it was made from in a manifest beside the oracle. An
- * oracle is fresh only when its manifest names the fingerprint of the sources as they are now.
+ * oracle is fresh only when the manifest matches both the current sources and the executable bytes.
  *
  * A specification whose sources cannot all be seen has no fingerprint: a required file is absent, or a source imports
  * a module of the specification that has no file. Such a tree is never fresh.
@@ -74,6 +74,9 @@ export const sources = (specification: Specification): Sources => {
     : { _tag: "Complete", files, fingerprint: hash.digest("hex") }
 }
 
+const executableDigest = (specification: Specification): string =>
+  createHash("sha256").update(readFileSync(specification.binary)).digest("hex")
+
 /** Where a build records the fingerprint of the sources it was made from. */
 export const manifestPath = (specification: Specification): string => `${specification.binary}.sources.json`
 
@@ -81,7 +84,13 @@ export const manifestPath = (specification: Specification): string => `${specifi
 export const record = (specification: Specification, built: Extract<Sources, { _tag: "Complete" }>): void =>
   writeFileSync(
     manifestPath(specification),
-    `${JSON.stringify({ fingerprint: built.fingerprint, files: built.files }, null, 2)}\n`
+    `${
+      JSON.stringify(
+        { fingerprint: built.fingerprint, executable: executableDigest(specification), files: built.files },
+        null,
+        2
+      )
+    }\n`
   )
 
 /**
@@ -93,8 +102,11 @@ export const stale = (specification: Specification, current: Sources = sources(s
   const path = manifestPath(specification)
   if (!existsSync(path)) return true
   try {
-    const manifest = JSON.parse(readFileSync(path, "utf8")) as { readonly fingerprint?: unknown } | null
-    return manifest?.fingerprint !== current.fingerprint
+    const manifest = JSON.parse(readFileSync(path, "utf8")) as {
+      readonly fingerprint?: unknown
+      readonly executable?: unknown
+    } | null
+    return manifest?.fingerprint !== current.fingerprint || manifest.executable !== executableDigest(specification)
   } catch {
     return true
   }
