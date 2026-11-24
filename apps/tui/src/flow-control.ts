@@ -11,11 +11,12 @@ import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import { executionDigest, projectFlowsDirectory } from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
-import { Cause, Context, Effect, Exit, Fiber, Layer, ManagedRuntime, Schema, Stream } from "effect"
+import { Cause, Context, Effect, Exit, Layer, type ManagedRuntime, Schema, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { existsSync } from "node:fs"
 import { join } from "node:path"
 import * as Approvals from "./approvals.ts"
+import { tuiRuntime } from "./effect-boundary.ts"
 import * as Extension from "./extension.ts"
 import { FlowError, type Port, type Settled, terminal } from "./flows.ts"
 import type { Host } from "./host.ts"
@@ -96,7 +97,7 @@ export const make = (options: {
   readonly approvals: NonNullable<Host["approvals"]>
   /** Where `control.db` and `engine.db` live; default `<cwd>/.flows`, like `smthrs up`. */
   readonly stateRoot?: string
-}): Port => {
+}, boundary = tuiRuntime): Port => {
   const judge = NodeControl.layerSeatEvaluator(options.environment).pipe(
     Layer.provide(
       process.versions.bun === undefined
@@ -120,7 +121,7 @@ export const make = (options: {
           })
         )
       )
-      const runtime = ManagedRuntime.make(
+      const runtime = boundary.makeManagedRuntime(
         NativeControl.layerControl(
           {
             root: options.cwd,
@@ -157,7 +158,7 @@ export const make = (options: {
 
   /** A flow's body kind in a fresh registry read; absent when no file declares it. */
   const kind = (flow: string): Promise<"markdown" | "module" | undefined> =>
-    Effect.runPromise(
+    boundary.runPromise(
       Registry.Registry.pipe(Effect.flatMap((each) => each.getOption(flow)), Effect.provide(registry()))
     ).then(
       (descriptor) =>
@@ -180,7 +181,7 @@ export const make = (options: {
       }
     },
     discover: () =>
-      Effect.runPromise(
+      boundary.runPromise(
         Registry.Registry.pipe(
           Effect.flatMap((each) => Effect.all([each.list(), each.warnings()])),
           Effect.provide(registry())
@@ -197,7 +198,7 @@ export const make = (options: {
     notices: () => notices,
     // A fresh registry each read, so an edited agent file applies to the next launch.
     body: (flow) =>
-      Effect.runPromise(
+      boundary.runPromise(
         Effect.gen(function*() {
           const each = yield* Registry.Registry
           const descriptor = yield* each.getOption(flow)
@@ -333,10 +334,9 @@ export const make = (options: {
     watch: (runId, onEvent) => {
       // Nothing is retained while the run streams: a long run's history is read
       // from its journal once, when the answer or error is needed.
-      let fiber: Fiber.Fiber<unknown, unknown> | undefined
-      let closed = false
+      const controller = new AbortController()
       const done = open().then(({ runtime }) => {
-        if (closed) return new Promise<never>(() => {})
+        if (controller.signal.aborted) return new Promise<never>(() => {})
         const program = Control.Control.pipe(
           Effect.flatMap((service) =>
             service.watch({ runId, follow: true }).pipe(
@@ -350,14 +350,12 @@ export const make = (options: {
             )
           )
         )
-        fiber = runtime.runFork(program)
-        return Effect.runPromise(Fiber.await(fiber))
+        return runtime.runPromiseExit(program, { signal: controller.signal })
       }).then(async (exit): Promise<Settled> => {
         if (Exit.isFailure(exit)) {
           throw new FlowError("control", `Control watch failed: ${typed(Cause.squash(exit.cause)).message}`)
         }
-        const last = exit.value as { _tag: string; value?: ControlEvent }
-        const event = last._tag === "Some" ? last.value : undefined
+        const event = exit.value._tag === "Some" ? exit.value.value : undefined
         if (event === undefined) throw new FlowError("control", "Control watch ended")
         if (event.kind === "control.run.completed") return { kind: "done", answer: answerOf(await events(runId)) }
         if (event.kind === "control.run.cancelled") return { kind: "cancelled" }
@@ -373,10 +371,7 @@ export const make = (options: {
       })
       return {
         done,
-        close: () => {
-          closed = true
-          if (fiber !== undefined) void Effect.runPromise(Fiber.interrupt(fiber))
-        }
+        close: () => controller.abort()
       }
     },
     events,
@@ -393,7 +388,7 @@ export const make = (options: {
       if (opening !== undefined) return control(list)
       // Never create a store just to find it empty.
       if (!existsSync(join(options.stateRoot ?? options.cwd, ".flows", "control.db"))) return []
-      const exit = await Effect.runPromiseExit(
+      return boundary.runPromise(
         Control.Control.pipe(
           Effect.flatMap(list),
           Effect.provide(
@@ -404,9 +399,9 @@ export const make = (options: {
             })
           )
         )
-      )
-      if (Exit.isSuccess(exit)) return exit.value
-      throw typed(Cause.squash(exit.cause))
+      ).catch((error) => {
+        throw typed(error)
+      })
     },
     cancel: (runId) =>
       control((service) => service.cancel({ runId, idempotencyKey: `tui:cancel:${runId}`, reason: "Stopped" })).then(

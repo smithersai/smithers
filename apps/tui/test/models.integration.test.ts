@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { Effect } from "effect"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -124,7 +125,7 @@ test("real HTTP pool discovery permits only served routes and actual TUI startup
     }
   }
   try {
-    const discovered = await Models.detect(environment)
+    const discovered = await Effect.runPromise(Models.detect(environment))
     expect(discovered.models.map((model) => model.seat)).toEqual(["openai:gpt-6-luna"])
     const answer = await start()
     expect(answer.code, answer.stderr).toBe(0)
@@ -136,22 +137,24 @@ test("real HTTP pool discovery permits only served routes and actual TUI startup
     expect(empty.code).toBe(1)
     expect(empty.stderr).toContain("No model is available")
     routes = ["anthropic"]
-    expect((await Models.detect(environment)).models).toEqual([])
+    expect((await Effect.runPromise(Models.detect(environment))).models).toEqual([])
     routes = ["chatgpt"]
     status = 403
     const forbidden = await start()
     expect(forbidden.code).toBe(1)
     expect(forbidden.stderr).toContain("No model is available")
     status = 503
-    expect((await Models.detect(environment)).models).toEqual([])
+    expect((await Effect.runPromise(Models.detect(environment))).models).toEqual([])
     status = 0
     const started = Date.now()
-    expect((await Models.detect(environment)).models).toEqual([])
+    expect((await Effect.runPromise(Models.detect(environment))).models).toEqual([])
     expect(Date.now() - started).toBeLessThan(9000)
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(cancelled).toBe(true)
     const before = requests.length
-    expect((await Models.detect({ ...environment, SMITHERS_ACCOUNT_POOL_KEY: "" })).models).toEqual([])
+    expect((await Effect.runPromise(Models.detect({ ...environment, SMITHERS_ACCOUNT_POOL_KEY: "" }))).models).toEqual(
+      []
+    )
     expect(requests.length).toBe(before)
     expect(requests.filter((url) => url === "/routes").length).toBeGreaterThanOrEqual(5)
   } finally {

@@ -35,6 +35,7 @@ import * as Cursor from "./cursor.ts"
 import * as Debug from "./debug.ts"
 import * as DevTools from "./devtools.ts"
 import * as Editor from "./editor.ts"
+import { tuiRuntime } from "./effect-boundary.ts"
 import * as Extension from "./extension.ts"
 import * as External from "./external.ts"
 import * as Files from "./files.ts"
@@ -606,7 +607,7 @@ export function App(props: AppProps) {
     const authentication = CloudSession.layerAuthentication(process.env)
     const readIdentity = async () => {
       try {
-        const status = await Effect.runPromise(Smithers.readIdentity.pipe(Effect.provide(authentication)), {
+        const status = await tuiRuntime.runPromise(Smithers.readIdentity.pipe(Effect.provide(authentication)), {
           signal: controller.signal
         })
         if (!controller.signal.aborted) setIdentity(status)
@@ -1193,12 +1194,12 @@ export function App(props: AppProps) {
     shell?.cancel()
     const editorStopped = stopEditor()
     if (editorStopped === undefined) renderer.destroy()
-    void External.bounded(Promise.allSettled([
+    void tuiRuntime.runPromise(External.bounded(Promise.allSettled([
       shell?.done,
       editorStopped,
       monitorsStopped,
       stopped.then(() => Promise.allSettled([props.host.dispose(), props.flows?.dispose()]))
-    ]))
+    ])))
       .then(() => {
         renderer.destroy()
         process.exit(0)

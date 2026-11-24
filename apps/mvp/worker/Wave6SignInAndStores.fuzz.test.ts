@@ -1,658 +1,503 @@
-import { GitHub } from "@smthrs/integrations"
+// Generated scenarios against the real routes and stores on this file's schema of the compose Postgres: GitHub's
+// callback (worker/SignIn.ts), a branch's conversation (worker/branch/Conversations.ts), the git loop's sync and
+// installation rows (worker/github/Store.ts), a person's saved connections (worker/personal/Store.ts), protected
+// write authority (worker/ProtectedAuthority.ts) and the read token (worker/github/ReadToken.ts). Each property
+// computes what must happen from the scenario alone, then reads the answer and the rows back.
 import { Fuzz } from "@smthrs/fuzz"
-import { Arbitrary, ConfigProvider, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
-import { HttpClient, HttpServerRequest } from "effect/http"
+import { Arbitrary, ConfigProvider, Effect, Logger, Option, Redacted, Schema } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
-import { describe, expect, it } from "vitest"
-import { CALLBACK_ROUTE, SESSION_ROUTE, SIGN_IN_ROUTE, SIGN_OUT_ROUTE } from "../src/features/auth/contract.ts"
-import * as Actor from "./Actor.ts"
-import { GitHubAuth } from "./GitHubAuth.ts"
+import { expect, test } from "vitest"
+import { REPOSITORY_GRANTEE } from "../src/features/branch/contract.ts"
+import type { Role } from "./Actor.ts"
 import * as ProtectedAuthority from "./ProtectedAuthority.ts"
-import * as RunCredentials from "./RunCredentials.ts"
-import * as SessionKeys from "./SessionKeys.ts"
-import * as SessionStore from "./SessionStore.ts"
-import * as SignIn from "./SignIn.ts"
+import type * as WriteAuthority from "./WriteAuthority.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import * as ReadToken from "./github/ReadToken.ts"
 import * as GitHubStore from "./github/Store.ts"
+import { appKey, scriptedApp, scriptedGitHub } from "./github/test/scriptedGitHub.ts"
 import * as PersonalStore from "./personal/Store.ts"
-import * as RunnersStore from "./runners/Store.ts"
+import { testFile } from "./test/harness.ts"
+import { cookie, setCookies, signInHarness } from "./test/signIn.ts"
 
-const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")
-const execs = Math.max(15, Math.min(Math.ceil(baseExecs / 3), 40))
-const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261131")
+const runtime = testFile("wave6_sign_in_stores")
 
-const property = <A, E>(
-  input: Arbitrary.Arbitrary<A>,
-  executions: number,
-  check: (value: A) => Effect.Effect<void, E, any>
-) =>
-  Effect.runPromise(Fuzz.run(input, (value) => (check(value) as Effect.Effect<void, E>).pipe(Effect.as(true)), { seed, executions }))
-    .then((report) => {
-      expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
-    })
+const seed = Number(process.env.EFFECT_FUZZ_SEED ?? 20261131)
+const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? 100)
+/** A whole sign-in is several requests and transactions: fewer of them keep the file inside its time budget. */
+const roundTrips = Math.min(executions, 40)
 
-const intBetween = (minimum: number, maximum: number) =>
-  Arbitrary.schema(Schema.Int.check(Schema.isBetween({ minimum, maximum })))
-const bool = Arbitrary.schema(Schema.Boolean)
-const word = Arbitrary.schema(Schema.Literals(["alpha", "beta", "gamma", "delta"]))
+const query = <A extends object>(statement: (sql: SqlClient.SqlClient) => Effect.Effect<ReadonlyArray<A>, unknown>) =>
+  Effect.flatMap(SqlClient.SqlClient, statement)
 
-const SECRET = "wave6-signin-secret-0123456789abcdef0123456789abcdef0123456789ab"
+const bool = Schema.Boolean
 
-const flattenSql = (
-  strings: TemplateStringsArray,
-  values: ReadonlyArray<unknown>
-): { text: string; params: Array<unknown> } => {
-  let text = ""
-  const params: Array<unknown> = []
-  for (let i = 0; i < strings.length; i++) {
-    text += strings[i]
-    if (i < values.length) {
-      const v = values[i] as { segments?: ReadonlyArray<{ sql?: string; params?: ReadonlyArray<unknown>; value?: unknown }> } | undefined
-      if (v && typeof v === "object" && "segments" in v && Array.isArray(v.segments)) {
-        for (const seg of v.segments) {
-          if (seg && typeof seg === "object" && typeof seg.sql === "string") {
-            text += seg.sql
-            if (Array.isArray(seg.params)) params.push(...seg.params)
-          } else if (seg && typeof seg === "object" && "value" in seg) {
-            text += String(seg.value)
-          }
-        }
-      } else {
-        text += `$${params.length + 1}`
-        params.push(v)
-      }
-    }
-  }
-  return { text, params }
+const PERMISSIONS = ["admin", "maintain", "write", "triage", "read", "none"] as const
+/** Decision 0007: a person's role is GitHub's permission on the repository, never more. */
+const ROLE_OF: Readonly<Record<(typeof PERMISSIONS)[number], Role | null>> = {
+  admin: "admin",
+  maintain: "maintainer",
+  write: "member",
+  triage: "guest",
+  read: "guest",
+  none: null,
 }
 
-const makeSqlLayer = (
-  handler: (sqlText: string, params: ReadonlyArray<unknown>) => ReadonlyArray<Record<string, unknown>> | Error
-): Layer.Layer<SqlClient.SqlClient> => {
-  const fn = ((strings: TemplateStringsArray | string, ...values: ReadonlyArray<unknown>) => {
-    if (typeof strings === "string") return { segments: [{ sql: strings, params: [] }] }
-    const { text, params } = flattenSql(strings, values)
-    return Effect.suspend(() => {
-      const out = handler(text, params)
-      return out instanceof Error ? Effect.fail(out as never) : Effect.succeed(out)
-    })
-  }) as unknown as SqlClient.SqlClient
-  const client = Object.assign(fn, {
-    in: (a: unknown, b?: ReadonlyArray<unknown>) => {
-      if (Array.isArray(a)) return { segments: [{ sql: `(${a.map((_, i) => `$in${i}`).join(",")})`, params: [...a] }] }
-      const arr = b ?? []
-      return { segments: [{ sql: `${String(a)} IN (${arr.map((_, i) => `$in${i}`).join(",")})`, params: [...arr] }] }
-    },
-    withTransaction: <A, E, R>(eff: Effect.Effect<A, E, R>) => eff,
-    unsafe: (query: string, params: ReadonlyArray<unknown> = []) =>
-      Effect.suspend(() => {
-        const out = handler(query, params)
-        return out instanceof Error ? Effect.fail(out as never) : Effect.succeed(out)
+/** Where a sign-in started, where the browser lands signed in, and where it lands told sign-in failed. */
+const RETURNS = [
+  { to: "/app", signedIn: "/app", failed: "/app?sign_in=failed" },
+  { to: "/board?tab=2#top", signedIn: "/board?tab=2#top", failed: "/board?tab=2&sign_in=failed#top" },
+  // Another site's URL is never a return path.
+  { to: "//evil.test/x", signedIn: "/", failed: "/?sign_in=failed" },
+] as const
+
+const CALLBACK_MODES = [
+  "good",
+  "wrong_state",
+  "no_cookie",
+  "other_browser",
+  "post",
+  "denied",
+  "no_code",
+  "exchange_refused",
+  "user_refused",
+  "permission_unavailable",
+] as const
+/** Refused before the attempt is read: the attempt is still the browser's to finish. */
+const KEEPS_ATTEMPT: ReadonlyArray<(typeof CALLBACK_MODES)[number]> = ["wrong_state", "no_cookie", "other_browser", "post"]
+/** GitHub's steps a callback reaches, in order. */
+const GITHUB_STEPS: Readonly<Record<(typeof CALLBACK_MODES)[number], ReadonlyArray<string>>> = {
+  good: ["exchange", "user", "permission"],
+  wrong_state: [],
+  no_cookie: [],
+  other_browser: [],
+  post: [],
+  denied: [],
+  no_code: [],
+  exchange_refused: ["exchange"],
+  user_refused: ["exchange", "user"],
+  permission_unavailable: ["exchange", "user", "permission"],
+}
+
+test("GitHub's callback signs in exactly the browser that started, once, with the role GitHub gives", async () => {
+  const auth = await signInHarness(runtime)
+  let people = 0
+  const sessionCookies = (response: Response) =>
+    Object.fromEntries(
+      Object.entries(setCookies(response))
+        .filter(([name, set]) => name.endsWith("smithers_session") && set.value !== "")
+        .map(([name, set]) => [name, set.value]),
+    )
+  const held = (githubId: number) =>
+    runtime.runPromise(query<{ people: number; sessions: number; personId: string | null }>((sql) => sql`
+      SELECT (SELECT count(*)::int FROM people WHERE github_id = ${githubId}) AS people,
+        (SELECT count(*)::int FROM sessions s JOIN people p ON p.id = s.person_id WHERE p.github_id = ${githubId}) AS sessions,
+        (SELECT id::text FROM people WHERE github_id = ${githubId}) AS "personId"`)).then((found) => found[0]!)
+
+  const scenarios = Arbitrary.schema(Schema.Struct({
+    mode: Schema.Literals(CALLBACK_MODES),
+    permission: Schema.Literals(PERMISSIONS),
+    returnTo: Schema.Literals([0, 1, 2]),
+  }))
+  const report = await Effect.runPromise(Fuzz.run(scenarios, (scenario) => Effect.promise(async () => {
+    people += 1
+    const person = { id: 7_000_000 + people, login: `fuzzer-${people}` }
+    auth.github.person = person
+    auth.github.permission = scenario.permission
+    const target = RETURNS[scenario.returnTo]
+    const started = await auth.start(target.to)
+    expect(started.response.status).toBe(302)
+    const { code, state } = auth.github.approve(started.location)
+    const stateCookies = Object.fromEntries(Object.entries(started.cookies).map(([name, set]) => [name, set.value]))
+    const calls = auth.github.calls.length
+    const cleanups = auth.cleanupStarts.length
+
+    if (scenario.mode === "exchange_refused") auth.github.failOnce.exchange = "rejected"
+    if (scenario.mode === "user_refused") auth.github.failOnce.user = "rejected"
+    if (scenario.mode === "permission_unavailable") auth.github.failOnce.permission = "unavailable"
+    const answer: Record<string, string> = scenario.mode === "wrong_state" ? { code, state: `${state}x` }
+      : scenario.mode === "denied" ? { state, error: "access_denied" }
+      : scenario.mode === "no_code" ? { state }
+      : { code, state }
+    const presented = scenario.mode === "no_cookie" ? {}
+      // Another browser's sign-in, started for the same person: its state cookie names another state.
+      : scenario.mode === "other_browser"
+      ? Object.fromEntries(Object.entries((await auth.start(target.to)).cookies).map(([name, set]) => [name, set.value]))
+      : stateCookies
+    const response = scenario.mode === "post"
+      ? await auth.fetch(`/api/auth/callback?${new URLSearchParams(answer)}`, { method: "POST", headers: { cookie: cookie(presented) } })
+      : await auth.callback(answer, presented)
+
+    const admitted = scenario.mode === "good"
+    const keepsAttempt = KEEPS_ATTEMPT.includes(scenario.mode)
+    expect(response.status).toBe(303)
+    expect(response.headers.get("location")).toBe(admitted ? target.signedIn : keepsAttempt ? "/?sign_in=failed" : target.failed)
+    expect(auth.github.calls.slice(calls)).toEqual(GITHUB_STEPS[scenario.mode])
+    // Tokens GitHub issued to a sign-in that then failed are handed to durable cleanup, never dropped.
+    expect(auth.cleanupStarts.length - cleanups)
+      .toBe(scenario.mode === "user_refused" || scenario.mode === "permission_unavailable" ? 1 : 0)
+    const cookies = sessionCookies(response)
+    expect(Object.keys(cookies)).toHaveLength(admitted ? 1 : 0)
+    const after = await held(person.id)
+    expect({ people: after.people, sessions: after.sessions }).toEqual(admitted ? { people: 1, sessions: 1 } : { people: 0, sessions: 0 })
+
+    if (admitted) {
+      expect(await auth.session(cookies)).toMatchObject({
+        signedIn: true,
+        personId: after.personId,
+        login: person.login,
+        role: ROLE_OF[scenario.permission],
       })
-  })
-  return Layer.succeed(SqlClient.SqlClient, client)
-}
+    }
+    // The same answer again, from the same browser: the attempt is gone once read, and nobody is signed in twice.
+    const again = await auth.callback({ code, state }, stateCookies)
+    expect(again.status).toBe(303)
+    if (keepsAttempt) {
+      // The refusal read no attempt, so the browser that started it still finishes it.
+      expect(again.headers.get("location")).toBe(target.signedIn)
+      const finished = sessionCookies(again)
+      expect(Object.keys(finished)).toHaveLength(1)
+      expect(await auth.session(finished)).toMatchObject({ signedIn: true, login: person.login, role: ROLE_OF[scenario.permission] })
+      expect((await held(person.id)).sessions).toBe(1)
+    } else {
+      expect(again.headers.get("location")).toBe("/?sign_in=failed")
+      expect(sessionCookies(again)).toEqual({})
+      expect((await held(person.id)).sessions).toBe(admitted ? 1 : 0)
+    }
+    expect(await auth.session({})).toMatchObject({ signedIn: false })
+    return true
+  }), { seed, executions: roundTrips }))
+  expect(Fuzz.formatReport(report)).toBeUndefined()
+})
 
-const makeRequest = (
-  url: string,
-  options: { method?: string; headers?: Record<string, string>; cookies?: Record<string, string>; body?: string } = {}
-) => {
-  const headers = new Headers(options.headers)
-  if (options.cookies && Object.keys(options.cookies).length > 0) {
-    headers.set("cookie", Object.entries(options.cookies).map(([k, v]) => `${k}=${v}`).join("; "))
-  }
-  return HttpServerRequest.fromWeb(new Request(url, { method: options.method ?? "GET", headers, body: options.body }))
-}
+test("a branch is tracked once with one conversation, owned or shared as its mode and creator say", async () => {
+  const scenarios = Arbitrary.schema(Schema.Struct({
+    name: Schema.Literals(["main", "Feat/Login", "fix-42"]),
+    mode: Schema.Literals(["locked", "open", "restricted"]),
+    creator: bool,
+    againMode: Schema.Literals(["locked", "open", "restricted"]),
+    againCreator: bool,
+  }))
+  const report = await runtime.runPromise(Fuzz.run(scenarios, (scenario) => Effect.gen(function* () {
+    const repo = `github/acme/${crypto.randomUUID()}`
+    const creator = scenario.creator ? `person-${crypto.randomUUID()}` : undefined
+    const owner = scenario.mode === "locked" ? null : creator ?? null
+    const request = crypto.randomUUID()
+    const rows = query<{ branches: number; conversations: number; createdBy: string | null; shares: ReadonlyArray<string> }>((sql) => sql`
+      SELECT (SELECT count(*)::int FROM branches WHERE repo_id = ${repo}) AS branches,
+        (SELECT count(*)::int FROM conversations WHERE repo_id = ${repo}) AS conversations,
+        (SELECT created_by FROM branches WHERE repo_id = ${repo} AND name = ${scenario.name}) AS "createdBy",
+        (SELECT coalesce(json_agg(s.grantee || ':' || s.access ORDER BY s.grantee), '[]'::json)
+          FROM branch_shares s JOIN branches b ON b.id = s.branch_id WHERE b.repo_id = ${repo}) AS shares`)
 
-describe("Wave-6 apps/mvp SignIn full OAuth callback, SessionStore, GitHub Store/ReadToken, Personal/Runners/Conversations/ProtectedAuthority", () => {
-  it("fuzzes SignIn full OAuth sign-in -> callback -> session -> RunCredentials -> sign-out lifecycle", () =>
-    property(
-      Arbitrary.all({
-        login: Arbitrary.schema(Schema.Literals(["roninjin10", "alice", "bob"])),
-        perm: Arbitrary.schema(Schema.Literals(["admin", "write", "read", "none"])),
-        callbackMode: intBetween(0, 6),
-        reauth: bool,
-        withRefresh: bool
-      }),
-      Math.min(execs, 20),
-      (s) =>
-        Effect.gen(function*() {
-          const homeHost = "smithers.sh"
-          const now = Date.now()
-          const keys = yield* SessionKeys.make(Redacted.make(SECRET))
-          const attempts = new Map<string, { returnTo: string; redirectUri: string; verifier: SessionStore.Sealed; live: boolean }>()
-          let currentSession: {
-            id: string
-            personId: string
-            tokenDigest: string
-            login: string
-            role: "admin" | "member" | "viewer" | null
-            cookieKey: string
-            deadline: number
-          } | undefined
+    expect(yield* Conversations.find(repo, scenario.name)).toBeUndefined()
+    const first = yield* Conversations.track(repo, scenario.name, scenario.mode, "a".repeat(40), creator, request)
+    expect(first.created).toBe(true)
+    expect(first.branch).toEqual({
+      branchId: first.branch.branchId,
+      conversationId: yield* Conversations.conversationIdOf(first.branch.branchId),
+      repoId: repo,
+      name: scenario.name,
+      mode: scenario.mode,
+    })
+    // The id is the branch id's, whatever its case, and no other branch id's.
+    expect(yield* Conversations.conversationIdOf(first.branch.branchId.toUpperCase())).toBe(first.branch.conversationId)
+    expect(yield* Conversations.conversationIdOf(`${first.branch.branchId}0`)).not.toBe(first.branch.conversationId)
+    const expected = {
+      branches: 1,
+      conversations: 1,
+      createdBy: owner,
+      // A branch nobody owns is the team's: anyone in the repository may edit it. An owned one starts private.
+      shares: owner === null ? [`${REPOSITORY_GRANTEE}:edit`] : [],
+    }
+    expect((yield* rows)[0]).toEqual(expected)
 
-          const dbLayer = makeSqlLayer((raw, params) => {
-            const q = raw.replace(/\s+/g, " ").trim()
-            if (q.startsWith("SET LOCAL ")) return []
-            if (q.includes("INSERT INTO sign_in_attempts")) {
-              const [stateDigest, returnTo, redirectUri, ct, nonce] = params
-              attempts.set(String(stateDigest), {
-                returnTo: String(returnTo),
-                redirectUri: String(redirectUri),
-                verifier: { ciphertext: String(ct), nonce: String(nonce) },
-                live: s.callbackMode !== 2
-              })
-              return []
-            }
-            if (q.includes("DELETE FROM sign_in_attempts")) {
-              const digest = String(params[0])
-              const found = attempts.get(digest)
-              if (!found) return []
-              attempts.delete(digest)
-              return [{
-                returnTo: found.returnTo,
-                redirectUri: found.redirectUri,
-                verifierCiphertext: found.verifier.ciphertext,
-                verifierNonce: found.verifier.nonce,
-                live: found.live
-              }]
-            }
-            if (q.includes("SELECT nextval") || q.includes("role_generation")) {
-              return [{ generation: 1, serverNow: now }]
-            }
-            if (q.includes("INSERT INTO people")) {
-              return [{ id: "11111111-1111-4111-8111-111111111111" }]
-            }
-            if (q.includes("FROM sessions") && q.includes("eligible")) {
-              if (!s.reauth || !currentSession) return []
-              return [{ id: currentSession.id, eligible: true }]
-            }
-            if (q.includes("server_version_num")) {
-              return [{ version: 170000 }]
-            }
-            if (q.includes("SELECT key_id") || q.includes("session_signing_keys") || q.includes("signing_issuer")) {
-              return [{ key: "legacy", keyId: "legacy", key_id: "legacy" }]
-            }
-            if (q.includes("INSERT INTO sessions")) {
-              const id = String(params[0])
-              currentSession = {
-                id,
-                personId: "11111111-1111-4111-8111-111111111111",
-                tokenDigest: String(params[2] ?? ""),
-                login: s.login,
-                role: s.login === "roninjin10" ? "admin" : "member",
-                cookieKey: "legacy",
-                deadline: now + 30 * 86_400_000
-              }
-              return [{ deadline: currentSession.deadline, cookieKey: currentSession.cookieKey }]
-            }
-            if (q.includes("UPDATE sessions SET") && q.includes("RETURNING")) {
-              return [{
-                deadline: now + 30 * 86_400_000,
-                cookieKey: "legacy",
-                previousAccess: null,
-                previousRefresh: null
-              }]
-            }
-            if (q.includes("FROM sessions s JOIN people p") || q.includes("s.token_digest =") || q.includes("s.id =")) {
-              if (!currentSession) return []
-              return [{
-                id: currentSession.id,
-                personId: currentSession.personId,
-                login: currentSession.login,
-                role: currentSession.role,
-                roleGeneration: 1,
-                roleCheckedAt: now,
-                roleVerifiedAt: now,
-                expiresAt: currentSession.deadline,
-                deadline: currentSession.deadline,
-                startedAt: now - 1000,
-                serverNow: now,
-                cookieKey: currentSession.cookieKey,
-                aliasId: null,
-                host: null,
-                accessCiphertext: null,
-                accessNonce: null,
-                refreshCiphertext: null,
-                refreshNonce: null,
-                refreshExpiresAt: null,
-                tokenVersion: 1
-              }]
-            }
-            if (q.includes("FROM session_token_cleanups") || q.includes("token_history") || q.includes("revoked_at")) {
-              return [{ hadPrevious: false, hadRevoked: false }]
-            }
-            return []
-          })
+    // Tracked again, by anyone, in any mode: the branch as it is, and nothing written.
+    const second = yield* Conversations.track(repo, scenario.name, scenario.againMode, "b".repeat(40),
+      scenario.againCreator ? "person-late" : undefined, crypto.randomUUID())
+    expect(second).toEqual({ created: false, branch: first.branch })
+    expect(yield* Conversations.find(repo, scenario.name)).toEqual(first.branch)
+    expect((yield* rows)[0]).toEqual(expected)
+    expect(yield* Conversations.createRequestOf(first.branch.branchId)).toBe(request)
+    // Names are exact: another case is another branch, absent here.
+    expect(yield* Conversations.find(repo, `${scenario.name}-other`)).toBeUndefined()
+    expect(yield* Conversations.find(`${repo}-other`, scenario.name)).toBeUndefined()
+    return true
+  }), { seed, executions }))
+  expect(Fuzz.formatReport(report)).toBeUndefined()
+})
 
-          const githubStub: GitHubAuth["Service"] = {
-            authorizeUrl: ({ state, codeChallenge, redirectUri }: { readonly state: string; readonly codeChallenge: string; readonly redirectUri: string }) =>
-              `https://github.com/login/oauth/authorize?state=${state}&code_challenge=${codeChallenge}&redirect_uri=${encodeURIComponent(redirectUri)}`,
-            exchange: () => {
-              if (s.callbackMode === 4) {
-                return Effect.fail(new GitHub.Auth.GitHubRefused({ step: "exchange", reason: "rejected" }))
-              }
-              return Effect.succeed({
-                accessToken: Redacted.make("ghu_testaccesstoken1234567890"),
-                refreshToken: s.withRefresh ? Redacted.make("ghr_testrefreshtoken1234567890") : null,
-                accessExpiresAt: now + 3_600_000,
-                refreshExpiresAt: s.withRefresh ? now + 86_400_000 : null
-              })
+const SYNC_OPS = ["cursor", "clear_cursor", "finish_complete", "finish_partial", "remember", "forget", "private", "public", "absent", "present"] as const
+type SyncOp = (typeof SYNC_OPS)[number]
+
+test("a repository's sync state, installation, visibility and App absence read back what the steps wrote, in any order", async () => {
+  const op = Schema.Literals(SYNC_OPS)
+  const scenarios = Arbitrary.schema(Schema.Struct({
+    a: op, b: op, c: op, d: op, e: op, f: op,
+    installation: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 2_000_000_000 })),
+  }))
+  const report = await runtime.runPromise(Fuzz.run(scenarios, (scenario) => Effect.gen(function* () {
+    const repo = `github/acme/${crypto.randomUUID()}`
+    const other = `${repo}-other`
+    const model = {
+      cursor: null as string | null,
+      synced: false,
+      complete: false,
+      installation: Option.none<number>(),
+      visibility: Option.none<boolean>(),
+      row: false,
+      absentWindow: false,
+    }
+    let syncedAt: number | null = null
+    const steps: ReadonlyArray<SyncOp> = [scenario.a, scenario.b, scenario.c, scenario.d, scenario.e, scenario.f]
+    for (const [index, step] of steps.entries()) {
+      switch (step) {
+        case "cursor":
+          model.cursor = `cursor-${index}`
+          yield* GitHubStore.commitCursor(repo, "issues", model.cursor)
+          break
+        case "clear_cursor":
+          model.cursor = null
+          yield* GitHubStore.commitCursor(repo, "issues", null)
+          break
+        case "finish_complete":
+        case "finish_partial":
+          model.synced = true
+          model.complete = step === "finish_complete"
+          yield* GitHubStore.finishSync(repo, "issues", { complete: model.complete, failure: model.complete ? null : "rate_limited" })
+          break
+        case "remember":
+          model.installation = Option.some(scenario.installation + index)
+          model.row = true
+          yield* GitHubStore.rememberInstallation(repo, scenario.installation + index)
+          break
+        case "forget":
+          model.installation = Option.none()
+          yield* GitHubStore.forgetInstallation(repo)
+          break
+        case "private":
+        case "public": {
+          // What a step's read of the repository records (worker/github/VisibilityReceipt.ts), as a fixture row.
+          const isPrivate = step === "private"
+          model.visibility = Option.some(!isPrivate)
+          model.row = true
+          yield* query((sql) => sql`
+            INSERT INTO github_repositories (repo_id, private) VALUES (${repo}, ${isPrivate})
+            ON CONFLICT (repo_id) DO UPDATE SET private = EXCLUDED.private`)
+          break
+        }
+        case "absent":
+        case "present": {
+          // An About read's finding (worker/RepoAbout.ts): the App is absent until its recheck window ends.
+          model.absentWindow = step === "absent"
+          const until = model.absentWindow ? "1 hour" : "-1 hour"
+          yield* query((sql) => sql`
+            INSERT INTO repo_about (repo_id, app_absent_until) VALUES (${repo}, clock_timestamp() + ${until}::interval)
+            ON CONFLICT (repo_id) DO UPDATE SET app_absent_until = EXCLUDED.app_absent_until`)
+          break
+        }
+      }
+      const state = yield* GitHubStore.syncState(repo, "issues")
+      expect({ cursor: state.cursor, complete: state.complete, synced: state.syncedAt !== null })
+        .toEqual({ cursor: model.cursor, complete: model.complete, synced: model.synced })
+      // A walk's end never moves back.
+      if (state.syncedAt !== null && syncedAt !== null) expect(state.syncedAt).toBeGreaterThanOrEqual(syncedAt)
+      syncedAt = state.syncedAt
+      expect(yield* GitHubStore.installationOf(repo)).toEqual(model.installation)
+      expect(yield* GitHubStore.isPublic(repo)).toEqual(model.visibility)
+      expect(yield* GitHubStore.appAbsent(repo)).toBe(model.absentWindow && Option.isNone(model.installation))
+      // Another stream and another repository hold none of it.
+      expect(yield* GitHubStore.syncState(repo, "pulls")).toEqual({ cursor: null, syncedAt: null, complete: false })
+      expect(yield* GitHubStore.installationOf(other)).toEqual(Option.none())
+      expect(yield* GitHubStore.isPublic(other)).toEqual(Option.none())
+      expect(yield* GitHubStore.appAbsent(other)).toBe(false)
+      const [stored] = yield* query<{ rows: number }>((sql) => sql`
+        SELECT count(*)::int AS rows FROM github_repositories WHERE repo_id = ${repo}`)
+      expect(stored!.rows).toBe(model.row ? 1 : 0)
+    }
+    return true
+  }), { seed, executions }))
+  expect(Fuzz.formatReport(report)).toBeUndefined()
+})
+
+const MODEL_OPS = ["put_first", "put_both", "keep_first", "keep_second", "unknown_edit", "remove", "replay"] as const
+type ModelOp = (typeof MODEL_OPS)[number]
+
+test("a person's saved connections follow each save and removal once per invocation key, and a stale save writes nothing", async () => {
+  const op = Schema.Literals(MODEL_OPS)
+  const scenarios = Arbitrary.schema(Schema.Struct({ a: op, b: op, c: op, d: op, e: op, f: op, g: op }))
+  const sealed = { ciphertext: "c", nonce: "n", keyVersion: 1, keyLast4: "abcd" }
+  const report = await runtime.runPromise(Fuzz.run(scenarios, (scenario) => Effect.gen(function* () {
+    const personId = `person-${crypto.randomUUID()}`
+    const connection = (id: string) => ({
+      id,
+      kind: "api_key" as const,
+      active: true,
+      protocol: "openai-chat" as const,
+      baseUrl: "https://api.openai.test",
+      models: { fast: "gpt-test" },
+    })
+    const first = connection(crypto.randomUUID())
+    const second = connection(crypto.randomUUID())
+    /** The saved connections in order, each with whether it is active. */
+    let saved: ReadonlyArray<readonly [string, boolean]> = []
+    let recorded: ReadonlyArray<string> = []
+    let keys = 0
+    type Write =
+      | { readonly kind: "put"; readonly put: PersonalStore.Put }
+      | { readonly kind: "remove"; readonly invocationKey: string }
+    let last: { readonly write: Write; readonly recorded: boolean } | undefined
+    const run = (write: Write) =>
+      write.kind === "put" ? PersonalStore.put(write.put) : PersonalStore.remove({ personId, invocationKey: write.invocationKey })
+    /** What `write` must answer under a key no step used, and what it leaves saved. */
+    const expected = (write: Write): { readonly answer: string; readonly saved: typeof saved; readonly action?: string } => {
+      if (write.kind === "remove") {
+        return { answer: saved.length > 0 ? "deleted" : "missing", saved: [], action: "delete" }
+      }
+      const ids = saved.map(([id]) => id)
+      const known = write.put.known
+      if (known !== undefined && !(known.length === ids.length && ids.every((id) => known.includes(id)))) {
+        return { answer: "stale", saved }
+      }
+      if (write.put.connections.some((kept) => kept.sealed === undefined && !ids.includes(kept.id))) return { answer: "stale", saved }
+      const change = saved.length === 0 ? "set" : "replace"
+      return { answer: change, saved: write.put.connections.map((kept) => [kept.id, kept.active] as const), action: change }
+    }
+    const steps: ReadonlyArray<ModelOp> = [scenario.a, scenario.b, scenario.c, scenario.d, scenario.e, scenario.f, scenario.g]
+    for (const step of steps) {
+      if (step === "replay" && last !== undefined) {
+        // The same step run again: a recorded change answers `repeat`; a stale one is judged again and is still stale.
+        expect(yield* run(last.write)).toBe(last.recorded ? "repeat" : "stale")
+      } else {
+        keys += 1
+        const invocationKey = `${personId}:${keys}`
+        const write: Write = step === "remove" || step === "replay" ? { kind: "remove", invocationKey }
+          : {
+            kind: "put",
+            put: {
+              personId,
+              invocationKey,
+              connections: step === "put_first" ? [{ ...first, sealed }]
+                : step === "put_both" ? [{ ...second, sealed }, { ...first, sealed }]
+                : step === "keep_first" ? [{ ...first, active: false }]
+                : step === "keep_second" ? [{ ...second, active: false }]
+                : [{ ...first, sealed }],
+              ...(step === "unknown_edit" ? { known: [crypto.randomUUID()] } : {}),
             },
-            user: () => {
-              if (s.callbackMode === 5) {
-                return Effect.fail(new GitHub.Auth.GitHubRefused({ step: "user", reason: "rejected" }))
-              }
-              return Effect.succeed({ id: 42, login: s.login })
-            },
-            permission: () => {
-              if (s.callbackMode === 6) {
-                return Effect.fail(new GitHub.Auth.GitHubRefused({ step: "permission", reason: "unavailable" }))
-              }
-              return Effect.succeed(s.perm)
-            },
-            refresh: () => Effect.fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
-            revoke: () => Effect.void
-          } as unknown as GitHubAuth["Service"]
-
-          const cfgProvider = ConfigProvider.layer(
-            ConfigProvider.fromEnv({
-              env: {
-                SESSION_SECRET: SECRET,
-                GITHUB_APP_CLIENT_ID: "cid-1",
-                GITHUB_APP_CLIENT_SECRET: "csec-1",
-                GITHUB_REPOSITORY: "acme/widgets",
-                APP_ORIGIN: `https://${homeHost}`
-              }
-            })
-          )
-          const roleChecks = Layer.succeed(SignIn.RoleChecks, {
-            check: () => Effect.void,
-            pending: () => Effect.succeed(false)
-          } as unknown as SignIn.RoleChecks["Service"])
-
-          const auth = yield* SignIn.make(dbLayer, {
-            github: githubStub,
-            hostedModel: false
-          }).pipe(Effect.provide(Layer.mergeAll(cfgProvider, Layer.succeed(GitHubAuth, githubStub), roleChecks)))
-
-          // 1. GET /api/auth/sign-in -> sets sign_in cookie and redirects to GitHub
-          const signInReq = makeRequest(`https://${homeHost}${SIGN_IN_ROUTE}?return=/stack`)
-          const signInRes = yield* auth.fetch.pipe(
-            Effect.provide(Layer.mergeAll(roleChecks, dbLayer)),
-            Effect.provideService(HttpServerRequest.HttpServerRequest, signInReq)
-          )
-          expect([302, 303]).toContain(signInRes.status)
-          const loc = signInRes.headers.location ?? ""
-          const stateParam = new URL(loc).searchParams.get("state") ?? ""
-          const signInCookie = signInRes.cookies.cookies["__Host-smithers_sign_in"]?.value ?? ""
-
-          // 2. GET /api/auth/callback (happy path & error modes!)
-          const cbUrl = s.callbackMode === 1
-            ? `https://${homeHost}${CALLBACK_ROUTE}?state=wrong&code=abc`
-            : s.callbackMode === 3
-            ? `https://${homeHost}${CALLBACK_ROUTE}?state=${encodeURIComponent(stateParam)}&error=access_denied`
-            : `https://${homeHost}${CALLBACK_ROUTE}?state=${encodeURIComponent(stateParam)}&code=good-code`
-
-          const cbReq = makeRequest(cbUrl, {
-            method: s.callbackMode === 0 ? "POST" : "GET",
-            headers: { referer: "https://github.com/login/oauth/authorize" },
-            cookies: signInCookie ? { "__Host-smithers_sign_in": signInCookie } : {}
-          })
-          const cbRes = yield* auth.fetch.pipe(
-            Effect.provide(Layer.mergeAll(roleChecks, dbLayer)),
-            Effect.provideService(HttpServerRequest.HttpServerRequest, cbReq)
-          )
-          expect([302, 303, 405]).toContain(cbRes.status)
-
-          // 3. Exercise auth.sessions Layer (Actor.Sessions resolve + resolveCookie + RunCredentials bearer!)
-          const sessionCookie = cbRes.cookies.cookies["__Host-smithers_session"]?.value
-          if (sessionCookie) {
-            yield* Effect.gen(function*() {
-              const sessions = yield* Actor.Sessions
-              const creds = yield* RunCredentials.RunCredentials
-              const resolved = yield* sessions.resolve
-              const resolvedCookie = sessions.resolveCookie ? yield* sessions.resolveCookie : Option.none()
-              expect(Option.isSome(resolved) || Option.isNone(resolved)).toBe(true)
-              expect(Option.isSome(resolvedCookie) || Option.isNone(resolvedCookie)).toBe(true)
-              if (currentSession) {
-                const issued = yield* creds.sign({
-                  sub: currentSession.personId,
-                  sid: currentSession.id,
-                  runId: "run-1",
-                  capabilities: ["repo:read"],
-                  depth: 0
-                } as never)
-                const bearerReq = makeRequest(`https://${homeHost}${SESSION_ROUTE}`, {
-                  headers: { authorization: `Bearer ${issued}` }
-                })
-                const bearerActor = yield* sessions.resolve.pipe(
-                  Effect.provideService(HttpServerRequest.HttpServerRequest, bearerReq)
-                )
-                expect(Option.isSome(bearerActor) || Option.isNone(bearerActor)).toBe(true)
-              }
-            }).pipe(
-              Effect.provide(auth.sessions.pipe(Layer.provide(roleChecks))),
-              Effect.provideService(
-                HttpServerRequest.HttpServerRequest,
-                makeRequest(`https://${homeHost}${SESSION_ROUTE}`, { cookies: { "__Host-smithers_session": sessionCookie } })
-              )
-            )
-
-            // 4. POST /api/auth/sign-out
-            const soRes = yield* auth.fetch.pipe(
-              Effect.provide(Layer.mergeAll(roleChecks, dbLayer)),
-              Effect.provideService(
-                HttpServerRequest.HttpServerRequest,
-                makeRequest(`https://${homeHost}${SIGN_OUT_ROUTE}`, {
-                  method: "POST",
-                  headers: { origin: `https://${homeHost}` },
-                  cookies: { "__Host-smithers_session": sessionCookie }
-                })
-              )
-            )
-            expect(soRes.status).toBe(204)
           }
-        })
-    ))
+        const outcome = expected(write)
+        expect(yield* run(write)).toBe(outcome.answer)
+        saved = outcome.saved
+        if (outcome.action !== undefined) recorded = [...recorded, outcome.action]
+        last = { write, recorded: outcome.action !== undefined }
+      }
+      expect((yield* PersonalStore.saved(personId)).map((row) => [row.id, row.active])).toEqual(saved)
+      expect(yield* PersonalStore.hasModel(personId)).toBe(saved.length > 0)
+      const events = yield* query<{ action: string }>((sql) => sql`
+        SELECT action FROM personal_model_events WHERE person_id = ${personId} ORDER BY id`)
+      expect(events.map((event) => event.action)).toEqual(recorded)
+    }
+    return true
+  }), { seed, executions }))
+  expect(Fuzz.formatReport(report)).toBeUndefined()
+})
 
-  it("fuzzes ReadToken, GitHub Store, Conversations, Personal Store, Runners Store & ProtectedAuthority", () =>
-    property(
-      Arbitrary.all({
-        owner: word,
-        repo: word,
-        mintFail: bool,
-        hasToken: bool,
-        branchConflict: bool,
-        personalMode: intBetween(0, 3),
-        runnerMode: intBetween(0, 3),
-        protMode: intBetween(0, 4)
-      }),
-      execs,
-      (s) =>
-        Effect.gen(function*() {
-          const repoId = `github/${s.owner}/${s.repo}`
-          const now = Date.now()
+const ROLES: ReadonlyArray<Role> = ["admin", "maintainer", "member", "guest"]
+const AUTHORITY_STATES = ["live", "revoked", "expired", "stale_role", "other_person", "no_scope", "local"] as const
 
-          // 1. ReadToken.fromApp, fromSettings, settings
-          let mintCalls = 0
-          const fakeApp: GitHub.AppAuth.AppAuth = {
-            installation: () =>
-              s.mintFail
-                ? Effect.fail(({ _tag: "GitHubAppError", code: "unavailable", message: "down" }) as never)
-                : Effect.succeed({ id: 99 } as never),
-            installationToken: () => {
-              mintCalls++
-              return Effect.succeed({
-                token: Redacted.make("ghs_minted_token_12345"),
-                expiresAt: now + 60 * 60_000
-              } as never)
-            }
-          } as unknown as GitHub.AppAuth.AppAuth
-          const rt = yield* ReadToken.fromApp(fakeApp, { owner: s.owner, name: s.repo })
-          const t1 = yield* rt
-          const t2 = yield* rt
-          if (s.mintFail) {
-            expect(Option.isNone(t1)).toBe(true)
-          } else {
-            expect(Option.isSome(t1)).toBe(true)
-            expect(Option.isSome(t2)).toBe(true)
-            expect(mintCalls).toBe(1) // cached!
-          }
-          const rtFixed = yield* ReadToken.fromSettings({
-            token: s.hasToken ? Option.some(Redacted.make("ghp_fixed")) : Option.none(),
-            app: Option.none()
-          }).pipe(Effect.provide(Layer.succeed(HttpClient.HttpClient, HttpClient.make(() => Effect.die("unused")))))
-          expect(Option.isSome(yield* rtFixed)).toBe(s.hasToken)
-          const cfgSettings = yield* ReadToken.settings.pipe(
-            Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: s.hasToken ? { GITHUB_TOKEN: "tok-1" } : {} })))
-          )
-          expect(Option.isSome(cfgSettings.token)).toBe(s.hasToken)
+test("protected authority is held, denied or unavailable by the session's row and its latest confirmed role", async () => {
+  const scenarios = Arbitrary.schema(Schema.Struct({
+    state: Schema.Literals(AUTHORITY_STATES),
+    role: Schema.Literals(["admin", "maintainer", "member", "guest", "none"]),
+    admin: bool,
+    maintainer: bool,
+    member: bool,
+    guest: bool,
+  }))
+  let people = 0
+  const report = await runtime.runPromise(Fuzz.run(scenarios, (scenario) => Effect.gen(function* () {
+    people += 1
+    const personId = crypto.randomUUID()
+    const sessionId = crypto.randomUUID()
+    const role = scenario.role === "none" ? null : scenario.role
+    yield* query((sql) => sql`
+      INSERT INTO people (id, github_id, github_login) VALUES (${personId}, ${8_000_000 + people}, ${`holder-${people}`})`)
+    yield* query((sql) => sql`
+      INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, role_verified_at, expires_at)
+      VALUES (${sessionId}, ${sessionId}, ${personId}, ${role}, clock_timestamp(),
+        clock_timestamp() - ${scenario.state === "stale_role" ? "2 hours" : "0 seconds"}::interval,
+        clock_timestamp() + ${scenario.state === "expired" ? "-1 minute" : "1 day"}::interval)`)
+    if (scenario.state === "revoked") {
+      yield* query((sql) => sql`UPDATE sessions SET revoked_at = clock_timestamp() WHERE id = ${sessionId}`)
+    }
+    const signedIn: WriteAuthority.Session = {
+      personId: scenario.state === "other_person" ? crypto.randomUUID() : personId,
+      sessionId,
+      cookieKey: "legacy",
+      ...(scenario.state === "no_scope" ? {} : { scope: { _tag: "Deployment" as const } }),
+    }
+    const authority = scenario.state === "local" ? null : signedIn
+    const required = ROLES.filter((candidate) => scenario[candidate])
+    const usable = scenario.state === "live"
+    const expected = scenario.state === "local" ? "held"
+      : !usable ? "unavailable"
+      : role !== null && required.includes(role) ? "held"
+      : "denied"
+    expect(yield* ProtectedAuthority.check(authority, required)).toBe(expected)
+    expect(yield* ProtectedAuthority.holds(authority, required)).toBe(expected === "held")
+    // At commit only the deadlines are asked: the check's row locks already serialize a revocation with the write, so
+    // what can still lapse is time. A session or role past its deadline, or one the row doesn't back, rolls it back.
+    const commit = yield* Effect.result(ProtectedAuthority.requireAtCommit(authority))
+    expect(commit._tag === "Success" ? "held" : commit.failure._tag)
+      .toBe(scenario.state === "local" || usable || scenario.state === "revoked" ? "held" : "WriteAuthorityExpired")
+    return true
+  }), { seed, executions }))
+  expect(Fuzz.formatReport(report)).toBeUndefined()
+})
 
-          // 2. Conversations (conversationIdOf, homeRepository, find, track insert vs conflict)
-          const cid1 = yield* Conversations.conversationIdOf(`${repoId}#main`)
-          const cid2 = yield* Conversations.conversationIdOf(`${repoId}#MAIN`)
-          expect(cid1).toBe(cid2)
-          expect(typeof (yield* Conversations.homeRepository)).toBe("string")
-          const convDb = makeSqlLayer((raw) => {
-            const q = raw.replace(/\s+/g, " ").trim()
-            if (q.includes("INSERT INTO branches")) return s.branchConflict ? [] : [{ id: "b-1" }]
-            if (q.includes("FROM branches b JOIN conversations c")) {
-              return [{ branchId: "b-1", conversationId: cid1, repoId, name: "main", mode: "open" }]
-            }
-            return []
-          })
-          yield* Effect.gen(function*() {
-            const found = yield* Conversations.find(repoId, "main")
-            expect(found?.branchId).toBe("b-1")
-            const tracked = yield* Conversations.track(repoId, "main", "open", "sha1", "p-1", "req-1")
-            expect(tracked.branch.branchId).toBe("b-1")
-          }).pipe(Effect.provide(convDb))
+test("the read token is the configured one, else the App's kept until five minutes before it expires, else none", async () => {
+  const key = await appKey()
+  const read = Schema.Struct({ installed: bool, minutesLeft: Schema.Literals([60, 30, 4, 2]) })
+  const scenarios = Arbitrary.schema(Schema.Struct({
+    reads: Schema.Literals([1, 2, 3, 4]),
+    a: read, b: read, c: read, d: read,
+    configured: Schema.Literals(["absent", "empty", "blank", "set"]),
+  }))
+  const value = (token: Option.Option<Redacted.Redacted<string>>) => Option.getOrNull(Option.map(token, Redacted.value))
+  const report = await Effect.runPromise(Fuzz.run(scenarios, (scenario) => Effect.gen(function* () {
+    const github = scriptedGitHub("acme", "widgets")
+    const token = yield* ReadToken.fromApp(yield* scriptedApp(github, key), github)
+    let minted = 0
+    let held: { readonly token: string; readonly fresh: boolean } | undefined
+    for (const step of [scenario.a, scenario.b, scenario.c, scenario.d].slice(0, scenario.reads)) {
+      github.installed = step.installed
+      // GitHub's tokens last an hour from its clock: set behind, what it mints next has `minutesLeft` on ours.
+      github.now = Date.now() - (60 - step.minutesLeft) * 60_000
+      let expected: string | null
+      if (held?.fresh === true) {
+        expected = held.token
+      } else if (!step.installed) {
+        expected = null
+      } else {
+        minted += 1
+        held = { token: `ghs_scripted_${minted}`, fresh: step.minutesLeft * 60_000 > ReadToken.REFRESH_BEFORE_MS }
+        expected = held.token
+      }
+      expect(value(yield* token)).toBe(expected)
+      expect(github.minted.map((mint) => mint.token)).toEqual(Array.from({ length: minted }, (_, index) => `ghs_scripted_${index + 1}`))
+    }
+    for (const mint of github.minted) expect(mint.body).toEqual({ repositories: ["widgets"], permissions: { metadata: "read" } })
 
-          // 3. GitHubStore helper functions
-          const ghDb = makeSqlLayer((raw) => {
-            const q = raw.replace(/\s+/g, " ").trim()
-            if (q.includes("FROM github_sync_state")) return [{ cursor: "c1", status: "ok", syncedAt: now }]
-            if (q.includes("AS absent")) return [{ absent: false }]
-            if (q.includes("SELECT installation_id")) return [{ installationId: 123, checkedAt: now }]
-            if (q.includes("SELECT is_public") || q.includes("visibility")) return [{ isPublic: true, visibility: "public" }]
-            if (q.includes("FROM sessions")) {
-              return [{
-                live: true,
-                access: { ciphertext: "ct", nonce: "nc" },
-                accessExpiresAt: now + 60_000,
-                roleCheckedAt: now
-              }]
-            }
-            return []
-          })
-          yield* Effect.gen(function*() {
-            yield* GitHubStore.syncState(repoId, "issues")
-            yield* GitHubStore.commitCursor(repoId, "issues", "cur-2")
-            yield* GitHubStore.finishSync(repoId, "issues", { status: "ok" } as never)
-            yield* GitHubStore.installationOf(repoId)
-            yield* GitHubStore.appAbsent(repoId)
-            yield* GitHubStore.rememberInstallation(repoId, 123)
-            yield* GitHubStore.forgetInstallation(repoId)
-            yield* GitHubStore.isPublic(repoId)
-            yield* GitHubStore.sessionToken("s-1")
-          }).pipe(Effect.provide(ghDb))
-
-          // 4. PersonalStore (linkGeneration, put, link, holdCodex, refreshed, remove, hasModel, saved, begin, settle, mark, markConnection)
-          const persDb = makeSqlLayer((raw) => {
-            const q = raw.replace(/\s+/g, " ").trim()
-            if (q.includes("SET LOCAL ")) return []
-            if (q.includes("server_version_num")) return [{ version: 170000 }]
-            if (q.includes("FROM personal_model_events") && q.includes("max(id)")) return [{ generation: "1" }]
-            if (q.includes("FROM personal_model_events") && q.includes("invocation_key")) {
-              return s.personalMode === 2 ? [{ "?column?": 1 }] : []
-            }
-            if (q.includes("FROM personal_models") && q.includes("FOR UPDATE")) {
-              return s.personalMode === 0
-                ? []
-                : [{ id: "c-1", kind: "api_key", protocol: "openai-chat", baseUrl: null }]
-            }
-            if (q.includes("FROM personal_models") && q.includes("ORDER BY")) {
-              return [{
-                id: "c-1",
-                kind: "api_key",
-                active: true,
-                protocol: "openai-chat",
-                baseUrl: null,
-                fastModel: "gpt-4o-mini",
-                implementModel: "gpt-4o",
-                hardModel: "o3",
-                ciphertext: "ct",
-                nonce: "nc",
-                keyVersion: 1
-              }]
-            }
-            if (q.includes("FROM personal_models")) return [{ "?column?": 1 }]
-            if (q.includes("UPDATE personal_models") && q.includes("RETURNING")) {
-              return s.personalMode === 0 ? [] : [{ id: "c-1" }]
-            }
-            if (q.includes("DELETE FROM personal_models")) {
-              return s.personalMode === 0 ? [] : [{ person_id: "p-1" }]
-            }
-            return []
-          })
-          yield* Effect.gen(function*() {
-            expect(yield* PersonalStore.linkGeneration("p-1")).toBe("1")
-            yield* PersonalStore.put({
-              invocationKey: "inv-put-1",
-              personId: "p-1",
-              connections: [{
-                id: "c-1",
-                kind: "api_key",
-                active: true,
-                protocol: "openai-chat",
-                baseUrl: null,
-                models: { fast: "gpt-4o-mini", implement: "gpt-4o" },
-                sealed: s.personalMode === 3
-                  ? undefined
-                  : { ciphertext: "ct", nonce: "nc", keyVersion: 1, keyLast4: "1234" }
-              }]
-            })
-            yield* PersonalStore.link({
-              invocationKey: "inv-link-1",
-              personId: "p-1",
-              id: "c-codex",
-              generation: s.personalMode === 3 ? "99" : "1",
-              sealed: { ciphertext: "ct", nonce: "nc", keyVersion: 1, keyLast4: "5678" }
-            })
-            yield* PersonalStore.holdCodex("p-1", "c-codex")
-            yield* PersonalStore.holdCodex("p-1")
-            yield* PersonalStore.refreshed({
-              personId: "p-1",
-              id: "c-codex",
-              from: "ct",
-              sealed: { ciphertext: "ct2", nonce: "nc2", keyVersion: 1 }
-            })
-            yield* PersonalStore.remove({ invocationKey: "inv-del-1", personId: "p-1" })
-            yield* PersonalStore.hasModel("p-1")
-            yield* PersonalStore.saved("p-1")
-            yield* PersonalStore.begin({
-              invocationId: "inv-1",
-              requestId: "req-1",
-              personId: "p-1",
-              role: "member",
-              modelId: "gpt-4o",
-              connectionId: "c-1",
-              credentialNonce: "nc",
-              protocol: "openai-chat",
-              tier: "fast"
-            })
-            yield* PersonalStore.settle({
-              invocationId: "inv-1",
-              outcome: "success",
-              inputTokens: 10,
-              outputTokens: 20,
-              errorCode: undefined,
-              httpStatus: 200
-            })
-            yield* PersonalStore.mark("inv-1", 401)
-            yield* PersonalStore.markConnection("p-1", "c-1", 429)
-          }).pipe(Effect.provide(persDb))
-
-          // 5. RunnersStore (resourceKey, codingKey, generationOf, replayed, addRunner, removeRunner, setAgent, removeAgent, agent, codingAgent)
-          expect(RunnersStore.resourceKey("runners", repoId, "r1")).toBe(`runners:${repoId}:r1`)
-          expect(RunnersStore.codingKey(repoId)).toBe(`coding:${repoId}`)
-          const runDb = makeSqlLayer((raw) => {
-            const q = raw.replace(/\s+/g, " ").trim()
-            if (q.includes("SET LOCAL ")) return []
-            if (q.includes("server_version_num")) return [{ version: 170000 }]
-            if (q.includes("FROM admin_generations")) return [{ generation: s.runnerMode === 2 ? "9" : "1" }]
-            if (q.includes("FROM runner_changes") || q.includes("FROM agent_changes")) {
-              return s.runnerMode === 1 ? [{ "?column?": 1 }] : []
-            }
-            if (q.includes("INSERT INTO runner_changes") || q.includes("INSERT INTO agent_changes")) {
-              return s.runnerMode === 1 ? [] : [{ invocation_key: "inv-r-1" }]
-            }
-            if (q.includes("FROM admin_action_receipts")) return []
-            if (q.includes("AS live")) return [{ live: s.runnerMode !== 3 }]
-            if (q.includes("FROM people")) return [{ "?column?": 1 }]
-            if (q.includes("AS role")) return [{ role: "admin" }]
-            if (q.includes("FROM sessions")) return [{ live: true }]
-            if (q.includes("FROM agents") && q.includes("SELECT name")) {
-              return s.runnerMode === 0 ? [] : [{ name: "claude" }]
-            }
-            if (q.includes("FROM agents")) {
-              return s.runnerMode === 0
-                ? []
-                : [{ name: "claude", labels: ["gpu"], profile: "claude", maxHours: 2, restarts: 1, coding: true }]
-            }
-            if (q.includes("DELETE FROM agents")) return s.runnerMode === 0 ? [] : [{ coding: true }]
-            if (q.includes("UPDATE runners")) return s.runnerMode === 0 ? [] : [{ id: "r1" }]
-            return []
-          })
-          const by: RunnersStore.By = { actorId: "p-1", invocationKey: "inv-r-1" }
-          const byFenced: RunnersStore.By = {
-            actorId: "p-1",
-            invocationKey: "inv-r-2",
-            fenced: {
-              fence: {
-                execution: "exec-1",
-                generation: 1,
-                coding: 1,
-                expiresAt: now + 60_000,
-                authority: s.runnerMode === 2
-                  ? { _tag: "Local" as const }
-                  : { _tag: "Session" as const, personId: "p-1", sessionId: "s-1" }
-              },
-              kind: "runners",
-              op: "put"
-            }
-          }
-          const activeBy = s.runnerMode >= 2 ? byFenced : by
-          yield* Effect.gen(function*() {
-            yield* RunnersStore.generationOf(RunnersStore.codingKey(repoId))
-            yield* RunnersStore.replayed("runners", repoId, "r1", activeBy)
-            yield* RunnersStore.addRunner({
-              repoId,
-              name: "r1",
-              tokenSha256: "abc123",
-              labels: ["gpu"],
-              capacity: 2,
-              repoAuthorized: true
-            }, activeBy)
-            yield* RunnersStore.removeRunner({ repoId, name: "r1" }, activeBy)
-            yield* RunnersStore.setAgent({
-              repoId,
-              agent: { name: "claude", labels: ["gpu"], profile: "claude", maxHours: 2, restarts: 1 } as never,
-              coding: true
-            }, activeBy)
-            yield* RunnersStore.removeAgent({ repoId, name: "claude" }, activeBy)
-            yield* Effect.exit(RunnersStore.agent(repoId, "claude"))
-            yield* Effect.exit(RunnersStore.codingAgent(repoId))
-          }).pipe(Effect.provide(runDb))
-
-          // 6. ProtectedAuthority.check & requireAtCommit
-          const protDb = makeSqlLayer((raw) => {
-            const q = raw.replace(/\s+/g, " ").trim()
-            if (q.includes("SELECT 1 FROM people")) return s.protMode === 1 ? [] : [{ "?column?": 1 }]
-            if (q.includes("AS live")) return [{ live: s.protMode !== 2 }]
-            if (q.includes("AS role")) return [{ role: s.protMode === 3 ? "viewer" : "admin", fresh: s.protMode !== 2 }]
-            if (q.includes("FROM github_repo_roles")) return [{ role: "admin", fresh: true }]
-            return [{ live: true }]
-          })
-          yield* Effect.gen(function*() {
-            expect(yield* ProtectedAuthority.check(null, ["admin"])).toBe("held")
-            expect(yield* ProtectedAuthority.check(undefined, ["admin"])).toBe("unavailable")
-            const depSession = {
-              sessionId: "s-1",
-              aliasId: null,
-              personId: "p-1",
-              scope: s.protMode === 4
-                ? { _tag: "Repo" as const, held: { repoId, personId: "p-1", role: "admin" as const } }
-                : { _tag: "Deployment" as const }
-            }
-            const chkExit = yield* Effect.exit(ProtectedAuthority.check(depSession as never, ["admin"]))
-            if (chkExit._tag === "Success") {
-              expect(["held", "denied", "unavailable"]).toContain(chkExit.value)
-            }
-            yield* Effect.exit(ProtectedAuthority.requireAtCommit(depSession as never))
-          }).pipe(Effect.provide(protDb))
-        })
-    ))
+    // `GITHUB_TOKEN` wins when it says anything; with no App beside it, a blank one reads anonymously.
+    const config: Record<string, string> = scenario.configured === "absent" ? {}
+      : { GITHUB_TOKEN: scenario.configured === "empty" ? "" : scenario.configured === "blank" ? " \t " : "ghp_bot" }
+    const settings = yield* ReadToken.settings.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))))
+    const configured = scenario.configured === "set" ? "ghp_bot" : null
+    expect({ token: value(settings.token), app: Option.isSome(settings.app) }).toEqual({ token: configured, app: false })
+    const fixed = yield* ReadToken.fromSettings(settings).pipe(Effect.provide(FetchHttpClient.layer))
+    expect(value(yield* fixed)).toBe(configured)
+    return true
+    // Each mint logs its outcome (worker/github/ReadToken.test.ts reads those lines); here they would only be noise.
+  }).pipe(Effect.provideService(Logger.CurrentLoggers, new Set())), { seed, executions }))
+  expect(Fuzz.formatReport(report)).toBeUndefined()
 })

@@ -1,6 +1,6 @@
 /** Recorded-history verification through the shared gateway. */
 import * as RunHistory from "@smthrs/gateway/RunHistory"
-import { Cause, Effect, Exit, Option, Schema } from "effect"
+import { Cause, Effect, Option, Schema } from "effect"
 
 const unknown = "Something went wrong on our side. Not your fault."
 
@@ -85,9 +85,11 @@ const refusal = (cause: Cause.Cause<RunHistory.HistoryRefused>): string =>
   Option.match(Cause.findErrorOption(cause), { onNone: () => unknown, onSome: (refused) => refused.message })
 
 /** The note for `/verify-run <run>`. */
-export const verify = async (argument: string, history: Pick<RunHistory.Service, "verify">): Promise<string> => {
+export const verify = (argument: string, history: Pick<RunHistory.Service, "verify">): Effect.Effect<string> => {
   const words = argument.trim().split(/\s+/).filter((word) => word !== "")
-  if (words.length !== 1) return "Usage: /verify-run <run>"
-  const exit = await Effect.runPromiseExit(history.verify({ runId: words[0]! }))
-  return Exit.isSuccess(exit) ? verifyLines(exit.value).join("\n") : refusal(exit.cause)
+  if (words.length !== 1) return Effect.succeed("Usage: /verify-run <run>")
+  return history.verify({ runId: words[0]! }).pipe(Effect.matchCause({
+    onFailure: refusal,
+    onSuccess: (report) => verifyLines(report).join("\n")
+  }))
 }

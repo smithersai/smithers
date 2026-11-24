@@ -46,7 +46,7 @@ import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import * as NativeSearch from "@smthrs/std/NativeSearch"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime, Result, Schema, Scope, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Result, Schema, Scope, Stream } from "effect"
 import * as ServiceContext from "effect/Context"
 import type * as FileSystem from "effect/FileSystem"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
@@ -61,6 +61,7 @@ import * as Changes from "./changes.ts"
 import * as Completion from "./completion.ts"
 import * as Context from "./context.ts"
 import * as Credit from "./credit.ts"
+import { tuiRuntime } from "./effect-boundary.ts"
 import {
   type Available,
   delegateModels,
@@ -311,7 +312,7 @@ export const make = (options: {
   readonly seats?: Layer.Layer<SeatResolver.SeatResolver>
   /** Where a worker's filesystem and shell flows run; this machine when absent. */
   readonly box?: Box.Box
-}): Host => {
+}, boundary = tuiRuntime): Host => {
   const approvalMode = options.approvals ?? "ask"
   // What each run already answered. Only `ask` consults it: `deny` refuses everything.
   const decided = new Approvals.Memory()
@@ -363,7 +364,7 @@ export const make = (options: {
       )
     ))
   )
-  const runtime = ManagedRuntime.make(layer)
+  const runtime = boundary.makeManagedRuntime(layer)
   let turns = 0
   const hostId = crypto.randomUUID().slice(0, 8)
 
@@ -383,7 +384,7 @@ export const make = (options: {
     seats: options.seats ?? NodeControl.layerSeatResolver(env).pipe(Layer.provide(executor)),
     budget,
     judge
-  })
+  }, boundary)
   const complete = completions.complete
 
   const monitor: NonNullable<Host["monitor"]> = {
@@ -829,7 +830,7 @@ export const make = (options: {
     // A run of its own, as a turn is: its allowance is new and its calls are its alone in the ledger.
     const executionId = `tui-${hostId}-${++turns}`
     // No policy caps nothing; the vendor's calls are still the run's.
-    const budget = Effect.runPromise(
+    const budget = boundary.runPromise(
       Effect.orDie(Budget.make(raised(options.budget ?? {}, input.caps ?? {}), ledgerOptions))
     )
     let calls = 0
@@ -842,7 +843,7 @@ export const make = (options: {
       ask: (budget: Budget.Service) => Effect.Effect<Budget.Verdict, Budget.AccountingUnavailable>
     ): Promise<Outcome | undefined> =>
       budget.then((service) =>
-        Effect.runPromise(Effect.match(ask(service), {
+        boundary.runPromise(Effect.match(ask(service), {
           onFailure: stopped,
           onSuccess: (verdict) => (verdict._tag === "refuse" ? stopped(verdict.failure) : undefined)
         }))

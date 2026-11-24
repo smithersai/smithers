@@ -27,6 +27,7 @@ import { deviceRegistry } from "./device/registry"
 import { awaitEditorWrites, hasFailedEditorWrite, hasPendingEditorWrites } from "./features/flows-ui/editorWrites"
 import "./styles/fonts.css"
 import { markStage } from "./bootStages"
+import { followingOutbox } from "./outboxFollower"
 import { followRoute, takeShell, verifyingFetch } from "./firstPaint/page"
 
 // The boot's first stage: the bundle has loaded and runs (src/bootStages.ts).
@@ -434,7 +435,8 @@ const host: Omit<Host, "editorTabId" | "editorTabPersistent" | "editorTabRefusal
         reopen(() => console.info("device.leader", { outcome: "older_build_reopened" }), "older_leader", OLDER_LEADER_REOPENED, 10 * 60_000)
       }),
   },
-  outbox: {
+  // A tab that stops leading the outbox lets go of the writes another tab then sends or takes back (src/outboxFollower.ts).
+  outbox: followingOutbox({
     start: startOfflineExecutor,
     changes: {
       publish: () => outboxChanges.postMessage(null),
@@ -487,7 +489,7 @@ const host: Omit<Host, "editorTabId" | "editorTabPersistent" | "editorTabRefusal
       () => (activation.state() === "retained" ? deviceOwner : undefined),
       () => deviceContinuous,
     ),
-  },
+  }),
   lock: WebLock.make(navigator.locks),
   isOnline: () => navigator.onLine,
   storage: StoragePersistence.make(navigator.storage),

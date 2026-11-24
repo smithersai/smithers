@@ -1,351 +1,426 @@
+// Generated cases for the e2e run's pure parts (its problem list, spend guard and redaction), the app's navigation
+// paths and the browser's stack client. Each property states what the scenario must produce on its own, as a list
+// or a value built from the scenario, and compares the code's answer to it whole.
+import type { APIRequestContext } from "@playwright/test"
 import { Fuzz } from "@smthrs/fuzz"
-import { Arbitrary, Effect, Exit, Layer, Schema } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/http"
-import { describe, expect, it } from "vitest"
-import * as Checks from "../evals/checks.ts"
+import { Arbitrary, Effect, Exit, Option, Schema } from "effect"
+import { HttpClient, HttpClientError, type HttpClientRequest, HttpClientResponse } from "effect/http"
+import { expect, test } from "vitest"
+import { CONFIRM_401_HEADER, SESSION_CHECK_HEADER } from "../src/features/auth/contract.ts"
 import { appPath } from "../src/features/navigation/paths.ts"
 import * as TodosApi from "../src/features/todos/api.ts"
+import { stackRoute, TODO_STATUS_NOT_FOUND, todoStatusRoute } from "../src/features/todos/contract.ts"
+import type { Sending } from "../src/features/todos/schema.ts"
 import * as TodosWrites from "../src/features/todos/writes.ts"
+import { RAY_HEADER } from "../src/requestRay.ts"
 import * as Problems from "./problems.ts"
 import * as Redact from "./redact.ts"
 import * as Spend from "./spend.ts"
 
-const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")
-const execs = Math.max(20, Math.min(Math.ceil(baseExecs / 2), 80))
-const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261130")
+const seed = Number(process.env.EFFECT_FUZZ_SEED ?? 20261130)
+const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? 200)
 
-const property = <A, E>(
-  input: Arbitrary.Arbitrary<A>,
-  executions: number,
-  check: (value: A) => Effect.Effect<void, E>
-) =>
-  Effect.runPromise(Fuzz.run(input, (value) => check(value).pipe(Effect.as(true)), { seed, executions }))
-    .then((report) => {
-      expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
-    })
+const property = async <S extends Schema.Top>(schema: S, check: (scenario: S["Type"]) => Effect.Effect<void>) => {
+  const report = await Effect.runPromise(
+    Fuzz.run(Arbitrary.schema(schema), (scenario) => Effect.as(check(scenario), true), { seed, executions }),
+  )
+  expect(Fuzz.formatReport(report)).toBeUndefined()
+}
 
-const intBetween = (minimum: number, maximum: number) =>
-  Arbitrary.schema(Schema.Int.check(Schema.isBetween({ minimum, maximum })))
-const bool = Arbitrary.schema(Schema.Boolean)
-const word = Arbitrary.schema(Schema.Literals(["alpha", "beta", "gamma", "delta"]))
+const int = (minimum: number, maximum: number) => Schema.Int.check(Schema.isBetween({ minimum, maximum }))
+const ORIGIN = "https://smithers.test"
+const ID = "12345678-1234-4234-8234-123456789abc"
 
-describe("Wave-6 apps/mvp e2e/problems, e2e/spend, e2e/redact, evals/checks, todos/api & writes, navigation/paths", () => {
-  it("fuzzes e2e/problems, e2e/spend, and e2e/redact invariants", () =>
-    property(
-      Arbitrary.all({
-        status: Arbitrary.schema(Schema.Literals([200, 404, 500, 502, 503])),
-        retryCount: intBetween(1, 4),
-        lacksCode: bool,
-        lacksModel: bool,
-        lacksGh: bool,
-        budgetVal: intBetween(100, 10_000),
-        spentVal: intBetween(0, 12_000),
-        unreadCount: intBetween(0, 4),
-        applies: bool
+test("the problem list holds exactly the app's 5xx, failed API requests and console errors, each declared, retried or not", () =>
+  property(
+    Schema.Struct({
+      status: Schema.Literals([200, 404, 500, 502, 503]),
+      repeats: int(1, 3),
+      declare: Schema.Literals(["none", "same", "wildcard", "otherStatus", "otherPath"]),
+      shapes: int(0, 4),
+      retryAfter: Schema.Boolean,
+      failed: Schema.Literals(["none", "reset", "aborted", "offline", "foreign", "page"]),
+      console: Schema.Literals(["none", "declared", "undeclared", "fixture", "foreign5xx"]),
+    }),
+    (s) =>
+      Effect.sync(() => {
+        const problems = new Problems.Problems(ORIGIN)
+        const expected: Array<Problems.Counted> = []
+        const unknown = ` code=unknown ${RAY_HEADER}=none`
+
+        for (let sent = 0; sent < s.repeats; sent++) {
+          problems.note({ kind: "response", method: "POST", url: `${ORIGIN}/api/repos/${ID}/test?b=2&a=1&b=3`, status: s.status, diagnostics: { code: "internal_error", ray: "not a ray" } })
+        }
+        const declaredStatus = s.status >= 500 ? s.status : 500
+        const annotations = [
+          ...(s.declare === "same" ? [Problems.serverErrorAnnotation(declaredStatus, `/api/repos/${ID}/test`)] : []),
+          ...(s.declare === "wildcard" ? [Problems.serverErrorAnnotation(declaredStatus, "/api/repos/*/test")] : []),
+          ...(s.declare === "otherStatus" ? [Problems.serverErrorAnnotation(declaredStatus === 500 ? 502 : 500, "/api/repos/*/test")] : []),
+          ...(s.declare === "otherPath" ? [Problems.serverErrorAnnotation(declaredStatus, "/api/repos/*/tes")] : []),
+          ...(s.console === "declared" ? [Problems.consoleErrorAnnotation("expected boom")] : []),
+          { type: "issue", description: "unrelated" },
+        ]
+        if (s.status >= 500) {
+          expected.push({
+            line: `${s.status} POST /api/repos/:id/test?a&b code=internal_error ${RAY_HEADER}=none`,
+            count: s.repeats,
+            declared: s.declare === "same" || s.declare === "wildcard",
+            retried: false,
+          })
+        }
+
+        for (let sent = 0; sent < s.shapes; sent++) {
+          problems.note({ kind: "response", method: "GET", url: `${ORIGIN}/api/shapes/todos?offset=${sent}`, status: 503, retryAfter: s.retryAfter ? "5" : undefined })
+        }
+        if (s.shapes > 0) {
+          expected.push({
+            line: `503 GET /api/shapes/todos?offset${s.retryAfter ? " retry-after" : ""}${unknown}`,
+            count: s.shapes,
+            declared: false,
+            retried: s.retryAfter && s.shapes <= Problems.SHAPE_RETRIES,
+          })
+        }
+
+        if (s.failed === "page") {
+          problems.note({ kind: "page", text: "TypeError: x is undefined", name: "TypeError" })
+          expected.push({ line: "page error: TypeError: x is undefined", count: 1, declared: false, retried: false })
+        } else if (s.failed !== "none") {
+          problems.note({
+            kind: "failed",
+            method: "GET",
+            url: `${s.failed === "foreign" ? "https://other.test" : ORIGIN}/api/broken`,
+            error: s.failed === "aborted" ? "net::ERR_ABORTED" : s.failed === "offline" ? "net::ERR_INTERNET_DISCONNECTED" : "net::ERR_CONNECTION_RESET",
+          })
+          if (s.failed === "reset") {
+            expected.push({ line: "failed GET /api/broken net::ERR_CONNECTION_RESET", count: 1, declared: false, retried: false })
+          }
+        }
+
+        if (s.console === "declared" || s.console === "undeclared") {
+          problems.note({ kind: "console", text: "[12:34:56.789] expected boom happened (#42)", url: `${ORIGIN}/app` })
+          expected.push({ line: "console error: expected boom happened", count: 1, declared: s.console === "declared", retried: false })
+        } else if (s.console === "fixture") {
+          problems.note({ kind: "console", text: "Failed to load resource: net::ERR_CONNECTION_REFUSED", url: "http://127.0.0.1:41234/page" })
+        } else if (s.console === "foreign5xx") {
+          problems.note({ kind: "console", text: "Failed to load resource: the server responded with a status of 503 ()", url: "https://cdn.test/a.js?v=1" })
+          expected.push({ line: `console 503 https://cdn.test/a.js?v: Failed to load resource${unknown}`, count: 1, declared: false, retried: false })
+        }
+
+        expect(problems.list(annotations)).toEqual(expected)
+        const lines = (kept: ReadonlyArray<Problems.Counted>) => kept.map((each) => `${each.line} ×${each.count}`)
+        expect(problems.undeclared(annotations)).toEqual(lines(expected.filter((each) => !each.declared && !each.retried)))
+        expect(problems.serverErrors(annotations)).toEqual(lines(expected.filter((each) => each.line.startsWith("50"))))
+        expect(problems.report(annotations)).toEqual(expected.length === 0 ? ["problems: none"] : [
+          "problems (e2e/problems.ts):",
+          ...expected.map((each) => `  ${each.declared ? "declared" : each.retried ? "retried" : "UNDECLARED"} ${each.line} ×${each.count}`),
+        ])
       }),
-      execs,
-      (s) =>
-        Effect.gen(function*() {
-          // 1. e2e/problems.ts
-          const origin = "https://smithers.sh"
-          const uuid = "12345678-1234-4234-8234-123456789abc"
-          expect(Problems.pathOf(`${origin}/api/repos/${uuid}/stack?b=2&a=1`)).toBe("/api/repos/:id/stack?a&b")
-          expect(Problems.bodyCodeOf({ code: "rate_limited" })).toBe("rate_limited")
-          expect(Problems.bodyCodeOf({ code: "INVALID CODE!" })).toBeUndefined()
-          expect(Problems.bodyCodeOf(null)).toBeUndefined()
+  ))
 
-          const envAnn = Problems.environmentAnnotations({
-            codeStorage: s.lacksCode,
-            model: s.lacksModel,
-            github: s.lacksGh
-          })
-          const consoleAnn = Problems.consoleErrorAnnotation("expected boom")
-          const serverAnn = Problems.serverErrorAnnotation(500, `/api/repos/${uuid}/test`)
-          const failedAnn = Problems.serverErrorAnnotation("failed", "/api/broken")
-          const allAnns = [...envAnn, consoleAnn, serverAnn, failedAnn]
+test("the spend guard counts the run's answers, reads at most once a minute and stops at the budget or three failed reads", () =>
+  property(
+    Schema.Struct({
+      applies: Schema.Boolean,
+      budget: int(1, 400),
+      failures: int(0, 4),
+      zone: Schema.Literals(["Z", "+00", "+0530", "-08:00"]),
+      rows: Schema.Array(Schema.Struct({
+        role: Schema.Literals(["assistant", "user"]),
+        secondsAfter: int(-3, 3),
+        input: int(0, 100),
+        output: int(0, 100),
+        dated: Schema.Boolean,
+      })).check(Schema.isMaxLength(5)),
+    }),
+    (s) =>
+      Effect.gen(function* () {
+        const since = Date.UTC(2026, 9, 21, 17, 0, 0)
+        const offsetMinutes = s.zone === "+0530" ? 330 : s.zone === "-08:00" ? -480 : 0
+        // Postgres' text form of an instant, as a clock `offsetMinutes` from UTC shows it, to the microsecond.
+        const written = (at: number) =>
+          `${new Date(at + offsetMinutes * 60_000).toISOString().replace("T", " ").replace("Z", "")}456${s.zone}`
+        const rows = s.rows.map((row, index) => ({
+          id: `row-${index}`,
+          role: row.role,
+          text: "",
+          status: "done",
+          question_id: null,
+          failure: null,
+          position: String(index),
+          input_tokens: String(row.input),
+          output_tokens: row.output === 0 ? null : String(row.output),
+          ...(row.dated ? { created_at: written(since + row.secondsAfter * 1_000) } : {}),
+        }))
+        const spent = s.rows.reduce(
+          (total, row) => row.role === "assistant" && row.dated && row.secondsAfter >= 0 ? total + row.input + row.output : total,
+          0,
+        )
+        for (const row of s.rows) expect(Spend.parseTimestamp(written(since + row.secondsAfter * 1_000))).toBe(since + row.secondsAfter * 1_000)
+        expect(Spend.spentSince(rows, since)).toBe(spent)
 
-          expect(() => Problems.serverErrorAnnotation(200, "/api/x")).toThrow()
-          expect(() => Problems.serverErrorAnnotation(500, "no-slash")).toThrow()
-          expect(() => Problems.consoleErrorAnnotation("   ")).toThrow()
-          expect(() => Problems.declarationsOf([{ type: Problems.EXPECTED_SERVER_ERROR, description: "bad" }])).toThrow()
-
-          const probs = new Problems.Problems(origin)
-          // Shape 503 retries
-          for (let i = 0; i < s.retryCount; i++) {
-            probs.note({
-              kind: "response",
-              method: "GET",
-              url: `${origin}/api/shapes/todos?offset=-1`,
-              status: 503,
-              retryAfter: "5",
-              diagnostics: { code: "overloaded", ray: "0123456789abcdef" }
-            })
-          }
-          // Declared 500 & undeclared status
-          probs.note({
-            kind: "response",
-            method: "POST",
-            url: `${origin}/api/repos/${uuid}/test`,
-            status: s.status,
-            diagnostics: { code: "internal_error", ray: "0123456789abcdef" }
-          })
-          // Failed API request (declared) & failed non-API request (ignored)
-          probs.note({ kind: "failed", method: "GET", url: `${origin}/api/broken`, error: "net::ERR_ABORTED" })
-          probs.note({ kind: "failed", method: "GET", url: "https://other.example/x", error: "net::ERR_FAILED" })
-          // Console errors: app origin, other origin, fixture localhost, undefined url
-          probs.note({ kind: "console", text: "expected boom happened", url: `${origin}/app` })
-          probs.note({ kind: "console", text: "external err", url: "https://cdn.example.com/a.js" })
-          probs.note({ kind: "console", text: "fixture err", url: "http://127.0.0.1:41234/page" })
-          probs.note({ kind: "console", text: "unknown place", url: undefined })
-          probs.note({ kind: "page", text: "uncaught exception", name: "TypeError" })
-
-          const list = probs.list(allAnns)
-          expect(list.length).toBeGreaterThan(0)
-          const undeclared = probs.undeclared(allAnns)
-          expect(Array.isArray(undeclared)).toBe(true)
-          const srvErrs = probs.serverErrors(allAnns)
-          expect(Array.isArray(srvErrs)).toBe(true)
-          const rep = probs.report(allAnns)
-          expect(rep.length).toBeGreaterThan(0)
-          const emptyProbs = new Problems.Problems(origin)
-          expect(emptyProbs.report([])).toStrictEqual(["problems: none"])
-
-          // 2. e2e/spend.ts
-          expect(Spend.tokenBudget({})).toBe(Spend.DEFAULT_TOKEN_BUDGET)
-          expect(Spend.tokenBudget({ E2E_TOKEN_BUDGET: String(s.budgetVal) })).toBe(s.budgetVal)
-          expect(() => Spend.tokenBudget({ E2E_TOKEN_BUDGET: "0" })).toThrow()
-          expect(() => Spend.tokenBudget({ E2E_TOKEN_BUDGET: "abc" })).toThrow()
-
-          expect(Spend.runStartedAt({ E2E_RUN_STARTED_AT: "1700000000000" })).toBe(1700000000000)
-          expect(() => Spend.runStartedAt({})).toThrow()
-
-          expect(Number.isFinite(Spend.parseTimestamp("2026-10-21 17:03:04.123456+00"))).toBe(true)
-          expect(Number.isFinite(Spend.parseTimestamp("2026-10-21T17:03:04Z"))).toBe(true)
-          expect(Number.isFinite(Spend.parseTimestamp("2026-10-21 17:03:04-0530"))).toBe(true)
-          expect(Number.isNaN(Spend.parseTimestamp("not-a-timestamp"))).toBe(true)
-
-          const since = Date.parse("2026-10-21T17:00:00Z")
-          const rows: Parameters<typeof Spend.spentSince>[0] = [
-            { id: "r1", role: "user", content: "", created_at: "2026-10-21T17:05:00Z", input_tokens: 999, output_tokens: 999 },
-            { id: "r2", role: "assistant", content: "", created_at: "2026-10-21T16:59:00Z", input_tokens: 999, output_tokens: 999 },
-            { id: "r3", role: "assistant", content: "", created_at: "2026-10-21 17:05:00+00", input_tokens: s.spentVal, output_tokens: 0 }
-          ] as unknown as Parameters<typeof Spend.spentSince>[0]
-          expect(Spend.spentSince(rows, since)).toBe(s.spentVal)
-
-          let nowMs = 10_000
-          let calls = 0
-          const guard = Spend.spendGuard({
-            applies: () => s.applies,
-            budget: () => s.budgetVal,
-            since: () => since,
-            now: () => nowMs,
-            unread: () => {},
-            rows: async () => {
-              calls++
-              if (calls <= s.unreadCount) throw new Error("503 starting")
-              return rows
-            }
-          })
-
-          if (!s.applies) {
-            yield* Effect.promise(() => guard())
-          } else if (s.unreadCount >= Spend.MAX_UNREAD) {
-            for (let i = 0; i < Spend.MAX_UNREAD - 1; i++) {
-              yield* Effect.promise(() => guard())
-              nowMs += Spend.REREAD_MS + 1
-            }
-            const ex = yield* Effect.exit(Effect.tryPromise(() => guard()))
-            expect(Exit.isFailure(ex)).toBe(true)
-          } else {
-            for (let i = 0; i < s.unreadCount; i++) {
-              yield* Effect.promise(() => guard())
-              nowMs += Spend.REREAD_MS + 1
-            }
-            const ex = yield* Effect.exit(Effect.tryPromise(() => guard()))
-            expect(Exit.isSuccess(ex)).toBe(s.spentVal < s.budgetVal)
-            if (s.spentVal < s.budgetVal) {
-              // Cached reread does not increment calls
-              const before = calls
-              yield* Effect.promise(() => guard())
-              expect(calls).toBe(before)
-            }
-          }
-
-          // 3. e2e/redact.ts
-          const raw = "cookie: sid=secret123\nSet-Cookie: a=b\nAuthorization: Bearer tok999\nplain: ok"
-          const redacted = Redact.redact(raw)
-          expect(redacted).not.toContain("secret123")
-          expect(redacted).not.toContain("tok999")
-          expect(redacted).toContain("plain: ok")
-          const err = new Error("failed with Authorization: Bearer secret-xyz")
-          Redact.redactError(err)
-          expect(err.message).not.toContain("secret-xyz")
-          expect(Redact.redactError("not-an-error")).toBe("not-an-error")
-
-          class FakeReqCtx {
-            async fetch() {
-              throw new Error("cookie: topsecret=1")
-            }
-          }
-          const ctx = new FakeReqCtx()
-          Redact.redactRequestErrors(ctx as never)
-          Redact.redactRequestErrors(ctx as never) // idempotent
-          const fetchEx = yield* Effect.exit(Effect.tryPromise(() => ctx.fetch()))
-          expect(Exit.isFailure(fetchEx)).toBe(true)
+        let now = 1_000_000
+        let reads = 0
+        const unread: Array<unknown> = []
+        const guard = Spend.spendGuard({
+          applies: () => s.applies,
+          budget: () => s.budget,
+          since: () => since,
+          now: () => now,
+          unread: (error) => void unread.push(error),
+          rows: () => {
+            reads += 1
+            return reads <= s.failures ? Promise.reject(new Error(`unread ${reads}`)) : Promise.resolve(rows)
+          },
         })
-    ))
+        /** How one test's guard ends: nothing, or the error it stops the test with. */
+        const guarded = Effect.promise(() => guard().then(() => undefined, (error: unknown) => error))
+        const over = spent >= s.budget ? new Spend.SpendBudgetSpent(spent, s.budget) : undefined
 
-  it("fuzzes evals/checks, todos/api, todos/writes, and navigation/paths", () =>
-    property(
-      Arbitrary.all({
-        owner: word,
-        repo: word,
-        num: intBetween(1, 50),
-        httpStatus: Arbitrary.schema(Schema.Literals([200, 202, 400, 401, 403, 404, 409, 413, 500])),
-        badJson: bool,
-        netErr: bool,
-        samePerson: bool,
-        opKind: Arbitrary.schema(Schema.Literals(["commit", "drop", "retry", "attach"])),
-        navKind: intBetween(0, 4)
+        for (let call = 1; call <= s.failures + 1; call++) {
+          const stopped = yield* guarded
+          if (!s.applies) expect(stopped).toBeUndefined()
+          else if (call <= s.failures) expect(stopped).toEqual(call >= Spend.MAX_UNREAD ? new Spend.SpendUnknown(call) : undefined)
+          else expect(stopped).toEqual(over)
+          expect(reads).toBe(s.applies ? call : 0)
+          now += Spend.REREAD_MS
+        }
+        expect(unread).toEqual(s.applies ? Array.from({ length: s.failures }, (_, index) => new Error(`unread ${index + 1}`)) : [])
+
+        // Within a minute of a read the guard answers from it; a minute on, it reads again.
+        now -= 1
+        expect(yield* guarded).toEqual(s.applies ? over : undefined)
+        expect(reads).toBe(s.applies ? s.failures + 1 : 0)
+        now += 1
+        expect(yield* guarded).toEqual(s.applies ? over : undefined)
+        expect(reads).toBe(s.applies ? s.failures + 2 : 0)
       }),
-      execs,
-      (s) =>
-        Effect.gen(function*() {
-          // 1. navigation/paths.ts
-          const origin = "https://smithers.sh"
-          const navInput = s.navKind === 0
-            ? `/${s.owner}/${s.repo}?tab=stack#top`
-            : s.navKind === 1
-            ? `${origin}///${s.owner}/${s.repo}`
-            : s.navKind === 2
-            ? "javascript:alert(1)"
-            : s.navKind === 3
-            ? "https://evil.example/phish"
-            : "http://[::1"
-          const navTarget = appPath(navInput, origin)
-          expect(navTarget._tag).toBe(s.navKind <= 1 ? "Path" : "Refused")
+  ))
 
-          // 2. evals/checks.ts (all 30+ checks!)
-          const trial: Checks.Trial = {
-            status: "done",
-            text: `Opened ${s.owner}/${s.repo} cleanly.`,
-            calls: [
-              { flow: "repo/open", input: { repo: `${s.owner}/${s.repo}`, url: `https://example.com/${s.repo}`, title: "hello world" }, ok: true }
-            ],
-            views: [
-              { template: "web-preview", props: { url: "https://example.com/p", repo: `${s.owner}/${s.repo}` }, inert: true },
-              { template: "form", props: { title: "Create issue", fields: [{ name: "title", label: "Title" }] }, inert: true },
-              {
-                template: "board",
-                props: {
-                  cells: [
-                    { title: "A", url: "https://example.com/a" },
-                    { title: "B", url: "https://example.com/b" }
-                  ]
-                },
-                inert: true
-              }
-            ],
-            painted: ["dark"],
-            navigated: [`/${s.owner}/${s.repo}`],
-            asked: [{ kind: "approval", message: "Proceed?" }],
-            drafts: [{ flow: "todo/commit", input: {} }],
-            role: "member",
-            usage: [{ role: "member", inputTokens: 100, outputTokens: 20, totalTokens: 120, chargedTokens: 120 }],
-            failure: undefined
-          } as unknown as Checks.Trial
+test("a token budget and a run's start are whole positive numbers or the run refuses to start", () =>
+  property(
+    Schema.Struct({
+      form: Schema.Literals(["unset", "empty", "whole", "zero", "negative", "fraction", "word", "huge"]),
+      tokens: int(1, 5_000_000),
+    }),
+    (s) =>
+      Effect.sync(() => {
+        const named: Record<typeof s.form, string | undefined> = {
+          unset: undefined,
+          empty: "",
+          whole: String(s.tokens),
+          zero: "0",
+          negative: `-${s.tokens}`,
+          fraction: `${s.tokens}.5`,
+          word: `${s.tokens} tokens`,
+          huge: `${s.tokens}e300`,
+        }
+        const value = named[s.form]
+        const budget = () => Spend.tokenBudget({ E2E_TOKEN_BUDGET: value })
+        if (s.form === "unset" || s.form === "empty") expect(budget()).toBe(Spend.DEFAULT_TOKEN_BUDGET)
+        else if (s.form === "whole") expect(budget()).toBe(s.tokens)
+        else expect(budget).toThrow(`E2E_TOKEN_BUDGET is "${value}": it must be a whole number of tokens above 0`)
 
-          const checks: ReadonlyArray<Checks.Check> = [
-            Checks.answered(trial),
-            Checks.failedWith(trial, "none"),
-            Checks.mentions(trial, s.repo),
-            Checks.readValues(trial),
-            Checks.noCalls(trial),
-            Checks.calledOnce(trial, "repo/open", Checks.all(Checks.hostIs("url", "example.com"), Checks.fieldSays("title", "hello"), Checks.fieldIs("repo", `${s.owner}/${s.repo}`))),
-            Checks.attempted(trial, "repo/open"),
-            Checks.notCalled(trial, "other/flow"),
-            Checks.onlyCalled(trial, ["repo/open"]),
-            Checks.atMostLines(trial, 5),
-            Checks.themeIs(trial, "dark"),
-            Checks.themeUnchanged(trial),
-            Checks.navigatedTo(trial, `/${s.owner}/${s.repo}`),
-            Checks.stayed(trial),
-            Checks.viewShows(trial, "web-preview", "example.com"),
-            Checks.templateShows(trial, "web-preview", `${s.owner}/${s.repo}`),
-            Checks.formAsks(trial, ["title"]),
-            Checks.boardShows(trial, 2),
-            Checks.inertViews(trial),
-            Checks.noViews(trial),
-            Checks.askedOnce(trial, "approval"),
-            Checks.askedNothing(trial),
-            Checks.nothingSaved(trial),
-            Checks.draftedCalling(trial, "todo/commit"),
-            Checks.usedRole(trial, "member"),
-            ...Checks.everyAnswer(trial),
-            ...Checks.safe(trial)
-          ]
-          const graded = Checks.grade([checks])
-          expect(graded.meta.trials.length).toBe(1)
+        const started = () => Spend.runStartedAt({ E2E_RUN_STARTED_AT: value })
+        if (s.form === "whole" || s.form === "fraction" || s.form === "huge") expect(started()).toBe(Number(value))
+        else expect(started).toThrow("E2E_RUN_STARTED_AT is unset")
+      }),
+  ))
 
-          // 3. todos/api.ts (readTodoStatus, postChange, StackClient.layer)
-          const fakeHttp = Layer.succeed(
-            HttpClient.HttpClient,
-            HttpClient.make((req) => {
-              if (s.netErr) return Effect.fail(new Error("offline") as never)
-              const isStatus = req.url.includes("/todos/")
-              const body = s.badJson
-                ? "{bad"
-                : s.httpStatus === 200 || s.httpStatus === 202
-                ? JSON.stringify(
-                  isStatus
-                    ? { kind: "found", number: s.num, state: "queued", title: "T", updatedAt: "2026-01-01T00:00:00Z", prNumber: null, failure: null }
-                    : { opId: "op-1", outcome: "committed", number: s.num, txid: s.httpStatus === 202 ? 12 : null, version: 2 }
-                )
-                : JSON.stringify({
-                  code: s.httpStatus === 404
-                    ? "not_found"
-                    : s.httpStatus === 401
-                    ? "authentication"
-                    : s.httpStatus === 403
-                    ? "forbidden"
-                    : "conflict"
-                })
-              const headers: Record<string, string> = { "content-type": "application/json" }
-              if (s.httpStatus === 401 && s.samePerson) headers["x-smithers-session-check"] = "same_person"
-              return Effect.succeed(HttpClientResponse.fromWeb(req, new Response(body, { status: s.httpStatus, headers })))
-            })
-          )
+const HEADERS = ["cookie", "Set-Cookie", "AUTHORIZATION", "Proxy-Authorization", "x-request-id", "accept", "cookies-seen"] as const
+/** The headers whose values a call log may not keep: a name that only starts or ends like one keeps its value. */
+const SENSITIVE: ReadonlyArray<string> = ["cookie", "Set-Cookie", "AUTHORIZATION", "Proxy-Authorization"]
 
-          const statusEx = yield* Effect.exit(
-            TodosApi.readTodoStatus(origin, s.owner, s.repo, s.num, "5 seconds").pipe(Effect.provide(fakeHttp))
-          )
-          expect(Exit.isSuccess(statusEx) || Exit.isFailure(statusEx)).toBe(true)
+test("redaction replaces every cookie and authorization value and nothing else, in text, errors and request contexts", () =>
+  property(
+    Schema.Struct({
+      lines: Schema.Array(Schema.Struct({
+        name: Schema.Literals(HEADERS),
+        value: Schema.Literals(["sid=secret123; theme=dark", "Bearer tok999", "plain-value"]),
+        spaced: Schema.Boolean,
+      })).check(Schema.isMinLength(1), Schema.isMaxLength(6)),
+      fails: Schema.Boolean,
+    }),
+    (s) =>
+      Effect.gen(function* () {
+        const text = s.lines.map((line) => `${line.name}:${line.spaced ? "  " : ""}${line.value}`).join("\n")
+        const safe = s.lines
+          .map((line) => `${line.name}:${line.spaced ? "  " : ""}${SENSITIVE.includes(line.name) ? "[redacted]" : line.value}`)
+          .join("\n")
+        expect(Redact.redact(text)).toBe(safe)
+        expect(Redact.redact(safe)).toBe(safe)
 
-          const changeReq: TodosApi.ChangeRequest = s.opKind === "commit"
-            ? { opId: "op-1", op: "commit", title: "T", prompt: "P", acceptance: [] }
-            : s.opKind === "attach"
-            ? { opId: "op-1", op: "attach", number: s.num, issue: 7 }
-            : { opId: "op-1", op: s.opKind, number: s.num }
+        const error = new Error(text)
+        error.stack = `Error: ${text}\n    at call log`
+        expect(Redact.redactError(error)).toBe(error)
+        expect([error.message, error.stack]).toEqual([safe, `Error: ${safe}\n    at call log`])
+        expect(Redact.redactError(text)).toBe(text)
 
-          const postEx = yield* Effect.exit(
-            Effect.flatMap(TodosApi.StackClient, (c) => c.change(s.owner, s.repo, changeReq)).pipe(
-              Effect.provide(TodosApi.StackClient.layer({ origin, within: "5 seconds" }).pipe(Layer.provide(fakeHttp)))
-            )
-          )
-          expect(Exit.isSuccess(postEx) || Exit.isFailure(postEx)).toBe(true)
-
-          // 4. todos/writes.ts (requestOf & reasonOf)
-          const sendingRow = s.opKind === "commit"
-            ? { v: 6, id: "op-1", repo: `${s.owner}/${s.repo}`, op: "commit" as const, title: "T", prompt: "P", acceptance: [], issue: 5, after: null, queuedAt: 1 }
-            : s.opKind === "attach"
-            ? { v: 6, id: "op-1", repo: `${s.owner}/${s.repo}`, op: "attach" as const, number: s.num, issue: 5, queuedAt: 1 }
-            : { v: 6, id: "op-1", repo: `${s.owner}/${s.repo}`, op: s.opKind, number: s.num, queuedAt: 1 }
-          expect(TodosWrites.requestOf(sendingRow as never).op).toBe(s.opKind)
-
-          for (const st of [400, 401, 403, 404, 409, 413, 500]) {
-            const r = TodosWrites.reasonOf(st, undefined)
-            expect(st === 500 ? r === undefined : r !== undefined).toBe(true)
+        // A class of this run only, as Playwright's request context is one class: patching one instance covers all.
+        class Context {
+          calls = 0
+          async fetch(url: string) {
+            this.calls += 1
+            if (s.fails) throw new Error(text)
+            return `${url} ${text}`
           }
+        }
+        const [first, second] = [new Context(), new Context()]
+        Redact.redactRequestErrors(first as unknown as APIRequestContext)
+        const patched = Context.prototype.fetch
+        Redact.redactRequestErrors(second as unknown as APIRequestContext)
+        expect(Context.prototype.fetch).toBe(patched)
+        const answer = yield* Effect.promise(() => second.fetch("/api/x").then((value) => ({ value }), (thrown: unknown) => ({ thrown })))
+        expect(answer).toEqual(s.fails ? { thrown: new Error(safe) } : { value: `/api/x ${text}` })
+        expect([first.calls, second.calls]).toEqual([0, 1])
+      }),
+  ))
+
+test("app/navigate takes this app's own paths and refuses every other origin, scheme and non-URL", () =>
+  property(
+    Schema.Struct({
+      owner: Schema.Literals(["octocat", "acme"]),
+      repo: Schema.Literals(["Spoon-Knife", "widgets"]),
+      form: Schema.Literals(["path", "bare", "full", "slashes", "protocolRelative", "otherOrigin", "otherPort", "javascript", "data", "mailto", "malformed"]),
+      query: Schema.Boolean,
+      hash: Schema.Boolean,
+    }),
+    (s) =>
+      Effect.sync(() => {
+        const tail = `${s.owner}/${s.repo}${s.query ? "?tab=stack&q=a%20b" : ""}${s.hash ? "#top" : ""}`
+        const to: Record<typeof s.form, string> = {
+          path: `/${tail}`,
+          bare: tail,
+          full: `${ORIGIN}/${tail}`,
+          slashes: `${ORIGIN}///${tail}`,
+          protocolRelative: `//evil.test/${tail}`,
+          otherOrigin: `https://evil.test/${tail}`,
+          otherPort: `${ORIGIN}:8443/${tail}`,
+          javascript: `javascript:alert("${tail}")`,
+          data: `data:text/html,${tail}`,
+          mailto: `mailto:${s.owner}@evil.test`,
+          malformed: `http://[::1/${tail}`,
+        }
+        const refused: Partial<Record<typeof s.form, "origin" | "scheme" | "invalid">> = {
+          protocolRelative: "origin",
+          otherOrigin: "origin",
+          otherPort: "origin",
+          javascript: "scheme",
+          data: "scheme",
+          mailto: "scheme",
+          malformed: "invalid",
+        }
+        const reason = refused[s.form]
+        expect(appPath(to[s.form], ORIGIN)).toEqual(reason === undefined ? { _tag: "Path", path: `/${tail}` } : { _tag: "Refused", reason })
+      }),
+  ))
+
+const TAKEN = { txid: 12, opId: "op-1", outcome: "committed", number: 7 } as const
+const FOUND = {
+  kind: "found", number: 7, state: "working", step: "implement", attempt: 1, branch: "smithers/todo-7", prNumber: null,
+  failure: null, note: null, runId: "todo:attempt-1", updatedAt: "2026-10-21T17:00:00Z",
+} as const
+
+test("the stack client sends one change and reads its answer, a refusal's code, or nothing it can trust", () =>
+  property(
+    Schema.Struct({
+      status: Schema.Literals([200, 202, 400, 401, 403, 404, 409, 413, 429, 500]),
+      body: Schema.Literals(["taken", "found", "refusal", "notJson", "empty"]),
+      code: Schema.Literals(["authentication", "forbidden", "stack_full", TODO_STATUS_NOT_FOUND, "rate_limited"]),
+      samePerson: Schema.Boolean,
+      offline: Schema.Boolean,
+      op: Schema.Literals(["commit", "commitOnIssue", "drop", "retry", "attach"]),
+      number: int(1, 50),
+    }),
+    (s) =>
+      Effect.gen(function* () {
+        const sent: Array<HttpClientRequest.HttpClientRequest> = []
+        const body = { taken: JSON.stringify(TAKEN), found: JSON.stringify(FOUND), refusal: JSON.stringify({ code: s.code }), notJson: "{bad", empty: "{}" }[s.body]
+        const client = HttpClient.make((request) => {
+          sent.push(request)
+          return s.offline
+            ? Effect.fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, description: "offline" }) }))
+            : Effect.succeed(HttpClientResponse.fromWeb(request, new Response(body, {
+              status: s.status,
+              headers: s.samePerson ? { [SESSION_CHECK_HEADER]: "same_person" } : {},
+            })))
         })
-    ))
-})
+        const ok = s.status === 200 || s.status === 202
+
+        // The queued row becomes the route's body: a commit's text, or the number a drop, retry or attach names.
+        const row: Sending = {
+          v: 4, id: "op-1", repo: "octo/hello", repoId: "github/octo/hello", queuedAt: 1,
+          op: s.op === "commitOnIssue" ? "commit" : s.op,
+          title: "Title", prompt: "Prompt", acceptance: ["passes"], number: s.number,
+          ...(s.op === "commitOnIssue" || s.op === "attach" ? { issue: 5 } : {}),
+          ...(s.op === "commitOnIssue" ? { after: null } : {}),
+        }
+        const change = TodosWrites.requestOf(row)
+        expect(change).toEqual(
+          s.op === "commit"
+            ? { opId: "op-1", op: "commit", title: "Title", prompt: "Prompt", acceptance: ["passes"] }
+            : s.op === "commitOnIssue"
+            ? { opId: "op-1", op: "commit", title: "Title", prompt: "Prompt", acceptance: ["passes"], issue: 5, after: null }
+            : s.op === "attach"
+            ? { opId: "op-1", op: "attach", number: s.number, issue: 5 }
+            : { opId: "op-1", op: s.op, number: s.number },
+        )
+        expect(Object.keys(change).sort()).toEqual(
+          (s.op === "commit" ? ["opId", "op", "title", "prompt", "acceptance"]
+            : s.op === "commitOnIssue" ? ["opId", "op", "title", "prompt", "acceptance", "issue", "after"]
+            : s.op === "attach" ? ["opId", "op", "number", "issue"] : ["opId", "op", "number"]).sort(),
+        )
+
+        const posted = yield* Effect.exit(
+          Effect.flatMap(TodosApi.StackClient, (stack) => stack.change("octo", "hello", change)).pipe(
+            Effect.provide(TodosApi.StackClient.layer({ origin: ORIGIN, within: "5 seconds" })),
+            Effect.provideService(HttpClient.HttpClient, client),
+          ),
+        )
+        expect(sent.map((request) => [request.method, request.url, request.headers[CONFIRM_401_HEADER]])).toEqual([
+          ["POST", `${ORIGIN}${stackRoute("octo", "hello")}`, "1"],
+        ])
+        // A refusal is compared field by field: what the outbox reads to decide between Not sent, held and retry.
+        const refusal = (exit: typeof posted) => {
+          const { status, code, sessionCheck } = Option.getOrThrow(Exit.findErrorOption(exit))
+          return { refused: { status, code, sessionCheck } }
+        }
+        expect(Exit.isSuccess(posted) ? posted.value : refusal(posted)).toStrictEqual(
+          s.offline
+            ? { refused: { status: undefined, code: undefined, sessionCheck: undefined } }
+            : ok
+            ? s.body === "taken" ? TAKEN : { refused: { status: s.status, code: undefined, sessionCheck: undefined } }
+            : { refused: {
+              status: s.status,
+              code: s.body === "refusal" ? s.code : undefined,
+              sessionCheck: s.samePerson ? "same_person" : undefined,
+            } },
+        )
+
+        const read = yield* Effect.exit(
+          TodosApi.readTodoStatus(ORIGIN, "octo", "hello", s.number, "5 seconds").pipe(
+            Effect.provideService(HttpClient.HttpClient, client),
+          ),
+        )
+        expect(sent[1]?.url).toBe(`${ORIGIN}${todoStatusRoute("octo", "hello", s.number)}`)
+        const named = s.body === "refusal" ? s.code : undefined
+        expect(Exit.isSuccess(read) ? read.value : Option.getOrThrow(Exit.findErrorOption(read)).reason).toEqual(
+          s.offline
+            ? "unavailable"
+            : s.status === 200
+            ? s.body === "found" ? FOUND : "unavailable"
+            : s.status === 404 && named === TODO_STATUS_NOT_FOUND
+            ? { kind: "not_found", number: s.number }
+            : s.status === 401 && named === "authentication"
+            ? "authentication"
+            : s.status === 403 && named === "forbidden"
+            ? "forbidden"
+            : "unavailable",
+        )
+
+        // What the outbox does with the refusal: a code it never sends again wins, then the status, else it retries.
+        const never: Partial<Record<number, string>> = { 400: "invalid", 401: "authentication", 403: "forbidden", 404: "not_found", 409: "conflict", 413: "too_large" }
+        const final = named === "authentication" || named === "forbidden" || named === "stack_full"
+        expect(TodosWrites.reasonOf(s.status, named)).toBe(final ? named : never[s.status])
+        expect(TodosWrites.reasonOf(undefined, undefined)).toBeUndefined()
+      }),
+  ))

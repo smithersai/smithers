@@ -903,8 +903,8 @@ it("never offers a GPT-5.6 model as a picker, delegate, default or worker seat",
     CEREBRAS_API_KEY: "test",
     ANTHROPIC_API_KEY: "test"
   }
-  const available = await Models.detect(everyProvider)
-  const openAiFirst = await Models.detect({ OPENAI_API_KEY: "test" })
+  const available = await Effect.runPromise(Models.detect(everyProvider))
+  const openAiFirst = await Effect.runPromise(Models.detect({ OPENAI_API_KEY: "test" }))
   const seats = [
     ...available.models.map((model) => model.seat),
     ...Object.values(Models.aliases),
@@ -940,14 +940,17 @@ it("never offers a GPT-5.6 model as a picker, delegate, default or worker seat",
 })
 
 it("prefers Cerebras for chat and keeps a distinct worker seat and explicit overrides", async () => {
-  const seats = await Models.detect({
+  const seats = await Effect.runPromise(Models.detect({
     CEREBRAS_API_KEY: "test",
     ANTHROPIC_API_KEY: "test",
     SMITHERS_TUI_WORKER_SEAT: "anthropic:worker"
-  })
+  }))
   expect(seats.defaultSeat).toBe("cerebras:qwen-3.8-27b")
   expect(seats.workerSeat).toBe("anthropic:worker")
-  expect((await Models.detect({ CEREBRAS_API_KEY: "test", SMITHERS_TUI_SEAT: "explicit:chat" })).defaultSeat).toBe(
+  expect(
+    (await Effect.runPromise(Models.detect({ CEREBRAS_API_KEY: "test", SMITHERS_TUI_SEAT: "explicit:chat" })))
+      .defaultSeat
+  ).toBe(
     "explicit:chat"
   )
 })

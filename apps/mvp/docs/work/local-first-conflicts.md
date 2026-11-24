@@ -142,7 +142,7 @@ Last runs: real model on the MacBook, 2026-10-21 00:16 to 00:30 (`pnpm e2e local
 | Both offline, back in either order | yes | Postgres' arrival order | `back in either order` | passed |
 | A duplicate send | yes | 200 `existing`, stored once | `duplicate send` | red: A's composer didn't open (passed on the mini) |
 | A stale tab after a leader switch | yes | `sent_elsewhere`: not sent twice | `stale tab` | red: tab 2's second question never showed (on the mini, tab 1 went blank) |
-| Withdraw while another tab sends | yes | `Outbox.withdraw` under the permit | `taken back before it is sent`; `taken back, still shown in the other tab`; `taken back after ChatApi took it` | passed; broken as marked; red before its mark: A saw its question arrive though its sync was down (on the mini it failed at its mark) |
+| Withdraw while another tab sends | yes | `Outbox.withdraw` under the permit + `outboxFollower.ts` | `taken back before it is sent`; `taken back in one tab, gone from the other`; `taken back after ChatApi took it` | passed; fixed & passed (mark removed); red before its mark: A saw its question arrive though its sync was down (on the mini it failed at its mark) |
 | Server refusal: permission revoked offline | yes: 401, 403 `view_only` | `Not sent`, never resent | cut: see Next | |
 | Schema or payload change across a deploy | yes: `plan_changed`, `payload_changed` | `chat/Close`: `Couldn't answer`, Retry | `new build refuses a parked answer` | passed |
 | Clock skew | across devices: handled; one device's clock stepping back: not | arrival order; the outbox orders writes by `createdAt` | `clock skew`; `clock steps back` | passed; the next question showed twice for 5 s, so its broken mark moved to that assertion (not rerun) |
@@ -151,7 +151,7 @@ Last runs: real model on the MacBook, 2026-10-21 00:16 to 00:30 (`pnpm e2e local
 ## Bugs found
 
 - **Fixed:** `IssueWrites.layer` handed over its outbox writes with `OutboxWrites.of`, replacing co-editing's `text-update`, so every keystroke in the composer threw "Unknown mutation function: text-update". It now uses `OutboxWrites.adding`; `src/outbox.test.ts` "every feature's mutation reaches the one outbox" fails on the old code.
-- **Marked broken, not fixed:** Edit after ChatApi took a question the device hasn't seen arrive takes it back anyway; a question taken back in one tab stays `Queued` in the tab that led; after a device clock steps back, the next question shows twice and the outbox orders writes by that clock (`@tanstack/offline-transactions` 1.1.3 orders and schedules by `createdAt` and `nextAttemptAt`).
+- **Marked broken, not fixed:** Edit after ChatApi took a question the device hasn't seen arrive takes it back anyway; after a device clock steps back, the next question shows twice and the outbox orders writes by that clock (`@tanstack/offline-transactions` 1.1.3 orders and schedules by `createdAt` and `nextAttemptAt`).
 - **Seen once, not marked:** on the mini at 21:05, about 20 s after a tab lost the outbox's lead its `views` collection errored and its conversation went blank; the MacBook run didn't show it.
 - `e2e/devices.ts` gave a resent question's second response to its first post; each response now goes to the first post of its id still open.
 

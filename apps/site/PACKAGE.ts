@@ -564,8 +564,13 @@ const docsRuntimeTests = Smithers.Shell.Test({
   data: [
     Smithers.file("scripts/deployment.test.mjs"),
     Smithers.file("package.json"),
-    Smithers.file("docs-redirect/wrangler.jsonc"),
-    Smithers.file("//apps/patterns-site/wrangler.jsonc"),
+    Smithers.file("docs-redirect/alchemy.run.ts"),
+    Smithers.file("//apps/patterns-site/alchemy.run.ts"),
+    Smithers.file("//apps/patterns-site/site/index.html"),
+    Smithers.file("docs-redirect/src/deploymentConfig.ts"),
+    Smithers.file("docs-redirect/src/docsRedirectMap.ts"),
+    Smithers.file("infra/Deployment.ts"),
+    Smithers.file("infra/Alchemy.ts"),
     Smithers.file("//apps/bug-worker/alchemy.run.ts"),
     Smithers.file("//apps/bug-worker/infra/Deployment.ts"),
     Smithers.file("//apps/bug-worker/README.md"),
@@ -601,13 +606,14 @@ const docsLint = Smithers.Shell.Test({
 /**
  * The docs redirect Worker's sources and what its tests read: the slug roster
  * from the docs-sync generator, which loads the workspace package list on
- * import, and its wrangler config. The map's freshness against the docs is
+ * import, and its Alchemy stack. The map's freshness against the docs is
  * //.smithers/flows:packageDocs (`pnpm docs:check`).
  */
 const docsRedirectSources = [
   Smithers.glob("docs-redirect/src/**/*.ts"),
+  Smithers.file("infra/Deployment.ts"),
   Smithers.file("docs-redirect/scripts/workerd.mjs"),
-  Smithers.file("docs-redirect/wrangler.jsonc"),
+  Smithers.file("docs-redirect/alchemy.run.ts"),
   Smithers.file("//.smithers/flows/docs-sync/package-docs.mjs"),
   Smithers.file("//.smithers/flows/docs-sync/package-docs.d.mts"),
   Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
@@ -661,7 +667,7 @@ const securityReview = Smithers.SecurityReview({
     "src/layouts/**",
     "src/pages/**",
     "docs-redirect/src/**",
-    "docs-redirect/wrangler.jsonc",
+    "docs-redirect/alchemy.run.ts",
     "scripts/**",
     "tapes/**",
     "public/_headers",
@@ -698,7 +704,7 @@ const securityReview = Smithers.SecurityReview({
         "public/_redirects",
         "scripts/check-built-site.mjs",
         "docs-redirect/src/**",
-        "docs-redirect/wrangler.jsonc"
+        "docs-redirect/alchemy.run.ts"
       ]
     },
     {

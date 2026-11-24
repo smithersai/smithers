@@ -407,18 +407,35 @@ export const question = {
   })
 }
 
+const notable = (response: Evaluator.Response) =>
+  Classifier.decodeAnswers(question, response.answers).pipe(
+    Effect.map((answers) => answers.notable.value),
+    Effect.mapError(() =>
+      new MonitorError({
+        _tag: "JevFailed",
+        code: "invalid_answer",
+        message: "Jev did not answer the notable question"
+      })
+    )
+  )
+
 /** The Jev judge over an evaluator: one boolean question, every failure typed. */
-export const jev = (
-  evaluate: (request: Evaluator.Request) => Promise<Evaluator.Response>
+export const jev = <R>(
+  evaluate: (request: Evaluator.Request) => Effect.Effect<Evaluator.Response, unknown, R>,
+  run: (effect: Effect.Effect<boolean, unknown, R>) => Promise<boolean>
 ) =>
 async (input: Judged): Promise<boolean> => {
-  let response: Evaluator.Response
   try {
-    response = await evaluate({
-      state: { watching: input.watch, before: input.before, after: input.after },
-      questions: question
-    })
+    return await run(
+      evaluate({
+        state: { watching: input.watch, before: input.before, after: input.after },
+        questions: question
+      }).pipe(
+        Effect.flatMap(notable)
+      )
+    )
   } catch (error) {
+    if (error instanceof MonitorError) throw error
     const typed = error instanceof Evaluator.EvaluatorError ? error : undefined
     throw new MonitorError(
       typed !== undefined
@@ -430,18 +447,6 @@ async (input: Judged): Promise<boolean> => {
         : { _tag: "JevFailed", code: "unreachable", message: error instanceof Error ? error.message : String(error) }
     )
   }
-  return Effect.runPromise(
-    Classifier.decodeAnswers(question, response.answers).pipe(
-      Effect.map((answers) => answers.notable.value),
-      Effect.mapError(() =>
-        new MonitorError({
-          _tag: "JevFailed",
-          code: "invalid_answer",
-          message: "Jev did not answer the notable question"
-        })
-      )
-    )
-  )
 }
 
 /** What Luna is told. */

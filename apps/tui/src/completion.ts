@@ -15,10 +15,11 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Node } from "@smthrs/plan"
 import { BunRuntime } from "@smthrs/platform-bun"
 import { NodeRuntime } from "@smthrs/platform-node"
-import { Effect, Layer, Logger, ManagedRuntime, Schema, Stream } from "effect"
+import { Effect, Layer, Logger, type ManagedRuntime, Schema, Stream } from "effect"
 import { createHash } from "node:crypto"
 import { chmodSync, closeSync, mkdirSync, openSync } from "node:fs"
 import { join } from "node:path"
+import type { tuiRuntime } from "./effect-boundary.ts"
 import * as Log from "./log.ts"
 import * as Monitors from "./monitors.ts"
 import * as Session from "./session.ts"
@@ -66,7 +67,7 @@ export const make = (options: {
   readonly seats: Layer.Layer<SeatResolver.SeatResolver>
   readonly budget: Layer.Layer<Budget.Budget>
   readonly judge: Layer.Layer<Evaluator.Evaluator>
-}) => {
+}, boundary: typeof tuiRuntime) => {
   const native = process.versions.bun === undefined ? NodeRuntime : BunRuntime
   // A private parent also protects the SQLite WAL and shared-memory files.
   const directory = join(Session.directory(options.cwd), "completions")
@@ -152,7 +153,7 @@ export const make = (options: {
           return settled.message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("")
         }))
     })).pipe(Layer.provide(Layer.mergeAll(options.seats, options.budget, options.judge, QuotaPolicy.layerDefault())))
-    const opened = ManagedRuntime.make(
+    const opened = boundary.makeManagedRuntime(
       native.layerHost(
         {
           filename,
@@ -201,12 +202,14 @@ export const make = (options: {
           "hex"
         )
       }`
-      return Monitors.jev(() =>
-        open().runPromise(Effect.flatMap(FlowRuntime.FlowRuntime, (engine) =>
-          engine.execute(reading, {
-            executionId,
-            payload: { watch: input.watch, before: input.before, after: input.after }
-          })))
+      return Monitors.jev(
+        () =>
+          Effect.flatMap(FlowRuntime.FlowRuntime, (engine) =>
+            engine.execute(reading, {
+              executionId,
+              payload: { watch: input.watch, before: input.before, after: input.after }
+            })),
+        (effect) => open().runPromise(effect)
       )(input)
     },
     dispose: () => runtime?.dispose() ?? Promise.resolve()

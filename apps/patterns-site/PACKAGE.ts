@@ -2,7 +2,7 @@
  * Patterns catalog site (`patterns.smithers.sh`).
  *
  * The page is one static file, `site/index.html`, served by the `patterns-site`
- * Worker (`wrangler.jsonc`). Its cards link into the whole repository, so the
+ * Worker (`alchemy.run.ts`). Its cards link into the whole repository, so the
  * link check declares every linked file from the catalog, the site package's
  * API reference filegroup, and every current use-case example file, and runs
  * uncached so newly added use-case examples are never masked by a stale cache.

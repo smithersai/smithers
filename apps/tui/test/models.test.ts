@@ -10,6 +10,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Models from "../src/models.ts"
 
+const detect = (...args: Parameters<typeof Models.detect>) => Effect.runPromise(Models.detect(...args))
+
 /** Claude Code signs its own requests, so resolving its seat never reaches the executor. */
 const unusedExecutor = {} as RequestExecutor.RequestExecutor
 
@@ -41,13 +43,13 @@ describe("seatOf", () => {
 
 describe("default chat seat", () => {
   test("prefers Cerebras, then Sol, then another available provider", async () => {
-    expect((await Models.detect({ CEREBRAS_API_KEY: "test", OPENAI_API_KEY: "test" })).defaultSeat).toBe(
+    expect((await detect({ CEREBRAS_API_KEY: "test", OPENAI_API_KEY: "test" })).defaultSeat).toBe(
       Models.delegateModels.cerebras
     )
-    expect((await Models.detect({ OPENAI_API_KEY: "test", MOONSHOT_API_KEY: "test" })).defaultSeat).toBe(
+    expect((await detect({ OPENAI_API_KEY: "test", MOONSHOT_API_KEY: "test" })).defaultSeat).toBe(
       Models.delegateModels.sol
     )
-    expect((await Models.detect({ OPENAI_API_KEY: "test", SMITHERS_TUI_SEAT: "custom:chat" })).defaultSeat).toBe(
+    expect((await detect({ OPENAI_API_KEY: "test", SMITHERS_TUI_SEAT: "custom:chat" })).defaultSeat).toBe(
       "custom:chat"
     )
   })
@@ -110,7 +112,7 @@ describe("account pool startup discovery", () => {
     { routes: ["anthropic", "chatgpt"], seat: "openai:gpt-6-luna" }
   ])("offers only a shared resolver default grounded in connected routes $routes", async ({ routes, seat }) => {
     const fixture = transport(JSON.stringify({ routes }))
-    const available = await Models.detect(environment, fixture.layer)
+    const available = await detect(environment, fixture.layer)
     expect(available.defaultSeat).toBe(seat)
     expect(available.workerSeat).toBe(seat)
     expect(available.models).toEqual([{ seat, label: expect.any(String), provider: "Account pool" }])
@@ -127,7 +129,7 @@ describe("account pool startup discovery", () => {
     { body: JSON.stringify({ routes: ["chatgpt"] }), status: 403 }
   ])("refuses failed or unusable discovery %j without inventing a model", async ({ body, status }) => {
     const fixture = transport(body, status)
-    const available = await Models.detect(environment, fixture.layer)
+    const available = await detect(environment, fixture.layer)
     expect(available.models).toEqual([])
     expect(available.defaultSeat).toBeUndefined()
     expect(available.workerSeat).toBeUndefined()
@@ -137,23 +139,23 @@ describe("account pool startup discovery", () => {
   test("unpermitted routes and incomplete credentials never produce an offered seat", async () => {
     const fixture = transport(JSON.stringify({ routes: ["chatgpt"] }))
     expect(
-      (await Models.detect({ ...environment, SMITHERS_ACCOUNT_POOL_PROVIDERS: "anthropic" }, fixture.layer)).models
+      (await detect({ ...environment, SMITHERS_ACCOUNT_POOL_PROVIDERS: "anthropic" }, fixture.layer)).models
     ).toEqual([])
     for (
       const missing of ["SMITHERS_ACCOUNT_POOL_URL", "SMITHERS_ACCOUNT_POOL_KEY", "SMITHERS_ACCOUNT_POOL_PROVIDERS"]
     ) {
       const before = fixture.requests.length
-      expect((await Models.detect({ ...environment, [missing]: "" }, fixture.layer)).models).toEqual([])
+      expect((await detect({ ...environment, [missing]: "" }, fixture.layer)).models).toEqual([])
       expect(fixture.requests.length).toBe(before)
     }
   })
 
   test("keeps local credentials and explicit chat/worker overrides while adding a discovered pool seat", async () => {
     const fixture = transport(JSON.stringify({ routes: ["chatgpt"] }))
-    const keyed = await Models.detect({ ...environment, OPENAI_API_KEY: "local-key" }, fixture.layer)
+    const keyed = await detect({ ...environment, OPENAI_API_KEY: "local-key" }, fixture.layer)
     expect(keyed.defaultSeat).toBe(Models.delegateModels.sol)
     expect(keyed.models.map((model) => model.seat)).toEqual([Models.delegateModels.sol, "openai:gpt-6-luna"])
-    const overridden = await Models.detect({
+    const overridden = await detect({
       ...environment,
       SMITHERS_TUI_SEAT: "custom:chat",
       SMITHERS_TUI_WORKER_SEAT: "custom:worker"
@@ -204,7 +206,7 @@ describe("delegable", () => {
     expect(Models.delegable(openai)).toContain("openai:gpt-6-sol")
     expect(Models.delegable([{ seat: Models.delegateModels.cerebras, label: "Qwen 3.8", provider: "Cerebras" }]))
       .toEqual(["cerebras", "qwen", Models.delegateModels.cerebras])
-    const claude = (await Models.detect({ ANTHROPIC_API_KEY: "test" })).models
+    const claude = (await detect({ ANTHROPIC_API_KEY: "test" })).models
     expect(Models.delegable(claude)).toEqual(expect.arrayContaining(["opus", "sonnet", "fable"]))
     expect(Models.delegable(claude)).not.toContain("claude-code:opus")
     expect(Models.delegable([])).toEqual([])
@@ -223,12 +225,12 @@ describe("Claude Code seats", () => {
     try {
       const claude = (models: ReadonlyArray<Models.Model>) =>
         models.filter((model) => model.seat.startsWith("claude-code:") || model.seat.startsWith("anthropic:"))
-      expect(claude((await Models.detect({ PATH: directory })).models)).toEqual([
+      expect(claude((await detect({ PATH: directory })).models)).toEqual([
         { seat: "claude-code:opus", label: "Claude Opus 5.5", provider: "Claude Code" },
         { seat: "claude-code:sonnet", label: "Claude Sonnet 5.5", provider: "Claude Code" },
         { seat: "claude-code:fable", label: "Claude Fable 5.1", provider: "Claude Code" }
       ])
-      expect(Models.delegable((await Models.detect({ PATH: directory })).models)).toEqual(expect.arrayContaining([
+      expect(Models.delegable((await detect({ PATH: directory })).models)).toEqual(expect.arrayContaining([
         "opus",
         "sonnet",
         "fable",
@@ -236,7 +238,7 @@ describe("Claude Code seats", () => {
         "claude-code:sonnet",
         "claude-code:fable"
       ]))
-      const keyed = claude((await Models.detect({ PATH: directory, ANTHROPIC_API_KEY: "k" })).models).map((model) =>
+      const keyed = claude((await detect({ PATH: directory, ANTHROPIC_API_KEY: "k" })).models).map((model) =>
         model.seat
       )
       expect(keyed).toEqual(["anthropic:claude-opus-5-5", "anthropic:claude-sonnet-5-5", "anthropic:claude-fable-5-1"])
@@ -251,7 +253,7 @@ describe("Claude Code seats", () => {
     const directory = claudeOnPath({ loggedIn: true, authMethod: "claude.ai", subscriptionType: "max" })
     try {
       const environment = { PATH: directory }
-      const seat = Models.seatOf("opus", (await Models.detect(environment)).models)!
+      const seat = Models.seatOf("opus", (await detect(environment)).models)!
       expect(seat).toBe("opus")
       // The Anthropic route would refuse without a key; Claude Code runs it.
       const resolved = await Effect.runPromise(NodeControl.seatResolver(environment, unusedExecutor).resolve(seat))
@@ -269,7 +271,7 @@ describe("Claude Code seats", () => {
       { mode: 0o755 }
     )
     try {
-      const available = await Models.detect({ PATH: directory, CLAUDE_CODE_OAUTH_TOKEN: "test-token" })
+      const available = await detect({ PATH: directory, CLAUDE_CODE_OAUTH_TOKEN: "test-token" })
       await Effect.runPromise(NodeControl.seatResolver(available.environment, unusedExecutor).resolve("opus"))
       expect(readFileSync(join(directory, "probes"), "utf8")).toBe("probe\n")
     } finally {
@@ -280,7 +282,7 @@ describe("Claude Code seats", () => {
   test("offers none when Claude Code is signed out", async () => {
     const directory = claudeOnPath({ loggedIn: false, authMethod: "none" })
     try {
-      expect((await Models.detect({ PATH: directory })).models.filter((model) => model.provider === "Claude Code"))
+      expect((await detect({ PATH: directory })).models.filter((model) => model.provider === "Claude Code"))
         .toEqual([])
     } finally {
       rmSync(directory, { recursive: true, force: true })

@@ -4,7 +4,7 @@ import { fetchWithDeadline, readBoundedJson, Transport } from "./Http"
 
 /*
  * The retired library docs sites (T-DOC-04, #3510): a separate Worker,
- * `smithers-docs-redirect` (wrangler.jsonc, entry src/worker.ts). README.md
+ * `smithers-docs-redirect` (alchemy.run.ts, entry src/worker.ts). README.md
  * is the runbook: inventory, routes, DNS.
  *
  * `<slug>.smithers.sh/<page path>` answers 301 to that page's file in the
@@ -33,6 +33,7 @@ export const UNCLAIMED_MARKER = "smithers-unclaimed=docs-redirect"
 export const UNKNOWN_SLUGS_TXT_MARKER = "txt-marker"
 
 export interface DocsRedirectEnv {
+  readonly DOCS_REDIRECT_ZONE?: string
   readonly UNKNOWN_SLUGS?: string
 }
 
@@ -70,10 +71,10 @@ const pageLocation = (slug: string, pathname: string): string | undefined => {
 }
 
 /** What a request URL asks for: the hostname picks the site, the path picks a page. */
-export const decide = (url: URL): DocsRedirectDecision => {
+export const decide = (url: URL, suffix = ZONE_SUFFIX): DocsRedirectDecision => {
   const hostname = url.hostname
-  if (!hostname.endsWith(ZONE_SUFFIX)) return { kind: "pass" }
-  const label = hostname.slice(0, -ZONE_SUFFIX.length)
+  if (!hostname.endsWith(suffix)) return { kind: "pass" }
+  const label = hostname.slice(0, -suffix.length)
   if (!LABEL.test(label)) return { kind: "pass" }
   const folder = DOCS_REDIRECTS.get(label)
   if (folder === undefined) return { kind: "unknown-slug", hostname }
@@ -155,7 +156,7 @@ const passThrough = (request: Request): Effect.Effect<Response, never, Transport
 
 export const handleDocsRedirect = (request: Request, env: DocsRedirectEnv): Effect.Effect<Response, never, Transport> =>
   Effect.gen(function* () {
-    const decision = decide(new URL(request.url))
+    const decision = decide(new URL(request.url), env.DOCS_REDIRECT_ZONE && `.${env.DOCS_REDIRECT_ZONE}`)
     if (decision.kind === "redirect") return permanent(decision.location)
     if (decision.kind === "unknown-slug" && env.UNKNOWN_SLUGS === UNKNOWN_SLUGS_TXT_MARKER &&
       (yield* isUnclaimed(decision.hostname))) return permanent(README_URL)

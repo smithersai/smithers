@@ -91,28 +91,27 @@ const poolTransport = RequestExecutor.layer.pipe(
   Layer.provide(FetchHttpClient.layer)
 )
 
-export const detect = async (
+export const detect = (
   environment: NodeJS.ProcessEnv,
   poolExecutor: Layer.Layer<RequestExecutor.RequestExecutor> = poolTransport
-): Promise<Available> => {
-  const base = detectWithoutClaude(environment)
-  const [claude, poolSeat] = await Promise.all([
-    Providers.claudeCode(hostOf(base.environment)),
-    Effect.runPromise(
+): Effect.Effect<Available> =>
+  Effect.gen(function*() {
+    const base = detectWithoutClaude(environment)
+    const [claude, poolSeat] = yield* Effect.all([
+      Effect.promise(() => Providers.claudeCode(hostOf(base.environment))),
       NodeControl.accountPoolDefaultModel(base.environment).pipe(
         Effect.provide(poolExecutor),
         Effect.timeout(5000),
         Effect.orElseSucceed(() => undefined)
       )
-    )
-  ])
-  const models = [...base.models]
-  if (claude.available) models.push(...claudeCode.map((model) => ({ ...model, provider: "Claude Code" })))
-  if (poolSeat !== undefined && !models.some((model) => model.seat === poolSeat)) {
-    models.push({ ...described(poolSeat), provider: "Account pool" })
-  }
-  return withModels(models, base.environment)
-}
+    ], { concurrency: "unbounded" })
+    const models = [...base.models]
+    if (claude.available) models.push(...claudeCode.map((model) => ({ ...model, provider: "Claude Code" })))
+    if (poolSeat !== undefined && !models.some((model) => model.seat === poolSeat)) {
+      models.push({ ...described(poolSeat), provider: "Account pool" })
+    }
+    return withModels(models, base.environment)
+  })
 
 /** The key-backed seats when a synchronous host is built without a startup scan. */
 export const detectWithoutClaude = (environment: NodeJS.ProcessEnv): Available => {

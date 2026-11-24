@@ -19,7 +19,7 @@ https://flows.smithers.sh/
 | Generator tests and the map's freshness against the docs | `.smithers/flows/docs-sync/package-docs-redirect.test.mjs` (`//.smithers/flows:packageDocs`; `pnpm docs:check` runs `--check`) |
 | Handler (pure decision, pass-through, DNS check) | `src/docsRedirect.ts` |
 | Entry (default export only; workerd refuses other exports) | `src/worker.ts` |
-| Config: name, 48 routes, `UNKNOWN_SLUGS` switch | `wrangler.jsonc` |
+| Config: name, 48 routes, `UNKNOWN_SLUGS` switch | `alchemy.run.ts` |
 | Unit and workerd tests | `src/docsRedirect.test.ts`, `src/docsRedirect.workerd.test.ts` |
 | Live acceptance probe (12 URLs: 301, exact Location, target 200) | `node apps/site/docs-redirect/scripts/probe.mjs` |
 
@@ -149,9 +149,12 @@ Routes edit on the account that holds the `smithers.sh` zone, run from a clean
 
 ```sh
 bun test src/docsRedirect.test.ts src/docsRedirect.workerd.test.ts
-CLOUDFLARE_API_TOKEN=<token> bun x wrangler deploy -c wrangler.jsonc
+export DOCS_REDIRECT_ZONE=smithers.sh
+../../bug-worker/node_modules/.bin/alchemy deploy --stage "${ALCHEMY_STAGE:?set ALCHEMY_STAGE}"
 node scripts/probe.mjs   # 11/12: the unknown slug needs DNS
 ```
+
+The stack reads `CLOUDFLARE_API_TOKEN` and `ALCHEMY_PASSWORD` from the deployment environment. Without `DOCS_REDIRECT_ZONE` it claims no routes. Set `DOCS_REDIRECT_WORKER_NAME` to override the physical Worker name.
 
 Then rerun the snapshot above and compare it with the inventory. After the probe
 passes, the old site Workers (one `smithers-docs-<slug>` Worker per slug)
@@ -168,7 +171,7 @@ curl -X POST "https://api.cloudflare.com/client/v4/zones/<smithers.sh zone ID>/d
   --data '{"type":"AAAA","name":"plan-store","content":"100::","proxied":true,"comment":"T-DOC-04 docs redirect"}'
 ```
 
-**Rollback:** `CLOUDFLARE_API_TOKEN=<token> bun x wrangler delete -c wrangler.jsonc`
+**Rollback:** `../../bug-worker/node_modules/.bin/alchemy destroy --stage "${ALCHEMY_STAGE:?set ALCHEMY_STAGE}"`
 removes the Worker and its routes; the docs-site Custom Domains under them answer again,
 as long as those Workers have not been destroyed.
 
@@ -194,6 +197,6 @@ quota and failure modes. That is a product call for the token holder, not a defa
 To turn it on, in one change:
 
 1. DNS: proxied `AAAA * 100::` and `TXT * "smithers-unclaimed=docs-redirect"`.
-2. `wrangler.jsonc`: add `{ "pattern": "*.smithers.sh/*", "zone_name": "smithers.sh" }`
+2. In `src/deploymentConfig.ts`, add a wildcard route for the configured zone
    and set `UNKNOWN_SLUGS` to `"txt-marker"`; update the config test.
 3. Deploy, run the probe (12/12), rerun the snapshot and compare every inventoried host.

@@ -403,27 +403,29 @@ describe("restored shell monitors", () => {
 
 describe("Jev adapter", () => {
   const evaluate = (layer: Layer.Layer<Evaluator.Evaluator>) => (request: Evaluator.Request) =>
-    Effect.runPromise(
-      Effect.gen(function*() {
-        return yield* (yield* Evaluator.Evaluator).evaluate(request)
-      }).pipe(Effect.provide(layer))
-    )
+    Effect.flatMap(Evaluator.Evaluator, (evaluator) => evaluator.evaluate(request)).pipe(Effect.provide(layer))
 
   it("asks one boolean question and reads its value", async () => {
     let asked: Evaluator.Request | undefined
-    const judge = Monitors.jev(evaluate(Evaluator.layerScripted((request) => {
-      asked = request
-      return { notable: { probability: 0.9 } }
-    })))
+    const judge = Monitors.jev(
+      evaluate(Evaluator.layerScripted((request) => {
+        asked = request
+        return { notable: { probability: 0.9 } }
+      })),
+      Effect.runPromise
+    )
     expect(await judge({ watch: "the build fails", before: "green", after: "red" })).toBe(true)
     expect(asked!.state).toEqual({ watching: "the build fails", before: "green", after: "red" })
     expect(asked!.questions.notable!.type).toBe("boolean")
-    const quiet = Monitors.jev(evaluate(Evaluator.layerScripted(() => ({ notable: { probability: 0.1 } }))))
+    const quiet = Monitors.jev(
+      evaluate(Evaluator.layerScripted(() => ({ notable: { probability: 0.1 } }))),
+      Effect.runPromise
+    )
     expect(await quiet({ watch: "x", before: "a", after: "b" })).toBe(false)
   })
 
   it("maps an evaluator failure to a typed JevFailed with its code", async () => {
-    const judge = Monitors.jev(evaluate(Evaluator.layerUnavailable()))
+    const judge = Monitors.jev(evaluate(Evaluator.layerUnavailable()), Effect.runPromise)
     const error = await judge({ watch: "x", before: "a", after: "b" }).catch((error) => error)
     expect(error).toBeInstanceOf(Monitors.MonitorError)
     expect(error.failure).toEqual({ _tag: "JevFailed", code: "unreachable", message: Evaluator.unreachableMessage })

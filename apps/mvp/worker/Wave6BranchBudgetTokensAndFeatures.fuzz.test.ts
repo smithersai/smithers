@@ -1,498 +1,355 @@
+// Generated properties for the sandbox ledger (worker/branch/Budget.ts) and a branch's permission list
+// (worker/branch/Access.ts) on this file's schema of the compose Postgres, and for the pure rules beside them: the
+// token permissions a step asks GitHub for, the parent an issue names, and the navigation and file-tab steps. Each
+// property computes what should happen from the scenario alone and compares the exact outcome and the stored rows.
 import { Fuzz } from "@smthrs/fuzz"
-import { Core, GitHub } from "@smthrs/integrations"
-import { Arbitrary, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
+import { FlowRuntime } from "@smthrs/flow"
+import { Arbitrary, Effect, Exit, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import { describe, expect, it } from "vitest"
+import { expect, test } from "vitest"
 import * as FilesFlows from "../src/features/files/flows.ts"
+import type { FilesCall } from "../src/features/files/schema.ts"
 import * as NavFlows from "../src/features/navigation/flows.ts"
-import * as RepoFlows from "../src/features/repo/flows.ts"
+import { DEFAULT_SANDBOX_LIMITS } from "../src/features/spend/contract.ts"
 import * as StatusFlows from "../src/features/status/flows.ts"
-import * as Actor from "./Actor.ts"
-import * as SessionKeys from "./SessionKeys.ts"
+import type { Actor, Role } from "./Actor.ts"
 import * as Access from "./branch/Access.ts"
 import * as Budget from "./branch/Budget.ts"
+import * as Conversations from "./branch/Conversations.ts"
 import * as GitHubStore from "./github/Store.ts"
 import * as GitHubTokens from "./github/Tokens.ts"
+import { testFile } from "./test/harness.ts"
 
-const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")
-const execs = Math.max(15, Math.min(Math.ceil(baseExecs / 3), 40))
-const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261151")
+const runtime = testFile("generated_budget_access")
 
-const property = <A, E>(
-  input: Arbitrary.Arbitrary<A>,
-  executions: number,
-  check: (value: A) => Effect.Effect<void, E, any>
-) =>
-  Effect.runPromise(Fuzz.run(input, (value) => (check(value) as Effect.Effect<void, E>).pipe(Effect.as(true)), { seed, executions }))
-    .then((report) => {
-      expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
-    })
+const seed = Number(process.env.EFFECT_FUZZ_SEED ?? 20261151)
+const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? 100)
+/** A property that asks Postgres many times per scenario runs fewer of them. */
+const stored = Math.max(10, Math.ceil(executions / 4))
 
-const intBetween = (minimum: number, maximum: number) =>
-  Arbitrary.schema(Schema.Int.check(Schema.isBetween({ minimum, maximum })))
-const bool = Arbitrary.schema(Schema.Boolean)
-const roleArb = Arbitrary.schema(Schema.Literals(["admin", "maintainer", "member", "guest"]))
+const int = (minimum: number, maximum: number) => Schema.Int.check(Schema.isBetween({ minimum, maximum }))
+const PEOPLE = ["maya", "ben"] as const
+const ROLES = ["admin", "maintainer", "member", "guest"] as const
+const Grant = Schema.Literals(["none", "view", "edit"])
 
-const SECRET = "wave6-branch-secret-0123456789abcdef0123456789abcdef0123456789ab"
+const Op = Schema.Struct({
+  kind: Schema.Literals(["admit", "started", "seen", "ended", "release", "expire"]),
+  branch: int(0, 3),
+  person: Schema.Literals(["maya", "ben", "nobody"]),
+  slot: Schema.Literals(["branch", "todo"]),
+  generation: int(1, 2),
+})
 
-const makeSqlLayer = (
-  handler: (sql: string, params: ReadonlyArray<unknown>) => ReadonlyArray<Record<string, unknown>>
-): Layer.Layer<SqlClient.SqlClient> => {
-  const exec = (raw: string, params: ReadonlyArray<unknown> = []): Effect.Effect<ReadonlyArray<any>, any> =>
-    Effect.sync(() => handler(raw, params))
-
-  const tag: any = Object.assign(
-    (strings: TemplateStringsArray, ...values: ReadonlyArray<unknown>) => {
-      let q = ""
-      const params: Array<unknown> = []
-      strings.forEach((part, idx) => {
-        q += part
-        if (idx < values.length) {
-          const val = values[idx] as any
-          if (val && typeof val === "object" && typeof val._sql === "string") {
-            q += val._sql
-            if (Array.isArray(val._params)) params.push(...val._params)
-          } else {
-            params.push(val)
-            q += `$${params.length}`
-          }
-        }
-      })
-      return Object.assign(exec(q, params), { _sql: q, _params: params })
-    },
-    {
-      unsafe: (raw: string, params?: ReadonlyArray<unknown>) => exec(raw, params ?? []),
-      withTransaction: <A, E, R>(eff: Effect.Effect<A, E, R>) => eff,
-      in: (values: ReadonlyArray<unknown>) => ({
-        _sql: `(${values.map((_, i) => `$in${i}`).join(",")})`,
-        _params: [...values]
-      }),
-      and: (frags: ReadonlyArray<any>) => ({
-        _sql: frags.map((f) => f._sql ?? "true").join(" AND "),
-        _params: frags.flatMap((f) => f._params ?? [])
-      }),
-      csv: (frags: ReadonlyArray<any>) => ({
-        _sql: frags.map((f) => f._sql ?? "").join(", "),
-        _params: frags.flatMap((f) => f._params ?? [])
-      }),
-      literal: (s: string) => ({ _sql: s, _params: [] }),
-      update: (v: Record<string, unknown>) => ({ _sql: "UPDATE_VALS", _params: Object.values(v) }),
-      insert: (v: unknown) => ({ _sql: "INSERT_VALS", _params: [v] }),
-      reserve: Effect.succeed({}),
-      onDialect: (cases: any) => cases.pg?.() ?? cases.sqlite?.()
-    }
-  )
-  return Layer.succeed(SqlClient.SqlClient, tag)
+/** One ledger row as the test expects Postgres to hold it. */
+interface Expected {
+  readonly branchId: string
+  readonly personId: string | null
+  readonly kind: string
+  generation: number | null
+  instance: string | null
+  open: boolean
+  /** Renewed within the lease. Meaningful only while `open`. */
+  live: boolean
 }
 
-describe("Wave-6 apps/mvp Budget, Access, GitHub Tokens & Store, Feature Flows", () => {
-  it("fuzzes worker/branch/Budget & worker/branch/Access across all states and policies", () =>
-    property(
-      Arbitrary.all({
-        budgetMode: intBetween(0, 4),
-        instance: Arbitrary.schema(Schema.Literals(["lite", "basic", "standard-1", "standard-2", "unknown"])),
-        role: roleArb,
-        signedIn: bool,
-        hasRepoRole: bool,
-        installed: bool,
-        accessMode: intBetween(0, 3)
-      }),
-      execs,
-      (s) =>
-        Effect.gen(function*() {
-          const now = Date.now()
-          // 1. Budget pure helpers
-          expect(Budget.personOf(undefined)).toBeNull()
-          expect(Budget.personOf("")).toBeNull()
-          expect(Budget.personOf("raw-1")).toBe("raw-1")
-          const pps = Budget.pricePerSecond(s.instance)
-          expect(pps).toBeGreaterThanOrEqual(0)
-          const month = Budget.monthOf(now)
-          expect(month.from).toBeLessThan(month.until)
+test("the sandbox ledger admits, waits, renews and closes exactly as its rules say for each generated history", async () => {
+  const scenarios = Arbitrary.schema(Schema.Struct({
+    awake: int(1, 3),
+    perPerson: int(1, 2),
+    alert: int(0, 500),
+    length: int(1, 8),
+    ops: Schema.Tuple([Op, Op, Op, Op, Op, Op, Op, Op]),
+  }))
+  const report = await runtime.runPromise(Fuzz.run(scenarios, scenario => Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`TRUNCATE sandbox_generations, sandbox_limits`
+    expect(yield* Budget.limits).toEqual(DEFAULT_SANDBOX_LIMITS)
+    const limit = { awake: scenario.awake, perPerson: scenario.perPerson, monthlyAlertUsd: scenario.alert }
+    expect(Number.isSafeInteger(yield* Budget.setLimits(limit, "person-admin"))).toBe(true)
+    expect(yield* Budget.limits).toEqual(limit)
+    expect(yield* sql`SELECT updated_by AS "updatedBy" FROM sandbox_limits`).toEqual([{ updatedBy: "person-admin" }])
 
-          // 2. Budget SQL operations: limits, setLimits, admit, observedAdmit, started, recorded, release, seen, ended, spendIn, awake
-          const budgetDb = makeSqlLayer((raw) => {
-            const q = raw.replace(/\s+/g, " ").trim()
-            if (q.includes("FROM sandbox_limits")) {
-              return s.budgetMode === 0 ? [] : [{ awake: 4, perPerson: 2, monthlyAlertUsd: 50 }]
-            }
-            if (q.includes("INSERT INTO sandbox_limits")) return [{ txid: "77" }]
-            if (q.includes("FROM sandbox_generations") && q.includes("count(*)")) {
-              if (s.budgetMode === 2) return [{ awake: 10, mine: 1 }]
-              if (s.budgetMode === 3) return [{ awake: 2, mine: 5 }]
-              return [{ awake: 1, mine: 0 }]
-            }
-            if (q.includes("FROM sandbox_generations") && q.includes("AS live")) {
-              if (s.budgetMode === 1) return [{ id: "10", live: true }]
-              if (s.budgetMode === 4) return [{ id: "11", live: false }]
-              return []
-            }
-            if (q.includes("FROM sandbox_generations") && q.includes("instance_type")) {
-              return [{ instance: s.instance, seconds: 120 }]
-            }
-            if (q.includes("UPDATE sandbox_generations") && q.includes("RETURNING")) {
-              return s.budgetMode === 1 ? [{ id: "10" }] : []
-            }
-            return []
-          })
-          const slot: Budget.Slot = { branchId: "b-1", personId: "p-1", kind: "branch" }
-          const machine: Budget.Started = {
-            ...slot,
-            generation: 2,
-            instance: s.instance
+    const rows: Array<Expected> = []
+    const openOf = (branchId: string) => rows.find(row => row.branchId === branchId && row.open)
+    const awakeCount = () => rows.filter(row => row.open && row.live).length
+    for (const op of scenario.ops.slice(0, scenario.length)) {
+      const branchId = `branch-${op.branch}`
+      const personId = op.person === "nobody" ? null : op.person
+      const instance = op.generation === 1 ? "lite" : "standard-1"
+      const open = openOf(branchId)
+      if (op.kind === "admit") {
+        const admission = yield* Budget.admit({ branchId, personId, kind: op.slot })
+        if (open?.live === true) {
+          expect(admission).toEqual({ _tag: "Admitted", awake: awakeCount() })
+        } else {
+          if (open !== undefined) open.open = false
+          const awake = awakeCount()
+          const mine = rows.filter(row => row.open && row.live && row.kind === "branch" && row.personId === personId).length
+          if (awake >= limit.awake) {
+            expect(admission).toEqual({ _tag: "Waiting", scope: "deployment", awake, limit: limit.awake })
+          } else if (op.slot === "branch" && personId !== null && mine >= limit.perPerson) {
+            expect(admission).toEqual({ _tag: "Waiting", scope: "person", awake, limit: limit.perPerson })
+          } else {
+            expect(admission).toEqual({ _tag: "Admitted", awake: awake + 1 })
+            rows.push({ branchId, personId, kind: op.slot, generation: null, instance: null, open: true, live: true })
           }
-          yield* Effect.gen(function*() {
-            const lim = yield* Budget.limits
-            expect(lim.awake).toBeGreaterThan(0)
-            const tx = yield* Budget.setLimits(lim, "p-1")
-            expect(tx).toBe(77)
-            const adm = yield* Budget.admit(slot)
-            expect(["Admitted", "Waiting"]).toContain(adm._tag)
-            yield* Budget.started(machine)
-            yield* Budget.release("b-1")
-            yield* Budget.seen("b-1", 2)
-            yield* Budget.ended("b-1", 2)
-            const sp = yield* Budget.spendIn(month)
-            expect(sp.usd).toBeGreaterThanOrEqual(0)
-            const aw = yield* Budget.awake
-            expect(typeof aw).toBe("number")
-          }).pipe(Effect.provide(budgetDb))
+        }
+      } else if (op.kind === "started") {
+        yield* Budget.started({ branchId, personId, kind: op.slot, generation: op.generation, instance })
+        if (open !== undefined && open.generation === op.generation) {
+          open.live = true
+        } else if (open !== undefined && open.generation === null) {
+          Object.assign(open, { generation: op.generation, instance, live: true })
+        } else {
+          if (open !== undefined) open.open = false
+          rows.push({ branchId, personId, kind: op.slot, generation: op.generation, instance, open: true, live: true })
+        }
+      } else if (op.kind === "seen") {
+        yield* Budget.seen(branchId, op.generation)
+        if (open?.generation === op.generation) open.live = true
+      } else if (op.kind === "ended") {
+        yield* Budget.ended(branchId, op.generation)
+        if (open?.generation === op.generation) open.open = false
+      } else if (op.kind === "release") {
+        yield* Budget.release(branchId)
+        if (open !== undefined && open.generation === null) open.open = false
+      } else {
+        // The lease runs out: nobody renewed the branch's open slot for longer than `LEASE_SECONDS`.
+        yield* sql`
+          UPDATE sandbox_generations SET started_at = started_at - make_interval(secs => ${Budget.LEASE_SECONDS + 1}),
+            seen_at = seen_at - make_interval(secs => ${Budget.LEASE_SECONDS + 1})
+          WHERE branch_id = ${branchId} AND ended_at IS NULL`
+        if (open !== undefined) open.live = false
+      }
+      const held = yield* sql<Expected>`
+        SELECT branch_id AS "branchId", person_id AS "personId", kind, generation, instance, ended_at IS NULL AS open,
+          ended_at IS NULL AND seen_at > now() - make_interval(secs => ${Budget.LEASE_SECONDS}) AS live
+        FROM sandbox_generations ORDER BY id`
+      expect(held, `after ${op.kind} on ${branchId}`).toEqual(rows.map(row => ({ ...row, live: row.open && row.live })))
+      expect(yield* Budget.awake).toBe(awakeCount())
+    }
+    return true
+  }), { seed, executions: stored }))
+  expect(Fuzz.formatReport(report)).toBeUndefined()
+})
 
-          // observedAdmit (both normal DB and failing DB)
-          const obsRes = yield* Budget.observedAdmit(slot, budgetDb)
-          expect(["Admitted", "Waiting"]).toContain(obsRes._tag)
-          const failDb = makeSqlLayer(() => { throw new Error("db down") })
-          expect(Exit.isFailure(yield* Effect.exit(Budget.observedAdmit(slot, failDb)))).toBe(true)
+/** What a person may do on a branch, restated from decision 0013 rather than from `accessOf`'s arithmetic. */
+const allowed = (
+  person: string,
+  role: Role | null,
+  branch: { readonly createdBy: string | null; readonly own: "none" | "view" | "edit"; readonly link: "none" | "view" | "edit" },
+): "owner" | "edit" | "view" | "none" => {
+  if (role === null) return "none"
+  // A Guest opens a branch only when it is shared with them by name, and only to view.
+  if (role === "guest") return branch.own === "none" ? "none" : "view"
+  if (branch.createdBy === person) return "owner"
+  if (branch.own === "edit" || branch.link === "edit") return "edit"
+  return branch.own === "view" || branch.link === "view" ? "view" : "none"
+}
 
-          // Budget.recorded against an in-memory KV store
-          const kv = new Map<string, unknown>()
-          const storage = {
-            get: <T>(k: string) => Effect.succeed(kv.get(k) as T | undefined),
-            put: (k: string, v: unknown) => Effect.sync(() => { kv.set(k, v) })
-          }
-          yield* Budget.recorded(storage, machine).pipe(Effect.provide(budgetDb))
-          // Second call with same generation is idempotent
-          yield* Budget.recorded(storage, machine).pipe(Effect.provide(budgetDb))
+let branches = 0
 
-          // 3. Access pure & SQL functions
-          const actorObj: Actor.Actor = {
-            subject: { kind: "human", id: "p-1" },
-            role: s.role,
-            session: "s-1"
-          } as unknown as Actor.Actor
-          const actorOpt = s.signedIn ? Option.some(actorObj) : Option.none()
-          expect(["edit", "view", "none"]).toContain(Access.ceilingOf(s.role))
-          expect(Access.ceilingOf(null)).toBe("none")
-          const acc = Access.accessOf(actorOpt, {
-            createdBy: s.accessMode === 0 ? "p-1" : "other",
-            repository: s.accessMode === 1 ? "edit" : s.accessMode === 2 ? "view" : null,
-            person: s.accessMode === 3 ? "edit" : null
-          })
-          expect(typeof Access.canView(acc)).toBe("boolean")
-          expect(typeof Access.canEdit(acc)).toBe("boolean")
-          expect(typeof Access.isMember(actorOpt)).toBe("boolean")
+test("a stored branch's permission list gives every person and role exactly the access its shares allow", async () => {
+  const scenarios = Arbitrary.schema(Schema.Struct({
+    owner: Schema.Literals(["maya", "ben", "team"]),
+    mode: Schema.Literals(["open", "locked", "restricted"]),
+    maya: Grant,
+    ben: Grant,
+    link: Grant,
+  }))
+  const report = await runtime.runPromise(Fuzz.run(scenarios, scenario => Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const { branch } = yield* Conversations.track(
+      "octo/hello", `generated-${branches++}`, scenario.mode, "a".repeat(40), scenario.owner === "team" ? undefined : scenario.owner,
+    )
+    // A locked branch and the team's have no creator, and start shared for editing with the repository's link.
+    const createdBy = scenario.mode === "locked" || scenario.owner === "team" ? null : scenario.owner
+    const grants: Record<string, "view" | "edit"> = createdBy === null ? { repository: "edit" } : {}
+    for (const [grantee, access] of [["maya", scenario.maya], ["ben", scenario.ben], ["repository", scenario.link]] as const) {
+      if (access === "none") continue
+      grants[grantee] = access
+      yield* sql`
+        INSERT INTO branch_shares (branch_id, grantee, login, access)
+        VALUES (${branch.branchId}, ${grantee}, ${grantee === "repository" ? null : grantee}, ${access})
+        ON CONFLICT (branch_id, grantee) DO UPDATE SET access = EXCLUDED.access`
+    }
+    const policy = yield* Access.policyOf(branch.branchId)
+    expect(policy).toEqual({ createdBy, grants })
+    for (const person of [...PEOPLE, "stranger"]) {
+      for (const role of [...ROLES, null]) {
+        const expected = allowed(person, role, { createdBy, own: grants[person] ?? "none", link: grants["repository"] ?? "none" })
+        const access = Access.underPolicy(policy, person, role)
+        expect(access, `${person} as ${role}`).toBe(expected)
+        expect(Access.canView(access)).toBe(expected !== "none")
+        expect(Access.canEdit(access)).toBe(expected === "owner" || expected === "edit")
+        const actor: Actor = { subject: { kind: "person", id: person }, role }
+        expect(Access.accessOf(Option.some(actor), { createdBy, person: grants[person] ?? null, repository: grants["repository"] ?? null })).toBe(expected)
+        expect(Access.isMember(Option.some(actor))).toBe(role !== null && role !== "guest")
+      }
+    }
+    // Signed out, nobody gets in, whatever the branch shares.
+    expect(Access.accessOf(Option.none(), { createdBy, person: "edit", repository: "edit" })).toBe("none")
+    expect(Access.isMember(Option.none())).toBe(false)
+    // A branch nobody recorded shares nothing.
+    expect(yield* Access.policyOf(crypto.randomUUID())).toEqual({ createdBy: null, grants: {} })
+    return true
+  }), { seed, executions: stored }))
+  expect(Fuzz.formatReport(report)).toBeUndefined()
+})
 
-          const policy: Access.Policy = {
-            createdBy: "p-1",
-            grants: { "p-2": "edit", "*": "view" }
-          }
-          expect(["owner", "edit", "view", "none"]).toContain(Access.underPolicy(policy, "p-1", s.role))
-          expect(["owner", "edit", "view", "none"]).toContain(Access.underPolicy(policy, "p-2", s.role))
-          expect(["owner", "edit", "view", "none"]).toContain(Access.underPolicy(policy, "p-3", null))
+const WRITES: Readonly<Record<GitHubTokens.Access, ReadonlyArray<string>>> = {
+  read: [], write: ["issues"], contents: [], pulls: [], publish: ["pull_requests", "contents"], review: ["pull_requests"],
+  status: ["statuses"], metadata: [],
+}
 
-          const accessDb = makeSqlLayer((raw) => {
-            const q = raw.replace(/\s+/g, " ").trim()
-            if (q.includes("FROM branches b")) {
-              return [{
-                branchId: "b-1",
-                conversationId: "c-1",
-                repoId: "github/acme/widgets",
-                name: "feat",
-                mode: "open",
-                createdBy: "p-1",
-                owner: "p-1",
-                repoAccess: "edit",
-                directAccess: "view",
-                repository: "edit",
-                direct: "view",
-                person: "view",
-                anyShare: true,
-                installed: s.installed
-              }]
-            }
-            if (q.includes("FROM github_repositories") && q.includes("installation_id")) {
-              return s.installed ? [{ installationId: 123 }] : []
-            }
-            if (q.includes("FROM github_repo_roles")) {
-              return s.hasRepoRole ? [{ role: s.role, checkedAt: new Date(now).toISOString(), fresh: true }] : []
-            }
-            if (q.includes("FROM branch_shares")) {
-              return [{ grantee: "*", access: "view" }, { grantee: "p-2", access: "edit" }]
-            }
-            if (q.includes("FROM agent_questions") || q.includes("FROM runs")) {
-              return [{
-                branchId: "b-1",
-                conversationId: "c-1",
-                repoId: "github/acme/widgets",
-                name: "feat",
-                mode: "open",
-                createdBy: "p-1",
-                owner: "p-1",
-                repoAccess: "edit",
-                directAccess: null
-              }]
-            }
-            return []
-          })
-          yield* Effect.gen(function*() {
-            yield* Access.readsCopy(actorOpt, "github/acme/widgets", Effect.succeed(s.installed))
-            yield* Access.installedOn("github/acme/widgets")
-            yield* Access.roleOn(actorObj, "github/acme/widgets", s.installed)
-            yield* Access.repoRoleOn(actorObj, "github/acme/widgets")
-            yield* Access.isMemberOn(actorOpt, "github/acme/widgets")
-            const ba = yield* Access.branchAccess(actorOpt, "b-1", "branch")
-            if (ba !== undefined) {
-              const asking = Access.askingOf(ba)
-              expect(typeof asking).toBe("string")
-            }
-            yield* Access.branchAccessAs(actorOpt, "c-1", "conversation")
-            yield* Access.policyOf("b-1")
-            yield* Effect.exit(Access.askingOnAnswer(actorObj, "ans-1"))
-          }).pipe(
-            Effect.provide(
-              Layer.mergeAll(
-                accessDb,
-                Layer.succeed(
-                  Access.BranchRoles,
-                  Access.BranchRoles.of({
-                    roleOn: () => Effect.succeed(s.hasRepoRole ? s.role : null),
-                    uninstalled: () => s.role,
-                    workUninstalled: () => Effect.succeed(s.role),
-                    repoRoleOn: () => Effect.succeed({ role: s.role, held: { repoId: "github/acme/widgets", personId: "p-1", role: s.role } } as never),
-                    publicCopy: () => Effect.succeed(true)
-                  })
-                )
-              )
-            )
-          )
-        })
+test("a step's GitHub token writes only what it names, a month holds its instant, and an issue URL names one parent", async () => {
+  const scenarios = Arbitrary.schema(Schema.Struct({
+    access: Schema.Literals(["read", "write", "contents", "pulls", "publish", "review", "status", "metadata"]),
+    at: int(Date.UTC(2020, 0, 1), Date.UTC(2040, 0, 1)),
+    owner: Schema.Literals(["octo", "acme-co", "a.b"]),
+    name: Schema.Literals(["hello", "wid_gets", "x"]),
+    number: int(0, 100_000),
+    suffix: Schema.Literals(["", "?per_page=1", "#top", "/comments", "x"]),
+    instance: Schema.Literals(["lite", "basic", "standard-1", "standard-2", "standard-3", "standard-4", "unknown"]),
+    owned: Schema.Literals(["maya", "", "absent"]),
+  }))
+  const report = await Effect.runPromise(Fuzz.run(scenarios, scenario => Effect.sync(() => {
+    const permissions = GitHubTokens.permissionsOf(scenario.access)
+    expect(Object.entries(permissions).filter(([, level]) => level === "write").map(([name]) => name).sort())
+      .toEqual([...WRITES[scenario.access]].sort())
+    expect(Object.keys(permissions).length).toBeGreaterThan(0)
+
+    const month = Budget.monthOf(scenario.at)
+    expect(month.label).toBe(new Date(scenario.at).toISOString().slice(0, 7))
+    expect(month.from <= scenario.at && scenario.at < month.until).toBe(true)
+    expect(new Date(month.from).toISOString().slice(7)).toBe("-01T00:00:00.000Z")
+    expect(Budget.monthOf(month.until).from).toBe(month.until)
+    expect(Budget.monthOf(month.until - 1).label).toBe(month.label)
+
+    const sizes = ["lite", "basic", "standard-1", "standard-2", "standard-3", "standard-4"]
+    const at = sizes.indexOf(scenario.instance)
+    const price = Budget.pricePerSecond(scenario.instance)
+    // An instance type the table doesn't know is priced as the largest, so spend is never understated.
+    if (at === -1) expect(price).toBe(Budget.pricePerSecond("standard-4"))
+    else if (at > 0) expect(price).toBeGreaterThan(Budget.pricePerSecond(sizes[at - 1]!))
+    else expect(price).toBeCloseTo(0.000002015, 12)
+
+    expect(Budget.personOf(scenario.owned === "absent" ? undefined : scenario.owned)).toBe(scenario.owned === "maya" ? "maya" : null)
+
+    const url = `https://api.github.com/repos/${scenario.owner}/${scenario.name}/issues/${scenario.number}${scenario.suffix}`
+    // GitHub has no owner with a dot, so a URL under one names no issue this app could read.
+    const named = scenario.owner !== "a.b" && scenario.number >= 1 && ["", "?per_page=1", "#top"].includes(scenario.suffix)
+    expect(GitHubStore.parentNamed(url)).toEqual(named
+      ? {
+        repoId: `github/${scenario.owner}/${scenario.name}`,
+        number: scenario.number,
+        owner: scenario.owner,
+        name: scenario.name,
+        id: `github/${scenario.owner}/${scenario.name}#${scenario.number}`,
+      }
+      : undefined)
+    return true
+  }), { seed, executions }))
+  expect(Fuzz.formatReport(report)).toBeUndefined()
+})
+
+const instanceOf = (executionId: string) => ({ executionId }) as FlowRuntime.FlowInstance["Service"]
+
+/** The error a failed exit carries, or undefined for a success. */
+const failureOf = <A, E>(exit: Exit.Exit<A, E>) =>
+  Exit.isFailure(exit) ? Option.getOrUndefined(Exit.findErrorOption(exit)) : undefined
+
+test("navigation and file steps ask only the tab that started the run, for app paths only, and report what it did", async () => {
+  const origin = "https://smithers.test"
+  const scenarios = Arbitrary.schema(Schema.Struct({
+    to: Schema.Literals(["path", "bare", "own-url", "other-origin", "script", "broken"]),
+    word: Schema.Literals(["alpha", "beta", "gamma"]),
+    agent: Schema.Boolean,
+    tab: Schema.Literals(["gone", "did", "did-not", "no-repository"]),
+    leading: int(0, 2),
+    trailing: int(0, 2),
+    lines: Schema.Literals(["none", "12", "10-20"]),
+    status: int(100, 599),
+  }))
+  const report = await Effect.runPromise(Fuzz.run(scenarios, scenario => Effect.gen(function* () {
+    const executionId = scenario.agent ? `answer-1/chat/Respond@v1/call/0.1` : "dispatch-1"
+    const requester = scenario.agent ? "answer-1" : "dispatch-1"
+
+    const to = {
+      path: `/octo/${scenario.word}?L=3#top`,
+      bare: `octo/${scenario.word}`,
+      "own-url": `${origin}//octo/${scenario.word}`,
+      "other-origin": `https://evil.example/octo/${scenario.word}`,
+      script: "javascript:alert(1)",
+      broken: "http://[::1",
+    }[scenario.to]
+    const path = { path: `/octo/${scenario.word}?L=3#top`, bare: `/octo/${scenario.word}`, "own-url": `/octo/${scenario.word}` }[
+      scenario.to as "path" | "bare" | "own-url"
+    ] as string | undefined
+    const reason = { "other-origin": "origin", script: "scheme", broken: "invalid" }[
+      scenario.to as "other-origin" | "script" | "broken"
+    ] as string | undefined
+    const asked: Array<unknown> = []
+    const moved = scenario.tab === "did"
+    const navigated = yield* Effect.exit(NavFlows.goTo({ to }).pipe(
+      Effect.provideService(NavFlows.Tabs, NavFlows.Tabs.of({
+        origin,
+        ask: (call) => Effect.sync(() => {
+          asked.push(call)
+          return scenario.tab === "gone" ? Option.none() : Option.some({ door: "composer" as const, moved })
+        }),
+      })),
+      Effect.provideService(FlowRuntime.FlowInstance, instanceOf(executionId)),
     ))
+    // The tab is told to stay (no path) for a refused target, and never hears the target itself.
+    expect(asked).toStrictEqual([path === undefined ? { requester } : { requester, path }])
+    if (path === undefined) {
+      expect(failureOf(navigated)).toMatchObject({ _tag: "@smthrs/mvp/navigation/NavigationRefused", reason })
+    } else {
+      expect(navigated).toStrictEqual(Exit.succeed({ path, moved }))
+    }
 
-  it("fuzzes GitHub Tokens, GitHub Store (relations/issues/comments/writes) & Feature Flows", () =>
-    property(
-      Arbitrary.all({
-        access: Arbitrary.schema(Schema.Literals(["read", "write", "contents", "pulls", "publish", "review", "status", "metadata"])),
-        tokMode: intBetween(0, 4),
-        appFail: intBetween(0, 3),
-        writeMode: intBetween(0, 3),
-        flowFail: bool
+    const raw = `${"/".repeat(scenario.leading)}src/${scenario.word}.ts${"/".repeat(scenario.trailing)}`
+    const file = `src/${scenario.word}.ts`
+    expect(FilesFlows.normalPath(raw)).toBe(file)
+    const lines = scenario.lines === "none" ? undefined : scenario.lines
+    const calls: Array<{ readonly requester: string; readonly call: FilesCall }> = []
+    const reply = scenario.tab === "no-repository"
+      ? { repository: null, ref: null, done: false }
+      : { repository: "octo/hello", ref: "main", done: scenario.tab === "did" }
+    const tabs = FilesFlows.FileTabsTabs.of({
+      ask: (from, call) => Effect.sync(() => {
+        calls.push({ requester: from, call })
+        return scenario.tab === "gone" ? Option.none() : Option.some({ door: "button" as const, reply })
       }),
-      execs,
-      (s) =>
-        Effect.gen(function*() {
-          const now = Date.now()
-          const repoId = "github/acme/widgets"
+    })
+    const provided = <A, E>(step: Effect.Effect<A, E, FilesFlows.FileTabsTabs | FlowRuntime.FlowInstance>) =>
+      Effect.exit(step.pipe(
+        Effect.provideService(FilesFlows.FileTabsTabs, tabs),
+        Effect.provideService(FlowRuntime.FlowInstance, instanceOf(executionId)),
+      ))
+    const opened = yield* provided(FilesFlows.openFile({ path: raw, lines }))
+    const closed = yield* provided(FilesFlows.closeFile({ path: raw }))
+    expect(calls).toStrictEqual([
+      { requester, call: { op: "open", path: file, ...(lines === undefined ? {} : { lines }) } },
+      { requester, call: { op: "close", path: file } },
+    ])
+    if (scenario.tab === "no-repository") {
+      expect(failureOf(opened)).toMatchObject({ _tag: "@smthrs/mvp/files/NotInRepository" })
+      expect(failureOf(closed)).toMatchObject({ _tag: "@smthrs/mvp/files/NotInRepository" })
+    } else {
+      const there = scenario.tab !== "gone"
+      expect(opened).toStrictEqual(Exit.succeed({
+        repository: there ? "octo/hello" : "", ref: there ? "main" : "", path: file, lines: lines ?? null, opened: scenario.tab === "did",
+      }))
+      expect(closed).toStrictEqual(Exit.succeed({ closed: scenario.tab === "did" }))
+    }
 
-          // 1. GitHub Tokens (permissionsOf + make -> forSession & forApp)
-          const perms = GitHubTokens.permissionsOf(s.access)
-          expect(Object.keys(perms).length).toBeGreaterThan(0)
-
-          const keys = yield* SessionKeys.make(Redacted.make(SECRET))
-          const sealedOk = yield* keys.seal(Redacted.make("ghu_user_1"), { id: "s-1", name: "github_access", version: 1 })
-          const tokDb = makeSqlLayer((raw) => {
-            const q = raw.replace(/\s+/g, " ").trim()
-            if (q.includes("FROM sessions")) {
-              if (s.tokMode === 0) return []
-              return [{
-                live: s.tokMode !== 1,
-                access: s.tokMode === 2 ? { ciphertext: "bad", nonce: "bad" } : sealedOk,
-                accessExpiresAt: s.tokMode === 3 ? now + 10_000 : now + 3_600_000,
-                roleCheckedAt: now
-              }]
-            }
-            if (q.includes("SELECT installation_id")) {
-              return s.appFail === 0 ? [{ installationId: 555 }] : []
-            }
-            return []
-          })
-          const fakeApp: GitHub.AppAuth.AppAuth = {
-            installation: () => {
-              if (s.appFail === 1) {
-                return Effect.fail(new (Core.IntegrationError.IntegrationError as any)({
-                  provider: "github",
-                  operation: "installation",
-                  kind: "http",
-                  message: "not found",
-                  status: 404
-                }) as never)
-              }
-              if (s.appFail === 2) {
-                return Effect.fail(new (Core.IntegrationError.IntegrationError as any)({
-                  provider: "github",
-                  operation: "installation",
-                  kind: "rate_limit",
-                  message: "limited",
-                  status: 429,
-                  details: { retryAfterUncappedMillis: 30_000 }
-                }) as never)
-              }
-              if (s.appFail === 3) {
-                return Effect.fail(new (Core.IntegrationError.IntegrationError as any)({
-                  provider: "github",
-                  operation: "installation",
-                  kind: "http",
-                  message: "limit",
-                  status: 403,
-                  details: { ratelimitRemaining: "0", rateLimitResetAt: now + 60_000 }
-                }) as never)
-              }
-              return Effect.succeed({ id: 555 } as never)
-            },
-            installationToken: () =>
-              Effect.succeed({
-                token: Redacted.make("ghs_app_1"),
-                expiresAt: now + 3_600_000
-              } as never)
-          } as unknown as GitHub.AppAuth.AppAuth
-
-          const tokens = GitHubTokens.make({
-            keys: s.tokMode === 0 ? Option.none() : Option.some(keys),
-            app: fakeApp,
-            refresh: () => Effect.void
-          })
-          yield* Effect.exit(tokens.forSession("s-1").pipe(Effect.provide(tokDb)))
-          yield* Effect.exit(
-            tokens.forInstallation({ id: repoId, owner: "acme", name: "widgets" }, s.access).pipe(Effect.provide(tokDb))
-          )
-
-          // 2. GitHub Store: markedWrite, shownBody, parentNamed, statedParent, relations, issues, comments, deliveries, writes
-          expect(GitHubStore.markedWrite(null)).toBeNull()
-          expect(GitHubStore.shownBody("hello")).toBe("hello")
-          const pn = GitHubStore.parentNamed("https://api.github.com/repos/acme/widgets/issues/42")
-          expect(pn?.number).toBe(42)
-          expect(GitHubStore.parentNamed("not-a-url")).toBeUndefined()
-
-          const fakeIssue: GitHub.Issues.Issue = {
-            id: 1001,
-            number: 10,
-            title: "Fix bug",
-            body: "Parent: https://github.com/acme/widgets/issues/42",
-            state: "open",
-            stateReason: null,
-            author: "alice",
-            assignees: ["bob"],
-            labels: [{ name: "bug", color: "ff0000" }],
-            htmlUrl: "https://github.com/acme/widgets/issues/10",
-            createdAt: "2026-01-01T00:00:00Z",
-            updatedAt: "2026-01-02T00:00:00Z",
-            closedAt: null,
-            commentsCount: 1,
-            isPullRequest: false,
-            parent_issue_url: "https://api.github.com/repos/acme/widgets/issues/42",
-            sub_issues_summary: { total: 1, completed: 0, percent_completed: 0 },
-            user: { login: "alice" },
-            created_at: "2026-01-01T00:00:00Z",
-            updated_at: "2026-01-02T00:00:00Z",
-            closed_at: null,
-            html_url: "https://github.com/acme/widgets/issues/10"
-          } as unknown as GitHub.Issues.Issue
-          const fakeComment: GitHub.Issues.IssueComment = {
-            id: 2001,
-            body: "Looks good",
-            author: "bob",
-            htmlUrl: "https://github.com/acme/widgets/issues/10#issuecomment-2001",
-            createdAt: "2026-01-02T00:00:00Z",
-            updatedAt: "2026-01-02T00:00:00Z"
-          } as unknown as GitHub.Issues.IssueComment
-
-          const storeDb = makeSqlLayer((raw) => {
-            const q = raw.replace(/\s+/g, " ").trim()
-            if (q.includes("FROM github_issue_relations") && q.includes("parent_id")) {
-              return [{ parentId: `${repoId}#42`, childId: `${repoId}#10`, verified: false, number: 42, owner: "acme", name: "widgets" }]
-            }
-            if (q.includes("FROM github_webhook_deliveries")) return [{ receivedAt: now }]
-            if (q.includes("INSERT INTO github_webhook_deliveries")) return [{ delivery_id: "d-1" }]
-            if (q.includes("INSERT INTO github_writes")) {
-              return s.writeMode === 0 ? [{ id: "w-1" }] : []
-            }
-            if (q.includes("FROM github_writes")) {
-              return [{
-                id: "w-1",
-                repoId,
-                op: "issue/create",
-                kind: "comment",
-                name: "feat/x",
-                itemNumber: 10,
-                actorId: "p-1",
-                sessionId: "s-1",
-                status: s.writeMode === 1 ? "pending" : "succeeded",
-                payload: { kind: "comment", number: 10, body: "hi" },
-                result: null,
-                error: null,
-                attempts: 1,
-                createdAt: now,
-                updatedAt: now
-              }]
-            }
-            if (q.includes("UPDATE github_writes")) return [{ id: "w-1", status: "running", attempts: 1 }]
-            return []
-          })
-          yield* Effect.gen(function*() {
-            GitHubStore.statedParent(`${repoId}#10`, fakeIssue)
-            yield* GitHubStore.upsertRelation(repoId, fakeIssue, now)
-            yield* GitHubStore.relationBefore(repoId, 10)
-            yield* GitHubStore.parentsToVerify(repoId, 10)
-            yield* GitHubStore.childrenOf(`${repoId}#42`)
-            yield* GitHubStore.markVerificationAttempt(repoId, `${repoId}#42`)
-            yield* GitHubStore.markVerified(`${repoId}#42`)
-            yield* GitHubStore.upsertIssue(repoId, fakeIssue, now)
-            yield* GitHubStore.upsertComment(repoId, 10, fakeComment, now)
-            yield* GitHubStore.tombstoneIssue(repoId, 10, now)
-            yield* GitHubStore.tombstoneCommentsExcept(repoId, 10, [2001], now)
-            yield* GitHubStore.tombstoneCommentsExcept(repoId, 10, [], now)
-            yield* GitHubStore.recordDelivery({ deliveryId: "d-1", event: "issues", action: "opened", repoId, subject: 10 })
-            yield* GitHubStore.receivedAt("d-1")
-            yield* GitHubStore.insertWrite({
-              id: "w-1",
-              repoId,
-              actorId: "p-1",
-              sessionId: "s-1",
-              via: "person",
-              payload: { op: "issue/comment", number: 10, body: "hi" } as never,
-              payloadHash: "hash-1"
-            })
-            yield* Effect.exit(GitHubStore.writeOf("w-1", false))
-            yield* GitHubStore.beginAttempt("w-1")
-            yield* GitHubStore.settleWrite("w-1", { status: "succeeded", result: { id: 1 } } as never)
-          }).pipe(Effect.provide(storeDb))
-
-          // 3. Feature flows: navigation/flows, files/flows, status/flows, repo/flows
-          const navTabs = Layer.succeed(NavFlows.Tabs, {
-            navigate: (to: string) =>
-              s.flowFail
-                ? Effect.fail(new NavFlows.NavigationRefused({ reason: "invalid" }))
-                : Effect.succeed({ path: to } as never)
-          } as unknown as NavFlows.Tabs["Service"])
-          yield* Effect.exit(NavFlows.goTo({ to: "/acme/widgets" }).pipe(Effect.provide(navTabs)))
-          yield* Effect.exit(NavFlows.goTo({ to: "https://evil.invalid" }).pipe(Effect.provide(navTabs)))
-
-          expect(FilesFlows.normalPath("/src/index.ts/")).toBe("src/index.ts")
-          const fileTabs = Layer.succeed(FilesFlows.FileTabsTabs, {
-            open: (path: string, lines?: string) =>
-              s.flowFail
-                ? Effect.fail(new FilesFlows.NotInRepository({}))
-                : Effect.succeed({ path, lines } as never),
-            close: (path: string) => Effect.succeed({ path } as never)
-          } as unknown as FilesFlows.FileTabsTabs["Service"])
-          yield* Effect.exit(FilesFlows.openFile({ path: "/src/a.ts", lines: "1-5" }).pipe(Effect.provide(fileTabs)))
-          yield* Effect.exit(FilesFlows.closeFile({ path: "/src/a.ts" }).pipe(Effect.provide(fileTabs)))
-
-          expect(StatusFlows.isRefusal(403)).toBe(true)
-          expect(StatusFlows.isRefusal(500)).toBe(false)
-          expect(StatusFlows.answerOf("yes")).not.toBeNull()
-          expect(StatusFlows.answerOf(null)).toBeNull()
-          expect(typeof StatusFlows.tokenOf("exec-1")).toBe("string")
-          expect(RepoFlows.parts("acme/widgets")).toEqual(["acme", "widgets"])
-        })
-    ))
+    // A 4xx is final but for a timeout and a rate limit, which say to try again.
+    const final = String(scenario.status).startsWith("4") && scenario.status !== 408 && scenario.status !== 429
+    expect(StatusFlows.isRefusal(scenario.status)).toBe(final)
+    expect(StatusFlows.isRefusal(undefined)).toBe(false)
+    return true
+  }), { seed, executions }))
+  expect(Fuzz.formatReport(report)).toBeUndefined()
 })

@@ -14,13 +14,12 @@ import { appHome, questionPost, requires, writeHeaders } from "./target"
 // request or replaces our code. The two clock tests set a device's clock with Playwright's clock, the way the system
 // clock moves, which Will approved for them only (ruling TEST-12, 2026-10-20 23:37).
 //
-// Three tests are marked broken (`test.fail`, docs/rulings.md TEST-5) just before the assertion the bug fails, so a failure
+// Two tests are marked broken (`test.fail`, docs/rulings.md TEST-5) just before the assertion the bug fails, so a failure
 // anywhere before it is still a failure. Once the bug is fixed the assertion passes, the run goes red, and the mark
 // comes off.
 
 /** Why each broken test fails today. */
 const BROKEN_WITHDRAW = "Broken: Outbox.withdraw takes back a write the server already took, between two of its sends"
-const BROKEN_GHOST = "Broken: a tab that loses the outbox's lead keeps the rows of writes another tab then takes back"
 const BROKEN_CLOCK =
   "Broken: after the device clock steps back, the device shows the next question twice, and the outbox orders its writes by that clock"
 
@@ -316,7 +315,7 @@ test.describe("Local-first conflicts", () => {
       await expect(one.question(typo), "the question left tab 1").toHaveCount(0)
     })
 
-    // Tab 2 still shows it queued until it leads again: the next test, marked broken.
+    // Tab 2 lets the question go too, though it no longer leads: the next test.
     await step("Tab 1 sends the fixed question, and A comes back: only the fixed one reaches Postgres and B", async () => {
       await one.composer.fill(fixed)
       await one.composer.press("Enter")
@@ -330,14 +329,11 @@ test.describe("Local-first conflicts", () => {
     await step("Tab 1 shows its fixed question answered", () => one.expectAnswered(fixed, `fixed-${word}`))
   })
 
-  test("taken back, still shown in the other tab: a question Edit took back in one tab stays Queued in the tab that led the outbox", {
-    annotation: [
-      {
-        type: "summary",
-        description: "Broken: Edit in tab 1 takes back a question tab 2's outbox held; tab 2 keeps showing it Queued, though it will never be sent.",
-      },
-      { type: "broken", description: BROKEN_GHOST },
-    ],
+  test("taken back in one tab, gone from the other: a question Edit took back in one tab leaves the tab that led the outbox", {
+    annotation: {
+      type: "summary",
+      description: "Edit in tab 1 takes back a question tab 2's outbox held; tab 2 stops showing it Queued, as it will never be sent.",
+    },
   }, async ({ devices }) => {
     const word = devices.word
     const [one] = await devices.open("Tab 1")
@@ -359,8 +355,7 @@ test.describe("Local-first conflicts", () => {
     })
 
     await step("Tab 2 shows it no more", async () => {
-      // Marked here, so a failure before this line stays a failure.
-      test.fail(true, BROKEN_GHOST)
+      // Tab 2 follows the outbox's storage while another tab leads (src/outboxFollower.ts).
       await expect(two.question(typo), "tab 2 no longer shows a question that will never be sent").toHaveCount(0, { timeout: 10_000 })
     })
   })

@@ -4,6 +4,9 @@ import unicorn from "eslint-plugin-unicorn"
 import tseslint from "typescript-eslint"
 import { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from "../../eslint.invariants.js"
 
+const effectRunners = ["runPromise", "runPromiseExit", "runSync", "runSyncExit", "runFork"]
+  .flatMap((name) => [name, `${name}With`])
+
 export default tseslint.config(
   {
     ignores: ["**/dist", "**/build", "**/coverage"]
@@ -63,6 +66,20 @@ export default tseslint.config(
     // `log.ts` wraps `console.error` for the renderer.
     files: ["src/main.tsx", "src/run.tsx", "src/ask.ts", "src/log.ts"],
     rules: { "no-console": "off" }
+  },
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/effect-boundary.ts"],
+    rules: {
+      "no-restricted-properties": [
+        "error",
+        ...effectRunners.map((property) => ({
+          object: "Effect",
+          property,
+          message: "Compose the Effect or use the injected TUI runtime."
+        }))
+      ]
+    }
   },
   ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)
 )

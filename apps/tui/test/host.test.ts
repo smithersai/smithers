@@ -1274,8 +1274,15 @@ describe("Host.run approval preparation", () => {
           _tag: "failed",
           error: { _tag: "/harness/HarnessError", code: "engine_failed", message: "Too many symlinks" }
         })
-        expect(events.filter((event) => event._tag === "cell-call-started")).toHaveLength(1)
-        expect(events.filter((event) => event._tag === "cell-call-settled")).toHaveLength(0)
+        const started = events.filter((event) => event._tag === "cell-call-started")
+        expect(started).toHaveLength(1)
+        const settled = events.filter((event) => event._tag === "cell-call-settled")
+        expect(settled).toHaveLength(1)
+        expect(settled[0]).toMatchObject({
+          flowName: flow,
+          identity: started[0]!.call.identity,
+          result: { outcome: "failure", value: null, message: `Flow ${flow} ended without an answer.` }
+        })
         expect(readFileSync(Log.path(), "utf8")).toContain("Too many symlinks")
         expect(await host.approvals!.pending()).toEqual([])
         expect(readlinkSync(join(cwd, "loop"))).toBe("loop")

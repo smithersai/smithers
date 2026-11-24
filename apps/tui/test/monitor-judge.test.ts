@@ -15,10 +15,11 @@ test.each([[0, false], [0.49999999999999994, false], [0.5, true], [0.50000000000
   "notability probability %s yields %s at the canonical half boundary",
   async (probability, expected) => {
     const requests: Evaluator.Request[] = []
-    const judge = Monitors.jev(async (request) => {
-      requests.push(request)
-      return booleanResponse(probability)
-    })
+    const judge = Monitors.jev((request) =>
+      Effect.sync(() => {
+        requests.push(request)
+        return booleanResponse(probability)
+      }), Effect.runPromise)
     expect(await judge(input)).toBe(expected)
     expect(requests).toHaveLength(1)
     expect(requests[0]?.state).toEqual({ watching: "the build fails", before: "green", after: "red" })
@@ -35,10 +36,11 @@ const wrongAnswers: ReadonlyArray<{ name: string; answers: Evaluator.RawAnswers 
 ]
 test.each([...wrongAnswers])("a %s answer refuses once and the next valid response recovers", async ({ answers }) => {
   let calls = 0
-  const judge = Monitors.jev(async () => ({
-    latencyMs: 0,
-    answers: ++calls === 1 ? answers : booleanResponse(0.5).answers
-  }))
+  const judge = Monitors.jev(() =>
+    Effect.sync(() => ({
+      latencyMs: 0,
+      answers: ++calls === 1 ? answers : booleanResponse(0.5).answers
+    })), Effect.runPromise)
   const failure: unknown = await judge(input).catch((error: unknown) => error)
   expect(failure).toBeInstanceOf(Monitors.MonitorError)
   if (!(failure instanceof Monitors.MonitorError)) throw new Error("Expected a typed monitor failure")
@@ -63,13 +65,16 @@ test.each(
   ] as const
 )("typed evaluator %s preserves its public classification", async (code, message) => {
   let calls = 0
-  const judge = Monitors.jev(async () => {
-    calls++
-    throw new Evaluator.EvaluatorError({
-      code,
-      message: code === "unreachable" ? "http://private-host.example?credential=synthetic" : "Request refused"
-    })
-  })
+  const judge = Monitors.jev(() =>
+    Effect.suspend(() => {
+      calls++
+      return Effect.fail(
+        new Evaluator.EvaluatorError({
+          code,
+          message: code === "unreachable" ? "http://private-host.example?credential=synthetic" : "Request refused"
+        })
+      )
+    }), Effect.runPromise)
   const failure: unknown = await judge(input).catch((error: unknown) => error)
   expect(failure).toBeInstanceOf(Monitors.MonitorError)
   if (!(failure instanceof Monitors.MonitorError)) throw new Error("Expected a typed monitor failure")
@@ -82,10 +87,11 @@ test.each([new Error("Adapter failed"), "Adapter failed"])(
   "untyped evaluator failures become an unreachable monitor failure",
   async (error) => {
     let calls = 0
-    const judge = Monitors.jev(async () => {
-      calls++
-      throw error
-    })
+    const judge = Monitors.jev(() =>
+      Effect.sync(() => {
+        calls++
+        throw error
+      }), Effect.runPromise)
     const failure: unknown = await judge(input).catch((reason: unknown) => reason)
     expect(failure).toBeInstanceOf(Monitors.MonitorError)
     if (!(failure instanceof Monitors.MonitorError)) throw new Error("Expected a typed monitor failure")
@@ -111,10 +117,11 @@ test.each([-1, 2, NaN, Infinity, -Infinity])(
     expect(canonicalError.code).toBe("invalid_answer")
     expect(canonicalError.message).toBe(`Answer to "notable": probability is ${probability}`)
     let calls = 0
-    const judge = Monitors.jev(async () => {
-      calls++
-      return response
-    })
+    const judge = Monitors.jev(() =>
+      Effect.sync(() => {
+        calls++
+        return response
+      }), Effect.runPromise)
     const result: unknown = await judge(input).catch((error: unknown) => error)
     expect(result).toBeInstanceOf(Monitors.MonitorError)
     if (!(result instanceof Monitors.MonitorError)) {
@@ -138,7 +145,7 @@ test.each([-1, 2])(
     const monitors = new Monitors.Monitors({
       judged: true,
       observe: async () => ++observed === 1 ? "green" : "red",
-      judge: Monitors.jev(async () => response),
+      judge: Monitors.jev(() => Effect.succeed(response), Effect.runPromise),
       compose: async () => {
         composed++
         return "Wrongly published"

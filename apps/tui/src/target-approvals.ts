@@ -10,9 +10,10 @@
 import * as BunControl from "@smthrs/cli/BunControl"
 import * as NodeControl from "@smthrs/cli/NodeControl"
 import { Control, type ControlError, type ControlSchema } from "@smthrs/control"
-import { Cause, Effect, Exit, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { existsSync } from "node:fs"
 import { join } from "node:path"
+import { tuiRuntime } from "./effect-boundary.ts"
 
 const NativeControl = process.versions.bun === undefined ? NodeControl : BunControl
 
@@ -81,9 +82,12 @@ export interface Port {
  * plane without starting runs and closes it again; a workspace with no
  * database has nothing pending and is never given one by a read.
  */
-export const make = (options: { readonly cwd: string; readonly stateRoot?: string | undefined }): Port => {
-  const run = async <A>(use: (control: Control.Service) => Effect.Effect<A, unknown>): Promise<A> => {
-    const exit = await Effect.runPromiseExit(
+export const make = (
+  options: { readonly cwd: string; readonly stateRoot?: string | undefined },
+  boundary = tuiRuntime
+): Port => {
+  const run = <A>(use: (control: Control.Service) => Effect.Effect<A, unknown>): Promise<A> =>
+    boundary.runPromise(
       Control.Control.pipe(
         Effect.flatMap(use),
         Effect.provide(NativeControl.layerControl({
@@ -93,9 +97,6 @@ export const make = (options: { readonly cwd: string; readonly stateRoot?: strin
         }))
       )
     )
-    if (Exit.isSuccess(exit)) return exit.value
-    throw Cause.squash(exit.cause)
-  }
   return {
     pending: () =>
       existsSync(join(options.stateRoot ?? options.cwd, ".flows", "control.db"))

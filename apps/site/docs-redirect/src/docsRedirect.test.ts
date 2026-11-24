@@ -8,7 +8,8 @@ import { answerIsUnclaimed, decide, handleDocsRedirect, MAX_UNCLAIMED_CACHE_ENTR
 import type { DocsRedirectEnv } from "./docsRedirect"
 import { DOCS_PAGES, DOCS_REDIRECTS, README_URL } from "./docsRedirectMap"
 import { Transport, transportFrom } from "./Http"
-import { parseWranglerConfig } from "./wranglerConfig"
+import * as ConfigProvider from "effect/ConfigProvider"
+import { deployment } from "./deploymentConfig"
 
 const REPO = "https://github.com/smithersai/smithers/"
 
@@ -279,7 +280,7 @@ describe("unknown slugs", () => {
 })
 
 describe("the map, the routes and the package list agree", () => {
-  const config = parseWranglerConfig(readFileSync(fileURLToPath(new URL("../wrangler.jsonc", import.meta.url)), "utf8"))
+  const config = Effect.runSync(deployment.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ DOCS_REDIRECT_ZONE: "smithers.sh" })))))
 
   // .smithers/flows/docs-sync/package-docs-redirect.test.mjs holds docsRedirectMap.ts to a fresh generation:
   // its target declares every docs file the map is built from.
@@ -290,13 +291,21 @@ describe("the map, the routes and the package list agree", () => {
   test("the Worker claims exactly the retired docs-site hostnames: no wildcard, no other host", () => {
     expect(config.name).toBe("smithers-docs-redirect")
     expect(config.main).toBe("src/worker.ts")
-    expect(config.routes).toEqual(legacySites.map(([slug]) => ({ pattern: `${slug}.smithers.sh/*`, zone_name: "smithers.sh" })))
+    expect(config.routes).toEqual(legacySites.map(([slug]) => ({ pattern: `${slug}.smithers.sh/*`, zoneName: "smithers.sh" })))
     expect([...DOCS_REDIRECTS.keys()]).toEqual(legacySites.map(([slug]) => slug))
-    expect(config.vars).toEqual({ UNKNOWN_SLUGS: "off" })
+    expect(config.env).toEqual({ UNKNOWN_SLUGS: "off", DOCS_REDIRECT_ZONE: "smithers.sh" })
+  })
+
+  test("a configured zone serves the retired sites and passes other zones through", async () => {
+    const env = { DOCS_REDIRECT_ZONE: "example.org", UNKNOWN_SLUGS: "off" }
+    const match = await run(new Request("https://flow.example.org/"), env)
+    expect(match.response.headers.get("location")).toBe(DOCS_REDIRECTS.get("flow")!)
+    const other = await run(new Request("https://flow.smithers.sh/"), env)
+    expect(other.seen.map(call => call.host)).toEqual(["flow.smithers.sh"])
   })
 
   test("the config names the zone, never a hosted account's zone ID", () => {
-    const source = readFileSync(fileURLToPath(new URL("../wrangler.jsonc", import.meta.url)), "utf8")
+    const source = readFileSync(fileURLToPath(new URL("./deploymentConfig.ts", import.meta.url)), "utf8")
     expect(source).not.toMatch(/zone_id|\b[0-9a-f]{32}\b/)
   })
 

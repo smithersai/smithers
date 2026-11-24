@@ -71,6 +71,7 @@ it("warms, starts and watches an exported action layer using real filesystem and
       cwd: resolve(import.meta.dir, ".."),
       env: {
         PATH: process.env.PATH,
+        SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY,
         XDG_CONFIG_HOME: join(root, "config"),
         SMITHERS_TUI_SESSION_DIR: join(root, "sessions"),
         AI_GATEWAY_API_KEY: "",

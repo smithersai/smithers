@@ -48,7 +48,9 @@ const unknown = "Something went wrong on our side. Not your fault."
 describe("/verify-run", () => {
   test("prints the verdict and every list the report holds", async () => {
     const { service, verifies } = recording()
-    expect(await History.verify(" run-1 ", service)).toBe(
+    const verification = History.verify(" run-1 ", service)
+    expect(verifies).toEqual([])
+    expect(await Effect.runPromise(verification)).toBe(
       ["run-1 divergent", "replays 2", "resumes review", "executes c", "not replayed verify/second, d"].join("\n")
     )
     expect(verifies).toEqual([{ runId: "run-1" }])
@@ -62,14 +64,14 @@ describe("/verify-run", () => {
   test("refuses a missing or surplus run id without calling the host", async () => {
     const { service, verifies } = recording()
     for (const argument of ["", "   ", "run-1 run-2"]) {
-      expect(await History.verify(argument, service)).toBe("Usage: /verify-run <run>")
+      expect(await Effect.runPromise(History.verify(argument, service))).toBe("Usage: /verify-run <run>")
     }
     expect(verifies).toEqual([])
   })
 
   test("prints the host's refusal, and the unknown-failure sentence for a defect", async () => {
-    expect(await History.verify("run-1", refusing)).toBe("No history")
-    expect(await History.verify("run-1", broken)).toBe(unknown)
+    expect(await Effect.runPromise(History.verify("run-1", refusing))).toBe("No history")
+    expect(await Effect.runPromise(History.verify("run-1", broken))).toBe(unknown)
   })
 })
 

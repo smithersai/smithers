@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test"
+import { Effect } from "effect"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -23,18 +24,18 @@ describe("external editor", () => {
 describe("bounded quit", () => {
   it("returns when the work settles", async () => {
     const started = Date.now()
-    await External.bounded(Promise.resolve(), 5_000)
+    await Effect.runPromise(External.bounded(Promise.resolve(), 5_000))
     expect(Date.now() - started).toBeLessThan(1_000)
   })
 
   it("returns after the bound when the work hangs", async () => {
     const started = Date.now()
-    await External.bounded(new Promise(() => {}), 100)
+    await Effect.runPromise(External.bounded(new Promise(() => {}), 100))
     expect(Date.now() - started).toBeGreaterThanOrEqual(90)
   })
 
   it("returns when the work rejects", async () => {
-    await External.bounded(Promise.reject(new Error("dispose failed")), 5_000)
+    await Effect.runPromise(External.bounded(Promise.reject(new Error("dispose failed")), 5_000))
   })
 })
 

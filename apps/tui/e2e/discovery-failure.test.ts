@@ -99,7 +99,11 @@ it("keeps New and Resumed acknowledgments over an unchanged discovery failure", 
   const where = await start()
   await submit("/name saved route")
   await submit("remember route")
-  await tui!.until((screen) => screen.includes("pong") && !screen.includes("esc Interrupt"), 15_000, "first answer")
+  await tui!.until(
+    (screen) => /^\s+pong\s*$/m.test(screen) && !screen.includes("esc Interrupt"),
+    15_000,
+    "first answer"
+  )
 
   let screen = await afterListing(where.sessions, () => submit("/new"), "New conversation started")
   expect(screen).toContain("New conversation started")

@@ -39,9 +39,10 @@ function runAsk(
   }
   const script = `
     import { mock } from "bun:test"
+    import { Effect } from "effect"
     const config = ${JSON.stringify(config)}
     mock.module(${JSON.stringify(join(source, "models.ts"))}, () => ({
-      detect: async () => ({ environment: {}, defaultSeat: config.defaultSeat }),
+      detect: () => Effect.succeed({ environment: {}, defaultSeat: config.defaultSeat }),
       delegateModels: { sol: "openai:gpt-6.1-sol" }
     }))
     mock.module(${JSON.stringify(join(source, "approvals.ts"))}, () => ({ mode: () => config.approval }))

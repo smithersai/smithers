@@ -7,6 +7,7 @@
 import { appendFileSync, writeFileSync } from "node:fs"
 import * as Approvals from "./approvals.ts"
 import * as Budget from "./budget.ts"
+import { tuiRuntime } from "./effect-boundary.ts"
 import * as Host from "./host.ts"
 import * as Models from "./models.ts"
 import * as Spend from "./spend.ts"
@@ -19,7 +20,7 @@ if (prompt === undefined) {
 // SMITHERS_TUI_RECORD=file.jsonl records every event with its arrival time.
 const record = process.env.SMITHERS_TUI_RECORD
 if (record !== undefined) writeFileSync(record, "")
-const available = await Models.detect(process.env)
+const available = await tuiRuntime.runPromise(Models.detect(process.env))
 const approvals = Approvals.mode(process.env, { print: true })
 if (typeof approvals === "object") {
   console.error(approvals.error)
@@ -36,7 +37,7 @@ const host = Host.make({
   available,
   approvals,
   ...(budget === undefined ? {} : { budget, ledger: Spend.ledger() })
-})
+}, tuiRuntime)
 const turn = host.run({
   prompt,
   seat: process.argv[3] ?? available.defaultSeat ?? Models.delegateModels.sol,

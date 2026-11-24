@@ -14,13 +14,63 @@ import ts from "typescript"
 import { docsRoutes, workerDomain } from "../../mvp/infra/Domain.ts"
 
 const root = resolve(import.meta.dirname, "../../..")
-const appEntries = ["bug-worker"].map((name) => join(root, "apps", name, "alchemy.run.ts"))
+const apps = join(root, "apps")
+const bugEntry = join(apps, "bug-worker/alchemy.run.ts")
+const patternsEntry = join(apps, "patterns-site/alchemy.run.ts")
+const redirectEntry = join(apps, "site/docs-redirect/alchemy.run.ts")
+// Production stacks can live in an app or one of its deployment directories.
+const stackPaths = [...appFiles(apps)].filter(path =>
+  /^(?:[^/]+\/){1,2}alchemy\.run\.ts$/.test(relative(apps, path))
+)
+// These two stacks load Vite/VibeLang through their own build pipelines.
+const compiledStacks = ["mvp", "vibelang"].map(app => join(apps, app, "alchemy.run.ts"))
+const appEntries = stackPaths.filter(path => !compiledStacks.includes(path))
+
+function* appFiles(directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name)
+    if (entry.isDirectory()) yield* appFiles(path)
+    else yield path
+  }
+}
+
+test("apps contain no Wrangler deployment configs", () => {
+  assert.deepEqual([...appFiles(apps)].filter(path => /\/wrangler\.(jsonc|toml)$/.test(path)), [])
+})
+
+const resolveDeployment = (effect, env) =>
+  Effect.runSync(effect.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env)))))
+
+test("site stacks default to generic installations and preserve static assets and redirect policy", async () => {
+  const patterns = await import(pathToFileURL(patternsEntry).href)
+  const redirect = await import(pathToFileURL(redirectEntry).href)
+  const base = resolveDeployment(patterns.deployment, {})
+  assert.equal(base.name, "patterns-site")
+  assert.equal(base.domain, undefined)
+  assert.equal(base.workersDev, true)
+  assert.equal(base.assets.directory, "site")
+  assert.ok(existsSync(join(dirname(patternsEntry), base.assets.directory, "index.html")))
+  const isolated = resolveDeployment(redirect.deployment, {})
+  assert.equal(isolated.name, "smithers-docs-redirect")
+  assert.equal(isolated.workersDev, false)
+  assert.deepEqual(isolated.routes, [])
+  assert.deepEqual(isolated.env, { UNKNOWN_SLUGS: "off" })
+  assert.deepEqual(isolated.compatibility, { date: "2026-08-01", flags: ["nodejs_compat"] })
+  assert.equal(isolated.observability.enabled, true)
+  assert.equal(base.observability.enabled, true)
+  assert.equal(base.compatibility.date, "2026-07-02")
+  for (const [program, name, key] of [
+    [patterns.deployment, "PATTERNS_SITE_WORKER_NAME", "PATTERNS_SITE_DOMAIN"],
+    [redirect.deployment, "DOCS_REDIRECT_WORKER_NAME", "DOCS_REDIRECT_ZONE"]
+  ]) {
+    assert.equal(resolveDeployment(program, { [name]: "another-worker" }).name, "another-worker")
+    assert.throws(() => resolveDeployment(program, { [key]: "*.example.org" }))
+  }
+})
 
 test("all deployment entry points import as Alchemy 2 stack effects", async () => {
-  const entryPoints = [
-    ...appEntries
-  ]
-  for (const path of entryPoints) {
+  for (const path of [bugEntry, patternsEntry, redirectEntry]) assert.ok(appEntries.includes(path), path)
+  for (const path of appEntries) {
     const module = await import(pathToFileURL(path).href)
     assert.ok(Effect.isEffect(module.default), `${path}: the CLI needs a default-exported stack effect`)
   }
@@ -28,9 +78,7 @@ test("all deployment entry points import as Alchemy 2 stack effects", async () =
 
 test("stack properties and shared implementation typecheck against the declared Alchemy API", () => {
   const program = ts.createProgram({
-    rootNames: [
-      ...appEntries
-    ],
+    rootNames: appEntries,
     options: {
       noEmit: true,
       strict: true,
@@ -70,7 +118,7 @@ const bugWorkerDeployment = async (env) => {
 }
 
 test("app stacks take Worker routing from deployment configuration and defer required redacted credentials", async () => {
-  const [bugs] = await Promise.all(appEntries.map((path) => import(pathToFileURL(path).href)))
+  const bugs = await import(pathToFileURL(bugEntry).href)
   // The physical names and hostnames are the installation's configuration,
   // never a hosted account's literals: another installation plans its own.
   const configured = bugs.workerProps(await bugWorkerDeployment(BUG_WORKER_FIXTURE))
@@ -269,34 +317,23 @@ test("each hostname and route has one owning Worker in this repository", async (
     [join(root, "apps/mvp/infra/DocsSite.ts"), join(root, "apps/mvp/infra/Domain.ts")],
     [join(root, "apps/bug-worker/alchemy.run.ts"), join(root, "apps/bug-worker/infra/Deployment.ts")]
   ])
-  const apps = join(root, "apps")
-  // The site's docs redirect Worker (apps/site/docs-redirect) is the one
-  // Worker nested below an app directory.
-  const wranglerPaths = [
-    ...readdirSync(apps).map((app) => join(apps, app, "wrangler.jsonc")),
-    join(apps, "site", "docs-redirect", "wrangler.jsonc")
-  ]
-  for (const wranglerPath of wranglerPaths) {
-    if (existsSync(wranglerPath)) {
-      const { config, error } = ts.parseConfigFileTextToJson(wranglerPath, readFileSync(wranglerPath, "utf8"))
-      assert.equal(error, undefined, wranglerPath)
-      for (const route of config.routes ?? []) {
-        const slash = route.pattern.indexOf("/")
-        claim({
-          host: slash === -1 ? route.pattern : route.pattern.slice(0, slash),
-          owner: config.name,
-          kind: route.custom_domain ? "domain" : "route",
-          path: slash === -1 ? "/*" : route.pattern.slice(slash)
-        })
-      }
-    }
+  const patterns = resolveDeployment((await import(pathToFileURL(patternsEntry).href)).deployment, {
+    PATTERNS_SITE_DOMAIN: "patterns.smithers.sh"
+  })
+  claim({ host: patterns.domain, owner: patterns.name, kind: "domain", path: "/*" })
+  const redirect = resolveDeployment((await import(pathToFileURL(redirectEntry).href)).deployment, {
+    DOCS_REDIRECT_ZONE: "smithers.sh"
+  })
+  for (const { pattern } of redirect.routes) {
+    const slash = pattern.indexOf("/")
+    claim({ host: pattern.slice(0, slash), owner: redirect.name, kind: "route", path: pattern.slice(slash) })
   }
-  for (const app of readdirSync(apps)) {
-    const stackPath = join(apps, app, "alchemy.run.ts")
-    if (existsSync(stackPath)) {
+  for (const stackPath of stackPaths) {
+    if (stackPath !== patternsEntry && stackPath !== redirectEntry) {
       for (const entry of stackHostnames(stackPath, bindings, bindingModules)) claim(entry)
     }
   }
+  assert.deepEqual([...owners.get("patterns.smithers.sh") ?? []], ["patterns-site"])
   // An empty static read must not pass for "no conflicts": it sees bug-worker's configured domain.
   for (const host of ["bug.example.com", "bugs.example.com"]) {
     assert.equal(owners.get(host)?.size, 1, host)

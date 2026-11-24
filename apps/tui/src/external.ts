@@ -123,7 +123,5 @@ export const run = (
 export const quitMs = 3000
 
 /** Settles when `work` does or after `ms`, whichever is first: a hung close never keeps the process alive. */
-export const bounded = (work: Promise<unknown>, ms = quitMs): Promise<void> =>
-  Effect.runPromise(
-    Effect.promise(() => work.then(() => undefined, () => undefined)).pipe(Effect.timeoutOption(ms), Effect.asVoid)
-  )
+export const bounded = (work: Promise<unknown>, ms = quitMs): Effect.Effect<void> =>
+  Effect.promise(() => work.then(() => undefined, () => undefined)).pipe(Effect.timeoutOption(ms), Effect.asVoid)

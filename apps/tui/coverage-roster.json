@@ -26,6 +26,7 @@
   "src/devtools.ts",
   "src/drag-scroll.ts",
   "src/editor.ts",
+  "src/effect-boundary.ts",
   "src/extension.ts",
   "src/external.ts",
   "src/failures.ts",

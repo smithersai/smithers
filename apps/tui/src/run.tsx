@@ -21,6 +21,7 @@ import * as Box from "./box.ts"
 import * as Budget from "./budget.ts"
 import * as Cli from "./cli.ts"
 import * as Debug from "./debug.ts"
+import { tuiRuntime } from "./effect-boundary.ts"
 import * as FlowControl from "./flow-control.ts"
 import * as Host from "./host.ts"
 import * as Models from "./models.ts"
@@ -66,7 +67,7 @@ try {
   process.exit(1)
 }
 
-const available = await Models.detect(process.env)
+const available = await tuiRuntime.runPromise(Models.detect(process.env))
 const seat = values.model ?? (replay === undefined ? available.defaultSeat : `replay:${replay}`)
 if (seat === undefined) {
   console.error("No model is available. Run `codex login` for the ChatGPT subscription, or set a provider API key.")
@@ -88,7 +89,7 @@ const host = Host.make({
   ...(seat.startsWith("replay:") ? { judge: ScriptedJudge.layerAll } : {}),
   ...(box === undefined ? {} : { box: Box.workspace(process.env, box) }),
   ...spending
-})
+}, tuiRuntime)
 
 if (values.print !== undefined) {
   const outcome = await Print.run({
@@ -128,7 +129,7 @@ try {
     import("./target-approvals.ts")
   ])
   // App warms the host after first draw; discovery alone never imports a flow module.
-  flows = FlowControl.make({ cwd, environment: available.environment, approvals: host.approvals! })
+  flows = FlowControl.make({ cwd, environment: available.environment, approvals: host.approvals! }, tuiRuntime)
   const resumeFile = values.continue === true ? Session.latest(cwd) : undefined
   const branch = spawnSync("git", ["branch", "--show-current"], { cwd, encoding: "utf8" }).stdout?.trim()
   const renderer = await createCliRenderer({
@@ -152,7 +153,7 @@ try {
       ...(resumeFile === undefined ? {} : { resume: resumeFile }),
       pickSession: values.resume === true,
       flows,
-      targets: TargetApprovals.make({ cwd }),
+      targets: TargetApprovals.make({ cwd }, tuiRuntime),
       ...(branch === undefined || branch === "" ? {} : { branch })
     })
   )
