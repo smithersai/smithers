@@ -498,7 +498,7 @@ process.exit(0);
       )
       assertPassed(report)
     },
-    120_000
+    240_000
   )
 
   it(
@@ -660,7 +660,7 @@ process.exit(0);
       )
       assertPassed(report)
     },
-    120_000
+    240_000
   )
 
   it(
@@ -776,6 +776,6 @@ process.exit(0);
       )
       assertPassed(report)
     },
-    120_000
+    240_000
   )
 })

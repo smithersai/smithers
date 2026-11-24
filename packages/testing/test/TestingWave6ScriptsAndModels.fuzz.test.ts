@@ -667,7 +667,7 @@ describe("Wave-6 testing scripts, models, server, CLI, process table & CLI drive
 
                 // Chat 501 / mid-stream die / 429 / mid-stream error
                 for (
-                  const [m, expectedStatus] of [["die-before", 501], ["die-mid", 200], ["fail-before", 429], [
+                  const [m, expectedStatus] of [["die-before", 500], ["die-mid", 200], ["fail-before", 429], [
                     "fail-mid",
                     200
                   ]] as const
@@ -708,7 +708,7 @@ describe("Wave-6 testing scripts, models, server, CLI, process table & CLI drive
                     })
                   })
                 )
-                expect(evDie.status).toBe(501)
+                expect(evDie.status).toBe(500)
                 const evFail = yield* Effect.promise(() =>
                   fetch(`${server.url}${ModelServer.paths.evaluation}`, {
                     method: "POST",

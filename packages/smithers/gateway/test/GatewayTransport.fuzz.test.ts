@@ -84,6 +84,7 @@ const makeControl = (overrides: Partial<Control.Service> = {}): Control.Service 
     steer: () => Effect.succeed(accepted),
     pause: () => Effect.die("pause is outside the runtime bridge protocol"),
     cancel: () => Effect.succeed(accepted),
+    pause: () => Effect.succeed(accepted),
     resume: () => Effect.succeed(accepted),
     list: () => Effect.succeed({ _tag: "runs", items: [makeSummary()] }),
     watch: () =>

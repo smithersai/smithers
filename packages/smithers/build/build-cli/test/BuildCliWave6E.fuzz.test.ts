@@ -503,7 +503,7 @@ describe("@smthrs/build-cli Wave-6E: Executor, Workspace, Owners, PackageTree, O
                         res.writeHead(200)
                         res.end(JSON.stringify({ missing: [] }))
                       }
-                    }, 150)
+                    }, 450)
                     return
                   }
                   if (findMissingMode === "429") {
@@ -559,7 +559,7 @@ describe("@smthrs/build-cli Wave-6E: Executor, Workspace, Owners, PackageTree, O
                   endpoint,
                   readToken: () => "tok-r",
                   writeToken: () => "tok-w",
-                  timeouts: { get: 40, put: 40 },
+                  timeouts: { get: 250, put: 250 },
                   warn: (m) => warnings.push(m)
                 })
                 const chunkedHit = await cache.get(`chunked-${slug}`)

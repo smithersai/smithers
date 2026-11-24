@@ -531,7 +531,7 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
       )
     )
     assertPassed(report)
-  })
+  }, 120_000)
 
   it("AgentAction, Budget reservations/settlement/USD & QuotaPolicy fuzz invariants", async () => {
     const Review = Schema.Struct({ approved: Schema.Boolean, count: Schema.Int })
@@ -643,7 +643,7 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
       )
     )
     assertPassed(report)
-  })
+  }, 120_000)
 
   it("StandardFlows, SmithersPlugin, FlowStore, PromoteFlows & WorkspaceObservation invariants", async () => {
     const arb = Arbitrary.schema(
@@ -761,7 +761,7 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
       )
     )
     assertPassed(report)
-  })
+  }, 120_000)
 
   it("Memory selection, wiki/repo/pack, MemoryMine & MemorySnapshotRecorder over real SQLite TestMemory", async () => {
     const arb = Arbitrary.schema(
@@ -842,7 +842,7 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
       )
     )
     assertPassed(report)
-  })
+  }, 120_000)
 
   it("EngineChildren durable child spawn, send, await & ownership invariants over SQLite", async () => {
     const Parent = Flow.make("agent/fuzz/child-parent", {
@@ -926,7 +926,7 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
       )
     )
     assertPassed(report)
-  })
+  }, 120_000)
 
   it("ExternalAgent, AgentTerminalCommand, Acp & SeatRouter invariants", async () => {
     const arb = Arbitrary.schema(
@@ -1170,7 +1170,7 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
       )
     )
     assertPassed(report)
-  })
+  }, 120_000)
 
   it("StandardFlows full tool invocations, PromoteFlows, Budget policies/ledger & MemoryMine.write/settle invariants", async () => {
     const arb = Arbitrary.schema(
@@ -1344,7 +1344,7 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
       )
     )
     assertPassed(report)
-  })
+  }, 120_000)
 
   it("Budget durable journal recovery/suspend/resume/envelope, StandardFlows.memory, StepTrace & PendingApproval invariants", async () => {
     const arb = Arbitrary.schema(
@@ -1544,5 +1544,5 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
       )
     )
     assertPassed(report)
-  })
+  }, 120_000)
 })

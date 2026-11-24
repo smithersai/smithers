@@ -140,6 +140,7 @@ describe("@smthrs/agent Wave-6 AgentSession deep fuzz invariants", () => {
                 const baseUsd = baseUsdCents / 100
                 const stores = TestStores.layerAt(":memory:").pipe(Layer.provideMerge(NodeCrypto.layer))
                 const runtimeLayer = SqlControlRuntime.layer({
+                  principal: { id: "local", kind: "operator" },
                   flows: [{
                     flowId: "budget/test",
                     executionDigest: "a".repeat(64),
@@ -457,6 +458,7 @@ describe("@smthrs/agent Wave-6 AgentSession deep fuzz invariants", () => {
                 ).pipe(Layer.provideMerge(NodeCrypto.layer), Layer.provideMerge(NodeServices.layer))
 
                 const runtimeLayer = SqlControlRuntime.layer({
+                  principal: { id: "local", kind: "operator" },
                   flows: [
                     {
                       flowId: "todo",
@@ -658,7 +660,7 @@ describe("@smthrs/agent Wave-6 AgentSession deep fuzz invariants", () => {
           freshCtx: Schema.Boolean
         })
       )
-      const principal: ControlSchema.Principal = { id: "operator", kind: "test", stampedAt: 1 }
+      const principal: ControlSchema.Principal = { id: "local", kind: "operator", stampedAt: 1 }
       let seq = 0
 
       const report = await Effect.runPromise(

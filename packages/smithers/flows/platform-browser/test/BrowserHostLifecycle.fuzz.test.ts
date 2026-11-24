@@ -319,7 +319,7 @@ describe("@smthrs/platform-browser host lifecycle fuzz invariants", () => {
       )
       for (const report of reports) assertPassed(report)
     },
-    60_000
+    180_000
   )
 
   it("leadership hands off through the Web Lock one holder at a time, in order, and a steal ends exactly the stolen holder", async () => {

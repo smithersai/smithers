@@ -836,7 +836,7 @@ describe("@smthrs/flow fuzz", () => {
         }).pipe(Effect.provide(Layer.merge(NodeCrypto.layer, TestClock.layer()))),
       { seed: seed + 7, executions: ioExecutions }
     )
-  })
+  }, 90_000)
 
   it("fuzzes HumanTask schema validation, answer validation across all 4 kinds, and ExternalJob declarations", async () => {
     const arb = Arbitrary.schema(

@@ -11,12 +11,12 @@
  */
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { resolve, sep } from "node:path"
+import { resolve } from "node:path"
 import type { TestProject } from "vitest/node"
 
 export const setup = (project: TestProject): () => Promise<void> => {
   const reportsDirectory = resolve(project.vitest.config.coverage.reportsDirectory)
-  const scratch = resolve(tmpdir()) + sep
+  const scratch = resolve(tmpdir(), "flows-flow-coverage-")
   return async () => {
     if (!reportsDirectory.startsWith(scratch)) return
     await rm(reportsDirectory, { recursive: true, force: true })

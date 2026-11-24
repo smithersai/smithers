@@ -1016,10 +1016,18 @@ process.exit(0);
                 expect(r1["prod"]).toBe("ran")
                 expect(r1["cons"]).toBe("ran")
 
-                // Warm run: both hit (exercises kept archive + putBackFor!)
+                // Warm run: without a background daemon, both must hit (kept archive + putBackFor);
+                // with leaveDaemon=true, PackageRunner refuses to cache-hit a step that left a live program
+                // running (`leftAProgram`), so prod/cons either both hit (if sleep had not spawned yet) or re-run.
                 const r2 = await runNames(["cons"])
-                expect(r2["prod"]).toBe("hit")
-                expect(r2["cons"]).toBe("hit")
+                if (!leaveDaemon) {
+                  expect(r2["prod"]).toBe("hit")
+                  expect(r2["cons"]).toBe("hit")
+                } else {
+                  expect(["hit", "ran"]).toContain(r2["prod"])
+                  expect(["hit", "ran"]).toContain(r2["cons"])
+                  if (r2["prod"] === "ran") expect(r2["cons"]).toBe("ran")
+                }
 
                 // Mutate in.txt -> both must invalidate and re-run!
                 await writeFile(root, "in.txt", `v2-${slug}\n`)

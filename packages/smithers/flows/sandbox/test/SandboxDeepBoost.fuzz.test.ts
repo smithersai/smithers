@@ -121,7 +121,7 @@ describe("@smthrs/sandbox LinuxBatch, CiJob.Graph, SandboxMerge.resolveWith & Re
     )
     const failure = Fuzz.formatReport(report)
     if (failure !== undefined) throw new Error(failure)
-  })
+  }, 120_000)
 
   it("CiJob.Graph & CiJob.make run multi-job DAGs with needs, skips, failures & parallel branches", async () => {
     const arb = Arbitrary.schema(

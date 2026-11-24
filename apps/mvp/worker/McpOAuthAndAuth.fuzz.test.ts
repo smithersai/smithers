@@ -78,6 +78,12 @@ const createMemoryOAuthDb = () => {
     Effect.try(() => {
       const q = normalize(strings)
       if (q.startsWith("SELECT pg_advisory_xact_lock")) return [] as ReadonlyArray<A>
+      if (q.includes("FROM mcp_registration_admissions")) {
+        return (q.includes("SELECT") ? [{ total: 0, network: 0 }] : []) as unknown as ReadonlyArray<A>
+      }
+      if (q.includes("INSERT INTO mcp_registration_admissions")) {
+        return [] as ReadonlyArray<A>
+      }
       if (q.startsWith("INSERT INTO mcp_oauth_clients")) {
         const [clientId, clientName, redirectUris] = values as [string, string, ReadonlyArray<string>]
         clients.set(clientId, { clientId, clientName, redirectUris: [...redirectUris] })

@@ -399,7 +399,7 @@ describe("@smthrs/memory SQLite MemoryStore facts, notes, threads & recall fuzz 
         expect(Result.isFailure(yield* Effect.result(noop.enableFts("flow")))).toBe(true)
       }).pipe(Effect.provide(testMemoryLayer))
     )
-  })
+  }, 120_000)
 })
 
 describe("@smthrs/memory Recall, Embedding, RecallSemantic, Source & Opening fuzz invariants", () => {

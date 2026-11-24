@@ -181,7 +181,7 @@ const populateSyntheticHome = (
     mkdirSync(logDir, { recursive: true })
     writeFileSync(
       join(logDir, "transcript.jsonl"),
-      `{"step":1,"text":"Authorization Bearer secret_token_1234567890"}\n`
+      `{"step":1,"type":"USER_INPUT","text":"Authorization Bearer secret_token_1234567890"}\n`
     )
   }
   if (opts.includeAgyToken) {
