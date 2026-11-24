@@ -14,6 +14,8 @@
  */
 
 import { RunState } from "@smthrs/migrate"
+import * as SqliteStoreNode from "@smthrs/migrate/SqliteStoreNode"
+import * as Effect from "effect/Effect"
 import { existsSync } from "node:fs"
 
 /**
@@ -66,12 +68,14 @@ export interface Database {
  */
 export const read = (path: string): Database => {
   if (!existsSync(path)) return { path, readable: true, runs: [] }
-  const finding = RunState.readDatabase(
-    path,
-    path,
-    [],
-    Date.now(),
-    RunState.defaultLiveWindowMs
+  const finding = Effect.runSync(
+    RunState.readDatabase(
+      path,
+      path,
+      [],
+      Date.now(),
+      RunState.defaultLiveWindowMs
+    ).pipe(Effect.provide(SqliteStoreNode.layer))
   )
   return {
     path,

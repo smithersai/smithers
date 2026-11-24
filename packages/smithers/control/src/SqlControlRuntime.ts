@@ -2004,11 +2004,15 @@ const makeRuntime = (
           Effect.map((rows) => rows.length > 0),
           Effect.mapError(persistence("read pending launch"))
         ),
-      takeLaunch: (id) =>
+      takeLaunch: (id, includeLegacy = false) =>
         sql<{ handing_nonce: string }>`UPDATE control_runs SET launch_pending = 2, handing_nonce = runs.owner_nonce
           FROM flows_runs AS runs WHERE control_runs.run_id = ${id} AND runs.run_id = control_runs.run_id
           AND runs.status = 'running' AND runs.owner_host_id = ${owner.hostId} AND runs.owner_pid = ${owner.pid}
-          AND (launch_pending = 1 OR (launch_pending = 2 AND handing_nonce <> runs.owner_nonce))
+          AND (
+            launch_pending = 1
+            OR (launch_pending = 2 AND handing_nonce <> runs.owner_nonce)
+            OR (${includeLegacy ? 1 : 0} = 1 AND launch_pending = 0 AND handing_nonce IS NULL)
+          )
           RETURNING handing_nonce`.pipe(
           Effect.map((rows) => rows[0]?.handing_nonce),
           Effect.mapError(persistence("claim pending launch"))

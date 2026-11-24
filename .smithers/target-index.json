@@ -51521,11 +51521,35 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/assemble.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/assemble.d.vibe.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/assemble.vibe"
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/collect.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/collect.d.vibe.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/collect.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/flow.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/flow.d.vibe.ts"
       },
       {
         "kind": "file",
@@ -51537,11 +51561,35 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/label.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/label.d.vibe.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/label.vibe"
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/main.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/main.d.vibe.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/main.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/prepare.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/prepare.d.vibe.ts"
       },
       {
         "kind": "file",

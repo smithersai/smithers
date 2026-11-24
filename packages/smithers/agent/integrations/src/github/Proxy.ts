@@ -337,7 +337,7 @@ export const make = (
         // A body the caller never finished sending ends the exchange; nothing reached GitHub.
         if (body === "unfinished") return json(400, { message: "The request body could not be read" })
         if (options.forwardPeopleActions !== true) {
-          const message = refusal(request.method, url.pathname, body ?? new Uint8Array())
+          const message = refusal(request.method, url.pathname, body ?? new Uint8Array(), url.searchParams)
           if (message !== undefined) return json(403, { message, reason: PEOPLE_ONLY })
         }
         const credential = yield* options.credential(repositoryOf(path))

@@ -170,6 +170,17 @@ const byPath = (tail: ReadonlyArray<string>): string | undefined => {
   return undefined
 }
 
+const hasQueryParam = (
+  searchParams: URLSearchParams | undefined,
+  names: ReadonlyArray<string>
+): boolean => {
+  if (searchParams === undefined) return false
+  for (const key of searchParams.keys()) {
+    if (names.includes(key.toLowerCase())) return true
+  }
+  return false
+}
+
 /**
  * Why the proxy refuses this request, or undefined when it forwards it.
  * `body` is the request body; a request with none passes an empty array.
@@ -177,16 +188,30 @@ const byPath = (tail: ReadonlyArray<string>): string | undefined => {
  * @since 1.0.0
  * @private
  */
-export const refusal = (method: string, pathname: string, body: Uint8Array): string | undefined => {
+export const refusal = (
+  method: string,
+  pathname: string,
+  body: Uint8Array,
+  searchParams?: URLSearchParams
+): string | undefined => {
   if (method === "GET" || method === "HEAD") return undefined
   const segments = segmentsOf(pathname)
   if (segments === undefined) return UNREADABLE
   const tail = repositoryTail(segments)
   const path = tail === undefined ? undefined : byPath(tail)
   if (path !== undefined) return path
-  if (segments[segments.length - 1] === "graphql") return graphql(body)
+  if (segments[segments.length - 1] === "graphql") {
+    if (hasQueryParam(searchParams, ["query", "variables", "operationname"])) return UNREADABLE
+    return graphql(body)
+  }
   if (tail === undefined || tail[0] !== "pulls" || tail[2] !== "reviews") return undefined
-  if (tail.length === 3) return review(body, true)
-  if (tail.length === 5 && tail[4] === "events") return review(body, false)
+  if (tail.length === 3) {
+    if (hasQueryParam(searchParams, ["event"])) return UNREADABLE
+    return review(body, true)
+  }
+  if (tail.length === 5 && tail[4] === "events") {
+    if (hasQueryParam(searchParams, ["event"])) return UNREADABLE
+    return review(body, false)
+  }
   return undefined
 }

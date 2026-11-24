@@ -577,7 +577,7 @@ export interface Service {
     PlanNotFound | PlanDenied | PlanDigestMismatch | EnvelopeMismatch | ClaimLost | PersistenceError
   >
   readonly launchPending: (runId: RunId) => Effect.Effect<boolean, PersistenceError>
-  readonly takeLaunch: (runId: RunId) => Effect.Effect<string | undefined, PersistenceError>
+  readonly takeLaunch: (runId: RunId, includeLegacy?: boolean) => Effect.Effect<string | undefined, PersistenceError>
   readonly finishLaunch: (runId: RunId, nonce: string, pending: boolean) => Effect.Effect<void, PersistenceError>
   readonly getRun: (runId: RunId) => Effect.Effect<RunSummary, RunNotFound | PersistenceError>
   /**
@@ -1320,9 +1320,10 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
           }
         ),
         launchPending: (id) => Effect.sync(() => pendingLaunches.has(id)),
-        takeLaunch: (id) =>
+        takeLaunch: (id, includeLegacy = false) =>
           Effect.sync(() => {
-            if (pendingLaunches.get(id) !== null) return undefined
+            const state = pendingLaunches.get(id)
+            if (state !== null && !(includeLegacy && state === undefined)) return undefined
             const nonce = String(++launchSequence)
             pendingLaunches.set(id, nonce)
             return nonce

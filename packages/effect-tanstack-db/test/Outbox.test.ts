@@ -1461,6 +1461,52 @@ describe("principal", () => {
     expect(offered.sort()).toEqual(["ann-1", "ann-2"])
   })
 
+  // R3-Astra-D2-001: outbox.parked rechecks ownership before projecting results if the principal switched mid-read.
+  test("outbox.parked drops earlier principal rows if principal switches during a pending storage read", async () => {
+    const world = await setup([])
+    for (const [id, owner] of [["ann-1", "ann"], ["ben-1", "ben"]] as const) {
+      world.storage.entries.set(
+        `parked:${id}`,
+        JSON.stringify({
+          reason: "negative",
+          name: "save",
+          write: JSON.stringify({
+            mutationFnName: "save",
+            mutations: [{ modified: note(id, -1) }],
+            metadata: { principal: owner }
+          })
+        })
+      )
+    }
+    const { state, principal } = as("ann")
+    let pauseOnBen = false
+    const enteredSecond = Effect.runSync(Deferred.make<void>())
+    const releaseSecond = Effect.runSync(Deferred.make<void>())
+    const wrappedStorage = {
+      ...world.storage,
+      keys: () => Promise.resolve(["parked:ann-1", "parked:ben-1"]),
+      get: async (key: string) => {
+        if (pauseOnBen && key === "parked:ben-1") {
+          pauseOnBen = false
+          Effect.runSync(Deferred.succeed(enteredSecond, undefined))
+          await Effect.runPromise(Deferred.await(releaseSecond))
+        }
+        return world.storage.get(key)
+      }
+    }
+    await scoped(Effect.gen(function*() {
+      const { outbox } = yield* start({ ...world, storage: wrappedStorage, principal })
+      pauseOnBen = true
+      const listing = yield* Effect.forkChild(outbox.parked)
+      yield* Deferred.await(enteredSecond)
+      // Principal switches to Ben while the second parked entry read is still in flight.
+      state.now = "ben"
+      yield* Deferred.succeed(releaseSecond, undefined)
+      const parked = yield* Fiber.join(listing)
+      expect(parked.map(({ id }) => id)).toEqual(["ben-1"])
+    }))
+  })
+
   test("a live receipt is the principal's that queued it: another principal reusing the key queues its own write", async () => {
     const world = await setup([])
     const { state, principal } = as("ann")

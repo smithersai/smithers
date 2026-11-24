@@ -366,11 +366,13 @@ export const connect = (
         // Status 0 is what a fetch host reports for a redirect it was told not to follow.
         if ((response.status >= 300 && response.status <= 399) || response.status === 0) {
           diagnostic("remote-error", { status: response.status })
-          // Terminal: a server that redirects is sent no further credential, session id or message.
+          // Terminal: a server that redirects is sent no further credential, session id or message,
+          // not even the `DELETE` that would end the session.
           terminal = Limits.protocolError(
             server,
             `MCP server "${server}" answered ${method} with an HTTP ${response.status} redirect, which is not followed`
           )
+          sessionId = undefined
           return yield* Effect.fail(terminal)
         }
         if (response.status < 200 || response.status > 299) {

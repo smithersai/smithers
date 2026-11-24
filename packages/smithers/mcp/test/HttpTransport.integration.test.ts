@@ -986,6 +986,8 @@ describe("Streamable HTTP hardening", () => {
     })
     expect(Result.isFailure(second) && Result.isFailure(first) && second.failure === first.failure).toBe(true)
     expect(calls(moved.hits)).toBe(1)
+    // R3-Neon-D2-001: a redirecting server receives no further authenticated DELETE on scope close.
+    expect(rpcs(moved.hits)).not.toContain("DELETE")
 
     // A fetch host told not to follow a redirect reports it as status 0.
     const opaque = fetching((message) =>
@@ -1005,6 +1007,7 @@ describe("Streamable HTTP hardening", () => {
     })
     expect(Result.isFailure(fourth) && Result.isFailure(third) && fourth.failure === third.failure).toBe(true)
     expect(opaque.seen.filter((rpc) => rpc === "POST tools/call")).toHaveLength(1)
+    expect(opaque.seen).not.toContain("DELETE")
   })
 
   // R1-Fable-D2-065: "every later call fails with that error".

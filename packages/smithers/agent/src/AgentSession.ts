@@ -5415,6 +5415,9 @@ export const make = (
       input: ControlExecutor.Launch
     ): Effect.Effect<ControlExecutor.Acceptance, LaunchFailed> =>
       Effect.gen(function*() {
+        // Launch is idempotent by run ID: if this executor is already driving
+        // the run, acknowledge without forking a second driver (R3-Astra-D2-002).
+        if (launchedDrives.has(input.run.runId)) return "accepted" as const
         const flowId = input.plan.card.flowId
         const recorded = yield* runtime.recordedCode(input.run.runId).pipe(
           Effect.map((code) => code.executionDigest),

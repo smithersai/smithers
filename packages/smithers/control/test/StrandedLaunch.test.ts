@@ -8,6 +8,7 @@
  */
 import { Registry } from "@smthrs/registry"
 import { Deferred, Effect, Exit, Layer } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -280,4 +281,105 @@ it("the memory owner can retry a failed handoff and ignores an obsolete release"
       expect(attempts).toBe(2)
     }).pipe(Effect.provide(live({ executor })))
   )
+})
+
+// R3-Astra-D2-002: a failed run.acceptance commit after executor acceptance never starts a second driver on replay.
+it("retries acknowledgment without re-launching when run.acceptance fails after executor acceptance", async () => {
+  const filename = join(directory, "ack-failure.sqlite")
+  const launched: Array<string> = []
+  let failWriteStatusOnce = true
+  const base = stack(
+    filename,
+    101,
+    ControlExecutor.makeNoop({
+      launch: (input) => Effect.sync(() => launched.push(input.run.runId)).pipe(Effect.as("accepted" as const))
+    })
+  )
+  const faultyRuntime = Layer.effect(
+    ControlRuntime,
+    Effect.map(ControlRuntime, (runtime) => ({
+      ...runtime,
+      writeStatus: (runId, fence, status) =>
+        Effect.suspend(() => {
+          if (status === "running" && failWriteStatusOnce) {
+            failWriteStatusOnce = false
+            return Effect.fail(new PersistenceError({ operation: "write status", message: "transient ack failure" }))
+          }
+          return runtime.writeStatus(runId, fence, status)
+        })
+    }))
+  ).pipe(Layer.provideMerge(base))
+
+  const result = await run(
+    Layer.provideMerge(Layer.fresh(ControlLive.layer), Layer.merge(faultyRuntime, Registry.layerNoop())),
+    Effect.gen(function*() {
+      const card = yield* admit
+      const first = yield* Effect.exit(retry(card))
+      expect(Exit.isFailure(first)).toBe(true)
+      expect(launched).toEqual(["dispatch:stranded-caller-reservation"])
+      expect((yield* (yield* ControlRuntime).getRun("dispatch:stranded-caller-reservation")).status).toBe("accepted")
+      // Replaying the original admission key commits the acknowledgment without calling executor.launch again.
+      const replayed = yield* retry(card)
+      expect(replayed).toMatchObject({ _tag: "AlreadyApplied", receiptId: "run:stranded" })
+      expect(launched).toEqual(["dispatch:stranded-caller-reservation"])
+      expect((yield* (yield* ControlRuntime).getRun("dispatch:stranded-caller-reservation")).status).toBe("running")
+    })
+  )
+  if (!Exit.isSuccess(result)) throw new Error(String(result.cause))
+})
+
+// R3-Astra-D2-003: reconcile pre-0011 owned accepted rows (launch_pending = 0, handing_nonce = NULL) on upgrade.
+it("reconciles pre-0011 legacy owned accepted rows: redispatches stranded handoffs and promotes already-started executions", async () => {
+  for (const mode of ["stranded", "started"] as const) {
+    const filename = join(directory, `pre-0011-${mode}.sqlite`)
+    const planned = await run(stack(filename, 101, ControlExecutor.makeNoop()), admit)
+    if (!Exit.isSuccess(planned)) throw new Error("plan failed")
+    const card = planned.value
+
+    // Simulate a pre-0011 crash: admit committed under pid 101, old code set launch_pending = 0, handing_nonce = NULL,
+    // and process died before writing status = "running".
+    const crashed = await run(
+      stack(filename, 101, ControlExecutor.makeNoop({ launch: () => Effect.interrupt })),
+      retry(card)
+    )
+    expect(Exit.isFailure(crashed)).toBe(true)
+    const seeded = await run(
+      stack(filename, 101, ControlExecutor.makeNoop()),
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        yield* sql`UPDATE control_runs SET launch_pending = 0, handing_nonce = NULL WHERE run_id = ${"dispatch:stranded-caller-reservation"}`
+      })
+    )
+    if (!Exit.isSuccess(seeded)) throw new Error(String(seeded.cause))
+
+    const launched: Array<string> = []
+    const peerExecutor = ControlExecutor.makeNoop({
+      readExecution: () =>
+        Effect.succeed(
+          mode === "started"
+            ? ({ _tag: "Observed", status: "running" } as const)
+            : ({ _tag: "Missing" } as const)
+        ),
+      launch: (input) => Effect.sync(() => launched.push(input.run.runId)).pipe(Effect.as("accepted" as const))
+    })
+
+    // While pid 101 is still alive, a peer never touches the legacy row.
+    const guarded = await run(stack(filename, 202, peerExecutor, [101]), retry(card))
+    if (!Exit.isSuccess(guarded)) throw new Error(String(guarded.cause))
+    expect(launched).toEqual([])
+
+    // Once pid 101 is dead, replay reconciles via durable execution evidence.
+    const recovered = await run(
+      stack(filename, 202, peerExecutor),
+      Effect.gen(function*() {
+        const receipt = yield* retry(card)
+        const status = (yield* (yield* ControlRuntime).getRun("dispatch:stranded-caller-reservation")).status
+        return { receipt, status }
+      })
+    )
+    if (!Exit.isSuccess(recovered)) throw new Error(String(recovered.cause))
+    expect(recovered.value.receipt).toMatchObject({ _tag: "AlreadyApplied", receiptId: "run:stranded" })
+    expect(recovered.value.status).toBe("running")
+    expect(launched).toEqual(mode === "stranded" ? ["dispatch:stranded-caller-reservation"] : [])
+  }
 })

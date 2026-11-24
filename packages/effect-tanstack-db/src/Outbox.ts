@@ -532,7 +532,10 @@ const stampedParkedIn = (
 
 /** The writes parked in `storage` that are `principal`'s. Fails and skips as `stampedParkedIn` does. */
 const parkedIn = (storage: StorageAdapter, principal: Principal | undefined): Effect.Effect<ReadonlyArray<Parked>> =>
-  Effect.map(stampedParkedIn(storage, principal), (writes) => writes.map(({ write }) => write))
+  Effect.map(
+    stampedParkedIn(storage, principal),
+    (writes) => writes.filter(({ stamp }) => owns(principal, stamp)).map(({ write }) => write)
+  )
 
 // The error names a mutation's failure becomes. Their messages are fixed, so the library's substring rules never read
 // anything else, and `shouldRetry` decides on the name alone.

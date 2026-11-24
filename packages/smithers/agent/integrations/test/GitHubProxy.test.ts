@@ -239,6 +239,35 @@ const PEOPLE_ACTIONS: ReadonlyArray<readonly [name: string, method: string, path
   ["a submission by repository id naming no event", "POST", "/repositories/42/pulls/7/reviews/9/events", "{}"],
   ["a dismissal by repository id", "PUT", "/repositories/42/pulls/7/reviews/9/dismissals", "{\"message\":\"stale\"}"],
   ["a merge under the /api/v3 prefix", "PUT", "/api/v3/repos/o/r/pulls/7/merge", "{}"],
+  // R3-Fable-D2-001: refuse people-action parameters smuggled in the query string.
+  ["an approval carried in the query string", "POST", "/repos/o/r/pulls/7/reviews?event=APPROVE", "{}"],
+  [
+    "a review event carried in the query string",
+    "POST",
+    "/repos/o/r/pulls/7/reviews/9/events?event=APPROVE",
+    "{\"event\":\"COMMENT\"}"
+  ],
+  [
+    "a GraphQL approval carrying variables in the query string",
+    "POST",
+    "/graphql?variables=%7B%22e%22%3A%22APPROVE%22%7D",
+    JSON.stringify({
+      query:
+        "mutation($e: PullRequestReviewEvent!) { addPullRequestReview(input: {pullRequestId: \"PR_1\", event: $e}) { clientMutationId } }"
+    })
+  ],
+  [
+    "a GraphQL request carrying query in the query string",
+    "POST",
+    "/graphql?query=mutation%7BmergePullRequest%7D",
+    JSON.stringify({ query: "{ viewer { login } }" })
+  ],
+  [
+    "a GraphQL request carrying operationName in the query string",
+    "POST",
+    "/graphql?operationName=Approve",
+    JSON.stringify({ query: "{ viewer { login } }" })
+  ],
   [
     "an approval by repository id under /api/v3",
     "POST",
