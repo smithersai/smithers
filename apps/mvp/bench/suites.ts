@@ -1,11 +1,9 @@
-// The measurements: real Chromium pages against the real app, its agent, ChatApi, Postgres, Electric and model, and
-// ChatApi's shapes and reads over plain HTTP from Node. No mocks and no route interception. Every question is asked
-// through a page's composer, and that page's own agent answers it: nothing answers a question Node posts, and its
-// `streaming` answer would hold up every later answer (docs/benchmarks.md#method).
+// Chromium asks through the app's composer. A benchmark agent pairs over MCP and answers each question with its
+// expected word after the Electric follower sees it. The app, ChatApi, Postgres and Electric all run normally.
 import { Effect } from "effect"
 import { usingResources } from "./resources.ts"
 import type { Browser, BrowserContext, Page } from "@playwright/test"
-import { type Follower, initialSync, settled, sleep } from "./chatapi.ts"
+import { attachBenchmarkAgent, type BenchmarkAgent, type Follower, initialSync, settled } from "./chatapi.ts"
 import { installProbe, questionPosts, watchExchange, type BenchWindow, type Exchange, type Post } from "./probe.ts"
 import { repo } from "./repo.ts"
 
@@ -24,7 +22,7 @@ export type Recorder = {
 export type Bench = {
   browser: Browser
   baseUrl: string
-  // Iterations of the suites that don't ask the model (load, cmdk, shape, repo), and of those that do (answer, sync).
+  // Iterations of the load suites and the suites that send questions (answer, sync).
   n: number
   nAnswer: number
   // The `concurrent` suite: this many asks at once, this many times.
@@ -43,35 +41,16 @@ const ANSWER_TIMEOUT = 90_000
 const LOAD_TIMEOUT = 60_000
 // The browser's own limit for Electric to deliver an asked question (ChatConfig.confirmWithin).
 const CONFIRM_TIMEOUT = 15_000
-// After a 429 from the model, wait this long times the attempt, then ask again with a new word.
-const BACKOFF_MS = 30_000
-const RETRIES = 2
-
-// A one-word answer, as the e2e tests ask. The agent sends the model up to the last 19 finished exchanges with every
-// question, and the model key's tokens-per-minute limit is shared, so long answers would make every later question
-// expensive (docs/benchmarks.md#limitations).
+/** The expected answer is the unique word in the question. */
 export const question = (word: string) => `Reply with exactly the word: ${word}`
+const wordOf = (bench: Bench, stem: string) => `bench-${bench.runId}-${stem}`
 
-// The model refused an answer with 429 (`failure: rate_limited`): not a latency sample.
-class RateLimited extends Error {}
-
-// Runs one iteration that asks the model, with a new word per attempt. A rate-limited answer backs off and asks again,
-// at most RETRIES times, then fails the iteration's check.
-const attempt = async (bench: Bench, suite: string, stem: string, iteration: number, body: (word: string) => Promise<void>) => {
-  for (let retry = 0; ; retry++) {
-    try {
-      return await body(`bench-${bench.runId}-${stem}${retry > 0 ? `r${retry}` : ""}`)
-    } catch (error) {
-      if (!(error instanceof RateLimited)) throw error
-      bench.record.count(`${suite}.rate_limited`)
-      if (retry === RETRIES) {
-        bench.record.check(suite, iteration, "answered without a 429", false, `rate limited on ${retry + 1} attempts`)
-        return
-      }
-      const wait = BACKOFF_MS * (retry + 1)
-      console.error(`bench: ${suite} #${iteration}: the model answered 429; backing off ${wait / 1000} s`)
-      await sleep(wait)
-    }
+const withAgent = async <A>(bench: Bench, context: BrowserContext, work: (agent: BenchmarkAgent) => Promise<A>) => {
+  const agent = await attachBenchmarkAgent(context, bench.baseUrl)
+  try {
+    return await work(agent)
+  } finally {
+    await agent.revoke()
   }
 }
 
@@ -85,13 +64,6 @@ const settledAnswer = (bench: Bench, word: string, timeoutMs = CONFIRM_TIMEOUT) 
     timeoutMs,
     `settled answer to ${word}`,
   )
-
-// After the page showed the answer done: throws RateLimited when the model refused it.
-const unlessRateLimited = async (bench: Bench, word: string) => {
-  const answer = await settledAnswer(bench, word)
-  if (answer.failure === "rate_limited") throw new RateLimited()
-  return answer
-}
 
 // The question containing `word` as Electric delivered it to the follower, and when it arrived.
 const delivered = (bench: Bench, word: string) =>
@@ -190,27 +162,31 @@ const answered = async (word: string, watchers: ReadonlyArray<Page>) => {
   )
 }
 
-// Asks on `asker` through the composer and waits until every watcher page shows the answer done. The asker's own
-// agent answers.
-const ask = async (asker: Page, word: string, watchers: ReadonlyArray<Page>) => {
+const respond = async (bench: Bench, agent: BenchmarkAgent, word: string) => {
+  const { row } = await delivered(bench, word)
+  await agent.respond(row.id, word)
+}
+
+// The composer submits the question, and the attached agent responds through MCP.
+const ask = async (bench: Bench, agent: BenchmarkAgent, asker: Page, word: string, watchers: ReadonlyArray<Page>) => {
   await prepare(asker, word, watchers)
   await send(asker)
+  await respond(bench, agent, word)
   const exchanges = await answered(word, watchers)
   return { ...(await sent(asker)), exchanges }
 }
 
-// The warm-up: asks the run's first question so the dev server, the model endpoint and Electric are hot, and gives the
-// load and shape suites a newest message to wait for. Its numbers are discarded.
+// Warm up the server, MCP and Electric and give the load and shape suites a newest message to find.
 export const seed = async (bench: Bench) => {
   const context = await newContext(bench)
   try {
     const page = await openApp(context, false)
     await openComposer(page)
-    await attempt(bench, "seed", "seed", 0, async (word) => {
-      const { exchanges } = await ask(page, word, [page])
-      await unlessRateLimited(bench, word)
+    await withAgent(bench, context, async (agent) => {
+      const word = wordOf(bench, "seed")
+      const { exchanges } = await ask(bench, agent, page, word, [page])
       const answer = exchanges[0]!.answerText
-      bench.record.check("seed", 0, "answer contains the word", answer.includes(word), answer)
+      bench.record.check("seed", 0, "answer contains the word", answer === word, answer)
       bench.newestWord = word
     })
   } finally {
@@ -324,19 +300,18 @@ export const shape = async (bench: Bench) => {
   }
 }
 
-// The browser's agent answering, through the UI: one page asks through the composer and its own agent answers. From
-// the Enter keydown to the question shown (the optimistic insert), the answer's first text and the answer done, as
-// Electric delivers the agent's writes. From the same ask, the page's `POST /api/questions` to its 202, and to Electric
-// delivering the question to the follower.
+// Time the composer submission, ChatApi's 202 and Electric's question and answer delivery. The MCP fixture writes
+// one terminal answer, so its latency uses separate metric names from the earlier streaming model workload.
 export const answer = async (bench: Bench) => {
   const context = await newContext(bench)
   try {
     const page = await openApp(context)
     await openComposer(page)
-    for (let iteration = 0; iteration < bench.nAnswer; iteration++) {
-      await attempt(bench, "answer", `a${iteration}`, iteration, async (word) => {
-        const { enterAt, posts, exchanges } = await ask(page, word, [page])
-        const row = await unlessRateLimited(bench, word)
+    await withAgent(bench, context, async (agent) => {
+      for (let iteration = 0; iteration < bench.nAnswer; iteration++) {
+        const word = wordOf(bench, `a${iteration}`)
+        const { enterAt, posts, exchanges } = await ask(bench, agent, page, word, [page])
+        const row = await settledAnswer(bench, word)
         const asked = await delivered(bench, word)
         const taken = takenBy(posts)
         const exchange = exchanges[0]!
@@ -351,8 +326,8 @@ export const answer = async (bench: Bench) => {
           bench.record.sample("answer.accepted", taken.responseAt - taken.startAt)
           bench.record.sample("answer.confirmed", asked.seenAt - taken.startAt)
         }
-        bench.record.sample("answer.first_text", exchange.firstTextAt - enterAt)
-        bench.record.sample("answer.done", exchange.completeAt - enterAt)
+        bench.record.sample("answer.mcp_first_text", exchange.firstTextAt - enterAt)
+        bench.record.sample("answer.mcp_done", exchange.completeAt - enterAt)
         bench.record.detail("answer", {
           iteration,
           word,
@@ -365,15 +340,15 @@ export const answer = async (bench: Bench) => {
           firstText: exchange.firstTextAt - enterAt,
           done: exchange.completeAt - enterAt,
         })
-      })
-    }
+      }
+    })
   } finally {
     await context.close()
   }
 }
 
 // Electric fan-out: two devices (separate browser contexts). A asks; from A's Enter keydown to the question in B's DOM,
-// and to the answer done on B. A's agent writes the answer through ChatApi; both pages receive it from Electric.
+// and to the answer done on B. The attached agent writes through MCP and both pages receive it from Electric.
 export const sync = async (bench: Bench) => {
   return Effect.runPromise(usingResources(
     Effect.tryPromise(() => newContext(bench)),
@@ -382,16 +357,17 @@ export const sync = async (bench: Bench) => {
     ([contextA, contextB]) => Effect.tryPromise(async () => {
       const [a, b] = await Promise.all([openApp(contextA!), openApp(contextB!)])
       await openComposer(a)
-      for (let iteration = 0; iteration < bench.nAnswer; iteration++) {
-        await attempt(bench, "sync", `s${iteration}`, iteration, async (word) => {
-          const { enterAt, exchanges } = await ask(a, word, [a, b])
-          await unlessRateLimited(bench, word)
+      await withAgent(bench, contextA!, async (agent) => {
+        for (let iteration = 0; iteration < bench.nAnswer; iteration++) {
+          const word = wordOf(bench, `s${iteration}`)
+          const { enterAt, exchanges } = await ask(bench, agent, a, word, [a, b])
+          await settledAnswer(bench, word)
           const [onA, onB] = exchanges as [Exchange, Exchange]
           bench.record.check("sync", iteration, "B shows the question as asked", onB.questionText === question(word), onB.questionText)
           bench.record.check("sync", iteration, "A's answer contains the word", onA.answerText.includes(word), onA.answerText)
           bench.record.check("sync", iteration, "B's answer matches A's", onB.answerText === onA.answerText, onB.answerText)
           bench.record.sample("sync.question", onB.questionAt - enterAt)
-          bench.record.sample("sync.answer_done", onB.completeAt - enterAt)
+          bench.record.sample("sync.mcp_answer_done", onB.completeAt - enterAt)
           bench.record.detail("sync", {
             iteration,
             word,
@@ -400,8 +376,8 @@ export const sync = async (bench: Bench) => {
             doneOnA: onA.completeAt - enterAt,
             doneOnB: onB.completeAt - enterAt,
           })
-        })
-      }
+        }
+      })
     }),
   ))
 }
@@ -409,11 +385,8 @@ export const sync = async (bench: Bench) => {
 /** A server answer is successful only after the asking browser displays completion. */
 export const concurrentOK = (wait: PromiseSettledResult<unknown>, serverOK: boolean) => wait.status === "fulfilled" && serverOK
 
-// Asking under load: `concurrency` devices (browser contexts) press Enter in their composers at once, `bursts` times,
-// each burst once the last one's answers are done. Each device's own agent answers its question, and answers come in
-// turn, so a burst's answers settle one after another. Times run from each page's `POST /api/questions`, as the
-// follower saw Electric deliver the question and the settled answer. A rate-limited answer (the model's 429) is
-// counted, not failed; after one, the next burst backs off.
+// Multiple browsers submit at once. Each answer is written through the attached session after its question arrives
+// in Electric. Each browser must display the completed answer before the burst's check can pass.
 export const concurrent = async (bench: Bench) => {
   return Effect.runPromise(usingResources(
     Effect.tryPromise(() => newContext(bench)),
@@ -422,64 +395,60 @@ export const concurrent = async (bench: Bench) => {
     (contexts) => Effect.tryPromise(async () => {
       const pages = await Promise.all(contexts.map((context) => openApp(context)))
       for (const page of pages) await openComposer(page)
-      for (let burst = 0; burst < bench.bursts; burst++) {
-        const words = pages.map((_, index) => `bench-${bench.runId}-c${burst}x${index}`)
-        await Promise.all(pages.map((page, index) => prepare(page, words[index]!, [page])))
-        await Promise.all(pages.map(send))
-        const waits = await Promise.allSettled(pages.map((page, index) => answered(words[index]!, [page])))
-        let limited = 0
-        for (const [index, page] of pages.entries()) {
-          const word = words[index]!
-          const iteration = burst * bench.concurrency + index
-          const wait = waits[index]!
-          const { posts } = await sent(page)
-          const asked = await delivered(bench, word).catch(() => undefined)
-          const answer = asked === undefined ? undefined : await settledAnswer(bench, word).catch(() => undefined)
-          const taken = takenBy(posts)
-          const settledAt = answer === undefined ? 0 : (bench.follower.timelines.get(answer.id)?.settledAt ?? 0)
-          bench.record.count("concurrent.asks")
-          for (const post of posts) bench.record.count(`concurrent.http.${post.status}`)
-          if (taken !== undefined) bench.record.sample("concurrent.accepted", taken.responseAt - taken.startAt)
-          if (taken !== undefined && asked !== undefined) bench.record.sample("concurrent.confirmed", asked.seenAt - taken.startAt)
-          bench.record.detail("concurrent", {
-            iteration,
-            burst,
-            word,
-            posts: posts.map((post) => post.status),
-            accepted: taken === undefined ? null : taken.responseAt - taken.startAt,
-            confirmed: taken === undefined || asked === undefined ? null : asked.seenAt - taken.startAt,
-            settled: taken === undefined || settledAt === 0 ? null : settledAt - taken.startAt,
-            answer: answer?.text ?? null,
-            answerStatus: answer?.status ?? null,
-            failure: answer?.failure ?? null,
-            ...(wait.status === "rejected" ? { error: String(wait.reason).split("\n")[0] } : {}),
-          })
-          bench.record.check("concurrent", iteration, "browser displays completion", wait.status === "fulfilled",
-            wait.status === "rejected" ? String(wait.reason).split("\n")[0] : undefined)
-          if (answer?.failure === "rate_limited" && wait.status === "fulfilled") {
-            limited++
-            bench.record.count("concurrent.rate_limited")
-            continue
+      await withAgent(bench, contexts[0]!, async (agent) => {
+        for (let burst = 0; burst < bench.bursts; burst++) {
+          const words = pages.map((_, index) => wordOf(bench, `c${burst}x${index}`))
+          await Promise.all(pages.map((page, index) => prepare(page, words[index]!, [page])))
+          await Promise.all(pages.map(send))
+          const waits = await Promise.allSettled(pages.map(async (page, index) => {
+            const word = words[index]!
+            await respond(bench, agent, word)
+            return answered(word, [page])
+          }))
+          for (const [index, page] of pages.entries()) {
+            const word = words[index]!
+            const iteration = burst * bench.concurrency + index
+            const wait = waits[index]!
+            const { posts } = await sent(page)
+            const asked = await delivered(bench, word).catch(() => undefined)
+            const answer = asked === undefined ? undefined : await settledAnswer(bench, word).catch(() => undefined)
+            const taken = takenBy(posts)
+            const settledAt = answer === undefined ? 0 : (bench.follower.timelines.get(answer.id)?.settledAt ?? 0)
+            bench.record.count("concurrent.asks")
+            for (const post of posts) bench.record.count(`concurrent.http.${post.status}`)
+            if (taken !== undefined) bench.record.sample("concurrent.accepted", taken.responseAt - taken.startAt)
+            if (taken !== undefined && asked !== undefined) bench.record.sample("concurrent.confirmed", asked.seenAt - taken.startAt)
+            bench.record.detail("concurrent", {
+              iteration,
+              burst,
+              word,
+              posts: posts.map((post) => post.status),
+              accepted: taken === undefined ? null : taken.responseAt - taken.startAt,
+              confirmed: taken === undefined || asked === undefined ? null : asked.seenAt - taken.startAt,
+              settled: taken === undefined || settledAt === 0 ? null : settledAt - taken.startAt,
+              answer: answer?.text ?? null,
+              answerStatus: answer?.status ?? null,
+              failure: answer?.failure ?? null,
+              ...(wait.status === "rejected" ? { error: String(wait.reason).split("\n")[0] } : {}),
+            })
+            bench.record.check("concurrent", iteration, "browser displays completion", wait.status === "fulfilled",
+              wait.status === "rejected" ? String(wait.reason).split("\n")[0] : undefined)
+            const done = answer?.status === "done"
+            if (taken !== undefined && done) bench.record.sample("concurrent.mcp_done", settledAt - taken.startAt)
+            const ok = concurrentOK(wait, taken !== undefined && asked !== undefined && done && answer.text?.includes(word) === true)
+            if (!ok) bench.record.count("concurrent.failed")
+            bench.record.check(
+              "concurrent",
+              iteration,
+              "taken, confirmed and answered with the word",
+              ok,
+              wait.status === "rejected"
+                ? String(wait.reason).split("\n")[0]
+                : `HTTP ${posts.map((post) => post.status).join(", ")}, answer ${answer?.status} ${answer?.failure ?? ""} ${answer?.text ?? ""}`,
+            )
           }
-          const done = answer?.status === "done"
-          if (taken !== undefined && done) bench.record.sample("concurrent.done", settledAt - taken.startAt)
-          const ok = concurrentOK(wait, taken !== undefined && asked !== undefined && done && answer.text?.includes(word) === true)
-          if (!ok) bench.record.count("concurrent.failed")
-          bench.record.check(
-            "concurrent",
-            iteration,
-            "taken, confirmed and answered with the word",
-            ok,
-            wait.status === "rejected"
-              ? String(wait.reason).split("\n")[0]
-              : `HTTP ${posts.map((post) => post.status).join(", ")}, answer ${answer?.status} ${answer?.failure ?? ""} ${answer?.text ?? ""}`,
-          )
         }
-        if (limited > 0 && burst < bench.bursts - 1) {
-          console.error(`bench: concurrent burst ${burst}: ${limited} rate-limited; backing off ${BACKOFF_MS / 1000} s`)
-          await sleep(BACKOFF_MS)
-        }
-      }
+      })
     }),
   ))
 }

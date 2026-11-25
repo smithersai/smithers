@@ -11,7 +11,7 @@ import { describe, expect, test } from "vitest"
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { noCommands } from "../test/commands.ts"
-import type { Seat } from "../ModelEndpoint.ts"
+import type { Seat } from "../ModelSeats.ts"
 import * as TodoAgent from "./TodoAgent.ts"
 import * as TodoMachine from "./TodoMachine.ts"
 

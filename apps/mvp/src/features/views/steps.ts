@@ -1,10 +1,10 @@
 import { type FlowEngineLike, ModelStep } from "@smthrs/agent"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
-import { type Model, ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
+import { type Model, ModelError, ModelEvent, ModelRequest } from "@smthrs/model"
 import { Context, Effect, Layer, Metric } from "effect"
 import { codeOf } from "../../errorCode"
 import { requesterOf } from "../../flows/requests"
-import { MODEL_ROUTE } from "../model/contract"
+import { clientSeat } from "../model/clientSeat"
 import { type ViewRefused, ViewsClient } from "./api"
 import { viewConversation } from "./conversation"
 import { formRefusal } from "./form"
@@ -48,18 +48,8 @@ export class RendererSeat extends Context.Service<
   RendererSeat,
   { readonly model: Model.Model; readonly route: FlowEngineLike.RouteResolver; readonly maxTokens: number }
 >()("@smthrs/mvp/views/RendererSeat") {
-  /**
-   * The `renderer` role of the model endpoint on `origin`, or `model` in its place: only the end-to-end tests' scripted
-   * agent under the dev server (src/test/scriptedAgent.ts).
-   */
   static readonly layer = (origin: string, model?: Model.Model, maxTokens = 8_000) =>
-    Layer.effect(
-      RendererSeat,
-      Effect.gen(function* () {
-        const url = `${origin}${MODEL_ROUTE}/renderer`
-        return { model: model ?? (yield* ModelProxy.makeClient({ url })), route: { prepare: ModelProxy.prepare({ url }) }, maxTokens }
-      }),
-    )
+    Layer.succeed(RendererSeat, { ...clientSeat(origin, "renderer", model), maxTokens })
 }
 
 /** Views the flows added, by `template` (`form`, `generated`) and `outcome`. */

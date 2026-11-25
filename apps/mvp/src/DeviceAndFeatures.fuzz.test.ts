@@ -3,7 +3,6 @@ import { Arbitrary, Effect, Layer, Logger, Option, Schema } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { describe, expect, it } from "vitest"
 import * as Identity from "./device/identity.ts"
-import * as Answers from "./features/agent/answers.ts"
 import * as FilesFlows from "./features/files/flows.ts"
 import * as FlowsSource from "./features/flows-ui/source.ts"
 import * as IssueLifecycle from "./features/issues/lifecycle.ts"
@@ -513,7 +512,7 @@ describe("apps/mvp device identity, todos view, tabPort, status, flows-ui, pwa &
     expect(report._tag).toBe("Passed")
   })
 
-  it("StatusApi, StatusReporter, StatusFlows & Agent.Answers handle HTTP responses, retries & refusals", async () => {
+  it("StatusApi, StatusReporter, StatusFlows handle HTTP responses, retries & refusals", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
         status: Schema.Literals([200, 202, 400, 401, 403, 404, 409, 500]),
@@ -549,10 +548,6 @@ describe("apps/mvp device identity, todos view, tabPort, status, flows-ui, pwa &
               Layer.provide(httpLayer)
             )
             const reporterLayer = StatusReporter.RunReporter.layer.pipe(Layer.provide(runsLayer))
-            const ansLayer = Answers.AnswerApi.layerHttp("https://smithers.test", "2 seconds").pipe(
-              Layer.provide(httpLayer)
-            )
-
             const ref = StatusFlows.isRefusal(status)
             const tok = StatusFlows.tokenOf(execution)
             const ans = StatusFlows.answerOf({ text: answerText })
@@ -565,11 +560,6 @@ describe("apps/mvp device identity, todos view, tabPort, status, flows-ui, pwa &
             const reporter = yield* StatusReporter.RunReporter.pipe(Effect.provide(reporterLayer))
             yield* Effect.exit(reporter.report("run-1", { kind: "working", label: "Checking" } as never))
             yield* Effect.exit(reporter.reportOrFail("run-1", { kind: "done" } as never))
-
-            const ansApi = yield* Answers.AnswerApi.pipe(Effect.provide(ansLayer))
-            yield* Effect.exit(ansApi.turn("ans-1"))
-            yield* Effect.exit(ansApi.heartbeat("ans-1"))
-            yield* Effect.exit(ansApi.write("ans-1", { kind: "parts", parts: [] } as never))
 
             return (
               typeof ref === "boolean" &&

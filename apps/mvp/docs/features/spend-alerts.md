@@ -140,7 +140,7 @@ Blocking a network and pausing asking without a deploy are not built ([todo.md](
 | `worker/AlertChannels.test.ts` | an Admin sets, replaces and clears each channel; every refusal (signed out, Member, an agent for an Admin, invalid input, too large, another method, Postgres failing); the shapes to Admins only; the providers from the environment, and the dev key |
 | `src/features/spend/spend.test.ts` "an Admin's alert channels" | Save on a tab's engine sets both channels and they sync back; a refused save shows Not saved, and clears once another device saves the channel; a Member's is refused and syncs nothing; a delivery's receipt syncs, the latest 10 first; the message's and a receipt's words |
 | `tests/AlertSettings.test.ts` | a synced email or Telegram update preserves the unsaved field, its element and focus; Save submits the draft; untouched fields follow sync |
-| `e2e/alert-channels.spec.ts` | in a real browser against `alchemy dev`: Settings, both channels saved, a question that spends, and both receipts `Sent` with the local providers holding the email and the Telegram message; clearing Telegram turns it off (dev server started with `MODEL_SPEND_ALERTS=true`, a short window and the providers' URLs; skipped otherwise and against a deployment) |
+| `e2e/alert-channels.spec.ts` | Against `alchemy dev`, save both channels, run server-side triage, and verify both deliveries and zero browser model requests. Clearing Telegram turns it off. Set `E2E_ALERT_TRIAGE_ISSUE` to an open issue eligible for triage in a disposable repository, configure a judge seat, and start dev with `MODEL_SPEND_ALERTS=true`, a short window and the provider URLs. |
 
 ### Shape access and outage recovery (2026-10-22)
 

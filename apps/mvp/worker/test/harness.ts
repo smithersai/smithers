@@ -1,5 +1,6 @@
 import { afterBody } from "../WriteAdmission.ts"
-import * as BodyLimits from "../BodyLimits.ts"
+import * as ModelEndpoint from "./modelEndpoint.ts"
+import { MODEL_ROLES, type ModelRole } from "../../src/features/model/contract.ts"
 // ChatApi's real handler for the worker tests, on a test file's own schema of the compose Postgres (`pnpm db:up`,
 // db/TestDatabase.ts). The model is the only stand-in: a scripted `Model` through HostModel. ChatApi starts remote
 // flows through a `FlowStarter` that records each start, unless a test sets one. Every log line, span and metric the
@@ -22,7 +23,7 @@ import {
   Stream,
   Tracer,
 } from "effect"
-import { FetchHttpClient, HttpEffect, HttpServerRequest } from "effect/http"
+import { FetchHttpClient, HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterAll, beforeAll, beforeEach } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
@@ -187,8 +188,6 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
     ...options.config,
   })
   const homeRepository = await runtime.runPromise(Conversations.configuredHomeRepositoryNames.pipe(Effect.provideService(ConfigProvider.ConfigProvider, config)))
-  // Captured while building, as SignIn's admission does.
-  const modelBytes = await runtime.runPromise(Effect.gen(function* () { return yield* BodyLimits.modelBytes }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config)))
   const model = Model.make({
     stream: (request) => {
       requests.push(request)
@@ -215,8 +214,6 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
   const chat = await runtime.runPromise(
     observed(
       Chat.make(database, {
-        ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
-        ...(options.hostedModel === undefined ? {} : { hostedModel: options.hostedModel }),
         // Generated views render in the realm Node compiles, loaded once for the whole file (worker/ViewRealm.ts).
         realm: nodeRealm,
       }).pipe(
@@ -257,10 +254,18 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
     const path = new URL(request.url, "http://chat.test").pathname
     return DocsApi.handles(path) ? docs.fetch : ConversationApi.handles(path) ? conversations.fetch : chat.fetch
   })
-  const handler = HttpEffect.toWebHandler(
+  const modelTransport = await runtime.runPromise(observed(ModelEndpoint.make(database, {
+    ...(options.spendAlerts === undefined ? {} : { alerts: options.spendAlerts }),
+    ...(options.hostedModel === undefined ? {} : { hosted: options.hostedModel }),
+  }).pipe(Effect.provide(hostModel))))
+  const modelRequest = Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
+    const role = new URL(request.url, "http://chat.test").pathname.slice("/api/model/".length) as ModelRole
+    return MODEL_ROLES.includes(role) ? modelTransport(role) : Effect.succeed(HttpServerResponse.empty({ status: 404 }))
+  })
+  type RequestContext = Effect.Services<typeof routed> | Effect.Services<typeof modelRequest>
+  const handlerFor = (requestHandler: Effect.Effect<HttpServerResponse.HttpServerResponse, never, RequestContext>) => HttpEffect.toWebHandler(
     observed(
-      (options.admitBody === false ? routed : afterBody(routed)).pipe(
-        Effect.provideService(BodyLimits.ModelBytes, modelBytes),
+      (options.admitBody === false ? requestHandler : afterBody(requestHandler)).pipe(
         Effect.provideService(Flows.FlowStarter, starter),
         Effect.provideService(Flows.TaskAnswers, options.answers ?? Flows.TaskAnswers.of({ answer: () => Effect.succeed(false) })),
         Effect.provide(docsSource),
@@ -277,9 +282,12 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
       ),
     ),
   )
+  const handler = handlerFor(routed)
+  const modelHandler = handlerFor(modelRequest)
   const line = (message: string) => logs.filter((log) => log.message === message)
   return {
     fetch: (path: string, init?: RequestInit) => handler(new Request(`http://chat.test${path}`, init)),
+    modelFetch: (path: string, init?: RequestInit) => modelHandler(new Request(`http://chat.test${path}`, init)),
     ask: (body: unknown, headers: Record<string, string> = {}) =>
       handler(
         new Request("http://chat.test/api/questions", {

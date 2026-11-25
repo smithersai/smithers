@@ -4,6 +4,7 @@ import { Clock, Duration, Effect, Layer, Option, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import { CODING_AGENTS } from "../../src/features/personal-model/contract.ts"
 import { Machines } from "../branch/Machines.ts"
+import { NoSeat } from "../ModelSeats.ts"
 import * as Agents from "../personal/Agents.ts"
 import * as Codex from "../personal/Codex.ts"
 import * as Subscriptions from "../personal/Subscriptions.ts"
@@ -34,9 +35,15 @@ export class RouteUnavailable extends Schema.TaggedError<RouteUnavailable>()("@s
 export const Route = Action.make("todo/Route", {
   payload: { ownerId: Schema.String },
   success: Routed,
-  error: RouteUnavailable,
+  error: Schema.Union([RouteUnavailable, NoSeat]),
   capabilities: ["db:read:personal_models"],
-  retryPolicy: RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000, expirationMs: 30 * 60_000 }),
+  retryPolicy: RetryPolicy.make({
+    initialMs: 1_000,
+    factor: 2,
+    maxMs: 60_000,
+    expirationMs: 30 * 60_000,
+    nonRetryable: ["@smthrs/mvp/todo/NoSeat"],
+  }),
 })
 
 /** `todo/ImplementCli`: the vendor's agent writes the TODO's change in the attempt's box. */
@@ -75,19 +82,26 @@ export type Credentials = Layer.Layer<SecretKeys | Codex.CodexAuth>
 /** Secrets off: a subscription's run ends `no_credential`. */
 const noCredentials: Credentials = Layer.merge(SecretKeys.off, Layer.succeed(Codex.CodexAuth, { origin: "", clientId: "" }))
 
+/** The host's check for an available personal or deployment coding seat. */
+export type RequireCodingSeat = (ownerId: string) => Effect.Effect<void, unknown>
+
 /** `todo/Route` and `todo/ImplementCli` over `database`, the host's `Machines` and `credentials`. */
 export const registration = <E, R>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
   commandSeconds: number,
   stepWaitSeconds: number,
   credentials: Credentials = noCredentials,
+  requireCodingSeat?: RequireCodingSeat,
 ) =>
   Layer.mergeAll(
     Route.toLayer(({ ownerId }) =>
       Subscriptions.agentOf(ownerId).pipe(
         Effect.provide(database),
+        Effect.tap((agent) => agent === "smithers" && requireCodingSeat !== undefined
+          ? requireCodingSeat(ownerId)
+          : Effect.void),
         Effect.map((agent) => ({ agent })),
-        Effect.mapError(() => new RouteUnavailable()),
+        Effect.mapError((error) => error instanceof NoSeat ? error : new RouteUnavailable()),
       )
     ),
     Layer.unwrap(Effect.gen(function* () {

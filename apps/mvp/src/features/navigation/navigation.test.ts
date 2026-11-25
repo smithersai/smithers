@@ -7,12 +7,12 @@ import { Action, FlowRuntime } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
 import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Option, Scope, Stream, Tracer } from "effect"
 import { afterEach, describe, expect, test } from "vitest"
-import { stop, testFile, usage } from "../../../worker/test/harness.ts"
+import { testFile } from "../../../worker/test/harness.ts"
 import { build } from "../../../worker/test/flowHost.ts"
 import { slashSubmit } from "@smthrs/ui"
 import { TabRequests } from "../../flows/requests"
 import { BROWSER_TELEMETRY } from "../../telemetry"
-import { answerRow, cell, openAgent } from "../../test/agent"
+import { openFlowHost } from "../../test/flowHost"
 import { COMMANDS } from "../commands/catalog"
 import { openDevice } from "../../test/device"
 import { MAX_TO_LENGTH, NAVIGATE_WITHIN, NAVIGATION_TELEMETRY, navigationChannel } from "./contract"
@@ -398,7 +398,7 @@ describe("on the device, as the browser builds it", () => {
   const AGENT_WITHIN = 90_000
 
   test("a person's dispatch runs on the leader's engine and moves only the tab that dispatched it", async () => {
-    const agent = await openAgent(runtime, () => Stream.empty)
+    const agent = await openFlowHost(runtime, () => Stream.empty)
     const device = await openDevice(agent.fetch)
     closers.push(device.close)
     const second = await device.openTab()
@@ -420,35 +420,4 @@ describe("on the device, as the browser builds it", () => {
     expect(device.navigated).toEqual(["/octocat/Spoon-Knife"])
     expect(second.navigated).toEqual(["/octocat/Spoon-Knife/tree/main"])
   })
-
-  test("the agent's call moves the tab whose composer asked, and no other", async () => {
-    let calls = 0
-    const agent = await openAgent(runtime, () => {
-      calls++
-      const source = calls === 1
-        ? `await ctx.call("app/navigate", { to: "octocat/Spoon-Knife" })`
-        : calls === 2
-        ? `await ctx.call("app/navigate", { to: "https://example.com/phish" })`
-        : `ctx.done("Opened octocat/Spoon-Knife.")`
-      return Stream.make({ type: "text-delta" as const, id: "t", text: cell(source) }, usage, stop)
-    })
-    const device = await openDevice(agent.fetch)
-    closers.push(device.close)
-    const second = await device.openTab()
-    const answerId = await agent.ask("Open octocat/Spoon-Knife, then example.com")
-
-    const exit = await Effect.runPromise(
-      device.dispatch.dispatch("chat/Answer", { answerId }, { door: "composer", executionId: answerId }),
-    )
-
-    expect(exit).toEqual({ _tag: "Done", value: { status: "done" } })
-    expect(device.navigated).toEqual(["/octocat/Spoon-Knife"])
-    expect(second.navigated).toEqual([])
-    const answer = await answerRow(runtime, answerId)
-    expect(answer).toMatchObject({ status: "done", text: "Opened octocat/Spoon-Knife." })
-    expect(answer?.parts).toEqual([
-      expect.objectContaining({ kind: "step", flow: "app/navigate", status: "done" }),
-      expect.objectContaining({ kind: "step", flow: "app/navigate", status: "failed" }),
-    ])
-  }, AGENT_WITHIN)
 })

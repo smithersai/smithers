@@ -1,4 +1,4 @@
-import { Result, Schema } from "effect"
+import { Effect, Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { MCP_MAX_REQUEST_BYTES } from "../../src/features/mcp/contract.ts"
 import type { Actor } from "../Actor.ts"
@@ -17,7 +17,7 @@ import {
   type Target,
 } from "./Attach.ts"
 import { handleAttachAgent } from "./AttachAgentRoutes.ts"
-import { defineTool, inputSchemaOf, makeMcpRoute, type McpTool } from "./McpRoute.ts"
+import { defineTool, inputSchemaOf, makeMcpRoute, type McpTool, readBody } from "./McpRoute.ts"
 
 const HOST = "https://smithers.sh"
 const target = { repo: "evmts/voltaire", branch: "main", conversation: "c_1" }
@@ -47,14 +47,15 @@ const setup = (limits?: Partial<AttachLimits>) => {
     mallory: ["flows:run"],
   }
   const asked: Array<{ readonly person: string; readonly target: Target }> = []
-  const attach = makeAttach({
+  const attachEffect = makeAttach({
     hostOrigin: HOST,
     now: () => clock,
     ...(limits === undefined ? {} : { limits }),
-    permissions: (person, at) => {
+    permissions: (actor, at) => Effect.sync(() => {
+      const person = actor.subject.id
       asked.push({ person, target: at })
       return held[person]
-    },
+    }),
   })
   const calls: Array<string> = []
   const grants: Array<Grant> = []
@@ -65,11 +66,11 @@ const setup = (limits?: Partial<AttachLimits>) => {
       input: Schema.Struct({ flow: Schema.optional(Schema.String), branch: Schema.optional(Schema.String) }),
       capability: "flows:run",
       policy: "agent",
-      call: async (grant, args) => {
+      call: (grant, args) => Effect.sync(() => {
         grants.push(grant)
         calls.push(`run_flow:${grant.person}:${String(args.flow)}`)
         return { started: true }
-      },
+      }),
     }),
     defineTool({
       name: "merge",
@@ -77,10 +78,10 @@ const setup = (limits?: Partial<AttachLimits>) => {
       input: Schema.Struct({}),
       capability: "flows:run",
       policy: "person_only",
-      call: async () => {
+      call: () => Effect.sync(() => {
         calls.push("merge")
         return {}
-      },
+      }),
     }),
     defineTool({
       name: "deploy",
@@ -88,10 +89,10 @@ const setup = (limits?: Partial<AttachLimits>) => {
       input: Schema.Struct({}),
       capability: "deploy",
       policy: "agent",
-      call: async () => {
+      call: () => Effect.sync(() => {
         calls.push("deploy")
         return {}
-      },
+      }),
     }),
     defineTool({
       name: "tamper",
@@ -99,7 +100,7 @@ const setup = (limits?: Partial<AttachLimits>) => {
       input: Schema.Struct({}),
       capability: "tamper",
       policy: "agent",
-      call: async (grant) => {
+      call: (grant) => Effect.sync(() => {
         const open = grant as { -readonly [K in keyof Grant]: Grant[K] } & { ceiling: Array<string> }
         const outcomes: Array<string> = []
         for (const change of [
@@ -115,7 +116,7 @@ const setup = (limits?: Partial<AttachLimits>) => {
           }
         }
         return { outcomes }
-      },
+      }),
     }),
     defineTool({
       name: "open_run",
@@ -125,13 +126,19 @@ const setup = (limits?: Partial<AttachLimits>) => {
       policy: "agent",
       // The nested resource is the tool's to authorize: the route only sees top-level repo, branch and conversation.
       authorize: (grant, args) => args.run.conversation === grant.conversation,
-      call: async (_grant, args) => {
+      call: (_grant, args) => Effect.sync(() => {
         calls.push(`open_run:${args.run.id}`)
         return { id: args.run.id }
-      },
+      }),
     }),
   ]
-  const route = makeMcpRoute({ attach, hostOrigin: HOST, tools })
+  const attach = {
+    ...attachEffect,
+    mintIntent: (...args: Parameters<typeof attachEffect.mintIntent>) => Effect.runPromise(attachEffect.mintIntent(...args)),
+    approveIntent: (...args: Parameters<typeof attachEffect.approveIntent>) => Effect.runPromise(attachEffect.approveIntent(...args)),
+  }
+  const handle = makeMcpRoute({ attach: attachEffect, hostOrigin: HOST, tools })
+  const route = async (request: Request) => Effect.runPromise(handle(request, await readBody(request, MCP_MAX_REQUEST_BYTES)))
   const advance = (ms: number) => {
     clock += ms
   }
@@ -618,7 +625,7 @@ describe("M4: explicit policy, strict arguments, immutable grant", () => {
     description: "No policy",
     input: Schema.Struct({}),
     capability: "flows:run",
-    call: async () => ({}),
+    call: () => Effect.succeed({}),
   }
 
   test("a tool without a policy cannot be defined", () => {
@@ -1017,7 +1024,7 @@ describe("M4: fresh grant at dispatch, nested authorization, one schema", () => 
       input: Schema.String,
       capability: "flows:run",
       policy: "agent",
-      call: async () => ({}),
+      call: () => Effect.succeed({}),
     })).toThrow("must be an object schema")
   })
 })

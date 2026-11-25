@@ -120,7 +120,6 @@ type Routed = {
 
 /** How each person-only flow's route is reached, by the flow: the registry's list, less the device-only ones. */
 const flows: Routed = {
-  "chat/Answer": chat((h) => h.ask({ id: crypto.randomUUID(), answerId: crypto.randomUUID(), text: "Hi" })),
   "run/answer": chat((h) => h.fetch(`/api/runs/${crypto.randomUUID()}/answer`, json({ version: 1, value: "main" }))),
   "flow/answer": chat((h) =>
     h.fetch(`/api/flow-drafts/${crypto.randomUUID()}/answers`, json({ round: 0, answers: [] }))
@@ -171,6 +170,9 @@ const runnerAdmin = (path: string, body: unknown): Case => async (actor, act) =>
 
 /** How each protected act's route is reached. */
 const protectedActs: { readonly [A in keyof typeof PROTECTED_ACTS]: Case } = {
+  "conversation/ask": chat((h) => h.ask({
+    id: crypto.randomUUID(), answerId: crypto.randomUUID(), conversationId: crypto.randomUUID(), text: "Hi",
+  })),
   secret: async (actor, act) => {
     const h = await secretsHarness(runtime, { start: () => Promise.reject() } as never, { actor })
     const { status } = await h.fetch(secretRoute(REPO.owner, REPO.name, "API_KEY"), {

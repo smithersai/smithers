@@ -14,7 +14,7 @@ const redeem = Schema.decodeUnknownOption(Schema.Struct({
 }))
 
 /** Agent-facing steps. The person approves through the host's existing session. */
-export const handleAttachAgent = async (attach: Attach, request: Request): Promise<Response> => {
+export const handleAttachAgent = async (attach: Pick<Attach, "claimIntent" | "redeemCode">, request: Request): Promise<Response> => {
   const path = new URL(request.url).pathname
   if (request.method !== "POST" || (path !== "/api/attach/claim" && path !== "/api/attach/redeem")) {
     return new Response(null, { status: 404 })

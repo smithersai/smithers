@@ -1,7 +1,7 @@
 // A pull request head's checks (worker/flows/Checks.ts, decision 0012 decision 12) on the Node host's engine over this
 // file's schema of the compose Postgres, against the scripted GitHub. The branch's machine is a test `Machines` over an
 // in-memory checkout of the head, and the judge behind the review is a scripted model admitted and metered by the
-// model endpoint's own `ModelEndpoint.local`: the only stand-ins. Each check is a `runs` row on the head's SHA.
+// model endpoint's own `ModelSeats.local`: the only stand-ins. Each check is a `runs` row on the head's SHA.
 import { Model, ModelError } from "@smthrs/model"
 import { SandboxTools } from "@smthrs/sandbox"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"

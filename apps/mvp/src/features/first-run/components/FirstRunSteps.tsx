@@ -14,7 +14,7 @@ const MARK = { done: "success", next: "default", later: "muted" } as const
 
 // The first run's steps (decision 0121), just above the composer's place on `/app` until the person has a conversation
 // of their own: each step's mark (✓ once done, else its number) and title, and the current step's one action. Sign in
-// is sign-in's own link; signed-in model setup uses the shared toast; at Ask, Chat ⌘K under the list is the button.
+// uses the sign-in link. At Ask, Chat ⌘K under the list is the button.
 // For a person who may not ask in `/app`'s conversation (ruling AUTH-8), Open your repository takes the repository's
 // name and opens its page, beside Install, the Smithers GitHub App's installation, when the deployment has one.
 export function FirstRunSteps() {
@@ -22,7 +22,7 @@ export function FirstRunSteps() {
   const { data: session } = useLiveQuery(useAuth().queries.session)
   const navigate = useNavigate()
   const { data: firstRun } = useLiveQuery(queries.state)
-  if (firstRun?.show !== "steps" || (firstRun.at === "model" && session?.status === "signed_in")) return null
+  if (firstRun?.show !== "steps") return null
   const action = (step: Step) => {
     if (step.state !== "next") return null
     if (step.id === "sign_in") return <SignInButton />

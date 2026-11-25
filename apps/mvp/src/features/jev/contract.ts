@@ -1,7 +1,7 @@
 // Jev's contract (docs/features/jev.md): the one home of the values the tab, the engine worker and the tests share.
 // Nothing here imports a library, so every side can.
 
-/** The model endpoint's role every judge call goes through: `POST /api/model/judge`, set with `admin/SetModel`. */
+/** The internal role a host may bind to Jev, set with `admin/SetModel`. */
 export const JUDGE_ROLE = "judge"
 
 /** The most items one `app/jev/classify` call judges. */

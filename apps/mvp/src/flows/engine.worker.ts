@@ -5,7 +5,6 @@ import { IndexedDBAdapter } from "@tanstack/offline-transactions"
 import SqliteFactory from "@journeyapps/wa-sqlite/dist/wa-sqlite.mjs"
 import wasmUrl from "@journeyapps/wa-sqlite/dist/wa-sqlite.wasm?url"
 import { Migrations } from "@smthrs/effect-tanstack-db"
-import type { Model } from "@smthrs/model"
 import { BrowserCache, BrowserRuntime, type SharedSqlite } from "@smthrs/platform-browser"
 import { Effect, Layer, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
@@ -20,9 +19,8 @@ import { engineRequests, engineTelemetry } from "./engine"
 import { workerRegistrations } from "./registrations"
 
 // The engine worker each tab starts (src/flows/engine.ts `tabEngine`): a program boundary, like src/main.tsx, which
-// hands the host's capabilities to the program. It, not the tab, imports every client flow's declaration and steps, the
-// agent's included. The worker whose tab holds the engine's Web Lock runs every client flow over SQLite in OPFS
-// (decision 0011); the others wait their turn. It reaches ChatApi on the page's origin, and this device's collections
+// hands the host's capabilities to the program. The worker whose tab holds the engine's Web Lock runs client flows
+// over SQLite in OPFS (decision 0011). The others wait their turn. It reaches ChatApi on the page's origin, and this device's collections
 // through its own tab. Its logs, spans and metrics go to ChatApi's relay, as the tab's do.
 
 // Whose data the device holds (src/device/identity.ts): checked before the engine starts and sent to this worker's tab
@@ -33,10 +31,7 @@ let receipt: Receipt | undefined
 const identity = new BroadcastChannel(IDENTITY_MESSAGE)
 const unbound = self.fetch.bind(self)
 // Under the dev server, the end-to-end tests' parameters, which main.tsx names this worker with (`dev:<parameters>`).
-// In production or dev, `demo:mock` runs an isolated zero-backend visitor demo (`?agent=mock`).
-const demoMock = import.meta.env.DEV && self.name === "demo:mock"
 const dev = import.meta.env.DEV && self.name.startsWith("dev:") ? new URLSearchParams(self.name.slice("dev:".length)) : undefined
-const scripted = dev?.get("agent") ?? undefined
 const faulted = dev?.get("faults") === "session-503"
 // Who the browser is signed in as, read for the device's owner check; behind the page's switch under
 // `?faults=session-503` (src/test/authFaults.ts). The first read takes the one the worker started as it loaded
@@ -92,9 +87,9 @@ self.fetch = boundFetch(unbound, {
   withCredential: (action, signal) => navigator.locks.request("smithers-credential-state", signal === undefined ? {} : { signal }, action),
 })
 
-const run = (model?: Model.Model, summaryModel?: Model.Model, rendererModel?: Model.Model) =>
+const run = () =>
   BrowserRuntime.run({
-    name: demoMock ? "smithers-demo" : ENGINE_NAME,
+    name: ENGINE_NAME,
     // The SQLite build loads only once this worker leads, and only in this worker's bundle.
     sqlite: {
       module: async () => ({ default: SqliteFactory }),
@@ -117,11 +112,8 @@ const run = (model?: Model.Model, summaryModel?: Model.Model, rendererModel?: Mo
     // `http:` pages on this machine open only under the dev server (src/features/web/url.ts).
     registerFlows: workerRegistrations(self, {
       origin: self.location.origin,
-      name: demoMock ? "smithers-demo" : ENGINE_NAME,
+      name: ENGINE_NAME,
       localHttp: import.meta.env.DEV,
-      ...(model === undefined ? {} : { model }),
-      ...(summaryModel === undefined ? {} : { summaryModel }),
-      ...(rendererModel === undefined ? {} : { rendererModel }),
     }),
     telemetry: identityRequests.pipe(
       Layer.provideMerge(engineRequests(self.location.origin)),
@@ -129,20 +121,9 @@ const run = (model?: Model.Model, summaryModel?: Model.Model, rendererModel?: Mo
     ),
   })
 
-// Under the dev server, `?agent=<script>` answers with a scripted model for the end-to-end tests
-// (src/test/scriptedAgent.ts), and `?faults=session-503` opens the session read refused until the page heals it
-// (src/test/authFaults.ts). A production build drops these branches, and the modules with them.
-if (demoMock) {
-  void import("../features/agent/demoModel").then((demo) => {
-    session = Effect.succeed(demo.DEMO_SESSION)
-    run(demo.demoModel, demo.demoSummary, demo.demoRenderer)
+if (faulted) {
+  void import("../test/authFaults").then((faults) => {
+    session = faults.faultySession(session, true)
+    run()
   })
-} else if (scripted === undefined && !faulted) run()
-else {
-  void Promise.all([
-    faulted ? import("../test/authFaults").then((faults) => void (session = faults.faultySession(session, true))) : undefined,
-    scripted === undefined ? undefined : Promise.all([import("../test/scriptedAgent"), import("../test/scriptedSummary")]),
-  ]).then(([, models]) =>
-    models === undefined ? run() : run(models[0].scriptedModel(scripted!), models[1].scriptedSummary, models[0].scriptedRenderer)
-  )
-}
+} else run()

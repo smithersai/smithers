@@ -21,6 +21,7 @@ import type { GitHubTokens } from "../github/Tokens.ts"
 import * as Stack from "../stack/Stack.ts"
 import { ChecksRun } from "./Checks.ts"
 import { Implement } from "./TodoAgent.ts"
+import { NoSeat } from "../ModelSeats.ts"
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import * as TodoCli from "./TodoCli.ts"
 import { AgentCliFailed, ImplementCli, Route, RouteUnavailable, Routed } from "./TodoCli.ts"
@@ -268,6 +269,8 @@ export const Settle = Action.make("todo/Settle", {
 })
 
 /** What `todo/Fail` reads: a step's own failure, or the agent's. */
+const RunError = Schema.Union([TodoUnavailable, NoSeat])
+
 const Failure = Schema.Union([
   TodoFailed,
   TodoUnavailable,
@@ -275,6 +278,7 @@ const Failure = Schema.Union([
   AgentAction.AgentFailure,
   AgentCliFailed,
   RouteUnavailable,
+  NoSeat,
   TodoSession.CodingUnavailable,
   ExternalAgent.AgentFailed,
   AgentRunner.AgentJobsUnavailable,
@@ -287,8 +291,13 @@ type Failure = typeof Failure.Type
 export const Fail = Action.make("todo/Fail", {
   payload: { request: TodoRequest, error: Failure },
   success: Ran,
-  error: TodoUnavailable,
-  retryPolicy: RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000 }),
+  error: RunError,
+  retryPolicy: RetryPolicy.make({
+    initialMs: 1_000,
+    factor: 2,
+    maxMs: 60_000,
+    nonRetryable: ["@smthrs/mvp/todo/NoSeat"],
+  }),
 })
 
 /**
@@ -315,7 +324,7 @@ export const Todo = Flow.make("todo", {
   modelInvocable: false,
   payload: TodoRequest,
   success: Ran,
-  error: TodoUnavailable,
+  error: RunError,
   body: Node.capture(
     {
       begin: Begin.name,
@@ -421,6 +430,7 @@ export interface Services<E, R> {
   readonly overflow?: Parameters<typeof Jobs.layer>[2]
   /** What a subscription's run opens and refreshes its token with. Without it, no subscription can run. */
   readonly credentials?: TodoCli.Credentials
+  readonly requireCodingSeat?: TodoCli.RequireCodingSeat
 }
 
 /** Admissions requested by TODO steps, by flow and outcome; ids are confined to logs and spans. */
@@ -960,10 +970,13 @@ export const steps = <E, R>(services: Services<E, R>) => {
         }
         yield* Fleet.raiseAll(request.attemptId, [alert], services.fleet.raise, () => Effect.void)
       }
+      if (reported.outcome !== "stale" && (error instanceof NoSeat || modelCode === "no_route")) {
+        return yield* new NoSeat()
+      }
       return { state: reported.outcome === "stale" ? "ended" : "failed" } satisfies Ran
     }).pipe(
       Effect.provide(services.database),
-      Effect.mapError(() => new TodoUnavailable({ step: "settle" })),
+      Effect.mapError((error) => error instanceof NoSeat ? error : new TodoUnavailable({ step: "settle" })),
       Effect.withSpan("todo.fail", { attributes: { "smithers.todo.attempt": request.attemptId } }),
     )
 
@@ -1049,6 +1062,7 @@ export const registration = <E, R, IE, IR>(
         commandSeconds ?? COMMAND_LIMIT_SECONDS,
         stepWaitSeconds ?? COMMAND_LIMIT_SECONDS,
         services.credentials,
+        services.requireCodingSeat,
       ),
     ),
   ).pipe(Layer.provideMerge(Action.layerImplementations))

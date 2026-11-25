@@ -21,7 +21,6 @@
     "bench:startup": "node bench/startup.ts",
     "bench:first-load": "node bench/first-load.ts",
     "eval": "vitest run --config evals/vitest.config.ts",
-    "eval:memory": "vitest run --config vitest.memory.config.ts",
     "test": "pnpm run test:deploy && bash db/test.sh",
     "test:stack": "bash db/test-stack.test.sh",
     "lint": "eslint --config eslint.config.js . --max-warnings=0",

@@ -6,7 +6,7 @@ import { Effect, Layer } from "effect"
 import { describe, expect, test } from "vitest"
 import { caseNamed, inputOf } from "./cases"
 import { call, trial } from "./fixtures"
-import { PERSONS_OWN } from "../src/features/agent/instructions"
+import { PERSONS_OWN } from "./person-only"
 import { ACTS_CRITERIA, CRITERIA, evidence, HONEST_CRITERIA, judgeScorer, questionsFor, read, SEAT_NOTE } from "./judge"
 
 /** A judge that answers each question with the probability `answer` gives it, and records what it was asked. */

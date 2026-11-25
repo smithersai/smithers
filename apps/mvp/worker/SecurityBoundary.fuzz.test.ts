@@ -11,7 +11,7 @@ import { McpToolError, McpToolRegistry } from "./mcp/Contract.ts"
 import * as McpProtocol from "./mcp/Protocol.ts"
 import * as SessionKeys from "./SessionKeys.ts"
 import * as Throttle from "./Throttle.ts"
-import { internalNames } from "../src/features/agent/words.ts"
+import { internalNames } from "../src/features/chat/productWords.ts"
 import * as ModelRefusal from "./ModelRefusal.ts"
 import * as ModelTiers from "./ModelTiers.ts"
 
@@ -83,7 +83,7 @@ describe("apps/mvp Worker SecurityBoundary fuzz invariants (Throttle, appRoute, 
                 return Effect.succeed({ success: limiterOutcome === "admitted" })
               }
             }
-            const throttle = Throttle.make({ shape: limiter, telemetry: limiter, broker: limiter })
+            const throttle = Throttle.make({ shape: limiter, telemetry: limiter, broker: limiter, attach: limiter, "attach-mcp": limiter })
             const req = HttpServerRequest.fromWeb(
               new Request(`https://app.smithers.sh${url}`, {
                 method: "GET",

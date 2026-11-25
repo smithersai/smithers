@@ -97,6 +97,7 @@ const environment = (html: string, browserVersion: string, startedAt: Date) => {
     browser: `Chromium ${browserVersion} (headless)`,
     playwright: createRequire(import.meta.url)("@playwright/test/package.json").version as string,
     node: process.version,
+    answerTransport: "attach-mcp",
     date: startedAt.toISOString(),
     n,
     nAnswer,
@@ -213,11 +214,8 @@ const main = async () => {
           `Concurrent asks: ${counts["concurrent.asks"]} (${concurrency} at once × ${bursts}). Their POSTs: ${Object.entries(counts)
             .filter(([name]) => name.startsWith("concurrent.http."))
             .map(([name, count]) => `${count} × ${name.slice("concurrent.http.".length)}`)
-            .join(", ")}. Answers the model refused with 429: ${counts["concurrent.rate_limited"] ?? 0}. Failed: ${counts["concurrent.failed"] ?? 0}.`,
+            .join(", ")}. Failed: ${counts["concurrent.failed"] ?? 0}.`,
         ]),
-    ...Object.entries(counts)
-      .filter(([name]) => name.endsWith(".rate_limited") && !name.startsWith("concurrent."))
-      .map(([name, count]) => `The model answered 429 ${count} time(s) in ${name.split(".")[0]}; each was retried after a back-off.`),
     ...(follower.refetches + follower.errors > 0 ? [`Follower: ${follower.refetches} refetches, ${follower.errors} request errors.`] : []),
     `Checks: ${result.checks.passed} passed, ${failed.length} failed.`,
     ...failed.slice(0, 10).map((check) => `- ${check.suite} #${check.iteration}: ${check.name}${check.detail ? ` (${check.detail.slice(0, 160)})` : ""}`),

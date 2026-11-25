@@ -20,10 +20,3 @@ export const postgresTime = (text: string): number | undefined => {
  */
 export const timeOf = (row: { readonly local: number; readonly at: number; readonly createdAt: string }) =>
   row.local === 1 ? row.at : postgresTime(row.createdAt)
-
-/**
- * The run an answer's debug info opens (docs/features/chat.md#debug-info): the answer's own run, whose id is the
- * answer's, so its page shows the flows and steps that answered it. A question or a view has none.
- */
-export const debugRunOf = (row: { readonly id: string; readonly role: string }): string | undefined =>
-  row.role === "assistant" ? row.id : undefined

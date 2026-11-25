@@ -6,7 +6,6 @@ import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
 import { Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
-import * as BodyLimits from "./BodyLimits.ts"
 import * as Throttle from "./Throttle.ts"
 import { afterBody } from "./WriteAdmission.ts"
 import { testFile } from "./test/harness.ts"
@@ -99,7 +98,7 @@ test.each(["coedit seed", "issue"])("a valid paced %s upload lasting over ten se
 test("a throttled 8 MiB telemetry caller consumes no body", async () => {
   let pulls = 0
   let handled = 0
-  const limit = Throttle.make({ shape: { limit: () => Effect.succeed({ success: false }) }, telemetry: { limit: () => Effect.succeed({ success: false }) }, broker: { limit: () => Effect.succeed({ success: false }) } })
+  const limit = Throttle.make({ shape: { limit: () => Effect.succeed({ success: false }) }, telemetry: { limit: () => Effect.succeed({ success: false }) }, broker: { limit: () => Effect.succeed({ success: false }) }, attach: { limit: () => Effect.succeed({ success: false }) }, "attach-mcp": { limit: () => Effect.succeed({ success: false }) } })
   const check = Effect.flatMap(HttpServerRequest.HttpServerRequest, limit)
   const handler = HttpEffect.toWebHandler(afterBody(Effect.sync(() => {
     handled++
@@ -135,19 +134,4 @@ test.each([
     } }, { highWaterMark: 0 }),
   } as RequestInit))
   expect([response.status, pulls, handled]).toEqual([413, 1, 0])
-})
-
-
-
-test("model buffering uses the byte cap its host captured and rejects content-length before pulling", async () => {
-  let pulls = 0
-  const handler = HttpEffect.toWebHandler(afterBody(Effect.succeed(HttpServerResponse.empty({ status: 204 }))).pipe(
-    Effect.provideService(BodyLimits.ModelBytes, 32),
-  ))
-  const accepted = await handler(new Request("http://smithers.test/api/model/chat", { method: "POST", body: new Uint8Array(32) }))
-  expect(accepted.status).toBe(204)
-  const response = await handler(new Request("http://smithers.test/api/model/chat", { method: "POST", duplex: "half", headers: { "content-length": "33" },
-    body: new ReadableStream({ pull(controller) { pulls++; controller.enqueue(new Uint8Array(33)); controller.close() } }, { highWaterMark: 0 }),
-  } as RequestInit))
-  expect([response.status, pulls]).toEqual([413, 0])
 })

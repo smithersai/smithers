@@ -27,7 +27,7 @@ import { hasReproCandidate, isBug, NEEDS_REPRO_COMMENT, NEEDS_REPRO_LABEL, REPRO
 import { JUDGE_ROLE } from "../../src/features/jev/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { type Permission, roleOf } from "../GitHubAuth.ts"
-import type { Seat } from "../ModelEndpoint.ts"
+import type { Seat } from "../ModelSeats.ts"
 import type { Services as GitHubServices } from "./Apply.ts"
 import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.ts"
@@ -262,7 +262,7 @@ export const TriageClassifier = Classifier.make("triage/Decide", {
 export interface Services<E = unknown, R = never> extends GitHubServices<E, R> {
   /**
    * The `judge` role for the person who enabled triage (`enabledBy`), admitted and metered as the model endpoint's
-   * calls are (`ModelEndpoint.local`): their own model decides, as it answers their chat, and the deployment's only
+   * calls are (`ModelSeats.local`): their own model decides, as it answers their chat, and the deployment's only
    * when they are one of its own Members (ruling AUTH-8).
    */
   readonly judge: (enabledBy: string) => Seat

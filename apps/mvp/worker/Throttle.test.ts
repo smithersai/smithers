@@ -4,6 +4,12 @@
 import { Effect, Logger, Metric, Option, References } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { describe, expect, test } from "vitest"
+import {
+  ATTACH_CLAIMS_ROUTE,
+  ATTACH_MCP_ROUTE,
+  ATTACH_REVOCATIONS_ROUTE,
+  ATTACH_TOKENS_ROUTE,
+} from "../src/features/mcp/contract.ts"
 import * as Throttle from "./Throttle.ts"
 
 /** A limiter that admits `allowed` requests per key, recording each key it was asked about. */
@@ -66,6 +72,19 @@ describe("routeOf", () => {
     ].map(Throttle.routeOf)).toEqual(["broker", "broker", "broker", "broker", undefined, undefined])
   })
 
+  test("anonymous attach traffic has a budget separate from MCP and cannot throttle revocation", () => {
+    const open = counting(1).limiter
+    const attach = counting(1).limiter
+    const mcp = counting(1).limiter
+    const check = Throttle.make({ shape: open, telemetry: open, broker: open, attach, "attach-mcp": mcp })
+    const tool = ATTACH_MCP_ROUTE + "/owner/repo/main"
+    expect(run(check, ATTACH_CLAIMS_ROUTE + "?ignored=1").result._tag).toBe("None")
+    expect(run(check, ATTACH_TOKENS_ROUTE).result._tag).toBe("Some")
+    expect(run(check, tool).result._tag).toBe("None")
+    expect(run(check, tool).result._tag).toBe("Some")
+    expect(run(check, ATTACH_REVOCATIONS_ROUTE).result._tag).toBe("None")
+  })
+
   test("every shape and the telemetry relay are throttled; the other routes aren't", () => {
     expect([
       "/api/shapes/messages",
@@ -126,7 +145,7 @@ describe("make", () => {
   test("the broker's routes count on their own limiter, so a flood of sign-in requests answers 429 before the object", () => {
     const shapes = counting(5)
     const broker = counting(1)
-    const check = Throttle.make({ shape: shapes.limiter, telemetry: shapes.limiter, broker: broker.limiter })
+    const check = Throttle.make({ shape: shapes.limiter, telemetry: shapes.limiter, broker: broker.limiter, attach: broker.limiter, "attach-mcp": broker.limiter })
     const from = { "cf-connecting-ip": "203.0.113.5" }
 
     const first = run(check, "/api/auth/broker/start?origin=x&return_to=y", from)
@@ -143,7 +162,7 @@ describe("make", () => {
   test("lets a route through until its limiter refuses the network, then answers 429 rate_limited", async () => {
     const shapes = counting(2)
     const telemetry = counting(1)
-    const check = Throttle.make({ shape: shapes.limiter, telemetry: telemetry.limiter, broker: counting(0).limiter })
+    const check = Throttle.make({ shape: shapes.limiter, telemetry: telemetry.limiter, broker: counting(0).limiter, attach: counting(0).limiter, "attach-mcp": counting(0).limiter })
     const from = { "cf-connecting-ip": "203.0.113.5" }
 
     const first = run(check, "/api/shapes/messages", from)
@@ -171,14 +190,14 @@ describe("make", () => {
 
   test("a route it doesn't cover never reaches a limiter", () => {
     const shapes = counting(0)
-    const check = Throttle.make({ shape: shapes.limiter, telemetry: shapes.limiter, broker: shapes.limiter })
+    const check = Throttle.make({ shape: shapes.limiter, telemetry: shapes.limiter, broker: shapes.limiter, attach: shapes.limiter, "attach-mcp": shapes.limiter })
 
     expect(Option.isNone(run(check, "/api/questions").result)).toBe(true)
     expect(shapes.seen).toEqual([])
   })
 
   test("a limiter that fails lets the request through, logged by its route and counted, never by its address", () => {
-    const check = Throttle.make({ shape: broken, telemetry: broken, broker: broken })
+    const check = Throttle.make({ shape: broken, telemetry: broken, broker: broken, attach: broken, "attach-mcp": broken })
 
     const ran = run(check, "/api/shapes/messages", { "cf-connecting-ip": "203.0.113.5" })
 

@@ -1,12 +1,6 @@
-// Product words (./words.ts): what the agent's answer may show a person. The names it refuses are the ones the agent
-// evals caught in answers (docs/features/agent-evals.md, 2026-10-20): `app/web/open`, `flow_failed`, `WebPageRefused`,
-// `viewId`, and an id.
-import { Schema } from "effect"
 import { describe, expect, test } from "vitest"
+import { internalNames } from "./productWords"
 import { names } from "../../flows/registry"
-import { internalNames, plainly, ProductWords } from "./words"
-
-const decode = Schema.decodeUnknownResult(ProductWords)
 
 describe("internalNames", () => {
   test("reads past a fenced code block the person asked to see: their own code may name a flow", () => {
@@ -69,17 +63,5 @@ describe("internalNames", () => {
         "",
       ]
     ) expect([text, internalNames(text)]).toEqual([text, []])
-  })
-})
-
-describe("ProductWords", () => {
-  test("takes an answer in the person's words as it is", () => {
-    expect(decode("Dark mode is on.")).toEqual(Schema.decodeUnknownResult(Schema.String)("Dark mode is on."))
-  })
-
-  test("refuses an answer that names machinery, telling the agent which names and to say it plainly", () => {
-    const result = decode("app/theme/set answered: dark (flow_failed).")
-    expect(result._tag).toBe("Failure")
-    expect(String(result._tag === "Failure" ? result.failure : "")).toContain(plainly(["app/theme/set", "flow_failed"]))
   })
 })

@@ -7,8 +7,6 @@ import { repoAuthority } from "../../test/repoAuthority"
 import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { RemoteRunsClient, RepoRunsFailed } from "./api"
 import * as actions from "./actions"
-import { AnswersUnavailable } from "../agent/answers"
-import { CancelPending } from "./flows"
 import { REFUSAL_WORDS } from "./contract"
 import type { Inspection } from "./schema"
 import { VIEW } from "./schema"
@@ -252,14 +250,6 @@ test("an act clears its indicator before refreshing the completed run", async ()
   }) }
   await t.runtime.runPromise(actions.stop.pipe(Effect.provideService(RunsStore, store)))
 })
-
-for (const error of [new CancelPending(), new AnswersUnavailable({ status: 503 })]) {
-  test(`a cancellation exhausted with ${error._tag} leaves a visible refusal`, async () => {
-    const t = await setup({ dispatch: Effect.succeed({ _tag: "Failed", error }) })
-    await t.runtime.runPromise(actions.stop)
-    expect((await t.view()).refusal).toBe("unavailable")
-  })
-}
 
 test("the run page retries a system TODO through todo/Retry instead of replaying the old attempt", async () => {
   const t = await setup({ dispatch: Effect.succeed({ _tag: "Done", value: { opId: "press", status: "requested" } }) })

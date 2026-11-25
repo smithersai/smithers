@@ -19,7 +19,7 @@ import { EngineStore } from "@smthrs/flows"
 import { Layer } from "effect"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
 import * as Catalog from "../../flows/catalog"
-import { cell, member, openAgent } from "../../test/agent"
+import { cell, member, openFlowHost } from "../../test/flowHost"
 import {
   type CodeState,
   FlowAnswer,
@@ -50,7 +50,7 @@ beforeEach(() =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE flow_drafts, flow_revisions, flows CASCADE`))
 )
 
-type Request = Parameters<Parameters<typeof openAgent>[1]>[0]
+type Request = Parameters<Parameters<typeof openFlowHost>[1]>[0]
 
 /** What the model answers a request with: one cell. */
 const answer = (source: string) => Stream.make({ type: "text-delta" as const, id: "t", text: cell(source) }, usage, stop)
@@ -91,8 +91,8 @@ afterEach(async () => {
 })
 
 /** ChatApi and this device's engine, with `script` as the model. */
-const device = async (script: Parameters<typeof openAgent>[1]) => {
-  const agent = await openAgent(runtime, script, { actor: member, partsEvery: "20 millis" })
+const device = async (script: Parameters<typeof openFlowHost>[1]) => {
+  const agent = await openFlowHost(runtime, script, { actor: member })
   const engine = await agent.engine()
   opened.push({ close: engine.kill })
   const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(Effect.exit(effect))

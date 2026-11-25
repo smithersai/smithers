@@ -1,6 +1,5 @@
 import { ChatPin, ChatUnpin } from "../features/pins/flows"
 import { Context, Layer } from "effect"
-import { Remember } from "../features/agent/memoryFlows"
 import { Phases, Summarize } from "../features/timeline/flow"
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import { BranchCreate, BranchTrack } from "../features/branch/flows"
@@ -16,10 +15,8 @@ import {
   SandboxStatus,
   SandboxWrite,
 } from "../features/sandbox/flows"
-import { Close } from "../features/agent/close"
 import { AuthRefresh } from "../features/auth/flows"
 import { ChatCopy, ChatEdit } from "../features/chat/flows"
-import { AnswerReference } from "../features/agent/reference"
 import { CloseFile, OpenFile } from "../features/files/flows"
 import { Navigate } from "../features/navigation/flows"
 import { RepoAbout, RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../features/repo/flows"
@@ -98,8 +95,8 @@ export interface Entry {
   /** Why the agent may not run it; absent when it may. */
   readonly userOnlyReason?: string
   /**
-   * Who its run acts as when nobody pressed it (decision 0017, slice 0): `agent` for a run that is an agent, such as
-   * `chat/Answer`; `flow` for a run only a device or another flow starts. Absent, it is the person's: a person's own
+   * Who its run acts as when nobody pressed it (decision 0017, slice 0): `agent` for a run that is an agent, and
+   * `flow` for a run only a device or another flow starts. Absent, it is the person's: a person's own
    * press runs it with their session, and any other run of it, a nested one included, gets a server-minted run
    * credential (docs/features/sign-in.md#run-credentials). The server reads the agents among them from here
    * (worker/Actor.ts `AGENT_FLOWS`), never from a request.
@@ -181,15 +178,6 @@ export const registry = {
     changes: "adds a repository's issues to the chat",
     slash: { command: "issues", description: "Show issues", minimum: "member", fields: ["repo"], hints: { fields: { conversationId: { hidden: true } } } },
   },
-  "chat/Answer": {
-    flow: AnswerReference,
-    acts: "agent",
-    userOnlyReason: "Asking starts it, and the agent is the one answering; it never asks itself.",
-  },
-  "chat/Close": {
-    flow: Close,
-    userOnlyReason: "The tab that asked settles an answer whose run can no longer finish; the agent never settles one.",
-  },
   // Message controls (docs/features/chat.md#message-controls): Copy on a message and `/copy`, which the agent runs to
   // copy its last answer; Edit on a question Smithers doesn't have yet and `/edit`, the person's only.
   "chat/pin": { flow: ChatPin, minimum: "guest", changes: "pins a message for the person across their devices" },
@@ -200,7 +188,6 @@ export const registry = {
     userOnlyReason: "Only the person changes what they asked; the agent never edits a question.",
     slash: { command: "edit", description: "Edit an unsent message", minimum: "member", hints: { fields: { questionId: { hidden: true } } } },
   },
-  "app/memory/remember": { flow: Remember, changes: "stores a fact for future conversations on this device" },
   "repo/tree": { flow: RepoTree },
   "repo/read": { flow: RepoRead },
   "repo/refs": { flow: RepoRefs },

@@ -34,7 +34,7 @@ beforeEach(() => runtime.runPromise(Effect.gen(function* () {
 const repoId = "github/acme/widgets"
 const ownerId = "person-coder"
 const Route = Flow.make("test/CliRoute", {
-  payload: { ownerId: Schema.String }, success: TodoCli.Routed, error: TodoCli.RouteUnavailable,
+  payload: { ownerId: Schema.String }, success: TodoCli.Routed, error: TodoCli.Route.errorSchema,
   body: Node.capture({}, (payload) => TodoCli.Route.call(payload)),
 })
 const Implement = Flow.make("test/CliImplement", {

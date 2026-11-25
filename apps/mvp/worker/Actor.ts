@@ -140,6 +140,7 @@ export type AgentFlow = { [N in FlowName]: Registry[N] extends { readonly acts: 
  * person. Merging, approving, pre-approving, members, roles and plugin grants join this list with their routes.
  */
 export const PROTECTED_ACTS = {
+  "conversation/ask": { route: "POST /api/questions" },
   secret: { route: "PUT, DELETE /api/repos/<owner>/<name>/secrets/<name>" },
   // Merging a pull request (decision 0012 decision 6): a person's press only, never the agent's or a flow's.
   "pr/merge": { route: "POST /api/repos/<owner>/<name>/writes" },
@@ -160,7 +161,7 @@ export type PersonOnlyAct = PersonOnlyFlow | keyof typeof PROTECTED_ACTS
  * `acts: "agent"`, and the compiler refuses one missing or one too many.
  */
 export const AGENT_FLOWS: ReadonlySet<string> = new Set(
-  Object.keys({ "chat/Answer": true, "flow/new": true, "flow/run/prompt": true } as const satisfies {
+  Object.keys({ "flow/new": true, "flow/run/prompt": true } as const satisfies {
     readonly [N in AgentFlow]: true
   }),
 )

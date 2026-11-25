@@ -3,7 +3,7 @@ import { Scorer } from "@smthrs/scorers"
 import { Effect, type Layer } from "effect"
 import { type AgentCase, CASES, type CaseInput, caseNamed } from "./cases"
 import type { Trial } from "./checks"
-import { PERSONS_OWN } from "../src/features/agent/instructions"
+import { PERSONS_OWN } from "./person-only"
 
 // The judge half of the agent evals (docs/features/agent-evals.md#the-judge): yes-or-no questions about each answer,
 // asked of the host's judge. Jev when the Jev key (`AI_GATEWAY_API_KEY`) is set; without it, the subscription judges

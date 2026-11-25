@@ -26,7 +26,8 @@ import * as ConversationPeople from "./branch/ConversationPeople.ts"
 import * as SandboxCalls from "./branch/SandboxCalls.ts"
 import * as Flows from "./Flows.ts"
 import * as HostedModel from "./HostedModel.ts"
-import * as ModelEndpoint from "./ModelEndpoint.ts"
+import * as ModelSeats from "./ModelSeats.ts"
+import * as ModelEndpoint from "./test/modelEndpoint.ts"
 import * as ModelSpend from "./ModelSpend.ts"
 import * as PersonalModels from "./personal/Models.ts"
 import * as PersonalUsage from "./personal/Usage.ts"
@@ -468,7 +469,7 @@ describe("Wave8: worker/Runs.ts", () => {
   }, 60_000)
 })
 
-describe("Wave8: worker/ModelEndpoint.ts, HostedModel.ts, ModelSpend.ts, personal/Usage.ts", () => {
+describe("Wave8: worker/ModelSeats.ts, HostedModel.ts, ModelSpend.ts, personal/Usage.ts", () => {
   it("fuzzes ModelEndpoint make & local across personal/hosted/budget/meter/error paths", async () => {
     const modeArb = Arbitrary.schema(
       Schema.Literals([
@@ -600,13 +601,13 @@ describe("Wave8: worker/ModelEndpoint.ts, HostedModel.ts, ModelSpend.ts, persona
         )
 
         if (mode.startsWith("local_")) {
-          const mkSeat = yield* ModelEndpoint.local(db, { alerts: true, hosted: true }).pipe(
+          const mkSeat = yield* ModelSeats.local(db, { alerts: true, hosted: true }).pipe(
             Effect.provide(Layer.mergeAll(hostModelLayer, personalLayer, cfg, silentLogger)),
           )
           const starter = {
             start: () => Effect.void,
           } as Flows.FlowStarter["Service"]
-          const owner: ModelEndpoint.Owner = () =>
+          const owner: ModelSeats.Owner = () =>
             mode === "local_owner_db_fail"
               ? Effect.fail(new Error("owner_db"))
               : Effect.succeed(

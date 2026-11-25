@@ -1,8 +1,9 @@
 import { ModelStep, type FlowEngineLike } from "@smthrs/agent"
 import { Interpreter, type RetryPolicy } from "@smthrs/flow"
-import { ModelError, ModelEvent, ModelProxy, ModelRequest, type Model } from "@smthrs/model"
+import { ModelError, ModelEvent, ModelRequest, type Model } from "@smthrs/model"
 import { Context, Effect, Layer, Metric, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
+import { clientSeat } from "../model/clientSeat"
 import { type SummaryReason, TIMELINE_SUMMARIES_ROUTE } from "./contract"
 import { cleanSpans, readOf, type StoredSpan } from "./marks"
 import { ANSWER_EXCERPT, isGenericSummary, QUESTION_EXCERPT, safeTimelineText } from "./identity"
@@ -13,10 +14,7 @@ export class SummarySeat extends Context.Service<SummarySeat, {
   /** Host-selected retry timings; omitted uses the durable model step's production policy. */
   readonly retryPolicy?: RetryPolicy.RetryPolicy
 }>()("timeline/SummarySeat") {
-  static readonly layer = (origin: string, model?: Model.Model) => Layer.effect(SummarySeat, Effect.gen(function* () {
-    const url = `${origin}/api/model/summary`
-    return { model: model ?? (yield* ModelProxy.makeClient({ url })), route: { prepare: ModelProxy.prepare({ url }) } }
-  }))
+  static readonly layer = (origin: string, model?: Model.Model) => Layer.succeed(SummarySeat, clientSeat(origin, "summary", model))
 }
 
 /** One segmentation's claim: the message it starts at, its level and its identity. */
@@ -141,7 +139,7 @@ export const segmentRequest = (payload: Pick<SegmentPayload, "level" | "items">)
 })
 
 /**
- * Claims the answer's one summary, then asks the summary role's model (`/api/model/summary`, a cheap model's tier) and
+ * Claims the answer's one summary, then asks the host's summary seat and
  * records what it wrote on the message. A claim another tab, device or person holds completes `taken` before any call. No
  * reasoning effort is sent: a model that doesn't reason refuses the parameter, and the endpoint chooses the effort.
  */

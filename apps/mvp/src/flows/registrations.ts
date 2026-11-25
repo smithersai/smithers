@@ -4,8 +4,6 @@ import * as Timeline from "../features/timeline/steps"
 import { Action } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
 import { Layer } from "effect"
-import { AnswerApi } from "../features/agent/answers"
-import * as AgentHost from "../features/agent/host"
 import * as Attention from "../features/attention/steps"
 import * as AuthSteps from "../features/auth/steps"
 import * as ConversationSteps from "../features/conversations/steps"
@@ -48,8 +46,7 @@ import { clientFlows } from "./declarations"
 import { type Endpoint, TabPort } from "./tabPort"
 
 // Every client flow's registration (docs/features/flows.md#the-engine-and-the-tab-port): what the leader tab's engine
-// worker (src/flows/engine.worker.ts) and a Node or Bun host register alike. It imports the agent's implementation, so
-// only an engine's host imports this module, never the tab (src/flows/tab.test.ts).
+// worker (src/flows/engine.worker.ts) and a Node or Bun host register alike. An engine's host imports this module (src/flows/tab.test.ts).
 
 /**
  * The repository flows: the reads (`repo/tree`, `repo/read`, `repo/refs`, `repo/about`) over RepoApi's GET routes on `origin`
@@ -81,18 +78,20 @@ export const docsSearch = (origin: string) =>
     Layer.provide(ViewsClient.layer({ origin })),
   )
 
-/** What every host's registrations take: the agent's host options, and whether `http:` pages on this machine open. */
-export interface HostOptions extends AgentHost.HostOptions {
+/** What a client flow host uses to reach routes and provide its own model seats. */
+export interface HostOptions {
+  readonly origin: string
+  readonly flowModel?: import("@smthrs/model").Model.Model
   /** Whether `app/web/open` opens `http:` pages on this machine: development only. Default `false`. */
   readonly localHttp?: boolean
   readonly summaryModel?: import("@smthrs/model").Model.Model
-  /** The renderer's model in place of the endpoint's `renderer` role: only the end-to-end tests' scripted agent. */
+  /** The model explicitly provided by a host for generated views. */
   readonly rendererModel?: import("@smthrs/model").Model.Model
 }
 
 /**
  * `ui/form`, `ui/render` and `view/set-state` (docs/features/views.md): views added and moved through ChatApi on
- * `origin`, written by the model endpoint's `renderer` role (or `rendererModel`).
+ * `origin`, where the renderer uses the host's explicit seat.
  */
 export const views = (origin: string, rendererModel?: import("@smthrs/model").Model.Model) =>
   ViewSteps.registration.pipe(
@@ -100,7 +99,7 @@ export const views = (origin: string, rendererModel?: import("@smthrs/model").Mo
     Layer.provide(ViewSteps.RendererSeat.layer(origin, rendererModel)),
   )
 
-/** Jev's flows, `app/jev/classify` and `app/jev/evaluate`, judging through the model endpoint's `judge` role on `origin`. */
+/** Jev's flows, which can read the person's configured Jev connection on `origin`. */
 export const jev = (origin: string) => Jev.registration.pipe(Layer.provide(Jev.JudgeSeat.layer(origin)))
 
 /**
@@ -124,14 +123,12 @@ export const registrations = (options: HostOptions) =>
     webPages(options.origin, options.localHttp ?? false),
     docsSearch(options.origin),
     views(options.origin, options.rendererModel),
-    AgentHost.layer(options),
     repoFlows(options.origin),
     jev(options.origin),
     Status.registration,
-    PersonalFlows.layer(options.origin),
+    PersonalFlows.layer(options.origin, options.flowModel),
     // Stop on a repository's run goes to ChatApi, which its Durable Object answers (docs/features/actions.md#acts).
     Runs.registration.pipe(
-      Layer.provide(AnswerApi.layerHttp(options.origin)),
       Layer.provide(RemoteRunsClient.layer({ origin: options.origin, within: REQUEST_WITHIN })),
     ),
     BranchSteps.registrationAt(options.origin),

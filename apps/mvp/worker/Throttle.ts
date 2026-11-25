@@ -2,6 +2,7 @@ import { Effect, Metric, Option } from "effect"
 import { type HttpServerRequest, HttpServerResponse } from "effect/http"
 import { GitHub } from "@smthrs/integrations"
 import { TELEMETRY_ROUTE } from "../src/features/chat/contract.ts"
+import { ATTACH_CLAIMS_ROUTE, ATTACH_MCP_ROUTE, ATTACH_TOKENS_ROUTE } from "../src/features/mcp/contract.ts"
 
 // The edge throttle on ChatApi's open routes (docs/features/chat.md#throttling, decision 0008 §7.3): every Electric
 // shape and the browser's telemetry relay answer anyone, signed in or not, so each network may call them only so often.
@@ -13,7 +14,7 @@ import { TELEMETRY_ROUTE } from "../src/features/chat/contract.ts"
  * The routes the throttle covers: every Electric shape, the telemetry relay, and the hosted-site sign-in broker, whose
  * four routes answer anyone and share one Durable Object (decision 0165).
  */
-export type Route = "shape" | "telemetry" | "broker"
+export type Route = "shape" | "telemetry" | "broker" | "attach" | "attach-mcp"
 
 /** Throttle decisions, by `route` and `outcome` (`admitted`, `limited`, or `error` when the limiter failed). */
 export const decisions = Metric.counter("smithers_throttle_decisions", {
@@ -38,6 +39,8 @@ const SHAPES = "/api/shapes/"
 export const routeOf = (url: string): Route | undefined => {
   if (GitHub.Auth.Broker.handles(url)) return "broker"
   const path = url.split("?")[0]!
+  if (path === ATTACH_CLAIMS_ROUTE || path === ATTACH_TOKENS_ROUTE) return "attach"
+  if (path.startsWith(ATTACH_MCP_ROUTE + "/")) return "attach-mcp"
   return path.startsWith(SHAPES) && path.length > SHAPES.length
     ? "shape"
     : path.startsWith(`${TELEMETRY_ROUTE}/`)

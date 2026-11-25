@@ -1047,7 +1047,7 @@ describe("sessions", () => {
     expect(mark.line).toMatch(/Max-Age=2592000/)
     const signedOut = { smithers_dev_signed_out: mark.value }
     expect(await dev.session(signedOut)).toEqual({ signedIn: false, available: true, hostedModel: false })
-    const ask = await chat.fetch("/api/model/agent", {
+    const ask = await chat.modelFetch("/api/model/agent", {
       method: "POST",
       body: modelRequest,
       headers: { cookie: cookie(signedOut) },
@@ -1146,12 +1146,12 @@ describe("asking Smithers", () => {
   test("a signed-out ask is refused before any model runs; a signed-in one is answered", async () => {
     const h = await signInHarness(runtime)
     const chat = await harness(runtime, answers("hi"), { sessions: h.sessions })
-    const signedOut = await chat.fetch("/api/model/agent", { method: "POST", body: modelRequest })
+    const signedOut = await chat.modelFetch("/api/model/agent", { method: "POST", body: modelRequest })
     expect(signedOut.status).toBe(401)
     expect(((await signedOut.json()) as { readonly code: string }).code).toBe("authentication")
     expect(chat.requests).toHaveLength(0)
     const { cookies } = await h.signInAs()
-    const signedIn = await chat.fetch("/api/model/agent", {
+    const signedIn = await chat.modelFetch("/api/model/agent", {
       method: "POST",
       body: modelRequest,
       headers: { cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId },
@@ -1161,7 +1161,7 @@ describe("asking Smithers", () => {
     expect(chat.requests).toHaveLength(1)
     // After signing out, the same cookie is refused again.
     await h.fetch("/api/auth/sign-out", { method: "POST", headers: { origin: "http://smithers.test", cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId } })
-    const after = await chat.fetch("/api/model/agent", { method: "POST", body: modelRequest, headers: { cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId } })
+    const after = await chat.modelFetch("/api/model/agent", { method: "POST", body: modelRequest, headers: { cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId } })
     expect(after.status).toBe(401)
   })
 
@@ -1170,7 +1170,7 @@ describe("asking Smithers", () => {
     const { cookies } = await h.signInAs()
     const down = await signInHarness(runtime, { github: h.github, database: unreachable })
     const chat = await harness(runtime, answers("hi"), { sessions: down.sessions })
-    const response = await chat.fetch("/api/model/agent", {
+    const response = await chat.modelFetch("/api/model/agent", {
       method: "POST",
       body: modelRequest,
       headers: { cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId },

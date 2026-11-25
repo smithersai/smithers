@@ -1,10 +1,6 @@
-import { Schema } from "effect"
 import { names } from "../../flows/registry"
 
-// Product words (docs/features/agent.md#product-words): what a person reads from the agent names things as the person
-// sees them, never the machinery behind them. `chat/Respond` declares its answer as `ProductWords`, so an answer that
-// names a flow, a cell, a failure's code or an id is handed back to the agent once to say it plainly, by the agent
-// library's own output check (`@smthrs/agent`'s structured output), before the person reads it.
+// Portable output-quality check for recorded and attached agent output.
 
 /** The cell contract's names and the codes a failed call reads, which mean nothing to a person. */
 const MACHINERY = [
@@ -61,15 +57,3 @@ export const internalNames = (text: string): ReadonlyArray<string> => {
   return [...new Set(found)]
 }
 
-/** What the agent is told when its answer named machinery: the names, and to say it in the person's words. */
-export const plainly = (found: ReadonlyArray<string>): string =>
-  `The person can't read ${found.map((name) => `"${name}"`).join(", ")}. Say the same thing in their words: what ` +
-  `you did or couldn't do, with no flow names, codes or ids.`
-
-/** An answer in product words: text that names no flow, cell, failure code or id. */
-export const ProductWords = Schema.String.check(
-  Schema.makeFilter((text: string) => {
-    const found = internalNames(text)
-    return found.length === 0 || plainly(found)
-  }),
-)

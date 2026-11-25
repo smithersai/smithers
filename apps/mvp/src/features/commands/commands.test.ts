@@ -155,7 +155,7 @@ const THEME: Command = {
 describe("the catalog", () => {
   test("every registered flow with a slash door, its row the first sentence of its description, its arguments its payload", () => {
     expect(COMMANDS.find(({ flow }) => flow === "app/theme/set")).toEqual(THEME)
-    expect(commandsOf((["app/theme/set", "chat/Answer", "repo/tree"] as const).map((name) => [name, entryOf(name)])))
+    expect(commandsOf((["app/theme/set", "run/inspect", "repo/tree"] as const).map((name) => [name, entryOf(name)])))
       .toEqual([THEME])
     // A reference carries no description: its row has none.
     const { _tag, payloadSchema, successSchema, errorSchema } = entryOf("app/theme/set").flow
@@ -174,8 +174,7 @@ describe("the catalog", () => {
       { name: "queue", flow: "app/navigate", minimum: "member", description: "Queue", fields: [], args: { to: "/app/queue" } },
       { name: "home", flow: "app/navigate", minimum: "anyone", description: "Home", fields: [] },
     ])
-    // The built-ins' (src/plugins/builtin.ts): the bug plugin's form and inbox, the factory's three, and the queue.
-    expect(PLUGIN_COMMANDS.map(({ name }) => name)).toEqual(["bug", "bugs", "factory", "lanes", "decide", "queue", "tour", "wiki"])
+    expect(PLUGIN_COMMANDS.map(({ name }) => name)).toEqual(["bug", "bugs", "factory", "lanes", "decide", "fleet", "queue", "tour", "wiki"])
   })
 
   test("names are command syntax, one per flow, and each slash door's flow carries a description", () => {

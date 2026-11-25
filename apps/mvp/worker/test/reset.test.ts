@@ -17,7 +17,7 @@ test("reset never sequentially scans the shared foreign-key catalog, even for an
     expect(after!.scans - before!.scans).toBe(0)
   })))))
 
-/** Seed every reset table, including both message foreign keys and the views/messages shared position sequence. */
+/** Seed the transcript, its dependent rows and the attach fixture. */
 const seed = Effect.flatMap(SqlClient.SqlClient, sql => Effect.gen(function* () {
   const [{ id: conversation }] = yield* sql<{ readonly id: string }>`SELECT id FROM conversations LIMIT 1`
   const question = crypto.randomUUID(), answer = crypto.randomUUID(), view = crypto.randomUUID()
@@ -26,6 +26,7 @@ const seed = Effect.flatMap(SqlClient.SqlClient, sql => Effect.gen(function* () 
   yield* sql`INSERT INTO message_pins (conversation_id, person_id, message_id, changed_at) VALUES (${conversation!}, 'reset-person', ${answer}, now())`
   yield* sql`INSERT INTO timeline_summaries (message_id, revision, person_id, reason) VALUES (${answer}, 'revision', 'reset-person', 'answer')`
   yield* sql`INSERT INTO timeline_phase_claims (anchor_id, level, revision, person_id) VALUES (${question}, 1, 'revision', 'reset-person')`
+  yield* sql`INSERT INTO attach_grants (origin, reference, person_id, expires_at, state) VALUES ('https://fixture.test', 'REF', 'reset-person', 0, '{}'::jsonb)`
   yield* sql`INSERT INTO views (id, template, props, conversation_id) VALUES (${view}, 'link', '{}', ${conversation!})`
   yield* sql`INSERT INTO view_moves (view_id, move_id, revision) VALUES (${view}, 'reset-move', 0)`
   return { conversation, question, answer, view }
@@ -37,11 +38,12 @@ const counts = Effect.flatMap(SqlClient.SqlClient, sql => sql`
     (SELECT count(*)::int FROM timeline_phase_claims) AS claims,
     (SELECT count(*)::int FROM messages) AS messages,
     (SELECT count(*)::int FROM views) AS views,
-    (SELECT count(*)::int FROM view_moves) AS moves`)
-const populated = [{ pins: 1, summaries: 1, claims: 1, messages: 2, views: 1, moves: 1 }]
-const empty = [{ pins: 0, summaries: 0, claims: 0, messages: 0, views: 0, moves: 0 }]
+    (SELECT count(*)::int FROM view_moves) AS moves,
+    (SELECT count(*)::int FROM attach_grants) AS attachments`)
+const populated = [{ pins: 1, summaries: 1, claims: 1, messages: 2, views: 1, moves: 1, attachments: 1 }]
+const empty = [{ pins: 0, summaries: 0, claims: 0, messages: 0, views: 0, moves: 0, attachments: 0 }]
 
-test("reset clears all six tables, preserves the home conversation, and restarts the shared sequence at its configured step", () =>
+test("reset clears the transcript and attach fixture, preserves the home conversation, and restarts the shared sequence at its configured step", () =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => Effect.gen(function* () {
     const { conversation } = yield* seed
     expect(yield* counts).toEqual(populated)

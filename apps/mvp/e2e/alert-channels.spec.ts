@@ -1,10 +1,13 @@
+import { RUN_TRIAGE_AGAIN, writesRoute } from "../src/features/issues/contract.ts"
+import { ALERT_WORD } from "../src/features/spend/copy.ts"
 import { type AlertProviders, startAlertProviders } from "../worker/test/alertProviders.ts"
+import { browserModelRequests } from "./attach"
 import { expect, test } from "./devices"
 import { requires, target } from "./target"
 
 // Spend alerts by email and Telegram, end to end (docs/features/spend-alerts.md#channels): the real app, ChatApi, the
 // `ops/SpendAlert` flow on its Durable Object, Postgres and Electric. An Admin (under `alchemy dev`, the local
-// developer) sets an email address and a Telegram chat in Settings, asks a question, which spends, and sees each
+// developer) sets an email address and a Telegram chat in Settings, runs triage on a scratch issue, and sees each
 // channel's receipt once the window ends. The providers are the local stand-in (worker/test/alertProviders.ts) at the
 // URL the dev server was started with, so nothing is really sent:
 //
@@ -12,12 +15,15 @@ import { requires, target } from "./target"
 //   ALERT_TELEGRAM_API_URL=http://127.0.0.1:1339 pnpm dev
 //
 // The spec reads the same variables (`requires("alertProviders")`, e2e/target.ts), so it runs only against local development.
-// The question must be admitted to spend, so the dev database's daily model budget needs room (`429 quota_exceeded`
-// spends nothing).
+// Set E2E_ALERT_TRIAGE_ISSUE to owner/repo/issues/number in a disposable repository with triage enabled.
+// The Worker needs a configured judge seat with room in its model budget.
 
 const providersUrl = process.env.ALERT_TELEGRAM_API_URL
 const ready = target === "local" && providersUrl !== undefined &&
   providersUrl === process.env.ALERT_EMAIL_API_URL && process.env.MODEL_SPEND_ALERTS === "true"
+
+const triageIssue = process.env.E2E_ALERT_TRIAGE_ISSUE ?? ""
+const scratchIssue = /^(?!smithersai\/)[\w.-]+\/[\w.-]+\/issues\/[1-9]\d*$/i.test(triageIssue)
 
 const ADDRESS = "will@example.com"
 const CHAT = "-1001234567890"
@@ -40,9 +46,11 @@ test("channels: an Admin sets email and Telegram, and each spend alert's deliver
   },
 }, async ({ devices }) => {
   requires("alertProviders")
+  test.skip(!scratchIssue, "Set E2E_ALERT_TRIAGE_ISSUE to an issue in a disposable triage-enabled repository")
   test.setTimeout(240_000)
   const [a] = await devices.open("Admin")
   const page = a.page
+  const calls = browserModelRequests(a.device.context)
   const settings = page.getByRole("region", { name: "Spend alerts" })
   const email = settings.getByRole("form", { name: "Email" })
   const telegram = settings.getByRole("form", { name: "Telegram chat" })
@@ -63,15 +71,26 @@ test("channels: an Admin sets email and Telegram, and each spend alert's deliver
     await expect(settings.getByRole("status")).toHaveCount(0, { timeout: 30_000 })
   })
 
-  await test.step("Ask a question, which spends", async () => {
-    await page.getByRole("link", { name: "Back to chat" }).click()
-    const call = page.waitForResponse((response) => response.url().includes("/api/model/agent"), { timeout: 60_000 })
-    await a.ask("What changed on main today?")
-    await call
+  await test.step("Run triage to spend from the server's judge seat", async () => {
+    const [owner, repo, , number] = triageIssue.split("/")
+    const path = writesRoute(owner!, repo!)
+    await page.goto(`/${triageIssue}`)
+    const [taken] = await Promise.all([
+      page.waitForResponse((response) => {
+        const request = response.request()
+        if (new URL(response.url()).pathname !== path || request.method() !== "POST") return false
+        const body = request.postDataJSON()
+        return body?.op === "triage/run" && body.number === Number(number)
+      }),
+      page.getByRole("group", { name: "Triage" }).getByRole("button", { name: RUN_TRIAGE_AGAIN }).click(),
+    ])
+    expect(taken.status()).toBe(202)
     await page.getByRole("navigation", { name: "Pages" }).getByRole("link", { name: "Settings" }).click()
   })
 
   await test.step("Each channel's receipt shows: sent", async () => {
+    await expect.poll(() => providers!.received.map(({ provider }) => provider), { timeout: DELIVERED_WITHIN })
+      .toEqual(expect.arrayContaining(["email", "telegram"]))
     // Every window with spend sends again, so the list may hold several receipts per channel.
     const sent = (channel: string) =>
       settings.getByRole("list", { name: "Deliveries" }).getByRole("listitem").filter({ hasText: channel })
@@ -83,9 +102,10 @@ test("channels: an Admin sets email and Telegram, and each spend alert's deliver
   // What the providers took: one email to the address, one message to the chat, each the alert's short message.
   const sentEmail = providers!.received.find((request) => request.provider === "email")
   const sentMessage = providers!.received.find((request) => request.provider === "telegram")
-  expect(sentEmail!.body).toMatchObject({ to: [ADDRESS], subject: expect.stringMatching(/^Model spend · [\d,]+ tokens/) })
-  expect(String(sentEmail!.body.text)).toMatch(/UTC, \d{4}-\d{2}-\d{2}\n[a-z]+ [\d,]+.*\nhttps?:\/\/[^/]+\/app$/u)
-  expect(sentMessage!.body).toMatchObject({ chat_id: CHAT, text: expect.stringMatching(/^Model spend · /) })
+  expect(sentEmail!.body).toMatchObject({
+    to: [ADDRESS], subject: ALERT_WORD, text: expect.stringMatching(/^https?:\/\/[^/]+\/app$/u),
+  })
+  expect(sentMessage!.body).toMatchObject({ chat_id: CHAT, text: expect.stringContaining(ALERT_WORD) })
 
   await test.step("Clear the Telegram chat: Telegram is off", async () => {
     await telegram.getByLabel("Telegram chat").fill("")
@@ -99,4 +119,5 @@ test("channels: an Admin sets email and Telegram, and each spend alert's deliver
       timeout: 30_000,
     })
   })
+  expect(calls).toEqual([])
 })

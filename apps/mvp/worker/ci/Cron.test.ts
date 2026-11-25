@@ -4,14 +4,13 @@
 // besides GitHub. Steps run on the test clock; the flows run on the Node host's engine.
 import { TestSchemas } from "@smthrs/database"
 import { TriggerError, TriggerStore } from "@smthrs/triggers"
-import { Duration, Effect, Exit, Layer, Logger, Metric, Option, Result } from "effect"
+import { Effect, Exit, Layer, Logger, Metric, Option, Result } from "effect"
 import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 import { afterAll, beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import * as Flows from "../Flows.ts"
-import * as Expire from "../flows/Expire.ts"
 import * as Pause from "../flows/Pause.ts"
 import { database, REPOSITORY, reset, services as githubServices } from "../github/test/fixtures.ts"
 import { type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
@@ -500,7 +499,7 @@ describe("on the execution host", { timeout: 120_000 }, () => {
     const engine = TestSchemas.schemaName("flows")
     schemas.push(engine)
     const flows = ExecutionHost.withSchedules(
-      ExecutionHost.remote({ database: await database(runtime), expiry: Duration.fromInputUnsafe(Expire.DEFAULT_EXPIRY) }),
+      ExecutionHost.remote(await database(runtime)),
       Effect.succeed(hosted),
     )
     const tickObject = memory()

@@ -21,10 +21,8 @@ import { MAX_FLOWS_BODY_BYTES, MAX_SOURCE_BYTES } from "../src/features/flows-ui
 import { SOURCE_PATH } from "../src/features/flows-ui/source.ts"
 import { MAX_VIEW_HTML_BYTES, MAX_VIEW_JSON_BYTES, SUBMIT_EVENT } from "../src/features/views/contract.ts"
 import * as Actor from "./Actor.ts"
-import * as Answers from "./Answers.ts"
 import * as BranchAccess from "./branch/Access.ts"
 import { DocsSource } from "./docs/Source.ts"
-import * as Messages from "./Messages.ts"
 import * as PersonalModels from "./personal/Models.ts"
 import * as PersonalFlows from "./PersonalFlows.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
@@ -990,7 +988,7 @@ describe("Wave8: worker/Views.ts", () => {
             : mode === "ask_from_gen_message_no_data"
             ? undefined
             : { title: "Hello" }
-          const res = yield* Views.askFrom(baseQuestion, src, data, () => Effect.void).pipe(
+          const res = yield* Views.askFrom(baseQuestion, src, data).pipe(
             Effect.provide(db),
             Effect.result,
           )
@@ -1176,197 +1174,6 @@ describe("Wave8: worker/Views.ts", () => {
               mode === "add_gen_html_too_large"
             ? 422
             : 400
-        expect(res.status).toBe(expected)
-      }),
-    )
-  }, 60_000)
-})
-
-describe("Wave8: worker/Answers.ts and worker/Messages.ts", () => {
-  it("fuzzes Answers turn, heartbeat, write, abandonment, and Messages.ask/history", async () => {
-    const modeArb = Arbitrary.schema(
-      Schema.Literals([
-        "messages_ask_insert",
-        "messages_ask_retry",
-        "messages_ask_id_taken",
-        "messages_history",
-        "method_405",
-        "bad_uuid_404",
-        "unauth_401",
-        "other_run_403",
-        "asking_forbidden_403",
-        "turn_404",
-        "turn_not_asker",
-        "turn_settled",
-        "turn_waiting",
-        "turn_ready_abandon",
-        "hb_404",
-        "hb_not_asker",
-        "hb_settled_204",
-        "hb_renewed",
-        "hb_not_renewed",
-        "write_too_large",
-        "write_bad_json",
-        "write_streaming_ok",
-        "write_done_ok",
-        "write_failed_ok",
-        "write_miss_404",
-        "write_miss_not_asker",
-        "write_landed_done",
-        "write_landed_failed",
-        "write_settled_conflict",
-        "db_503",
-      ]),
-    )
-
-    await holds(modeArb, Math.max(execs * 2, 60), (mode) =>
-      Effect.gen(function* () {
-        const db = makeSqlLayer((q) => {
-          if (mode === "db_503") return new Error("db_down")
-          if (q.includes("WITH question AS")) {
-            return mode === "messages_ask_insert" ? [{ txid: "77", attempt: "77" }] : []
-          }
-          if (q.includes("FROM messages q LEFT JOIN messages a")) {
-            return [{
-              role: "user",
-              text: mode === "messages_ask_id_taken" ? "other" : "hi",
-              answerId: ANSWER_ID,
-              askedBy: PERSON_ID,
-              conversationId: CONV_ID,
-              sameView: true,
-            }]
-          }
-          if (q.includes("SELECT question, answer FROM")) {
-            return [{ question: "q1", answer: "a1" }]
-          }
-          if (q.includes("SELECT conversation_id AS \"conversationId\" FROM messages WHERE id =")) {
-            return [{ conversationId: CONV_ID }]
-          }
-          if (q.includes("FROM branches") && q.includes("conversations")) {
-            return mode === "asking_forbidden_403"
-              ? [branchRow({ createdBy: OTHER_ID })]
-              : [branchRow()]
-          }
-          if (q.includes("AS waiting") && q.includes("AS \"waitedMs\"")) {
-            if (mode === "turn_404" || mode === "hb_404" || mode === "write_miss_404") return []
-            if (mode === "turn_not_asker" || mode === "hb_not_asker" || mode === "write_miss_not_asker") {
-              return [{ status: "streaming", question: "q", text: "", failure: null, askedBy: OTHER_ID, waiting: false, waitedMs: 0 }]
-            }
-            if (mode === "turn_settled" || mode === "hb_settled_204" || mode === "write_settled_conflict") {
-              return [{ status: "done", question: "q", text: "different", failure: null, askedBy: PERSON_ID, waiting: false, waitedMs: 0 }]
-            }
-            if (mode === "write_landed_done") {
-              return [{ status: "done", question: "q", text: "final answer", failure: null, askedBy: PERSON_ID, waiting: false, waitedMs: 0 }]
-            }
-            if (mode === "write_landed_failed") {
-              return [{ status: "failed", question: "q", text: "", failure: "quota", askedBy: PERSON_ID, waiting: false, waitedMs: 0 }]
-            }
-            return [{
-              status: "streaming",
-              question: "q",
-              text: "",
-              failure: null,
-              askedBy: PERSON_ID,
-              waiting: mode === "turn_waiting",
-              waitedMs: 1200,
-            }]
-          }
-          if (q.includes("SET status = 'failed', failure = 'abandoned'")) {
-            return mode === "turn_ready_abandon" ? [{ id: "12345678-1234-4123-8123-123456789012" }] : []
-          }
-          if (q.includes("UPDATE messages SET updated_at = now()")) {
-            return mode === "hb_not_renewed" ? [] : [{ id: ANSWER_ID }]
-          }
-          if (q.includes("UPDATE messages a SET")) {
-            if (mode === "write_streaming_ok" || mode === "write_done_ok" || mode === "write_failed_ok") {
-              return [{ txid: "88" }]
-            }
-            return []
-          }
-          return []
-        })
-
-        if (mode.startsWith("messages_")) {
-          if (mode === "messages_history") {
-            const hist = yield* Messages.history(ANSWER_ID).pipe(Effect.provide(db))
-            expect(hist).toEqual([{ question: "q1", answer: "a1" }])
-            return
-          }
-          const res = yield* Messages.ask({
-            id: QUESTION_ID,
-            answerId: ANSWER_ID,
-            conversationId: CONV_ID,
-            text: "hi",
-            askedBy: PERSON_ID,
-          }).pipe(Effect.provide(db), Effect.result)
-          if (mode === "messages_ask_id_taken") expect(Result.isFailure(res)).toBe(true)
-          else expect(Result.isSuccess(res)).toBe(true)
-          return
-        }
-
-        const handler = yield* Answers.make(db).pipe(
-          Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({}))),
-        )
-        const actor = mode === "unauth_401"
-          ? Option.none<Actor.Actor>()
-          : mode === "other_run_403"
-          ? Option.some(personActor({ act: { kind: "agent", id: OTHER_ID } }))
-          : Option.some(personActor())
-        const env = Layer.mergeAll(sessionsLayer(actor), branchRolesLayer(), silentLogger)
-
-        const method = mode === "method_405"
-          ? "PUT"
-          : mode.startsWith("hb_")
-          ? "PATCH"
-          : mode.startsWith("write_")
-          ? "POST"
-          : "GET"
-        const body = mode === "write_too_large"
-          ? "x".repeat(700_000)
-          : mode === "write_bad_json"
-          ? "{"
-          : mode === "write_streaming_ok"
-          ? JSON.stringify({ status: "streaming", parts: [{ id: "0.0", kind: "step", flow: "x", status: "running" }], text: "hi" })
-          : mode === "write_failed_ok" || mode === "write_landed_failed"
-          ? JSON.stringify({ status: "failed", failure: "quota" })
-          : JSON.stringify({ status: "done", text: "final answer", inputTokens: 10, outputTokens: 20 })
-
-        const targetId = mode === "bad_uuid_404" ? "not-a-uuid" : ANSWER_ID
-        const req = makeReq(`https://app.test/api/answers/${targetId}`, {
-          method,
-          ...(method === "POST" ? { body } : {}),
-        })
-        const res = yield* handler(targetId).pipe(
-          Effect.provideService(HttpServerRequest.HttpServerRequest, req),
-          Effect.provide(env),
-        )
-        const expected =
-          mode === "turn_ready_abandon" ||
-          mode === "hb_renewed" ||
-          mode === "hb_not_renewed" ||
-          mode === "write_streaming_ok" ||
-          mode === "write_done_ok" ||
-          mode === "write_failed_ok" ||
-          mode === "write_landed_done" ||
-          mode === "write_landed_failed"
-            ? 200
-            : mode === "hb_settled_204"
-            ? 204
-            : mode === "method_405"
-            ? 405
-            : mode === "unauth_401"
-            ? 401
-            : mode === "bad_uuid_404" || mode === "turn_404" || mode === "hb_404" || mode === "write_miss_404"
-            ? 404
-            : mode === "other_run_403" || mode === "asking_forbidden_403" || mode === "turn_not_asker" || mode === "hb_not_asker" || mode === "write_miss_not_asker"
-            ? 403
-            : mode === "write_too_large"
-            ? 413
-            : mode === "write_bad_json"
-            ? 400
-            : mode === "db_503"
-            ? 503
-            : 409
         expect(res.status).toBe(expected)
       }),
     )

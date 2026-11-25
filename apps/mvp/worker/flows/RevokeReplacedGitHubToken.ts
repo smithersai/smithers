@@ -93,7 +93,7 @@ const observed = <A, E, R>(effect: Effect.Effect<A, unknown, SqlClient.SqlClient
 const maintenanceCapabilities = ["db:write:sessions", "db:write:host_sessions", "db:write:github_token_cleanups", "db:write:session_end_receipts", "db:write:person_role_receipts"]
 const maintenanceError = Schema.Union([CleanupFailed, Sleep.SleepRequestInvalid])
 
-/** Each round uses chat/Expire's durable sleep and handoff, so an idle deployment keeps its own alarm. */
+/** Each round sleeps durably and hands off, so an idle deployment keeps its own alarm. */
 export const MaintainSessions: Flow.Flow<
   "auth/MaintainSessions", Schema.Struct<{}>, typeof Schema.Void, typeof maintenanceError,
   Action.Requirement<"auth/SweepReplacedTokens">

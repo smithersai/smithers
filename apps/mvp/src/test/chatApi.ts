@@ -1395,7 +1395,7 @@ const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineSt
   const engine = BrowserRuntime.layer(
     // The flows' own schemas render their runs' values for the run page (decision 0014 §3), as the worker's do.
     { name, flows: clientFlows },
-    workerRegistrations(channel.port1, { origin: api.origin, name, partsEvery: "20 millis" }).pipe(Layer.provide(http))
+    workerRegistrations(channel.port1, { origin: api.origin, name }).pipe(Layer.provide(http))
   ).pipe(
     Layer.provide(
       NodeRuntime.storage(store.filename).pipe(Layer.provide(Layer.merge(NodeHost.layer, NodeHost.NodeCrypto.layer)))

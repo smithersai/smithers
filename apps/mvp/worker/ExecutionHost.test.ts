@@ -17,7 +17,6 @@ import * as TodoRuns from "./stack/TodoRuns.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
 import * as SandboxSpend from "./flows/SandboxSpend.ts"
 import * as BugReport from "./flows/BugReport.ts"
-import * as Expire from "./flows/Expire.ts"
 import * as Pause from "./flows/Pause.ts"
 import { awaitPullClosed } from "./flows/TodoWait.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
@@ -32,7 +31,7 @@ import { DEVICE_PERSON_HEADER, type SessionState } from "../src/features/auth/co
 import { cloneExecutionId } from "../src/features/repo/contract.ts"
 import * as Repos from "./Repos.ts"
 import { scripted } from "./test/codeStorage.ts"
-import { answers, harness, row, testFile } from "./test/harness.ts"
+import { answers, harness, testFile } from "./test/harness.ts"
 import { repositoryRow, resetRepos } from "./test/repos.ts"
 import { resetBranches, terminal, terminalRows, tracked } from "./test/branch.ts"
 import { Sandboxes } from "./branch/Sandboxes.ts"
@@ -59,15 +58,12 @@ import * as SecretStore from "./secrets/Store.ts"
 import { TokenUnavailable } from "./github/Tokens.ts"
 import * as ProtectedAuthority from "./ProtectedAuthority.ts"
 
-// The app's own tables, for sign-in's role check (`auth/RecheckRole`) and `chat/Expire`, on a schema of this file's.
+// The deployed flows' app database, on this file's own schema.
 const app = testFile("execution_host")
 
-/** The deployed flows' services over the app's tables on this file's schema, with answers expiring after `expiry`. */
-const appServices = async (expiry: Duration.Input = Expire.DEFAULT_EXPIRY): Promise<Expire.Services<unknown>> => ({
+const appServices = async () => ({
   database: (await app.runPromise(Effect.service(TestDatabase.Scratch))).database,
-  expiry: Duration.fromInputUnsafe(expiry),
 })
-
 
 /** A Durable Object's storage in memory: values cross it by structured clone, and it holds one alarm. */
 const memory = () => {
@@ -215,7 +211,7 @@ describe("ExecutionHost over the compose Postgres", () => {
     await withSchema(({ name, url }) => Effect.gen(function* () {
       const options = { hostId: `window-${executionId}`, database: ExecutionHost.database(url, name), signingKeyIds: ["legacy"],
         roleFreshMs, router: recording().router, driveBudgetMs: 5_000,
-        flows: ExecutionHost.withSecrets(ExecutionHost.remote(services), services.database) }
+        flows: ExecutionHost.withSecrets(ExecutionHost.remote(services.database), services.database) }
       const host = ExecutionHost.make(memory().storage, options)
       const payload = { repoId, name: "EXAMPLE", actorId: person, authority }
       yield* host.start(op === "delete"
@@ -247,7 +243,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       stage = "host"
       await withSchema(({ name, url }) => Effect.gen(function* () {
         const options = { hostId: `keys-${executionId}`, database: ExecutionHost.database(url, name), driveBudgetMs: 5_000,
-          flows: ExecutionHost.withRunners(ExecutionHost.remote(services), services.database),
+          flows: ExecutionHost.withRunners(ExecutionHost.remote(services.database), services.database),
           signingKeyIds: boundary === "removed key" ? ["legacy"] : ["next"], router: recording().router }
         const host = ExecutionHost.make(memory().storage, options)
         yield* host.start(yield* ExecutionHost.intent(RunnerAdmin.AddRunner, { executionId, payload: {
@@ -498,7 +494,7 @@ describe("ExecutionHost over the compose Postgres", () => {
         const host = ExecutionHost.make(object.storage, {
           hostId: `object-${executionId}`,
           database: ExecutionHost.database(url, name),
-          flows: ExecutionHost.remote(services),
+          flows: ExecutionHost.remote(services.database),
           router: recording().router,
         })
         yield* host.signal(WaitFor.deferred("before-start").name)
@@ -520,10 +516,10 @@ describe("ExecutionHost over the compose Postgres", () => {
     const services = await appServices()
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
-        const flows = ExecutionHost.remote(services)
+        const flows = ExecutionHost.remote(services.database)
         expect(flows.flows).toEqual([
           Pause.Pause,
-          Expire.Expire,
+   
           SpendAlert.SpendAlert,
           DatabaseLoad.DatabaseLoad,
           DatabaseLoad.DatabaseLoadV2,
@@ -546,61 +542,13 @@ describe("ExecutionHost over the compose Postgres", () => {
     )
   })
 
-  test("the deployed flows run chat/Expire: it parks on its timer, then settles the answer abandoned", async () => {
-    const h = await harness(app, answers("never"), {
-      actor: { subject: { kind: "person", id: "person-member" }, role: "member" },
-    })
-    const answerId = crypto.randomUUID()
-    const asked = await h.ask({ id: crypto.randomUUID(), answerId, text: "Asked, then the phone was shut" })
-    expect(asked.status).toBe(202)
-    // ChatApi started the expiry, as it asks the Durable Object to: the execution of the attempt that stored the answer.
-    const executionId = h.starts[0]!.executionId
-    expect(executionId).toMatch(new RegExp(`^${Expire.executionId(answerId)}-\\d+$`))
-    expect(h.starts).toEqual([{ flow: "chat/Expire", executionId, payload: { answerId } }])
-    // Use the production expiry: a shortened deadline can enter the host's five-second hold during setup.
-    const services = await appServices()
-    await withSchema(({ name, sql, url }) =>
-      Effect.gen(function* () {
-        const object = memory()
-        const host = ExecutionHost.make(object.storage, {
-          hostId: `object-${executionId}`,
-          database: ExecutionHost.database(url, name),
-          flows: ExecutionHost.remote(services),
-          router: recording().router,
-        })
-        yield* host.start(yield* ExecutionHost.intent(Expire.Expire, { executionId, payload: { answerId } }))
-
-        // The first alarm finds the answer young and parks on the durable timer, with the alarm armed for it.
-        const parked = yield* host.alarm()
-        expect(parked._tag).toBe("Parked")
-        const wakeAt = parked._tag === "Parked" ? parked.wakeAtMs : null
-        expect(object.alarm()).toBe(wakeAt)
-        expect(yield* status(sql, name, executionId)).toBe("suspended")
-
-        // Advance both time domains: Postgres owns the answer age, and the host owns the durable timer.
-        const [aged] = yield* Effect.flatMap(SqlClient.SqlClient, (appSql) => appSql`
-          UPDATE messages SET updated_at = updated_at - make_interval(secs => ${Duration.toSeconds(services.expiry)})
-          WHERE id = ${answerId} RETURNING status`).pipe(Effect.provide(services.database))
-        expect(aged).toMatchObject({ status: "streaming" })
-        const settled = yield* Effect.gen(function* () {
-          yield* TestClock.setTime(wakeAt! + 1)
-          return yield* host.alarm()
-        }).pipe(Effect.provide(TestClock.layer()))
-        expect(settled).toMatchObject({ _tag: "Settled" })
-        expect(object.alarm()).toBe(settled._tag === "Settled" ? settled.forgetAtMs : null)
-        expect(yield* status(sql, name, executionId)).toBe("completed")
-      })
-    )
-    expect(await row(app, answerId)).toMatchObject({ status: "failed", failure: "abandoned" })
-  })
-
   test("the deployed flows run ops/SpendAlert: a model call starts it; once its window ends, it records the alert", async () => {
     const h = await harness(app, answers("spent"), {
       actor: { subject: { kind: "person", id: "person-member" }, role: "member" },
       config: { MODEL_SPEND_ALERT_WINDOW: "1 second" },
     })
     await app.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE model_usage, spend_alerts`))
-    const call = await h.fetch("/api/model/agent", {
+    const call = await h.modelFetch("/api/model/agent", {
       method: "POST",
       body: JSON.stringify({
         modelId: "m",
@@ -620,7 +568,7 @@ describe("ExecutionHost over the compose Postgres", () => {
         const host = ExecutionHost.make(object.storage, {
           hostId: `object-${start!.executionId}`,
           database: ExecutionHost.database(url, name),
-          flows: ExecutionHost.remote(services),
+          flows: ExecutionHost.remote(services.database),
           router: recording().router,
         })
         yield* host.start(
@@ -765,7 +713,7 @@ describe("ExecutionHost over the compose Postgres", () => {
           ExecutionHost.make(object.storage, {
             hostId: `object-${executionId}`,
             database: ExecutionHost.database(url, name),
-            flows: ExecutionHost.remote(services),
+            flows: ExecutionHost.remote(services.database),
             router: recording().router,
             afterAlarm: sampleLoad.pipe(Effect.provideService(Flows.FlowStarter, starter)),
           })
@@ -797,67 +745,6 @@ describe("ExecutionHost over the compose Postgres", () => {
     )
   }, 60_000)
 
-  test("a chat/Expire round that finds the queue moved during its wait hands off to the next round's own object", async () => {
-    const h = await harness(app, answers("never"), {
-      actor: { subject: { kind: "person", id: "person-member" }, role: "member" },
-    })
-    const [ahead, last] = [crypto.randomUUID(), crypto.randomUUID()]
-    expect((await h.ask({ id: crypto.randomUUID(), answerId: ahead, text: "First" })).status).toBe(202)
-    expect((await h.ask({ id: crypto.randomUUID(), answerId: last, text: "Second" })).status).toBe(202)
-    const executionId = Expire.executionId(last)
-    const services = await appServices()
-    const router = recording()
-    const timing: Array<{ readonly stage: string; readonly serverNowMs: number; readonly renewedAtMs: number; readonly deadlineMs: number }> = []
-    let renewedAtMs = 0
-    const sample = (stage: string) => Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      sql<{ readonly serverNowMs: number }>`SELECT extract(epoch FROM clock_timestamp())::float8 * 1000 AS "serverNowMs"`).pipe(
-        Effect.provide(services.database),
-        Effect.orDie,
-        Effect.tap(([clock]) => Effect.sync(() => {
-          timing.push({ stage, serverNowMs: clock!.serverNowMs, renewedAtMs, deadlineMs: renewedAtMs + Duration.toMillis(services.expiry) })
-        })),
-      )
-    await withSchema(({ name, url }) =>
-      Effect.gen(function* () {
-        const object = memory()
-        const host = ExecutionHost.make(object.storage, {
-          hostId: `object-${executionId}`,
-          database: ExecutionHost.database(url, name),
-          flows: ExecutionHost.remote(services),
-          router: router.router,
-        })
-        yield* host.start(yield* ExecutionHost.intent(Expire.Expire, { executionId, payload: { answerId: last } }))
-        const parked = yield* host.alarm()
-        expect(parked._tag).toBe("Parked")
-        const wakeAt = parked._tag === "Parked" ? parked.wakeAtMs : null
-        yield* Effect.flatMap(SqlClient.SqlClient, (appSql) => appSql`
-          UPDATE messages SET updated_at = updated_at - make_interval(secs => ${Duration.toSeconds(services.expiry)})
-          WHERE id IN (${ahead}, ${last})`).pipe(Effect.provide(services.database))
-        // Renew immediately before delivering the original due alarm. Renewing
-        // just after Parked leaves only startup time between the two deadlines;
-        // a late alarm can then correctly abandon the renewed queue instead.
-        const [moved] = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
-          sql<{ readonly renewedAtMs: number }>`
-            UPDATE messages SET status = 'done', text = 'Answered.', updated_at = now() WHERE id = ${ahead}
-            RETURNING extract(epoch FROM updated_at)::float8 * 1000 AS "renewedAtMs"`).pipe(
-          Effect.provide(services.database),
-          Effect.orDie,
-        )
-        renewedAtMs = moved!.renewedAtMs
-        yield* sample("before_alarm")
-        yield* Effect.gen(function* () {
-          yield* TestClock.setTime(wakeAt! + 1)
-          return yield* host.alarm()
-        }).pipe(Effect.provide(TestClock.layer()))
-        yield* sample("after_alarm")
-      })
-    )
-    // This round ended without settling the answer, and its object handed the next round to that round's own object.
-    expect(await row(app, last), JSON.stringify({ answerId: last, timing })).toMatchObject({ status: "streaming" })
-    expect(router.routed).toEqual([expect.stringMatching(/^start /)])
-    expect(router.routed[0]).not.toBe(`start ${executionId}`)
-  }, 60_000)
-
   test.each(["permission", "refresh"] as const)("concurrent renewal drives share a healthy %s request", async (heldStep) => {
     const signIn = await signInHarness(app)
     const { cookies } = await signIn.signInAs()
@@ -878,7 +765,7 @@ describe("ExecutionHost over the compose Postgres", () => {
         yield* Deferred.await(release)
       })
       const github = signIn.github.service
-      const flows = ExecutionHost.remoteWithSignIn({ database, expiry: Expire.DEFAULT_EXPIRY }, {
+      const flows = ExecutionHost.remoteWithSignIn(database, {
         keys, repository: "smithersai/smithers", github: {
           ...github,
           permission: (...args) => heldStep === "permission" ? hold.pipe(Effect.andThen(github.permission(...args))) : github.permission(...args),
@@ -939,14 +826,14 @@ describe("ExecutionHost over the compose Postgres", () => {
       return { sessionId: row!.id, database: (yield* TestDatabase.Scratch).database }
     }))
     const keys = await Effect.runPromise(SessionKeys.make(Redacted.make(SECRET)))
-    const flows = ExecutionHost.remoteWithSignIn({ database, expiry: Expire.DEFAULT_EXPIRY }, {
+    const flows = ExecutionHost.remoteWithSignIn(database, {
       keys,
       github: signIn.github.service,
       repository: "smithersai/smithers",
     })
     expect(flows.flows).toEqual([
       Pause.Pause,
-      Expire.Expire,
+ 
       SpendAlert.SpendAlert,
       DatabaseLoad.DatabaseLoad,
       DatabaseLoad.DatabaseLoadV2,
@@ -1016,7 +903,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       Repos.request({ id: "github/octocat/spoon-knife", owner: "octocat", name: "Spoon-Knife" }, budgets, "octocat"),
     )
     if (requested.kind !== "started") throw new Error(`requested ${requested.kind}`)
-    const flows = ExecutionHost.withRepoClone(ExecutionHost.remote({ database, expiry: Expire.DEFAULT_EXPIRY }), {
+    const flows = ExecutionHost.withRepoClone(ExecutionHost.remote(database), {
       database,
       codeStorage: provider.client,
       upstream: provider.upstream,
@@ -1025,7 +912,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       index: () => Effect.succeed(3),
       installed: () => Effect.succeed(false),
     })
-    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, DatabaseLoad.DatabaseLoadV2, SandboxSpend.SandboxSpend, BugReport.BugReport, RepoClone.Clone, RepoRefresh.Refresh])
+    expect(flows.flows).toEqual([Pause.Pause, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, DatabaseLoad.DatabaseLoadV2, SandboxSpend.SandboxSpend, BugReport.BugReport, RepoClone.Clone, RepoRefresh.Refresh])
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const object = memory()
@@ -1060,7 +947,7 @@ describe("ExecutionHost over the compose Postgres", () => {
     const flows = ExecutionHost.withDomains(
       ExecutionHost.withPersonalModels(
         ExecutionHost.withSecrets(
-          ExecutionHost.withSandboxTools(ExecutionHost.remote({ database, expiry: Expire.DEFAULT_EXPIRY }), database, machines),
+          ExecutionHost.withSandboxTools(ExecutionHost.remote(database), database, machines),
           database,
         ),
         database,
@@ -1071,7 +958,7 @@ describe("ExecutionHost over the compose Postgres", () => {
     )
     expect(flows.flows).toEqual([
       Pause.Pause,
-      Expire.Expire,
+ 
       SpendAlert.SpendAlert,
       DatabaseLoad.DatabaseLoad,
       DatabaseLoad.DatabaseLoadV2,
@@ -1102,8 +989,8 @@ describe("ExecutionHost over the compose Postgres", () => {
       wake: (branch) => Effect.sync(() => machines.push(`wake ${branch.branchId}`)).pipe(Effect.as({ generation: 7 })),
       session: (_, id, ownerId) => Effect.sync(() => void machines.push(`session ${id} ${ownerId}`)),
     }))
-    const flows = ExecutionHost.withTerminals(ExecutionHost.remote({ database, expiry: Expire.DEFAULT_EXPIRY }), database, sandboxes)
-    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, DatabaseLoad.DatabaseLoadV2, SandboxSpend.SandboxSpend, BugReport.BugReport, TerminalOpen.TerminalOpen])
+    const flows = ExecutionHost.withTerminals(ExecutionHost.remote(database), database, sandboxes)
+    expect(flows.flows).toEqual([Pause.Pause, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, DatabaseLoad.DatabaseLoadV2, SandboxSpend.SandboxSpend, BugReport.BugReport, TerminalOpen.TerminalOpen])
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const object = memory()

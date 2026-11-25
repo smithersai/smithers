@@ -29,7 +29,7 @@ import { classify, withToken } from "../github/Calls.ts"
 import { type Repository, repositoryOf } from "../github/Config.ts"
 import { fetchPull, projectPull } from "../github/Pulls.ts"
 import { type GitHubTokens, TokenUnavailable } from "../github/Tokens.ts"
-import type { Seat } from "../ModelEndpoint.ts"
+import type { Seat } from "../ModelSeats.ts"
 import type { SandboxBranch } from "../branch/Sandboxes.ts"
 import * as SandboxCommand from "./SandboxCommand.ts"
 

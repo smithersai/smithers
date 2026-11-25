@@ -1,6 +1,4 @@
-import { AnswersUnavailable } from "../agent/answers"
-import { SETTLE_RETRY } from "../agent/close"
-import { Action, Flow, RetryPolicy } from "@smthrs/flow"
+import { Action, Flow } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { Schema } from "effect"
 import { RUNS_REFUSALS } from "../actions/contract"
@@ -51,18 +49,12 @@ export const RunStatus = Schema.Literals(["pending", "running", "suspended", "co
  */
 export const Stopped = Schema.Struct({ outcome: Schema.Literals(["requested", "settled"]), status: Schema.optionalKey(RunStatus) })
 
-/** Cancellation is recorded, but its engine cleanup has not produced a terminal receipt yet. */
-export class CancelPending extends Schema.TaggedError<CancelPending>()("@smthrs/mvp/runs/CancelPending", {}) {}
-
-const CancelError = Schema.Union([RunActRefused, CancelPending, AnswersUnavailable])
-
 /** The step: record the cancellation. */
 export const CancelRun = Action.make("run/cancel/request", {
   payload: CancelPayload,
   success: Stopped,
-  error: CancelError,
+  error: RunActRefused,
   tier: "sealed",
-  retryPolicy: RetryPolicy.make({ ...SETTLE_RETRY, nonRetryable: ["@smthrs/mvp/runs/RunActRefused"] }),
 })
 
 /** `run/cancel`: Stop a run on this device. */
@@ -72,7 +64,7 @@ export const Cancel = Flow.make("run/cancel", {
   modelInvocable: true,
   payload: CancelPayload,
   success: Stopped,
-  error: CancelError,
+  error: RunActRefused,
   body: Node.capture({ cancel: CancelRun.name }, (payload) => CancelRun.call(payload)),
 }).annotate(Flow.Placement, Placement.client())
 

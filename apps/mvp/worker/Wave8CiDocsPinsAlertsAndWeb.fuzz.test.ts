@@ -7,7 +7,6 @@ import { Channels } from "@smthrs/notifications"
 import {
   Arbitrary,
   ConfigProvider,
-  Duration,
   Effect,
   Exit,
   Layer,
@@ -31,7 +30,6 @@ import * as DocsApi from "./docs/Api.ts"
 import * as DocsSourceMod from "./docs/Source.ts"
 import * as AlertDelivery from "./flows/AlertDelivery.ts"
 import * as AskFlow from "./flows/Ask.ts"
-import * as ExpireFlow from "./flows/Expire.ts"
 import * as SandboxCallFlow from "./flows/SandboxCall.ts"
 import * as SpendAlertFlow from "./flows/SpendAlert.ts"
 import * as GitHubTokens from "./github/Tokens.ts"
@@ -884,8 +882,8 @@ describe("Wave8: worker/docs/Source.ts & worker/docs/Api.ts", () => {
   }, 60_000)
 })
 
-describe("Wave8: worker/flows/{SpendAlert,AlertDelivery,Expire,SandboxCall,Ask} & todos/writes", () => {
-  it("fuzzes SpendAlert, AlertDelivery, Expire, SandboxCall, Ask, and TodoWrites pure helpers", async () => {
+describe("Wave8: worker/flows/{SpendAlert,AlertDelivery,SandboxCall,Ask} & todos/writes", () => {
+  it("fuzzes SpendAlert, AlertDelivery, SandboxCall, Ask, and TodoWrites pure helpers", async () => {
     const modeArb = Arbitrary.schema(
       Schema.Literals([
         "spend_alert_record_ok",
@@ -900,11 +898,6 @@ describe("Wave8: worker/flows/{SpendAlert,AlertDelivery,Expire,SandboxCall,Ask} 
         "spend_alert_deliver_refused",
         "spend_alert_deliver_failed",
         "spend_alert_deliver_db_err",
-        "expire_in_and_abandon_done",
-        "expire_abandon_live",
-        "expire_abandon_abandoned",
-        "expire_abandon_missing",
-        "expire_db_err",
         "sandbox_call_failure_and_settle_done",
         "sandbox_call_settle_failed_and_saved",
         "sandbox_call_settle_db_err",
@@ -1021,31 +1014,6 @@ describe("Wave8: worker/flows/{SpendAlert,AlertDelivery,Expire,SandboxCall,Ask} 
           } else {
             expect(Result.isSuccess(res)).toBe(true)
           }
-          return
-        }
-
-        if (mode.startsWith("expire_")) {
-          expect(ExpireFlow.executionId(ANSWER_ID, "1")).toContain(ANSWER_ID)
-          const db = makeSqlLayer((q) => {
-            if (mode === "expire_db_err") return new Error("db_down")
-            if (q.includes("AS ms")) {
-              if (mode === "expire_abandon_missing") return []
-              return [{ ms: mode === "expire_abandon_live" ? 5000 : 0 }]
-            }
-            if (q.includes("AS abandoned")) {
-              return [{
-                abandoned: mode === "expire_abandon_abandoned" ? 1 : 0,
-                found: mode === "expire_abandon_missing" ? 0 : 1,
-                streaming: mode === "expire_abandon_live" ? 1 : 0,
-              }]
-            }
-            return []
-          })
-          const services: ExpireFlow.Services<never, never> = { database: db, expiry: Duration.seconds(60) }
-          const r1 = yield* ExpireFlow.observedExpiresIn(ANSWER_ID, services).pipe(Effect.provide(silentLogger), Effect.result)
-          const r2 = yield* ExpireFlow.observedAbandon(ANSWER_ID, services).pipe(Effect.provide(silentLogger), Effect.result)
-          expect(Result.isSuccess(r1)).toBe(mode !== "expire_db_err")
-          expect(Result.isSuccess(r2)).toBe(mode !== "expire_db_err")
           return
         }
 

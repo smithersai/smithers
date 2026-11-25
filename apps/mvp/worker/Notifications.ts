@@ -213,8 +213,7 @@ export const lockRuns = (runIds: ReadonlyArray<string>) =>
   Effect.flatMap(pairsOf(runIds), (pairs) => Effect.flatMap(SqlClient.SqlClient, (sql) => FeedLocks.lock(sql, pairs)))
 
 /**
- * Routes run `runId`'s current state to its recipients, inside the caller's transaction (worker/Runs.ts writes the
- * run's row first; worker/Answers.ts and `chat/Expire` settle its answer first): its launcher, branch watchers
+ * Routes run `runId`'s current state to its recipients inside the caller's transaction: its launcher, branch watchers
  * (`Inbox.route`) and existing recipients, each subject to current branch access. Accessible existing rows still
  * settle after muting. A row's version goes up when the change needs attention again (`Inbox.raises`); a row that
  * would show the same thing is left alone. `launcherLogin` names the launcher on other people's rows. Records a span

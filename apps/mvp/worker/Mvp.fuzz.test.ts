@@ -160,25 +160,20 @@ describe("apps/mvp security & routing fuzz invariants", () => {
           "/api/remote-runs/r1/stop",
           "/api/unknown/route"
         ]),
-        query: Schema.String.pipe(Schema.check(Schema.isMaxLength(40))),
-        modelCap: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 50_000_000 })))
+        query: Schema.String.pipe(Schema.check(Schema.isMaxLength(40)))
       })
     )
     const report = await Effect.runPromise(
       Fuzz.run(
         arb,
-        ({ path, query, modelCap }) =>
+        ({ path, query }) =>
           Effect.gen(function*() {
-            const limitNoQ = yield* BodyLimits.forRequest(path).pipe(
-              Effect.provideService(BodyLimits.ModelBytes, modelCap)
-            )
-            const limitWithQ = yield* BodyLimits.forRequest(`${path}?${query}`).pipe(
-              Effect.provideService(BodyLimits.ModelBytes, modelCap)
-            )
+            const limitNoQ = yield* BodyLimits.forRequest(path)
+            const limitWithQ = yield* BodyLimits.forRequest(`${path}?${query}`)
             // Query string MUST NEVER change or bypass a route's body limit!
             if (limitNoQ !== limitWithQ) return false
             if (!Number.isInteger(limitNoQ) || limitNoQ < 0 || limitNoQ > BodyLimits.MAX_BODY_BYTES) return false
-            if (path.startsWith("/api/model/") && limitNoQ !== Math.min(BodyLimits.MAX_BODY_BYTES, modelCap)) {
+            if (path.startsWith("/api/model/") && limitNoQ !== BodyLimits.MAX_BODY_BYTES) {
               return false
             }
             return true

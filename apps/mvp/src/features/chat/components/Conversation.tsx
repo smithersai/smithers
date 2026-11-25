@@ -14,7 +14,7 @@ import { AnswerDrafts } from "../../todos/components/AnswerDrafts"
 import { useStatus } from "../../status/components/StatusContext"
 import { ConversationView } from "../../views/components/ConversationView"
 import { COPY, DEBUG_INFO, EDIT, NOT_SENT, QUEUED } from "../contract"
-import { debugRunOf, timeOf } from "../view"
+import { timeOf } from "../view"
 
 // The conversation on this device: never a loading state. Until it is restored or synced it is blank, never the empty
 // state. "Load earlier" heads it while the device has messages before the window. A queued question is badged only
@@ -115,9 +115,9 @@ export function Conversation({ empty = <Wordmark />, notices, readOnly = false, 
                 {EDIT}
               </Button>
             ) : null}
-            {debugRunOf(message) === undefined ? null : (
+            {message.role !== "assistant" || !statuses.some((status) => status.id === message.id) ? null : (
               <Button asChild variant="ghost" size="sm">
-                <Link to="/app/runs/$runId" params={{ runId: debugRunOf(message)! }} aria-label={DEBUG_INFO} title={DEBUG_INFO}>
+                <Link to="/app/runs/$runId" params={{ runId: message.id }} aria-label={DEBUG_INFO} title={DEBUG_INFO}>
                   <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.3">
                     <circle cx="3.5" cy="8" r="2" />
                     <circle cx="12.5" cy="3.5" r="2" />

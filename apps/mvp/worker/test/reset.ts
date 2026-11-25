@@ -11,6 +11,7 @@ export const reset = Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransa
   // These receipts intentionally have no session foreign key, so session truncation cannot reset them.
   yield* sql`DELETE FROM github_token_cleanups`
   yield* sql`DELETE FROM session_end_receipts`
+  yield* sql`DELETE FROM attach_grants`
   yield* sql`DELETE FROM message_pins`
   yield* sql`DELETE FROM timeline_summaries`
   yield* sql`DELETE FROM timeline_phase_claims`

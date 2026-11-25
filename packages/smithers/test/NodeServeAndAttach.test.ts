@@ -8,9 +8,10 @@ import { DatabaseSync } from "node:sqlite"
 import { join } from "node:path"
 import { Readable, Writable } from "node:stream"
 import { expect, test } from "vitest"
+import { MCP_MAX_REQUEST_BYTES } from "../../../apps/mvp/src/features/mcp/contract.ts"
 import { makeAttach } from "../../../apps/mvp/worker/attach/Attach.ts"
 import { handleAttachAgent } from "../../../apps/mvp/worker/attach/AttachAgentRoutes.ts"
-import { defineTool, makeMcpRoute } from "../../../apps/mvp/worker/attach/McpRoute.ts"
+import { defineTool, makeMcpRoute, readBody } from "../../../apps/mvp/worker/attach/McpRoute.ts"
 import { attach, redeem } from "../src/commands/AttachCommand.ts"
 import { httpTransport, startNode } from "../src/commands/NodeServe.ts"
 
@@ -46,7 +47,7 @@ const unwrap = <A, E>(result: Result.Result<A, E>) => {
 
 test("an agent attaches over PKCE, calls MCP, and a SQLite node syncs in both directions after restart", async () => {
   const dir = mkdtempSync(join(tmpdir(), "smithers-node-"))
-  const service = makeAttach({ hostOrigin: personOrigin, permissions: () => ["shard:append"] })
+  const service = makeAttach({ hostOrigin: personOrigin, permissions: () => Effect.succeed(["shard:append"]) })
   const localSessions = Principal.sessions({
     [token]: { kind: "mcp", subject: "replica", session: "local", capabilities: ["shard:append"] },
     [syncToken]: { kind: "mcp", subject: "replica", session: "sync", capabilities: [read, sync] }
@@ -54,7 +55,7 @@ test("an agent attaches over PKCE, calls MCP, and a SQLite node syncs in both di
   const verify: Principal.Verify = (evidence) => Effect.gen(function*() {
     if (evidence.kind === "mcp" && [token, syncToken].includes(evidence.tokenRef)) return yield* localSessions(evidence)
     const grant = evidence.kind === "mcp"
-      ? yield* Effect.promise(() => service.verifyBearer(`Bearer ${evidence.tokenRef}`, target))
+      ? yield* service.verifyBearer(`Bearer ${evidence.tokenRef}`, target)
       : undefined
     if (grant === undefined || Result.isFailure(grant) || grant.success.act !== "agent") {
       return yield* new Principal.AuthRefused({ reason: "unknown_credential", detail: "Agent credential required" })
@@ -76,12 +77,12 @@ test("an agent attaches over PKCE, calls MCP, and a SQLite node syncs in both di
       defineTool({
         name: "shard__append", description: "Append shard event", input: Schema.Struct({ side: Schema.String }),
         capability: "shard:append", policy: "agent",
-        call: async (_grant, payload) => {
+        call: (_grant, payload) => Effect.promise(async () => {
           const response = await mcp(replica.origin, token, payload)
           const reply = await response.json() as { result?: { structuredContent: object } }
           if (!response.ok || reply.result === undefined || "isError" in reply.result) throw new Error("Local append refused")
           return reply.result.structuredContent
-        }
+        })
       })
     ]
   })
@@ -96,7 +97,7 @@ test("an agent attaches over PKCE, calls MCP, and a SQLite node syncs in both di
       })
       const result = url.pathname.startsWith("/api/attach/")
         ? await handleAttachAgent(service, webRequest)
-        : await route(webRequest)
+        : await Effect.runPromise(route(webRequest, await readBody(webRequest, MCP_MAX_REQUEST_BYTES)))
       response.writeHead(result.status, { "content-type": "application/json" }).end(await result.text())
     } catch {
       response.writeHead(500).end()
@@ -110,14 +111,14 @@ test("an agent attaches over PKCE, calls MCP, and a SQLite node syncs in both di
     const address = edge.address()
     if (address === null || typeof address === "string") throw new Error("Invalid test listener")
     const origin = `http://127.0.0.1:${address.port}`
-    const { reference } = unwrap(await service.mintIntent({ ...person, ...target, ceiling: ["shard:append"] }))
+    const { reference } = unwrap(await Effect.runPromise(service.mintIntent({ ...person, ...target, ceiling: ["shard:append"] })))
     let output = ""
     await attach({
       intent: reference,
       origin,
       approve: async (pairing) => {
         const { claim } = unwrap(service.consentFor({ ...person, reference }))
-        return unwrap(await service.approveIntent({ ...person, claim, pairing })).code
+        return unwrap(await Effect.runPromise(service.approveIntent({ ...person, claim, pairing }))).code
       },
       input: Readable.from([Buffer.from(JSON.stringify({
         jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "shard__append", arguments: { side: "replica" } }
@@ -136,12 +137,12 @@ test("an agent attaches over PKCE, calls MCP, and a SQLite node syncs in both di
     const hubReply = await mcp(hub.origin, token, { side: "hub" })
     expect(await hubReply.json()).toMatchObject({ result: { structuredContent: { output: { side: "hub" } } } })
     expect(await replica.sync()).toMatchObject({ position: { seq: 2 }, terminalFailures: [] })
-    const { reference: next } = unwrap(await service.mintIntent({ ...person, ...target, ceiling: ["shard:append"] }))
+    const { reference: next } = unwrap(await Effect.runPromise(service.mintIntent({ ...person, ...target, ceiling: ["shard:append"] })))
     const grant = await redeem({
       intent: next, origin,
-      approve: async (pairing) => unwrap(await service.approveIntent({
+      approve: async (pairing) => unwrap(await Effect.runPromise(service.approveIntent({
         ...person, claim: unwrap(service.consentFor({ ...person, reference: next })).claim, pairing
-      })).code
+      }))).code
     })
     expect(grant.endpoint.pathname).toBe("/mcp/example/project/work%2Fbranch")
     expect((await fetch(new URL("/mcp", origin), {

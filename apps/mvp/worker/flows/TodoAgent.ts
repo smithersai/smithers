@@ -11,7 +11,7 @@ import type { SqlClient } from "effect/sql"
 import { CHECKS_DIRECTORY } from "../../src/features/pulls/contract.ts"
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
-import type { Seat as EndpointSeat } from "../ModelEndpoint.ts"
+import type { Seat as EndpointSeat } from "../ModelSeats.ts"
 import * as SandboxCommand from "./SandboxCommand.ts"
 import * as Machine from "./TodoMachine.ts"
 
@@ -22,13 +22,12 @@ import * as Machine from "./TodoMachine.ts"
 // who committed the TODO, and a command runs once per call even when the run resumes (the call's id is its
 // replay-stable identity). A command runs as the call's own
 // `sandbox/Command` job (worker/flows/SandboxCommand.ts), so the run parks while it runs and no host's drive holds it. The model is the `coding` role
-// (the `agent` role's model until an admin sets it, decision 0033), admitted and metered in process as the model
-// endpoint's calls are (`ModelEndpoint.local`).
+// with a personal or configured deployment seat, admitted and metered in process (`ModelSeats.local`).
 
 /** The seat the step declares, which the host answers with the model endpoint's `coding` role (worker/Executions.ts). */
 export const AGENT_SEAT = "agent"
 
-/** The context window the agent compacts against, as the browser agent's (src/features/agent/host.ts). */
+/** The context window the agent compacts against. */
 export const CONTEXT_WINDOW_TOKENS = 32_768
 
 /** The most tool calls one cell may make. */

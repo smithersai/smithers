@@ -16,7 +16,7 @@ import { ConfigProvider, Effect, Exit, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { beforeEach, describe, expect, test } from "vitest"
 import { ACCEPTED_LABEL, NOT_ACCEPTED_LABEL, triageRunExecutionId } from "../../src/features/issues/contract.ts"
-import * as ModelEndpoint from "../ModelEndpoint.ts"
+import * as ModelSeats from "../ModelSeats.ts"
 import { PersonalModels } from "../personal/Models.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
@@ -206,7 +206,7 @@ describe.skipIf(agentMissing.length > 0 || refused)("the real GitHub, triage", (
   test.skipIf(modelMissing.length > 0)("the real judge decides a clear bug report, and GitHub carries what it decided", async () => {
     const base = await live()
     const local = await Effect.runPromise(
-      ModelEndpoint.local(base.database, { hosted: true }).pipe(
+      ModelSeats.local(base.database, { hosted: true }).pipe(
         Effect.provide(PersonalModels.none),
         Effect.provide(
           HostModel.layerConfig("CHAT_MODEL", {

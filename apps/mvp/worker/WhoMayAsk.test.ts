@@ -134,17 +134,6 @@ describe("what an asker does in the conversation after", () => {
     await sql(runtime, `TRUNCATE github_repo_roles`)
   }
 
-  test("her answer's turn and writes, while she is a Member there; once GitHub says read, 403", async () => {
-    const opened = await open(maya(null), "write")
-    const answerId = await asked(opened)
-    expect((await opened.h.fetch(`/api/answers/${answerId}`)).status).toBe(200)
-    await nowOnGitHub(opened, "read")
-    expect(await json(await opened.h.fetch(`/api/answers/${answerId}`))).toEqual([403, { code: "forbidden" }])
-    const write = await opened.h.fetch(`/api/answers/${answerId}`, { method: "POST", body: JSON.stringify({ status: "done", text: "No" }) })
-    expect(await json(write)).toEqual([403, { code: "forbidden" }])
-    expect(opened.h.line("chat.answer.turn").at(-1)?.annotations).toMatchObject({ status: 403, errorCode: "forbidden" })
-  })
-
   test("a view added to the conversation, while she is a Member there; once GitHub says read, 403", async () => {
     const opened = await open(maya(null), "write")
     const view = (id = uuid()) => ({ id, template: "webpage", props: { url: "https://example.com/" }, conversationId: opened.conversationId })

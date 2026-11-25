@@ -126,7 +126,7 @@ const deployment = () =>
   )
 /** One call of the model endpoint's `role`, as an agent's seat makes it. */
 const chat = async (h: Awaited<ReturnType<typeof harness>>, role = "agent") => {
-  const response = await h.fetch(`/api/model/${role}`, {
+  const response = await h.modelFetch(`/api/model/${role}`, {
     method: "POST",
     body: JSON.stringify(Schema.encodeSync(ModelRequest.ModelRequest)(ask)),
   })

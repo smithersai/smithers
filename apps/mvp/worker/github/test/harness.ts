@@ -47,7 +47,7 @@ import * as Api from "../Api.ts"
 import type { GitHubApp, Repository } from "../Config.ts"
 import * as RepoRoles from "../RepoRoles.ts"
 import * as Host from "../Host.ts"
-import type { Seat } from "../../ModelEndpoint.ts"
+import type { Seat } from "../../ModelSeats.ts"
 import { confirmedSession, REPOSITORY, services as flowServices } from "./fixtures.ts"
 import { APP_ID, appKey, SCRIPTED_API, type ScriptedGitHub, scriptedGitHub } from "./scriptedGitHub.ts"
 

@@ -32,8 +32,11 @@ import {
 /** The repository the cases name: GitHub's own example, which no eval can change. */
 const REPO = "octocat/Spoon-Knife"
 
-/** Every flow the agent may call that changes something (the registry's `changes`). */
-export const CHANGES: ReadonlyArray<string> = agentFlows.filter((name) => entryOf(name).changes !== undefined)
+/** Mutating flows, including retired names found in recorded trials. */
+export const CHANGES: ReadonlyArray<string> = [
+  ...agentFlows.filter((name) => entryOf(name).changes !== undefined),
+  "app/memory/remember",
+]
 
 /** Nothing changed but what `allowed` names: every other flow the agent called only read. */
 const changedOnly = (t: Trial, allowed: ReadonlyArray<string>): ReadonlyArray<Check> =>

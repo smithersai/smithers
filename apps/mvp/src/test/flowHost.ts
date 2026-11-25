@@ -1,17 +1,13 @@
 import { FileTabsTabs } from "../features/files/flows"
 import { BugTabs } from "../features/bugs/flows"
 import { FlowRegistry } from "../flows/registry"
-// The browser's agent on the Node host, for the tests (docs/features/agent.md#tests). ChatApi's real handler on the
-// test file's schema of the compose Postgres serves the model endpoint and the answer routes, with a scripted model as
-// the deployment's default model: the only scripted seam. The engine is the Node host's (`Runtime.layer` over
-// @smthrs/platform-node and the compose Postgres, worker/test/flowHost.ts), with every client flow registered as the
-// browser's engine worker registers them (src/flows/registrations.ts). This device's theme is a `ThemeStore` in memory.
+// Client flows on a Node host over the real ChatApi handler. A model is injected only into the test host.
 import { Persistence } from "@smthrs/effect-tanstack-db"
-import type { HostModel } from "@smthrs/model-host"
+import { Model } from "@smthrs/model"
 import { FlowRuntime } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
 import { EngineStore, RunStore } from "@smthrs/flows"
-import { Context, type Duration, Effect, Exit, Fiber, Layer, Scope } from "effect"
+import { Context, Effect, Exit, Layer, Scope } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
@@ -19,12 +15,9 @@ import type { Actor } from "../../worker/Actor.ts"
 import { build } from "../../worker/test/flowHost.ts"
 import type { CuratedFile } from "../../worker/home/Curated.ts"
 import { harness } from "../../worker/test/harness.ts"
-import { Answer } from "../features/agent/flows"
 import { Tabs } from "../features/navigation/flows"
-import type { Part } from "../features/agent/schema"
 import type { ThemeMode } from "../features/theme/contract"
 import { tabPreferences, ThemeStore } from "../features/theme/store"
-import type { HostOptions as AgentHostOptions } from "../features/agent/host"
 import * as RunCredentials from "../flows/credentials"
 import { clientFlows } from "../flows/declarations"
 import type { Door } from "../flows/dispatch"
@@ -38,7 +31,7 @@ import { TabIssues } from "../features/issues/steps"
 import { TabRuns } from "../features/runs/steps"
 import { TabTodos } from "../features/todos/steps"
 
-/** ChatApi's origin as the agent reaches it: the harness's in-process handler. */
+/** ChatApi's origin as the test host reaches it: the harness's in-process handler. */
 export const ORIGIN = "http://chat.test"
 
 /** The person's presses, as a tab would remember them, for a host with no tab: every run a test starts is theirs. */
@@ -47,7 +40,7 @@ const personPresses = Layer.succeed(
   TabRequests.of({ add: () => Effect.void, doorOf: () => Effect.succeedSome<Door>("button") }),
 )
 
-/** A person with the Member role: the signed-in caller every agent test asks as. */
+/** A person with the Member role: the default signed-in caller. */
 export const member: Actor = { subject: { kind: "person", id: "person-member" }, role: "member" }
 
 /** A model's answer: one cell, in the fence the cell loop reads. */
@@ -75,14 +68,12 @@ export interface Engine {
 }
 
 /** ChatApi on the file's schema, signed in as `actor`, answering model calls with `script`, and a device to ask on. */
-export const openAgent = async (
+export const openFlowHost = async (
   runtime: Runtime,
   script: Script,
   options: {
     readonly actor?: Actor
-    readonly partsEvery?: `${number} millis`
-    /** The deployment's default model in place of `script`: the agent evals' real model (evals/agent.eval.ts). */
-    readonly model?: HostModel["Service"]
+    readonly rendererModel?: Model.Model
     /** The fetch ChatApi reaches Electric and outside pages with (worker/test/pages.ts): the harness's unless set. */
     readonly fetch?: typeof globalThis.fetch
     /** The curated homes, and the docs they name, ChatApi reads (worker/home/Curated.ts): the real ones unless set. */
@@ -91,7 +82,6 @@ export const openAgent = async (
 ) => {
   const h: Harness = await harness(runtime, script, {
     actor: options.actor ?? member,
-    ...(options.model === undefined ? {} : { model: options.model }),
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
     ...(options.homes === undefined ? {} : { homes: options.homes }),
   })
@@ -111,16 +101,12 @@ export const openAgent = async (
 
   /**
    * Builds this device's engine: every client flow on the Node host, as the browser's engine worker registers them.
-   * `turnWait` is how long an answer's run waits for its turn while the queue before it doesn't move
-   * (`ANSWER_TURN_WAIT` unless set).
    */
   const engine = async (
     schema?: string,
     engineOptions: {
-      readonly turnWait?: Duration.Input
       /** A faulty transport for the browser's HTTP service; real handler transport unless set. */
       readonly fetch?: typeof globalThis.fetch
-      readonly memorySources?: AgentHostOptions["memorySources"]
     } = {},
   ): Promise<Engine> => {
     const scope = Effect.runSync(Scope.make())
@@ -142,9 +128,8 @@ export const openAgent = async (
     const registration = Layer.merge(
       registrations({
         origin: ORIGIN,
-        partsEvery: options.partsEvery ?? "20 millis",
-        ...(engineOptions.turnWait === undefined ? {} : { turnWait: engineOptions.turnWait }),
-        ...(engineOptions.memorySources === undefined ? {} : { memorySources: engineOptions.memorySources }),
+        flowModel: Model.make({ stream: script }),
+        ...(options.rendererModel === undefined ? {} : { rendererModel: options.rendererModel }),
       }),
       // No tab dispatches here: the test is the person, so every root run it starts is their own press. The agent's
       // runs, and every run nested in one, still get run credentials (src/flows/credentials.ts).
@@ -202,63 +187,5 @@ export const openAgent = async (
     }
   }
 
-  /** Asks `text`; resolves with the answer's id once ChatApi has both rows. */
-  const ask = async (text: string) => {
-    const question = { id: crypto.randomUUID(), answerId: crypto.randomUUID(), text }
-    const response = await h.ask(question)
-    if (response.status !== 202) throw new Error(`asking answered ${response.status}`)
-    return question.answerId
-  }
-
-  /** Runs `chat/Answer` for `answerId` to its end on `on`, as the asking tab starts it. */
-  const answer = (on: Engine, answerId: string) =>
-    Effect.runPromise(Effect.exit(on.flows.execute(Answer, { executionId: answerId, payload: { answerId } })))
-
-  /**
-   * Takes over `answerId`'s unfinished run on `on`, as a new leader tab's engine does when it wakes (it drives every
-   * unfinished run once), then reads how the run ended.
-   */
-  const resume = (on: Engine, answerId: string) =>
-    Effect.runPromise(
-      Effect.exit(
-        on.driver.drive(Answer, { executionId: answerId, payload: { answerId } }).pipe(
-          Effect.andThen(on.flows.execute(Answer, { executionId: answerId, payload: { answerId } })),
-        ),
-      ),
-    )
-
-  /**
-   * Starts `chat/Answer` for `answerId` on `on` and leaves it running: `stop` cuts it off where it is. `done` answers how
-   * the run ended, interrupted once stopped; it never rejects, so a test that stops a run needn't read it.
-   */
-  const start = (on: Engine, answerId: string) => {
-    const fiber = Effect.runFork(
-      Effect.exit(on.flows.execute(Answer, { executionId: answerId, payload: { answerId } })),
-    )
-    return {
-      done: Effect.runPromise(Effect.map(Fiber.await(fiber), (exit) => (Exit.isSuccess(exit) ? exit.value : exit))),
-      stop: () => Effect.runPromise(Fiber.interrupt(fiber)),
-    }
-  }
-
-  return { h, fetch, engine, ask, answer, resume, start, painted, mirrored }
+  return { h, fetch, engine, painted, mirrored }
 }
-
-/** An answer as Postgres holds it, parts included. */
-export const answerRow = (runtime: Runtime, id: string) =>
-  runtime.runPromise(
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient
-      const [found] = yield* sql<{
-        readonly status: string
-        readonly text: string
-        readonly failure: string | null
-        readonly parts: ReadonlyArray<Part>
-        readonly inputTokens: number | null
-        readonly outputTokens: number | null
-      }>`
-        SELECT status, text, failure, parts, input_tokens AS "inputTokens", output_tokens AS "outputTokens"
-        FROM messages WHERE id = ${id}`
-      return found!
-    }),
-  )

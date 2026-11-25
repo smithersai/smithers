@@ -8,10 +8,10 @@ The React view holds no focus state. See [decision 0081](../decisions/0081-keybo
 ## What the user does
 
 1. Opens the app (`/app`) and presses ⌘K (Ctrl+K), or clicks Chat ⌘K. The app opens at once, from the device, online or not. It installs as a PWA.
-2. Types a message and presses Enter or Send, whenever: offline, or while an answer streams. Asking needs sign-in as a Member or above: a signed-out person sees Sign in with GitHub where the composer would be ([sign-in.md](sign-in.md#the-browser)). Smithers answers with the person's own model ([Your model](personal-model.md)): a person who saved none sees "Add your model" and Open settings where the composer would be, unless the deployment's own model is on ([hosted inference](model-endpoint.md#hosted-inference), off for a deploy). On `/app`, until the person has had a conversation, those states show as the [first run](first-run.md)'s steps: Sign in, Add your model and Ask Smithers, each ✓ once done, the current one with its button.
+2. Types a message and presses Enter or Send. Asking needs a signed-in Member who may edit the branch. Attach an agent to the conversation so it can read questions and post answers. [MCP](mcp.md)
 3. Hides the chat with ⌘K again, Esc, or the Hide button.
-4. Sees their message at once, then Smithers' answer growing as it streams. Questions asked in a row are sent in that order.
-5. Sees the same conversation, live, on every other device that has the app open. Reloading a tab mid-answer doesn't stop the answer; closing every tab of the asking browser pauses it until the app opens there again.
+4. Sees their message when they send it and the answer when the attached agent posts it. The device sends questions in the order asked.
+5. Sees the same conversation on every open device that can read it. The attached agent runs independently of the browser.
 6. Sees the most recent 50 messages, and clicks Load earlier for the 50 before them; the device has the whole conversation, so this needs no network.
 7. Uses each message's controls ([message controls](#message-controls)): sees when each was written (`3m ago`), copies a finished message with Copy or the latest answer with `/copy`, takes a queued question back to the composer with Edit before it is sent, and finds an unsent draft still in the composer after a reload.
 
@@ -28,21 +28,19 @@ The status copy is decision [0002](../decisions/0002-local-first.md) §2:
 ```
 browser ── messages (OPFS SQLite) ◀── Electric shape ◀── GET /api/shapes/messages ◀── Electric ◀── Postgres
         ├─ ask: asking row + outbox write (IndexedDB) ── POST /api/questions ── ChatApi ── INSERT question + streaming answer ──▶ Postgres
-        └─ once ChatApi took it: start chat/Answer { answerId } ── the tab's engine (engine worker, SQLite on OPFS); the send waits until it recorded the run
-              chat/Answer ── GET /api/answers/<id> ── POST /api/model/agent ── POST /api/answers/<id> ── UPDATE answer ──▶ Postgres
+agent   ── conversation_read + conversation_respond (MCP) ── ChatApi ── settle pending answer ──▶ Postgres
 service worker: the app's shell, cached for offline; never /api/* and never the engine
 ```
 
 - **Postgres** holds the conversation (`messages`). It is the only source of truth, and its `position` column orders it.
 - **Electric** streams the `messages` table to every device. Browsers reach it only through ChatApi's shape proxy, so the Electric URL and secret stay on the server.
 - **ChatApi** (`worker/ChatApi.ts`) is an Alchemy Effect-native Worker. It reaches Postgres through Hyperdrive. It answers nothing itself.
-  - For a signed-in Member or above, it inserts the question and an empty `streaming` answer in one statement, starts the answer's expiry inside that transaction (`chat/Expire`, [agent.md](agent.md#settling)), and commits and answers 202 with the transaction id once the start is recorded.
-  - It serves the routes the browser's agent answers through: the metered model endpoint, `POST /api/model/<role>` ([model-endpoint.md](model-endpoint.md)), and the answer routes, `GET` and `POST /api/answers/<id>` ([agent.md](agent.md#the-answer-routes)).
-  - Its code: `Chat.ts` (routes and the shape proxy, `ShapeProxy` from `@smthrs/effect-electric`), `Messages.ts` (asking and the history), `Answers.ts` (the answer routes).
-- **The browser's agent answers.** Once ChatApi takes a question, the asking tab dispatches `chat/Answer { answerId }` on this browser's durable engine, with the answer's id as its execution id ([agent.md](agent.md), decision [0011](../decisions/0011-the-agent-runs-in-the-browser.md)), and the send waits until the engine has recorded the run, so the outbox keeps the question until a run exists to answer it: a tab closed in between leaves the question in the outbox, and the next page sends it again and starts the run. The engine's starts are idempotent by execution id, so a resend starts no second run. A reload or a killed tab resumes the run from its journal when the app opens again; a model call that sealed is never made again.
+  - For a signed-in Member who may edit the branch, it stores the question and a pending answer together and returns the Postgres transaction ID with HTTP 202.
+  - The attach routes give the person's agent a grant for one conversation. The grant's tools read that conversation and settle its pending answers. [MCP](mcp.md)
+  - `Chat.ts` handles question admission and the shape proxy using `ShapeProxy` from `@smthrs/effect-electric`. `Messages.ts` persists questions and pending answers.
 - **The browser** (`src/features/chat/`) keeps the conversation on the device and sends every question through a durable outbox (decision [0002](../decisions/0002-local-first.md)). Its state machine, the Effect boundary and the libraries it uses are in [state.md](../state.md).
   - **Reads come from the device.** `messages` is an Electric collection kept in SQLite on OPFS (`SharedSqlite`, the app's database beside the engine's in the leading tab's engine worker, one per origin, shared by the browser's tabs through TanStack DB's tab coordinator). It syncs the whole conversation eagerly; a reload restores it before the network answers, and Electric resumes from the stored handle and offset. Load earlier moves a window over what the device has.
-  - **Writes go through the outbox** (`@tanstack/offline-transactions`, IndexedDB). Asking puts the question into the outbox as an optimistic `asking` row; the outbox stores it before sending, sends one at a time in the order asked, retries with its backoff (1 s doubling to 60 s), and restores waiting questions after a reload or restart. One send is `POST /api/questions` under one 15 s deadline, then the start of the answer's run, recorded by this device's engine, then a wait of up to 15 s until Electric delivers the question (the 202's transaction id, or for a resend answered 200, the question's id). A run the engine doesn't record (this tab's engine failed, or the tab is closing) is sent again, and so is a question asked in a branch whose conversation the device can't open to see it arrive (`chat branch delivery waiting`): the outbox never sends a write again after a defect, so the device's failure becomes a retry. Every resend carries the same ids, so Postgres keeps one question.
+  - The outbox persists an optimistic `asking` row before sending. It sends questions in order and restores unsent questions when the app opens again. After `POST /api/questions` succeeds, the device reconciles the optimistic row with Electric using either the new transaction ID or the existing question ID. A resend carries the same IDs.
   - **A refused question stays** (400, 409, 413): kept in the persisted `unsent` collection, `Not sent`, until the person edits or discards it. A question the outbox can't take (its storage failed, or another tab still leads the outbox for the moment this tab takes the lead) is `unsent` as well, with Retry; the tab sends it again once it leads.
   - **The tab a person uses leads the outbox**, elected through `@smthrs/platform-browser`'s `WebLock` service: the window getting focus, anything in it getting focus (the composer), or asking takes the lock at once with `steal`, so a question asked in any tab is sent from it. The tab that led waits in line again; when the leading tab closes, the next tab leads and sends what the first stored.
   - **The device store is one SQLite database per origin** (`SharedSqlite` from `@smthrs/platform-browser`), served by the leading tab's engine worker. When that tab closes, the next leader serves the same file; a transaction the old leader never finished runs again on the new one, so a handover loses no write the store took ([platform-browser](../../../../packages/smithers/flows/platform-browser/docs/concepts/durable-browser-engine.md)).
@@ -55,7 +53,6 @@ service worker: the app's shell, cached for offline; never /api/* and never the 
 
 ```
 message meta:  (3m ago [Copy])                    a finished question or answer; "Copied" once the clipboard has it
-               (3m ago [Copy] [⋰])                 an answer: [⋰] is its debug info, a link to the run that answered it
                Queued (3m ago [Edit])              a question waiting in the outbox while the pill shows
                Not sent [Edit] [Discard] (3m ago)  unchanged (decision 0002 §2)
                ( ) shown only on hover, focus inside the message, or a tap
@@ -67,7 +64,6 @@ type  ─▶ setDraft ─▶ composer row (memory) + drafts row (SQLite on OPFS)
 - **Shown on hover.** A message's time, Copy and a queued question's Edit are `ChatMessage`'s `actions` (`@smthrs/ui`): hidden until the pointer is over that message or focus is inside it, and on a touch screen until it is tapped. Their space is kept, so nothing moves when they show; the fade is 120 ms, none under reduced motion. `Queued`, `Not sent` and the Retry, Edit and Discard that recover a message are its `meta`, always shown (Will, 2026-10-20: "copy should not be visible nor should the timestamp unless you are already hovering over the message").
 - **Times.** Every message shows when it was written, as `@smthrs/ui`'s `RelativeTime` (`just now`, `3m ago`, a date after a day), with the full date and time as its title. A synced message uses its `created_at` in Postgres; a question this device hasn't sent yet, when it was asked here (`timeOf`, `src/features/chat/view.ts`).
 - **Copy.** A finished question or answer has Copy (`@smthrs/ui`'s `CopyButton`), which says `Copied` once the clipboard has the text. It runs `chat/copy { messageId }` through `FlowDispatch`, door `button`. `/copy` runs it with no message, which copies Smithers' latest finished answer, and so does the agent when asked to copy its last answer: `chat/copy` is model-invocable. The step runs in the leader tab's engine worker and asks the tab that started the run ([the tab that asked](flows.md#the-tab-that-asked)), which finds the text in the conversation it shows and writes it through the host's `Clipboard` (`src/clipboard.ts`, shared with `repo/copy`). The text never passes through the engine or its journal. An answer still streaming, a failed answer and a view aren't copied: `MessageNotFound`. A clipboard that refuses answers `{ copied: false }`.
-- **Debug info.** Every answer has a small icon labelled `Debug info`, among its hover controls, that opens `/app/runs/<answer id>`: the run that answered it, since an answer's id is its run's (`debugRunOf`, `src/features/chat/view.ts`). The run's page shows its flow view, the agent's turn and every flow it called as a step, each with its input and output ([runs](runs.md#the-run-page)). An answer another device gave reads "On another device", since runs are read from this device's engine. Will, 2026-10-20 19:52: "we should be able to see it used jev via clicking on debug info and seeing the flow view".
 - **Edit on a queued question.** While the pill shows, a queued question has Edit beside `Queued`. It runs `chat/edit { questionId }`, door `button`; `/edit` runs it with no question, which takes the latest waiting one, queued or unsent. The tab takes the question out of the outbox with `Outbox.handoff` (`@smthrs/effect-tanstack-db`), which holds the outbox's own lock against a send: the question is taken back before it is sent, or it is sent and stays, never both. Taken back, it is parked in the outbox's storage, where it is never sent, and deleted from its queue, and its row goes. Its text becomes the draft of the conversation it was asked in, and the edit finishes only once the device has stored that draft; then the parked copy goes and the text opens in the composer. If the person showed another conversation while the outbox took it back, the composer keeps the draft it shows. If the device refuses the draft, or the tab closes first, the edit is `failed` and the parked copy stays: the next opening stores it as that conversation's draft, so the question is never lost; the outbox never sends it, and the questions behind it are sent in order. A question being sent, or already sent, stays where it is (`QuestionNotEditable { reason: "sent" }`), and so does the composer's draft. An unsent question's Edit is unchanged. Only the person edits: the agent never runs `chat/edit`.
 - **The saved draft.** Home and unshared branches keep private drafts per conversation in the device's `chat-drafts` collection. Only a branch its owner shared uses the collaborative prompt ([co-editing](coedit.md#the-prompt)). Both survive reloads offline. `ChatWrites` initializes drafts and the outbox before repository display stores; page queries still wait for the data gate. A sent question waits for the chat read side only when confirming delivery. `chat.writes.ready` and `smithers_web_chat_writes_ready_ms` measure this local startup boundary. The composer's textarea says `data-draft="saved"` once the device has stored what it shows, and `unsaved` until then. Private writes record `chat draft saving`, then `chat draft stored` or `chat draft failed`, correlated by transaction id, with a `chat.draft.save` span and `smithers_web_draft_writes{stage}` counter; no draft or error message enters those records.
 
@@ -83,9 +79,9 @@ type  ─▶ setDraft ─▶ composer row (memory) + drafts row (SQLite on OPFS)
 | `status` | `text` | `done`, `streaming` or `failed` |
 | `question_id` | `uuid` | an answer's question; null for a question |
 | `failure` | `text` | when failed: `quota`, `rate_limited`, `model_error`, `empty`, `unfinished` or `abandoned` (see below) |
-| `model_id`, `stop_reason` | `text` | set when an answer settles; `stop_reason` when the model gave one |
-| `input_tokens`, `output_tokens` | `integer` | set when an answer settles, when the model reported them |
-| `parts` | `jsonb`, default `[]` | an answer's steps, as the agent shows them ([agent.md](agent.md#streaming)); `[]` for a question |
+| `model_id`, `stop_reason` | `text` | provider details kept on earlier browser-agent answers |
+| `input_tokens`, `output_tokens` | `integer` | model usage kept on earlier browser-agent answers |
+| `parts` | `jsonb`, default `[]` | step records kept on earlier browser-agent answers |
 | `asked_by` | `text` | a question's asker: the person id of the session that asked, never the body's. Null for an answer, and for a question asked before `0011_question_askers`. Never synced |
 | `position` | `bigint` identity, stepping by 2 | the conversation's order: a question draws one, and its answer takes the next |
 | `created_at`, `updated_at` | `timestamptz` | display and diagnostics only |
@@ -99,12 +95,12 @@ Failures:
 | `model_error` | any other model failure |
 | `empty` | the model finished with no text |
 | `unfinished` | the agent ran out of frames, or the queue before the answer didn't move for the turn wait (10 minutes) while it waited its turn |
-| `abandoned` | still `streaming` once nothing in its queue (it, and the earlier answers in its conversation) had moved for 25 minutes, so `chat/Expire` settled it: its device never came back, or its run ended without settling ([agent.md](agent.md#settling)); or left `streaming` by ChatApi's former server-side answering when migration `0008_browser_answering` ran |
+| `abandoned` | a retired answering process left the message pending |
 
 A question ChatApi didn't take has no row and no `failure`: the asking tab shows it failed from its own memory (above).
 
 Rules:
-- An answer only changes while `streaming`, through the answer routes, and only for the person who asked its question; settling is one update to `done` or `failed` ([agent.md](agent.md#the-answer-routes)).
+- The attached agent's answer tool can settle a pending answer in its granted conversation for its grant's person.
 - A question and its answer are inserted in one statement (`Messages.ask`). The question draws its `position` from the identity, which steps by 2, and the answer takes the next one, so no other row lands between them. Asking locks the conversation before allocating positions and holds that lock through commit; later asks and answer turns cannot overtake an uncommitted pair.
 - Ids are stored lowercase, as Postgres prints a `uuid`.
 - `db/migrations/0001_messages.ts` creates the table, with these values as `CHECK` constraints; `0003_paired_positions.ts` makes `position` step by 2; `0006_answer_parts.ts` adds `parts` and `unfinished`; `0008_browser_answering.ts` drops `attempts` (added by `0002`), settles answers the server left `streaming`, and indexes streaming answers by `position` for the turn wait; `0011_question_askers.ts` adds `asked_by`, checked null on an answer, and settles `abandoned` the answers still `streaming`, since no one may write them.
@@ -118,7 +114,7 @@ Rules:
 
   | Status | Body | When |
   |---|---|---|
-  | `202` | `{ "txid": number }` | both rows inserted: the question, and its answer, empty and `streaming`, for the asking browser's agent to answer |
+  | `202` | `{ "txid": number }` | the question and its pending answer were inserted |
   | `200` | `{ "txid": null, "existing": true }` | a retry: this question is already stored, with the same text, `answerId` and asker; nothing is written |
   | `400` | `{ "message" }` | invalid body, malformed UTF-8 or a body that breaks off included |
   | `401` | `{ "message": "Sign in to ask Smithers." }` | nobody is signed in; nothing is written |
@@ -130,9 +126,8 @@ Rules:
   | `413` | | body over 64 KB, declared or streamed |
   | `500` | | a defect in ChatApi; logged by the defect's name, never its message |
   | `503` | `{ "message" }` | Postgres can't be reached (for sessions or the insert), or refuses the insert for another reason; nothing is written |
-  | `503` | `{ "message": "Smithers couldn't take the question. Try again." }` | the remote host didn't record its expiry's start, so the question isn't stored; the outbox sends it again |
 
-  The client validates both success bodies before starting an answer: a `200` must carry
+  The client validates both success bodies before reconciling the device's copy: a `200` must carry
   `{ "txid": null, "existing": true }`. Malformed or incomplete bodies are `invalid_response`;
   the request deadline includes reading either body, so a stalled `200` is `unreachable`.
 
@@ -141,9 +136,9 @@ Rules:
 
 ### Answering
 
-The asking browser's agent answers: `chat/Answer` on that browser's durable engine, started once ChatApi takes the question ([agent.md](agent.md)). It reads its turn and history from `GET /api/answers/<id>` (what the model sees: the most recent finished exchanges before the answer, at most 19 or 24,000 characters), calls the model through `POST /api/model/agent`, and writes the answer's text and steps through `POST /api/answers/<id>`: at most once a second while it streams, then once to settle it `done` or `failed`. Answers come in order: an answer waits while an earlier one is still streaming and live ([agent.md](agent.md#turn-by-turn)).
+An attached agent reads the transcript over MCP and calls `conversation_respond` to settle a pending answer. The Worker uses the granted repository, branch, conversation and person for both tools. Postgres stores the finished answer, and Electric streams it to the devices that can view the conversation.
 
-Each streaming write is one row update, and Electric logs an update with the whole `text`, so the shape log grows by the answer's length at every write: about `L × n / 2` characters for an answer of `L` characters written in `n` writes ([infrastructure.md](../infrastructure.md#limits)). Electric needs `REPLICA IDENTITY FULL`, which adds nothing to the shape log.
+Migration `0133_byoa_cutover` marks the browser agent's pending answers as abandoned and preserves their partial text and recorded steps. It settles their active run and feed states too.
 
 ### `GET /api/shapes/messages`
 
@@ -179,8 +174,6 @@ Not built: binding a request to a session or a visitor cookie and limiting by it
 
 | Variable | Default | |
 |---|---|---|
-| `CHAT_MODEL` | Cerebras `qwen-3.8-27b` (`DEFAULT_CHAT_MODEL`, `worker/ModelRoles.ts`) | a Smithers configured-model record, as JSON: the model endpoint's default model for every role, used only while hosted inference is on, a work in progress off for a deploy ([model-endpoint.md](model-endpoint.md#hosted-inference)) |
-| the record's credential | none | for example `CEREBRAS_API_KEY` |
 | `DATABASE_URL` | the compose Postgres, `postgresql://smithers:smithers@localhost:54321/smithers` | `pnpm db:migrate` and the tests connect to it; ChatApi reaches it through Hyperdrive, which `alchemy dev` passes straight through |
 | `ELECTRIC_URL` | `http://localhost:30001` | |
 | `ELECTRIC_SECRET` | none | sent as `secret`; unset in production, where Electric's gateway has no public URL ([infrastructure.md](../infrastructure.md#electric)) |
@@ -202,21 +195,18 @@ to remove the capture listener on both browsers and the Node test host.
 
 - **Unit (`pnpm test`):**
   - The libraries' own suites (`packages/effect-tanstack-db`, `packages/effect-electric`): the TanStack DB and Electric wrappers against real collections and real Electric shapes, persistence on a SQLite file (restore, resume, a new `schemaVersion`), the outbox (resends, refusals, admission, a write restored by the next program, the lock leader's handover), the sync policy and the shape proxy.
-  - The browser's state machine (`src/features/chat/chat.test.ts`, `telemetry.test.ts`, `src/boot.test.ts`), driven through the chat layer's actions and queries with no React, built by the same `appLayer` the browser uses, on a Node device (`nodeDevice`: SQLite through TanStack DB's own browser persistence, the outbox in memory, `WebLock` over Node's Web Locks, and its engine leading, as a browser's engine worker does), against ChatApi's real handler (`src/test/chatApi.ts`), with a scripted model behind ChatApi's model endpoint, which the tab's own agent calls. Each test gets its own schema in the database Electric replicates, made by `db/migrations` and dropped after, so it never touches the dev conversation: ChatApi reaches it through the connection's `search_path`, and its Electric requests name it in `table`. Unhappy paths get faulty services by injection, never an intercepted request: ChatApi's client fails the next question as unreachable, a gateway's 503, ChatApi's 400, a 413, cut short after a 202, delivered twice, beaten by a conflicting writer or answered too late; Electric's shape source goes down, refuses (all requests or live ones), stalls or cuts its responses short (`src/test/faults.ts`); the host's outbox storage refuses a write, or another tab holds the outbox's lock even against a steal; this tab's engine never leads, fails, or holds its starts (`EngineFaults`). Tabs: the tab that gets focus or asks leads at once, and a tab closed before its engine recorded an answer's run leaves the question to the next page; a tab alone whose browser grants the outbox's lock late still shows its first question Queued; and a busy tab's late snapshot never erases a question the device's writing tab stored (`busyTab`). Happy paths use the real services. They need `pnpm db:up`.
+  - The browser tests exercise durable outbox admission, offline recovery and transcript sync through the app's chat layer. The fault tests inject unavailable services.
   - The real ChatApi client from the browser's side (`src/features/chat/api.test.ts`) against a local HTTP server: a body that stalls after 202, or no answer at all, fails at the deadline and the server sees the request aborted; a 202 cut short is `invalid_response`; nothing listening is `unreachable`.
-  - ChatApi (`worker/*.test.ts`) through its real handler (`worker/test/harness.ts`) against the compose Postgres and Electric, with a scripted model through `HostModel`: the routes and who may ask (`Chat.test.ts`), asking and the history (`Messages.test.ts`), the answer routes (`Answers.test.ts`), the shape proxy (`ShapeProxy.test.ts`) and the site Worker (`index.test.ts`). Every wait is for a condition, never a fixed time. `Messages.test.ts` holds one ask mid-statement, with a trigger on another connection's lock, while a second transaction asks, and checks that each answer stays right after its question.
-  - The browser's agent (`src/features/agent/*.test.ts`, [agent.md](agent.md#tests)).
+  - Worker tests exercise question admission, access, ordering and Electric sync through the real handler and Postgres. The attach tests exercise conversation grants and MCP tools.
   - Message controls (`src/features/chat/controls.test.ts`) on the app's own layer over a device whose engine leads: Copy on an answer and on a question through `chat/copy`, `/copy` copying the latest answer, a message not shown (`MessageNotFound`), a clipboard that refuses, nothing copied while streaming or failed; Edit on a question queued after a failed send (never sent, the edit is), `/edit` and the button on the latest waiting question, a question being sent stays (`sent`), nothing waiting; the draft across a reload, per conversation, gone once sent or cleared, and never over what the person typed first; Postgres' timestamps and a local question's time. `src/features/chat/steps.test.ts`: both steps over the engine's channels, every outcome, the agent's door, and a tab that is gone.
   - The database layer, `pnpm db:migrate` and the test guard (`db/*.test.ts`).
   - Each test file has one runtime and a schema of its own on the compose Postgres ([infrastructure.md](../infrastructure.md#tests)), so no test touches the dev conversation. With Postgres or Electric down, the file fails and says to run `pnpm db:up`.
 - **End to end (`pnpm e2e`):**
-  - Real browsers, Worker, Postgres, Electric and model; no mocks and no intercepted requests. Every test records video.
+  - Playwright exercises the browser, Worker, Postgres and Electric and records video.
   - An unhappy path opens `/app?faults` under the dev server, so the page runs on the faulty services (`src/test/e2e.ts`), and throws their switches with `page.evaluate(() => window.faults.shapes.down())` once `"faults" in window`. `?faults=down`, `refuse`, `refuse-<status>`, `stall` or `corrupt` opens the page with sync already failing. A production build has no such page.
   - Every page runs the no-spinner observer (`e2e/fixtures.ts`): an init script records any `aria-busy="true"` or progress bar a frame paints outside a streaming answer, the router's own bar aside, and the test fails if it saw one. A loading state still in its first 300 ms paints nothing, so it never counts.
   - A device test (`e2e/devices.ts`) is void, and fails saying so, when the dev server reloaded one of its pages mid-test: Vite's `full-reload` on its HMR socket, sent when someone edits a module it serves. The page restarts and loses its memory and its fault switches. The tab's log names the file. Run e2e against a dev server whose checkout nobody edits meanwhile: on 2026-10-21 the shared one reloaded test pages about once a minute.
   - `e2e/message-controls.spec.ts`: an answer and its question show their times, hidden until hovered, Copy puts the answer on the clipboard and says `Copied`, Edit takes a question queued offline back to the composer and only the fixed question reaches Postgres, and a draft survives a reload. GIFs: `message-controls-message-copy.gif` and `message-controls-message-edit.gif` from `pnpm e2e:gifs`.
-  - Debug info: `src/features/jev/jev.test.ts` opens an answer's run from its debug info (`debugRunOf`) and reads its flow view, and `e2e/jev.spec.ts` shows the icon only on hover, opens the answer's run from it, and inspects the Jev step there ([Jev](jev.md#seeing-that-smithers-used-jev)).
-  - Coverage includes ⌘K, asking, the browser's agent answering through the model endpoint (`e2e/agent.spec.ts`), the theme by button and by the agent, a killed tab whose answer resumes without paying again for a sealed model call, signing out (`e2e/sign-in.spec.ts`), two devices, a reload mid-answer (the answer still completes), a tab closed mid-answer (the answer waits for its device), late joiners, concurrent asks, sync down at boot (the shell at once, then the pill with Retry), and 0002 §7: questions asked offline survive a reload offline and a restart and are answered in order; a flapping network; two tabs (the tab a person asks in leads and sends at once; the outbox's handover when the leading tab closes); a tab closed after ChatApi took its question, before its engine recorded the run (answered when the app opens again); offline mid-answer; Electric down at boot after one visit (the conversation from the device); Retry sending at once; back and forward.
   - `e2e/local-first-conflicts.spec.ts`: the conflicts the device store and the outbox resolve, one test each, on two devices or two tabs of one device, on the real model; the two clock tests set a device's clock with Playwright's clock (ruling TEST-12). Two writers claim one question id (409: the device keeps its own `Not sent`, and Edit asks it again under a new id); two people drop the same TODO offline (the second drop changes nothing); two devices come back in either order (Postgres' arrival decides); a reply lost after ChatApi took the question (the resend gets 200 `existing`, stored once); a tab that lost the outbox's lead leads again (`sent_elsewhere`: not sent twice); Edit in one tab takes back a question another tab's outbox holds (never sent); a new build that can't resume a parked answer (`payload_changed`: `Couldn't answer` on both devices, and Retry answers); a device clock a day behind (its question still lands by arrival). Three are marked broken (`test.fail`, TEST-5, just before the assertion the bug fails): Edit after ChatApi took the question but before the device saw it arrive takes it back anyway, so it is both in the composer and answered; a question Edit took back in one tab stays `Queued` in the tab that led the outbox; and after a device clock steps back, the next question shows twice and the outbox orders writes by that clock (`@tanstack/offline-transactions` orders and schedules by `createdAt` and `nextAttemptAt`). Access lost while offline (403) is still to come ([local-first conflicts](../work/local-first-conflicts.md)).
   - A device's first page waits for the service worker and loads again online, the one earlier visit an offline reload needs: under the dev server the service worker keeps only what a page it controls fetched.
 - **Benchmarks (`pnpm bench`):** see [benchmarks.md](../benchmarks.md).
@@ -238,7 +228,7 @@ Queued and unsent questions pin immediately. The versioned intent keeps a local 
 
 The composer keeps keystrokes arriving immediately after its shortcut, before the input mounts. Typed text shows its character count and the 8,000-character limit. Oversize input stays intact with a refusal; it is neither truncated nor sent.
 
-The composer (or its model-settings action) precedes message history in keyboard
+The composer precedes message history in keyboard
 order while remaining docked below it visually. Message actions remain reachable
 after it. `e2e/accessibility-composer.spec.ts` checks this with existing history.
 
@@ -253,7 +243,7 @@ reading at their route's byte cap, before authentication; the fixed upload deadl
 seed expands in base64 JSON and needs more than 10 seconds at 1 Mbit/s. Authority is resolved only after EOF.
 Early body refusals are recorded as `write.body` and `smithers_write_bodies`, before a feature handler runs.
 
-Branch queued and unsent questions follow the conversation access gate when displayed; delivery keeps their raw rows. Missing ownership, an unknown refusal restore, and denial hide their text. Home agent statuses use the same attributed messages as the conversation.
+The conversation's access gate controls whether a device shows queued and unsent questions. Delivery keeps their original rows. Missing ownership, an unknown refusal restore, and denial hide their text. Historical agent statuses use the same attributed messages as the conversation.
 
 
 ### Held-write ordering

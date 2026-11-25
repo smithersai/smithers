@@ -281,25 +281,6 @@ describe("a run's reports route to its launcher and the people on its branch", (
     expect(await rowOf(subject, "person-cat")).toBeUndefined()
   })
 
-  test("the answer's own settle is its run's: an answer settled before its run reports so reads settled", async () => {
-    const a = await open(ann)
-    const b = await open(ben)
-    await post(b, WATCHES_ROUTE, { conversationId: null })
-    for (const settle of [{ status: "done", text: "Deployed." }, { status: "failed", failure: "unfinished" }] as const) {
-      const runId = await asked(a)
-      const subject = Notifications.runSubject(runId)
-      await report(a, runId, { status: "working" })
-      expect((await post(a, `/api/answers/${runId}`, settle)).status).toBe(200)
-      expect(await rows(subject)).toEqual([
-        expect.objectContaining({ recipient: "person-ann", state: settle.status, version: 2 }),
-        expect.objectContaining({ recipient: "person-ben", state: settle.status, quiet: true }),
-      ])
-      // The run's own late report of it changes nothing.
-      await report(a, runId, { status: settle.status })
-      expect((await rowOf(subject, "person-ann"))!.version).toBe(2)
-    }
-  })
-
   test.each([{ status: "done", text: "Finished." }, { status: "failed", failure: "unfinished" }] as const)(
     "a settled answer repairs its Working notice when the run row is gone ($status)", async (ending) => {
       const a = await open(ann)
@@ -309,12 +290,12 @@ describe("a run's reports route to its launcher and the people on its branch", (
       // Missing run metadata alone is not a terminal outcome while the answer still streams.
       expect(await runtime.runPromise(Notifications.foldRun(runId, undefined))).toBe(0)
       expect(await rowOf(Notifications.runSubject(runId), "person-ann")).toMatchObject({ state: "working" })
-      expect((await post(a, `/api/answers/${runId}`, ending)).status).toBe(200)
+      await sql(`UPDATE messages SET status = $2, text = $3, failure = $4 WHERE id = $1`,
+        runId, ending.status, "text" in ending ? ending.text : "", "failure" in ending ? ending.failure : null)
+      expect(await runtime.runPromise(Notifications.foldRun(runId, undefined))).toBe(1)
       expect(await rowOf(Notifications.runSubject(runId), "person-ann"))
         .toMatchObject({ state: ending.status, version: 2, title: "Deploy the docs preview sentinel-7c1d" })
-      expect(a.count(Notifications.routed, { kind: "run", state: ending.status })).toBe(1)
       expect(recorded(a)).not.toContain("sentinel-7c1d")
-      expect(a.only("notifications.run_missing").annotations).toMatchObject({ runId, written: 1 })
       expect(await runtime.runPromise(Notifications.foldRun(runId, undefined))).toBe(0)
     },
   )

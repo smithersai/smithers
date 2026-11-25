@@ -549,20 +549,17 @@ const host: Omit<Host, "editorTabId" | "editorTabPersistent" | "editorTabRefusal
   // The repository view's language server: TypeScript in a worker of its own, started when a TypeScript or JavaScript
   // file first shows, so its bundle loads only then (docs/features/code-intelligence.md).
   codeIntelWorker: () => new Worker(new URL("./features/code-intel/language.worker.ts", import.meta.url), { type: "module" }),
-  // This tab's engine worker: it runs every client flow, the agent among them, once its tab leads (decision 0011). Under
-  // the dev server, the end-to-end tests' parameters reach it in its name, `dev:<parameters>`: `?agent=<script>` names a
-  // scripted model (src/test/scriptedAgent.ts), and `?faults=session-503` opens its session read refused
-  // (src/test/authFaults.ts). A production build drops the branch.
+  // The leading tab's engine runs client flows (decision 0011). Under the dev server a session fault
+  // reaches it through its worker name (src/test/authFaults.ts).
   engineName: ENGINE_NAME,
   engineWorker: () => {
     // A page already on memory never starts a worker that could lead over the device's data.
     if (activation.state() === "memory") return failedWorker(sealed)()
     const search = new URLSearchParams(window.location.search)
-    const dev = new URLSearchParams([...search].filter(([key]) => key === "agent" || key === "faults"))
+    const dev = new URLSearchParams([...search].filter(([key]) => key === "faults"))
     // Vite reads the worker's `type` statically, so it comes after the spread.
-    const demoMock = search.get("agent") === "mock"
     const worker = new Worker(new URL("./flows/engine.worker.ts", import.meta.url), {
-      ...(demoMock ? { name: "demo:mock" } : import.meta.env.DEV && dev.toString() !== "" ? { name: `dev:${dev}` } : {}),
+      ...(import.meta.env.DEV && dev.toString() !== "" ? { name: `dev:${dev}` } : {}),
       type: "module",
     })
     engineWorker = worker
@@ -716,25 +713,6 @@ void Promise.all([Promise.resolve(firstPaint?.handOver()).then((held) => wipe.op
     void import("./test/e2e")
       .then((e2e) => e2e.startWithFaults(opened, window.location.search, window))
       .then(({ stop }) => leaving(stop))
-  } else if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("agent") === "mock") {
-    void import("./features/agent/demoModel")
-      .then((demo) => {
-        const demoPage = {
-          ...opened,
-          host: {
-            ...unwiped(tabHost),
-            engineName: demo.DEMO_ENGINE_NAME,
-            engineWorker: () =>
-              new Worker(new URL("./flows/engine.worker.ts", import.meta.url), {
-                name: demo.DEMO_WORKER_NAME,
-                type: "module",
-              }),
-          },
-        }
-        leaving(start(demoPage, demo.demoServices).stop)
-      }, () => {
-        leaving(start(opened, realServices(opened)).stop)
-      })
   } else {
     leaving(start(opened, realServices(opened)).stop)
   }

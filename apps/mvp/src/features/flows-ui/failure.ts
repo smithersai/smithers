@@ -1,7 +1,7 @@
 // Why a draft round failed, as the closed code its row and its `flow.author` record carry (docs/features/flows.md#why-a-draft-failed,
 // OBS-4). The drafting agent's failure (`@smthrs/agent` `AgentFailure`, as its step journaled it) is read for its tags
 // and codes only: its message, its provider body and anything the model said never leave this module. The same
-// reading chat's answers make of a model failure (src/features/agent/progress.ts), at a draft's grain.
+// logic gives a draft the closed reason for a model failure.
 
 /** Why a round failed. The first six are the agent's; the rest are the round's own. */
 export const DRAFT_FAILURES = [

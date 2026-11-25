@@ -8,7 +8,6 @@ import { withRequestRay } from "./RequestRay.ts"
 // the Worker first builds its program, not when Cloudflare starts the Worker, so its modules are evaluated then and
 // count against the first request's CPU instead of the Worker's startup limit (docs/infrastructure.md#limits).
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { HostModel } from "@smthrs/model-host"
 import { Logger } from "@smthrs/observability"
 import { EdgeCache } from "@smthrs/platform-cloudflare"
 import { CiJob } from "@smthrs/sandbox"
@@ -27,6 +26,7 @@ import { AUTH_ROUTE } from "../src/features/auth/contract.ts"
 import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE } from "../src/features/repo/contract.ts"
 import * as AgentSandbox from "./AgentSandbox.ts"
 import * as Asks from "./Asks.ts"
+import * as Attach from "./attach/LiveMount.ts"
 import { BranchRoles } from "./branch/Access.ts"
 import * as BranchApi from "./branch/BranchApi.ts"
 import * as Conversations from "./branch/Conversations.ts"
@@ -68,7 +68,6 @@ import * as McpAuth from "./mcp/Auth.ts"
 import { McpToolRegistry } from "./mcp/Contract.ts"
 import * as McpLiveDeps from "./mcp/LiveDeps.ts"
 import * as McpTools from "./mcp/Tools.ts"
-import { DEFAULT_CHAT_MODEL } from "./ModelRoles.ts"
 import * as PersonalApi from "./personal/Api.ts"
 import { PersonalModels } from "./personal/Models.ts"
 import * as Placement from "./Placement.ts"
@@ -131,7 +130,7 @@ const pools = { request: ChatDatabase, engine: EngineDatabase } as const
 /**
  * ChatApi's program. Who is asking comes from sign-in (`worker/SignIn.ts`); `fallback` is who is signed in while the
  * GitHub App isn't configured: nobody in production (below), a local developer under `alchemy dev`
- * (`worker/DevChatApi.ts`). The model endpoint refuses a call with no actor. `localHttp`, which only `alchemy dev` sets,
+ * (`worker/DevChatApi.ts`). `localHttp`, which only `alchemy dev` sets,
  * keeps links to `http:` pages on `localhost` (`WEB_PAGES_LOCAL_HTTP`'s default, worker/Views.ts). `spendAlerts`,
  * which only `alchemy dev` sets, to `false`, is `MODEL_SPEND_ALERTS`' default: a deploy alerts on any model spend
  * unless its environment says otherwise (docs/features/spend-alerts.md). `dev`, which only `alchemy dev` sets, lets an
@@ -227,8 +226,6 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       // Generated views render in the realm on the QuickJS build the bundle compiled (worker/ViewRealm.ts).
       realm: ViewRealm.load,
       ...(options.localHttp === undefined ? {} : { localHttp: options.localHttp }),
-      ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
-      ...(options.hostedModel === undefined ? {} : { hostedModel: options.hostedModel }),
       ...(options.summaryDailyCap === undefined ? {} : { summaryDailyCap: options.summaryDailyCap })
     })
     // A person's own model (docs/features/personal-model.md): saving, removing and testing it, and its shape.
@@ -398,6 +395,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const home = HomeApi.make({ roles, mayRead: github.mayRead, mayBrowse: github.mayBrowse, maySync: github.maySync })
     // Bring Your Own Agent via MCP (docs/features/mcp.md): Streamable HTTP MCP + OAuth 2.1 + token management.
     const mcpApi = McpApi.make()
+    const attach = Attach.make(database)
     const mcpReadToken = yield* ReadToken.fromConfig.pipe(
       Effect.provide(FetchHttpClient.layer),
       Effect.orDie
@@ -436,6 +434,15 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const brokerLimit = yield* Cloudflare.RateLimit("BROKER_LIMIT", {
       namespaceId: 71003,
       simple: { limit: 300, period: 60 }
+    })
+
+    const attachLimit = yield* Cloudflare.RateLimit("ATTACH_LIMIT", {
+      namespaceId: 71004,
+      simple: { limit: 120, period: 60 }
+    })
+    const attachMcpLimit = yield* Cloudflare.RateLimit("ATTACH_MCP_LIMIT", {
+      namespaceId: 71005,
+      simple: { limit: 1200, period: 60 }
     })
 
     /**
@@ -489,6 +496,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         }
         const runtime = yield* RuntimeContext
         const brokerRequest = yield* HttpServerRequest.HttpServerRequest
+        const path = brokerRequest.url.split("?")[0]!
+        if (path === "/api/model" || path.startsWith("/api/model/")) return HttpServerResponse.empty({ status: 404 })
         const throttle = Effect.flatMap(
           HttpServerRequest.HttpServerRequest,
           Throttle.make({
@@ -496,7 +505,9 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
             telemetry: {
               limit: (key) => telemetryLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime))
             },
-            broker: { limit: (key) => brokerLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) }
+            broker: { limit: (key) => brokerLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) },
+            attach: { limit: (key) => attachLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) },
+            "attach-mcp": { limit: (key) => attachMcpLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) }
           })
         )
         // Every hosted site's sign-in shares one object: a network past its allowance never reaches it.
@@ -611,6 +622,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
               }
               // Before the repository routes: Bring Your Own Agent MCP endpoints, RFC 9728/8414 metadata, OAuth 2.1,
               // and `/api/me/mcp-tokens` (docs/features/mcp.md).
+              if (Attach.handles(path)) return yield* attach.fetch.pipe(Effect.provide(signedIn))
               if (McpApi.handles(path)) {
                 const mcpAuth = McpAuth.McpAuthServiceLive({ database, roles })
                 const mcpTools = Layer.effect(
@@ -695,8 +707,6 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                 Effect.provideService(Flows.FlowStarter, starter),
                 // An answer to a run addressed to the person reaches the run's own object (worker/Runs.ts).
                 Effect.provideService(Flows.TaskAnswers, yield* taskAnswerer),
-                // The model endpoint answers a person who saved a model of their own with it.
-                Effect.provide(personalModels),
                 Effect.provide(signedIn),
                 Effect.provide(docsSource),
                 Effect.provide(Layer.merge(FetchHttpClient.layer, webCache))
@@ -747,7 +757,6 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     Effect.provide(RunContent.live(DatabaseRoutes.route(pools, "RunContent"), socketChecks(options))),
     Effect.provide(
       Layer.mergeAll(
-        HostModel.layerConfig("CHAT_MODEL", DEFAULT_CHAT_MODEL),
         Cloudflare.Hyperdrive.ConnectBinding,
         // The gate's run artifacts (`CiArtifacts`), bound only with the gate machine.
         Cloudflare.R2.ReadWriteBucketBinding,

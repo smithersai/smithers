@@ -24,7 +24,6 @@ const ACTS: Readonly<Record<string, string>> = {
   "src/resumeAdmissions.ts": "finishes the device's own queued writes after a reload; renders nothing",
   "src/admissionSource.ts": "admits the device's own queued writes; renders nothing",
   "src/features/timeline/notice.ts": "checks whether its own notice is already raised before it raises one",
-  "src/features/attention/modelNotice.ts": "checks whether the model notice is already raised before it raises or drops it",
   "src/features/conversations/pin.ts": "names the routed branch in a pin's payload; renders nothing",
   "src/features/pulls/refresh.ts": "adds the routed pull request's number to its shape's request; renders nothing",
   "src/features/views/minimize.ts": "reads where a minimized view came from, to go back there; renders nothing",

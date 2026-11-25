@@ -56,7 +56,7 @@ const values = async (response: Response) =>
 describe("GET /api/shapes/spend-alerts", () => {
   test("a call starts its window's alert; once the window ends the flow records it, and an Admin syncs it", async () => {
     const { h, upstream } = await open(admin, { MODEL_SPEND_ALERT_WINDOW: "1 second" })
-    const call = await h.fetch("/api/model/agent", {
+    const call = await h.modelFetch("/api/model/agent", {
       method: "POST",
       body: JSON.stringify({
         modelId: "m",

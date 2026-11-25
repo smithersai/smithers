@@ -25,7 +25,7 @@ const Settlement = Flow.make("probe/TodoSettlement", {
   body: Node.capture({ settle: Todo.Settle.name }, (payload) => Todo.Settle.call(payload)),
 })
 const Failure = Flow.make("probe/TodoFailure", {
-  payload: Todo.Fail.payloadSchema, success: Todo.Ran, error: Todo.TodoUnavailable,
+  payload: Todo.Fail.payloadSchema, success: Todo.Ran, error: Todo.Fail.errorSchema,
   body: Node.capture({ fail: Todo.Fail.name }, (payload) => Todo.Fail.call(payload)),
 })
 
@@ -94,7 +94,7 @@ test.each(["merged", "dropped", "failed"] as const)("%s retries same-process adm
     calls.push(options)
     return calls.length === 1 ? Effect.fail(new Stack.RunsUnavailable({ errorCode: "admission_down" })) : Effect.void
   })) })
-  const action = (): Effect.Effect<Todo.Ran, Todo.TodoUnavailable> => state === "failed"
+  const action = (): Effect.Effect<Todo.Ran, typeof Todo.Fail.errorSchema.Type> => state === "failed"
     ? steps.fail({ request, error: new Todo.TodoFailed({ failure: "implement" }) })
     : steps.settle({ request, awaited: { state: state === "merged" ? "merged" : "closed", mergeSha: null } })
   if (state !== "merged") {

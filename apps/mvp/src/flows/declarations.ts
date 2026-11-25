@@ -1,5 +1,4 @@
 import { ChatPin, ChatUnpin } from "../features/pins/flows"
-import { Remember } from "../features/agent/memoryFlows"
 import { Phases, Summarize } from "../features/timeline/flow"
 import { Flow } from "@smthrs/flow"
 import { Context } from "effect"
@@ -15,10 +14,8 @@ import {
   SandboxStatus,
   SandboxWrite,
 } from "../features/sandbox/flows"
-import { Close } from "../features/agent/close"
 import { AuthRefresh } from "../features/auth/flows"
 import { ChatCopy, ChatEdit } from "../features/chat/flows"
-import { Answer } from "../features/agent/flows"
 import {
   FlowAnswer,
   FlowDelete,
@@ -77,13 +74,10 @@ export const declarations = {
   "view/set-state": SetViewState,
   "ui/repo": ShowRepo,
   "ui/issues": ShowIssues,
-  "chat/Answer": Answer,
-  "chat/Close": Close,
   "chat/pin": ChatPin,
   "chat/unpin": ChatUnpin,
   "chat/copy": ChatCopy,
   "chat/edit": ChatEdit,
-  "app/memory/remember": Remember,
   "repo/tree": RepoTree,
   "repo/read": RepoRead,
   "repo/refs": RepoRefs,

@@ -130,6 +130,7 @@ import m0129 from "./migrations/0129_fleet_session_observability.ts"
 import m0130 from "./migrations/0130_agent_jobs_settled_claim.ts"
 import m0131 from "./migrations/0131_scrub_fleet_transcripts.ts"
 import m0132 from "./migrations/0132_fleet_snapshot_receipts.ts"
+import m0133 from "./migrations/0133_byoa_cutover.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -264,4 +265,5 @@ export const migrations = {
   "0130_agent_jobs_settled_claim": m0130,
   "0131_scrub_fleet_transcripts": m0131,
   "0132_fleet_snapshot_receipts": m0132,
+  "0133_byoa_cutover": m0133,
 }

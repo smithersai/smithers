@@ -16,9 +16,6 @@ import { FirstRunProvider } from "../src/features/first-run/components/FirstRunC
 import { FirstRunGate } from "../src/features/first-run/components/FirstRunGate"
 import { FirstRunSteps } from "../src/features/first-run/components/FirstRunSteps"
 import { FirstRun } from "../src/features/first-run/firstRun"
-import { PersonalModel } from "../src/features/personal-model/personalModel"
-import { FIRST_RUN } from "../src/features/first-run/schema"
-import { FirstRunStore } from "../src/features/first-run/store"
 import { openTestApp } from "../src/test/chatApi"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -35,8 +32,7 @@ test("the steps, the composer's place and the header's sign-in, for each state o
   const store = await app.runPromise(Effect.service(AuthStore))
   const firstRun = await app.runPromise(Effect.service(FirstRun))
   const chat = await app.runPromise(Effect.service(Chat))
-  const personalModel = await app.runPromise(Effect.service(PersonalModel))
-  for (const query of [auth.queries.session, auth.queries.confirmed, firstRun.queries.state, personalModel.queries.saved]) {
+  for (const query of [auth.queries.session, auth.queries.confirmed, firstRun.queries.state]) {
     query.startSyncImmediate()
   }
   const page = () => createElement("div", null,
@@ -65,29 +61,21 @@ test("the steps, the composer's place and the header's sign-in, for each state o
     expect(out).toMatch(/<li class="first-run-step" data-step="sign_in" data-state="next" aria-current="step">/)
     expect(out.match(/Sign in with GitHub/g)).toHaveLength(1)
     expect(out).toContain('href="/api/auth/sign-in?return=%2Fapp"')
-    expect(out).toContain("Add your model")
+    expect(out).not.toContain("Add your model")
     expect(out).toContain("Ask Smithers")
     expect(out).not.toContain("data-gate")
   })
 
-  // A Member without a model while the deployment's is off: Sign in done, Open settings on Add your model.
-  await session({ status: "signed_in", login: "member", role: "member", hostedModel: false })
-  await until(() => {
-    const out = html()
-    expect(out).not.toContain('aria-label="Get started"')
-    expect(out).not.toContain("Open settings")
-    expect(out).not.toContain("Sign in with GitHub")
-    expect(out).not.toContain("data-gate")
-  })
-
-  // With the deployment's model on, Ask Smithers is current, and the composer's place shows under the list.
-  await session({ hostedModel: true })
-  await until(() => {
-    const out = html()
-    expect(out).toMatch(/data-step="ask" data-state="next" aria-current="step"/)
-    expect(out).not.toContain('data-step="model"')
-    expect(out).toContain("data-gate")
-  })
+  // Chat admission is independent of the deployment's model configuration.
+  for (const hostedModel of [false, true]) {
+    await session({ status: "signed_in", login: "member", role: "member", hostedModel })
+    await until(() => {
+      const out = html()
+      expect(out).toMatch(/data-step="ask" data-state="next" aria-current="step"/)
+      expect(out).not.toContain('data-step="model"')
+      expect(out).toContain("data-gate")
+    })
+  }
 
   // Opening the composer leaves only the composer's place.
   chat.actions.openComposer("button")
@@ -98,27 +86,8 @@ test("the steps, the composer's place and the header's sign-in, for each state o
   })
   chat.actions.closeComposer()
 
-  // A Guest of the deployment's repository, whom its model doesn't answer: Sign in done, Add your model current, and
-  // Open your repository to come; never Members can ask Smithers. (ruling AUTH-8).
+  // A Guest is shown the repository field and Install while the GitHub App is available.
   await session({ role: "guest", hostedModel: false, install: "https://github.com/apps/smithers/installations/new" })
-  await until(() => {
-    const out = html()
-    expect(out).not.toContain('aria-label="Get started"')
-    expect(out).not.toContain("Open settings")
-    expect(out).not.toContain("Members can ask Smithers.")
-    expect(out).not.toContain("data-gate")
-  })
-
-  // Their model saved, as the follower works out (src/features/first-run/firstRun.test.ts): Open your repository is
-  // current, with its field, Open and Install, and no composer.
-  const steps = await app.runPromise(Effect.service(FirstRunStore))
-  const atRepository = () =>
-    app.runPromise(steps.row.update(FIRST_RUN, (draft) => void Object.assign(draft, {
-      show: "steps",
-      at: "repository",
-      steps: [{ id: "sign_in", state: "done" }, { id: "model", state: "done" }, { id: "repository", state: "next" }],
-    })))
-  await atRepository()
   await until(() => {
     const out = html()
     expect(out).toMatch(/data-step="repository" data-state="next" aria-current="step">/)
@@ -137,7 +106,6 @@ test("the steps, the composer's place and the header's sign-in, for each state o
 
   // Without an App to install (local development), the field and Open, and no Install.
   await session({ install: undefined })
-  await atRepository()
   await until(() => {
     const out = list(html())
     expect(out).toContain('name="repository"')

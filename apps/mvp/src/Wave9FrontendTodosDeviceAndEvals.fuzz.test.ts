@@ -1,13 +1,10 @@
 import * as AuthContract from "./features/auth/contract"
-import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { Fuzz } from "@smthrs/fuzz"
-import { Arbitrary, Duration, Effect, Exit, Layer, Logger, Option, Schema } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/http"
+import { Arbitrary, Effect, Exit, Layer, Logger, Schema } from "effect"
 import { rmSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as Checks from "../evals/checks.ts"
 import * as DeviceIdentity from "./device/identity.ts"
-import * as Answers from "./features/agent/answers.ts"
 import * as CoeditSaved from "./features/coedit/saved.ts"
 import * as PersonalContract from "./features/personal-model/contract.ts"
 import { ChangeNotTaken, StackClient } from "./features/todos/api.ts"
@@ -246,52 +243,7 @@ describe("Wave9 Todos StackWrites, OutboxWrites, Agent AnswerApi, Coedit, Person
     ) } finally { rmSync(tmpStackDb, { force: true }) }
   })
 
-  it("fuzzes Agent AnswerApi.layerHttp, Coedit saved marks, PersonalContract checkSave/codingChoice/jevOf, DeviceIdentity & DeviceFixture", async () => {
-    // 1. AnswerApi.layerHttp
-    let responder: (method: string) => Effect.Effect<Response> = () => Effect.succeed(new Response("{}", { status: 200 }))
-    const fakeHttp = Layer.succeed(
-      HttpClient.HttpClient,
-      HttpClient.make((req) =>
-        responder(req.method).pipe(Effect.map((res) => HttpClientResponse.fromWeb(req, res))),
-      ),
-    )
-    const apiLayer = Answers.AnswerApi.layerHttp("https://chat.test", Duration.millis(40)).pipe(Layer.provide(fakeHttp))
-
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const api = yield* Answers.AnswerApi
-        // turn: 409 not_your_turn (with & without waitedMs), 409 settled, 409 other, 503, 200 bad json, timeout
-        responder = () => Effect.succeed(new Response(JSON.stringify({ code: "not_your_turn", waitedMs: 500 }), { status: 409 }))
-        expect(Exit.isFailure(yield* Effect.exit(api.turn("a1")))).toBe(true)
-        responder = () => Effect.succeed(new Response(JSON.stringify({ code: "not_your_turn", waitedMs: -1 }), { status: 409 }))
-        expect(Exit.isFailure(yield* Effect.exit(api.turn("a1")))).toBe(true)
-        responder = () => Effect.succeed(new Response(JSON.stringify({ code: "settled" }), { status: 409 }))
-        expect(Exit.isFailure(yield* Effect.exit(api.turn("a1")))).toBe(true)
-        responder = () => Effect.succeed(new Response(JSON.stringify({ code: "other" }), { status: 409 }))
-        expect(Exit.isFailure(yield* Effect.exit(api.turn("a1")))).toBe(true)
-        responder = () => Effect.succeed(new Response("err", { status: 503 }))
-        expect(Exit.isFailure(yield* Effect.exit(api.turn("a1")))).toBe(true)
-        responder = () => Effect.succeed(new Response("{}", { status: 200 }))
-        expect(Exit.isFailure(yield* Effect.exit(api.turn("a1")))).toBe(true)
-        responder = () => Effect.sleep(Duration.millis(80)).pipe(Effect.as(new Response("{}", { status: 200 })))
-        expect(Exit.isFailure(yield* Effect.exit(api.turn("a1")))).toBe(true)
-
-        // heartbeat: 200 ok, 204 AnswerSettled, 409 not_your_turn -> AnswersUnavailable, 409 settled
-        responder = () => Effect.succeed(new Response(null, { status: 200 }))
-        yield* api.heartbeat("a1")
-        responder = () => Effect.succeed(new Response(null, { status: 204 }))
-        expect(Exit.isFailure(yield* Effect.exit(api.heartbeat("a1")))).toBe(true)
-        responder = () => Effect.succeed(new Response(JSON.stringify({ code: "not_your_turn" }), { status: 409 }))
-        expect(Exit.isFailure(yield* Effect.exit(api.heartbeat("a1")))).toBe(true)
-
-        // write: 200 ok, 409 not_your_turn, 409 settled
-        responder = () => Effect.succeed(new Response(null, { status: 200 }))
-        yield* api.write("a1", { status: "streaming", text: "hi", parts: [{ id: "0.0", kind: "step", flow: "repo/read", status: "done" }] } as never)
-        responder = () => Effect.succeed(new Response(JSON.stringify({ code: "not_your_turn" }), { status: 409 }))
-        expect(Exit.isFailure(yield* Effect.exit(api.write("a1", { status: "streaming", text: "hi", parts: [{ id: "0.0", kind: "step", flow: "repo/read", status: "done" }] } as never)))).toBe(true)
-      }).pipe(Effect.provide(apiLayer), Effect.provide(silent)),
-    )
-
+  it("fuzzes Coedit saved marks, PersonalContract checkSave/codingChoice/jevOf, DeviceIdentity & DeviceFixture", async () => {
     // 2. Coedit saved marks
     const textArb = Arbitrary.schema(Schema.String.check(Schema.isMaxLength(200)))
     await holds(textArb, execs, (t) =>

@@ -1,7 +1,7 @@
 // Issue triage (worker/github/{Triage,TriageStore,Write,Api}.ts, docs/features/issues.md#triage, decision 0012 §5) on
 // the Node host (worker/test/flowHost.ts), over this file's schema of the compose Postgres and Electric (`pnpm db:up`),
 // with the scripted GitHub (worker/github/test/scriptedGitHub.ts). The judge is a scripted model behind the model
-// endpoint's own admission and metering (`ModelEndpoint.local`): the model is the only scripted seam. Faults are the
+// endpoint's own admission and metering (`ModelSeats.local`): the model is the only scripted seam. Faults are the
 // scripted GitHub's armed answers and the judge's scripts; nothing intercepts a request.
 import { FlowRuntime } from "@smthrs/flow"
 import { ModelError } from "@smthrs/model"

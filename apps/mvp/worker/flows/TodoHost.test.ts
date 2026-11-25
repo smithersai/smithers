@@ -12,7 +12,6 @@ import { checkExecutionId } from "../../src/features/pulls/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { noCommands } from "../test/commands.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
-import * as Expire from "./Expire.ts"
 import { judgeSeat, judging, REPOSITORY, reset, services as githubServices, signedIn, sql } from "../github/test/fixtures.ts"
 import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { testFile } from "../test/harness.ts"
@@ -43,7 +42,7 @@ test("withTodos registers the todo run and a head's checks, and the object runs 
     sleepIfIdle: () => Effect.die("unused"),
   }))
   const flows = ExecutionHost.withTodos(
-    ExecutionHost.remote({ database: services.database, expiry: Expire.DEFAULT_EXPIRY }),
+    ExecutionHost.remote(services.database),
     Effect.succeed({ ...services, reviewerFor: () => seat, start: () => Effect.void }),
     machines,
     TodoAgent.registration(seat, services.database, Agent.layerSandbox),

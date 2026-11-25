@@ -4,7 +4,7 @@ import { Effect, Layer, Option } from "effect"
 import { HttpClient } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
-import type { Seat } from "../ModelEndpoint.ts"
+import type { Seat } from "../ModelSeats.ts"
 import type { SessionKeys } from "../SessionKeys.ts"
 import * as Apply from "./Apply.ts"
 import * as GitHubConfig from "./Config.ts"
@@ -65,7 +65,7 @@ export const ready = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
 /**
  * The flows' services from `ready`: sign-in's keys open a person's token (none without sign-in), `refresh` starts the
  * session's `auth/RecheckRole`, and `judge` is the model triage decides with for the person who enabled it
- * (`ModelEndpoint.local`'s `judge` role).
+ * (`ModelSeats.local`'s `judge` role).
  */
 export const services = <E, R>(
   ready: Ready<E, R>,

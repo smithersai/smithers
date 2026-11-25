@@ -8,7 +8,7 @@ import { MODEL_ROLES, type ModelRole, type ModelTier } from "../src/features/mod
 // Which of the deployment's models answers each role (docs/features/model-endpoint.md#roles): the model an admin set
 // in `model_roles`, read on every call, else the deployment's defaults. The summary role's own default comes first
 // (`SUMMARY_MODEL`), then the role's tier's (`TIER_MODELS`, decision 0107), then the row of the role it inherits from:
-// the agent role's for `coding` (decision 0033) and `plan`, the judge role's for `review`, so a new role answers as it
+// the agent role's for `plan`, the judge role's for `review`, so a new role answers as it
 // did before it had a name; then `HostModel` (the `CHAT_MODEL` configuration), never for the summary role. Changing a
 // role needs no deploy.
 
@@ -85,12 +85,13 @@ export type TierModels = typeof TierModels.Type
 export const tierModels = Config.option(Config.schema(Schema.fromJsonString(TierModels), "TIER_MODELS"))
 
 /** The role whose row a role without its own answers with, after its tier's model: the role it was before it had a name. */
-const INHERITS: Partial<Record<ModelRole, ModelRole>> = { coding: "agent", plan: "agent", review: "judge" }
+const INHERITS: Partial<Record<ModelRole, ModelRole>> = { plan: "agent", review: "judge" }
 
 /** The deployment's defaults the endpoint captured when it built, each kept as a failure when it doesn't parse. */
 export interface Defaults {
   readonly summary: Result.Result<Option.Option<ModelRecord>, HostModelUnusable>
   readonly tiers: Result.Result<Option.Option<TierModels>, HostModelUnusable>
+  readonly fallback?: Result.Result<Resolved, HostModelUnusable>
 }
 
 /** The model that answers a role now, where the choice came from, and the effort its record sets on each call. */
@@ -119,10 +120,17 @@ const fromRecord = (source: Resolved["source"], record: ModelRecord) =>
     ...(record.reasoningEffort === undefined ? {} : { reasoningEffort: record.reasoningEffort }),
   }))
 
+/** The deployment default is captured as a seat result so missing credentials leave other Worker routes available. */
+export const defaultModel = Config.schema(Schema.fromJsonString(ModelRecord), "CHAT_MODEL").pipe(
+  Config.withDefault(DEFAULT_CHAT_MODEL),
+  Effect.mapError(() => new HostModelUnusable({ reason: "config" })),
+  Effect.flatMap((record) => fromRecord("default", record)),
+)
+
 /**
  * The model `role` uses, on `tier`: its `model_roles` row, built with the key the Worker holds; else `SUMMARY_MODEL` for
  * the summary role; else the tier's `TIER_MODELS` record; else the row of the role it inherits from (`INHERITS`); else
- * `HostModel`, except for the summary role. A row or default this Worker can't use fails with `HostModelUnusable` and
+ * `HostModel`, except for the summary and coding roles. A row or default this Worker can't use fails with `HostModelUnusable` and
  * the planner's reason (`invalid` for a row that isn't a record, `unconfigured` for a summary role with nothing to
  * answer it, `config` for a default that doesn't parse). `defaults` are those captured when the endpoint built.
  */
@@ -148,10 +156,12 @@ export const resolve = (role: ModelRole, tier: ModelTier, defaults: Defaults) =>
     const parent = INHERITS[role]
     const inherited = parent === undefined ? undefined : yield* rowOf(parent)
     if (inherited !== undefined) return yield* setting(inherited)
-    // Auxiliary navigation must not silently spend on the main agent model: only its own defaults answer it.
-    if (role === "summary") return yield* new HostModelUnusable({ reason: "unconfigured" })
-    const fallback = yield* HostModel
-    return { source: "default", modelId: fallback.modelId, model: fallback.model } satisfies Resolved
+    // The summary and coding roles require explicitly configured models.
+    if (role === "summary" || role === "coding") return yield* new HostModelUnusable({ reason: "unconfigured" })
+    if (defaults.fallback !== undefined) return yield* Effect.fromResult(defaults.fallback)
+    const fallback = yield* Effect.serviceOption(HostModel)
+    if (Option.isNone(fallback)) return yield* new HostModelUnusable({ reason: "unconfigured" })
+    return { source: "default", modelId: fallback.value.modelId, model: fallback.value.model } satisfies Resolved
   })
 
 /**

@@ -586,7 +586,6 @@ describe("apps/mvp feature contract fuzz invariants", () => {
           hostedModel: v.hostedModel
         },
         undefined,
-        v.ownModel
       )
       if (v.status === "signed_out" && access !== "sign_in") return false
       if (v.status === "signed_in" && v.role === "guest" && v.roleConfirmed !== false && access !== "members_only") {

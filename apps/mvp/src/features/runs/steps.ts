@@ -8,8 +8,6 @@ import { RunCredentials } from "../../flows/credentials"
 import { declarationOf as declared } from "../../flows/declarations"
 import type { Door } from "../../flows/dispatch"
 import { type FlowName, names } from "../../flows/registry"
-import { closeAnswer } from "../agent/close"
-import { AnswerReference } from "../agent/reference"
 import { FLOW_CODE } from "../flows-ui/reference"
 import { requesterOf } from "../../flows/requests"
 import {
@@ -25,7 +23,6 @@ import {
 import {
   Cancel,
   CancelRun,
-  CancelPending,
   Inspect,
   InspectRun,
   List,
@@ -132,7 +129,6 @@ export const cancel = ({ runId, seq, host }: { readonly runId: string; readonly 
     if (host === "cloud") return yield* cancelCloud(runId)
     const { run } = yield* summaryOf("cancel", runId)
     if (settled(run.status)) {
-      if (run.flowName === AnswerReference._tag) yield* closeAnswer({ answerId: runId })
       yield* recordAct("cancel", runId, "settled")
       return { outcome: "settled" as const, status: run.status }
     }
@@ -142,11 +138,6 @@ export const cancel = ({ runId, seq, host }: { readonly runId: string; readonly 
     // A cancellation the store couldn't record leaves the run going: the step fails, and the person sees it.
     yield* Effect.orDie((yield* FlowRuntime.FlowRuntime).interrupt(flow, runId))
     yield* recordAct("cancel", runId, "requested")
-    if (run.flowName === AnswerReference._tag) {
-      // The flow engine retries this durable step while cleanup is pending. Only its real terminal receipt allows
-      // settlement, including after reload or from a run page that never opened the branch conversation.
-      return yield* new CancelPending()
-    }
     return { outcome: "requested" as const, status: run.status }
   })
 

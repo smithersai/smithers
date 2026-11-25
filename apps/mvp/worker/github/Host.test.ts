@@ -11,7 +11,6 @@ import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { writeExecutionId } from "../../src/features/issues/contract.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
-import * as Expire from "../flows/Expire.ts"
 import { testFile } from "../test/harness.ts"
 import * as Apply from "./Apply.ts"
 import * as GitHubConfig from "./Config.ts"
@@ -125,7 +124,7 @@ describe("Host", () => {
     const sessionKeys = await keys()
     const { seat } = await judgeSeat(runtime, judging("abstain"))
     const flows = ExecutionHost.withGitHub(
-      ExecutionHost.remote({ database: app, expiry: Expire.DEFAULT_EXPIRY }),
+      ExecutionHost.remote(app),
       Effect.succeed(
         Host.services(
           made,

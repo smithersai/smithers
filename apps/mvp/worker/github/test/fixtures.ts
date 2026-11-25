@@ -13,7 +13,7 @@ import type { Actor, Role } from "../../Actor.ts"
 import type { testFile } from "../../test/harness.ts"
 import { SECRET } from "../../test/signIn.ts"
 import type * as Apply from "../Apply.ts"
-import * as ModelEndpoint from "../../ModelEndpoint.ts"
+import * as ModelSeats from "../../ModelSeats.ts"
 import { PersonalModels } from "../../personal/Models.ts"
 import type { Repository } from "../Config.ts"
 import type * as RepoRoles from "../RepoRoles.ts"
@@ -212,7 +212,7 @@ export const judging = (decision: "accept" | "reject" | "abstain", reason = "oth
   )
 
 /**
- * The `judge` seat a host gives triage: `ModelEndpoint.local` on the file's schema, metered against `config`'s budget,
+ * The `judge` seat a host gives triage: `ModelSeats.local` on the file's schema, metered against `config`'s budget,
  * over a scripted model that answers with `answer` and records each request in `requests`. The model is the only
  * scripted seam; admission and metering are the endpoint's own.
  */
@@ -229,7 +229,7 @@ export const judgeSeat = async (
     },
   })
   const local = await Effect.runPromise(
-    ModelEndpoint.local(options.database ?? (await database(runtime)), { hosted: true }).pipe(
+    ModelSeats.local(options.database ?? (await database(runtime)), { hosted: true }).pipe(
       Effect.provide(PersonalModels.none),
       Effect.provideService(
         HostModel,
@@ -252,7 +252,7 @@ export const services = async (
   options: {
     readonly signIn?: boolean
     readonly database?: Apply.Services["database"]
-    readonly judge?: ModelEndpoint.Seat
+    readonly judge?: ModelSeats.Seat
     readonly mayAct?: (id: string) => boolean
     readonly allowedRepositories?: ReadonlyArray<string>
   } = {},

@@ -3,10 +3,9 @@
 // a library, so every side can.
 
 /**
- * The first run's steps for a person who may ask in `/app`'s conversation, in order: signing in, adding their own model,
- * and asking.
+ * The first-run steps for a person who may ask in the home conversation.
  */
-export const STEPS = ["sign_in", "model", "ask"] as const
+export const STEPS = ["sign_in", "ask"] as const
 
 /** One of {@link STEPS}. */
 export type StepId = (typeof STEPS)[number]
@@ -24,16 +23,12 @@ export type ShownStep = StepId | typeof REPOSITORY
 export const STEP_STATES = ["done", "next", "later"] as const
 export type StepState = (typeof STEP_STATES)[number]
 
-// The first run's copy. Open settings is the gate's button (OPEN_SETTINGS, src/features/auth/contract.ts); Install is
-// the repository page's (INSTALL, src/features/repo/contract.ts).
-
 /** The list's name, for assistive technology. */
 export const GET_STARTED = "Get started"
 
 /** Each step's title. */
 export const STEP_TITLES: Readonly<Record<ShownStep, string>> = {
   sign_in: "Sign in",
-  model: "Add your model",
   ask: "Ask Smithers",
   repository: "Open your repository",
 }

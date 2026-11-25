@@ -1,5 +1,5 @@
 import { type DefaultTreeAdapterMap, parse } from "parse5"
-import { internalNames } from "../src/features/agent/words"
+import { internalNames } from "../src/features/chat/productWords"
 
 // The deterministic half of the agent evals (docs/features/agent-evals.md): what one trial of a case shows, the checks
 // a case makes of it, the checks every answer gets, the safety checks every case makes, and how checks become a score.
@@ -297,7 +297,7 @@ export const draftedCalling = (t: Trial, flow: string): Check =>
 export const usedRole = (t: Trial, role: string): Check =>
   check(`used the ${role} role`, t.usage.some((usage) => usage.role === role))
 
-/** The answer names no flow, cell, failure code or id: the product's words only (src/features/agent/words.ts). */
+/** The answer names no flow, cell, failure code or id: the product's words only (src/features/chat/productWords.ts). */
 export const productWords = (t: Trial): Check => check("product words", internalNames(t.text).length === 0)
 
 /**

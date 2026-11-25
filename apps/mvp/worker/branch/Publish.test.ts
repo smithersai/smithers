@@ -14,7 +14,6 @@ import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
-import * as Expire from "../flows/Expire.ts"
 import { publishExecutionId, updateExecutionId } from "../../src/features/branch/contract.ts"
 import { TokenUnavailable } from "../github/Tokens.ts"
 import * as Metrics from "../github/Metrics.ts"
@@ -858,7 +857,7 @@ describe("the remote host", { timeout: 60_000 }, () => {
     const writeId = await publishing(maya, branchId)
     const { services: built } = await services(runtime, github)
     const flows = ExecutionHost.withBranchPublish(
-      ExecutionHost.remote({ database: await database(runtime), expiry: Expire.DEFAULT_EXPIRY }),
+      ExecutionHost.remote(await database(runtime)),
       Effect.succeed(built),
       machine.layer,
       Forge.gitHub,

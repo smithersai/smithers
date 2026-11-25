@@ -432,24 +432,18 @@ describe("the composer", () => {
     // A branch page's repository decides where its access says (ruling AUTH-8): a Member there asks, whatever their
     // role on the deployment's own repository, and one below Member there doesn't.
     for (const role of ["guest", null, "admin"]) {
-      expect(composerAccess(at("signed_in", role), undefined, "saved", true), String(role)).toBe("ask")
-      expect(composerAccess(at("signed_in", role), undefined, "saved", false), String(role)).toBe("members_only")
-      expect(composerAccess(at("unreachable", null), { role: role as null }, "saved", true), String(role)).toBe("ask")
+      expect(composerAccess(at("signed_in", role), undefined, true), String(role)).toBe("ask")
+      expect(composerAccess(at("signed_in", role), undefined, false), String(role)).toBe("members_only")
+      expect(composerAccess(at("unreachable", null), { role: role as null }, true), String(role)).toBe("ask")
     }
-    expect(composerAccess({ ...at("signed_in", null), hostedModel: false }, undefined, "none", true)).toBe("add_model")
+    expect(composerAccess({ ...at("signed_in", null), hostedModel: false }, undefined, true)).toBe("ask")
   })
 
-  test("while the deployment's model is off, a member without a model of their own sees the way to add one", () => {
+  test("chat admission does not require a hosted model or a saved seat", () => {
     const member = (hostedModel: boolean | undefined) =>
       ({ status: "signed_in", role: "member", restored: true, hostedModel }) as Parameters<typeof composerAccess>[0]
-    expect(composerAccess(member(false), undefined, "none")).toBe("add_model")
-    expect(composerAccess(member(false), undefined, "saved")).toBe("ask")
-    // Their row hasn't synced yet: nothing, so neither the composer nor the prompt flashes.
-    expect(composerAccess(member(false), undefined, "loading")).toBe("wait")
-    // The deployment's model answers, or ChatApi didn't say: the composer, whatever they saved.
-    for (const hosted of [true, undefined]) expect(composerAccess(member(hosted), undefined, "none")).toBe("ask")
-    // A Guest still sees who may ask, before anything about models.
-    expect(composerAccess({ ...member(false), role: "guest" }, undefined, "none")).toBe("members_only")
+    for (const hosted of [true, false, undefined]) expect(composerAccess(member(hosted), undefined)).toBe("ask")
+    expect(composerAccess({ ...member(false), role: "guest" }, undefined)).toBe("members_only")
   })
 
   test("a member who reloads offline, or before ChatApi answers, can still ask", async () => {

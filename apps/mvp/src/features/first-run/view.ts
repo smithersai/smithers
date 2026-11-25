@@ -1,4 +1,4 @@
-import type { ComposerAccess, OwnModel } from "../auth/contract"
+import type { ComposerAccess } from "../auth/contract"
 import type { Mine } from "../conversations/schema"
 import { isRepository } from "../repo/contract"
 import { REPOSITORY, type StepId } from "./contract"
@@ -18,9 +18,6 @@ export type Conversations = "none" | "some" | "loading"
 export const conversationsOf = (rows: ReadonlyArray<Mine>, loaded: boolean): Conversations =>
   rows.length > 0 ? "some" : loaded ? "none" : "loading"
 
-/** Whether the person saved a model of their own, as `ComposerGate` reads it: `loading` until their rows are ready. */
-export const ownOf = (saved: number, ready: boolean): OwnModel => (saved > 0 ? "saved" : ready ? "none" : "loading")
-
 /** What the composer's place shows: the first run's row, without its key. */
 export type FirstRun = Omit<FirstRunRow, "id">
 
@@ -30,26 +27,9 @@ export const HIDDEN: FirstRun = { show: "hidden", at: null, steps: [] }
 /** Not known yet: nothing shows. */
 export const WAITING: FirstRun = { show: "wait", at: null, steps: [] }
 
-/**
- * The first run from:
- * - `access`: what `composerAccess` says stands where the composer goes (src/features/auth/contract.ts);
- * - `hostedModel`: whether the deployment's own model answers this person, as ChatApi said (`undefined` until it says);
- * - `own`: whether they saved a model of their own (`ownOf`);
- * - `conversations`: whether the person has a conversation of their own (`conversationsOf`);
- * - `composerOpen`: whether this tab's composer is open.
- *
- * Nothing while who they are isn't known. A person who may not ask in `/app`'s conversation, the deployment's own
- * repository's, is shown the way to their own (ruling AUTH-8), whatever conversations they have, since the composer's
- * place there is never theirs: Sign in done, Add your model, then Open your repository; nothing until their model's
- * rows are ready. Anyone else: hidden once they have had a conversation, or opened the composer to ask. While their
- * conversations aren't known, a person who may ask keeps the composer (it never waits on the network to show), and one
- * who must sign in sees the steps: a visitor's rows never sync. Else the steps: Sign in; Add your model, unless the
- * deployment's model answers; Ask Smithers. Those before the person's are done, theirs is next.
- */
+/** The first-run steps for signing in and opening a conversation. */
 export const firstRunOf = (input: {
   readonly access: ComposerAccess
-  readonly hostedModel: boolean | undefined
-  readonly own: OwnModel
   readonly conversations: Conversations
   readonly hasHistory?: boolean
   readonly composerOpen: boolean
@@ -57,29 +37,18 @@ export const firstRunOf = (input: {
   if (input.hasHistory === true) return HIDDEN
   if (input.access === "wait") return WAITING
   if (input.access === "members_only") {
-    if (input.own === "loading") return WAITING
-    const saved = input.own === "saved"
     return {
       show: "steps",
-      at: saved ? REPOSITORY : "model",
-      steps: [
-        { id: "sign_in", state: "done" },
-        { id: "model", state: saved ? "done" : "next" },
-        { id: REPOSITORY, state: saved ? "next" : "later" },
-      ],
+      at: REPOSITORY,
+      steps: [{ id: "sign_in", state: "done" }, { id: REPOSITORY, state: "next" }],
     }
   }
   if (input.conversations === "some") return HIDDEN
-  if (input.conversations === "loading" && input.access !== "sign_in") return input.access === "ask" ? HIDDEN : WAITING
-  if (input.access === "ask" && input.composerOpen) return HIDDEN
-  const order: ReadonlyArray<StepId> = input.hostedModel === true ? ["sign_in", "ask"] : ["sign_in", "model", "ask"]
-  const at: StepId = input.access === "sign_in" ? "sign_in" : input.access === "add_model" ? "model" : "ask"
-  const index = order.indexOf(at)
-  const steps = order.map((id, position): Step => ({
-    id,
-    state: position < index ? "done" : position === index ? "next" : "later",
-  }))
-  return { show: "steps", at, steps }
+  if (input.access === "ask") {
+    if (input.conversations === "loading" || input.composerOpen) return HIDDEN
+    return { show: "steps", at: "ask", steps: [{ id: "sign_in", state: "done" }, { id: "ask", state: "next" }] }
+  }
+  return { show: "steps", at: "sign_in", steps: [{ id: "sign_in", state: "next" }, { id: "ask", state: "later" }] }
 }
 
 /**

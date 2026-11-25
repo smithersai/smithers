@@ -62,6 +62,10 @@ const viewRow = (id: string) =>
       readonly revision: number
     }>`SELECT template, state, html, interactions, revision FROM views WHERE id = ${id}`)).then(([row]) => row)
 
+const questionData = (id: string) =>
+  runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql`SELECT text, data FROM messages WHERE id = ${id}`)).then(([row]) => row)
+
 const question = (text: string, extra: Record<string, unknown> = {}) => ({
   id: crypto.randomUUID(),
   answerId: crypto.randomUUID(),
@@ -114,9 +118,7 @@ describe("a form", () => {
       state: { submitted: true, values, questionId: submission.id },
       revision: 1,
     })
-    // The answer's turn reads the values beside the label.
-    const turn = await (await h.fetch(`/api/answers/${submission.answerId}`)).json() as { readonly question: string }
-    expect(turn.question).toBe(`Clone\nThe values the person sent with it: {"url": "https://github.com/octocat/Spoon-Knife"}`)
+    expect(await questionData(submission.id)).toEqual({ text: "Clone", data: values })
 
     // The same submission again changes nothing; another one is refused, and so are values the form doesn't take.
     expect((await h.ask(submission)).status).toBe(200)
@@ -159,8 +161,7 @@ describe("a form", () => {
       state: { submitted: true, values, questionId: submission.id },
       revision: 1,
     })
-    const turn = await (await h.fetch(`/api/answers/${submission.answerId}`)).json() as { readonly question: string }
-    expect(turn.question).toBe('Clone\nThe values the person sent with it: {"url": "https://github.com/octocat/Spoon-Knife"}')
+    expect(await questionData(submission.id)).toEqual({ text: "Clone", data: values })
     expect((await h.ask(submission)).status).toBe(200)
     expect(await viewRow(form.id)).toMatchObject({ revision: 1 })
     expect(recorded(h)).not.toContain("Spoon-Knife")
@@ -176,26 +177,6 @@ describe("a form", () => {
     expect((await h.ask({ ...submission, data: { url: "https://b.example/y" } })).status).toBe(409)
     expect((await h.ask({ ...submission, source: { viewId: other.id, event: "submit" } })).status).toBe(409)
     expect(await viewRow(other.id)).toMatchObject({ state: { submitted: false } })
-  })
-
-  test("the history counts a submission's values in its budget, as the model reads them", async () => {
-    const h = await open()
-    const big = "v".repeat(13_000)
-    for (let index = 0; index < 2; index++) {
-      const form = cloneForm()
-      await post(h, "/api/views", form)
-      const sent = question("Clone", { source: { viewId: form.id, event: "submit" }, data: { url: big } })
-      expect((await h.ask(sent)).status).toBe(202)
-      await post(h, `/api/answers/${sent.answerId}`, { status: "done", text: "Done." })
-    }
-    const last = question("And now?")
-    expect((await h.ask(last)).status).toBe(202)
-    const turn = await (await h.fetch(`/api/answers/${last.answerId}`)).json() as {
-      readonly history: ReadonlyArray<{ readonly question: string }>
-    }
-    // Two submissions of 13,000 characters each would pass the 24,000-character budget: only the latest fits.
-    expect(turn.history).toHaveLength(1)
-    expect(turn.history[0]!.question).toContain(big)
   })
 
   test("a question names only a view in its own conversation", async () => {

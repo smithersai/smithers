@@ -6,12 +6,10 @@ import { describe, expect, it } from "vitest"
 import * as Database from "../db/Database.ts"
 import migration0025 from "../db/migrations/0025_flow_source.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import { ANSWERS_ROUTE } from "../src/features/agent/contract.ts"
 import { ACK_ROUTE, NOTIFICATIONS_SHAPE_ROUTE, WATCHES_ROUTE } from "../src/features/attention/contract.ts"
 import { HOSTED_MODEL_ROUTE } from "../src/features/auth/contract.ts"
 import { MAX_QUESTION_BODY_BYTES, QUESTIONS_ROUTE, SHAPE_ROUTE, TELEMETRY_ROUTE } from "../src/features/chat/contract.ts"
 import { FLOW_DRAFTS_ROUTE, FLOW_DRAFTS_SHAPE_ROUTE, FLOWS_ROUTE, FLOWS_SHAPE_ROUTE } from "../src/features/flows-ui/contract.ts"
-import { MODEL_ROUTE } from "../src/features/model/contract.ts"
 import { PIN_ROUTE, PINS_SHAPE_ROUTE } from "../src/features/pins/contract.ts"
 import {
   ALERT_CHANNELS_ROUTE,
@@ -28,7 +26,6 @@ import * as Actor from "./Actor.ts"
 import * as BranchAccess from "./branch/Access.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import * as ChatMetrics from "./ChatMetrics.ts"
-import * as Flows from "./Flows.ts"
 import * as Messages from "./Messages.ts"
 import * as Views from "./Views.ts"
 import * as H from "./test/harness.ts"
@@ -133,7 +130,7 @@ describe("Wave9 Chat.ts & harness.ts real Postgres fuzzing", () => {
       }))
 
     expect(await H.rowCount(runtime)).toBeGreaterThanOrEqual(dbExecs * 2)
-    expect(h.starts.length).toBeGreaterThan(0)
+    expect(h.starts).toEqual([])
     expect(h.count(ChatMetrics.questions, { status: "202" })).toBeGreaterThanOrEqual(dbExecs)
     expect(h.span("chat.question").length).toBeGreaterThan(0)
     expect(h.line("chat.question").length).toBeGreaterThan(0)
@@ -188,9 +185,9 @@ describe("Wave9 Chat.ts & harness.ts real Postgres fuzzing", () => {
       [FLOW_DRAFTS_ROUTE, { method: "GET" }],
       [`${FLOW_DRAFTS_ROUTE}/${H.uuid()}`, { method: "GET" }],
       [`${TELEMETRY_ROUTE}/v1/traces`, { method: "POST", body: "{}" }],
-      [`${MODEL_ROUTE}/chat`, { method: "GET" }],
-      [`${MODEL_ROUTE}/not-a-role`, { method: "GET" }],
-      [`${ANSWERS_ROUTE}/${singleAns}`, { method: "GET" }],
+      ["/api/model/chat", { method: "GET" }],
+      ["/api/model/not-a-role", { method: "GET" }],
+      [`/api/answers/${singleAns}`, { method: "GET" }],
       ["/api/does-not-exist", { method: "GET" }],
     ]
     for (const [path, init] of routes) {
@@ -204,7 +201,7 @@ describe("Wave9 Chat.ts & harness.ts real Postgres fuzzing", () => {
     expect((await h.fetch("/api/does-not-exist")).status).toBe(404)
   }, 120_000)
 
-  it("fuzzes /api/questions refusals: auth, person-only, roles, view_only, missing conversation, view source errors, body limits, expiry failure, db failure, and defects", async () => {
+  it("fuzzes /api/questions refusals: auth, person-only, roles, view_only, missing conversation, view source errors, body limits, db failure, and defects", async () => {
     const homeId = await H.homeConversation(runtime)
 
     // 1. Signed out -> 401
@@ -260,20 +257,6 @@ describe("Wave9 Chat.ts & harness.ts real Postgres fuzzing", () => {
     })
     expect(resViewNotFound.status).toBe(400)
 
-    // 8. Expiry FlowStarter failure (StartUnavailable and StartConflict) -> 503
-    for (const err of [
-      new Flows.StartUnavailable({ errorCode: "host_down" }),
-      new Flows.StartConflict(),
-    ]) {
-      const hFailExpire = await H.harness(runtime, H.answers("x"), {
-        actor: adminActor,
-        starter: Flows.FlowStarter.of({ start: () => Effect.fail(err) }),
-        fetch: okElectricFetch,
-      })
-      const r = await hFailExpire.ask({ id: H.uuid(), answerId: H.uuid(), conversationId: homeId, text: "hi" })
-      expect(r.status).toBe(503)
-    }
-
     // 9. Defect handling (nameOf for tagged error, Error, plain object, string, invalid long name) -> 500
     const defects: ReadonlyArray<unknown> = [
       new CustomTaggedDefect({ reason: "boom" }),
@@ -285,7 +268,7 @@ describe("Wave9 Chat.ts & harness.ts real Postgres fuzzing", () => {
     for (const defect of defects) {
       const hDefect = await H.harness(runtime, H.answers("x"), {
         actor: adminActor,
-        starter: Flows.FlowStarter.of({ start: () => Effect.die(defect) }),
+        database: Layer.effect(SqlClient.SqlClient, Effect.die(defect)),
         fetch: okElectricFetch,
       })
       const r = await hDefect.ask({ id: H.uuid(), answerId: H.uuid(), conversationId: homeId, text: "trigger defect" })
@@ -402,8 +385,8 @@ describe("Wave9 db/migrations/0025_flow_source, Database.ts & TestDatabase.ts fu
     expect(Exit.isFailure(remoteExit)).toBe(true)
 
     const fc = await Effect.runPromise(TestDatabase.fixtureConfig)
-    expect(fc.DATABASE_URL).toContain("54321")
-    expect(fc.ELECTRIC_URL).toContain("30001")
+    expect(new URL(fc.DATABASE_URL).port).toBe(fc.TEST_DATABASE_PORT)
+    expect(new URL(fc.ELECTRIC_URL).port).toBe(fc.TEST_ELECTRIC_PORT)
   })
 
   it("fuzzes migration 0025_flow_source and Database.migrateAndReport on real Postgres 18 temp schemas", async () => {

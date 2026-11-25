@@ -1,4 +1,4 @@
-// The metered model endpoint (worker/ModelEndpoint.ts, docs/features/model-endpoint.md), through ChatApi's routes on
+// Internal model seats (worker/ModelSeats.ts), against
 // this file's own schema of the compose Postgres. The model provider is the only scripted seam: the deployment's
 // default model is a scripted `Model` (worker/test/harness.ts), and a model an admin sets is a real HostModel reaching
 // a scripted provider on loopback HTTP. `admin/SetModel` runs on the Node host (worker/test/flowHost.ts).
@@ -16,7 +16,7 @@ import * as TestDatabase from "../db/TestDatabase.ts"
 import { type Actor, CurrentActor, Sessions, SessionsUnavailable } from "./Actor.ts"
 import * as Flows from "./Flows.ts"
 import * as HostedModel from "./HostedModel.ts"
-import * as ModelEndpoint from "./ModelEndpoint.ts"
+import * as ModelSeats from "./ModelSeats.ts"
 import * as ModelSpend from "./ModelSpend.ts"
 import * as ModelRoles from "./ModelRoles.ts"
 import * as ModelTiers from "./ModelTiers.ts"
@@ -65,7 +65,7 @@ type Harness = Awaited<ReturnType<typeof harness>>
 
 /** One `POST /api/model/<role>`: its status, its NDJSON lines or error body. */
 const call = async (h: Harness, request: ModelRequest.ModelRequest, role = "agent") => {
-  const response = await h.fetch(`/api/model/${role}`, { method: "POST", body: body(request) })
+  const response = await h.modelFetch(`/api/model/${role}`, { method: "POST", body: body(request) })
   const text = await response.text()
   const lines = response.status === 200 ? text.split("\n").filter((line) => line !== "").map((line) => JSON.parse(line)) : []
   return { status: response.status, lines, error: response.status === 200 ? undefined : JSON.parse(text || "null") }
@@ -273,7 +273,7 @@ describe("sign-in", () => {
     })
     expect(minted.status).toBe(200)
     const { token } = await minted.json() as { token: string }
-    const request = () => h.fetch("/api/model/agent", {
+    const request = () => h.modelFetch("/api/model/agent", {
       method: "POST", body: body(ask("hello")), headers: { authorization: `Bearer ${token}` },
     })
     const control = await request()
@@ -363,7 +363,7 @@ describe("sign-in", () => {
   test("the browser's ModelProxy client reads the endpoint as a Model", async () => {
     const h = await harness(runtime, answering, { actor: member })
     const fetch: typeof globalThis.fetch = (input, init) =>
-      h.fetch(new URL(String(input)).pathname, init as RequestInit)
+      h.modelFetch(new URL(String(input)).pathname, init as RequestInit)
 
     const events = await Effect.runPromise(
       Effect.gen(function* () {
@@ -381,11 +381,14 @@ describe("sign-in", () => {
     ])
   })
 
-  test("an unknown role is 404", async () => {
+  test("public model routes return 404 even with a signed-in session", async () => {
     const h = await harness(runtime, answering, { actor: member })
 
-    expect((await call(h, ask("hi"), "poet")).status).toBe(404)
-    expect((await h.fetch("/api/model", { method: "POST", body: body(ask("hi")) })).status).toBe(404)
+    for (const path of ["/api/model", "/api/model/judge", "/api/model/agent", "/api/model/poet", "/api/model/coding/extra"]) {
+      expect((await h.fetch(path, { method: "POST", body: body(ask("hi")) })).status).toBe(404)
+    }
+    expect(h.requests).toEqual([])
+    expect(await usageRows()).toEqual([])
   })
 })
 
@@ -457,7 +460,7 @@ describe("what the model receives", () => {
     const request = ask("hi", { params: ModelRequest.GenerationParams.make({ maxTokens: 8_000, thinkingBudget: -8_000 }) })
 
     const responses = await Promise.all(
-      Array.from({ length: 8 }, () => h.fetch("/api/model/agent", { method: "POST", body: body(request) })),
+      Array.from({ length: 8 }, () => h.modelFetch("/api/model/agent", { method: "POST", body: body(request) })),
     )
     open()
     await Promise.all(responses.map((response) => response.text()))
@@ -488,10 +491,10 @@ describe("the request's size", () => {
   test("the bound is 192 KiB unless set, and a positive integer", async () => {
     const h = await harness(runtime, answering, { actor: member })
 
-    const under = await call(h, ask("x".repeat(ModelEndpoint.MAX_REQUEST_BYTES - 1_024)))
-    const over = await call(h, ask("x".repeat(ModelEndpoint.MAX_REQUEST_BYTES)))
+    const under = await call(h, ask("x".repeat(ModelSeats.MAX_REQUEST_BYTES - 1_024)))
+    const over = await call(h, ask("x".repeat(ModelSeats.MAX_REQUEST_BYTES)))
 
-    expect(ModelEndpoint.MAX_REQUEST_BYTES).toBe(192 * 1024)
+    expect(ModelSeats.MAX_REQUEST_BYTES).toBe(192 * 1024)
     expect([under.status, over.status]).toEqual([200, 413])
     await expect(harness(runtime, answering, { config: { MODEL_MAX_REQUEST_BYTES: "0" } })).rejects.toThrow()
   })
@@ -528,9 +531,9 @@ describe("roles", () => {
     expect(response.lines.at(-1).retryAfterMillis).toBeUndefined()
     expect(h.only("model.quota.refused").annotations).toMatchObject({ role: "agent", errorCode: "out_of_credit", httpStatus: 0 })
     expect(h.span("model.quota.refused")[0]!.attributes.get("httpStatus")).toBe(0)
-    expect(h.count(ModelEndpoint.quotaRefusals, { role: "agent", errorCode: "out_of_credit" })).toBe(1)
+    expect(h.count(ModelSeats.quotaRefusals, { role: "agent", errorCode: "out_of_credit" })).toBe(1)
     // Without the provider's status its usage remains unknown, so metering stays conservative.
-    expect(h.count(ModelEndpoint.usageWrites, { outcome: "kept" })).toBe(1)
+    expect(h.count(ModelSeats.usageWrites, { outcome: "kept" })).toBe(1)
     expect(recorded(h)).not.toContain("private balance detail")
     expect(recorded(h)).not.toContain("private question")
   })
@@ -556,7 +559,7 @@ describe("roles", () => {
       expect(failure.quotaScope).toBeUndefined()
     }
     expect(h.only("model.proxy.serve").annotations).toMatchObject({ outcome: "failed", errorCode: httpStatus === 402 ? "out_of_credit" : code })
-    expect(h.count(ModelEndpoint.usageWrites, { outcome: "refused" })).toBe(1)
+    expect(h.count(ModelSeats.usageWrites, { outcome: "refused" })).toBe(1)
     expect(h.count(ModelProxy.requests, { role: "agent", side: "server", outcome: "failed", status: "200" })).toBe(1)
     expect(h.span("model.proxy.serve")[0]!.attributes.get("error.type")).toBe(httpStatus === 402 ? "out_of_credit" : code)
     expect(h.only("model.usage").annotations).toMatchObject({ outcome: "refused", errorCode: httpStatus === 402 ? "out_of_credit" : code })
@@ -566,7 +569,7 @@ describe("roles", () => {
       const errorCode = httpStatus === 402 ? "out_of_credit" : code
       expect(h.only("model.quota.refused").annotations).toMatchObject({ role: "agent", errorCode, httpStatus })
       expect(h.span("model.quota.refused")[0]!.attributes.get("errorCode")).toBe(errorCode)
-      expect(h.count(ModelEndpoint.quotaRefusals, { role: "agent", errorCode })).toBe(1)
+      expect(h.count(ModelSeats.quotaRefusals, { role: "agent", errorCode })).toBe(1)
     }
     expect(recorded(h)).not.toContain("private provider detail")
     expect(recorded(h)).not.toContain("private question")
@@ -621,7 +624,7 @@ describe("roles", () => {
     expect(audit.map((row) => row.model)).toEqual([first.model, second.model])
   })
 
-  test("the coding role answers as the agent role does, its setting included, until an admin sets coding itself", async () => {
+  test("coding requires its own seat and keeps the agent setting separate", async () => {
     const agentModel = await provider({ text: "agent row answer" })
     const codingModel = await provider({ text: "coding row answer" })
     const h = await harness(runtime, answering, {
@@ -635,14 +638,12 @@ describe("roles", () => {
       },
     })
 
-    // No setting for either: the deployment's default, booked as coding.
-    await call(h, ask("first"), "coding")
-    expect(h.requests.map((request) => request.modelId)).toEqual(["default-model"])
-    expect(h.only("model.proxy.serve").annotations).toMatchObject({ role: "coding", modelId: "default-model" })
-    // The agent role's setting: coding follows it.
+    expect(await call(h, ask("first"), "coding")).toMatchObject({ status: 409, error: { code: "no_route" } })
     await setModel(admin, { role: "agent", model: rowModel(agentModel.origin, "agent-row") })
-    const followed = await call(h, ask("second"), "coding")
-    expect(followed.lines.filter((line) => line.type === "text-delta").map((line) => line.text)).toEqual(["agent row answer"])
+    expect(await call(h, ask("second"), "coding")).toMatchObject({ status: 409, error: { code: "no_route" } })
+    expect(h.requests).toEqual([])
+    expect(agentModel.seen).toEqual([])
+    expect(await usageRows()).toEqual([])
     // Its own setting, an origin-pinned key of its own: coding goes there, and the agent role stays.
     const ran = await setModel(admin, {
       role: "coding",
@@ -1002,8 +1003,7 @@ describe("a role's routing and reasoning", () => {
     for (const role of ["review", "plan", "summary", "renderer"]) {
       expect(texts((await call(h, ask(role), role)).lines), role).toEqual(["tiered"])
     }
-    // No implement model: the coding role keeps the deployment's default.
-    await call(h, ask("code"), "coding")
+    expect(await call(h, ask("code"), "coding")).toMatchObject({ status: 409, error: { code: "no_route" } })
     expect(upstream.seen.map((seen) => [seen.body.model, seen.body.reasoning_effort ?? null])).toEqual([
       ["hard-model", null],
       ["hard-model", null],
@@ -1011,7 +1011,7 @@ describe("a role's routing and reasoning", () => {
       ["fast-model", "minimal"],
       ["fast-model", "minimal"],
     ])
-    expect(h.requests.map((request) => request.modelId)).toEqual(["default-model"])
+    expect(h.requests).toEqual([])
   })
 
   test("a TIER_MODELS that doesn't parse refuses each role without a setting 409, logged unusable:config", async () => {
@@ -1065,14 +1065,14 @@ describe("budget and metering", () => {
     ])
     expect(h.count(ModelProxy.tokens, { role: "agent", type: "output", model: "test-model" })).toBe(34)
     expect(h.count(ModelProxy.tokens, { role: "renderer", type: "input", model: "test-model" })).toBe(12)
-    expect(h.count(ModelEndpoint.usageWrites, { outcome: "recorded" })).toBe(2)
+    expect(h.count(ModelSeats.usageWrites, { outcome: "recorded" })).toBe(2)
   })
 
   test("calls that repeat one request id each book what they spent, against the budget", async () => {
     // One call spends 10,000 tokens; the budget allows two.
     const h = await harness(runtime, spending(10_000), { actor: member, config: { MODEL_DAILY_TOKEN_BUDGET: "20000" } })
     const repeat = () =>
-      h.fetch("/api/model/agent", {
+      h.modelFetch("/api/model/agent", {
         method: "POST",
         headers: { [ModelProxy.requestIdHeader]: "same" },
         body: body(ask("hi")),
@@ -1135,7 +1135,7 @@ describe("budget and metering", () => {
     })
 
     const responses = await Promise.all(
-      Array.from({ length: 8 }, () => h.fetch("/api/model/agent", { method: "POST", body: body(ask("hi")) })),
+      Array.from({ length: 8 }, () => h.modelFetch("/api/model/agent", { method: "POST", body: body(ask("hi")) })),
     )
     open()
     const bodies = await Promise.all(responses.map((response) => response.text()))
@@ -1183,7 +1183,7 @@ describe("budget and metering", () => {
   // Anything less is unknown, never zero: the model may have spent tokens it never reported, so the call keeps its
   // reservation (Codex review 4, P1). These calls all stream paid output before they end.
   const reservationOf = (request: ModelRequest.ModelRequest) =>
-    new TextEncoder().encode(body(request)).length + ModelEndpoint.MAX_OUTPUT_TOKENS
+    new TextEncoder().encode(body(request)).length + ModelSeats.MAX_OUTPUT_TOKENS
   const transportFailure = Stream.fail(new ModelError.ModelError({ code: "transport", message: "connection reset" }))
 
   test("a call whose client goes away after its text, before usage, keeps its whole reservation", async () => {
@@ -1192,7 +1192,7 @@ describe("budget and metering", () => {
     })
     const request = ask("hi")
 
-    const response = await h.fetch("/api/model/agent", { method: "POST", body: body(request) })
+    const response = await h.modelFetch("/api/model/agent", { method: "POST", body: body(request) })
     const reader = response.body!.getReader()
     await reader.read()
     await reader.cancel()
@@ -1200,7 +1200,7 @@ describe("budget and metering", () => {
     await eventually(async () => (await ledger())[0]?.settled === true)
     expect(await committedToday()).toBe(reservationOf(request))
     expect(h.only("model.proxy.serve").annotations).toMatchObject({ outcome: "interrupted" })
-    expect(h.count(ModelEndpoint.usageWrites, { outcome: "kept" })).toBe(1)
+    expect(h.count(ModelSeats.usageWrites, { outcome: "kept" })).toBe(1)
     expect(h.only("model.usage")).toMatchObject({
       level: "INFO",
       annotations: { role: "agent", outcome: "kept", ended: "interrupted", reported: "none" },
@@ -1266,7 +1266,7 @@ describe("budget and metering", () => {
       [900_000, 1],
     ])
     expect(h.line("model.usage").map((line) => line.annotations.reported)).toEqual(["partial", "complete", "complete"])
-    expect(h.count(ModelEndpoint.usageWrites, { outcome: "kept" })).toBe(3)
+    expect(h.count(ModelSeats.usageWrites, { outcome: "kept" })).toBe(3)
   })
 
   // A provider outage refuses each call before it produces anything. Such a call spent nothing beyond the usage its
@@ -1296,7 +1296,7 @@ describe("budget and metering", () => {
     expect(await committedToday()).toBe(7)
     expect((await charges()).map((row) => row.charged)).toEqual([0, 7, 0])
     expect(await reconciled()).toBe(true)
-    expect(h.count(ModelEndpoint.usageWrites, { outcome: "refused" })).toBe(3)
+    expect(h.count(ModelSeats.usageWrites, { outcome: "refused" })).toBe(3)
     expect(h.line("model.usage").map((line) => line.annotations)).toEqual([
       expect.objectContaining({ outcome: "refused", ended: "failed", errorCode: "rate_limited", reported: "none" }),
       expect.objectContaining({ outcome: "refused", ended: "failed", errorCode: "invalid_request", reported: "partial" }),
@@ -1332,8 +1332,8 @@ describe("budget and metering", () => {
     for (let index = 0; index < 3; index++) await call(h, request)
 
     expect(await committedToday()).toBe(3 * reservationOf(request))
-    expect(h.count(ModelEndpoint.usageWrites, { outcome: "kept" })).toBe(3)
-    expect(h.count(ModelEndpoint.usageWrites, { outcome: "refused" })).toBe(0)
+    expect(h.count(ModelSeats.usageWrites, { outcome: "kept" })).toBe(3)
+    expect(h.count(ModelSeats.usageWrites, { outcome: "refused" })).toBe(0)
   })
 
   test("a refusal after output keeps its reservation", async () => {
@@ -1374,7 +1374,7 @@ describe("budget and metering", () => {
       config: { MODEL_DAILY_TOKEN_BUDGET: String(2 * reservationOf(request)) },
     })
     const cancelled = async () => {
-      const response = await h.fetch("/api/model/agent", { method: "POST", body: body(request) })
+      const response = await h.modelFetch("/api/model/agent", { method: "POST", body: body(request) })
       if (response.status !== 200) return response.status
       const reader = response.body!.getReader()
       await reader.read()
@@ -1472,7 +1472,7 @@ describe("budget and metering", () => {
     const h = await harness(runtime, gated(gate), { actor: member, config: { MODEL_RESERVATION_EXPIRY: "1 minute" } })
     const request = ask("hi")
 
-    const response = await h.fetch("/api/model/agent", { method: "POST", body: body(request) })
+    const response = await h.modelFetch("/api/model/agent", { method: "POST", body: body(request) })
     const [{ invocationId, expiresInSeconds }] = await charges()
     await expire(invocationId)
     open()
@@ -1480,7 +1480,7 @@ describe("budget and metering", () => {
 
     expect(expiresInSeconds).toBe(60)
     expect(await committedToday()).toBe(reservationOf(request))
-    expect(h.count(ModelEndpoint.usageWrites, { outcome: "expired" })).toBe(1)
+    expect(h.count(ModelSeats.usageWrites, { outcome: "expired" })).toBe(1)
     expect(h.only("model.usage")).toMatchObject({
       level: "WARN",
       annotations: { role: "agent", invocationId, outcome: "expired" },
@@ -1492,7 +1492,7 @@ describe("budget and metering", () => {
 
     await call(h, ask("hi"))
 
-    expect(Duration.toSeconds(ModelEndpoint.RESERVATION_EXPIRY)).toBe(3_600)
+    expect(Duration.toSeconds(ModelSeats.RESERVATION_EXPIRY)).toBe(3_600)
     expect((await charges())[0]!.expiresInSeconds).toBe(3_600)
     expect(await reconciled()).toBe(true)
     await expect(harness(runtime, answering, { config: { MODEL_RESERVATION_EXPIRY: "soon" } })).rejects.toThrow()
@@ -1519,10 +1519,10 @@ describe("budget and metering", () => {
       const { lines } = await call(h, request)
 
       expect(lines.at(-1)).toEqual({ type: "end" })
-      expect(h.count(ModelEndpoint.usageWrites, { outcome: "error" })).toBe(1)
+      expect(h.count(ModelSeats.usageWrites, { outcome: "error" })).toBe(1)
       expect(h.only("model.usage").annotations).toMatchObject({ role: "agent", errorCode: expect.stringMatching(/^sql:/) })
       // Fail-closed: the call still counts at its worst case.
-      expect(await committedToday()).toBe(new TextEncoder().encode(body(request)).length + ModelEndpoint.MAX_OUTPUT_TOKENS)
+      expect(await committedToday()).toBe(new TextEncoder().encode(body(request)).length + ModelSeats.MAX_OUTPUT_TOKENS)
     })
   })
 
@@ -1626,7 +1626,7 @@ describe("telemetry", () => {
   })
 })
 
-describe("a server flow's own calls (ModelEndpoint.local)", () => {
+describe("a server flow's own calls (ModelSeats.local)", () => {
   /** The `judge` seat a flow on the server calls with, over a scripted model, metered on this file's schema. */
   const seat = async (
     script: (request: ModelRequest.ModelRequest) => Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure>,
@@ -1641,7 +1641,7 @@ describe("a server flow's own calls (ModelEndpoint.local)", () => {
     })
     const database = await runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.database))
     const local = await Effect.runPromise(
-      ModelEndpoint.local(database, { alerts: true, hosted: true }).pipe(
+      ModelSeats.local(database, { alerts: true, hosted: true }).pipe(
         Effect.provide(PersonalModels.none),
         Effect.provideService(HostModel, HostModel.of({ modelId: "default-model", model, route: { prepare: () => Effect.die("unused") } })),
         Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
@@ -1649,8 +1649,39 @@ describe("a server flow's own calls (ModelEndpoint.local)", () => {
     )
     return { judge: local("judge"), local, requests }
   }
-  const run = (judge: ModelEndpoint.Seat, request: ModelRequest.ModelRequest) =>
+  const run = (judge: ModelSeats.Seat, request: ModelRequest.ModelRequest) =>
     Effect.runPromiseExit(Stream.runCollect(judge.model.stream(request)))
+
+  test("builds model seats without deployment keys and refuses only a call that needs one", async () => {
+    const database = await scratchDatabase()
+    const local = await Effect.runPromise(
+      ModelSeats.local(database, { hosted: true }).pipe(
+        Effect.provide(PersonalModels.none),
+        Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+      ),
+    )
+    const exit = await run(local("judge"), ask("judge this"))
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ code: "no_route", httpStatus: 409 })
+    expect(await usageRows()).toEqual([])
+  })
+
+  test("resolves the configured deployment default without an injected model", async () => {
+    const upstream = await provider({ text: "configured default" })
+    const database = await scratchDatabase()
+    const local = await Effect.runPromise(
+      ModelSeats.local(database, { hosted: true }).pipe(
+        Effect.provide(PersonalModels.none),
+        Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({
+          ...keyConfig(upstream.origin),
+          CHAT_MODEL: JSON.stringify(rowModel(upstream.origin, "server-default")),
+        }))),
+      ),
+    )
+    const exit = await run(local("judge"), ask("judge this"))
+    expect(Exit.isSuccess(exit)).toBe(true)
+    expect(upstream.seen.map((seen) => seen.body.model)).toEqual(["server-default"])
+    expect(await usageRows()).toMatchObject([{ role: "judge", modelId: "server-default" }])
+  })
 
   test("streams the role's model with no person's session, bounded and metered as the endpoint's calls are", async () => {
     const { judge, requests } = await seat(answering)
@@ -1682,7 +1713,7 @@ describe("a server flow's own calls (ModelEndpoint.local)", () => {
     ])
     expect(starts[0]).toMatchObject({
       executionId: SpendAlert.executionId(before),
-      payload: { ...before, budget: ModelEndpoint.DAILY_TOKEN_BUDGET },
+      payload: { ...before, budget: ModelSeats.DAILY_TOKEN_BUDGET },
     })
   })
 
@@ -1795,11 +1826,11 @@ describe("timeline summary role", () => {
   })
 
   // The timeline's summary of one entry on the Node host's engine, its model calls admitted and metered by the endpoint
-  // in process (`ModelEndpoint.local`), with `config` as the Worker's configuration. Counts the step's model calls.
+  // in process (`ModelSeats.local`), with `config` as the Worker's configuration. Counts the step's model calls.
   const summarize = async (config: Record<string, string> = {}) => {
     const database = await runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.database))
     const local = await Effect.runPromise(
-      ModelEndpoint.local(database, { alerts: true, hosted: true }).pipe(
+      ModelSeats.local(database, { alerts: true, hosted: true }).pipe(
         Effect.provide(PersonalModels.none),
         // The agent's model, which the summary role must never reach.
         Effect.provideService(HostModel, HostModel.of({

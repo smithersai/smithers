@@ -96,7 +96,6 @@ export const ATTENTION_TELEMETRY = {
     "notifications.ack",
     "notifications.pending",
     "notifications.shown",
-    "notifications.model",
     "smithers_notification_watches",
     "smithers_notification_acks",
     "smithers_notification_acts_dropped",
@@ -107,5 +106,3 @@ export const ATTENTION_TELEMETRY = {
   fields: ["subject", "act", "outcome", "status", "surface", "state", "kind", "version", "errorCode", "reason", "via", "feature"],
 } as const
 
-/** One model prerequisite per tab, shared by every surface; never a server notification. */
-export const MODEL_NOTICE = "model:required"

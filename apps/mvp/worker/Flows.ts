@@ -3,7 +3,7 @@ import { Cause, Clock, Context, Duration, Effect, Ref, Schema } from "effect"
 import { codeOf } from "./ErrorCode.ts"
 
 // Where a remote flow starts (docs/features/remote-flows.md#starting-an-execution). A route that admits a remote flow
-// (asking starts `chat/Expire`, `POST /api/repos` starts `repo/Clone`) starts it through `FlowStarter`: a Durable
+// (for example `POST /api/repos` starts `repo/Clone`) starts it through `FlowStarter`: a Durable
 // Object in ChatApi (worker/ExecutionHost.ts), anything else in a test. No route starts a flow by its name alone:
 // every remote flow today is admitted by the route that starts it (docs/features/remote-flows.md#no-remote-door).
 

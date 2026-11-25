@@ -58,9 +58,9 @@ const deployment = (): PlaywrightTestConfig => {
   }
 }
 
-/** The specs whose scripted agent answers in the local shared conversation and waits for its turn there. */
+/** The specs that answer in the local shared conversation and waits for its turn there. */
 const TAKES_TURNS = [
-  "answer-ordering", "coedit", "factory", "files", "forms", "generated-view", "model-quota", "notifications", "pin-message",
+  "agent", "coedit", "factory", "files", "forms", "generated-view", "model-quota", "notifications", "pin-message",
   "queue", "repo-in-chat", "run-credentials", "run-graph", "sandbox-tools", "status", "sync", "timeline", "timeline-look", "toast-overlap",
   "todos",
 ].map((name) => `**/${name}.spec.ts`)
@@ -92,9 +92,7 @@ export default defineConfig({
         { name: "local-setup", testMatch: /local\/[^/]+\.setup\.ts$/, use: { video: "off", trace: "off" } },
         { name: "webkit", dependencies: ["local-setup"], use: { browserName: "webkit" }, workers: 1 },
         { name: "local", dependencies: ["local-setup"], testIgnore: TAKES_TURNS },
-        // Locally every spec asks in one shared conversation, which answers one question at a time (worker/Answers.ts):
-        // specs whose scripted agent waits for its answer, or for its person, take turns instead of timing out behind
-        // each other's runs.
+        // Specs that use shared local conversation state run one at a time.
         { name: "local-turns", dependencies: ["local-setup"], testMatch: TAKES_TURNS, workers: 1 },
       ],
     }),

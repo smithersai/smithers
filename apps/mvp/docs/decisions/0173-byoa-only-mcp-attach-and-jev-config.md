@@ -40,14 +40,14 @@ deletes 33 files (5,141 lines), refactors 317 and keeps 1,826. No attach endpoin
    `Jev.config` runs the same decoder at run time. A repository path holds no `..` segment, and `resolveRepoPath`
    keeps the resolved file, symlinks followed, under the pinned checkout.
 
-## Today
+## Implementation
 
 | Part                                   | State                                                                                   |
 | -------------------------------------- | --------------------------------------------------------------------------------------- |
-| Attach intent, consent, grant, revoke  | Built in memory: `worker/attach/Attach.ts`. Not yet stored durably or routed. No adapter yet supplies `Sessions` actors or repository permissions. |
-| `/mcp` Streamable HTTP handler         | Built: `worker/attach/McpRoute.ts`, with no tools registered and no route mounted yet. |
+| Attach intent, consent, grant, revoke  | Mounted in `worker/attach/LiveMount.ts` using `Sessions` and `BranchRoles`. State is stored in Postgres. |
+| Streamable HTTP attach handler         | `/api/attach/mcp/<owner>/<repo>/<branch>` exposes conversation reads and replies with an attenuated grant. |
 | `Jev.config` validator                 | Built: `src/features/jev/config.ts`, compile time and run time. No executor calls `resolveRepoPath` yet. |
-| Browser agent removal                  | Not built.                                                                              |
+| Browser agent removal                  | The browser chat agent and its public model proxy have been removed. Server-side flows use internal model seats. |
 | Local `smthrs --mcp` over stdio        | Not built.                                                                              |
 
 ## Rejected

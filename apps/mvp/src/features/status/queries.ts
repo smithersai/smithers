@@ -56,9 +56,8 @@ export type Statuses = Effect.Success<ReturnType<typeof statusesQuery>>
 /**
  * `core/waits` (decision 0017): the open waits addressed to the viewer, in every conversation, oldest first, then by run
  * id. A run's row is synced only to the person who launched it, or the one an agent's `queue/ask` asks, the one
- * `run/answer` lets answer it, so every open row here is theirs, a question on a branch this tab never opened included. An answer in the home conversation that already
- * settled still wins over its run's row, as in `statusesQuery`; ChatApi fails a run's row when it settles its answer
- * itself (worker/flows/Expire.ts, worker/Answers.ts). Each row is `WAITS_ROW` (./contract.ts).
+ * `run/answer` lets answer it. This includes waits in branches the viewer has never opened. A settled answer in the
+ * home conversation takes precedence over its run's status here and in `statusesQuery`. Each row is `WAITS_ROW`.
  */
 export const waitsQuery = (home: Collection.Collection<Message>, runs: Source<Run>) =>
   LiveQuery.make((q) =>

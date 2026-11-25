@@ -1,8 +1,7 @@
 import { Toast, ToastStack } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import type { ReactElement } from "react"
-import { MODEL_NOTICE, type Surface } from "../contract"
-import { OPEN_SETTINGS } from "../../auth/contract"
+import { type Surface } from "../contract"
 import { TRY_AGAIN } from "../../repo/contract"
 import type { Entry } from "../schema"
 import { useAttention } from "./AttentionContext"
@@ -40,7 +39,6 @@ export function Notices({ surface }: { readonly surface: Surface }) {
 
 function Notice({ entry, surface }: { readonly entry: Entry; readonly surface: Surface }) {
   const { actions } = useAttention()
-  const model = entry.id === MODEL_NOTICE
   const answers = entry.action === "answer"
   const retries = entry.action === "retry"
   return (
@@ -52,15 +50,12 @@ function Notice({ entry, surface }: { readonly entry: Entry; readonly surface: S
       unread={entry.unread}
       onOpen={() => actions.open(entry.id, surface)}
       {...(entry.local === true ? {} : { onExpand: () => actions.openPanel("toast", entry.id), onRead: () => actions.read(entry.id) })}
-      {...(model
-        ? { action: { label: OPEN_SETTINGS, onAction: () => actions.open(entry.id, surface) } }
-        : answers
+      {...(answers
         ? { action: { label: "Answer", onAction: () => actions.open(entry.id, surface) }, onAnswer: () => actions.answer(entry.id, surface) }
         : retries
         ? { action: { label: TRY_AGAIN, onAction: () => actions.retry(entry.id) } }
         : {})}
-      {...(entry.local === true && !model ? {} : { onHide: () => actions.hide(entry.id) })}
-      {...(model ? { "data-add-model": "" } : {})}
+      {...(entry.local === true ? {} : { onHide: () => actions.hide(entry.id) })}
       data-subject={entry.id}
       {...(entry.runId === null ? {} : { "data-run": entry.runId })}
     />

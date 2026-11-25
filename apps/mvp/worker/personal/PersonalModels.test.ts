@@ -24,7 +24,7 @@ import {
 } from "../../src/features/personal-model/contract.ts"
 import * as Actor from "../Actor.ts"
 import * as Flows from "../Flows.ts"
-import * as ModelEndpoint from "../ModelEndpoint.ts"
+import * as ModelSeats from "../ModelSeats.ts"
 import * as ModelTiers from "../ModelTiers.ts"
 import * as SpendAlert from "../flows/SpendAlert.ts"
 import { SecretKeys } from "../secrets/Keys.ts"
@@ -679,7 +679,7 @@ describe("the model endpoint answers a person with their own model", () => {
   const body = (request: ModelRequest.ModelRequest) => JSON.stringify(Schema.encodeSync(ModelRequest.ModelRequest)(request))
   type H = Awaited<ReturnType<typeof harness>>
   const call = async (h: H, role = "agent", request = ask("hi")) => {
-    const response = await h.fetch(`/api/model/${role}`, { method: "POST", body: body(request) })
+    const response = await h.modelFetch(`/api/model/${role}`, { method: "POST", body: body(request) })
     const text = await response.text()
     return {
       status: response.status,
@@ -990,7 +990,7 @@ describe("the model endpoint answers a person with their own model", () => {
   })
 })
 
-describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
+describe("a todo run on its committer's model (ModelSeats.local)", () => {
   const ask = ModelRequest.ModelRequest.make({
     modelId: "coding",
     system: [],
@@ -1001,7 +1001,7 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
 
   const seat = async (
     fetch: typeof globalThis.fetch,
-    owner: ModelEndpoint.Owner,
+    owner: ModelSeats.Owner,
     starter?: Flows.FlowStarter["Service"],
     role: "coding" | "summary" = "coding",
     hosted = true,
@@ -1011,6 +1011,12 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
       HOSTED_MODEL_ENABLED: hosted ? "true" : "false",
       SMITHERS_MODEL_KEY_DEPLOYMENT: "deployment-key",
       SMITHERS_MODEL_KEY_DEPLOYMENT_ORIGIN: "https://deployment.example.com",
+      TIER_MODELS: JSON.stringify({ implement: {
+        protocol: "openai-chat",
+        baseUrl: "https://deployment.example.com",
+        modelId: "deployment-model",
+        credential: "DEPLOYMENT",
+      } }),
       SUMMARY_MODEL: JSON.stringify({
         protocol: "openai-chat",
         baseUrl: "https://deployment.example.com",
@@ -1019,7 +1025,7 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
       }),
     }))
     const local = await Effect.runPromise(
-      ModelEndpoint.local(database, { alerts: true }).pipe(
+      ModelSeats.local(database, { alerts: true }).pipe(
         Effect.provide(PersonalModels.layer(database).pipe(Layer.provide(SecretKeys.layer(KEY)))),
         Effect.provide(HostModel.layerConfig("CHAT_MODEL", {
           protocol: "openai-chat",
@@ -1036,7 +1042,7 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
   const inRun = (executionId: string) =>
     Stream.provideService(FlowRuntime.FlowInstance, { executionId } as unknown as FlowRuntime.FlowInstance["Service"])
   /** A run of the person who saved a model, a Member of the deployment's own repository. */
-  const memberOwns: ModelEndpoint.Owned = { personId: "person-member", deploymentPays: true }
+  const memberOwns: ModelSeats.Owned = { personId: "person-member", deploymentPays: true }
 
   test("inside a run its owner saved a model for, their model answers; any other call is the deployment's", async () => {
     await seed(runtime, "person-member")
@@ -1082,7 +1088,7 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
 
   test("a run whose owner isn't a Member of the deployment's repository and saved no model is refused no_route (ruling AUTH-8)", async () => {
     const provider = scriptedProvider({ text: "the deployment's" }, globalThis.fetch, ["https://deployment.example.com"])
-    const strangers: ModelEndpoint.Owned = { personId: "person-stranger", deploymentPays: false }
+    const strangers: ModelSeats.Owned = { personId: "person-stranger", deploymentPays: false }
     const coding = await seat(provider.fetch, () => Effect.succeed(Option.some(strangers)))
     const exit = await Effect.runPromiseExit(Stream.runCollect(coding.model.stream(ask).pipe(inRun("todo:theirs"))))
     expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ code: "no_route", httpStatus: 409 })
@@ -1267,10 +1273,9 @@ describe("credential identity across model admission", () => {
       modelId: "browser-choice", system: [], messages: [ModelRequest.Message.user("hi")], tools: [],
       params: ModelRequest.GenerationParams.make({ maxTokens: 64 }),
     })
-    const pending = h.fetch(route === "endpoint" ? "/api/model/agent" : PERSONAL_MODEL_TEST_ROUTE, {
-      method: "POST",
-      ...(route === "endpoint" ? { body: JSON.stringify(Schema.encodeSync(ModelRequest.ModelRequest)(request)) } : {}),
-    }).then(async (response) => { await response.text() })
+    const pending = (route === "endpoint" && "modelFetch" in h
+      ? h.modelFetch("/api/model/agent", { method: "POST", body: JSON.stringify(Schema.encodeSync(ModelRequest.ModelRequest)(request)) })
+      : h.fetch(PERSONAL_MODEL_TEST_ROUTE, { method: "POST" })).then(async (response) => { await response.text() })
     try {
       await runtime.runPromise(Deferred.await(ready))
       // The real model has captured the old key, but admission has not inserted its ledger row yet.

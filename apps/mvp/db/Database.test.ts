@@ -2291,3 +2291,94 @@ describe("0124_flow_placement_syntax", () => {
       expect(await on(through("0124"))).toEqual([])
     }))
 })
+
+describe("0133_byoa_cutover", () => {
+  test("settles the retired browser answers and runs while preserving transcript and wait history", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0132"))
+      const question = crypto.randomUUID()
+      const streaming = crypto.randomUUID()
+      const finished = crypto.randomUUID()
+      const remote = crypto.randomUUID()
+      const waits = { question: "Continue?" }
+      const parts = [{ id: "step", kind: "call", flow: "repo/read", status: "done" }]
+      await on(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        const [home] = yield* sql<{ readonly id: string }>`SELECT id FROM conversations`
+        yield* sql`
+          INSERT INTO messages (id, role, status, conversation_id, asked_by)
+          VALUES (${question}, 'user', 'done', ${home!.id}, 'p')`
+        yield* sql`
+          INSERT INTO messages (id, role, status, conversation_id, question_id, text, parts)
+          VALUES (${streaming}, 'assistant', 'streaming', ${home!.id}, ${question}, 'Partial', ${JSON.stringify(parts)}::jsonb),
+            (${finished}, 'assistant', 'done', ${home!.id}, ${question}, 'Complete', '[]'::jsonb)`
+        yield* sql`
+          INSERT INTO runs (id, flow, status, waiting, wait, version, launched_by)
+          VALUES (${streaming}, 'chat/Answer', 'needs_you', 'input', ${JSON.stringify(waits)}::jsonb, 1, 'p'),
+            (${finished}, 'chat/Answer', 'done', NULL, NULL, 0, 'p'),
+            (${remote}, 'todo', 'working', NULL, NULL, 0, 'p')`
+        yield* sql`
+          INSERT INTO notifications (recipient, subject, kind, state, run_id, href, version, read_version)
+          VALUES ('p', 'old', 'run', 'needs_you', ${streaming}, '/app', 2, 2),
+            ('p', 'finished', 'run', 'done', ${finished}, '/app', 1, 0),
+            ('p', 'remote', 'run', 'working', ${remote}, '/app', 1, 0)`
+      }))
+
+      expect(await on(Database.migrate)).toEqual([[133, "byoa_cutover"]])
+      expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT id, status, failure, text, parts, question_id FROM messages WHERE role = 'assistant' ORDER BY position`)))
+        .toEqual([
+          { id: streaming, status: "failed", failure: "abandoned", text: "Partial", parts, question_id: question },
+          { id: finished, status: "done", failure: null, text: "Complete", parts: [], question_id: question },
+        ])
+      expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT id, status, waiting, wait, version FROM runs`))).toEqual(expect.arrayContaining([
+        { id: streaming, status: "failed", waiting: null, wait: waits, version: 1 },
+        { id: finished, status: "done", waiting: null, wait: null, version: 0 },
+        { id: remote, status: "working", waiting: null, wait: null, version: 0 },
+      ]))
+      expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT subject, state, version, read_version FROM notifications ORDER BY subject`))).toEqual([
+        { subject: "finished", state: "done", version: 1, read_version: 0 },
+        { subject: "old", state: "failed", version: 2, read_version: 2 },
+        { subject: "remote", state: "working", version: 1, read_version: 0 },
+      ])
+      expect(await on(Database.migrate)).toEqual([])
+    }))
+
+  test.each([false, true])("carries forward explicit agent settings with configured coding seat = %s", (configured) =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0132"))
+      await on(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        yield* sql`
+          INSERT INTO model_roles (role, model, updated_by, updated_at)
+          VALUES ('agent', '{"modelId":"legacy"}', 'original-admin', '2026-10-01T00:00:00Z')`
+        if (configured) {
+          yield* sql`
+            INSERT INTO model_roles (role, model, updated_by, updated_at)
+            VALUES ('coding', '{"modelId":"current"}', 'coding-admin', '2026-10-02T00:00:00Z')`
+        }
+        yield* sql`
+          INSERT INTO model_role_changes (invocation_key, role, model, changed_by)
+          VALUES ('legacy-change', 'agent', '{"modelId":"legacy"}', 'original-admin')`
+      }))
+
+      expect(await on(Database.migrate)).toEqual([[133, "byoa_cutover"]])
+      const legacy = { model: { modelId: "legacy" }, updated_by: "original-admin", updated_at: new Date("2026-10-01") }
+      const coding = { model: { modelId: "current" }, updated_by: "coding-admin", updated_at: new Date("2026-10-02") }
+      expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT role, model, updated_by, updated_at FROM model_roles ORDER BY role`))).toEqual([
+        { role: "agent", ...legacy },
+        { role: "coding", ...(configured ? coding : legacy) },
+      ])
+      expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT invocation_key, role FROM model_role_changes`))).toEqual([{ invocation_key: "legacy-change", role: "agent" }])
+    }))
+})

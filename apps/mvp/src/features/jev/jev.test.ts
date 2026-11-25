@@ -1,39 +1,21 @@
-// Jev in the agent's hands (docs/features/jev.md): `app/jev/classify` and `app/jev/evaluate` on the Node host's engine
-// (worker/test/flowHost.ts), judging through ChatApi's real model endpoint, role `judge`, on this file's schema of the
-// compose Postgres (`pnpm db:up`), with a scripted model as the deployment's default model: the only scripted seam. Then
-// the agent's call from a cell (src/test/agent.ts), and the payload's bounds.
+// Jev's flows driven through the durable engine with an explicitly supplied model seat.
+import { Model } from "@smthrs/model"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Schema, Scope, Stream, Tracer } from "effect"
-import { FetchHttpClient } from "effect/http"
-import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
 import { build } from "../../../worker/test/flowHost.ts"
-import { contents, harness, stop, testFile, usage } from "../../../worker/test/harness.ts"
-import { jev } from "../../flows/registrations"
+import { contents, harness, stop, usage } from "../../../worker/test/harness.ts"
+import { clientSeat } from "../model/clientSeat"
+import { JudgeSeat, registration } from "./steps"
 import { BROWSER_TELEMETRY } from "../../telemetry"
-import { answerRow, cell, type Engine, member, openAgent } from "../../test/agent"
-import { debugRunOf } from "../chat/view"
-import { JOURNAL_PAGE, runPath } from "../runs/contract"
-import { graphOf } from "../runs/graph"
-import type { Inspection, RunPage } from "../runs/schema"
 import { JEV_TELEMETRY, MAX_CRITERIA, MAX_ITEMS, MAX_LABELS } from "./contract"
-import { Classify, Evaluate, JudgeFailed, type Verdicts } from "./flows"
+import { Classify, Evaluate, JudgeFailed } from "./flows"
 import { judgments, verdicts } from "./metrics"
 
 /** A failed call's error. The engine annotates an action's failed cause with its FailureSite, which the outcome doesn't depend on. */
 const failureOf = (exit: Exit.Exit<unknown, unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit
 
-const runtime = testFile("jev")
-
-/** ChatApi's origin as the steps reach it: the harness's in-process handler. */
 const ORIGIN = "http://chat.test"
-
-/** The words every judge request opens its instructions with (`Evaluator.layerFromSeat` in `@smthrs/model`). */
-const JUDGE = "Judge the supplied evidence"
-
-const isJudge = (request: Parameters<Parameters<typeof harness>[1]>[0]) =>
-  request.system.some((part) => part.text.startsWith(JUDGE))
 
 /** What a judge request asks: the state and the questions, as the seat reads them. */
 const asked = (request: Parameters<Parameters<typeof harness>[1]>[0]) =>
@@ -62,24 +44,14 @@ afterEach(async () => {
   for (const scope of scopes.splice(0)) await Effect.runPromise(Scope.close(scope, Exit.void))
 })
 
-/** Calls the model endpoint served for `role`, from this file's ledger. */
-const served = (role: string) =>
-  runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql<{ readonly n: number }>`SELECT count(*)::int AS n FROM model_usage WHERE role = ${role}`)).then(([row]) => row!.n)
-
-/**
- * Jev's flows on the Node host's engine, judging through ChatApi's real model endpoint as `actor` (a Member unless
- * `null`), with `script` as the deployment's model. Every log line, span and count the steps record is kept.
- */
-const openJudge = async (
-  script: Parameters<typeof harness>[1],
-  options: { readonly actor?: Actor | null } = {},
-) => {
-  const h = await harness(runtime, script, options.actor === null ? {} : { actor: options.actor ?? member })
-  const fetch: typeof globalThis.fetch = (input, init) => {
-    const url = new URL(input instanceof Request ? input.url : String(input))
-    return h.fetch(`${url.pathname}${url.search}`, input instanceof Request ? input : init)
-  }
+const openJudge = async (script?: Parameters<typeof harness>[1]) => {
+  const requests: Array<Parameters<Parameters<typeof harness>[1]>[0]> = []
+  const model = script === undefined ? undefined : Model.make({
+    stream: (request) => {
+      requests.push(request)
+      return script(request)
+    },
+  })
   const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
   const spans: Array<Tracer.NativeSpan> = []
   const registry: Metric.MetricRegistry = new Map()
@@ -99,16 +71,18 @@ const openJudge = async (
   scopes.push(scope)
   const { context } = await Effect.runPromise(
     observed(Scope.provide(scope)(build(
-      jev(ORIGIN).pipe(
+      registration.pipe(
         Layer.provideMerge(Action.layerImplementations),
-        Layer.provide(FetchHttpClient.layer),
-        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
+        Layer.provide(Layer.succeed(JudgeSeat, {
+          ...clientSeat(ORIGIN, "judge", model),
+          ...(model === undefined ? { unconfigured: true as const } : {}),
+        })),
       ),
     ))),
   )
   const flows = Context.get(context, FlowRuntime.FlowRuntime)
   return {
-    h,
+    requests,
     classify: (executionId: string, payload: typeof Classify.payloadSchema.Type) =>
       Effect.runPromise(observed(Effect.exit(flows.execute(Classify, { executionId, payload })))),
     evaluate: (executionId: string, payload: typeof Evaluate.payloadSchema.Type) =>
@@ -125,7 +99,6 @@ const openJudge = async (
 describe("app/jev/classify", () => {
   test("asks one question per item in one judge call, and answers a verdict per item in order", async () => {
     const judge = await openJudge(judged(bugs))
-    const before = await served("judge")
 
     const exit = await judge.classify("classify-1", {
       question: "Is this a bug report?",
@@ -140,9 +113,8 @@ describe("app/jev/classify", () => {
       ],
     }))
     // One call, through the `judge` role, asking each item by its id.
-    expect(await served("judge")).toBe(before + 1)
-    expect(judge.h.requests).toHaveLength(1)
-    const request = asked(judge.h.requests[0]!)
+    expect(judge.requests).toHaveLength(1)
+    const request = asked(judge.requests[0]!)
     expect(request.state).toEqual({
       question: "Is this a bug report?",
       items: { item1: "The app crashes on save", item2: "Please add dark mode", item3: "Search feels slow sometimes" },
@@ -166,7 +138,7 @@ describe("app/jev/classify", () => {
     expect(exit).toEqual(Exit.succeed({
       verdicts: [{ verdict: "bug", confidence: 0.9 }, { verdict: "unsure", confidence: 0.4 }],
     }))
-    const request = asked(judge.h.requests[0]!)
+    const request = asked(judge.requests[0]!)
     expect(request.state["labels"]).toEqual(["bug", "feature", "question"])
     expect(request.questions["item1"]).toMatchObject({ type: "choice", instructions: "item1: What kind of issue is this?" })
     expect(judge.count(verdicts, { flow: "app/jev/classify", verdict: "label" })).toBe(1)
@@ -181,10 +153,10 @@ describe("app/jev/classify", () => {
     const again = await judge.classify("classify-replay", payload)
 
     expect(again).toEqual(first)
-    expect(judge.h.requests).toHaveLength(1)
+    expect(judge.requests).toHaveLength(1)
   })
 
-  test("a judge answer it can't read, and a caller the endpoint refuses, fail JudgeFailed by code", async () => {
+  test("an invalid judge answer and a missing judge seat, fail JudgeFailed by code", async () => {
     const garbled = await openJudge(() =>
       Stream.make({ type: "text-delta" as const, id: "t", text: "Yes to all." }, usage, stop)
     )
@@ -196,13 +168,11 @@ describe("app/jev/classify", () => {
       expect.objectContaining({ level: "WARN", annotations: expect.objectContaining({ outcome: "invalid_answer", items: 1 }) }),
     ])
 
-    // Signed out: the endpoint refuses before any model runs (401). A refused credential is unconfigured, not unreachable,
-    // so no backup model on another credential is asked (5901b91aa2eb, packages/smithers/agent/model Evaluator).
-    const signedOut = await openJudge(judged(bugs), { actor: null })
-    expect(failureOf(await signedOut.classify("classify-signed-out", { question: "Bug?", items: ["It crashes"] }))).toEqual(
+    const unconfigured = await openJudge()
+    expect(failureOf(await unconfigured.classify("classify-no-seat", { question: "Bug?", items: ["It crashes"] }))).toEqual(
       new JudgeFailed({ code: "unconfigured" }),
     )
-    expect(signedOut.h.requests).toEqual([])
+    expect(unconfigured.requests).toEqual([])
   })
 })
 
@@ -221,7 +191,7 @@ describe("app/jev/evaluate", () => {
         { verdict: "no", confidence: expect.closeTo(0.92, 5) },
       ],
     }))
-    const request = asked(judge.h.requests[0]!)
+    const request = asked(judge.requests[0]!)
     expect(request.state).toEqual({ text: "Fixes the save crash. Closes #12." })
     expect(request.questions["criterion1"]).toEqual({
       type: "boolean",
@@ -292,102 +262,4 @@ describe("the payload", () => {
     expect(decodes(Evaluate, { text: "A change.", criteria: criteria(MAX_CRITERIA + 1) })).toBe(false)
     expect(decodes(Evaluate, { text: "", criteria: criteria(1) })).toBe(false)
   })
-})
-
-describe("the agent", () => {
-  /** An answer takes several sealed model steps and a judgment; under a loaded machine one test may take minutes. */
-  const SLOW = 240_000
-  const engines: Array<Engine> = []
-  afterEach(async () => {
-    for (const engine of engines.splice(0)) await engine.kill()
-  })
-
-  /** The cell's call: three items, one question, no labels. */
-  const ITEMS = ["The app crashes on save", "Please add dark mode", "Search feels slow sometimes"]
-
-  /** The agent answers "Which of these are bugs?" by classifying `ITEMS` in its first cell, then answers. */
-  const classified = async () => {
-    const cells = [
-      `const r = await ctx.call("app/jev/classify", { question: "Is this a bug report?", ` +
-      `items: ${JSON.stringify(ITEMS)} })\n` +
-      `console.log(JSON.stringify(r.verdicts.map((v) => v.verdict)))`,
-      `ctx.done("Bug: the crash. Not a bug: dark mode. Unsure: slow search.")`,
-    ]
-    let calls = 0
-    const agent = await openAgent(runtime, (request) =>
-      isJudge(request)
-        ? judged(bugs)(request)
-        : Stream.make({ type: "text-delta" as const, id: "t", text: cell(cells[Math.min(calls++, 1)]!) }, usage, stop))
-    const engine = await agent.engine()
-    engines.push(engine)
-    const before = await served("judge")
-    const answerId = await agent.ask("Which of these are bugs?")
-    expect(await agent.answer(engine, answerId)).toEqual(Exit.succeed({ status: "done" }))
-    return { agent, engine, answerId, before }
-  }
-
-  /**
-   * The page `/app/runs/<runId>` shows, read as the browser's engine reads it for the run screen
-   * (src/features/runs/store.ts `readRun`): the run, and every run under it.
-   */
-  const runPage = async (engine: Engine, runId: string): Promise<RunPage> => {
-    const read = (id: string) => Effect.runPromise(engine.inspection.inspect(id, { limit: JOURNAL_PAGE }))
-    const inspection = await read(runId)
-    const descendants: Array<Awaited<ReturnType<typeof read>>> = []
-    const pending = inspection.children.map((child) => child.runId)
-    for (const id of pending) {
-      const child = await read(id)
-      descendants.push(child)
-      pending.push(...child.children.map((grandchild) => grandchild.runId))
-    }
-    return { id: runId, state: "read", inspection, more: [], hasMore: inspection.journal.hasMore, descendants }
-  }
-
-  test("a cell's ctx.call classifies items as a journaled step, its judgment through the judge role", async () => {
-    const { agent, answerId, before } = await classified()
-
-    const answer = await answerRow(runtime, answerId)
-    expect(answer).toMatchObject({ status: "done", text: "Bug: the crash. Not a bug: dark mode. Unsure: slow search." })
-    expect(answer.parts).toEqual([{ id: "0.0", kind: "step", flow: "app/jev/classify", status: "done" }])
-    expect(await served("judge")).toBe(before + 1)
-    // The agent's next frame read the verdicts the cell printed.
-    const second = agent.h.requests.filter((request) => !isJudge(request))[1]!
-    expect(contents(second).join("\n")).toContain(`["yes","no","unsure"]`)
-  }, SLOW)
-
-  test("the answer's debug info opens the run that answered it, whose flow view shows the Jev step's input and output", async () => {
-    const { engine, answerId } = await classified()
-
-    // Debug info on the answer opens its own run; a question has none (src/features/chat/view.ts).
-    const runId = debugRunOf({ id: answerId, role: "assistant" })!
-    expect(runId).toBe(answerId)
-    expect(debugRunOf({ id: answerId, role: "user" })).toBeUndefined()
-
-    const page = await runPage(engine, runId)
-    expect((page.inspection as Inspection).run).toMatchObject({ flowName: "chat/Answer", status: "completed" })
-    // The cell's call is a run of its own under the answer's: Jev's input and its verdicts.
-    const call = (page.descendants as ReadonlyArray<Inspection>).find((read) => read.run.flowName === "app/jev/classify")!
-    expect(JSON.parse(call.run.input.text)).toEqual({ question: "Is this a bug report?", items: ITEMS })
-    const verdictsOf = (text: string) => (JSON.parse(text) as Verdicts).verdicts.map((verdict) => verdict.verdict)
-    expect(verdictsOf(call.run.result!.text)).toEqual(["yes", "no", "unsure"])
-
-    // The flow view: the answer's own steps, its opening memory among them, and the Jev step its call ran, done, with the
-    // verdicts as its output and a link to the call's own run, whose page holds the input.
-    const graph = graphOf(page, null, Date.now())
-    const nodes = graph.nodes.map((node) => [node.label, node.state])
-    // chat/ForgetProgress releases the answer's progress after Settle, so the page can be read before or after it ran.
-    expect(nodes.map(([label]) => label)).toContain("chat/ForgetProgress")
-    expect(nodes.filter(([label]) => label !== "chat/ForgetProgress")).toEqual([
-      ["chat/LoadTurn", "done"],
-      ["chat/RecallOpening", "done"],
-      ["chat/Opening", "done"],
-      ["chat/Respond", "done"],
-      ["chat/Settle", "done"],
-      ["app/jev/classify/judge", "done"],
-    ])
-    const judge = graph.steps.find((step) => step.row.label === "app/jev/classify/judge")!
-    expect(judge.row.state).toBe("completed")
-    expect(verdictsOf(judge.output!.text)).toEqual(["yes", "no", "unsure"])
-    expect(judge.href).toBe(runPath(call.run.runId))
-  }, SLOW)
 })

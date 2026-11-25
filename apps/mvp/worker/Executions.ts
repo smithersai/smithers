@@ -26,7 +26,6 @@ import { codeOf } from "./ErrorCode.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Flows from "./Flows.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
-import * as Expire from "./flows/Expire.ts"
 import * as FleetAlert from "./flows/FleetAlert.ts"
 import { recheckExecutionId, RecheckRole } from "./flows/RecheckRole.ts"
 import * as RedactFeed from "./flows/RedactFeed.ts"
@@ -42,7 +41,7 @@ import { pullClosed } from "./flows/TodoWait.ts"
 import * as GitHubApply from "./github/Apply.ts"
 import * as GitHubHost from "./github/Host.ts"
 import * as HyperdrivePool from "./HyperdrivePool.ts"
-import * as ModelEndpoint from "./ModelEndpoint.ts"
+import * as ModelSeats from "./ModelSeats.ts"
 import * as ModelFlows from "./personal/ModelFlows.ts"
 import { PersonalModels } from "./personal/Models.ts"
 import * as Placement from "./Placement.ts"
@@ -208,8 +207,6 @@ const object = <E, R>(
         hyperdrive.connectionString,
         (url) => ExecutionHost.database(Redacted.value(url), Cron.TRIGGERS_SCHEMA)
       )))
-      // `chat/Expire` settles answers their devices left streaming (docs/features/agent.md#settling).
-      const app = { database: appDatabase, expiry: yield* Expire.expiry.pipe(Effect.orDie) }
       // How long one alarm's drive keeps starting steps, under Cloudflare's 15-minute alarm limit
       // (docs/features/remote-flows.md#how-an-execution-runs).
       const driveBudgetMs = yield* ExecutionHost.driveBudget.pipe(Effect.orDie)
@@ -246,7 +243,7 @@ const object = <E, R>(
       // (docs/features/personal-model.md#todo-runs).
       // What steps holding a person's credentials read: Config, here, as a step can't.
       const credentials = yield* ModelFlows.captureCredentials.pipe(Effect.orDie)
-      const seats = yield* ModelEndpoint.local(appDatabase, {
+      const seats = yield* ModelSeats.local(appDatabase, {
         ...(options.spendAlerts === undefined ? {} : { alerts: options.spendAlerts }),
         ...(options.hostedModel === undefined ? {} : { hosted: options.hostedModel })
       }).pipe(
@@ -255,11 +252,9 @@ const object = <E, R>(
       )
       // A run's person, and whether the deployment pays for the calls their own model doesn't answer: only its own
       // Members' (ruling AUTH-8).
-      const ownedBy = (personId: string) =>
-        Effect.map(
-          SessionStore.deploymentMember(personId),
-          (deploymentPays) => Option.some({ personId, deploymentPays })
-        )
+      const modelOwner = (personId: string) =>
+        Effect.map(SessionStore.deploymentMember(personId), (deploymentPays) => ({ personId, deploymentPays }))
+      const ownedBy = (personId: string) => modelOwner(personId).pipe(Effect.map(Option.some))
       // A `todo` run's committer.
       const todoOwner = (executionId: string) =>
         TodoMachine.ownerOf(executionId).pipe(
@@ -412,8 +407,8 @@ const object = <E, R>(
                       ExecutionHost.withSandboxTools(
                         ExecutionHost.withTerminals(
                           Option.isSome(signIn)
-                            ? ExecutionHost.remoteWithSignIn(app, signIn.value, alertChannels, pool)
-                            : ExecutionHost.remote(app, alertChannels, pool),
+                            ? ExecutionHost.remoteWithSignIn(appDatabase, signIn.value, alertChannels, pool)
+                            : ExecutionHost.remote(appDatabase, alertChannels, pool),
                           appDatabase,
                           BranchSandboxes.sandboxesLayer(sandboxObjects, keep)
                         ),
@@ -510,6 +505,12 @@ const object = <E, R>(
             return {
               ...built,
               credentials,
+              requireCodingSeat: (personId: string) =>
+                modelOwner(personId).pipe(
+                  Effect.provide(appDatabase),
+                  Effect.flatMap(seats("coding").requireSeat),
+                  Effect.provideService(RuntimeContext, runtime)
+                ),
               fleet: { settings: fleet, raise },
               overflow: (due: Overflow.Due) => Effect.asVoid(sandboxes.wake(Overflow.boxBranch(due.repoId))),
               cancel: (executionId: string) =>

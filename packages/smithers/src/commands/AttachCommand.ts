@@ -13,7 +13,7 @@ interface AttachOptions {
 const claimResponse = z.object({ claim: z.string().min(1), pairing: z.string().regex(/^\d{6}$/) })
 const redeemResponse = z.object({
   token: z.string().regex(/^smat_[A-Za-z0-9_-]+$/),
-  mcpPath: z.string().regex(/^\/mcp\/[^/]+\/[^/]+\/.+$/),
+  mcpPath: z.string().regex(/^(?:\/api\/attach)?\/mcp\/[^/]+\/[^/]+\/.+$/),
   grant: z.object({ act: z.literal("agent"), expiresAt: z.number() })
 })
 

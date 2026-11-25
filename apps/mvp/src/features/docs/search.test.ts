@@ -12,10 +12,9 @@ import type { Actor } from "../../../worker/Actor.ts"
 import type { CuratedFile } from "../../../worker/home/Curated.ts"
 import { tracked } from "../../../worker/test/branch.ts"
 import { build } from "../../../worker/test/flowHost.ts"
-import { contents, harness, stop, testFile, usage } from "../../../worker/test/harness.ts"
+import { harness, testFile } from "../../../worker/test/harness.ts"
 import { markdown, outsideWeb, type Page } from "../../../worker/test/pages.ts"
 import { BROWSER_TELEMETRY } from "../../telemetry"
-import { answerRow, cell, type Engine, openAgent } from "../../test/agent"
 import { COMMANDS } from "../commands/catalog"
 import { ViewRefused, ViewsClient } from "../views/api"
 import { DocsClient, DocsRefused } from "./api"
@@ -349,38 +348,6 @@ describe("the flow", () => {
       for (const field of Object.keys(log.annotations)) expect(BROWSER_TELEMETRY.fields).toContain(field)
     }
     expect(BROWSER_TELEMETRY.records).toEqual(expect.arrayContaining([...DOCS_TELEMETRY.records]))
-  }, WITHIN)
-})
-
-describe("the agent", () => {
-  const engines: Array<Engine> = []
-  afterEach(async () => {
-    for (const engine of engines.splice(0)) await engine.kill()
-  })
-
-  test("a cell's ctx.call shows a docs page as a journaled step, and the agent hears its text", async () => {
-    const cells = [
-      `const found = await ctx.call("app/docs/search", { repository: "acme/widgets", query: "retry" })\n` +
-      `console.log(JSON.stringify(found))`,
-      `ctx.done("Use retry with a schedule.")`,
-    ]
-    let calls = 0
-    const agent = await openAgent(
-      runtime,
-      () => Stream.make({ type: "text-delta" as const, id: "t", text: cell(cells[Math.min(calls++, 1)]!) }, usage, stop),
-      { fetch: outsideWeb(SITE), homes: HOMES },
-    )
-    const engine = await agent.engine()
-    engines.push(engine)
-    const answerId = await agent.ask("How do I retry in acme/widgets?")
-
-    expect(await agent.answer(engine, answerId)).toEqual(Exit.succeed({ status: "done" }))
-
-    expect((await rows()).map(({ template, props }) => [template, props.path])).toEqual([["docs", "/guide/retrying.md"]])
-    const answer = await answerRow(runtime, answerId)
-    expect(answer.parts).toEqual([{ id: "0.0", kind: "step", flow: "app/docs/search", status: "done" }])
-    // The call's answer, the page's text included, is in the model's next request.
-    expect(contents(agent.h.requests.at(-1)!).join("\n")).toContain(SENTINEL)
   }, WITHIN)
 })
 

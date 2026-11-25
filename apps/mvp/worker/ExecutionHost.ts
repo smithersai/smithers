@@ -19,7 +19,6 @@ import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
 import * as SandboxSpend from "./flows/SandboxSpend.ts"
 import * as BugReport from "./flows/BugReport.ts"
 import * as CiJobMachine from "./flows/CiJobMachine.ts"
-import * as Expire from "./flows/Expire.ts"
 import * as Pause from "./flows/Pause.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
 import * as RepoClone from "./flows/RepoClone.ts"
@@ -71,21 +70,19 @@ export interface Flows<ROut, E, R> {
 }
 
 /**
- * The deployed remote flows: `probe/Pause`, whose steps log, `chat/Expire` over `app`: the app's own tables (not
- * the engine's schema) and how old a streaming answer gets before it settles (docs/features/agent.md#settling), and
- * `ops/SpendAlert`, `ops/DatabaseLoad`, `ops/SandboxSpend` and `ops/BugReport` over the app's tables, sending through
+ * The deployed remote flows: `probe/Pause` logs its steps. `ops/SpendAlert`, `ops/DatabaseLoad`,
+ * `ops/SandboxSpend` and `ops/BugReport` use the app's database and send through
  * `channels`, the deployment's email and Telegram providers (none by default; docs/features/spend-alerts.md#channels,
  * `ops/DatabaseLoad` also reading Hyperdrive's pools through `pool` when there is one,
  * docs/features/database-alerts.md, docs/features/sandbox-budgets.md#the-spend-alert, docs/features/bugs.md).
  */
 export const remote = <E, R>(
-  app: Expire.Services<E, R>,
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
   channels?: Layer.Layer<Channels.Channels>,
   pool?: HyperdrivePool.Reader,
 ) => ({
   flows: [
     Pause.Pause,
-    Expire.Expire,
     SpendAlert.SpendAlert,
     DatabaseLoad.DatabaseLoad,
     DatabaseLoad.DatabaseLoadV2,
@@ -94,11 +91,10 @@ export const remote = <E, R>(
   ],
   registration: Layer.mergeAll(
     Pause.registration(Pause.logged),
-    Expire.registration(app),
-    SpendAlert.registration(app.database, channels),
-    DatabaseLoad.registration(app.database, channels, { pool }),
-    SandboxSpend.registration(app.database, channels),
-    BugReport.registration(app.database, channels),
+    SpendAlert.registration(database, channels),
+    DatabaseLoad.registration(database, channels, { pool }),
+    SandboxSpend.registration(database, channels),
+    BugReport.registration(database, channels),
   ),
 })
 
@@ -108,19 +104,19 @@ export const remote = <E, R>(
  * #signing-out).
  */
 export const remoteWithSignIn = <E, R>(
-  app: Expire.Services<E, R>,
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
   services: RecheckRole.Services,
   channels?: Layer.Layer<Channels.Channels>,
   pool?: HyperdrivePool.Reader,
 ) => {
-  const base = remote(app, channels, pool)
+  const base = remote(database, channels, pool)
   return {
     flows: [...base.flows, RecheckRole.RecheckRole, RevokeGitHubToken.RevokeGitHubToken, ReplacedTokens.RevokeReplacedGitHubToken, ReplacedTokens.SweepReplacedGitHubTokens, ReplacedTokens.MaintainSessions],
     registration: Layer.mergeAll(
       base.registration,
-      RecheckRole.registration(app.database, services),
-      RevokeGitHubToken.registration(app.database, services),
-      ReplacedTokens.registration(app.database, services),
+      RecheckRole.registration(database, services),
+      RevokeGitHubToken.registration(database, services),
+      ReplacedTokens.registration(database, services),
     ),
   }
 }

@@ -5,7 +5,6 @@ import { PINS_TELEMETRY } from "./features/pins/contract"
 // relay (worker/Chat.ts) keeps exactly these and drops the rest, and the engine worker exports only these spans
 // (src/flows/engine.ts), so the browser and the Worker share one list; src/telemetry.test.ts fails when they drift.
 // Nothing here imports a library, so every side can.
-import { AGENT_TELEMETRY } from "./features/agent/contract"
 import { ATTENTION_TELEMETRY } from "./features/attention/contract"
 import { AUTH_TELEMETRY } from "./features/auth/contract"
 import { BRANCH_TELEMETRY } from "./features/branch/contract"
@@ -191,7 +190,6 @@ const features: ReadonlyArray<Telemetry> = [
   COMMANDS_TELEMETRY,
   AUTH_TELEMETRY,
   FLOWS_TELEMETRY,
-  AGENT_TELEMETRY,
   { records: ["smithers_memory_operations", "memory.recall", "smithers_memory_recall_ms", "memory.remember", "smithers_memory_remembered", "memory.opening", "smithers_memory_recalled", "smithers_memory_inserted", "smithers_memory_filtered", "smithers_memory_ms", "chat.opening.skipped", "smithers_chat_opening_skipped"], fields: ["method", "outcome", "recalled", "inserted", "filtered", "skillsRecalled", "skillsInserted", "durationMs", "reason"] },
   THEME_TELEMETRY,
   NAVIGATION_TELEMETRY,

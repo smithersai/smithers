@@ -1,6 +1,6 @@
 # Benchmarks
 
-`pnpm bench` measures the chat app against `alchemy dev` or any deployment, in real Chromium and over plain HTTP from Node. Nothing is mocked: it uses the real app and its agent, the ChatApi Worker, Postgres, Electric and the model. Every question is asked through a page's composer, and that page's own agent answers it ([agent.md](features/agent.md)). It checks every answer and compares the run with a baseline.
+`pnpm bench` measures the chat app in Chromium and over HTTP. Chromium asks through the composer. A deterministic agent pairs over MCP, waits for Electric to deliver the question, then writes the matching word through the Worker. The bench checks the HTTP receipt, the stored answer and the browser display.
 
 ## Run it
 
@@ -10,13 +10,13 @@
 | Live | `BASE_URL=https://<host> pnpm bench` |
 
 - The bench never starts or restarts the server. It waits up to 120 s for `<BASE_URL>/app`, then exits. If `GET /api/shapes/messages?offset=now` fails, it exits at once.
-- A default run asks 19 questions (1 + 2 × 5 + 4 × 2) in the shared conversation that everyone sees. Each answer is one agent run, of one model call or more, through the deployment's model endpoint and key.
+- A default run asks 19 questions (1 + 2 × 5 + 4 × 2) in the home conversation. Set `GITHUB_REPOSITORY` to the home repository configured on the Worker when it differs from the default.
 - **Asking needs a Member.** The bench's pages carry no session. Under `alchemy dev` without the GitHub App's credentials, every page is the local developer, an Admin, and asks. Wherever sign-in is real (a deployment, or `alchemy dev` with the App configured) the pages are signed out: the seed can't ask, so no suite runs. A live run needs a session the bench doesn't carry yet.
 
 | Option | Environment | Default | |
 |---|---|---|---|
-| `--n <count>` | `BENCH_N` | `10` | Iterations of the suites that don't ask the model: `load`, `cmdk`, `shape` and `repo`. |
-| `--n-answer <count>` | `BENCH_N_ANSWER` | `5` | Iterations of the suites that ask the model: `answer` and `sync`. |
+| `--n <count>` | `BENCH_N` | `10` | Iterations of the load and repository suites: `load`, `cmdk`, `shape` and `repo`. |
+| `--n-answer <count>` | `BENCH_N_ANSWER` | `5` | Iterations of the question and answer suites: `answer` and `sync`. |
 | `--concurrency <P>` | `BENCH_CONCURRENCY` | `4` | Devices that ask at once in the `concurrent` suite. |
 | `--bursts <count>` | `BENCH_BURSTS` | `2` | How many times `concurrent`'s P devices ask at once. |
 | `--only <suites>` | | `load,cmdk,shape,repo,answer,sync,concurrent` | Suites to run, comma-separated. |
@@ -37,9 +37,9 @@ The bench's own tests: `node --test bench/`. Typecheck: `tsc -p bench`.
 
 A run starts one headless Chromium and one **follower**. The follower is a Node client that follows the `messages` shape live through ChatApi's proxy for the whole run, from `offset=now`. It records when Electric delivers each row and each change to it. The run asks a seed question, then runs the suites in order: `load`, `cmdk`, `shape`, `repo`, `answer`, `sync` and `concurrent`. Nothing records video or traces.
 
-**Pages ask; Node never does.** A question is asked as a person asks it: the composer, the outbox's `POST /api/questions`, and that tab's agent (`chat/Answer` on its engine worker) answering through `POST /api/model/agent` and `/api/answers/<id>`. ChatApi only stores a question and its empty `streaming` answer. Nothing would answer a question Node posted, and its `streaming` answer would hold up every later answer, the bench's and everyone else's, for up to `ANSWER_TURN_LIVE_SECONDS` (30 s; [agent.md](features/agent.md#turn-by-turn)). So the `POST` timings come from the asking page's Resource Timing, and Electric's delivery from the follower.
+**Pages ask.** The composer sends `POST /api/questions` through its outbox. Chromium's Resource Timing records the response. The follower records Electric's delivery to Node. The paired [test agent](../e2e/attach.ts) writes the word through `conversation_respond` for the delivered question and revokes its grant when the suite finishes.
 
-**Seed.** A throwaway page asks one question (`bench-<run>-seed`) and its timings are discarded. This warms the dev server's module transforms, the model endpoint and Electric. It also gives the `load` and `shape` suites a newest message to look for. If the seed's answer fails its check, no suite runs.
+**Seed.** A throwaway page asks `bench-<run>-seed` to warm the dev server, the MCP route and Electric. It also gives the load and shape suites a newest message to look for. Measured suites start after the seed passes.
 
 **Each context is a new device.** A browser context has its own OPFS, so it keeps its own copy of the conversation (SQLite on OPFS), its own engine and its own outbox ([chat.md](features/chat.md#how-it-works)). A cold load opens a new context and syncs the conversation from Electric's shape. A warm load reloads that context: the conversation comes from the device while Electric resumes from its stored offset, and the HTTP cache may hold the app's modules.
 
@@ -57,17 +57,16 @@ A run starts one headless Chromium and one **follower**. The follower is a Node 
 | **UI: ask to question shown** | `answer`, page | `timeStamp` of the Enter `keydown` | The question is in the asking page's DOM: TanStack DB's optimistic insert |
 | **UI: the page's POST to 202** | | The page's `POST /api/questions` starts (Resource Timing's `startTime`) | The first byte of the response ChatApi answered `202` (`responseStart`) |
 | **UI: the page's POST to the question from Electric** | | Same | The follower receives the question's row |
-| **UI: ask to first answer text / to done** | | The Enter `keydown` | The answer shows its first text, and its `data-streaming` turns `false`. The page's agent writes both through ChatApi's answer routes; Electric delivers them. |
+| **UI: ask to first answer text / to done** | | The Enter `keydown` | The answer shows its first text, and its `data-streaming` turns `false`. The MCP agent settles the answer in one write. Electric delivers it. |
 | **Fan-out: question, A to B** | `sync`, two pages | A's Enter `keydown` | The question is in B's DOM |
 | **Fan-out: answer done on B** | | Same | B's answer turns `data-streaming="false"` |
 | **Repositories shape initial sync** | `repo`, Node | `GET /api/shapes/repositories?offset=-1` | The response that ends with `up-to-date` (`repo.shape.initial_sync`) |
 | **Tree and README reads** | `repo`, Node | `GET /api/repos/octocat/Spoon-Knife/tree/<head>` and `/blob/<head>/README.md` sent | The whole body read. The first iteration (`repo.tree.first`, `repo.blob.first`) may read Code Storage; the rest are the immutable cache's (`repo.tree.cached`, `repo.blob.cached`). Without a ready `octocat/Spoon-Knife` (`e2e/repo.spec.ts` clones it) the suite only counts `repo.not_ready`. |
 | **Concurrent asks: POST to 202 / to the question / to done** | `concurrent`, P pages | Each page's `POST /api/questions` starts, after P Enter presses at once | Its `202`'s first byte; the follower receiving the question's row; the follower receiving the answer settled. Each burst starts once the last burst's answers are done. |
 
-`concurrent` also counts the status of each page's `POST /api/questions` (resends included), each answer the model refused with 429, and each failure.
+`concurrent` also counts the status of each page's `POST /api/questions` (resends included), and each failure.
 
-- **Two devices.** A and B are separate browser contexts. Each holds its own copy of the conversation and its own Electric long-poll. A's agent writes the answer through ChatApi; both pages show it as Electric delivers it.
-- **Answers come in turn** ([agent.md](features/agent.md#turn-by-turn)). An answer waits while an earlier `streaming` answer in the shared conversation is live. `answer` and `sync` ask one question at a time, so they wait only for other people's answers. In `concurrent`, a burst's P answers settle one after another: each `done` includes the answers before it, and `chat/LoadTurn`'s retries (250 ms, doubling to 4 s) between them.
+- **Two devices.** A and B are separate browser contexts. Each holds its own copy of the conversation and its own Electric long-poll. The attached agent writes through MCP and both pages show the answer from Electric.
 - **Clocks.** Every time is compared as `performance.timeOrigin + performance.now()`, both in the pages and in Node. Everything runs on one machine and shares its clock.
 - **"Shown"** means the element reached the DOM. A `MutationObserver` callback runs right after React commits, and the frame paints within one frame after that.
 - **Event timestamps.** `event.timeStamp` is when the browser created the input event, so input delay counts.
@@ -111,11 +110,6 @@ Every iteration checks its result, and any failed check fails the run.
 - After ⌘K, the composer has focus.
 - Each load reports TTFB, chat usable and newest message shown.
 
-**429s.** An answer the model refused with 429 (`failure: rate_limited`) is not a latency sample.
-
-- **`seed`, `answer` and `sync`:** the follower reads the answer's `failure`. On a 429, the iteration backs off 30 s and asks again with a new word (`…r1`). On a second 429 it backs off 60 s, and a third fails the check. The summary reports the 429s.
-- **`concurrent`:** an answer the model refused with 429 is counted, not failed, and the next burst backs off 30 s. Any other failure fails the check: no `POST` answered `202`, a question Electric didn't deliver within 15 s, an answer not done within 90 s, an answer that failed, or an answer without its word.
-
 A failed run still writes its results file, with `"ok": false` and the failures. It isn't compared with the baseline, and it exits 1. Chromium decides what counts as a contentful paint, so a missing FCP or LCP doesn't fail the run; the summary reports how often each was missing.
 
 ## Output
@@ -125,7 +119,7 @@ A failed run still writes its results file, with `"ok": false` and the failures.
   - the `concurrent` counts;
   - the checks and any regressions.
 - **`bench/results/<timestamp>.json`** holds:
-  - `env`: the jj commit (`jj log -r @ -T commit_id --no-graph`), base URL, server build (`vite-dev` or `built`), machine, OS, Chromium, Playwright, Node, date, every option, and the conversation's size: `conversationMessages` on the page, and `shape` (rows, operations, requests and bytes of its initial sync). It also records `follower` (`refetches` after an Electric 409, and request `errors`).
+  - `env`: the answer transport, the jj commit (`jj log -r @ -T commit_id --no-graph`), base URL, server build (`vite-dev` or `built`), machine, OS, Chromium, Playwright, Node, date, every option, and the conversation's size: `conversationMessages` on the page, and `shape` (rows, operations, requests and bytes of its initial sync). It also records `follower` (`refetches` after an Electric 409, and request `errors`).
   - `metrics` (the summaries), `notReported`, `counts`, `checks` and `comparison`.
   - `samples`: every raw sample.
   - `details`, per iteration: each word, answer text and status, and the statuses of the asking page's `POST /api/questions`. For `load`, each page's shape requests and how many came from the HTTP cache.
@@ -135,7 +129,7 @@ A failed run still writes its results file, with `"ok": false` and the failures.
 
 `bench/baseline.json` holds one baseline per `BASE_URL`: the p50 and p95 of every metric, plus the source run, commit, machine and server build.
 
-- **Matching.** A run is compared only with the baseline for its own `BASE_URL`. If the baseline ran on another machine or server build, the summary warns.
+- **Matching.** A run is compared only with the baseline for its own `BASE_URL`. If the baseline ran on another machine or server build, the summary warns. MCP answer timings use new metric names so reports do not compare them with the earlier browser model timings.
 - **Regression.** A statistic regresses when `current > baseline × (1 + threshold)` and `current − baseline > floor`. The floor keeps a 2 ms metric that moves to 3 ms from counting. Any regression exits 1.
 - **Setting a baseline.** `pnpm bench --update-baseline` replaces the baseline for its `BASE_URL`, and only when every check passed.
 

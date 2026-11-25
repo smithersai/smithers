@@ -225,3 +225,46 @@ export const parsePublicRepoMcpPath = (
   if (owner === "api" || owner === "app" || owner === "assets" || owner === ".well-known") return null
   return { owner, name }
 }
+
+// BYOA attach (decision 0173, worker/attach/LiveMount.ts): a person's own agent gets a grant for one conversation.
+
+/** The attach routes' root on ChatApi. */
+export const ATTACH_ROUTE = "/api/attach"
+
+/** `POST`, the person's own session: mints a reference for the copied prompt. */
+export const ATTACH_INTENTS_ROUTE = `${ATTACH_ROUTE}/intents`
+
+/** `POST`, the agent: claims a reference with a PKCE S256 challenge. */
+export const ATTACH_CLAIMS_ROUTE = `${ATTACH_ROUTE}/claims`
+
+/** `POST`, the person's own session: the consent view of their reference's claim. */
+export const ATTACH_CONSENT_ROUTE = `${ATTACH_ROUTE}/consent`
+
+/** `POST`, the person's own session: approves a claim by its id and pairing code. */
+export const ATTACH_APPROVALS_ROUTE = `${ATTACH_ROUTE}/approvals`
+
+/** `POST`, the agent: redeems an approval's code and its PKCE verifier for the grant's bearer token. */
+export const ATTACH_TOKENS_ROUTE = `${ATTACH_ROUTE}/tokens`
+
+/** `POST`, the person's own session: revokes one of their grants. */
+export const ATTACH_REVOCATIONS_ROUTE = `${ATTACH_ROUTE}/revocations`
+
+/** Prefix for the attached agent's Streamable HTTP endpoint. */
+export const ATTACH_MCP_ROUTE = ATTACH_ROUTE + "/mcp"
+
+/** The attached agent's MCP endpoint for one branch of a repository. The branch may hold slashes. */
+export const attachMcpRoute = (owner: string, name: string, branch: string): string =>
+  `${ATTACH_MCP_ROUTE}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${branch.split("/").map(encodeURIComponent).join("/")}`
+
+/**
+ * What a grant may let an attached agent do in its conversation: read its messages, and answer the questions its
+ * person asked there. A person holds `read` on a branch they may view and `write` where they may ask.
+ */
+export const ATTACH_CAPABILITIES = ["conversation:read", "conversation:write"] as const
+export type AttachCapability = (typeof ATTACH_CAPABILITIES)[number]
+
+/** The most messages one `conversation_read` call returns. */
+export const ATTACH_READ_LIMIT = 100
+
+/** The longest answer an attached agent may write, in characters. */
+export const ATTACH_MAX_ANSWER_LENGTH = 32_000

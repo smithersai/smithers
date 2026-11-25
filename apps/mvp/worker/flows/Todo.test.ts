@@ -3,7 +3,7 @@ import { TestSchemas } from "@smthrs/database"
 // schema of the compose Postgres (`pnpm db:up`), against the scripted GitHub on the `HttpClient` seam. The providers
 // reach the run as Effect services: the branch's machine runs real sandbox tools and processes on a
 // scratch checkout, and the model behind the agent's `agent` seat is scripted, while its admission and
-// metering are the model endpoint's own (`ModelEndpoint.local`). The writer, the engine, the GitHub client, the tokens
+// metering are the model endpoint's own (`ModelSeats.local`). The writer, the engine, the GitHub client, the tokens
 // and the projection are the real ones.
 import { Agent } from "@smthrs/agent"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, WaitFor } from "@smthrs/flow"
@@ -33,10 +33,11 @@ import { REPOSITORY, reset, services as githubServices, sql } from "../github/te
 import { BOT_LOGIN, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as Apply from "../github/Apply.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
-import * as ModelEndpoint from "../ModelEndpoint.ts"
+import * as ModelSeats from "../ModelSeats.ts"
+import * as ModelRoles from "../ModelRoles.ts"
 import { PersonalModels } from "../personal/Models.ts"
 import { KEY, resetModels, seed, seedKeys, VALUE } from "../personal/test/harness.ts"
-import { scriptedProvider } from "../personal/test/provider.ts"
+import { OPENAI_ORIGIN, scriptedProvider } from "../personal/test/provider.ts"
 import { SecretKeys } from "../secrets/Keys.ts"
 import * as RunnerStore from "../runners/Store.ts"
 import * as Stack from "../stack/Stack.ts"
@@ -57,7 +58,7 @@ afterAll(() => rmSync(boxes, { recursive: true, force: true }))
 beforeEach(async () => {
   await reset(runtime)
   await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks, pulls, pull_commits, reviews, runs")
-  await sql(runtime, "TRUNCATE model_usage, model_budget_days")
+  await sql(runtime, "TRUNCATE model_usage, model_budget_days, model_roles, model_role_changes")
   await sql(runtime, "TRUNCATE agent_jobs, agents, agent_changes RESTART IDENTITY CASCADE")
   await resetModels(runtime)
 })
@@ -134,20 +135,23 @@ const WRITES_README = [
  * The `agent` seat over `model`, admitted and metered as the endpoint's calls are; given `personal`, the people's own
  * models' provider, the deployed `coding` seat, whose run's committer's own model answers (worker/Executions.ts).
  */
-const agentSeat = async (model: Model.Model, personal?: typeof globalThis.fetch) => {
+const agentSeat = async (model: Model.Model, personal?: typeof globalThis.fetch, requireCoding = false) => {
   const db = await database()
   const local = await Effect.runPromise(
-    ModelEndpoint.local(db, { hosted: true }).pipe(
+    ModelSeats.local(db, { hosted: true }).pipe(
       Effect.provide(personal === undefined ? PersonalModels.none : PersonalModels.layer(db).pipe(Layer.provide(SecretKeys.layer(KEY)))),
       Effect.provideService(
         HostModel,
         HostModel.of({ modelId: "agent-model", model, route: { prepare: () => Effect.die(new Error("unused")) } }),
       ),
-      Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+      Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({
+        SMITHERS_MODEL_KEY_LEGACY: "legacy-test-key",
+        SMITHERS_MODEL_KEY_LEGACY_ORIGIN: OPENAI_ORIGIN,
+      }))),
       Effect.provideService(FetchHttpClient.Fetch, personal ?? globalThis.fetch),
     ),
   )
-  return personal === undefined
+  return personal === undefined && !requireCoding
     ? local("agent")
     : local("coding", undefined, (executionId) => TodoMachine.ownerOf(executionId).pipe(Effect.map(Option.map(personId => ({ personId, deploymentPays: true }))), Effect.provide(db)))
 }
@@ -163,6 +167,7 @@ const setup = async (
     readonly schema?: string
     /** The people's own models' provider: the run's committer's model answers its agent. */
     readonly personal?: typeof globalThis.fetch
+    readonly requireCoding?: boolean
     /** SECRETS_KEY is set, so a run can open what its committer sealed. */
     readonly secrets?: boolean
   } = {},
@@ -172,6 +177,8 @@ const setup = async (
   const machine = machines(github, options.run, { onRun: options.onRun })
   const { services } = await githubServices(runtime, github)
   const starts: Array<{ readonly flow: string; readonly executionId: string; readonly payload: unknown }> = []
+  const agent = cells(...(options.agent ?? [WRITES_README]))
+  const seat = await agentSeat(options.model ?? agent.model, options.personal, options.requireCoding)
   const todoServices: Todo.Services<unknown, never> = {
     database: services.database,
     tokens: services.tokens,
@@ -184,10 +191,11 @@ const setup = async (
           Layer.orDie,
         ) }
       : {}),
+    ...(options.requireCoding === true
+      ? { requireCodingSeat: (personId) => seat.requireSeat({ personId, deploymentPays: true }) }
+      : {}),
     start: (flow, start) => Effect.sync(() => void starts.push({ flow: flow._tag, ...start })),
   }
-  const agent = cells(...(options.agent ?? [WRITES_README]))
-  const seat = await agentSeat(options.model ?? agent.model, options.personal)
   // The agent's commands run as `sandbox/Command` jobs, which the deployed host registers beside the sandbox tools.
   const registration = Layer.mergeAll(
     Todo.registration(todoServices, TodoAgent.registration(seat, await database(), Agent.layerSandbox)),
@@ -412,6 +420,23 @@ describe("the todo run", { timeout: 120_000 }, () => {
     expect((await todo(1))["branch"]).toMatch(/^smithers\/t1-nothing-[0-9a-f]{12}$/)
     expect([...ctx.github.refs.keys()]).toEqual(["main"])
     expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(0)
+  })
+
+  test("a deployment-paid TODO without a coding seat reports NoSeat without calling the legacy agent model", async () => {
+    await runtime.runPromise(ModelRoles.set({
+      role: "agent",
+      model: { protocol: "openai-chat", baseUrl: OPENAI_ORIGIN, modelId: "legacy-agent", credential: "LEGACY" },
+    }, { actorId: maya.id, invocationKey: crypto.randomUUID() }))
+    const provider = scriptedProvider({ text: "legacy agent answered" })
+    const ctx = await setup({ requireCoding: true, personal: provider.fetch })
+    const start = (await commit("No coding seat", "Nothing can answer."))!
+    const ran = await ctx.run(start)
+    expect(Exit.isFailure(ran.exit) && Cause.squash(ran.exit.cause)).toBeInstanceOf(ModelSeats.NoSeat)
+    expect(ran.status).toBe("failed")
+    expect(await todo()).toMatchObject({ state: "failed", failure: "implement" })
+    expect(provider.seen).toEqual([])
+    expect(ctx.agent.requests).toEqual([])
+    expect(ctx.github.pulls.size).toBe(0)
   })
 
   test("its committer's own model answers the run's agent, with their key, outside the deployment's budget", async () => {

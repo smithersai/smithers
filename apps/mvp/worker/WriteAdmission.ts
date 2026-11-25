@@ -1,4 +1,3 @@
-import { ModelProxy } from "@smthrs/model"
 import { Data, Duration, Effect, Metric, Option, Stream } from "effect"
 import * as BodyLimits from "./BodyLimits.ts"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -46,11 +45,6 @@ export const afterBody = <E, R>(handler: Effect.Effect<HttpServerResponse.HttpSe
     yield* Metric.update(Metric.withAttributes(bodies, { status: String(status) }), 1)
     if (result._tag === "Failure") {
       yield* Effect.logWarning("write.body").pipe(Effect.annotateLogs({ status }))
-      if (status === 413 && request.url.split("?")[0]!.startsWith("/api/model/")) {
-        const requestId = crypto.randomUUID().replaceAll("-", "")
-        return HttpServerResponse.jsonUnsafe({ code: "invalid_request", message: `Send at most ${maxBytes} bytes.`, requestId } satisfies ModelProxy.ErrorBody,
-          { status, headers: { "cache-control": "no-store", [ModelProxy.requestIdHeader]: requestId } })
-      }
       return HttpServerResponse.jsonUnsafe({ code: status === 408 ? "body_timeout" : status === 413 ? "too_large" : "invalid" },
         { status, headers: { "cache-control": "no-store" } })
     }

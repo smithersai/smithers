@@ -1,3 +1,4 @@
+import { SetTheme } from "../features/theme/flows"
 // This device's engine as the browser builds it (src/test/device.ts): a tab dispatches through `BrowserEngine` to the
 // leader's engine worker, which runs every client flow and reaches the tab's collections through the tab port. A
 // person's button and the agent's cell both switch the theme through the one declaration, `app/theme/set`. The tab's
@@ -8,20 +9,17 @@ import { BrowserEngine, TabChannel } from "@smthrs/platform-browser"
 import { Context, Effect, Exit, Fiber, Layer, Logger, ManagedRuntime, Option, References, Scope, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { stop, testFile, usage } from "../../worker/test/harness.ts"
-import { Answer } from "../features/agent/flows"
+import { testFile } from "../../worker/test/harness.ts"
 import { sessionChannel } from "../features/auth/contract"
-import { REFRESH_RETRY } from "../features/auth/flows"
 import { SessionCall } from "../features/auth/schema"
 import { answerAskingTab } from "./askingTab"
 import type { ThemeMode } from "../features/theme/contract"
 import { WriteTheme } from "../features/theme/flows"
 import { ThemeStore } from "../features/theme/store"
-import { answerRow, cell, openAgent } from "../test/agent"
+import { openFlowHost } from "../test/flowHost"
 import { openDevice } from "../test/device"
 import { EngineFailed, engineRequests, failFastOnEngine, tabAnswers, tabEngine, TabWorker } from "./engine"
 import { ClientEngine } from "./dispatch"
-import { AnswerReference } from "../features/agent/reference"
 import { type Endpoint, TabCallFailed, TabPort } from "./tabPort"
 
 const runtime = testFile("device")
@@ -33,7 +31,7 @@ afterEach(async () => {
 
 describe("the device's engine", () => {
   test("a person's button sets the theme through the leader's engine and the tab port, and the tab paints it", async () => {
-    const agent = await openAgent(runtime, () => Stream.empty)
+    const agent = await openFlowHost(runtime, () => Stream.empty)
     const device = await openDevice(agent.fetch)
     devices.push(device)
 
@@ -48,7 +46,7 @@ describe("the device's engine", () => {
   })
 
   test("the tab says which door its press came through, so a person-only press goes in the person's session", async () => {
-    const agent = await openAgent(runtime, () => Stream.empty)
+    const agent = await openFlowHost(runtime, () => Stream.empty)
     const device = await openDevice(agent.fetch)
     devices.push(device)
 
@@ -63,29 +61,8 @@ describe("the device's engine", () => {
     expect(answered).toMatchObject({ _tag: "Failed", error: { _tag: "@smthrs/mvp/status/AnswerRefused", status: 404 } })
   })
 
-  test("the agent answers on the leader's engine, and its theme call paints this tab", async () => {
-    let calls = 0
-    const agent = await openAgent(runtime, () => {
-      calls++
-      const source = calls === 1
-        ? `await ctx.call("app/theme/set", { mode: "dark" })`
-        : `ctx.done("Dark mode is on.")`
-      return Stream.make({ type: "text-delta" as const, id: "t", text: cell(source) }, usage, stop)
-    })
-    const device = await openDevice(agent.fetch)
-    devices.push(device)
-    const answerId = await agent.ask("Switch to dark mode")
-
-    await Effect.runPromise(device.engine.start(Answer, { executionId: answerId, payload: { answerId } }))
-    const exit = await Effect.runPromise(device.engine.result(Answer, answerId))
-
-    expect(exit).toEqual(Exit.succeed({ status: "done" }))
-    expect(device.painted).toEqual(["dark"])
-    expect(await answerRow(runtime, answerId)).toMatchObject({ status: "done", text: "Dark mode is on." })
-  })
-
   test("a session refresh waiting out its backoff holds up no other flow on the leader's engine", async () => {
-    const agent = await openAgent(runtime, () => Stream.empty)
+    const agent = await openFlowHost(runtime, () => Stream.empty)
     const device = await openDevice(agent.fetch)
     devices.push(device)
     // The tab's side of auth/refresh, on a ChatApi that never says who is signed in: the engine asks again and again.
@@ -104,10 +81,8 @@ describe("the device's engine", () => {
       const refreshing = Effect.runFork(device.dispatch.dispatch("auth/refresh", {}, { door: "sync" }))
       await vi.waitFor(() => expect(asked.length).toBeGreaterThanOrEqual(2), { timeout: 10_000, interval: 20 })
       // The refresh is between attempts, its run still open: another flow starts and ends at once.
-      const startedAt = Date.now()
       const set = await Effect.runPromise(device.dispatch.dispatch("app/theme/set", { mode: "dark" }, { door: "button" }))
       expect(set).toEqual({ _tag: "Done", value: { mode: "dark" } })
-      expect(Date.now() - startedAt).toBeLessThan(REFRESH_RETRY.initialMs * 2)
       expect(device.painted).toEqual(["dark"])
       expect(refreshing.pollUnsafe()).toBeUndefined()
       await Effect.runPromise(Fiber.interrupt(refreshing))
@@ -195,7 +170,7 @@ describe("an engine worker that fails", () => {
     const dispatched = runtime.runPromise(
       Effect.flip(
         Effect.flatMap(Effect.service(ClientEngine), (client) =>
-          client.start(AnswerReference, { executionId: crypto.randomUUID(), payload: { answerId: crypto.randomUUID() } })),
+          client.start(SetTheme, { executionId: crypto.randomUUID(), payload: { mode: "dark" } })),
       ),
     )
 
@@ -241,12 +216,11 @@ describe("the engine worker's requests", () => {
     const logger = Logger.make(({ message, fiber }) =>
       void lines.push({ message: (message as ReadonlyArray<unknown>)[0], annotations: fiber.getRef(References.CurrentLogAnnotations) })
     )
-    // The provider is down: the deployment's model endpoint answers 503, and another origin refuses too.
     const down: typeof globalThis.fetch = async () => new Response(null, { status: 503 })
     await Effect.runPromise(Effect.gen(function* () {
       const fetch = yield* FetchHttpClient.Fetch
-      yield* Effect.promise(() => fetch("https://chat.test/api/model/agent", { method: "POST" }))
-      yield* Effect.promise(() => fetch("https://elsewhere.test/api/model/agent"))
+      yield* Effect.promise(() => fetch("https://chat.test/api/runs/2c73810e-9827-4135-a082-e36aa01c93a0", { method: "POST" }))
+      yield* Effect.promise(() => fetch("https://elsewhere.test/api/runs/2c73810e-9827-4135-a082-e36aa01c93a0"))
     }).pipe(
       Effect.provide(engineRequests("https://chat.test")),
       Effect.provide(Logger.layer([logger])),
@@ -254,7 +228,7 @@ describe("the engine worker's requests", () => {
     ))
     expect(lines).toEqual([{
       message: "http.request.failed",
-      annotations: { route: "/api/model/:id", method: "POST", status: 503, statusClass: "5xx", retried: false, failures: 1 },
+      annotations: { route: "/api/runs/:id", method: "POST", status: 503, statusClass: "5xx", retried: false, failures: 1 },
     }])
   })
 })

@@ -1,18 +1,20 @@
-import { Agent, Budget, QuotaPolicy } from "@smthrs/agent"
+import { Agent, AgentAction, Budget, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
 import { digestSync, Uuid } from "@smthrs/crypto"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { EngineStore } from "@smthrs/flows"
 import { RealmFlow } from "@smthrs/harness"
-import { Evaluator } from "@smthrs/model"
+import { Evaluator, type Model } from "@smthrs/model"
+import { Registry } from "@smthrs/registry"
 import { Clock, Effect, Layer, Option, Schema } from "effect"
 import { codeOf } from "../../errorCode"
-import { callFlow, publicError } from "../../flows/catalog"
+import { callFlow, publicError, source as catalogSource } from "../../flows/catalog"
 import { declarationOf } from "../../flows/declarations"
 import { entryOf, type FlowName } from "../../flows/registry"
-import * as AgentHost from "../agent/host"
+import { clientSeat } from "../model/clientSeat"
+import { SandboxRun } from "../sandbox/flows"
 import { startRoot } from "../runs/start"
 import { FlowsClient } from "./api"
-import { DRAFT_ID_NAMESPACE, FLOW_MODEL_ROLE, MAX_REALM_CALLS } from "./contract"
+import { DRAFT_ID_NAMESPACE, DRAFT_MODEL_ROLE, FLOW_MODEL_ROLE, MAX_FLOW_FRAMES, MAX_REALM_CALLS } from "./contract"
 import { PROMPT_CALLABLE } from "./callable"
 import { checkSource, passes, readSource } from "./checks"
 import {
@@ -67,9 +69,7 @@ import { placementOf, renderSource, SOURCE_PATH } from "./source"
 
 // What your own flows' steps do (decision 0014 §2, docs/features/flows.md#your-own-flows): ChatApi's flows and drafts
 // routes through `FlowsClient`, the static checks over the registry's `ModuleFlow` (./checks.ts), a person's code in the
-// QuickJS realm through `RealmFlow` (@smthrs/harness), and the agent through the same seat, catalog and policies
-// `chat/Answer` runs on (src/features/agent/host.ts). Only an engine's host imports this module: the engine worker and
-// the Node host.
+// QuickJS realm through `RealmFlow` (@smthrs/harness). Only an engine's host imports this module.
 
 /** The answered questions of a round, as the drafting agent reads them. */
 const answered = (questions: ReadonlyArray<DraftQuestion>) =>
@@ -477,7 +477,7 @@ export const list = () =>
   )
 
 /**
- * Every `flow/*` flow registered with its steps. The agent's steps need the agent's runtime (`agentRuntime`), and
+ * Every `flow/*` flow registered with its steps. The agent's steps need the host's prompt runtime, and
  * every step that calls ChatApi needs `FlowsClient`.
  */
 export const registration = Layer.mergeAll(
@@ -504,20 +504,32 @@ export const registration = Layer.mergeAll(
   Interpreter.layerWithImplementations(FlowDrafts, ReadDrafts.toLayer(drafts)),
 )
 
-/**
- * The agent's runtime for the drafting and running agents: the model endpoint's `agent` seat on `origin`, the app's
- * catalog (scoped per run, src/flows/catalog.ts) and `chat/Answer`'s policies. Their events go to no sink: a person's
- * flow shows on its run page, not as an answer's parts.
- */
-export const agentRuntime = (origin: string) =>
-  Layer.mergeAll(AgentHost.agentHost, AgentHost.seats(origin), Agent.layer).pipe(
+/** Runtime for a host that explicitly supplies a seat to a person's prompt flow. */
+const promptRuntime = (origin: string, model?: Model.Model) =>
+  Layer.mergeAll(
+    Layer.effect(AgentAction.Host, Effect.map(catalogSource, (app) => AgentAction.makeHost({
+      registry: Registry.makeNoop(),
+      flows: [app],
+      limits: { calls: MAX_REALM_CALLS, pauseTotalMsFor: [SandboxRun._tag] },
+      capabilityEnvelope: [],
+      maxFrames: MAX_FLOW_FRAMES,
+    }))),
+    model === undefined
+      ? SeatResolver.layerNoop()
+      : SeatResolver.layer({
+        resolve: (id) => id === FLOW_MODEL_ROLE || id === DRAFT_MODEL_ROLE
+          ? Effect.succeed(Seat.make({ id, modelId: id, contextWindowTokens: 32_768, ...clientSeat(origin, id, model) }))
+          : Effect.fail(new Seat.SeatUnresolved({ seat: id, message: "No model seat is configured." })),
+      }),
+    Agent.layer,
+  ).pipe(
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
     Layer.provideMerge(Layer.mergeAll(Agent.layerDefaults, Evaluator.layerUnavailable())),
   )
 
-/** Your own flows on a host: the registration, with ChatApi on `origin` and the agent's runtime. */
-export const layer = (origin: string) =>
+/** Your own flows on a host: the registration and its ChatApi client. */
+export const layer = (origin: string, model?: Model.Model) =>
   registration.pipe(
-    Layer.provide(agentRuntime(origin)),
+    Layer.provide(promptRuntime(origin, model)),
     Layer.provide(FlowsClient.layer({ origin })),
   )

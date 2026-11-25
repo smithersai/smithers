@@ -111,27 +111,10 @@ export const DOMAIN_ROLES: ReadonlyArray<Role> = ["admin", "maintainer"]
 /** Whether a person with `role` may manage custom domains: Maintainer or Admin. */
 export const mayManageDomains = (role: Role | null): boolean => role !== null && DOMAIN_ROLES.includes(role)
 
-/**
- * What stands where the composer goes: the composer (`ask`), the line saying only Members ask (`members_only`), the
- * sign-in prompt (`sign_in`), the way to add a model of one's own while the deployment's is off (`add_model`, decision
- * 0099), or nothing yet (`wait`).
- */
-export type ComposerAccess = "ask" | "members_only" | "sign_in" | "add_model" | "wait"
+/** What stands where the composer goes. The conversation's repository role controls sending. */
+export type ComposerAccess = "ask" | "members_only" | "sign_in" | "wait"
 
-/** Whether the person has saved a model of their own, as this tab knows it: `saved`, `none`, or not synced yet. */
-export type OwnModel = "saved" | "none" | "loading"
-
-/**
- * What stands where the composer goes, from what ChatApi said (`status`, `role` and whether the deployment's own model
- * answers this person, `hostedModel`), and, while it hasn't said or can't be reached, the last session it confirmed on
- * this device (`confirmed`, once `restored` from the device): a person who reloads offline keeps asking. The sign-in
- * prompt shows only when ChatApi says signed out, or when ChatApi can't be reached and the device never confirmed a
- * session. While the deployment's model doesn't answer them, a person who may ask needs their own (`own`): without
- * one, the way to add it, never a composer whose every answer would fail; nothing until their row has synced.
- * `member` is whether they are a Member or above on the repository of the conversation the composer asks in (ruling
- * AUTH-8), as its branch's access says; absent, their role on the deployment's own repository (`role`) decides, as in
- * its home conversation.
- */
+/** Uses the last confirmed role while the network is unavailable on this device. */
 export const composerAccess = (
   session: {
     readonly status: "loading" | "signed_in" | "signed_out" | "unreachable"
@@ -141,12 +124,10 @@ export const composerAccess = (
     readonly hostedModel?: boolean | undefined
   },
   confirmed: { readonly role: Role | null } | undefined,
-  own: OwnModel = "saved",
   member?: boolean,
 ): ComposerAccess => {
   if (session.status === "signed_in") {
     if (!(member ?? mayAsk(session.role))) return session.roleConfirmed === false ? "wait" : "members_only"
-    if (session.hostedModel === false && own !== "saved") return own === "none" ? "add_model" : "wait"
     return "ask"
   }
   if (session.status === "signed_out") return "sign_in"
@@ -222,11 +203,6 @@ export const SIGN_IN_TO_ASK = "Sign in to ask Smithers."
 /** Where the composer would be, for a signed-in Guest or a person with no role on the conversation's repository. */
 export const MEMBERS_ASK = "Members can ask Smithers."
 
-/** Where the composer goes while the deployment's model is off and the person has none of their own. */
-export const ADD_YOUR_MODEL = "Add your model"
-
-/** The button that opens Settings ▸ Your model. */
-export const OPEN_SETTINGS = "Open settings"
 
 /** Beside the button after the callback failed. */
 export const SIGN_IN_FAILED = "Couldn't sign in."

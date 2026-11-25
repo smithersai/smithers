@@ -1,5 +1,4 @@
 import { Schema } from "effect"
-import { Part } from "../agent/schema"
 import { FormValues } from "../views/schema"
 import { COPY_ANSWERS, EDIT_ANSWERS } from "./contract"
 import { copyPayload, editPayload } from "./flows"
@@ -7,6 +6,18 @@ import { copyPayload, editPayload } from "./flows"
 // Every row chat's collections hold, as the Effect Schema its collection checks it with. Constants the browser shares
 // with ChatApi live in contract.ts. A row stored on the device (`messages`, `unsent`) or in the outbox (`asking`) is
 // read by the next version of the app too: change its shape only with its collection's `schemaVersion`, or its `v`.
+
+/**
+ * One step recorded in a historical answer: the flow it called and how the call went. `id` is the call's place
+ * in the run, `<frame>.<ordinal>`, so a replayed step keeps its id.
+ */
+export const Part = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literal("step"),
+  flow: Schema.String,
+  status: Schema.Literals(["running", "done", "failed"]),
+})
+export type Part = typeof Part.Type
 
 /**
  * One row of Postgres `messages` as Electric delivers it (docs/features/chat.md#messages-postgres): columns in

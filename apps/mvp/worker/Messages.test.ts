@@ -26,14 +26,13 @@ const alone = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
     }),
   )
 
-/** Settles a streaming answer with `text`, as the answer routes do (worker/Answers.ts). */
-const settle = (answerId: string, text: string, status: "done" | "failed") =>
+/** Settles a streaming answer with `text`, to set up the completed-answer case. */
+const settle = (answerId: string, text: string) =>
   runtime.runPromise(
     Effect.flatMap(
       SqlClient.SqlClient,
       (sql) =>
-        sql`UPDATE messages SET status = ${status}, text = ${text},
-          failure = ${status === "failed" ? "model_error" : null}
+        sql`UPDATE messages SET status = 'done', text = ${text}
           WHERE id = ${answerId} AND status = 'streaming'`,
     ),
   )
@@ -125,7 +124,7 @@ describe("ask", () => {
     const question = { id: uuid(), answerId: uuid(), text: "Ask me once.", askedBy: asker, conversationId }
     await runtime.runPromise(Messages.ask(question))
     expect(await runtime.runPromise(Messages.ask(question))).toEqual({ txid: null })
-    await settle(question.answerId, "Once.", "done")
+    await settle(question.answerId, "Once.")
     expect(await runtime.runPromise(Messages.ask(question))).toEqual({ txid: null })
     expect(await rowCount(runtime)).toBe(2)
     expect(await row(runtime, question.answerId)).toMatchObject({ status: "done", text: "Once." })
@@ -152,33 +151,5 @@ describe("ask", () => {
     expect(SqlError.isSqlError(error) && error.reason._tag).toBe("UniqueViolation")
     expect(await rowCount(runtime)).toBe(2)
     expect(await order()).not.toContain(clash)
-  })
-})
-
-describe("history", () => {
-  /** A question and its answer: finished, failed, or still streaming. */
-  const exchange = (question: string, answer: string, status: "done" | "failed" | "streaming") =>
-    runtime.runPromise(
-      Effect.gen(function* () {
-        const ids = { id: uuid(), answerId: uuid() }
-        yield* Messages.ask({ ...ids, text: question, askedBy: asker, conversationId })
-        return ids
-      }),
-    ).then(async (ids) => {
-      if (status !== "streaming") await settle(ids.answerId, answer, status)
-      return ids
-    })
-
-  test("is the finished exchanges before the answer, oldest first", async () => {
-    await exchange("one", "1", "done")
-    await exchange("broken", "", "failed")
-    await exchange("elsewhere", "", "streaming")
-    await exchange("two", "2", "done")
-    const target = await exchange("target", "", "streaming")
-    await exchange("after", "later", "done")
-    expect(await runtime.runPromise(Messages.history(target.answerId))).toEqual([
-      { question: "one", answer: "1" },
-      { question: "two", answer: "2" },
-    ])
   })
 })

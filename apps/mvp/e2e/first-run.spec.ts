@@ -3,28 +3,23 @@ import { SIGN_IN } from "../src/features/auth/contract"
 import { expect, test } from "./devices"
 import { step, test as pageTest } from "./fixtures"
 import { firstRun, firstRunStep } from "./firstRun"
-import { baseURL, requires, scriptedAgent, signedOut, target } from "./target"
+import { baseURL, requires, signedOut, target } from "./target"
 
 // The first run (decision 0121, docs/features/first-run.md): until a person has a conversation of their own, `/app`
 // shows the steps to their first one where the composer would be, each a mark and a title, the current one with its
 // button. The walk runs locally as a brand-new person (local development's `newcomer-<word>`, worker/DevChatApi.ts)
-// with the scripted `hello` agent answering (src/test/scriptedAgent.ts). The first page runs everywhere, production
-// included: it reads and writes nothing of the test account's but its own page visit.
+// and stores a first question. The first page runs on local and hosted deployments.
 
 /** A step's ✓: its mark says Done to assistive technology. */
 const done = (page: Parameters<typeof firstRunStep>[0], title: string) => firstRunStep(page, title).getByRole("img", { name: DONE })
 
-/** What `/api/auth/session` says of the deployment's own model, which decides whether Add your model is a step. */
-const hostedModelOf = async (page: Parameters<typeof firstRunStep>[0]) =>
-  ((await (await page.request.get("/api/auth/session")).json()) as { hostedModel?: boolean }).hostedModel === true
-
 test("first run: a brand-new person signs in from the first step, asks Smithers, and the steps are gone", {
   annotation: {
     type: "summary",
-    description: "A new person sees the steps, signs in from the first one, opens Chat, gets an answer, and never sees the steps again.",
+    description: "A new person sees the steps, signs in from the first one, opens Chat, sends a question, and never sees the steps again.",
   },
 }, async ({ devices }) => {
-  requires("devPeople", "devSignIn", "scriptedAgent")
+  requires("devPeople", "devSignIn")
   test.setTimeout(240_000)
   const word = devices.word
   const person = `newcomer-${word}` as const
@@ -32,8 +27,7 @@ test("first run: a brand-new person signs in from the first step, asks Smithers,
   const page = a.page
 
   await step("Open Smithers signed out: the first step is Sign in", async () => {
-    // The scripted agent answers here: the engine worker is named for the page's parameters as it starts.
-    await page.goto(scriptedAgent("hello"))
+    await page.goto("/app")
     await a.ready()
     await expect(firstRunStep(page, "Sign in")).toHaveAttribute("aria-current", "step", { timeout: 30_000 })
     await expect(firstRunStep(page, "Ask Smithers")).toHaveAttribute("data-state", "later")
@@ -51,12 +45,12 @@ test("first run: a brand-new person signs in from the first step, asks Smithers,
   })
 
   const question = `Say hello to ${word}`
-  await step("Chat opens the composer in the steps' place, and Smithers answers", async () => {
+  await step("Chat opens the composer and stores the first question", async () => {
     await a.chatButton.click()
     await expect(a.composer).toBeVisible()
     await expect(firstRun(page)).toHaveCount(0)
-    await a.ask(question)
-    await a.expectAnswered(question, `Hello, ${word}.`, 90_000)
+    await a.askAndWaitTaken(question)
+    await expect(a.question(question)).toHaveAttribute("data-state", "done")
   })
 
   await step("Hide the chat: the steps are gone, and stay gone after a reload", async () => {
@@ -86,10 +80,8 @@ pageTest.describe("the first page", () => {
         await page.goto("/app")
         await expect(firstRunStep(page, "Sign in")).toHaveAttribute("aria-current", "step", { timeout: 30_000 })
       })
-      await step("The steps to come: Add your model while the deployment's own model is off, then Ask Smithers", async () => {
-        const model = firstRunStep(page, "Add your model")
-        if (await hostedModelOf(page)) await expect(model).toHaveCount(0)
-        else await expect(model).toHaveAttribute("data-state", "later")
+      await step("Ask Smithers follows Sign in", async () => {
+        await expect(firstRunStep(page, "Add your model")).toHaveCount(0)
         await expect(firstRunStep(page, "Ask Smithers")).toHaveAttribute("data-state", "later")
         await expect(firstRun(page).getByRole("link", { name: SIGN_IN })).toHaveCount(1)
         await expect(page.getByRole("link", { name: SIGN_IN })).toHaveCount(1)
@@ -100,13 +92,11 @@ pageTest.describe("the first page", () => {
   pageTest("first run: a signed-in person who is set up sees every step before Ask done, or no steps once they have a conversation", {
     annotation: {
       type: "summary",
-      description: "Signed in, /app shows Sign in and Your model done with Chat as the next step, or, once the account has a conversation, Chat alone.",
+      description: "Signed in, /app shows Chat as the next step. After a conversation it shows Chat alone.",
     },
   }, async ({ page }) => {
-    requires("member", "personalModel")
+    requires("member")
     const chat = page.getByRole("button", { name: /^Chat\b/ })
-    // The account is set up: signed in, with its own model saved (the deployment setup saves it) where the
-    // deployment's own model is off. Whether it has had a conversation, open or archived, decides what /app shows.
     const hasConversation = await step("Count the account's conversations, open and archived", async () => {
       await page.goto("/app/conversations")
       const counted: Array<number> = []
@@ -130,8 +120,7 @@ pageTest.describe("the first page", () => {
     } else {
       await step("Every step before Ask Smithers is done, and Chat is the next step's button", async () => {
         await expect(done(page, "Sign in")).toBeVisible({ timeout: 30_000 })
-        if (await hostedModelOf(page)) await expect(firstRunStep(page, "Add your model")).toHaveCount(0)
-        else await expect(done(page, "Add your model")).toBeVisible()
+        await expect(firstRunStep(page, "Add your model")).toHaveCount(0)
         await expect(firstRunStep(page, "Ask Smithers")).toHaveAttribute("aria-current", "step")
       })
     }

@@ -101,7 +101,6 @@ export const CHAT_TELEMETRY = {
     "chat branch delivery waiting",
     "question not sent",
     "question not admitted",
-    "answer not started",
     "unsent question handled",
     "chat connection changed",
     "chat retried",

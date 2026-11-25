@@ -1,9 +1,10 @@
 import { type FlowEngineLike, ModelStep } from "@smthrs/agent"
 import { Action, Interpreter, RetryPolicy } from "@smthrs/flow"
-import { Classifier, Evaluator, type Model, ModelError, ModelProxy } from "@smthrs/model"
+import { Classifier, Evaluator, type Model, ModelError } from "@smthrs/model"
 import { Clock, Context, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { MODEL_ROUTE, quotaRefused } from "../model/contract"
+import { quotaRefused } from "../model/contract"
+import { clientSeat } from "../model/clientSeat"
 import { JEV_ROUTE } from "../personal-model/contract"
 import { type JevFlow, JUDGE_ROLE, SURE_LABEL, SURE_YES_NO, UNSURE, type VerdictCode } from "./contract"
 import {
@@ -19,12 +20,8 @@ import {
 } from "./flows"
 import { recordJudgment, withJudgeSpan } from "./metrics"
 
-// What Jev's steps run on (docs/features/jev.md#how-a-judgment-runs): the server's model endpoint, role `judge`, as a
-// seat. Each step declares one classifier over its items (`Classifier.make` from `@smthrs/model`), one question per
-// item, and asks it through `Evaluator.layerFromSeat`, whose model is `ModelStep.model` from `@smthrs/agent`: so the
-// judgment is one sealed model step of the run, keyed by what the endpoint is sent, and a resumed run reads it back.
-// The endpoint holds the key, picks the role's model and meters the call; the device never calls a provider. A person's
-// own Jev is asked first, as a sealed step of its own (`judgeOn`), so a resumed run reads that judgment back too.
+// Each step declares one question per item with `Classifier.make`. It checks the person's own Jev in a
+// sealed action first. An explicit host seat can then judge through `ModelStep`, which replays the recorded verdict.
 
 /** Keep durable model retries, excluding exhausted quota and credit. */
 export const MODEL_RETRY = RetryPolicy.make({
@@ -42,12 +39,13 @@ export const MODEL_RETRY = RetryPolicy.make({
  */
 export const OWN_JEV_WITHIN: Duration.Input = "15 seconds"
 
-/** The judge's seat: the model endpoint's `judge` role, read with `ModelProxy`'s client and keyed with its `prepare`. */
+/** A host's judge seat and the person's configured Jev connection. */
 export class JudgeSeat extends Context.Service<
   JudgeSeat,
   {
     readonly model: Model.Model
     readonly route: FlowEngineLike.RouteResolver
+    readonly unconfigured?: true
     /** Host-selected retry timings; omitted uses the durable model step's production policy. */
     readonly retryPolicy?: RetryPolicy.RetryPolicy
     /**
@@ -58,18 +56,16 @@ export class JudgeSeat extends Context.Service<
   }
 >()("@smthrs/mvp/jev/JudgeSeat") {
   /**
-   * The `judge` role of the model endpoint on `origin`, through the host's `HttpClient`, waiting `ownJevWithin`
-   * ({@link OWN_JEV_WITHIN} unless set) for the person's own Jev.
+   * Waits `ownJevWithin` ({@link OWN_JEV_WITHIN} unless set) for the person's own Jev on `origin`.
    */
   static readonly layer = (origin: string, options: { readonly ownJevWithin?: Duration.Input } = {}) =>
     Layer.effect(
       JudgeSeat,
       Effect.gen(function* () {
-        const url = `${origin}${MODEL_ROUTE}/${JUDGE_ROLE}`
         const client = yield* HttpClient.HttpClient
         return {
-          model: yield* ModelProxy.makeClient({ url }),
-          route: { prepare: ModelProxy.prepare({ url }) },
+          ...clientSeat(origin, JUDGE_ROLE),
+          unconfigured: true as const,
           retryPolicy: MODEL_RETRY,
           ownJev: ownJev(`${origin}${JEV_ROUTE}`, client, options.ownJevWithin ?? OWN_JEV_WITHIN),
         }
@@ -150,7 +146,11 @@ export const judgeOn = (
   model: Model.Model,
 ): Effect.Effect<Layer.Layer<Evaluator.Evaluator>, never, ModelStep.Requirements> =>
   Effect.map(Effect.context<ModelStep.Requirements>(), (context) => {
-    const onSeat = Evaluator.layerFromSeat({ modelId: JUDGE_ROLE, model })
+    const onSeat = seat.unconfigured
+      ? Layer.succeed(Evaluator.Evaluator, Evaluator.Evaluator.of({
+          evaluate: () => Effect.fail(new Evaluator.EvaluatorError({ code: "unconfigured", message: "No judge seat is configured." })),
+        }))
+      : Evaluator.layerFromSeat({ modelId: JUDGE_ROLE, model })
     if (seat.ownJev === undefined) return onSeat
     const own = seat.ownJev
     return Layer.effect(

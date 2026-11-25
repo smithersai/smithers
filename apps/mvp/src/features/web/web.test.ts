@@ -12,10 +12,9 @@ import { afterEach, describe, expect, test } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import { build } from "../../../worker/test/flowHost.ts"
 import { tracked } from "../../../worker/test/branch.ts"
-import { contents, harness, stop, testFile, usage } from "../../../worker/test/harness.ts"
+import { harness, testFile } from "../../../worker/test/harness.ts"
 import { framable, outsideWeb, type Page, refusing } from "../../../worker/test/pages.ts"
 import { BROWSER_TELEMETRY } from "../../telemetry"
-import { answerRow, cell, type Engine, openAgent } from "../../test/agent"
 import { COMMANDS } from "../commands/catalog"
 import { ViewRefused, ViewsClient } from "../views/api"
 import { DispatchFailed, type Dispatched, FlowDispatch } from "../../flows/dispatch"
@@ -70,11 +69,17 @@ const conversationsOfViews = () =>
  * `null`), with the policy of an app on `APP` (`localHttp` as set), and `views` in place of the real client when set.
  * Every log line, span and count is kept.
  */
+const ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1"/></svg>'
+const iconPage: Page = { headers: { "content-type": "image/svg+xml" }, html: ICON }
+const inlineIcon = "data:image/svg+xml;base64," + btoa(ICON)
+
 /** The outside web these tests reach: pages that allow framing, and one that refuses it. */
 const PAGES: Record<string, Page> = {
   "https://example.com/": framable("Example"),
   "https://example.com/docs": framable("Example docs"),
   "https://refuses.example/": refusing("Refuses"),
+  "https://example.com/icon.png": iconPage,
+  "https://refuses.example/favicon.ico": iconPage,
 }
 
 const openEngine = async (options: {
@@ -175,7 +180,7 @@ describe("the flow", () => {
         url: "https://example.com/docs",
         title: "Example docs",
         description: "A page that lets others frame it.",
-        icon: "https://example.com/icon.png",
+        icon: inlineIcon,
       },
     })
     // A person's dispatch is counted by the tab that knows their door, not here.
@@ -235,7 +240,7 @@ describe("the flow", () => {
         url: "https://refuses.example/",
         title: "Refuses",
         description: "A page that never shows in a frame.",
-        icon: "https://refuses.example/favicon.ico",
+        icon: inlineIcon,
       },
     })
     expect(offline).toEqual(
@@ -405,64 +410,6 @@ describe("the flow", () => {
       for (const field of Object.keys(log.annotations)) expect(BROWSER_TELEMETRY.fields).toContain(field)
     }
     expect(BROWSER_TELEMETRY.records).toEqual(expect.arrayContaining([...WEB_TELEMETRY.records]))
-  }, WITHIN)
-})
-
-describe("the agent", () => {
-  const engines: Array<Engine> = []
-  afterEach(async () => {
-    for (const engine of engines.splice(0)) await engine.kill()
-  })
-
-  test("a cell's ctx.call opens a page as a journaled step; a refused page is a failed call, and nothing is added", async () => {
-    const cells = [
-      `await ctx.call("app/web/open", { url: "https://example.com/" })\n` +
-      `const bad = await ctx.call("app/web/open", { url: "javascript:alert(1)" })\nconsole.log(JSON.stringify(bad))`,
-      `ctx.done("Opened example.com.")`,
-    ]
-    let calls = 0
-    const agent = await openAgent(
-      runtime,
-      () => Stream.make({ type: "text-delta" as const, id: "t", text: cell(cells[Math.min(calls++, 1)]!) }, usage, stop),
-      { fetch: outsideWeb(PAGES) },
-    )
-    const engine = await agent.engine()
-    engines.push(engine)
-    const answerId = await agent.ask("Show me example.com")
-
-    expect(await agent.answer(engine, answerId)).toEqual(Exit.succeed({ status: "done" }))
-
-    expect((await rows()).map(({ template, props }) => [template, props.url])).toEqual([["webpage", "https://example.com/"]])
-    const answer = await answerRow(runtime, answerId)
-    expect(answer).toMatchObject({ status: "done", text: "Opened example.com." })
-    expect(answer.parts).toEqual([
-      { id: "0.0", kind: "step", flow: "app/web/open", status: "done" },
-      { id: "0.1", kind: "step", flow: "app/web/open", status: "failed" },
-    ])
-  }, WITHIN)
-
-  test("the agent asked to embed a page that refuses framing hears that a card shows instead, and says so", async () => {
-    const cells = [
-      `const opened = await ctx.call("app/web/open", { url: "https://refuses.example/" })\nconsole.log(JSON.stringify(opened))`,
-      `ctx.done("Added a card that opens it in a new tab.")`,
-    ]
-    let calls = 0
-    const agent = await openAgent(
-      runtime,
-      () => Stream.make({ type: "text-delta" as const, id: "t", text: cell(cells[Math.min(calls++, 1)]!) }, usage, stop),
-      { fetch: outsideWeb(PAGES) },
-    )
-    const engine = await agent.engine()
-    engines.push(engine)
-    const answerId = await agent.ask("Show me refuses.example in the chat")
-
-    expect(await agent.answer(engine, answerId)).toEqual(Exit.succeed({ status: "done" }))
-
-    expect((await rows()).map(({ template, props }) => [template, props.url])).toEqual([["link", "https://refuses.example/"]])
-    // The cell's output, the call's answer, is in the model's next request.
-    const after = contents(agent.h.requests.at(-1)!).join("\n")
-    expect(after).toContain('"shown":"card"')
-    expect(after).toContain('"framing":"refused"')
   }, WITHIN)
 })
 

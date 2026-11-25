@@ -1,6 +1,7 @@
-import { Option, Result, Schema } from "effect"
-import { MCP_MAX_REQUEST_BYTES } from "../../src/features/mcp/contract.ts"
-import { type Attach, type AttachRefusal, freezeGrant, type Grant } from "./Attach.ts"
+import { Effect, Option, Result, Schema } from "effect"
+import { isBranchName } from "../../src/features/branch/contract.ts"
+import { isRepository } from "../../src/features/repo/contract.ts"
+import { type Attach, freezeGrant, type Grant, REFUSAL_STATUS } from "./Attach.ts"
 
 // The `/mcp/<owner>/<repo>/<branch>` route (decision 0173, Gate 4): MCP over Streamable HTTP for an attached agent.
 // Every request carries a grant's bearer token and is verified again, including `initialize`, so a revoked or expired
@@ -24,7 +25,7 @@ export type McpPolicy = (typeof MCP_POLICIES)[number]
 export type McpInputSchema = { readonly type: "object"; readonly [key: string]: unknown }
 
 /** A tool as its author declares it. `policy` is required: a tool with none is refused when the route is built. */
-export interface McpToolDefinition<S extends Schema.Top> {
+export interface McpToolDefinition<S extends Schema.Top, E, R> {
   readonly name: string
   readonly description: string
   /**
@@ -40,22 +41,22 @@ export interface McpToolDefinition<S extends Schema.Top> {
    * Asked after decoding and before `call`. `false` refuses the call `forbidden`. A tool whose arguments name any
    * resource beyond the top-level `repo`, `branch` and `conversation` must supply it.
    */
-  readonly authorize?: (grant: Grant, args: S["Type"]) => boolean | Promise<boolean>
+  readonly authorize?: (grant: Grant, args: S["Type"]) => boolean | Effect.Effect<boolean, E, R>
   /** Runs with a frozen copy of the grant and the decoded arguments, never the raw ones. */
-  readonly call: (grant: Grant, args: S["Type"]) => Promise<unknown>
+  readonly call: (grant: Grant, args: S["Type"]) => Effect.Effect<unknown, E, R>
 }
 
 /** A registered tool. Only {@link defineTool} makes one, so every tool's arguments are decoded before it runs. */
-export interface McpTool {
+export interface McpTool<E = never, R = never> {
   readonly name: string
   readonly description: string
   readonly inputSchema: McpInputSchema
   readonly capability: string
   readonly policy: McpPolicy
-  readonly invoke: (grant: Grant, args: unknown) => Promise<Result.Result<unknown, "invalid_arguments" | "forbidden">>
+  readonly invoke: (grant: Grant, args: unknown) => Effect.Effect<Result.Result<unknown, "invalid_arguments" | "forbidden">, E, R>
 }
 
-const defined = new WeakSet<McpTool>()
+const defined = new WeakSet<object>()
 
 const isPolicy = (value: unknown): value is McpPolicy => MCP_POLICIES.some((policy) => policy === value)
 
@@ -80,7 +81,7 @@ export const inputSchemaOf = (name: string, input: Schema.Top): McpInputSchema =
 }
 
 /** Registers a tool. Throws when the definition names no policy, so an untyped caller cannot default one open. */
-export const defineTool = <S extends Schema.Top>(definition: McpToolDefinition<S>): McpTool => {
+export const defineTool = <S extends Schema.Top, E, R>(definition: McpToolDefinition<S, E, R>): McpTool<E, R> => {
   if (!isPolicy(definition.policy)) throw new TypeError(`MCP tool ${definition.name} must declare its policy`)
   const inputSchema = inputSchemaOf(definition.name, definition.input)
   const empty = isEmptyStruct(definition.input)
@@ -88,72 +89,58 @@ export const defineTool = <S extends Schema.Top>(definition: McpToolDefinition<S
   const decode = Schema.decodeUnknownOption(Schema.toCodecJson(definition.input as never), { onExcessProperty: "error" }) as (
     input: unknown,
   ) => Option.Option<S["Type"]>
-  const tool: McpTool = Object.freeze({
+  const tool: McpTool<E, R> = Object.freeze({
     name: definition.name,
     description: definition.description,
     inputSchema,
     capability: definition.capability,
     policy: definition.policy,
-    invoke: async (grant: Grant, args: unknown) => {
+    invoke: (grant: Grant, args: unknown) => Effect.gen(function* () {
       if (!isRecord(args) || (empty && Object.keys(args).length > 0)) return Result.fail("invalid_arguments" as const)
       const decoded = decode(args)
       if (Option.isNone(decoded)) return Result.fail("invalid_arguments" as const)
       // The tool's own frozen copy: nothing it does reaches the grant the verifier holds or another tool's copy.
       const own = freezeGrant(grant)
-      if (definition.authorize !== undefined && (await definition.authorize(own, decoded.value)) !== true) {
-        return Result.fail("forbidden" as const)
-      }
-      return Result.succeed(await definition.call(own, decoded.value))
-    },
+      const decision = definition.authorize?.(own, decoded.value) ?? true
+      const allowed = typeof decision === "boolean" ? decision : yield* decision
+      if (!allowed) return Result.fail("forbidden" as const)
+      return Result.succeed(yield* definition.call(own, decoded.value))
+    }),
   })
   defined.add(tool)
   return tool
 }
 
-export interface McpRouteOptions {
-  readonly attach: Pick<Attach, "verifyBearer">
+export interface McpRouteOptions<AE, AR, TE, TR> {
+  readonly attach: Pick<Attach<AE, AR>, "verifyBearer">
   readonly hostOrigin: string
-  readonly tools: ReadonlyArray<McpTool>
+  readonly tools: ReadonlyArray<McpTool<TE, TR>>
+  readonly pathPrefix?: string
 }
 
 type Id = string | number | null
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store", ...headers } })
 
 const rpcError = (status: number, id: Id, code: number, reason: string, headers?: Record<string, string>) =>
   json(status, { jsonrpc: "2.0", id, error: { code, message: reason, data: { reason } } }, headers)
-
-const STATUS: Record<AttachRefusal, number> = {
-  unauthenticated: 401,
-  expired: 401,
-  revoked: 401,
-  wrong_target: 403,
-  forbidden: 403,
-  person_only: 403,
-  unknown_reference: 401,
-  already_claimed: 401,
-  not_claimed: 401,
-  wrong_origin: 403,
-  wrong_person: 403,
-  invalid_challenge: 400,
-  consent_expired: 401,
-  wrong_pairing: 401,
-  invalid_code: 401,
-  invalid_verifier: 401,
-  too_many: 429,
-}
 
 /** Builds the attached-agent MCP path from its verified repository and branch. */
 export const attachMcpPath = (target: Pick<Grant, "repo" | "branch">): string =>
   "/mcp/" + [...target.repo.split("/"), target.branch].map(encodeURIComponent).join("/")
 
 /** Reads `/mcp/<owner>/<repo>/<branch>`. The branch may hold slashes. */
-const targetOf = (url: URL): { readonly repo: string; readonly branch: string } | undefined => {
-  const match = /^\/mcp\/([^/]+)\/([^/]+)\/(.+)$/.exec(url.pathname)
+export const targetOf = (url: URL, prefix: string): { readonly repo: string; readonly branch: string } | undefined => {
+  if (!url.pathname.startsWith(prefix + "/")) return undefined
+  const match = /^\/([^/]+)\/([^/]+)\/(.+)$/.exec(url.pathname.slice(prefix.length))
   if (match === null) return undefined
   try {
-    return { repo: `${decodeURIComponent(match[1]!)}/${decodeURIComponent(match[2]!)}`, branch: decodeURIComponent(match[3]!) }
+    const owner = decodeURIComponent(match[1]!)
+    const name = decodeURIComponent(match[2]!)
+    const branch = decodeURIComponent(match[3]!)
+    if (!isRepository(owner, name) || !isBranchName(branch)) return undefined
+    return { repo: (owner + "/" + name).toLowerCase(), branch }
   } catch {
     return undefined
   }
@@ -186,8 +173,8 @@ export const readBody = async (request: Request, maxBytes: number): Promise<Resu
   }
 }
 
-export const makeMcpRoute = (options: McpRouteOptions) => {
-  const byName = new Map<string, McpTool>()
+export const makeMcpRoute = <AE, AR, TE, TR>(options: McpRouteOptions<AE, AR, TE, TR>) => {
+  const byName = new Map<string, McpTool<TE, TR>>()
   for (const tool of options.tools) {
     // Fail closed while building: a hand-built tool skips argument decoding, and a missing policy would read as open.
     if (!defined.has(tool) || !isPolicy(tool.policy)) throw new TypeError(`MCP tool ${String(tool.name)} is not from defineTool`)
@@ -197,9 +184,9 @@ export const makeMcpRoute = (options: McpRouteOptions) => {
   const visible = (grant: Grant) =>
     options.tools.filter((tool) => tool.policy === "agent" && grant.ceiling.includes(tool.capability))
 
-  return async (request: Request): Promise<Response> => {
+  return (request: Request, body: Result.Result<string, "too_large" | "body">) => Effect.gen(function* () {
     const url = new URL(request.url)
-    const target = targetOf(url)
+    const target = targetOf(url, options.pathPrefix ?? "/mcp")
     if (target === undefined) return json(404, { error: "not_found" })
     // Streamable HTTP servers must check Origin against DNS rebinding. Agents send none, browsers on the host do.
     // The value is the request's own header, never one a caller passes beside it.
@@ -207,11 +194,10 @@ export const makeMcpRoute = (options: McpRouteOptions) => {
     if (origin !== null && origin !== options.hostOrigin) return rpcError(403, null, -32001, "wrong_origin")
     // The bounded body first, then the grant: a grant revoked while the body streams in is refused here, so the
     // grant a tool runs with was verified after the last byte arrived.
-    const body = await readBody(request, MCP_MAX_REQUEST_BYTES)
-    const verified = await options.attach.verifyBearer(request.headers.get("authorization"), target)
+    const verified = yield* options.attach.verifyBearer(request.headers.get("authorization"), target)
     if (Result.isFailure(verified)) {
       const challenge = { "www-authenticate": `Bearer realm="smithers", error="invalid_token"` }
-      return rpcError(STATUS[verified.failure], null, -32001, verified.failure, STATUS[verified.failure] === 401 ? challenge : {})
+      return rpcError(REFUSAL_STATUS[verified.failure], null, -32001, verified.failure, REFUSAL_STATUS[verified.failure] === 401 ? challenge : {})
     }
     const grant = verified.success
     if (request.method !== "POST") return json(405, { error: "method_not_allowed" }, { allow: "POST" })
@@ -255,25 +241,21 @@ export const makeMcpRoute = (options: McpRouteOptions) => {
         for (const key of ["repo", "branch", "conversation"] as const) {
           if (Object.hasOwn(args, key) && args[key] !== grant[key]) return rpcError(403, id, -32001, "wrong_target")
         }
-        try {
-          const outcome = await tool.invoke(grant, args)
-          if (Result.isFailure(outcome)) {
-            return outcome.failure === "forbidden"
-              ? rpcError(403, id, -32001, "forbidden")
-              : rpcError(200, id, -32602, outcome.failure)
-          }
-          const value = outcome.success
-          return ok({
-            content: [{ type: "text", text: JSON.stringify(value) }],
-            ...(isRecord(value) ? { structuredContent: value } : {}),
-            isError: false,
-          })
-        } catch {
-          return ok({ content: [{ type: "text", text: "tool_failed" }], isError: true })
+        const outcome = yield* tool.invoke(grant, args)
+        if (Result.isFailure(outcome)) {
+          return outcome.failure === "forbidden"
+            ? rpcError(403, id, -32001, "forbidden")
+            : rpcError(200, id, -32602, outcome.failure)
         }
+        const value = outcome.success
+        return ok({
+          content: [{ type: "text", text: JSON.stringify(value) }],
+          ...(isRecord(value) ? { structuredContent: value } : {}),
+          isError: false,
+        })
       }
       default:
         return rpcError(200, id, -32601, "method_not_found")
     }
-  }
+  })
 }

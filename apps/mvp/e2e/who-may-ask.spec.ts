@@ -1,61 +1,40 @@
-import { MEMBERS_ASK, OPEN_SETTINGS, SIGN_IN } from "../src/features/auth/contract"
+import { MEMBERS_ASK, SIGN_IN } from "../src/features/auth/contract"
 import { DONE, OPEN, REPOSITORY_FIELD } from "../src/features/first-run/contract"
 import { expect, test } from "./devices"
 import { step, test as pageTest } from "./fixtures"
 import { firstRun, firstRunStep } from "./firstRun"
-import { connectionRows, fillYourModel } from "./personal-model"
-import { requires, requiresVerified, scriptedAgent } from "./target"
+import { requires, requiresVerified } from "./target"
 import { expectServerError } from "./watch"
 
-// Who may ask Smithers (ruling AUTH-8, decision 0122): anyone signed in, with their own model, in a conversation on a
+// Who may ask Smithers (ruling AUTH-8, decision 0122): anyone signed in, in a conversation on a
 // repository where they are a Member or above, never by their role on the deployment's own. Locally, as brand-new
 // people with no role on the dev server's repository (worker/DevChatApi.ts `owner-` and `reader-`): an `owner-` is the
 // Admin of octocat/Spoon-Knife, as a person who installed the App on their own repository is, and a `reader-` its Guest.
-// The scripted `hello` agent answers (src/test/scriptedAgent.ts); GitHub is the real one, read with no credential.
 
 const REPOSITORY = "octocat/Spoon-Knife"
 
 /** A step's ✓: its mark says Done to assistive technology. */
 const done = (page: Parameters<typeof firstRunStep>[0], title: string) => firstRunStep(page, title).getByRole("img", { name: DONE })
 
-test("who may ask: a new person who is Admin of their own repository signs in, adds their model, opens it, and gets an answer there", {
+test("who may ask: a new person who is Admin of their own repository signs in, opens it and sends a question there", {
   annotation: {
     type: "summary",
     description: "A stranger to the deployment's repository is walked to their own repository and asks there, never stopped at Members can ask Smithers.",
   },
 }, async ({ devices }) => {
-  requires("devPeople", "devSignIn", "scriptedAgent")
+  requires("devPeople", "devSignIn")
   test.setTimeout(300_000)
   const word = devices.word
   const [a] = await devices.openVisitorAs(`owner-${word}`, "Owner")
   const page = a.page
 
-  await step("Sign in from the first step: Add your model is next, never Members can ask Smithers.", async () => {
-    await page.goto(scriptedAgent("hello"))
+  await step("Sign in from the first step and open your repository", async () => {
+    await page.goto("/app")
     await a.ready()
     await firstRun(page).getByRole("link", { name: SIGN_IN }).click()
-    await expect(page.locator(".sui-toast-stack [data-add-model]")).toBeVisible({ timeout: 30_000 })
-    await expect(firstRun(page)).toHaveCount(0)
-    await expect(page.getByText(MEMBERS_ASK)).toHaveCount(0)
-  })
-
-  await step("Open settings and save their own model", async () => {
-    await page.locator(".sui-toast-stack [data-add-model]").getByRole("button", { name: OPEN_SETTINGS }).click()
-    const section = page.getByRole("region", { name: "Your model" })
-    await expect(section).toBeVisible({ timeout: 30_000 })
-    await fillYourModel(section, page, {
-      protocol: "openai-chat",
-      baseUrl: "https://api.openai.com/v1",
-      key: `sk-who-may-ask-${word}-0123456789`,
-      tiers: { fast: "gpt-test" },
-    })
-    await expect(connectionRows(section)).toHaveCount(1, { timeout: 30_000 })
-  })
-
-  await step("Back to chat: Open your repository is next", async () => {
-    await page.getByRole("link", { name: "Back to chat" }).click()
-    await expect(done(page, "Add your model")).toBeVisible({ timeout: 30_000 })
+    await expect(done(page, "Sign in")).toBeVisible({ timeout: 30_000 })
     await expect(firstRunStep(page, "Open your repository")).toHaveAttribute("aria-current", "step")
+    await expect(page.getByText(MEMBERS_ASK)).toHaveCount(0)
   })
 
   await step(`Open ${REPOSITORY}: its page`, async () => {
@@ -74,9 +53,9 @@ test("who may ask: a new person who is Admin of their own repository signs in, a
   })
 
   const question = `Say hello to ${word}`
-  await step("Ask Smithers there, and it answers", async () => {
-    await a.ask(question)
-    await a.expectAnswered(question, `Hello, ${word}.`, 90_000)
+  await step("Send a question in the branch conversation", async () => {
+    await a.askAndWaitTaken(question)
+    await expect(a.question(question)).toHaveAttribute("data-state", "done")
   })
 
   expectServerError(403, "/api/terminals")
@@ -109,8 +88,7 @@ test("who may ask: a Guest of a repository is never stopped on /app, and sees Me
   await step("On /app: Sign in done and the way to their own repository, no dead end", async () => {
     await page.goto("/app")
     await a.ready()
-    await expect(page.locator(".sui-toast-stack [data-add-model]")).toBeVisible({ timeout: 30_000 })
-    await expect(firstRun(page)).toHaveCount(0)
+    await expect(firstRunStep(page, "Open your repository")).toHaveAttribute("aria-current", "step", { timeout: 30_000 })
     await expect(page.getByText(MEMBERS_ASK)).toHaveCount(0)
   })
 

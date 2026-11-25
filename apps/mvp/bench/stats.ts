@@ -28,12 +28,16 @@ export const METRICS: Record<string, string> = {
   "answer.accepted": "UI: the page's POST /api/questions to 202",
   "answer.confirmed": "UI: the page's POST to the question from Electric",
   "answer.first_text": "UI: ask to first answer text",
+  "answer.mcp_first_text": "UI: ask to first MCP answer text",
   "answer.done": "UI: ask to answer done",
+  "answer.mcp_done": "UI: ask to MCP answer done",
   "sync.question": "Fan-out: ask on A to question on B",
   "sync.answer_done": "Fan-out: ask on A to answer done on B",
+  "sync.mcp_answer_done": "Fan-out: ask on A to MCP answer done on B",
   "concurrent.accepted": "Concurrent asks: POST to 202",
   "concurrent.confirmed": "Concurrent asks: POST to the question from Electric",
   "concurrent.done": "Concurrent asks: POST to answer done from Electric",
+  "concurrent.mcp_done": "Concurrent asks: POST to MCP answer done from Electric",
 }
 
 // Linear interpolation between the closest ranks: R's type 7, NumPy's default. `sorted` is ascending.

@@ -76,7 +76,7 @@ export default defineConfig({
         "db/migrations/0075_timeline_phases.ts",
         "worker/Actor.ts",
         "worker/ErrorCode.ts",
-        "worker/ModelEndpoint.ts",
+        "worker/ModelSeats.ts",
         "worker/ModelRefusal.ts",
         "db/migrations/0059_model_quota_failure.ts",
         "worker/ModelRoles.ts",
@@ -94,13 +94,13 @@ export default defineConfig({
         "worker/RunCredentials.ts",
         "worker/SignIn.ts",
         "db/migrations/0005_sign_in.ts",
-        // Remote flow starts and the browser agent's answer routes (docs/features/remote-flows.md and agent.md).
-        "worker/Answers.ts",
+        // Remote flow starts and request admission (docs/features/remote-flows.md).
         "worker/Body.ts",
         "worker/Flows.ts",
         "db/migrations/0006_answer_parts.ts",
         // ChatApi stops answering: the browser's agent answers (docs/features/agent.md).
         "db/migrations/0008_browser_answering.ts",
+        "db/migrations/0133_byoa_cutover.ts",
         // Repositories: RepoApi, cloning into Code Storage and its spend (docs/features/repo.md).
         "worker/RepoApi.ts",
         "worker/RepoConfig.ts",

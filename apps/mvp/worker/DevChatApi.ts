@@ -11,7 +11,7 @@ import type { Signed } from "./SignIn.ts"
 
 // ChatApi under `alchemy dev` (alchemy.run.ts picks it only then): the same program with real sign-in once the GitHub
 // App's client id and secret are in the environment, and until then a local developer signed in as an Admin, so the
-// browser's agent can call the model endpoint on a laptop (docs/features/sign-in.md#local-development). It keeps
+// local development can exercise signed-in routes (docs/features/sign-in.md#local-development). It keeps
 // `/web … tab` links to the dev machine's own `http://localhost` pages (docs/features/web-pages.md), and turns spend
 // alerts off, since a laptop's runs and the end-to-end tests spend all day (`MODEL_SPEND_ALERTS=true` turns them back
 // on; docs/features/spend-alerts.md), and lets an alert provider pointed at a local fake (`ALERT_EMAIL_API_URL`,

@@ -56,6 +56,34 @@ Anonymous reads share GitHub's 60-per-hour limit across all of Cloudflare's egre
 minutes, so the token is the default. A 403 that is not quota exhaustion is retried once anonymously, and a private
 repository still answers `not_found`. Quota exhaustion surfaces as the `rate_limited` tool error.
 
+## Attach to a conversation
+
+The person mints an attach reference for a repository, branch and conversation. The agent claims it with a PKCE S256
+challenge and reads out a pairing code. The person opens consent and approves that claim using the code. The agent
+redeems the approval with its PKCE verifier and sends its resulting bearer token on every MCP request.
+
+| POST route | Caller and result |
+|---|---|
+| `/api/attach/intents` | Signed-in person, from the same origin. Returns a ten-minute reference. |
+| `/api/attach/claims` | Agent. Returns an opaque claim and pairing code. |
+| `/api/attach/consent` | Same person and origin. Returns the target, client, and the permissions on offer. |
+| `/api/attach/approvals` | Same person and origin. Returns a single-use approval code and the id the person can revoke. |
+| `/api/attach/tokens` | Agent holding the approval code and PKCE verifier. Returns an eight-hour grant and bearer token. |
+| `/api/attach/revocations` | Grant's person, from the same origin. Ends the grant. |
+| `/api/attach/mcp/<owner>/<repo>/<branch>` | Agent holding a valid grant for this target. |
+
+`conversation_read` returns recent messages in the bound conversation. `conversation_respond` settles a pending
+question from the person who attached the agent. The grant keeps the narrower of the approved permissions and the
+person's current repository role and branch access. A delegated credential cannot grant or revoke access.
+
+Each attachment has one Postgres row across Worker isolates. Indexed approval code and bearer token digests look up
+that row. Claim, redemption and revocation lock only the matching attachment. A live token holds a shared lock through
+its tool call so revocation takes effect in order. Unknown tokens use a read-only lookup. Claim and redemption share
+a limit of 120 requests per network per minute, with a separate limit of 1,200 for MCP. Each request records only its
+route and status in the `attach.request` log and span and the
+`smithers_attach_requests` counter. See the [attach integration tests](../../worker/attach/LiveMount.test.ts) and
+[decision 0173](../decisions/0173-byoa-only-mcp-attach-and-jev-config.md).
+
 ## Observability
 
 ChatApi records `mcp.request` logs and spans with the route, outcome and status. Its counters are
@@ -70,7 +98,7 @@ and tool payloads stay out of logs, traces and metrics.
 |---|---|
 | `worker/index.mcp.test.ts` | Both discovery requests reach ChatApi unchanged. The repository POST keeps its authorization header, query and JSON body through the rewrite. The consent and app run paths serve the app shell. |
 | `worker/index.test.ts` | Existing API, alias, custom domain, docs and asset routing. |
-| `worker/mcp/LiveDeps.test.ts` | The public GitHub fallback reads refs, tree, files, issues and pulls; it sends the deployment read token, retries a non-quota 403 anonymously and reports quota exhaustion as `rate_limited`. |
+| `worker/mcp/LiveDeps.test.ts` | The public GitHub fallback reads refs, tree, files, issues and pulls. It sends the deployment read token, retries a non-quota 403 anonymously and reports quota exhaustion as `rate_limited`. |
 | `packages/smithers/test/McpRemote.test.ts` | `smthrs mcp login` PKCE and token storage, and the `smthrs mcp serve` stdio bridge. |
 
 To test the full connection, run a real Streamable HTTP client through discovery, registration, consent, exchange,

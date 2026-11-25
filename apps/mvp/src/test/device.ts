@@ -4,9 +4,7 @@ import { FlowRegistry } from "../flows/registry"
 // dispatch and navigation answers (src/flows/engine.ts `tabEngine` and `tabAnswers`, src/features/navigation/tab.ts), and the leader its engine worker runs (`BrowserRuntime.serve` over every
 // client flow, src/flows/registrations.ts), over Node's own Web Locks and `BroadcastChannel`. The worker is a
 // `MessageChannel`: the leader reaches its tab through one port (`TabPort`), and the tab answers on the other. Only
-// the engine's store differs from a browser's: the compose Postgres in place of SQLite on OPFS. ChatApi is the agent
-// tests' harness (src/test/agent.ts), so the agent's model calls and writes reach the real handler.
-import type { HostOptions } from "../features/agent/host"
+// the engine's store differs from a browser's: the compose Postgres in place of SQLite on OPFS. ChatApi runs in-process over the same database.
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
 import { Persistence } from "@smthrs/effect-tanstack-db"
@@ -29,7 +27,7 @@ import { FilesStore } from "../features/files/store"
 import { tabFiles } from "../features/files/tab"
 import { workerRegistrations } from "../flows/registrations"
 import type { Endpoint } from "../flows/tabPort"
-import { ORIGIN } from "./agent"
+import { ORIGIN } from "./flowHost"
 import { repoAuthority } from "./repoAuthority"
 
 /**
@@ -86,7 +84,6 @@ type ServicesOf<C> = C extends Context.Context<infer S> ? S : never
 export const openDevice = async (
   fetch: typeof globalThis.fetch,
   telemetry: DeviceTelemetry = {},
-  memorySources?: HostOptions["memorySources"],
   /** `at`: the page the tab shows, for file tabs (`hereAt`); none unless set. */
   page: { readonly at?: string } = {},
 ) => {
@@ -103,7 +100,7 @@ export const openDevice = async (
   const engine = BrowserRuntime.layer(
     // The flows' own schemas render their runs' values for the run page (decision 0014 §3), as the worker's do.
     { name, flows: clientFlows },
-    workerRegistrations(channel.port1, { origin: ORIGIN, name, partsEvery: "20 millis", ...(memorySources === undefined ? {} : { memorySources }) }).pipe(Layer.provide(http)),
+    workerRegistrations(channel.port1, { origin: ORIGIN, name }).pipe(Layer.provide(http)),
   ).pipe(Layer.provide(PostgresDatabase.layer({ url: url.toString(), driver: Pg, schema })))
   const leader = Effect.runFork(
     BrowserRuntime.serve({ name, flows: clientFlows }, engine).pipe(

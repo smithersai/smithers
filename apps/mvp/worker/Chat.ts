@@ -16,8 +16,6 @@ import {
   SHAPE_ROUTE,
   TELEMETRY_ROUTE,
 } from "../src/features/chat/contract.ts"
-import { ANSWERS_ROUTE } from "../src/features/agent/contract.ts"
-import { MODEL_ROLES, MODEL_ROUTE, type ModelRole } from "../src/features/model/contract.ts"
 import { VIEWS_ROUTE, VIEWS_SHAPE_ROUTE } from "../src/features/views/contract.ts"
 import { FormValues } from "../src/features/views/schema.ts"
 import { WEB_PREVIEW_ROUTE } from "../src/features/web/contract.ts"
@@ -40,17 +38,13 @@ import {
 } from "../src/features/flows-ui/contract.ts"
 import { BROWSER_TELEMETRY, TELEMETRY_LIMITS } from "../src/telemetry.ts"
 import { type Actor, refusesPersonOnly, Sessions } from "./Actor.ts"
-import * as Answers from "./Answers.ts"
 import { askingOf, branchAccess, canView } from "./branch/Access.ts"
 import * as ConversationPeople from "./branch/ConversationPeople.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "./Body.ts"
 import * as ChatMetrics from "./ChatMetrics.ts"
 import { codeOf } from "./ErrorCode.ts"
-import * as Flows from "./Flows.ts"
-import * as Expire from "./flows/Expire.ts"
 import * as Messages from "./Messages.ts"
-import * as ModelEndpoint from "./ModelEndpoint.ts"
 import * as Notifications from "./Notifications.ts"
 import * as PersonalFlows from "./PersonalFlows.ts"
 import * as Runs from "./Runs.ts"
@@ -63,12 +57,10 @@ import * as Views from "./Views.ts"
 import * as WebPreview from "./WebPreview.ts"
 
 // ChatApi's routes (docs/features/chat.md#contract). ChatApi.ts runs them on Cloudflare; the tests run them as they
-// are. ChatApi only stores a question and its empty `streaming` answer: the browser's agent answers it, through the
-// model endpoint and the answer routes (docs/features/agent.md).
+// are. ChatApi stores a question and its pending answer. The attached agent answers it over MCP.
 
 /**
- * The `messages` columns every device syncs: all of them but `asked_by`, the asker's person id, which only the answer
- * routes read (worker/Answers.ts). A column a migration adds stays on the server until it is listed here.
+ * The `messages` columns every device syncs. The asker's person id (`asked_by`) stays on the server.
  * `conversation_id` names the branch's conversation each row belongs to (decision 0013 §1).
  */
 export const SYNCED_MESSAGE_COLUMNS = [
@@ -154,19 +146,15 @@ class Refusal extends Data.TaggedError("Refusal")<{
 }> {}
 
 /**
- * Reads the configuration (`ShapeProxy.config`, `ModelEndpoint.make`, with `spendAlerts` as `MODEL_SPEND_ALERTS`'
- * default, `Answers.make`, `Views.make` and `WebPreview.make`, with `localHttp` as `WEB_PAGES_LOCAL_HTTP`'s default) and
+ * Reads the configuration (`ShapeProxy.config`, `Views.make` and `WebPreview.make`, with `localHttp` as `WEB_PAGES_LOCAL_HTTP`'s default) and
  * returns ChatApi's `fetch` handler, which checks pages through the host's `HttpClient` and keeps their answers in its
  * `ImmutableCache`. `database` opens a Postgres client for the scope that builds it: one per request. `fetch` reads who is
- * asking from `Sessions`, and starts each answer's `chat/Expire` through `Flows.FlowStarter`.
+ * asking from `Sessions`.
  */
 export const make = <E, R>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
   options: {
     readonly localHttp?: boolean
-    readonly spendAlerts?: boolean
-    /** `HOSTED_MODEL_ENABLED`'s default: on only under `alchemy dev` (decision 0099). */
-    readonly hostedModel?: boolean
     /** `TIMELINE_SUMMARY_DAILY_CAP`'s default when not 200: only `alchemy dev` sets it, for its one person's every spec. */
     readonly summaryDailyCap?: number
     /** The realm generated views render in (worker/ViewRealm.ts): `load` on Cloudflare, `loadNode` in the tests. */
@@ -174,14 +162,6 @@ export const make = <E, R>(
   },
 ) =>
   Effect.gen(function* () {
-    // POST /api/model/<role>: the metered model endpoint (docs/features/model-endpoint.md), which starts the spend
-    // alerts (docs/features/spend-alerts.md).
-    const model = yield* ModelEndpoint.make(database, {
-      ...(options.spendAlerts === undefined ? {} : { alerts: options.spendAlerts }),
-      ...(options.hostedModel === undefined ? {} : { hosted: options.hostedModel }),
-    })
-    // GET and POST /api/answers/<id>: the write path for the browser's agent (docs/features/agent.md).
-    const answers = yield* Answers.make(database)
     const pins = yield* Pins.make(database)
     // POST /api/timeline/summaries: an answer's one summary, claimed once and recorded on the message (docs/features/timeline.md#cost).
     const timelineSummaries = yield* TimelineSummaries.make(database, options.summaryDailyCap)
@@ -256,16 +236,15 @@ export const make = <E, R>(
       const response = yield* Effect.gen(function* () {
         if (request.method !== "POST") return yield* new Refusal({ status: 405, errorCode: "method" })
         const asker = yield* signedIn
-        // Asking starts the agent's run, and the agent never asks itself (decision 0017 slice 0).
-        if (yield* refusesPersonOnly(asker, "chat/Answer")) {
+        if (yield* refusesPersonOnly(asker, "conversation/ask")) {
           return yield* new Refusal({ status: 403, errorCode: "person_only", explanation: "Only the person asks." })
         }
         const body = yield* readBody(request, fields)
         const decoded = yield* decodeQuestion(body).pipe(
           Effect.mapError(() => new Refusal({ status: 400, errorCode: "invalid", explanation: invalid })),
         )
-        // Lowercase, as Postgres prints a uuid: one answer has one id in rows, logs and the browser's agent.
-        // The asker is the session's person, never the body's: only they may write the answer (worker/Answers.ts).
+        // Keep the same UUIDs in Postgres, the transcript and the attached agent's tools.
+        // The asker's identity comes from the signed-in session.
         const conversationId = yield* conversationOf(decoded.conversationId, asker, fields)
         const question = {
           id: decoded.id.toLowerCase(),
@@ -283,46 +262,25 @@ export const make = <E, R>(
           "smithers.chat.question_id": question.id,
           "smithers.chat.answer_id": question.answerId,
         })
-        // The ask is stored only once its expiry is admitted, so no answer is left with neither a device nor a server
-        // to settle it. The expiry starts inside the question's transaction, before it commits, under that attempt's
-        // own execution id: a Worker lost on either side of the start leaves at most an expiry with no answer, which
-        // ends `missing`, never a stored answer with no expiry. A start the host refuses rolls the question back and
-        // is a 503, which the outbox sends again. The unit is uninterruptible, so a caller that goes away can't stop
-        // it half way.
-        const admit = (attempt: string) =>
-          Effect.map(expire(question.answerId, attempt), (expiry) => void (fields.expiry = expiry))
-        const asked = yield* Effect.uninterruptible(
-          Effect.gen(function* () {
-            const asked = yield* (decoded.source === undefined
-              ? Messages.ask(question, admit)
-              : Views.askFrom(
-                question,
-                { viewId: decoded.source.viewId.toLowerCase(), event: decoded.source.event },
-                decoded.data,
-                admit,
-              )).pipe(
-                Effect.provide(database),
-                Effect.mapError((error) =>
-                  error instanceof Refusal
-                    ? error
-                    : error instanceof Views.SourceRefused
-                    ? new Refusal({ status: error.status, errorCode: error.code, explanation: refusedSource[error.code] })
-                    : refuseStore(error)
-                ),
-              )
-            yield* ConversationPeople.asked(conversationId, asker.subject.id).pipe(
-              Effect.provide(database),
-              Effect.catchCause(() => Effect.logWarning("conversation.asked.failed")),
-            )
-            // A resend of a question already stored starts the answer's one execution, a no-op once started: it gives
-            // an expiry to an answer stored before expiries started inside the ask.
-            if (asked.txid === null) {
-              fields.existing = true
-              fields.expiry = yield* expire(question.answerId)
-            }
-            return asked
-          }),
+        const asked = yield* (decoded.source === undefined
+          ? Messages.ask(question)
+          : Views.askFrom(
+            question,
+            { viewId: decoded.source.viewId.toLowerCase(), event: decoded.source.event },
+            decoded.data,
+          )).pipe(
+            Effect.provide(database),
+            Effect.mapError((error) =>
+              error instanceof Views.SourceRefused
+                ? new Refusal({ status: error.status, errorCode: error.code, explanation: refusedSource[error.code] })
+                : refuseStore(error)
+            ),
+          )
+        yield* ConversationPeople.asked(conversationId, asker.subject.id).pipe(
+          Effect.provide(database),
+          Effect.catchCause(() => Effect.logWarning("conversation.asked.failed")),
         )
+        if (asked.txid === null) fields.existing = true
         return asked.txid === null
           ? HttpServerResponse.jsonUnsafe({ txid: null, existing: true }, { status: 200, headers: noStore })
           : HttpServerResponse.jsonUnsafe({ txid: asked.txid }, { status: 202, headers: noStore })
@@ -366,8 +324,7 @@ export const make = <E, R>(
      * conversation when it names none (503 when there is none to bind it to). The asker must be a Member or above on
      * its branch's repository (`repo:ask`, decision 0007; ruling AUTH-8), never by their role on another (403
      * `forbidden` otherwise), and able to edit its branch (403 `view_only` otherwise): someone it is shared with to view
-     * reads the conversation, never asks in it. Nothing is written for any of them: a Guest's question would leave a
-     * `streaming` answer that no agent may answer, which holds up every later answer's turn.
+     * can read the conversation. Neither case may write a question.
      */
     const conversationOf = (named: string | undefined, asker: Actor, fields: Record<string, string | number | boolean>) =>
       Effect.gen(function* () {
@@ -441,52 +398,11 @@ export const make = <E, R>(
       }
       if (path.startsWith(`${RUNS_ROUTE}/`)) return yield* runs.route(path.slice(RUNS_ROUTE.length + 1))
       if (path.startsWith(`${TELEMETRY_ROUTE}/`)) return yield* telemetry
-      if (path.startsWith(`${MODEL_ROUTE}/`)) {
-        const role = path.slice(MODEL_ROUTE.length + 1)
-        if (isModelRole(role)) return yield* model(role)
-      }
-      if (path.startsWith(`${ANSWERS_ROUTE}/`)) {
-        return yield* answers(path.slice(ANSWERS_ROUTE.length + 1))
-      }
       return HttpServerResponse.empty({ status: 404 })
     })
 
     return { fetch }
   })
-
-/**
- * Starts `chat/Expire` for an answer ChatApi takes (worker/flows/Expire.ts), on the remote host through
- * `Flows.FlowStarter`, without waiting for it: the execution of the `attempt` storing the answer, or, without one, the
- * one execution of an answer already stored, which starting again is a no-op. It settles the answer if no device ever
- * does. A start the host can't record is a `chat.answer.expire` line and a count, `not_started`, and refuses the ask
- * with a 503, so the outbox sends it again.
- */
-const expire = (answerId: string, attempt?: string) =>
-  Effect.flatMap(
-    Flows.FlowStarter,
-    (starter) =>
-      starter.start(Expire.Expire, { executionId: Expire.executionId(answerId, attempt), payload: { answerId } }),
-  ).pipe(
-    Effect.as("started"),
-    Effect.catch((error) =>
-      Effect.andThen(
-        Metric.update(Metric.withAttributes(Expire.expiries, { outcome: "not_started" }), 1),
-        Effect.logWarning("chat.answer.expire").pipe(
-          Effect.annotateLogs({
-            answerId,
-            outcome: "not_started",
-            errorCode: error._tag === "@smthrs/mvp/flows/StartUnavailable" ? error.errorCode : "conflict",
-          }),
-          Effect.andThen(
-            new Refusal({ status: 503, errorCode: "expiry_not_started", explanation: notTaken }),
-          ),
-        ),
-      )
-    ),
-  )
-
-/** The 503 message when ChatApi couldn't start a question's expiry, so didn't store it. */
-const notTaken = "Smithers couldn't take the question. Try again."
 
 /** The 503 message when Postgres, or the sessions in it, can't be read. */
 const unreachable = "Smithers can't reach its database. Try again."
@@ -511,8 +427,6 @@ const noStore = { "cache-control": "no-store" }
 const NO_CONVERSATION = "00000000-0000-0000-0000-000000000000"
 
 const isUuid = Schema.is(Schema.String.check(Schema.isUUID()))
-
-const isModelRole = (value: string): value is ModelRole => (MODEL_ROLES as ReadonlyArray<string>).includes(value)
 
 /**
  * Reads at most `MAX_QUESTION_BODY_BYTES` as UTF-8 (`readBounded`): a larger body is 413, and malformed UTF-8 or a body that

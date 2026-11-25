@@ -50,7 +50,7 @@ const success = <A, E>(result: Result.Result<A, E>): A => {
 
 describe("claimsFor: who a credential says acts", () => {
   test("the person's session starts a chain: the agent for a flow the registry marks one, else a flow", () => {
-    const agent = success(claims(member, "answer-1", { flow: "chat/Answer" }))
+    const agent = success(claims(member, "answer-1", { flow: "flow/new" }))
     expect(agent).toEqual({
       v: 1,
       sub: "person-member",
@@ -58,7 +58,7 @@ describe("claimsFor: who a credential says acts", () => {
       act: "agent",
       run: "answer-1",
       root: "answer-1",
-      chain: ["chat/Answer"],
+      chain: ["flow/new"],
       ceiling: [],
       exp: NOW + CREDENTIAL_TTL_MS,
     })
@@ -73,11 +73,11 @@ describe("claimsFor: who a credential says acts", () => {
   })
 
   test("a nested call grows the chain by one, keeps its root, and stays the agent inside an agent", () => {
-    const answer = acting(member, success(claims(member, "answer-1", { flow: "chat/Answer" })))
+    const answer = acting(member, success(claims(member, "answer-1", { flow: "flow/new" })))
     const call = success(claims(answer, "answer-1/call/0.1", { flow: "app/agent/ask" }))
-    expect(call).toMatchObject({ act: "agent", run: "answer-1/call/0.1", root: "answer-1", chain: ["chat/Answer", "app/agent/ask"] })
+    expect(call).toMatchObject({ act: "agent", run: "answer-1/call/0.1", root: "answer-1", chain: ["flow/new", "app/agent/ask"] })
     const deeper = success(claims(acting(member, call), "answer-1/call/0.1/x", { flow: "repo/read" }))
-    expect(deeper).toMatchObject({ act: "agent", root: "answer-1", chain: ["chat/Answer", "app/agent/ask", "repo/read"] })
+    expect(deeper).toMatchObject({ act: "agent", root: "answer-1", chain: ["flow/new", "app/agent/ask", "repo/read"] })
   })
 
   test("a flow's nested call stays the flow's, and becomes the agent's when it calls an agent", () => {
@@ -94,7 +94,7 @@ describe("claimsFor: who a credential says acts", () => {
   })
 
   test("no credential is minted for a person-only flow whose route refuses an act, nested or not", () => {
-    const answer = acting(member, success(claims(member, "answer-1", { flow: "chat/Answer" })))
+    const answer = acting(member, success(claims(member, "answer-1", { flow: "flow/new" })))
     for (const [flow, enforcement] of Object.entries(PERSON_ONLY_FLOWS)) {
       const refused = "route" in enforcement
       expect(refusesCredential(flow), flow).toBe(refused)
@@ -103,8 +103,8 @@ describe("claimsFor: who a credential says acts", () => {
       expect(claims(answer, "answer-1/call", { flow }), flow).toEqual(Result.fail("person_only"))
     }
     // An agent's own run, or a device-only flow, still gets one: their requests are the agent's or the device's.
-    expect(Result.isSuccess(claims(member, "answer-1", { flow: "chat/Answer" }))).toBe(true)
-    expect(Result.isSuccess(claims(member, "answer-1/close", { flow: "chat/Close" }))).toBe(true)
+    expect(Result.isSuccess(claims(member, "answer-1", { flow: "flow/new" }))).toBe(true)
+    expect(Result.isSuccess(claims(member, "run-1", { flow: "auth/refresh" }))).toBe(true)
   })
 
   test("a callee wider than its caller's ceiling is refused; one inside it narrows to the intersection", () => {
@@ -136,7 +136,7 @@ describe("claimsFor: who a credential says acts", () => {
 describe("the authority intersection, as properties", () => {
   // Small vocabularies, so generated chains overlap, refuse and narrow often.
   const PATTERNS = ["fs:read:src/**", "fs:read:src/main.ts", "fs:read:**", "fs:write:src/**", "net:get:**", "*"]
-  const FLOWS = ["repo/read", "repo/tree", "chat/Answer", "flow/run", "flow/run/prompt", "run/answer", "todo/commit"]
+  const FLOWS = ["repo/read", "repo/tree", "flow/new", "flow/run", "flow/run/prompt", "run/answer", "todo/commit"]
   const Hop = Schema.Struct({
     flow: Schema.Literals(FLOWS),
     ceiling: Schema.optional(
@@ -215,7 +215,7 @@ describe("signing and reading a credential", () => {
         currentTimeNanos: Effect.succeed(BigInt(now) * 1_000_000n),
       })),
     ))
-  const minted = success(claims(member, "answer-1", { flow: "chat/Answer" }))
+  const minted = success(claims(member, "answer-1", { flow: "flow/new" }))
   let signed = ""
   beforeAll(async () => void (signed = await sign(minted)))
 
@@ -224,9 +224,17 @@ describe("signing and reading a credential", () => {
     expect(actor).toEqual(
       Option.some({
         ...member,
-        act: { kind: "agent", id: "answer-1", root: "answer-1", chain: ["chat/Answer"], ceiling: [] } satisfies Act,
+        act: { kind: "agent", id: "answer-1", root: "answer-1", chain: ["flow/new"], ceiling: [] } satisfies Act,
       }),
     )
+  })
+
+  test("an already signed browser-agent credential retains its recorded actor", async () => {
+    const legacy = await sign({ ...minted, chain: ["chat/Answer"] })
+    expect(await at(NOW, credentials.verify(legacy))).toMatchObject({
+      _tag: "Some",
+      value: { act: { kind: "agent", chain: ["chat/Answer"] } },
+    })
   })
 
   test("forged, tampered, another purpose's, expired or ended: nobody", async () => {
@@ -433,12 +441,12 @@ describe("POST /api/runs/<run>/credential", () => {
   test("the agent asks for its run's credential, and answering the person's question with it is refused", async () => {
     const h = await openSignedIn(asker)
     const answerId = await asked(h)
-    const root = await mint(h, answerId, { flow: "chat/Answer" })
+    const root = await mint(h, answerId, { flow: "flow/new" })
     expect(root).toEqual({ status: 200, body: { token: expect.any(String), act: "agent", expiresAt: expect.any(Number) } })
     const agent = bearer(root.body.token as string)
     // The agent's run reports its question with its own credential.
     expect((await post(h, `/api/runs/${answerId}`, { status: "needs_you", wait: waiting }, agent)).status).toBe(200)
-    // The agent's chat/Answer calling run/answer: no credential for the call, and its own is refused at the route.
+    // The agent calling run/answer: no credential for the call, and its own is refused at the route.
     expect(await mint(h, `${answerId}/call/0.1`, { flow: "run/answer" }, agent)).toEqual({
       status: 403,
       body: { code: "person_only" },
@@ -454,7 +462,7 @@ describe("POST /api/runs/<run>/credential", () => {
   test("a nested call's credential grows the chain under its caller's and narrows; a wider callee is refused", async () => {
     const h = await openSignedIn(asker)
     const answerId = await asked(h)
-    const root = (await mint(h, answerId, { flow: "chat/Answer" })).body.token as string
+    const root = (await mint(h, answerId, { flow: "flow/new" })).body.token as string
     const call = await mint(h, `${answerId}/call/0.1`, { flow: "app/agent/ask" }, bearer(root))
     expect(call).toMatchObject({ status: 200, body: { act: "agent" } })
     // A plugin's flow, its ceiling small, calls a flow that declares more: refused before it runs.
@@ -477,19 +485,17 @@ describe("POST /api/runs/<run>/credential", () => {
     const mine = await openSignedIn(asker)
     const theirs = await open(other)
     const theirAnswer = await asked(theirs)
-    // Minting for another person's answer.
+    // The historical credential route still refuses minting under another person's answer.
     expect(await mint(mine, theirAnswer, { flow: "chat/Answer" })).toEqual({ status: 403, body: { code: "forbidden" } })
     // A credential bound to one of my runs, used on another of mine.
     const first = await asked(mine)
     const second = await asked(mine)
-    const token = (await mint(mine, first, { flow: "chat/Answer" })).body.token as string
+    const token = (await mint(mine, first, { flow: "flow/new" })).body.token as string
     const report = await post(mine, `/api/runs/${second}`, { status: "working" }, bearer(token))
     expect([report.status, await report.json()]).toEqual([403, { code: "other_run" }])
-    const write = await post(mine, `/api/answers/${second}`, { status: "streaming", parts: [] }, bearer(token))
-    expect(write.status).toBe(403)
     // Forged and expired credentials read as nobody, never as the cookie's person: signed out. So does an
     // `Authorization` header that isn't a bearer token sessions read: too long, another scheme, or no token.
-    const expired = await sign({ ...success(claims(asker, first, { flow: "chat/Answer" })), exp: Date.now() - 1 })
+    const expired = await sign({ ...success(claims(asker, first, { flow: "flow/new" })), exp: Date.now() - 1 })
     const unreadable = [`Bearer ${"a".repeat(RunCredentials.MAX_TOKEN_LENGTH + 1)}`, "bearer forged", "Basic forged", "Bearer"]
     for (const headers of [bearer("forged"), bearer(expired), ...unreadable.map((authorization) => ({ authorization }))]) {
       expect((await post(mine, `/api/runs/${first}`, { status: "working" }, headers)).status, headers.authorization.slice(0, 16)).toBe(401)
@@ -501,8 +507,8 @@ describe("POST /api/runs/<run>/credential", () => {
     expect((await mine.fetch(credentialRoute(first), { method: "POST", body: new Uint8Array([0xff]) })).status).toBe(400)
     expect((await mine.fetch(credentialRoute(first), { method: "POST", body: "x".repeat(17_000) })).status).toBe(413)
     expect((await post(mine, credentialRoute(first), { flow: "Not A Flow" })).status).toBe(400)
-    expect((await post(mine, "/api/runs/%E0%A4%A/credential", { flow: "chat/Answer" })).status).toBe(404)
-    expect((await post(mine, `/api/runs/${encodeURIComponent("a b")}/credential`, { flow: "chat/Answer" })).status)
+    expect((await post(mine, "/api/runs/%E0%A4%A/credential", { flow: "flow/new" })).status).toBe(404)
+    expect((await post(mine, `/api/runs/${encodeURIComponent("a b")}/credential`, { flow: "flow/new" })).status)
       .toBe(404)
     expect((await post(mine, credentialRoute("not-an-answer"), { flow: "chat/Answer" })).status).toBe(404)
   })
@@ -525,7 +531,7 @@ describe("a credential's life, with sign-in configured", () => {
     expect(
       (await h.ask({ id: crypto.randomUUID(), answerId, text: "Deploy the docs preview" }, session)).status,
     ).toBe(202)
-    const token = (await mint(h, answerId, { flow: "chat/Answer" }, session)).body.token as string
+    const token = (await mint(h, answerId, { flow: "flow/new" }, session)).body.token as string
     expect((await post(h, `/api/runs/${answerId}`, { status: "needs_you", wait: waiting }, bearer(token))).status).toBe(200)
     // A valid credential whose live session cannot be read fails closed, with an unavailable response.
     const unavailable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
@@ -561,7 +567,7 @@ describe("local development, sign-in not configured", () => {
         Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(config)),
       ),
     )
-  const minted = success(claims(developer, "answer-1", { flow: "chat/Answer" }))
+  const minted = success(claims(developer, "answer-1", { flow: "flow/new" }))
 
   test("with SESSION_SECRET bound, a credential outlives the Worker reloading", async () => {
     const config = { SESSION_SECRET: RUN_CREDENTIAL_SECRET }
@@ -581,7 +587,7 @@ describe("local development, sign-in not configured", () => {
 
 describe("renewing a queued write's signed authority", () => {
   test("an expired proof renews the exact agent principal, run, chain and ceiling", async () => {
-    const parent = acting(member, success(claims(member, "queued-answer", { flow: "chat/Answer", ceiling: [["net:post:github/**"]] })))
+    const parent = acting(member, success(claims(member, "queued-answer", { flow: "flow/new", ceiling: [["net:post:github/**"]] })))
     const original = { ...success(claims(parent, "queued-answer/call/1", { flow: "issue/create" })), exp: Date.now() - 1 }
     const token = await sign(original)
     expect(await Effect.runPromise(credentials.verify(token))).toEqual(Option.none())
@@ -616,7 +622,7 @@ describe("renewing a queued write's signed authority", () => {
 
   test("the real credential route renews an expired proof and rejects wider/foreign reinterpretations", async () => {
     const h = await open(member)
-    const original = { ...success(claims(acting(member, success(claims(member, "answer", { flow: "chat/Answer", ceiling: [["net:post:github/**"]] }))), "answer/call/4", { flow: "issue/create" })), exp: Date.now() - 1 }
+    const original = { ...success(claims(acting(member, success(claims(member, "answer", { flow: "flow/new", ceiling: [["net:post:github/**"]] }))), "answer/call/4", { flow: "issue/create" })), exp: Date.now() - 1 }
     const token = await sign(original)
     const reply = await mint(h, original.run, { flow: "repo/read", ceiling: [], renew: token })
     expect(reply.status).toBe(200)

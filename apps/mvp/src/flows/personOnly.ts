@@ -32,10 +32,6 @@ export const PERSON_ONLY_FLOWS = {
   "timeline/summarize": { device: "The device projects conversation labels and reaches only the metered model role; no approval or shared write authority is granted." },
   "timeline/phases": { device: "The device projects conversation phases and reaches only the metered model role; no approval or shared write authority is granted." },
   "repo/about": { device: "A repository's page reads what GitHub says of it through RepoApi's about route, which any visitor may read; it grants nothing." },
-  "chat/Answer": { starts: "POST /api/questions" },
-  "chat/Close": {
-    device: "The asking tab settles its own answer through the answer route its agent writes; it grants nothing more.",
-  },
   "chat/edit": { device: "It takes a question back from this device's outbox, which no server route serves." },
   "run/answer": { route: "POST /api/runs/<id>/answer" },
   "run/deliver": { device: "It delivers an answer the server already recorded to this device's engine." },

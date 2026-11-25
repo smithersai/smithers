@@ -1,11 +1,37 @@
 // Electric's `messages` shape through ChatApi's proxy, over plain HTTP from Node (docs/features/chat.md#contract): the
-// bench's view of the server, beside the browsers' view of the app. Node never asks: nothing would answer a question it
-// posted, so the pages ask (docs/benchmarks.md#method).
+// bench's view of the server, beside the browsers' view of the app. The pages ask and the attached fixture answers.
 //
 // Times are epoch milliseconds with sub-millisecond precision (`performance.timeOrigin + performance.now()`), the
 // same clock the pages report on, since everything runs on one machine.
 
+import type { BrowserContext } from "@playwright/test"
 import { Effect, Context, Metric } from "effect"
+import { attachAgent } from "../e2e/attach.ts"
+import { SESSION_ROUTE } from "../src/features/auth/contract.ts"
+import { HOME_BRANCH } from "../src/features/branch/contract.ts"
+import { DEFAULT_REPOSITORY } from "../worker/defaultRepository.ts"
+
+export type BenchmarkAgent = Awaited<ReturnType<typeof attachAgent>>
+
+/** Pair a test agent to the same home conversation the browser opens at /app. */
+export const attachBenchmarkAgent = async (context: BrowserContext, baseUrl: string): Promise<BenchmarkAgent> => {
+  const session = await context.request.get(SESSION_ROUTE)
+  try {
+    if (!session.ok()) throw new Error(`GET ${SESSION_ROUTE} answered ${session.status()}`)
+    const person = await session.json() as { signedIn: boolean; personId?: string; homeConversationId?: string }
+    if (!person.signedIn || person.personId === undefined || person.homeConversationId === undefined) {
+      throw new Error("The benchmark needs a signed-in browser with a home conversation")
+    }
+    return await attachAgent(context.request, baseUrl, person.personId, {
+      repo: process.env.GITHUB_REPOSITORY ?? DEFAULT_REPOSITORY,
+      branch: HOME_BRANCH,
+      conversation: person.homeConversationId,
+    })
+  } finally {
+    await session.dispose()
+  }
+}
+
 
 export class FollowerHttp extends Context.Service<FollowerHttp, {
   readonly request: (url: string, signal: AbortSignal) => Effect.Effect<Response, Error>
@@ -19,8 +45,6 @@ const liveHttp = { request: (url: string, signal: AbortSignal) => Effect.tryProm
 
 /** Now, comparable with a page's `performance.timeOrigin + performance.now()`. */
 export const now = () => performance.timeOrigin + performance.now()
-
-export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 /** A `messages` row as Electric sends it: snake_case columns, every value a JSON value. */
 export type Row = {

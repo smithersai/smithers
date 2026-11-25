@@ -51,11 +51,7 @@ export const props = {
 export const program = (options: ProgramOptions = {}) =>
   Effect.flatMap(Effect.promise(() => import("./ChatApiProgram.ts")), (loaded) => loaded.program(options))
 
-// ChatApi answers /api/* for the site Worker (worker/index.ts): questions, the Electric shape proxy, the model
-// endpoint, the answer routes, sign-in, repositories, the git loop and the browser's telemetry
-// (docs/features/chat.md, docs/features/model-endpoint.md, docs/features/agent.md, docs/features/sign-in.md,
-// docs/features/repo.md, docs/features/issues.md), and hosts the remote flows' Durable Object
-// (docs/features/remote-flows.md).
-// Alchemy runs its handlers; nothing here runs an Effect itself. Until the GitHub App is configured, nobody is signed
-// in, so asking, the model endpoint and the answer routes refuse every call.
+// ChatApi answers /api/* for the site Worker (worker/index.ts), including chat, the Electric shape proxy, agent
+// attachment, sign-in, repositories and the browser's telemetry. It hosts the remote flows' Durable Object.
+// Alchemy runs its handlers. Until the GitHub App is configured, production has no signed-in sessions.
 export default class ChatApi extends Cloudflare.Worker<ChatApi>()("ChatApi", props, program()) {}

@@ -104,7 +104,6 @@ describe("the parity law", () => {
       "chat/pin",
       "chat/unpin",
       "chat/copy",
-      "app/memory/remember",
       "repo/tree",
       "repo/read",
       "repo/refs",
@@ -176,8 +175,6 @@ describe("names and placement", () => {
       expect(declaration.successSchema).toBe(reference.successSchema)
       expect(declaration.errorSchema).toBe(reference.errorSchema)
     }
-    // The agent's flow is only a reference here: the tab never holds its body.
-    expect(Flow.isFlow(registry["chat/Answer"].flow)).toBe(false)
   })
 
   test("every registered flow declares that it runs on this device", () => {
@@ -205,13 +202,10 @@ describe("names and placement", () => {
       "view/set-state",
       "ui/repo",
       "ui/issues",
-      "chat/Answer",
-      "chat/Close",
       "chat/pin",
       "chat/unpin",
       "chat/copy",
       "chat/edit",
-      "app/memory/remember",
       "repo/tree",
       "repo/read",
       "repo/refs",

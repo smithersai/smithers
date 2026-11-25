@@ -9,11 +9,11 @@ import { DeviceWipe } from "./features/auth/device"
 import { Action } from "@smthrs/flow"
 import { Otlp } from "@smthrs/observability"
 import { TabChannel } from "@smthrs/platform-browser"
-import { Effect, Exit, Fiber, Layer, ManagedRuntime, Metric, Scope, Stream } from "effect"
+import { Effect, Exit, Fiber, Layer, ManagedRuntime, Metric, Scope } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { sourceText, sourcesUnder } from "../../../packages/repo-targets/test-utils/source-readers.mjs"
 import { build } from "../worker/test/flowHost"
-import { stop, testFile, usage } from "../worker/test/harness.ts"
+import { testFile } from "../worker/test/harness.ts"
 import { Auth, bindSessionConnectivity } from "./features/auth/auth"
 import { AuthRefresh } from "./features/auth/flows"
 import { sessionRefreshes } from "./features/auth/metrics"
@@ -21,15 +21,12 @@ import * as AuthSteps from "./features/auth/steps"
 import { AuthStore } from "./features/auth/store"
 import { tabSession } from "./features/auth/tab"
 import { ClientEngine, FlowDispatch } from "./flows/dispatch"
-import { Answer } from "./features/agent/flows"
 import { TELEMETRY_ROUTE } from "./features/chat/contract"
 import { Chat } from "./features/chat/chat"
 import { ChatStore } from "./features/chat/store"
 import { engineTelemetry } from "./flows/engine"
-import { BROWSER_TELEMETRY, ENGINE_SERVICE, EXPORTED_SPANS, RELAY_FIELDS, TELEMETRY_LIMITS, WEB_SERVICE, WITHHELD } from "./telemetry"
-import { cell, openAgent } from "./test/agent"
+import { BROWSER_TELEMETRY, EXPORTED_SPANS, RELAY_FIELDS, TELEMETRY_LIMITS, WEB_SERVICE, WITHHELD } from "./telemetry"
 import { nodeDevice, openFaultyApp, TestChatApi } from "./test/chatApi"
-import { openDevice } from "./test/device"
 import { QuestionFaults } from "./test/faults"
 import { captured, type Dropped, type Export, ORIGIN, relayed } from "./test/relay"
 
@@ -65,92 +62,8 @@ const bytes = (exports: ReadonlyArray<Export>) => exports.map(({ body }) => new 
 const RELAY_MAX_BODY_BYTES = TELEMETRY_LIMITS.maxRequestBytes
 
 describe("the relay keeps everything the browser exports", () => {
-  test("the engine worker: an answer whose agent calls a flow, with every model call and step", async () => {
-    let calls = 0
-    const agent = await openAgent(runtime, () => {
-      calls++
-      const source = calls === 1 ? `await ctx.call("app/theme/set", { mode: "dark" })` : `ctx.done("Dark mode is on.")`
-      return Stream.make({ type: "text-delta" as const, id: "t", text: cell(source) }, usage, stop)
-    })
-    // The tab's exporter as src/boot.ts installs it, and the engine worker's as src/flows/engine.worker.ts does.
-    const tab = captured(Otlp.layerFetch({ baseUrl: `${ORIGIN}${TELEMETRY_ROUTE}`, serviceName: WEB_SERVICE, ...TELEMETRY_LIMITS }))
-    const engine = captured(engineTelemetry(ORIGIN))
-    const device = await openDevice(agent.fetch, { tab: tab.layer, engine: engine.layer })
-    closing.push(device.close)
 
-    await device.theme.actions.toggle()
-    const answerId = await agent.ask("Switch to dark mode")
-    await device.run(device.engine.start(Answer, { executionId: answerId, payload: { answerId } }))
-    expect(await device.run(device.engine.result(Answer, answerId))).toEqual(Exit.succeed({ status: "done" }))
-    await closing.pop()!()
-
-    const fromTab = await relay(tab.exports)
-    const fromEngine = await relay(engine.exports)
-    expect([...fromTab.kept, ...fromEngine.kept]).toContainEqual(expect.objectContaining({
-      name: "flows_engine_replay_seeds",
-      fields: expect.objectContaining({ "otlp.value": expect.any(Number) }),
-    }))
-    expect(fromTab.kept).toContainEqual(expect.objectContaining({
-      name: "electric.shape.request",
-      fields: expect.objectContaining({ "electric.shape.live": expect.any(Boolean) }),
-    }))
-    expect(drift(fromTab.dropped)).toEqual({ records: [], fields: [] })
-    expect(drift(fromEngine.dropped)).toEqual({ records: [], fields: [] })
-
-    // Each worker's records name it, and what the end-to-end tests read arrives with its fields.
-    const kept = (lines: typeof fromEngine.kept, name: string) => lines.filter((line) => line.name === name)
-    expect(new Set(fromEngine.kept.map((line) => line.fields["service.name"]))).toEqual(new Set([ENGINE_SERVICE]))
-    // A run's admission and claim carry when each happened: the start-latency the dashboards read.
-    for (const [name, at] of [["flow.run.created", "createdAtMs"], ["flow.run.claimed", "claimedAtMs"]] as const) {
-      expect(kept(fromEngine.kept, name)).toContainEqual(
-        expect.objectContaining({ fields: expect.objectContaining({ "smithers.execution.id": expect.any(String), [at]: expect.any(Number) }) }),
-      )
-    }
-    for (const name of ["flow.run.started", "flow.run.settled"]) {
-      expect(kept(fromEngine.kept, name)).toContainEqual(expect.objectContaining({
-        fields: expect.objectContaining({ flow: "app/theme/set", door: "button", actor: "person", placement: "browser",
-          ...(name === "flow.run.settled" ? { outcome: "succeeded", code: "none", durationMs: expect.any(Number) } : {}),
-        }),
-      }))
-    }
-    for (const name of ["flows_runs_started", "flows_runs_settled"]) {
-      expect(kept(fromEngine.kept, name).some(({ fields }) =>
-        fields.flow === "app/theme/set" && fields.door === "button" && fields.actor === "person" &&
-        fields.placement === "browser" && Number(fields["otlp.value"]) > 0 &&
-        (name === "flows_runs_started" || fields.outcome === "succeeded")
-      ), name).toBe(true)
-    }
-    // The engine's start says once how many registrations recovered and how long that took, never once per flow.
-    expect(kept(fromEngine.kept, "engine-store.registration.recovered")).toEqual([
-      expect.objectContaining({
-        fields: expect.objectContaining({ registrations: expect.any(Number), durationMs: expect.any(Number) }),
-      }),
-    ])
-    expect(kept(fromEngine.kept, "agent_model_step_calls")).toContainEqual(
-      expect.objectContaining({
-        fields: expect.objectContaining({ step: "harness/sealStep", outcome: "sealed", "otlp.value": expect.any(Number) }),
-      }),
-    )
-    for (const name of ["invoke_agent", "chat agent", "ModelStep", "model.proxy.stream", "execute_tool app/theme/set"]) {
-      expect(kept(fromEngine.kept, name), name).not.toEqual([])
-    }
-    expect(kept(fromTab.kept, "flow.dispatch")).toContainEqual(
-      expect.objectContaining({
-        fields: expect.objectContaining({
-          flow: "app/theme/set",
-          door: "button",
-          executionId: expect.any(String),
-          outcome: "done",
-        }),
-      }),
-    )
-
-    // The engine sends only the spans the relay keeps, so no export comes near ChatApi's limit.
-    expect(Math.max(...bytes(engine.exports))).toBeLessThan(RELAY_MAX_BODY_BYTES)
-    expect(Math.max(...bytes(tab.exports))).toBeLessThan(RELAY_MAX_BODY_BYTES)
-  })
-
-  test("the tab: asking, answered by its agent; a refused ask discarded; sync failing and retried", async () => {
+  test("the tab: asking and syncing, a refused ask discarded, and sync retried", async () => {
     const app = openFaultyApp({
       answers: true,
       pageSize: 2,
@@ -170,10 +83,7 @@ describe("the relay keeps everything the browser exports", () => {
 
     chat.actions.openComposer("button")
     if (!(await chat.actions.ask("What is the theme?")).asked) throw new Error("not asked")
-    const reply = await app.runPromise(api.answerTo("What is the theme?"))
-    reply.say("Light.")
-    reply.done()
-    await until(() => expect(shown()).toEqual(["user done", "assistant done"]))
+    await until(() => expect(shown()).toEqual(["user done", "assistant streaming"]))
     app.runSync(questions.failNext("bad_request"))
     const refused = (await chat.actions.ask("And again?"))
     if (!refused.asked) throw new Error("not asked")
@@ -194,7 +104,7 @@ describe("the relay keeps everything the browser exports", () => {
     const fromTab = await relay(api.telemetry)
     expect(drift(fromTab.dropped)).toEqual({ records: [], fields: [] })
     expect(fromTab.kept.map((line) => line.name)).toEqual(
-      expect.arrayContaining(["question asked", "question stored", "question not sent", "outbox.send", "flow.dispatch"]),
+      expect.arrayContaining(["question asked", "question stored", "question not sent", "outbox.send"]),
     )
   })
 })

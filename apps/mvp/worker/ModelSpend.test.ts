@@ -37,7 +37,7 @@ type Harness = Awaited<ReturnType<typeof harness>>
 
 /** One call to the endpoint, read to its end: its status. */
 const ask = async (h: Harness, role = "agent") => {
-  const response = await h.fetch(`/api/model/${role}`, { method: "POST", body })
+  const response = await h.modelFetch(`/api/model/${role}`, { method: "POST", body })
   await response.text()
   return response.status
 }

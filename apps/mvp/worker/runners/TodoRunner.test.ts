@@ -36,7 +36,7 @@ import { repositoryOf } from "../github/Config.ts"
 import { stopRoute } from "../../src/features/runs/contract.ts"
 import { REPOSITORY, reset, services as githubServices, sql } from "../github/test/fixtures.ts"
 import { INSTALLATION_ID, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
-import * as ModelEndpoint from "../ModelEndpoint.ts"
+import * as ModelSeats from "../ModelSeats.ts"
 import { PersonalModels } from "../personal/Models.ts"
 import { KEY, resetModels, seedKeys } from "../personal/test/harness.ts"
 import * as Stack from "../stack/Stack.ts"
@@ -263,7 +263,7 @@ const setup = async (
       "acp-test": { argv: [process.execPath, testAgent], env: { ACP_TEST_AGENT_STATE: join(state, "agent-state") } },
     },
   }))
-  const local = await Effect.runPromise(ModelEndpoint.local(db, { hosted: true }).pipe(
+  const local = await Effect.runPromise(ModelSeats.local(db, { hosted: true }).pipe(
     Effect.provide(PersonalModels.none),
     Effect.provideService(
       HostModel,
