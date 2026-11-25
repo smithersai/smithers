@@ -41,3 +41,9 @@ export * as Outbox from "./Outbox.ts"
  * @since 0.3.0
  */
 export * as Migrations from "./Migrations.ts"
+
+/**
+ * @category collections
+ * @since 0.4.0
+ */
+export * as JournalCollection from "./JournalCollection.ts"

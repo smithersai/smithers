@@ -17,6 +17,8 @@
  * - `ContainerTerminal`: a browser terminal over `@smthrs/sandbox`'s
  *   `TerminalProtocol`, one tmux session per terminal in the container and
  *   one tmux client per socket.
+ * - `DoSqliteShard`: a shard's sequencer (protocol v2) in a SQLite-backed
+ *   Durable Object, its order surviving hibernation.
  * - `ContainerSession`: the container as a `Sandbox.Session`, so
  *   `@smthrs/sandbox`'s `SandboxTools` and `Sandbox.layerHost` run on it.
  *
@@ -87,6 +89,13 @@ export * as ContainerSession from "./ContainerSession.ts"
  * @since 1.0.0-rc.17
  */
 export * as SandboxObject from "./SandboxObject.ts"
+
+/**
+ * A protocol v2 shard sequencer in a Durable Object's own SQLite storage.
+ *
+ * @since 1.0.0-rc.18
+ */
+export * as DoSqliteShard from "./DoSqliteShard.ts"
 
 /** Read the durable engine this host already provides. @since 1.0.0 */
 export { RunInspection } from "@smthrs/engine-store"

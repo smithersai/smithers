@@ -129,3 +129,27 @@ export * as PresenceSocket from "./PresenceSocket.ts"
  * @since 1.0.0-rc.17
  */
 export * as SharedText from "./SharedText.ts"
+
+/**
+ * Protocol v2: submit, pull and snapshot against one shard's sequencer.
+ *
+ * @category protocol
+ * @since 1.0.0-rc.18
+ */
+export * as ShardProtocol from "./ShardProtocol.ts"
+
+/**
+ * One shard's sequencer over a synchronous, atomic store.
+ *
+ * @category services
+ * @since 1.0.0-rc.18
+ */
+export * as ShardServer from "./ShardServer.ts"
+
+/**
+ * A node's outbox and applied cursor against one shard.
+ *
+ * @category services
+ * @since 1.0.0-rc.18
+ */
+export * as ShardClient from "./ShardClient.ts"
