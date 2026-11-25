@@ -1,0 +1,39 @@
+{
+  "name": "@smthrs/app-state",
+  "type": "module",
+  "version": "1.0.0-rc.18",
+  "private": true,
+  "license": "MIT",
+  "description": "Pure reference state machine for the plan tree, chat, and shard sync envelope; mirrored and proven in Lean 4",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/app-state"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./Canonical": "./src/Canonical.ts",
+    "./Chat": "./src/Chat.ts",
+    "./Decision": "./src/Decision.ts",
+    "./PlanTree": "./src/PlanTree.ts",
+    "./SyncReducer": "./src/SyncReducer.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.1",
+    "effect": "4.1.1",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  },
+  "peerDependencies": {
+    "effect": "4.1.1"
+  }
+}
