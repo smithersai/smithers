@@ -13,6 +13,7 @@ import { ISSUES_STREAM } from "../../issues/contract"
 import { ACTION_FAILED, VIEW_AS, VIEW_WORDS } from "../contract"
 import { draftFor, filesOf, flowsOf, homePageOf, issuesOf, liveKindsOf, offered, runsOf, stackOf } from "../view"
 import { useHome } from "./HomeContext"
+import { HomeViewFrame, isOfferedHomeFlow } from "./HomeViewFrame"
 
 // `/$owner/$repo`: the repository's own home, or Smithers' curated one, with only the sections the person may see;
 // else `tree`, its file tree, under one line when the declared home can't show. While the home is read a skeleton
@@ -107,7 +108,8 @@ function HomeContent({ tree }: { readonly tree: ReactNode }) {
       files={filesOf(files ?? [])}
       askHref={session?.status === "signed_in" && answer !== undefined && mayAsk(answer.role) ? page.askHref : undefined}
       onAsk={ask}
-      offered={offered}
+      offered={(flow) => isOfferedHomeFlow(flow, offered, mine ?? [])}
+      renderView={(block) => <HomeViewFrame flow={block.flow} onOpen={(flow) => ask(flow)} />}
       live={live}
       onNavigate={(href) => void navigate({ href })}
       onRun={run}

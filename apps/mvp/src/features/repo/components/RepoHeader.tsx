@@ -1,4 +1,4 @@
-import { Button, PageHeader } from "@smthrs/ui"
+import { Button, ForkBadge, PageHeader } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useLocation } from "@tanstack/react-router"
 import { Notices } from "../../attention/components/Notices"
@@ -14,6 +14,7 @@ import { BackToChat } from "../../views/components/BackToChat"
 import { CLONE, TRY_AGAIN } from "../contract"
 import { cloneHeaderOf } from "../cloneHeader"
 import { minimizedOf } from "../embedView"
+import { exampleForkOf } from "../exampleForks"
 import { aboutOf, headerOf } from "../view"
 import { Slot } from "../../../plugins/components/Slot"
 import { useRepo, useRepoAnswer } from "./RepoContext"
@@ -40,6 +41,7 @@ export function RepoHeader({ backTarget, notices = true }: { readonly backTarget
   const { view, repository, clone, about } = data
   const header = cloneHeaderOf(headerOf(repository, clone, view.signedIn, view.answered, about), view.signedIn, answer)
   const defaultBranch = repository?.defaultBranch ?? aboutOf(about)?.defaultBranch ?? null
+  const fork = exampleForkOf(view.owner, view.name)
   const sections = header.kind === "missing" || header.kind === "unavailable" ? undefined : (
     <>
       <Link to="/$owner/$repo/issues" params={{ owner: view.owner, repo: view.name }}>{ISSUES}</Link>
@@ -59,7 +61,12 @@ export function RepoHeader({ backTarget, notices = true }: { readonly backTarget
       aria-label="Repository"
       width="wide"
       back={<BackToChat target={backTarget ?? { template: "repo", props: minimizedOf(view, defaultBranch) }} />}
-      title={<Link to="/$owner/$repo" params={{ owner: view.owner, repo: view.name }}>{view.owner} / {view.name}</Link>}
+      title={
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+          <Link to="/$owner/$repo" params={{ owner: view.owner, repo: view.name }}>{view.owner} / {view.name}</Link>
+          {fork !== undefined ? <ForkBadge forkOrg={fork.forkOrg} upstreamRepo={fork.upstreamRepo} upstreamHref={fork.upstreamHref} /> : null}
+        </span>
+      }
       nav={sections}
       navLabel="Repository sections"
       actions={
