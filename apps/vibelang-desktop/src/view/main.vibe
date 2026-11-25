@@ -1,11 +1,11 @@
 // The native additions wrap the unchanged Foldkit application; its conversation machine and commands stay shared.
 import { Command, Dom, Render, Subscription, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import * as Web from "../../../vibelang/src/web/main.vibe"
-import { newClient } from "../../../vibelang/src/core/conversation.vibe"
-import { Factory } from "../../../vibelang/src/core/Factory.vibe"
-import { Actions } from "../../../vibelang/src/actions/Actions.vibe"
-import { viewer } from "../../../vibelang/src/core/roles.vibe"
+import * as Web from "@smthrs/vibelang-site/web/main"
+import { newClient } from "@smthrs/vibelang-site/core/conversation"
+import { Factory } from "@smthrs/vibelang-site/core/Factory"
+import { Actions } from "@smthrs/vibelang-site/actions/Actions"
+import { viewer } from "@smthrs/vibelang-site/core/roles"
 const localViewer = { ...viewer, available: false }
 import { Snapshot, type Operation } from "../protocol.vibe"
 import { endpointOf, modelReady } from "../policy.vibe"

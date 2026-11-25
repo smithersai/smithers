@@ -506,13 +506,13 @@ describe("@smthrs/step-cache Wave 10 deep fuzz", () => {
                     return putOut._tag === "Inserted" && Option.isSome(got)
                   }
                   case "corruptJsonRow": {
-                    yield* sql`PRAGMA ignore_check_constraints = ON`
+                    yield* TestDatabase.checks(sql, false)
                     yield* sql`INSERT INTO flows_step_cache (key_digest, result_json, meta_json, created_at_ms, recorded_run_id, recorded_event_seq) VALUES (${key}, ${"{bad"}, ${"{}"}, ${1000}, ${"r1"}, ${1})`
                     const r = yield* Effect.result(store.get(key))
                     return Result.isFailure(r) && r.failure.code === "decode_failed"
                   }
                   case "invalidSchemaRow": {
-                    yield* sql`PRAGMA ignore_check_constraints = ON`
+                    yield* TestDatabase.checks(sql, false)
                     yield* sql`INSERT INTO flows_step_cache (key_digest, result_json, meta_json, created_at_ms, recorded_run_id, recorded_event_seq) VALUES (${key}, ${"{}"}, ${"{}"}, ${-5}, ${""}, ${1})`
                     const r = yield* Effect.result(store.get(key))
                     return Result.isFailure(r) && r.failure.code === "decode_failed"

@@ -31,6 +31,7 @@ describe("Control.layerNoop", () => {
             )
           ],
           ["cancel", yield* Effect.flip(control.cancel(mutation))],
+          ["pause", yield* Effect.flip(control.pause(mutation))],
           ["resume", yield* Effect.flip(control.resume(mutation))],
           ["list", yield* Effect.flip(control.list({ _tag: "flows" }))],
           ["watch", yield* Effect.flip(Stream.runCollect(control.watch({})))]
@@ -46,6 +47,7 @@ describe("Control.layerNoop", () => {
       ["steer", "steer"],
       ["signal", "signal"],
       ["cancel", "cancel"],
+      ["pause", "pause"],
       ["resume", "resume"],
       ["list", "list"],
       ["watch", "watch"]

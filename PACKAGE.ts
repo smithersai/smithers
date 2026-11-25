@@ -308,7 +308,9 @@ const ripgrep = Smithers.CiToolchain.Ripgrep({ release: "14.1.1" })
 const bubblewrap = Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "strace"] })
 // TerminalRecording renders GIFs and inspects their timing through ffmpeg/ffprobe.
 const graphSystemTools = Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "ffmpeg", "strace"] })
-const packageSystemTools = Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "ffmpeg", "openssh-server", "strace"] })
+const packageSystemTools = Smithers.CiToolchain.Apt({
+  packages: ["bubblewrap", "dbus", "ffmpeg", "gnome-keyring", "libsecret-tools", "openssh-server", "strace"]
+})
 // `//packages/smithers/build/build-cli:test` drives a real `forge` and a real Go toolchain:
 // it builds and tests a Foundry package and asserts `forge fmt --check` drift,
 // and it builds a Go package tree. Without them six cases fail on the REQUIRED

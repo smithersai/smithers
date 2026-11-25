@@ -415,7 +415,7 @@ describe("ci conformance", () => {
       .flatMap((step) => step.run === undefined || step.run.includes("\n") ? [] : [step.run])
     assert.ok(commands.length > 0)
     const derived = [
-      /^pnpm exec smthrs (?:build|test|lint|docs|review|ci)(?: '\/\/[^']*')+( --jobs \d+)?( --shard \$\{\{ matrix\.shard \}\}\/[1-9]\d*)?( --known-red '\.github\/ci-known-red\.json')? --verbose$/,
+      /^pnpm exec smthrs (?:build|test|lint|docs|review|ci)(?: '\/\/[^']*')+( --jobs \d+)?( --shard \$\{\{ matrix\.shard \}\}\/[1-9]\d*)?( --known-red '\.github\/ci-known-red\.json')?( --skip-other-hosts)? --verbose$/,
       /^pnpm install --frozen-lockfile --ignore-scripts$/,
       /^rustup toolchain install$/,
       /^jj git init --colocate$/

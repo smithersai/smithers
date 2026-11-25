@@ -4619,7 +4619,11 @@ const compactedTipFromRow = (
     ).pipe(Effect.provideContext(driver.crypto), Effect.orDie)
     // Only a missing round 1 indicates pruning; an existing (even malformed)
     // middle round must not trigger a lineage walk or skip ordinary resolution.
-    if ((yield* findRun(driver, round1.executionId)) !== undefined) return Option.none()
+    const round1Exists = yield* driver.store.get(round1.executionId).pipe(
+      Effect.as(true),
+      Effect.catch((error) => Effect.succeed(error.code !== "not_found_row"))
+    )
+    if (round1Exists) return Option.none()
     const latest = yield* driver.store.latestRound(root.runId).pipe(Effect.orDie)
     return Number(latest.roundOrdinal) > 1 ? Option.some(latest) : Option.none()
   })

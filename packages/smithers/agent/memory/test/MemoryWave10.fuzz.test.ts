@@ -16,7 +16,7 @@ import * as TestMemory from "../src/test/TestMemory.ts"
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "250")
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261124")
 const silentLogger = Logger.layer([])
-const pgUrl = process.env.SMITHERS_TEST_PG_URL ?? "postgres://smithers:smithers@127.0.0.1:54321/smithers"
+const pgUrl = process.env.SMITHERS_TEST_PG_URL
 
 const realCrypto = Layer.succeed(EffectDigest.Digest)(
   EffectDigest.Digest.of({
@@ -390,7 +390,8 @@ describe("@smthrs/memory Wave 10 deep fuzz", () => {
               // Corrupt non-finite Float32Array stored directly in memory_vectors
               const nanBytes = new Uint8Array(12)
               new DataView(nanBytes.buffer).setFloat32(0, Number.NaN, true)
-              yield* sql`INSERT OR REPLACE INTO memory_vectors (record_kind, record_id, namespace_kind, namespace_id, embedding_model, content_digest, dimensions, vector_bytes, updated_at_ms)
+              yield* sql`DELETE FROM memory_vectors WHERE record_kind = ${"fact"} AND record_id = ${"nan-row"} AND embedding_model = ${"test-emb"}`
+              yield* sql`INSERT INTO memory_vectors (record_kind, record_id, namespace_kind, namespace_id, embedding_model, content_digest, dimensions, vector_bytes, updated_at_ms)
               VALUES (${"fact"}, ${"nan-row"}, ${ns.kind}, ${ns.id}, ${"test-emb"}, ${"d"}, ${3}, ${nanBytes}, ${1})`
               const badNan = yield* Effect.result(
                 RecallSemantic.recall({ banks: [bank], query: "alpha" }, { vectorStore }).pipe(
@@ -400,7 +401,8 @@ describe("@smthrs/memory Wave 10 deep fuzz", () => {
 
               // Bad length blob -> decode catch error
               yield* sql`DELETE FROM memory_vectors WHERE record_id = ${"nan-row"}`
-              yield* sql`INSERT OR REPLACE INTO memory_vectors (record_kind, record_id, namespace_kind, namespace_id, embedding_model, content_digest, dimensions, vector_bytes, updated_at_ms)
+              yield* sql`DELETE FROM memory_vectors WHERE record_kind = ${"fact"} AND record_id = ${"short-row"} AND embedding_model = ${"test-emb"}`
+              yield* sql`INSERT INTO memory_vectors (record_kind, record_id, namespace_kind, namespace_id, embedding_model, content_digest, dimensions, vector_bytes, updated_at_ms)
               VALUES (${"fact"}, ${"short-row"}, ${ns.kind}, ${ns.id}, ${"test-emb"}, ${"d"}, ${3}, ${new Uint8Array([
                 1,
                 2
@@ -436,10 +438,11 @@ describe("@smthrs/memory Wave 10 deep fuzz", () => {
   it(
     "PostgreSQL FTS, MemoryFtsFold migration, and Postgres MemorySchema run cleanly in an isolated temp schema",
     async () => {
+      if (!pgUrl) return
       const schema = TestSchemas.schemaName("w10mem")
       const database = Layer.provideMerge(
         DurableWriter.layer(),
-        PostgresDatabase.layer({ url: pgUrl, driver: Pg, schema })
+        PostgresDatabase.layer({ url: pgUrl!, driver: Pg, schema })
       )
       const memory = Layer.provideMerge(MemoryStore.layer, Layer.merge(database, realCrypto))
       const result = await Effect.runPromise(

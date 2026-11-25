@@ -225,7 +225,7 @@ describe("a journal callback that is never answered", () => {
       grantFor(journal.baseUrl),
       undefined,
       undefined,
-      deadline
+      1_500
     )
     const exit = await Effect.runPromise(
       Effect.exit(producer.write(delta("a"))).pipe(

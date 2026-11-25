@@ -577,7 +577,9 @@ export class Engine extends Context.Service<Engine, {
   /** The production observation port, over both stores. */
   readonly observe: (runId: string) => Effect.Effect<ControlExecutor.ExecutionObservation>
   /** The production signal port. */
-  readonly deliverSignal: (input: ControlExecutor.Signal) => Effect.Effect<ControlExecutor.SignalDelivery>
+  readonly deliverSignal: (
+    input: ControlExecutor.Signal
+  ) => Effect.Effect<ControlExecutor.SignalDelivery, never, ControlRuntime>
   /** One pass of the production signal inbox (`AgentSession.drainRecordedSignals`). */
   readonly drainSignals: Effect.Effect<void, never, ControlRuntime>
   /** Polls until an execution BELOW `runId` is parked on a human wait. */
@@ -769,12 +771,14 @@ const engineLayer = (
           ),
         deliverSignal: (input: ControlExecutor.Signal) =>
           // `AgentSession` provides its captured services here too: signal
-          // delivery reads `DurableEngineState` and `FlowRuntime`.
-          AgentSession.deliverSignal(input).pipe(
-            Effect.provideService(DurableEngineState.DurableEngineState, state),
-            Effect.provideContext(services),
-            Effect.orDie
-          ),
+          // delivery reads `DurableEngineState`, `FlowRuntime`, and `ControlRuntime`.
+          Effect.flatMap(ControlRuntime, (control) =>
+            AgentSession.deliverSignal(input).pipe(
+              Effect.provideService(ControlRuntime, control),
+              Effect.provideService(DurableEngineState.DurableEngineState, state),
+              Effect.provideContext(services),
+              Effect.orDie
+            )),
         drainSignals: AgentSession.drainRecordedSignals.pipe(
           Effect.provideService(DurableEngineState.DurableEngineState, state),
           Effect.provideContext(services)
@@ -851,13 +855,14 @@ const executor = Layer.effect(ControlExecutor.ControlExecutor)(
     // gives: only the executor crosses back in a host composition, and an
     // ambient `Journal` or `RunStore` here is the CONTROL plane's.
     const controlSql = yield* SqlClient.SqlClient
+    const control = yield* ControlRuntime
     const supervisor = yield* EngineJournalSupervisor.make({
       inControlTransaction: Effect.map(Effect.serviceOption(controlSql.transactionService), Option.isSome),
       engineJournal: engine.journal,
       controlJournal: yield* Journal.Journal,
       engineState: engine.state,
       runs: engine.runs,
-      control: yield* ControlRuntime,
+      control,
       // What a host does when one of its own runs has written a flow file:
       // rebuild that one catalog entry from the bytes that reached the
       // workspace, before the run's receipt is readable. `NativeControl`
@@ -875,7 +880,7 @@ const executor = Layer.effect(ControlExecutor.ControlExecutor)(
     yield* Effect.forkScoped(engine.drainSignals.pipe(Effect.repeat({ schedule: Schedule.spaced("250 millis") })))
     return supervisor.wrap(ControlExecutor.makeNoop({
       readExecution: (runId) => engine.observe(runId),
-      deliverSignal: (input) => engine.deliverSignal(input),
+      deliverSignal: (input) => Effect.provideService(engine.deliverSignal(input), ControlRuntime, control),
       // Started and not awaited, as a host starts an accepted launch: the run
       // parks on its gate, and acceptance is not its settlement.
       launch: (input) =>
@@ -986,12 +991,17 @@ const discoveredFlow = (executable: Executable.Executable, root: string): Durabl
  */
 const controlRuntime = (authoring?: ReturnType<typeof makeAuthoringFixture>) =>
   authoring === undefined
-    ? SqlControlRuntime.layer({ flows: [durableFlow], approvalAuthority }).pipe(Layer.orDie)
+    ? SqlControlRuntime.layer({
+      flows: [durableFlow],
+      approvalAuthority,
+      principal: { id: "local", kind: "operator" }
+    }).pipe(Layer.orDie)
     : Layer.effect(ControlRuntime)(
       Effect.gen(function*() {
         const engine = yield* Engine
         return yield* SqlControlRuntime.make({
           approvalAuthority,
+          principal: { id: "local", kind: "operator" },
           loadFlows: () =>
             Effect.succeed([
               durableFlow,

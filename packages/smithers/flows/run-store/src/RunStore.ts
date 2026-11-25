@@ -1530,9 +1530,10 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
             )
           `
             }),
-            // Admission reads other run partitions; serialize it against all
-            // writers so concurrent rounds cannot pass the same maximum.
-            lineageId !== null && lineageId !== runId ? undefined : runId
+            // Serialize every round creation of a lineage on the lineage root's
+            // partition so concurrent rounds cannot pass the same maximum while
+            // unrelated runs never block each other.
+            lineageId ?? runId
           )
         }).pipe(
           Effect.as({ _tag: "Success" } as const),

@@ -33,10 +33,12 @@ export function targetInvocation(run) {
   let jobs
   let knownRed
   let verbose = false
+  let skipOtherHosts = false
   let resultsFile
   for (let index = 0; index < options.length; index++) {
     const option = options[index]
     if (option === "--verbose" && !verbose) verbose = true
+    else if (option === "--skip-other-hosts" && !skipOtherHosts) skipOtherHosts = true
     else if (option === "--jobs" && jobs === undefined && /^[1-9]\d*$/.test(options[index + 1] ?? "")) {
       jobs = Number(options[++index])
     } else if (option === "--known-red" && knownRed === undefined && /^'[^']+'$/.test(options[index + 1] ?? "")) {

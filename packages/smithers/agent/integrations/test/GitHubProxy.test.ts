@@ -545,6 +545,20 @@ describe("GitHub proxy GraphQL comments and strings", () => {
   const encoder = new TextEncoder()
   const judged = (query: string) => refusal("POST", "/graphql", encoder.encode(JSON.stringify({ query })))
 
+  it("ignores unrelated query parameters when evaluating proxy refusal policy", () => {
+    expect(refusal("GET", "/repos/o/r/issues", new Uint8Array(), new URLSearchParams("state=open&per_page=10")))
+      .toBeUndefined()
+    expect(
+      refusal(
+        "POST",
+        "/graphql",
+        encoder.encode(JSON.stringify({ query: "query { viewer { login } }" })),
+        new URLSearchParams("foo=bar")
+      )
+    )
+      .toBeUndefined()
+  })
+
   it("judges a mutation the same whatever comments and strings surround it", () => {
     const next = random(20_261_123)
     const pick = <A>(values: ReadonlyArray<A>): A => values[Math.floor(next() * values.length)]!

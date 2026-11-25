@@ -66,11 +66,16 @@ if (scenario === "subscribe") {
       const result = spawnSync("mkfifo", [join(root, pipe)])
       if (result.status !== 0) throw new Error("mkfifo failed")
     }
-    stop = at('if (readFileSync(lockPath, "utf8") === observed) unlinkSync(lockPath)', () => {
-      child = spawn(process.execPath, [fileURLToPath(import.meta.url), "hold", root], { stdio: "ignore" })
-      peerHeld = readFileSync(join(root, "ready"), "utf8") === "held"
-      raced++
-    }, "unlinkSync")
+    stop = at(
+      'if (readFileSync(lockPath, "utf8") === observed) unlinkSync(lockPath)',
+      () => {
+        child = spawn(process.execPath, [fileURLToPath(import.meta.url), "hold", root], { stdio: "ignore" })
+        peerHeld = readFileSync(join(root, "ready"), "utf8") === "held"
+        raced++
+      },
+      "unlinkSync",
+      new URL("../../src/internal/OwnerLock.ts", import.meta.url).href
+    )
   } else {
     // An external client's update lands after Smithers read the configuration.
     stop = at('run(["add-json"', () => { writeFileSync(path, '{"theme":"external"}\n'); raced++ })

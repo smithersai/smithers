@@ -358,6 +358,7 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     expect(await answering("echo 'heads(all())'")(tree([1, 0]))).toContain("not a clean line")
     expect(visible()).toEqual(before)
     expect(await answering("echo nonsense")(tree([1, 0]))).toContain("not a clean line")
+    expect(await answering("echo deadbeef0000")(tree([1, 0]))).toContain("not a clean line")
     expect(await answering("true")(tree([1, 0]))).toContain("gave no commit")
     expect(await answering("echo $2")(tree([1, 0]))).toContain("not a clean line")
     // It says the conflicted change is fine as it is: the queue does not take its word.

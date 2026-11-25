@@ -6,7 +6,7 @@
  * recording Docker in build-cli's `TargetApproval.test.ts`.
  */
 import { execFile, spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -74,7 +74,9 @@ const pushedConfig = async (tag: string): Promise<unknown> => {
 
 /** The config digest of the single image in the build's OCI archive. */
 const builtConfig = (): unknown => {
-  const archive = join(root, "docker-image", "image.tar")
+  const outDir = readdirSync(root).find((entry) => entry === "docker-image" || entry.startsWith("docker-image-")) ??
+    "docker-image"
+  const archive = join(root, outDir, "image.tar")
   const read = (entry: string) => {
     const result = spawnSync("tar", ["-xOf", archive, entry], { encoding: "utf8" })
     expect(result.status, result.stderr).toBe(0)

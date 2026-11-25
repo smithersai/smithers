@@ -1,5 +1,5 @@
 // The desktop reply's pure decisions: what the model reads, and whether a failed reply was the model's failure.
-import { promptWindow } from "../../vibelang/src/core/sequenceDecision.vibe"
+import { promptWindow } from "@smthrs/vibelang-site/core/sequenceDecision"
 
 /** The most turns of the conversation the agent reads, as the hosted reply's window (apps/vibelang worker/Reply.vibe). */
 export const MAX_TURNS = 24

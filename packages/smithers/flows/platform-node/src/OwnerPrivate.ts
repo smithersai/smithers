@@ -38,6 +38,7 @@ export const make = (
       ? undefined
       : suffix
   }
+  const outsideRoot = () => new Error("private publication must be below its trusted root")
   const pin = (base: string, target: string) =>
     Effect.tryPromise({
       try: async () => {
@@ -47,12 +48,12 @@ export const make = (
         try {
           root = await realpath(base)
         } catch (cause) {
-          if (suffix === undefined) throw new Error("private publication must be below its trusted root")
+          if (suffix === undefined) throw outsideRoot()
           throw cause
         }
         if (suffix === undefined) suffix = under(root, resolvedTarget)
         if (suffix === undefined) {
-          throw new Error("private publication must be below its trusted root")
+          throw outsideRoot()
         }
         const info = await stat(root, { bigint: true })
         return {

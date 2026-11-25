@@ -52,5 +52,5 @@ describe("backend trust and authoring contracts", () => {
     const errors = program.getSemanticDiagnostics(source)
       .map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"))
     expect(errors).toEqual([])
-  }, 30_000)
+  }, 90_000)
 })

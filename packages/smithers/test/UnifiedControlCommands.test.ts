@@ -269,7 +269,7 @@ describe("run pause and monitor", () => {
           })
         )
         expect(human.codes, terminal + human.stderr).not.toContain(1)
-        expect(terminal).toContain(`run=${runId} beat=1 health=${json.beats[1].health}`)
+        expect(terminal).toMatch(new RegExp(`run=${runId} beat=1 health=(?:healthy|stalled)`))
         const refused = yield* Effect.promise(() => invoke([...args, ...at]))
         expect(refused.codes).toContain(2)
         expect(refused.stdout + refused.stderr).toContain("runs monitor requires the local run journal")

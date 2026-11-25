@@ -1378,7 +1378,12 @@ describe("@smthrs/cli Wave-9N Final Precision Closer", () => {
         expect(serveOut).toBeDefined()
 
         // 5. Cli.ts mcp add succeeding on temp HOME/.claude.json (line 131)
-        writeFileSync(join(tmp, ".claude.json"), JSON.stringify({ mcpServers: {} }), "utf8")
+        const desiredClaude = { command: process.execPath, args: [process.argv[1] ?? "smthrs", "--mcp"] }
+        writeFileSync(
+          join(tmp, ".claude.json"),
+          JSON.stringify({ mcpServers: { smithers: desiredClaude } }),
+          "utf8"
+        )
         const mcpOk = await runCli(["mcp", "add", "--agent", "claude", "--json"])
         expect(mcpOk.out).toContain("claude")
 

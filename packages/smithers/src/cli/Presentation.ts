@@ -19,8 +19,8 @@ import { AsyncLocalStorage } from "node:async_hooks"
 import { Writable } from "node:stream"
 import { stripVTControlCharacters } from "node:util"
 import * as CliError from "../CliError.ts"
-import * as Forensics from "../Forensics.ts"
 import * as Failure from "../internal/Failure.ts"
+import * as ShellQuote from "../internal/ShellQuote.ts"
 
 interface Session {
   readonly transport: "mcp" | "cli"
@@ -171,7 +171,7 @@ export type FollowUps =
  * @category formatting
  * @since 1.0.0
  */
-export const quote = Forensics.shellQuote
+export const quote = ShellQuote.shellQuote
 const text = (value: unknown): string | undefined => asString(value) || undefined
 
 /**

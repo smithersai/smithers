@@ -11,7 +11,8 @@ const artifactRoot = process.env.SMITHERS_TERMINAL_ARTIFACTS ??
   resolve(import.meta.dirname, "../../.cache/terminal-evidence")
 const environment = {
   PATH: process.env.SMITHERS_TERMINAL_PATH ?? process.env.PATH ?? "",
-  SMITHERS_API_ORIGIN: "https://smithers.sh"
+  SMITHERS_API_ORIGIN: "https://smithers.sh",
+  VIBELANG_CACHE_DIR: process.env.VIBELANG_CACHE_DIR ?? resolve(import.meta.dirname, "../../.cache/vibelang")
 }
 const make = Driver.make({
   executable: process.execPath,
@@ -99,7 +100,7 @@ describe("real CLI terminal journeys", () => {
         const unconfigured = yield* Driver.make({
           executable: process.execPath,
           args: ["--no-warnings", "--import", import.meta.resolve("vibelang/register"), binary],
-          env: { PATH: environment.PATH }
+          env: { PATH: environment.PATH, VIBELANG_CACHE_DIR: environment.VIBELANG_CACHE_DIR }
         })
         const missing = yield* unconfigured.run(["auth", "status", "--json"])
         expect(missing.code).toBe(1)

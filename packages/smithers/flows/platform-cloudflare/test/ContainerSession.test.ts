@@ -8,6 +8,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { SandboxTools } from "@smthrs/sandbox"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
 import { execFileSync } from "node:child_process"
@@ -286,4 +287,12 @@ describe("ContainerSession", () => {
       }))
     )
   })
+
+  it.effect("refuses an invalid maxFileBytes configuration", () =>
+    Effect.gen(function*() {
+      const exit = yield* Effect.exit(
+        ContainerSession.make(ProcessContainer.make().container, { id: "bad-limit", workdir: root, maxFileBytes: 0 })
+      )
+      expect(Exit.isFailure(exit)).toBe(true)
+    }))
 })

@@ -1366,9 +1366,14 @@ const makeRuntime = (
           yield* resumeProgress(runId, "park-owner-check")
           const parkedOwner = yield* decodeStoredJson("parked host", Ownership.OwnerId, summary.parkedBy)
           if (!sameProcess(parkedOwner, owner)) {
-            const alive = isAlive === undefined || !Ownership.sameHostIncarnation(parkedOwner, owner)
-              ? true
-              : yield* isAlive(parkedOwner, { claimant: owner, heartbeatAtMs: row.heartbeatAtMs, nowMs: yield* now })
+            let alive = true
+            if (isAlive !== undefined && Ownership.sameHostIncarnation(parkedOwner, owner)) {
+              alive = yield* isAlive(parkedOwner, {
+                claimant: owner,
+                heartbeatAtMs: row.heartbeatAtMs,
+                nowMs: yield* now
+              })
+            }
             if (alive) {
               return yield* new ClaimLost({
                 runId,

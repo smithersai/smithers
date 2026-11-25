@@ -25,7 +25,7 @@ import * as QualifiedRead from "../src/postgres/QualifiedRead.ts"
 import * as SlowNetwork from "../src/test/SlowNetwork.ts"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
 
-const PG_URL = process.env.SMITHERS_TEST_PG_URL ?? "postgres://smithers:smithers@127.0.0.1:54321/smithers"
+const PG_URL = process.env.SMITHERS_TEST_PG_URL
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261124")
 const silentLogger = Logger.layer([])
@@ -45,7 +45,7 @@ const withPgSchema = async <A>(
 ): Promise<A> => {
   const schema = tempSchema(prefix)
   const layer = PostgresDatabase.layer({
-    url: PG_URL,
+    url: PG_URL!,
     driver: Pg,
     schema,
     ...(options?.readOnly !== undefined ? { readOnly: options.readOnly } : {})
@@ -618,6 +618,7 @@ describe("Database Wave10 Deep Fuzzing", () => {
   it(
     "exercises Dialect, Migrations, TestDatabase, PostgresDatabase savepoints/partitions, and PostgresSelection against real Postgres 18",
     async () => {
+      if (!PG_URL) return
       await withPgSchema("dialect", (schema, sql) =>
         Effect.gen(function*() {
           expect(Dialect.isPostgres(sql)).toBe(true)

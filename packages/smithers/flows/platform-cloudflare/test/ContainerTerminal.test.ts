@@ -328,12 +328,34 @@ describe("ContainerTerminal.attach", () => {
       for (let i = 0; i < 17; i++) viewer.emit("message", new Uint8Array(max))
       // This also gives old code a terminating verdict, rather than a timeout.
       viewer.emit("message", "{invalid")
+
       const report = yield* Fiber.join(fiber)
       expect(report.outcome).toBe("failed")
       expect(viewer.closeCalls).toEqual([{
         code: TerminalProtocol.CloseCode.failed,
         reason: "Terminal input buffer full"
       }])
+      expect(viewer.listenerCount()).toBe(0)
+    }))
+
+  it.effect("drops additional ingress frames synchronously after a rejected verdict frame", () =>
+    Effect.gen(function*() {
+      const hold = yield* Deferred.make<void>()
+      const memory = MemoryContainer.make(shell, { hold })
+      const viewer = MemoryContainer.socket()
+      const fiber = yield* Effect.forkChild(ContainerTerminal.attach(memory.container, viewer.socket, {
+        name: id,
+        user: "1000:2000",
+        access: "write",
+        cols: 80,
+        rows: 24
+      }))
+      yield* memory.entered
+      viewer.emit("message", "{invalid")
+      viewer.emit("message", new Uint8Array([1]))
+      yield* Deferred.succeed(hold, void 0)
+      const report = yield* Fiber.join(fiber)
+      expect(report.outcome).toBe("unsupported")
       expect(viewer.listenerCount()).toBe(0)
     }))
 

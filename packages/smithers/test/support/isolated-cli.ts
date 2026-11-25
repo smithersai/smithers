@@ -45,8 +45,11 @@ export const isolatedCli = async (destination: string, omitted: string): Promise
     copies.set(source, target)
     await mkdir(target, { recursive: true })
     if (source === cli) {
-      for (const path of ["src", "bin", "package.json"]) {
-        await cp(join(source, path), join(target, path), { recursive: true })
+      for (const path of ["src", "bin", "package.json", "tsconfig.json"]) {
+        await cp(join(source, path), join(target, path), {
+          recursive: true,
+          filter: (entry) => !basename(entry).startsWith(".vibelang-sidecar-")
+        })
       }
     } else {
       await cp(source, target, {
@@ -66,7 +69,7 @@ export const isolatedCli = async (destination: string, omitted: string): Promise
       ...adapters,
       // Source exports include .vibe files; this fixture carries the same
       // authoring compiler as the source CLI, rather than relying on the host.
-      ...(source === cli ? ["vibelang", "@types/node"] : [])
+      ...(source === cli ? ["vibelang", "vibelang-runtime", "@types/node"] : [])
     ])
     for (const name of dependencies) {
       if (name === omitted) continue

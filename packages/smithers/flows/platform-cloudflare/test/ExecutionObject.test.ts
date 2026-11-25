@@ -820,3 +820,107 @@ describe("ExecutionObject.intent payload identity (VIP-44)", () => {
       expect(right.payload).toEqual(left.payload)
     }))
 })
+
+describe("ExecutionObject storage transactions and concurrent intent swaps", () => {
+  it.effect("uses storage.transaction when provided and preserves a concurrently replaced intent", () =>
+    Effect.gen(function*() {
+      const mem = MemoryStorage.make()
+      let txCount = 0
+      const withTx = (inner: ExecutionObject.Storage): ExecutionObject.Storage => ({
+        ...inner,
+        transaction: (body) =>
+          Effect.suspend(() => {
+            txCount++
+            return body(inner)
+          })
+      })
+      // Idle alarm with storage.transaction when intent appears concurrently before atomic deleteAlarm (lines 118, 958)
+      let idleReads = 0
+      const racingIdleStorage = withTx({
+        ...mem.storage,
+        get: <A>(key: string) =>
+          Effect.sync(() => {
+            if (key === ExecutionObject.intentKey && ++idleReads === 2) {
+              return JSON.stringify({
+                flow: "x",
+                executionId: "e",
+                requestedAtMs: 0,
+                payload: {},
+                origin: { door: "unknown", actor: "unknown" }
+              }) as A
+            }
+            return structuredClone(mem.values.get(key)) as A | undefined
+          })
+      })
+      expect(
+        yield* ExecutionObject.alarm(racingIdleStorage, {
+          flows: [Answer],
+          runtime: Layer.empty as never
+        })
+      ).toEqual({ _tag: "Idle" })
+      expect(txCount).toBeGreaterThan(0)
+
+      // Settled alarm where intent changes before setAlarm (line 1092) and before forget/delete (line 1098)
+      const intentA = JSON.stringify({
+        flow: "a",
+        executionId: "e-a",
+        requestedAtMs: 0,
+        payload: {},
+        origin: { door: "unknown", actor: "unknown" }
+      })
+      const intentB = JSON.stringify({
+        flow: "b",
+        executionId: "e-b",
+        requestedAtMs: 1,
+        payload: {},
+        origin: { door: "unknown", actor: "unknown" }
+      })
+
+      // Case A: before retention expires (< until), intent flips before atomic setAlarm
+      mem.values.set(ExecutionObject.intentKey, intentA)
+      mem.values.set(ExecutionObject.settledKey, 1000)
+      let readsA = 0
+      const swapBeforeArm = withTx({
+        ...mem.storage,
+        get: <A>(key: string) =>
+          Effect.sync(() => {
+            if (key === ExecutionObject.intentKey) {
+              readsA++
+              return (readsA >= 2 ? intentB : intentA) as A
+            }
+            return structuredClone(mem.values.get(key)) as A | undefined
+          })
+      })
+      expect(
+        yield* ExecutionObject.alarm(swapBeforeArm, {
+          flows: [Answer],
+          runtime: Layer.empty as never,
+          settledRetentionMs: 60_000
+        })
+      ).toMatchObject({ _tag: "Settled" })
+
+      // Case B: after retention expires (>= until), intent flips before atomic delete
+      mem.values.set(ExecutionObject.intentKey, intentA)
+      mem.values.set(ExecutionObject.settledKey, 0)
+      let readsB = 0
+      const swapBeforeForget = withTx({
+        ...mem.storage,
+        get: <A>(key: string) =>
+          Effect.sync(() => {
+            if (key === ExecutionObject.intentKey) {
+              readsB++
+              return (readsB >= 2 ? intentB : intentA) as A
+            }
+            return structuredClone(mem.values.get(key)) as A | undefined
+          })
+      })
+      expect(
+        yield* ExecutionObject.alarm(swapBeforeForget, {
+          flows: [Answer],
+          runtime: Layer.empty as never,
+          settledRetentionMs: 0
+        })
+      ).toEqual({ _tag: "Forgotten" })
+      expect(mem.values.get(ExecutionObject.intentKey)).toBe(intentA)
+    }))
+})

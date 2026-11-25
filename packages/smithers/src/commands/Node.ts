@@ -3,7 +3,7 @@
  * @since 1.0.0
  */
 
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import { Effect, Layer } from "effect"
 import { Cli, z } from "incur"
 import { hostname } from "node:os"
@@ -69,7 +69,7 @@ export const createNodeCli = () =>
           collectAccounts: c.options.accounts,
           collectCfbox: c.options.cfbox,
           once: c.options.once
-        }).pipe(Effect.provide(Layer.merge(collectors, NodeHttpClient.layerNodeHttp)))
+        }).pipe(Effect.provide(Layer.merge(collectors, EgressHttpClient.layer(process.env))))
         await Effect.runPromise(program)
         return { ok: true, nodeId, origin, once: c.options.once }
       }
@@ -117,7 +117,7 @@ export const createNodeCli = () =>
         return await Effect.runPromise(
           McpClient.callTool({ origin, token }, "fleet_overview", {
             includeEnded: c.options.includeEnded
-          }).pipe(Effect.provide(NodeHttpClient.layerNodeHttp))
+          }).pipe(Effect.provide(EgressHttpClient.layer(process.env)))
         )
       }
     })

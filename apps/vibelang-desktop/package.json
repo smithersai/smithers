@@ -28,6 +28,7 @@
     "@smthrs/registry": "workspace:*",
     "@smthrs/run-store": "workspace:*",
     "@smthrs/std": "workspace:*",
+    "@smthrs/vibelang-site": "workspace:*",
     "effect": "4.1.1",
     "electrobun": "1.18.1",
     "foldkit": "0.170.0",

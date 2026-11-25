@@ -215,7 +215,7 @@ describe("native execution read confinement", () => {
         yield* store.create("root", state)
         yield* store.create("middle", state, { parentRunId: "root" })
         yield* store.create("child", state, { parentRunId: "middle" })
-        yield* store.create("round", state, { lineageId: "root", roundOrdinal: 1 })
+        yield* store.create("round", state, { parentRunId: "root", lineageId: "root", roundOrdinal: 1 })
         yield* store.create("foreign", state)
         const read = yield* NativeExecutionRead.makeFromSql()
         const before = yield* read({ runId: "root", executionIds: ["child", "round", "foreign", "absent"] })

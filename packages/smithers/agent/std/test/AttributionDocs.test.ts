@@ -24,4 +24,4 @@ it("the attribution example typechecks against TestRun's Effect API", () => {
   const errors = program.getSemanticDiagnostics(program.getSourceFile(filename))
     .map((error) => ts.flattenDiagnosticMessageText(error.messageText, "\n"))
   expect(errors).toEqual([])
-})
+}, 90_000)

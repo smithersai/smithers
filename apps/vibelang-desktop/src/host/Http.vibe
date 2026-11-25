@@ -2,8 +2,8 @@ import { sandboxRequest, signedOutGateway } from "../../../vibelang/worker/Sandb
 // Loopback desktop API and bundled assets. Local privileges never follow web navigation, and only the window
 // launched with this run's secret holds the cookie that admits /desktop/* and /api/* requests.
 import { HttpIncomingMessage, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { ConversationRead, Factory } from "../../../vibelang/src/core/Factory.vibe"
-import { viewer } from "../../../vibelang/src/core/roles.vibe"
+import { ConversationRead, Factory } from "@smthrs/vibelang-site/core/Factory"
+import { viewer } from "@smthrs/vibelang-site/core/roles"
 import { handleConversations as factoryHttp, eventStream, afterOf } from "../../../vibelang/worker/Http.vibe"
 import { externalUrl } from "../policy.vibe"
 import { Desktop } from "./Factory.vibe"

@@ -21,7 +21,12 @@ const assertPassed = <A, E = unknown>(report: Fuzz.Report<A, E>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 
-const makeReq = (modelId: string, withTools: boolean, withReasoning: boolean) =>
+const makeReq = (
+  modelId: string,
+  withTools: boolean,
+  withReasoning: boolean,
+  includeMaxTokens = true
+) =>
   ModelRequest.ModelRequest.make({
     modelId,
     system: [ModelRequest.SystemPart.make({ text: "You are concise." })],
@@ -40,7 +45,7 @@ const makeReq = (modelId: string, withTools: boolean, withReasoning: boolean) =>
       ]
       : [],
     params: ModelRequest.GenerationParams.make({
-      maxTokens: 256,
+      ...(includeMaxTokens ? { maxTokens: 256 } : {}),
       ...(withReasoning ? { reasoningEffort: "medium" as const } : {})
     })
   })
@@ -65,7 +70,7 @@ describe("@smthrs/model Wave 9 deep Route, RequestExecutor & OpenAIResponses fuz
           ({ useChatGpt, withTools, withReasoning, finishKind, deltaText }) =>
             Effect.gen(function*() {
               const proto = useChatGpt ? OpenAIResponses.chatgptProtocol : OpenAIResponses.protocol
-              const req = makeReq(useChatGpt ? "gpt-5.4" : "gpt-5", withTools, withReasoning)
+              const req = makeReq(useChatGpt ? "gpt-5.4" : "gpt-5", withTools, withReasoning, !useChatGpt)
               const body = yield* proto.body.from(req, { native: !useChatGpt })
               expect(body).toBeDefined()
 

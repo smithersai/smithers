@@ -107,7 +107,7 @@ const grep = (
       catch: (cause) =>
         new StdError.StdError({
           code: "invalid_pattern",
-          message: cause instanceof Error ? cause.message : "Invalid search pattern"
+          message: (cause as Error).message
         })
     })
     const shownMatches: Array<Search.GrepMatch> = []

@@ -1874,7 +1874,10 @@ export const make = (
           // it projects nothing. Calls in flight count, and a first call is
           // projected at its run's token allowance.
           const projected = mode === "reading" ? 0 : current.largestCall || tokens?.max || 0
-          const held = mode === "reading" ? 0 : yield* inFlight(run, stepKey)
+          let held = 0
+          if (mode !== "reading") {
+            held = yield* inFlight(run, stepKey)
+          }
           if (used + held + projected > daily.max || used + held >= daily.max) {
             return yield* settle(run, runId, exceeded("daily", "fail", used, daily.max, projected, held))
           }

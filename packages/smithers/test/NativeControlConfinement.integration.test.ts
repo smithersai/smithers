@@ -292,9 +292,18 @@ it("runs a sealed host's bash and test in its one container through the docker C
       const tested = yield* flow("test")!.run(call({ against: "workspace" }, "test"))
       expect(tested.outcome, JSON.stringify(tested)).toBe("success")
       expect(tested.value).toMatchObject({ exitCode: 0, passed: 1 })
-      expect(dockerCalls()[1]!.argv).toEqual(
-        ["exec", "-w", "/app", "--", "benchmark-cell", "bash", "-c", "pytest -q \"$@\"", "pytest -q"]
+      expect(dockerCalls()[1]!.argv.slice(0, 7)).toEqual(
+        ["exec", "-w", "/app", "--", "benchmark-cell", "sh", "-c"]
       )
+      expect(dockerCalls()[1]!.argv.slice(-7)).toEqual([
+        "sh",
+        expect.stringMatching(/^[0-9a-f]{16}$/),
+        "600",
+        "bash",
+        "-c",
+        "pytest -q \"$@\"",
+        "pytest -q"
+      ])
       // A rootless daemon is found only through these; every transport process carries them.
       for (const entry of dockerCalls()) {
         expect(entry).toMatchObject({ host: sealed.DOCKER_HOST, config: sealed.DOCKER_CONFIG })

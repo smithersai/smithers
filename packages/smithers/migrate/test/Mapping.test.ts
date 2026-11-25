@@ -284,8 +284,8 @@ describe("Mapping.rows", () => {
   it.each([
     ["inspect", "runs inspect"],
     ["replay", "runs replay"],
-    ["fork", "runs fork"],
-    ["rewind", "runs rewind"],
+    ["fork", "runs replay"],
+    ["rewind", "runs replay"],
     ["approve", "approvals approve"],
     ["deny", "approvals deny"],
     ["signal", "runs signal"],

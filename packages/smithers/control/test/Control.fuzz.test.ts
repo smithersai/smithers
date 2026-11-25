@@ -1567,6 +1567,7 @@ describe("@smthrs/control durable & full-stack fuzz invariants", () => {
                 }),
                 c.signal({ runId: "r", signal: { name: "n", payload: {} }, idempotencyKey: "k" }),
                 c.cancel({ runId: "r", idempotencyKey: "k" }),
+                c.pause({ runId: "r", idempotencyKey: "k" }),
                 c.resume({ runId: "r", idempotencyKey: "k" }),
                 c.list({ _tag: "runs" })
               ]

@@ -2,7 +2,7 @@ import { parse } from "yaml"
 import { packagePatterns, packageShards, shardJobId } from "../../../packages/repo-targets/ci/shards.ts"
 
 const shardCommands = (verb) => packageShards.map((shard) =>
-  `pnpm exec smthrs ${verb} ${shard.patterns.map((pattern) => `'${pattern}'`).join(" ")} --jobs 2 --verbose`)
+  `pnpm exec smthrs ${verb} ${shard.patterns.map((pattern) => `'${pattern}'`).join(" ")} --jobs 2 --skip-other-hosts --verbose`)
 
 
 /**
@@ -251,7 +251,7 @@ export const releaseGateCommand = (gate) =>
  * @returns {{ verb: string; target: string; additionalTargets?: string[]; jobs?: number } | undefined}
  */
 export const parseGateCommand = (command) => {
-  const match = /^pnpm exec smthrs ([a-z]+)((?: '\/\/[^']+')+)(?: --jobs (\d+))?(?: --known-red '[^']+')? --verbose$/.exec(command)
+  const match = /^pnpm exec smthrs ([a-z]+)((?: '\/\/[^']+')+)(?: --jobs (\d+))?(?: --known-red '[^']+')?(?: --skip-other-hosts)? --verbose$/.exec(command)
   if (!match) return undefined
   const [, verb, selections, jobs] = match
   const [target, ...additionalTargets] = [...selections.matchAll(/'([^']+)'/g)].map((match) => match[1])

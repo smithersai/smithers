@@ -944,16 +944,19 @@ export const make = (options: Options = {}): Effect.Effect<Service, never, SqlCl
       return Read.boundary(
         "RunInspection.list",
         Effect.gen(function*() {
-          const after = options.cursor === undefined ? undefined : yield* decodeCursor(options.cursor).pipe(
-            Effect.mapError((cause) =>
-              new RunStore.RunStoreError({
-                method: "RunInspection.list",
-                code: "invalid_run",
-                message: "run list cursor is malformed",
-                cause
-              })
+          let after: typeof Cursor.Type | undefined
+          if (options.cursor !== undefined) {
+            after = yield* decodeCursor(options.cursor).pipe(
+              Effect.mapError((cause) =>
+                new RunStore.RunStoreError({
+                  method: "RunInspection.list",
+                  code: "invalid_run",
+                  message: "run list cursor is malformed",
+                  cause
+                })
+              )
             )
-          )
+          }
           const { flows, runIds } = options
           const tooMany = () =>
             new RunStore.RunStoreError({

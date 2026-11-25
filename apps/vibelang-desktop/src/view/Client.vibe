@@ -1,11 +1,11 @@
 // Both hosts supply the same Factory service. This composition alone adds desktop settings and local transport.
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
-import { ConversationRead, Factory, Unavailable } from "../../../vibelang/src/core/Factory.vibe"
-import { LiveFactory } from "../../../vibelang/src/core/LiveFactory.vibe"
-import { MockFactory } from "../../../vibelang/src/core/MockFactory.vibe"
-import { Actions } from "../../../vibelang/src/actions/Actions.vibe"
-import { MockActions } from "../../../vibelang/src/actions/MockActions.vibe"
-import { LiveActions } from "../../../vibelang/src/actions/LiveActions.vibe"
+import { ConversationRead, Factory, Unavailable } from "@smthrs/vibelang-site/core/Factory"
+import { LiveFactory } from "@smthrs/vibelang-site/core/LiveFactory"
+import { MockFactory } from "@smthrs/vibelang-site/core/MockFactory"
+import { Actions } from "@smthrs/vibelang-site/actions/Actions"
+import { MockActions } from "@smthrs/vibelang-site/actions/MockActions"
+import { LiveActions } from "@smthrs/vibelang-site/actions/LiveActions"
 import { Snapshot, type Operation } from "../protocol.vibe"
 
 export service DesktopClient {

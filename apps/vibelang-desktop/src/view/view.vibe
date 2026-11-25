@@ -1,6 +1,6 @@
 // Reuse every web view and handler. Native chrome is rendered around its Foldkit tree; slots decorate its builders.
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
-import { view as webView } from "../../../vibelang/src/web/view.vibe"
+import { view as webView } from "@smthrs/vibelang-site/web/view"
 import { modelReady } from "../policy.vibe"
 import { busy, canSend, Message, type Model, type Message as Msg } from "./main.vibe"
 type H = HtmlBuilder<Msg>
@@ -115,7 +115,7 @@ export function view(model: Model, h: H): Document {
     },
   }
   // The root dispatch union contains every web message; the builder stays in this same root frame.
-  const web = webView(model, decorated as unknown as HtmlBuilder<import("../../../vibelang/src/web/main.vibe").Message>)
+  const web = webView(model, decorated as unknown as HtmlBuilder<import("@smthrs/vibelang-site/web/main").Message>)
   return { title: "VibeLang", body: h.div([h.Class("dt-host")], [
     h.header([h.Class("dt-titlebar electrobun-webkit-app-region-drag")], [
       h.span([h.Class("dt-title")], ["VibeLang"]),

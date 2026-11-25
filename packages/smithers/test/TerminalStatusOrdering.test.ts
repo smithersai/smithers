@@ -98,6 +98,7 @@ const setup = Effect.gen(function*() {
   // the projection brackets its page with.
   const engineJournal: Journal.Service = {
     ...source,
+    heads: undefined,
     entries: (request) =>
       Effect.andThen(
         Effect.andThen(

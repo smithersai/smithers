@@ -17,8 +17,11 @@ it("previews a real CLI bug report without a Git OAuth credential username", () 
   const root = realpathSync(mkdtempSync(join(tmpdir(), "smithers-bug-oauth-")))
   const credential = "SyntheticOpaqueUserZq7Value9"
   try {
+    const cacheDir = process.env.VIBELANG_CACHE_DIR ?? fileURLToPath(new URL("../.cache/vibelang", import.meta.url))
     const child = spawnSync(process.execPath, [
       "--no-warnings",
+      "--import",
+      import.meta.resolve("vibelang/register"),
       fileURLToPath(new URL("../src/bin.ts", import.meta.url)),
       "bug",
       `https://${credential}:x-oauth-basic@host.invalid/private.git`,
@@ -29,9 +32,15 @@ it("previews a real CLI bug report without a Git OAuth credential username", () 
       root
     ], {
       cwd: root,
-      env: { PATH: process.env.PATH, HOME: root, XDG_CONFIG_HOME: root, TMPDIR: process.env.TMPDIR },
+      env: {
+        PATH: process.env.PATH,
+        HOME: root,
+        XDG_CONFIG_HOME: root,
+        TMPDIR: process.env.TMPDIR,
+        VIBELANG_CACHE_DIR: cacheDir
+      },
       encoding: "utf8",
-      timeout: 30_000
+      timeout: 60_000
     })
     expect(child.error).toBeUndefined()
     expect(child.status).toBe(0)

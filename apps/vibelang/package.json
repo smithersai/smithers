@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./*": "./src/*.vibe"
+  },
   "description": "vibelang.smithers.sh, the VibeLang factory: a Foldkit app written in VibeLang on Effect, served by Cloudflare and deployed by Alchemy.",
   "scripts": {
     "dev": "pnpm wiki:build && vite",

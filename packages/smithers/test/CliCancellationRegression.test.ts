@@ -51,9 +51,14 @@ it("cancels tui --mcp with SIGINT after the real protocol handshake", async () =
 
 it("keeps the generated approval token out of quiet stderr", async () => {
   const driver = fileURLToPath(new URL("./fixtures/quiet-host-regression.ts", import.meta.url))
-  const child = spawn(process.execPath, ["--no-warnings", driver], {
-    env: { PATH: process.env.PATH, HOME: process.env.HOME }
-  })
+  const cacheDir = process.env.VIBELANG_CACHE_DIR ?? fileURLToPath(new URL("../.cache/vibelang", import.meta.url))
+  const child = spawn(
+    process.execPath,
+    ["--no-warnings", "--import", import.meta.resolve("vibelang/register"), driver],
+    {
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, VIBELANG_CACHE_DIR: cacheDir }
+    }
+  )
   let errors = ""
   child.stderr.on("data", (chunk) => errors += chunk)
   const closed = once(child, "close", { signal: AbortSignal.timeout(20_000) })

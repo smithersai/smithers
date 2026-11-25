@@ -3098,7 +3098,7 @@ const memoryMethods = (memory: Memory): Omit<Service, "transaction" | "readTrans
   waitingRunsPage: (filter) =>
     memoryWaitingRuns(memory)(filter).pipe(Effect.map((rows) => ({
       rows,
-      nextAfterRunId: rows.length === filter.page.limit ? rows.at(-1)?.runId : undefined
+      nextAfterRunId: rows.length > 0 && rows.length === filter.page.limit ? rows[rows.length - 1]!.runId : undefined
     }))),
   pendingRuns: memoryPendingRuns(memory),
   pendingRunTail: memoryPendingRunTail(memory),

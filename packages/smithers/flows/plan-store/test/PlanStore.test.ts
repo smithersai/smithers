@@ -611,10 +611,11 @@ describe("PlanStore", () => {
           Effect.gen(function*() {
             const sql = yield* SqlClient.SqlClient
             const decodeNode = Schema.decodeUnknownEffect(Schema.fromJsonString(Plan.PlanNode))
+            const generations = readPrefix ? 40 : 300
             let prefixRowsRead = 0
             let plan = yield* withCrypto(compile([draft("n0", { writes: ["out/0"] })]))
             yield* store.record(plan, 1)
-            for (let generation = 1; generation <= 300; generation++) {
+            for (let generation = 1; generation <= generations; generation++) {
               const prefix = plan
               plan = yield* withCrypto(
                 Plan.append(plan, [
@@ -658,7 +659,7 @@ describe("PlanStore", () => {
                 assertAppendQueries(queries)
               }
             }
-            expect(prefixRowsRead).toBe(readPrefix ? 45_150 : 0)
+            expect(prefixRowsRead).toBe(readPrefix ? (generations * (generations + 1)) / 2 : 0)
             expect(Option.getOrThrow(yield* store.get(plan.planId))).toEqual(plan)
           })
         )

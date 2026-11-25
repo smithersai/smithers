@@ -1143,9 +1143,9 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
                             read: (buf: Uint8Array) =>
                               Effect.map(file.read(buf), (n) =>
                                 fault === "read_bad_length"
-                                  ? ((buf.byteLength + 10) as typeof n)
+                                  ? (buf.byteLength + 10)
                                   : fault === "read_short"
-                                  ? (0 as typeof n)
+                                  ? (0)
                                   : n)
                           }
                         })

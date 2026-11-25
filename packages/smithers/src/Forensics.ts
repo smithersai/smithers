@@ -37,6 +37,7 @@ import {
 import { type RunMemory, runMemoryOf } from "@smthrs/gateway/RunTrace"
 import * as Schema from "effect/Schema"
 import { causeLine, terminalSafe } from "./internal/Failure.ts"
+import { shellQuote as quoteShellWord } from "./internal/ShellQuote.ts"
 
 /**
  * One refused flow call, aggregated by its refusal message. Reach for this in
@@ -296,14 +297,6 @@ const verdict = (d: Digest): string => {
 const label = (name: string): string => name.padEnd(10)
 
 /**
- * Characters a POSIX shell passes through unchanged in an unquoted word.
- *
- * Everything else, including the empty string, is quoted. The set is
- * deliberately narrow: a value is quoted unless it is provably inert.
- */
-const inertWord = /^[A-Za-z0-9_@%+=:,./-]+$/
-
-/**
  * Quotes one argv element as exactly one POSIX shell word. Reach for this for
  * every caller-controlled value in a copy-paste command. It preserves all
  * bytes, including newlines, and performs no semantic validation.
@@ -316,8 +309,7 @@ const inertWord = /^[A-Za-z0-9_@%+=:,./-]+$/
  * @category conversions
  * @since 0.1.0
  */
-export const shellQuote = (value: string): string =>
-  inertWord.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
+export const shellQuote = quoteShellWord
 
 const shellCommand = (...arguments_: ReadonlyArray<string>): string => arguments_.map(shellQuote).join(" ")
 

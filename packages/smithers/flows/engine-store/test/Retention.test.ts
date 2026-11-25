@@ -24,6 +24,7 @@ import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
@@ -1461,14 +1462,92 @@ describe("compacted lineage resumption", () => {
           expect(Option.getOrUndefined(yield* second.poll(Loop, "compacted-root"))?._tag).toBe("Suspended")
           yield* second.resume(Loop, "compacted-root", { poll: true })
           yield* TestClock.adjust(5_000)
-          const result = yield* second.execute(Loop, {
+          const fiber = yield* second.execute(Loop, {
             executionId: "compacted-root",
             payload: { round: 0 },
             discard: false
-          })
+          }).pipe(Effect.forkChild({ startImmediately: true }))
+          yield* TestDatabase.until(
+            TestClock.adjust("1 second").pipe(Effect.map(() => fiber.pollUnsafe() !== undefined))
+          )
+          const result = yield* Fiber.join(fiber)
           expect(result).toBe("settled-after-prune")
           const polled = yield* second.poll(Loop, "compacted-root")
           expect(Option.getOrUndefined(polled)?._tag).toBe("Complete")
+        }))
+      }).pipe(
+        Effect.scoped,
+        Effect.provideService(Jj.Jj, jj),
+        Effect.provide(StepBoundary.layerTest()),
+        Effect.provide(stores)
+      )
+    ))
+
+  it.effect("compacted lineage whose tip settled with Handoff suspends execute until the next round settles", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        const retain = yield* Retention.make()
+        const sql = yield* SqlClient.SqlClient
+        const LoopPayload = Schema.Struct({ round: Schema.Number })
+        const Loop: Flow.Flow<
+          "Retention/CompactedHandoffTip",
+          typeof LoopPayload,
+          typeof Schema.String,
+          typeof Sleep.SleepRequestInvalid
+        > = Flow.make(
+          "Retention/CompactedHandoffTip",
+          {
+            payload: { round: Schema.Number },
+            success: Schema.String,
+            body: Node.capture({}, ({ round }) =>
+              round < 2
+                ? Loop.to({ round: round + 1 })
+                : Sleep.action.call({ millis: 5_000 }).pipe(Node.andThen(Node.succeed("settled-after-prune"))))
+          }
+        )
+        const makeEngine = EngineStore.make({
+          owner: { hostId: "retention-compacted-handoff" },
+          journalSource: "retention-compacted-handoff",
+          isAlive: () => Effect.succeed(false)
+        })
+        const runs = yield* RunStore.RunStore
+        const registerLoop = (engine: Context.Service.Shape<typeof FlowRuntime.FlowRuntime>) =>
+          Layer.build(Interpreter.layerWithImplementations(Loop, Sleep.layer)).pipe(
+            Effect.provideService(FlowRuntime.FlowRuntime, engine)
+          )
+
+        // Drive rounds 0 -> 1 -> 2 (round 2 parks on durable sleep)
+        yield* Effect.scoped(Effect.gen(function*() {
+          const first = yield* makeEngine
+          yield* registerLoop(first)
+          yield* first.execute(Loop, { executionId: "compacted-handoff-root", payload: { round: 0 }, discard: true })
+          yield* TestDatabase.until(
+            runs.latestRound("compacted-handoff-root").pipe(
+              Effect.map((row) => row.roundOrdinal === 2 && row.status === "suspended"),
+              Effect.catch(() => Effect.succeed(false))
+            )
+          )
+        }))
+
+        // Prune intermediate round 1, then leave tip round 2 settled with a Handoff (before round 3 exists).
+        const pruned = yield* retain.pruneSupersededRounds("compacted-handoff-root")
+        expect(pruned.runIds).toHaveLength(1)
+        const root = yield* runs.get("compacted-handoff-root")
+        const tip = yield* runs.latestRound("compacted-handoff-root")
+        yield* sql`UPDATE flows_runs SET status = ${"completed"}, state_json = ${root.stateJson} WHERE run_id = ${tip.runId}`
+
+        // Executing from root hits the compacted Handoff tip and returns Suspended rather than leaking raw Handoff.
+        yield* Effect.scoped(Effect.gen(function*() {
+          const second = yield* makeEngine
+          yield* registerLoop(second)
+          const fiber = yield* second.execute(Loop, {
+            executionId: "compacted-handoff-root",
+            payload: { round: 0 },
+            discard: false
+          }).pipe(Effect.forkChild({ startImmediately: true }))
+          yield* TestClock.adjust("500 millis")
+          expect(fiber.pollUnsafe()).toBeUndefined()
+          yield* Fiber.interrupt(fiber)
         }))
       }).pipe(
         Effect.scoped,
