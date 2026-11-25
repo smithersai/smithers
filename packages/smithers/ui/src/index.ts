@@ -1000,3 +1000,45 @@ export {
   shouldShowSettlement,
   WORK_NOTICE_DELAY_MS
 } from "./notification-policy";
+
+export {
+  PaneFrame,
+  CauseChip,
+  CauseTrail,
+  PlanTree,
+  AttachAgentCard,
+  WaitlistCard,
+  ForkBadge,
+  AudienceSwitch,
+  type PaneFrameProps,
+  type PaneOrigin,
+  type PaneSize,
+  type CauseChipProps,
+  type CauseOrigin,
+  type CauseReceiptData,
+  type CauseTrailProps,
+  type PlanAssumption,
+  type PlanTreeNodeItem,
+  type PlanTreeNodeStatus,
+  type PlanTreeProps,
+  type AttachAgentCardProps,
+  type AttachConnectionState,
+  type AttachTransportMode,
+  type WaitlistCardProps,
+  type WaitlistStatus,
+  type AudienceRole,
+  type AudienceSwitchProps,
+  type ForkBadgeProps,
+} from "./workbench";
+
+export {
+  FrameScrubber,
+  StateMachineView,
+  WorkflowExecutionView,
+  type FrameScrubberProps,
+  type ProofVerdict,
+  type StateMachineViewProps,
+  type StateTransitionItem,
+  type WorkflowExecutionViewProps,
+  type WorkflowNodeItem,
+} from "./workbench";
