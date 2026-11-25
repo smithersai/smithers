@@ -1,10 +1,11 @@
 // A run's artifacts (worker/branch/Artifacts.ts, docs/features/ci.md#artifacts) in workerd, bundled as Alchemy bundles
 // ChatApi, over a real R2 binding, through real HTTP requests: what a job box's PUT and GET do. Node can't show what
 // only workerd decides: a streamed body R2 takes only at a known length (`FixedLengthStream`).
+import { digestSync } from "@smthrs/crypto"
 import { Miniflare } from "miniflare"
 import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, expect, test } from "vitest"
-import { bundle, COMPATIBILITY } from "../test/workerd/bundle.ts"
+import { answer, bundle, COMPATIBILITY } from "../test/workerd/bundle.ts"
 
 let worker: Miniflare
 beforeAll(async () => {
@@ -54,3 +55,21 @@ test("refusals: 403 without a scope, 400 for a bad name, 405 for another method,
   const stream = new ReadableStream({ start: (controller) => (controller.enqueue(new Uint8Array([1, 2])), controller.close()) })
   expect(await status("a", { method: "PUT", body: stream, duplex: "half", headers: { "x-scope": RUN_A } } as never)).toBe(411)
 }, 60_000)
+
+test("Smithers-Ops returns the same 404 for missing and hidden artifacts over Worker HTTP", async () => {
+  const run = "ci:ops-fixture"
+  const scope = digestSync(`run:${run}`).slice(0, 40)
+  expect(await status("private.txt", { method: "PUT", body: "private bytes", headers: { "x-scope": scope } })).toBe(201)
+  const url = (name: string) => `http://smithers.test/api/repos/smithersai/Smithers-Ops/artifacts/${run}/${name}`
+  const owner = { headers: { "x-test-login": "roninjin10" } }
+  expect(await answer(worker, url("private.txt"), owner)).toMatchObject({ status: 200, body: "private bytes" })
+  const missing = await answer(worker, url("absent.txt"), owner)
+  expect(missing).toMatchObject({ status: 404, body: '{"error":"not_found"}' })
+  for (const init of [undefined, { headers: { "x-test-login": "someone-else" } }]) {
+    const hidden = await answer(worker, url("private.txt"), init)
+    expect(hidden.status).toBe(missing.status)
+    expect(hidden.body).toBe(missing.body)
+    expect([...hidden.headers].filter(([name]) => name !== "date"))
+      .toEqual([...missing.headers].filter(([name]) => name !== "date"))
+  }
+})

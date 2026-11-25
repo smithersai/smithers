@@ -2,7 +2,7 @@ import { CauseReceipt, CliAdapter, GuiAdapter, McpAdapter, Principal, SdkAdapter
 import { canonicalHash, emptyPlanTree, PlanTree } from "@smthrs/app-state"
 import { JournalCollection } from "@smthrs/effect-tanstack-db"
 import { ShardClient, ShardProtocol } from "@smthrs/sync"
-import { Effect, Queue, Redacted, Schema, Stream } from "effect"
+import { Effect, Option, Queue, Redacted, Schema, Stream } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Reactivity from "effect/reactivity/Reactivity"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -10,6 +10,10 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "vitest"
 import { openStorage } from "../../../../packages/smithers/flows/platform-cloudflare/test/SqliteObjectFixture.ts"
+import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../../src/features/auth/contract.ts"
+import type { Actor } from "../Actor.ts"
+import { repositoryOf } from "../github/Config.ts"
+import { signedIn } from "../test/harness.ts"
 import * as Plan from "./PlanTreeShard.ts"
 import * as Routes from "./PlanTreeRoutes.ts"
 
@@ -292,5 +296,58 @@ test("four clients and TanStack DB converge through a SQLite restart without a r
   } finally {
     db.hibernate()
     rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("the repository route derives shard grants from the session and the repository role", async () => {
+  const db = openStorage(":memory:")
+  const repo = repositoryOf("example/project")
+  try {
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const fetch = yield* Routes.makeShardHandler(db.storage, shard)
+      const person = { subject: { kind: "person", id: "person" }, role: "admin" } as const
+      const routed = (actor: Actor, role: Actor["role"], path: string, body?: unknown) =>
+        Routes.dispatch((id, request) => {
+          expect(id).toBe(shard)
+          return fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
+        }, {
+          repository: repo,
+          resolve: (_actor, requested) => {
+            expect(requested.id).toBe(repo.id)
+            return Effect.succeed({ role, held: Option.none() })
+          },
+        }, { admins: new Set() }).pipe(
+          Effect.provide(signedIn(actor)),
+          Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request(
+            `https://smithers.example/api/repos/example/project/plan/${path}`, {
+              headers: {
+                [DEVICE_PERSON_HEADER]: NO_DEVICE_DATA,
+                "x-smithers-plan-admission": JSON.stringify({ subject: "impostor", session: "fake", write: true }),
+              },
+              ...(body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }),
+            },
+          ))),
+        )
+      const delegated = { ...person, act: { kind: "agent", id: "run", ceiling: [[Plan.readCapability(other)]] } } as const
+      const snapshot = (requested: string) => "snapshot?" + new URLSearchParams({ shard: requested })
+      const update = {
+        jsonrpc: "2.0", id: 1, method: "tools/call",
+        params: { name: McpAdapter.toolName(Plan.update), arguments: command("role-test") },
+      }
+      expect((yield* routed(person, "guest", snapshot(shard))).status).toBe(403)
+      expect((yield* routed(delegated, "admin", snapshot(shard))).status).toBe(403)
+      expect((yield* routed({
+        ...delegated, act: { ...delegated.act, ceiling: [[Plan.readCapability(shard)]] },
+      }, "member", snapshot(shard))).status).toBe(200)
+      expect((yield* routed(person, "member", snapshot(other))).status).toBe(403)
+      expect((yield* routed(person, "member", snapshot(shard))).status).toBe(200)
+      const call = (role: "member" | "maintainer") => routed(person, role, "mcp", update).pipe(
+        Effect.flatMap((response) => Effect.promise(() => HttpServerResponse.toWeb(response).json())),
+      )
+      expect(yield* call("member")).toMatchObject({ result: { isError: true } })
+      expect(yield* call("maintainer")).toMatchObject({ result: { structuredContent: expect.any(Object) } })
+    })))
+  } finally {
+    db.hibernate()
   }
 })

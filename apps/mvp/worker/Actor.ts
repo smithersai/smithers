@@ -150,6 +150,7 @@ export const PROTECTED_ACTS = {
   "stack/configure": { route: "POST /api/repos/<owner>/<name>/stack (configure)" },
   // Registering a runner machine or naming an external agent (decision 0136): what runs code on whose machine.
   runner: { route: "PUT, DELETE /api/repos/<owner>/<name>/runners/<name>" },
+  "ssh-key": { route: "POST /api/user/keys, DELETE /api/user/keys/<id>" },
   agent: { route: "PUT, DELETE /api/repos/<owner>/<name>/agents/<name>" },
 } as const
 

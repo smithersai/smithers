@@ -42,3 +42,9 @@ Three blockers ship before launch:
 - One generic `run(tag, payload)` MCP tool: allowing reads would allow sandbox execution.
 - Host-realm npm plugins: they cannot be confined.
 - TTY approvals on self-hosted nodes: in BYOA the person's own agent drives the TTY.
+
+## Wave 3 wiring (2026-11-24)
+
+ChatApi routes each repository's plan to the named `repo:<owner>/<name>` SQLite shard with `@smthrs/sync`. Repository Members can read the shard. Maintainers can update it. Delegated requests must carry the exact shard capability in their credential ceiling. The existing MCP core keeps person-only review out of that transport.
+
+CI reads commits through `@smthrs/integrations` GitHub Contents. It checks `.vibe`, then `.ts` in the workflows directory, then the older flow directory. The QuickJS planner currently accepts TypeScript-compatible source.

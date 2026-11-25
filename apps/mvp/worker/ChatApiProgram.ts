@@ -7,6 +7,11 @@ import { withRequestRay } from "./RequestRay.ts"
 // ChatApi's program (worker/ChatApi.ts): everything ChatApi serves and hosts. worker/ChatApi.ts loads this module when
 // the Worker first builds its program, not when Cloudflare starts the Worker, so its modules are evaluated then and
 // count against the first request's CPU instead of the Worker's startup limit (docs/infrastructure.md#limits).
+import * as ArtifactRoutes from "./ops/ArtifactRoutes.ts"
+import * as PlanTreeRoutes from "./plan/PlanTreeRoutes.ts"
+import * as SshKeyAccess from "./SshKeyAccess.ts"
+import * as Artifacts from "./branch/Artifacts.ts"
+import { CiArtifacts } from "../infra/GateMachine.ts"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Logger } from "@smthrs/observability"
 import { EdgeCache } from "@smthrs/platform-cloudflare"
@@ -418,6 +423,10 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // ChatApi hosts the remote flow executions' Durable Object (worker/Executions.ts, docs/features/remote-flows.md), and
     // creates each one where the deployment places them (`FLOW_EXECUTION_LOCATION`, worker/Placement.ts).
     const executions = Placement.placed(yield* Executions.FlowExecution, yield* Placement.location.pipe(Effect.orDie))
+    const planObjects = yield* PlanTreeRoutes.PlanTreeObject
+    const artifactBucket = machines.includes(JobMachines.GATE) ? yield* Cloudflare.R2.ReadWriteBucket(CiArtifacts) : undefined
+    const artifactStorage = artifactBucket?.raw as unknown as Effect.Effect<Artifacts.Bucket, never, RuntimeContext> | undefined
+    const artifactPolicy = { admins: deploymentAdmins }
     // The edge throttle on the open routes (worker/Throttle.ts): requests per network per minute, counted per Cloudflare
     // location. Neither number comes from a load test: a busy tab sends about 70 shape requests and 150 telemetry
     // exports a minute, so each lets about 20 busy tabs share a network (docs/features/chat.md#throttling).
@@ -540,6 +549,29 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                 BranchRoles.layer(roles)
               )
               const path = request.url.split("?")[0]!
+              if (SshKeyAccess.handles(request.method, path)) {
+                return yield* SshKeyAccess.guard(Effect.succeed(HttpServerResponse.empty({ status: 404 }))).pipe(
+                  Effect.provide(signedIn),
+                )
+              }
+              if (PlanTreeRoutes.handles(path)) {
+                return yield* PlanTreeRoutes.dispatch((shard, outgoing) => planObjects.getByName(shard).fetch(outgoing), roles, artifactPolicy).pipe(
+                  Effect.provideService(RuntimeContext, runtime),
+                  Effect.provide(signedIn),
+                )
+              }
+              if (ArtifactRoutes.handles(path)) {
+                return yield* ArtifactRoutes.read(roles, artifactPolicy,
+                  (id) => executions.getByName(id).repositoryRun(),
+                  (key) => artifactStorage === undefined ? Effect.succeedNone : Effect.flatMap(artifactStorage, (bucket) => Effect.tryPromise({
+                    try: async () => {
+                      const object = await bucket.get(key)
+                      return object === null ? Option.none() : Option.some({ body: object.body, bytes: object.size })
+                    },
+                    catch: () => new Artifacts.StoreFailed(),
+                  })),
+                ).pipe(Effect.provideService(RuntimeContext, runtime), Effect.provide(signedIn))
+              }
               // Before sign-in, which answers every other `/api/auth/` path: the person's connected sites and their
               // Disconnect (docs/features/sign-in.md).
               if (GitHubConnectionsPage.handles(path)) {
@@ -754,6 +786,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       FetchHttpClient.layer,
     )),
     Effect.provide(BranchRooms.live(DatabaseRoutes.route(pools, "RoomObject"), socketChecks(options))),
+    Effect.provide(PlanTreeRoutes.live),
     Effect.provide(RunContent.live(DatabaseRoutes.route(pools, "RunContent"), socketChecks(options))),
     Effect.provide(
       Layer.mergeAll(

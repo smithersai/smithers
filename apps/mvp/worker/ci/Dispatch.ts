@@ -227,7 +227,12 @@ export const asApp = (services: Pick<Services<unknown, unknown>, "tokens" | "htt
           RepoFlow.isUnreadable(error) ? Effect.succeed(Option.none<string>()) : Effect.fail(new DispatchUnavailable())
         ),
       )
-    return Option.some({ repository, call, read })
+    const workflow = (name: string, ref: string) => RepoFlow.readWorkflow(name, (path) =>
+      call(GitHub.Contents.getText(repository.owner, repository.name, path, { ref })),
+    ).pipe(Effect.catch((error) =>
+      RepoFlow.isUnreadable(error) ? Effect.succeedNone : Effect.fail(new DispatchUnavailable())
+    ))
+    return Option.some({ repository, call, read, workflow })
   })
 
 /** The steps over `services`. */
@@ -248,7 +253,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const wanted = Triggers.flowsFor(Triggers.triggersOf(manifest.value), request)
       const active: Array<string> = []
       for (const flow of wanted) {
-        if (Option.isSome(yield* read(RepoFlow.flowPath(flow)))) active.push(flow)
+        if (Option.isSome(yield* app.value.workflow(flow, request.defaultBranch))) active.push(flow)
       }
       return { flows: active, outcome: active.length > 0 ? "matched" : "none" } satisfies Matched
     }).pipe(

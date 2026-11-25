@@ -70,6 +70,8 @@ export interface Runtime extends RuntimeConfig {
   readonly effectContext?: Context.Context<never> | undefined
   /** Host-owned MCP transport; the process standard streams when omitted. */
   readonly mcpStdio?: McpStdio.Service | undefined
+  /** Human approval supplied by an embedded attach host; defaults to the controlling terminal. */
+  readonly attachApproval?: ((pairing: string) => Promise<string>) | undefined
   /** Explicit judge for an embedded or offline CLI host; otherwise select the gateway. */
   readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   /** Host-owned delegation for local commands and the served gateway, never a request argument. */

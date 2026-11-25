@@ -15,11 +15,11 @@ import { type Repository, repositoryOf } from "../github/Config.ts"
 import type { GitHubTokens } from "../github/Tokens.ts"
 import * as Realm from "./Realm.ts"
 
-// A repository's own flow on Smithers (docs/features/ci.md#repository-flows): `.smithers/flows/<flow>/flow.ts` at the
+// A repository's own flow on Smithers (docs/features/ci.md#repository-flows): a workflow entry point at the
 // run's commit, planned in the QuickJS realm (worker/ci/Realm.ts), its jobs each a `ci/job` on its own machine
 // (worker/flows/CiJobMachine.ts), its result a GitHub commit status `smithers/<flow>` on that commit (ruling GH-10).
 //
-//   repo/Run    repo/Plan     reads flow.ts at the commit as the App (Contents: read) and plans it in the realm
+//   repo/Run    repo/Plan     reads the workflow at the commit as the App (Contents: read) and plans it in the realm
 //               repo/Jobs     a child run: `smithers/<flow>` pending, the jobs as a `ci/graph` child (each job a
 //                             `ci/job` once its needs passed, skipped if one didn't), then repo/Report: success when
 //                             every job passed, else failure, as the App (Commit statuses)
@@ -33,6 +33,21 @@ export const FLOW_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
 /** Where a repository flow's file lives. */
 export const flowPath = (flow: string): string => `.smithers/flows/${flow}/flow.ts`
+
+/** Repository entry points in lookup order. Only validated names may reach GitHub. */
+export const workflowPaths = (name: string): ReadonlyArray<string> => FLOW_NAME.test(name)
+  ? [`.smithers/workflows/${name}.vibe`, `.smithers/workflows/${name}.ts`, flowPath(name)]
+  : []
+
+/** Reads the first entry present at the supplied ref, stopping on a read failure. */
+export const readWorkflow = <A, E, R>(name: string, read: (path: string) => Effect.Effect<Option.Option<A>, E, R>) =>
+  Effect.gen(function* () {
+    for (const path of workflowPaths(name)) {
+      const entry = yield* read(path)
+      if (Option.isSome(entry)) return entry
+    }
+    return Option.none<A>()
+  })
 
 /**
  * Whether GitHub's answer to a file read means no retry will read it: a refusal, or a file it won't give as text (a
@@ -161,7 +176,7 @@ export const Jobs = Flow.make("repo/Jobs", {
 
 /** `repo/Run`: one run of a repository flow at a commit. */
 export const Run = Flow.make("repo/Run", {
-  description: "Run a repository's own flow, .smithers/flows/<flow>/flow.ts at a commit: plan it in the QuickJS " +
+  description: "Run a repository's own workflow at a commit: plan it in the QuickJS " +
     "realm, run each job on its own machine, and report smithers/<flow> on the commit.",
   capabilities: ["sandbox:job"],
   modelInvocable: false,
@@ -263,17 +278,18 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const repository = repositoryOfRequest(request)
       const token = yield* tokenFor(request, "contents")
       if (token._tag === "Failure") return { _tag: "refused", reason: "unreadable" } as const
-      const file = yield* GitHub.Contents.getText(repository.owner, repository.name, flowPath(request.flow), { ref: request.sha })
-        .pipe(
+      const source = yield* readWorkflow(request.flow, (path) =>
+        GitHub.Contents.getText(repository.owner, repository.name, path, { ref: request.sha }).pipe(
           withToken(token.success, services.apiBaseUrl),
           Effect.provideService(HttpClient.HttpClient, services.http),
-          Effect.map(Option.match({ onNone: () => "not_found" as const, onSome: (found) => found.text })),
-          Effect.catch((error) =>
-            isUnreadable(error) ? Effect.succeed("unreadable" as const) : Effect.fail(new RepoFlowUnavailable())
-          ),
         )
-      if (file === "not_found" || file === "unreadable") return { _tag: "refused", reason: file } as const
-      const planned = yield* Realm.plan(request.flow, file, {
+      ).pipe(Effect.result)
+      if (source._tag === "Failure") {
+        if (isUnreadable(source.failure)) return { _tag: "refused", reason: "unreadable" } as const
+        return yield* new RepoFlowUnavailable()
+      }
+      if (Option.isNone(source.success)) return { _tag: "refused", reason: "not_found" } as const
+      const planned = yield* Realm.plan(request.flow, source.success.value.text, {
         ...request.input,
         run: request.run,
         repo: request.repo,

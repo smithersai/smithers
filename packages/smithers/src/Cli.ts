@@ -32,12 +32,14 @@ import * as TargetApprovals from "./cli/TargetApprovals.ts"
 import { createTokenCli } from "./cli/TokenCommands.ts"
 import * as CliError from "./CliError.ts"
 import * as AlertsCmd from "./commands/Alerts.ts"
+import { registerAttach } from "./commands/AttachCommand.ts"
 import * as BugCmd from "./commands/Bug.ts"
 import * as DoctorCmd from "./commands/Doctor.ts"
 import * as GcCmd from "./commands/Gc.ts"
 import type * as Globals from "./commands/Globals.ts"
 import * as MigrateCmd from "./commands/Migrate.ts"
 import { createNodeCli } from "./commands/Node.ts"
+import { registerNode } from "./commands/NodeServe.ts"
 import * as OpenCmd from "./commands/Open.ts"
 import { createRunnerCli } from "./commands/Runner.ts"
 import * as TuiCmd from "./commands/Tui.ts"
@@ -347,6 +349,8 @@ export const makeCli = (
     .command(createTokenCli(config))
     .command(createRunnerCli(config))
     .command(createNodeCli())
+    .command(registerAttach({ ...config.mcpStdio, approve: config.attachApproval, signal: config.signal }))
+    .command(registerNode())
     .command(alerts)
     .command(createTriggersCli(config))
     .command(createIntegrationsCli())
@@ -750,6 +754,8 @@ export const makeCli = (
       approvals: config.approvals ?? TargetApprovals.store
     })
   const humanDoors = [
+    "attach",
+    "node serve",
     ...doors,
     ...catalogCommands.filter((row) =>
       row.actors.includes("person") && row.name !== "debug-api" &&

@@ -75,8 +75,12 @@ const approveInTerminal = async (pairing: string): Promise<string> => {
   }
 }
 
-export const registerAttach = () => Cli.create("attach", {
+interface AttachHost extends Pick<McpServeOptions, "input" | "output" | "signal"> {
+  readonly approve?: AttachOptions["approve"] | undefined
+}
+
+export const registerAttach = (host: AttachHost = {}) => Cli.create("attach", {
   description: "Attach an agent via a one-time intent",
   options: z.object({ intent: z.string(), origin: z.string().optional() }),
-  run: ({ options }) => attach({ ...options, approve: approveInTerminal })
+  run: ({ options }) => attach({ ...options, ...host, approve: host.approve ?? approveInTerminal })
 })

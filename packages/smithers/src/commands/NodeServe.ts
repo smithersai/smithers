@@ -366,6 +366,7 @@ export const registerNode = () => Cli.create("node", { description: "Local Smith
       await serveMcpStdioBridge({ agentGrant: { token, endpoint: new URL("/mcp", node.origin) }, signal: abort.signal })
       await stopped
     } finally {
+      process.stdin.pause()
       process.off("SIGINT", stop)
       process.off("SIGTERM", stop)
       await node.close()

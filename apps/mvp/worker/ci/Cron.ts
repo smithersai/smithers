@@ -327,10 +327,10 @@ export const steps = <E, R>(services: Services<E, R>) => {
       if (Option.isNone(app)) return { outcome: "unreadable", ...none } satisfies Registered
       const manifest = yield* app.value.read(Triggers.MANIFEST_PATH, request.defaultBranch)
       const rows = Option.match(manifest, { onNone: () => [], onSome: Triggers.schedulesOf })
-      // As a push's: a flow is active once its flow.ts is on the default branch.
+      // As a push's: a flow is active once its entry point is on the default branch.
       const active = new Set<string>()
       for (const flow of new Set(rows.map((row) => row.flow))) {
-        if (Option.isSome(yield* app.value.read(RepoFlow.flowPath(flow), request.defaultBranch))) active.add(flow)
+        if (Option.isSome(yield* app.value.workflow(flow, request.defaultBranch))) active.add(flow)
       }
       const wanted = new Map<string, Trigger.Trigger>()
       let refused = 0

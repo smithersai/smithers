@@ -44,6 +44,7 @@ export const legacyArguments = (input: ReadonlyArray<string> | Argv.Globals): Ar
   if (command === "internal" && args[index + 1] === "claude") return [...args.slice(0, index), ...args.slice(index + 1)]
   // Only the removed lifecycle subcommands use the compatibility refusal.
   if (command === "gateway") return rest[0] === "status" || rest[0] === "stop" ? [...args] : undefined
+  if (command === "node" && rest[0] === "serve") return undefined
   if (command === "bug" && rest.length === 0) return [...args]
   if (command !== undefined && legacy.has(command)) return [...args]
   if (command === "run") {

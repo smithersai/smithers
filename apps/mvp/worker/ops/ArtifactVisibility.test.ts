@@ -291,3 +291,43 @@ describe("Low 1 (approvals): a stored public approval needs a person's id and lo
     expect(readArtifact(undefined, note(publicRepo, { visibility: "public", approvedBy: approval }), policy)).toMatchObject({ status: 200 })
   })
 })
+
+test("the Worker artifact handler returns the same 404 before storage for anonymous and non-owner requests", async () => {
+  const { Effect, Option } = await import("effect")
+  const { HttpEffect } = await import("effect/http")
+  const { Sessions } = await import("../Actor.ts")
+  const { repositoryOf } = await import("../github/Config.ts")
+  const routes = await import("./ArtifactRoutes.ts")
+  const repository = repositoryOf("smithersai/Smithers-Ops")
+  const run = "ci:fixture"
+  const bytes = "private artifact"
+  let lookups = 0
+  const handler = (actor?: Actor) => HttpEffect.toWebHandler(routes.read(
+    { repository, resolve: () => Effect.die("ops reads do not ask GitHub for a role") },
+    policy,
+    (execution) => Effect.sync(() => {
+      lookups++
+      return execution === run ? { execution, repoId: repository.id } : null
+    }),
+    () => Effect.sync(() => {
+      lookups++
+      const body = new Response(bytes).body!
+      return Option.some({ body, bytes: bytes.length })
+    }),
+  ).pipe(Effect.provideService(Sessions, Sessions.of({ resolve: Effect.succeed(Option.fromNullishOr(actor)) }))))
+  const fetch = (actor: Actor | undefined, execution = run) => handler(actor)(
+    new Request(`https://smithers.test/api/repos/smithersai/Smithers-Ops/artifacts/${execution}/private.txt`),
+  )
+  const absent = await fetch(will, "missing")
+  const unavailable = { status: absent.status, headers: [...absent.headers], body: await absent.text() }
+  expect(unavailable).toMatchObject({ status: 404, body: JSON.stringify({ error: "not_found" }) })
+  const before = lookups
+  for (const actor of [undefined, repoAdmin, delegated(will, "agent")]) {
+    const response = await fetch(actor)
+    expect({ status: response.status, headers: [...response.headers], body: await response.text() }).toEqual(unavailable)
+  }
+  expect(lookups).toBe(before)
+  const permitted = await fetch(will)
+  expect(permitted.status).toBe(200)
+  expect(await permitted.text()).toBe(bytes)
+})

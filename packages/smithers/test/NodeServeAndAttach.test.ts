@@ -1,6 +1,8 @@
 import { Principal } from "@smthrs/app-core"
 import { ShardProtocol, ShardServer } from "@smthrs/sync"
 import { Effect, Result, Schema } from "effect"
+import { spawn } from "node:child_process"
+import { once } from "node:events"
 import { mkdtempSync, rmSync } from "node:fs"
 import { createServer, request as httpRequest } from "node:http"
 import { tmpdir } from "node:os"
@@ -12,8 +14,10 @@ import { MCP_MAX_REQUEST_BYTES } from "../../../apps/mvp/src/features/mcp/contra
 import { makeAttach } from "../../../apps/mvp/worker/attach/Attach.ts"
 import { handleAttachAgent } from "../../../apps/mvp/worker/attach/AttachAgentRoutes.ts"
 import { defineTool, makeMcpRoute, readBody } from "../../../apps/mvp/worker/attach/McpRoute.ts"
-import { attach, redeem } from "../src/commands/AttachCommand.ts"
+import { makeCli } from "../src/Cli.ts"
+import { redeem } from "../src/commands/AttachCommand.ts"
 import { httpTransport, startNode } from "../src/commands/NodeServe.ts"
+import { executable, runIn, scriptedHost } from "./support/bin.ts"
 
 const shard = Schema.decodeUnknownSync(ShardProtocol.ShardId)("repo:example/project")
 const stream = Schema.decodeUnknownSync(ShardProtocol.StreamId)(shard)
@@ -113,20 +117,26 @@ test("an agent attaches over PKCE, calls MCP, and a SQLite node syncs in both di
     const origin = `http://127.0.0.1:${address.port}`
     const { reference } = unwrap(await Effect.runPromise(service.mintIntent({ ...person, ...target, ceiling: ["shard:append"] })))
     let output = ""
-    await attach({
-      intent: reference,
-      origin,
-      approve: async (pairing) => {
+    const environment = { SMITHERS_DELEGATE_ACT: "agent" }
+    const cli = makeCli({
+      environment,
+      attachApproval: async (pairing) => {
         const { claim } = unwrap(service.consentFor({ ...person, reference }))
         return unwrap(await Effect.runPromise(service.approveIntent({ ...person, claim, pairing }))).code
       },
-      input: Readable.from([Buffer.from(JSON.stringify({
-        jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "shard__append", arguments: { side: "replica" } }
-      }) + "\n")]),
-      output: new Writable({
-        write(chunk, _encoding, callback) { output += chunk.toString(); callback() }
-      })
+      mcpStdio: {
+        input: Readable.from([Buffer.from(mcpCall({ side: "replica" }) + "\n")]),
+        output: new Writable({
+          write(chunk, _encoding, callback) { output += chunk.toString(); callback() }
+        }),
+      },
     })
+    let exit = 0
+    let cliOutput = ""
+    await cli.serve(["attach", "--intent", reference, "--origin", origin], {
+      env: environment, exit: (code) => { exit = code }, stdout: (chunk) => { cliOutput += chunk },
+    })
+    expect(exit, cliOutput).toBe(0)
     expect(JSON.parse(output)).toMatchObject({
       id: 7, result: { structuredContent: { output: { side: "replica" }, cause: { nodeId: "shard/append" } } }
     })
@@ -409,5 +419,76 @@ test("node counts chunked raw bytes before buffering and decodes split UTF-8", a
     expect(await node.sync()).toMatchObject({ position: { seq: 1 } })
   } finally {
     await node.close()
+  }
+})
+
+test("the top-level CLI serves a loopback node and invokes the attach claim endpoint", { timeout: 60_000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "smithers-node-cli-"))
+  const server = createServer((request, response) => {
+    claims.push([request.method, request.url])
+    request.resume()
+    response.writeHead(409).end()
+  })
+  const claims: Array<unknown> = []
+  const environment = {
+    ...process.env,
+    HOME: dir,
+    SMITHERS_DELEGATE_ACT: "agent",
+    SMITHERS_NODE_AGENT_TOKEN: token,
+    SMITHERS_NODE_SYNC_TOKEN: syncToken,
+  }
+  const runCli = (...args: Array<string>) => {
+    const child = spawn(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, ...args], {
+      cwd: dir, env: environment, stdio: "pipe", timeout: 30_000, killSignal: "SIGKILL",
+    })
+    let output = ""
+    const capture = (chunk: Buffer) => { output += chunk.toString() }
+    child.stderr.on("data", capture)
+    child.stdout.on("data", capture)
+    return { child, output: () => output, closed: once(child, "close") }
+  }
+  try {
+    for (const [args, description] of [
+      [["attach", "--help"], "one-time intent"],
+      [["node", "serve", "--help"], "local SQLite shard"],
+    ] as const) {
+      const help = runIn(dir, args)
+      expect(help.status, help.stderr).toBe(0)
+      expect(help.stdout).toContain(description)
+    }
+    server.listen(0, "127.0.0.1")
+    await once(server, "listening")
+    const addr = server.address()
+    if (addr === null || typeof addr === "string") throw new Error("Expected loopback listener")
+    const attached = runCli("attach", "--intent", "ABCD-1234", "--origin", `http://127.0.0.1:${addr.port}`)
+    expect((await attached.closed)[0]).not.toBe(0)
+    expect(attached.output()).toContain("HTTP 409")
+    expect(claims).toEqual([["POST", "/api/attach/claim"]])
+
+    const node = runCli("node", "serve", "--file", join(dir, "node.sqlite"), "--shard", shard, "--node", "local")
+    try {
+      const origin = await new Promise<string>((resolve, reject) => {
+        node.child.stderr.on("data", () => {
+          const found = /Smithers node listening on (http:\/\/127\.0\.0\.1:\d+)/.exec(node.output())
+          if (found) resolve(found[1]!)
+        })
+        void node.closed.then(() => reject(new Error(node.output())), reject)
+      })
+      const response = await fetch(new URL(snapshot(), origin), { headers: headers(syncToken) })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ position: { shard, seq: 0 } })
+      const listed = await fetch(new URL("/mcp", origin), {
+        method: "POST", headers: headers(token),
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      })
+      const catalog = await listed.json() as { result: { tools: ReadonlyArray<{ name: string }> } }
+      expect(catalog.result.tools.map((tool) => tool.name)).toEqual(["ref__cause", "shard__append"])
+    } finally {
+      node.child.kill("SIGTERM")
+      await node.closed
+    }
+  } finally {
+    if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()))
+    rmSync(dir, { recursive: true, force: true })
   }
 })

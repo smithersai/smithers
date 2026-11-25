@@ -4,8 +4,9 @@
 // are keyed by the list itself, so a person-only flow added to the registry fails the compiler here until its route is
 // held to it.
 import { Effect, Metric, Option, Stream } from "effect"
-import { HttpEffect } from "effect/http"
+import { HttpEffect, HttpServerResponse } from "effect/http"
 import * as TestDatabase from "../db/TestDatabase.ts"
+import * as SshKeyAccess from "./SshKeyAccess.ts"
 import * as Flows from "./Flows.ts"
 import * as RunnerAdmin from "./runners/Admin.ts"
 import { describe, expect, test } from "vitest"
@@ -198,6 +199,22 @@ const protectedActs: { readonly [A in keyof typeof PROTECTED_ACTS]: Case } = {
     labels: ["linux"],
     capacity: 1,
   }),
+  "ssh-key": async (actor, act) => {
+    const registry: Metric.MetricRegistry = new Map()
+    const handler = HttpEffect.toWebHandler(SshKeyAccess.guard(Effect.succeed(HttpServerResponse.empty({ status: 404 }))).pipe(
+      Effect.provide(signedIn(actor)),
+      Effect.provideService(Metric.MetricRegistry, registry),
+    ))
+    for (const [method, path] of [["POST", "/api/user/keys"], ["DELETE", "/api/user/keys/42"]] as const) {
+      const response = await handler(new Request(`https://chat.test${path}`, { method }))
+      expect(response.status).toBe(403)
+      expect(await response.json()).toEqual({ error: "person_only" })
+    }
+    const counted = Effect.runSync(Metric.value(Metric.withAttributes(personOnlyRefusals, {
+      act, by: actor.act!.kind,
+    })).pipe(Effect.provideService(Metric.MetricRegistry, registry))).count
+    return { status: 403, counted: counted / 2 }
+  },
   agent: runnerAdmin(`/api/repos/${REPO.owner}/${REPO.name}/agents/coder`, { labels: [], profile: "coder" }),
 }
 
@@ -212,7 +229,7 @@ describe("person-only acts refuse anyone acting for the person", () => {
 
   for (const [act, refused] of [...Object.entries(flows), ...Object.entries(protectedActs)] as Array<[PersonOnlyAct, Case]>) {
     test(`${act}: an agent's, a flow's or a frame's request is refused 403 and counted`, async () => {
-      for (const kind of ["agent", "flow", "app"] as const) {
+      for (const kind of ["agent", "flow", "app", ...(act === "ssh-key" ? ["sandbox" as const] : [])] as const) {
         expect(await refused(actingFor(kind), act), `${act} as ${kind}`).toEqual({ status: 403, counted: 1 })
       }
     })

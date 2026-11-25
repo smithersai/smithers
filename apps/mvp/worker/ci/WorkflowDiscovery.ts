@@ -1,6 +1,6 @@
 import { Data, Result } from "effect"
 import { decodeJevConfig, isRepoPath, type JevConfig, type JevConfigError } from "../../src/features/jev/config.ts"
-import { FLOW_NAME, flowPath } from "./RepoFlow.ts"
+import { FLOW_NAME, flowPath, workflowPaths } from "./RepoFlow.ts"
 
 // A repository's workflows and Jev config in a checkout on disk (docs/features/ci.md#repository-flows).
 //
@@ -76,11 +76,8 @@ const FLOWS_DIR = "./.smithers/flows"
 const WORKFLOW_FILE = /^([a-z0-9][a-z0-9_-]{0,63})\.(vibe|ts)$/
 
 /** The files a workflow `name` may live in, in lookup order. */
-export const workflowCandidates = (name: string): ReadonlyArray<{ readonly source: WorkflowSource; readonly path: string }> => [
-  { source: "workflows", path: `${WORKFLOWS_DIR}/${name}.vibe` },
-  { source: "workflows", path: `${WORKFLOWS_DIR}/${name}.ts` },
-  { source: "flows", path: `./${flowPath(name)}` },
-]
+export const workflowCandidates = (name: string): ReadonlyArray<{ readonly source: WorkflowSource; readonly path: string }> =>
+  workflowPaths(name).map((path, index) => ({ source: index < 2 ? "workflows" : "flows", path: `./${path}` }))
 
 type Refusal<A> = Result.Result<A, WorkflowDiscoveryError>
 

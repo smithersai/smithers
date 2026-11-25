@@ -87,9 +87,11 @@ A job box reads and writes its run's artifacts at `http://artifacts.smithers.int
 - **Expiry.** The bucket deletes each object 7 days after it was written.
 - **Only the gate's boxes.** The default machine registers no artifacts intercept: its boxes reach that host only as any other host, through the registry egress, which refuses it.
 
+A signed-in repository Member can download a run artifact from `GET /api/repos/<owner>/<name>/artifacts/<execution>/<name>`. For Smithers-Ops, access requires a configured deployment admin acting in person. Hidden and missing artifacts return the same `404`.
+
 ## Repository flows
 
-A repository declares its CI as TypeScript: `.smithers/flows/<flow>/flow.ts`, one `Flow.make` whose body returns the flow's jobs. It type-checks against the real SDK; the realm reads only its tag and its body (e2e/fixtures/ci-repo is one).
+A repository declares its CI with one `Flow.make` whose body returns the flow's jobs. Smithers checks `.smithers/workflows/<flow>.vibe`, `.smithers/workflows/<flow>.ts`, then `.smithers/flows/<flow>/flow.ts` at the selected commit. The Worker's QuickJS planner accepts TypeScript-compatible source in these files. It type-checks against the real SDK; the realm reads only its tag and its body (e2e/fixtures/ci-repo is one).
 
 ```ts
 // .smithers/flows/ci/flow.ts
@@ -111,7 +113,7 @@ export default Flow.make("ci", {
 ```
 FlowExecution DO
  repo/Run { run, repo, flow, sha, ref, event, secrets }
-   repo/Plan ── GET contents/.smithers/flows/<flow>/flow.ts?ref=<sha> (App, Contents: read)
+   repo/Plan ── GET contents/<workflow path>?ref=<sha> (App, Contents: read)
              └─ QuickJS realm: sucrase strips types; Flow.make, Node.all, CiJob.make as data ─▶ { jobs }
    repo/Jobs (child) ─ repo/Pending ─▶ smithers/<flow> pending
                      ─ ci/graph (child) ─ ci/job × n, in waves by needs (one machine each)
@@ -124,7 +126,7 @@ FlowExecution DO
 - **Inputs, without running the body.** `Realm.describe` reads a flow's inputs as JSON Schema: each field of its `payload` literal beyond `run`, `repo`, `sha`, `ref` and `event`, typed `string`, `number`, `integer` or `boolean`, with `enum` from `Schema.Literal(s)` and `title`, `description` and `default` from `annotate`; required unless optional or defaulted. A field no form can fill, a payload declared as one `Schema.Struct`, or more than 32 inputs is refused `inputs`.
 - **Retry failed runs the failed jobs.** A `RunRequest` with `only` plans the same commit and keeps only the named jobs; a need on a job it doesn't run again passed before, so it is dropped. Naming none the flow has runs nothing (`invalid_plan`).
 - **A run whose jobs failed reads Failed.** `repo/Run` never fails, so the engine completes it either way; its row settles `failed` when its result reports `state: "failure"` (`RepoFlow.reportedFailure`).
-- **The flow's tag is its directory.** `.smithers/flows/ci/flow.ts` must declare `Flow.make("ci", …)`.
+- **The flow's tag is its name.** Each entry point for `ci` must declare `Flow.make("ci", …)`.
 - **Retries.** GitHub's or Postgres' outages are retried, 1 s doubling to a minute, for 30 minutes (the report: until GitHub takes it). A refusal (no Contents or Commit statuses permission, the App not installed) is recorded once and never retried; the jobs still run.
 
 Not yet: a repository flow imports nothing but the four modules (no shared `../_ci/target.ts`); `Node.all` is the only combinator, and order between jobs is `needs` only; a person can't yet start a repository flow by hand from the app: `repo/Run` takes `event: "manual"` with inputs, and manifests declare `manual` triggers, but the routes and the Run form aren't built (`ci-parity-manual-run`). Runs are listed and watched on the [repository’s Actions page](actions.md), with Stop.
@@ -135,7 +137,7 @@ Not yet: a repository flow imports nothing but the four modules (no shared `../_
 GitHub ──push / pull_request──▶ POST /api/github/webhook (REPO_FLOWS on): verify, start triggers/Dispatch once per delivery (triggers/dispatch:<delivery>)
 triggers/Dispatch { delivery, repo, defaultBranch, event, ref, branch, tag, action, sha, trusted }
   triggers/Match ── GET contents/.smithers/factory.json?ref=<default branch> (App, Contents: read)
-                 └─ matching trigger rows whose .smithers/flows/<flow>/flow.ts is on the default branch
+                 └─ matching trigger rows whose workflow entry point is on the default branch
   triggers/Start ── repo/Run under <flow>:<delivery>, at the event's commit
 ```
 

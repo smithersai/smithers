@@ -228,7 +228,9 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
             : yield* asApp(GitHub.Refs.getBranch(repository.owner, repository.name, ref))
           if (Option.isNone(head)) return { _tag: "refused", code: "not_found" } as const
           const source = yield* asApp(
-            GitHub.Contents.getText(repository.owner, repository.name, RepoFlow.flowPath(flow), { ref: head.value.sha }),
+            RepoFlow.readWorkflow(flow, (path) =>
+              GitHub.Contents.getText(repository.owner, repository.name, path, { ref: head.value.sha }),
+            ),
           )
           if (Option.isNone(source)) return { _tag: "refused", code: "not_found" } as const
           const described = yield* Realm.describe(flow, source.value.text).pipe(Effect.provide(options.variant))

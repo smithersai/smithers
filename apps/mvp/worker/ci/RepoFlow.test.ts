@@ -124,6 +124,20 @@ describe("repo/Run", { timeout: 60_000 }, () => {
       ])
   })
 
+  test.each(["vibe", "ts"])("prefers a %s workflow over older entries at the run commit", async (extension) => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const sha = github.push("main", {
+      ".smithers/flows/ci/flow.ts": "invalid legacy source",
+      ".smithers/workflows/ci.ts": extension === "vibe" ? "invalid lower-priority source" : CI,
+      ...(extension === "vibe" ? { ".smithers/workflows/ci.vibe": CI } : {}),
+    })
+    const box = machine()
+    await run(github, box, request(sha))
+    expect(github.shownStatuses(sha)).toEqual({ "smithers/ci": "success" })
+    expect(box.ran()).toContain("pnpm lint")
+    expect(RepoFlow.workflowPaths("../ci")).toEqual([])
+  })
+
   test("a job that fails fails the flow, its sibling still runs, and the status names the failed job", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     const sha = github.push("main", { ".smithers/flows/ci/flow.ts": CI })
