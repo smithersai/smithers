@@ -5,33 +5,62 @@
 //
 //   node .smithers/workflows/fast-check.ts                 changed files from `jj diff`
 //   node .smithers/workflows/fast-check.ts <file> ...      the files you name
+//   node .smithers/workflows/fast-check.ts --dry-run       print the plan and exit 0
 //
-// It exits 0 when every step passes and 1 otherwise, and prints one line per step. medium-check and full-check
-// follow as their own files once this tier has run on real edits.
+// It exits 0 when every step passes and 1 otherwise, and prints one line per step. medium-check.ts and full-check.ts
+// beside it are tiers 2 and 3.
 import { spawnSync } from "node:child_process"
-import { existsSync, readFileSync } from "node:fs"
-import { join, relative } from "node:path"
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync, statSync } from "node:fs"
+import { isAbsolute, join, relative, resolve } from "node:path"
 
-const root = spawnSync("jj", ["root"], { encoding: "utf8" }).stdout.trim() || process.cwd()
+// The real checkout: every file this tier reads must resolve under it, symlinks followed, even under `--dry-run`.
+const root = realpathSync(spawnSync("jj", ["root"], { encoding: "utf8" }).stdout.trim() || process.cwd())
 const mvp = join(root, "apps/mvp")
 const bin = (name: string) => join(mvp, "node_modules/.bin", name)
 
+const dryRun = process.argv.includes("--dry-run")
+const named = process.argv.slice(2).filter((arg) => arg !== "--dry-run")
+
 const changedFiles = (): Array<string> => {
-  if (process.argv.length > 2) return process.argv.slice(2).map((file) => relative(root, join(process.cwd(), file)))
+  if (named.length > 0) return named.map((file) => relative(root, resolve(process.cwd(), file)))
   const diff = spawnSync("jj", ["diff", "--name-only"], { cwd: root, encoding: "utf8" })
   if (diff.status !== 0) throw new Error(`jj diff failed: ${diff.stderr}`)
   return diff.stdout.split("\n").filter((line) => line !== "")
 }
 
-const files = changedFiles().filter((file) => existsSync(join(root, file)))
+/** The real path of `file` when it is a regular file under the real checkout. */
+const confined = (file: string): string | undefined => {
+  try {
+    const real = realpathSync(join(root, file))
+    return real.startsWith(`${root}/`) && statSync(real).isFile() ? real : undefined
+  } catch {
+    return undefined
+  }
+}
+
+const present = (file: string) => {
+  try {
+    lstatSync(join(root, file))
+    return true
+  } catch {
+    return false
+  }
+}
+
+const climbs = (file: string) => file === ".." || file.startsWith("../") || isAbsolute(file)
+const candidates = changedFiles()
+/** Paths outside the checkout, or entries in it that resolve outside it or are not regular files: never read. */
+const refused = candidates.filter((file) => climbs(file) || (present(file) && confined(file) === undefined))
+const files = candidates.filter((file) => !climbs(file) && confined(file) !== undefined)
 
 /** A changed test, or the test beside a changed source file. */
 const tests = [...new Set(files.flatMap((file) => {
   if (!file.startsWith("apps/mvp/") || !/\.(ts|vibe)$/.test(file)) return []
   if (/\.test\.(ts|vibe)$/.test(file)) return [file]
   const beside = file.replace(/\.(ts|vibe)$/, ".test.ts")
-  return existsSync(join(root, beside)) ? [beside] : []
-}))].map((file) => relative(mvp, join(root, file)))
+  return confined(beside) !== undefined ? [beside] : []
+// `./` keeps a file named `-x.test.ts` out of Vitest's option parser.
+}))].map((file) => `./${relative(mvp, join(root, file))}`)
 
 /** Each apps/mvp vibelang project that holds a changed file. */
 const projects = [...new Set(files.flatMap((file) => {
@@ -41,23 +70,47 @@ const projects = [...new Set(files.flatMap((file) => {
   return []
 }))]
 
+/** Read a confined regular file via O_NOFOLLOW fd so copy scan never follows a swapped symlink or runs during --dry-run. */
+const readConfinedUtf8 = (file: string): string | undefined => {
+  const real = confined(file)
+  if (real === undefined) return undefined
+  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)
+  let fd: number | undefined
+  try {
+    fd = openSync(real, flags)
+    if (!fstatSync(fd).isFile()) return undefined
+    return readFileSync(fd, "utf8")
+  } catch {
+    return undefined
+  } finally {
+    if (fd !== undefined) closeSync(fd)
+  }
+}
+
 /** Changed docs: em dashes anywhere, semicolons in prose outside code fences and frontmatter. */
-const copyFindings = files.filter((file) => file.endsWith(".md")).flatMap((file) => {
-  let fenced = false
-  let frontmatter = false
-  return readFileSync(join(root, file), "utf8").split("\n").flatMap((line, index) => {
-    if (index === 0 && line === "---") frontmatter = true
-    else if (frontmatter && line === "---") frontmatter = false
-    if (line.startsWith("```")) fenced = !fenced
-    const prose = !fenced && !frontmatter && !line.startsWith("```")
-    const text = line.replace(/`[^`]*`/g, "")
-    const found = line.includes("—") || (prose && text.includes(";"))
-    return found ? [`${file}:${index + 1}`] : []
+const scanCopy = () =>
+  files.filter((file) => file.endsWith(".md")).flatMap((file) => {
+    const content = readConfinedUtf8(file)
+    if (content === undefined) return [`${file}:unreadable-or-escaped`]
+    let fenced = false
+    let frontmatter = false
+    return content.split("\n").flatMap((line, index) => {
+      if (index === 0 && line === "---") frontmatter = true
+      else if (frontmatter && line === "---") frontmatter = false
+      if (line.startsWith("```")) fenced = !fenced
+      const prose = !fenced && !frontmatter && !line.startsWith("```")
+      const text = line.replace(/`[^`]*`/g, "")
+      const found = line.includes("—") || (prose && text.includes(";"))
+      return found ? [`${file}:${index + 1}`] : []
+    })
   })
-})
 
 interface Step {
   readonly name: string
+  /** The command it runs, for `--dry-run`. */
+  readonly plan: string
+  /** A step that fails without running: a path this tier will not read. */
+  readonly refuse?: boolean
   readonly run: () => { readonly ok: boolean; readonly detail: string }
 }
 
@@ -68,16 +121,33 @@ const command = (cmd: string, args: ReadonlyArray<string>) => () => {
 }
 
 const steps: Array<Step> = [
+  ...(refused.length === 0 ? [] : [{
+    name: "confine",
+    plan: `${refused.length} path(s) outside the checkout: ${refused.join(" ")}`,
+    refuse: true,
+    run: () => ({ ok: false, detail: refused.map((file) => `outside the checkout: ${file}`).join("\n") }),
+  }]),
   ...(tests.length === 0 ? [] : [{
     name: `vitest ${tests.length} file(s)`,
+    plan: `vitest run --coverage.enabled=false ${tests.join(" ")}`,
     run: command(bin("vitest"), ["run", "--coverage.enabled=false", ...tests]),
   }]),
-  ...projects.map((project) => ({ name: `typecheck ${project}`, run: command(bin("vibelang"), ["-p", project]) })),
+  ...projects.map((project) => ({
+    name: `typecheck ${project}`,
+    plan: `vibelang -p ${project}`,
+    run: command(bin("vibelang"), ["-p", project]) })),
   {
     name: "copy scan",
-    run: () => ({ ok: copyFindings.length === 0, detail: copyFindings.map((at) => `semicolon or em dash at ${at}`).join("\n") }),
+    plan: `${files.filter((file) => file.endsWith(".md")).length} changed doc(s)`,
+    run: () => { const copyFindings = scanCopy(); return { ok: copyFindings.length === 0, detail: copyFindings.map((at) => `semicolon or em dash at ${at}`).join("\n") } },
   },
 ]
+
+if (dryRun) {
+  console.log(`fast-check plan: ${steps.length} step(s) for ${files.length} changed file(s)`)
+  for (const step of steps) console.log(`${step.refuse === true ? "refuse" : "plan"}  ${step.name}  ${step.plan}`)
+  process.exit(0)
+}
 
 console.log(`fast-check: ${files.length} changed file(s)`)
 let failed = 0

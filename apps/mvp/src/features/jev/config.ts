@@ -170,10 +170,17 @@ export const decodeJevConfig = (input: unknown): Result.Result<JevConfig, JevCon
   return Result.succeed(config)
 }
 
+/** Whether `path` is a repository path: `./<path>` with no empty, `.` or `..` segment. */
+export const isRepoPath = (path: string): boolean => Result.isSuccess(Schema.decodeUnknownResult(RepoPath)(path))
+
 /**
  * Resolves a config's repository path for use: a script to run, or a schema or template to read. `realpath` follows
  * symlinks, as `fs.realpathSync` does. The result is the real file, and it is refused `path_escape` unless it lies
  * under the real checkout, so neither a `..` segment nor a symlink in the repository reaches a file outside it.
+ *
+ * The answer is a path checked once, not an open file: a writer who swaps the file or an ancestor afterwards redirects
+ * a later open. A loader reads through `loadJevConfig` (worker/ci/WorkflowDiscovery.ts), which opens each file once
+ * and proves the open file is the one it checked.
  */
 export const resolveRepoPath = (input: {
   readonly checkout: string
