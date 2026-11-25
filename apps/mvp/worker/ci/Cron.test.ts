@@ -400,19 +400,40 @@ describe("triggers/Tick's steps", { timeout: 60_000 }, () => {
     expect(await at(T0, unreachable.inspect(id))).toMatchObject({ _tag: "Failure", failure: { code: "runner" } })
   })
 
-  test("a tick that leaves a trigger undispatched fails to be tried again with the same since; a store that fails too", async () => {
+  test("a failed claim leaves the occurrence eligible for the same tick window", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     declared(github, [{ flow: "every", cron: "* * * * *" }])
-    const { services, schema } = await scheduled(github)
+    const { services, starts } = await scheduled(github)
     const steps = Cron.steps(services)
     await at(T0, steps.register({ request: request() }))
-    // A row the store can't decode: the tick dispatches the rest and keeps its own since as the watermark.
+    const fault = Layer.effect(TriggerStore.TriggerStore, Effect.map(TriggerStore.TriggerStore, (store) => ({
+      ...store,
+      claimFire: () => Effect.fail(new TriggerError.TriggerError({ code: "store", message: "Cannot claim occurrence" })),
+    }))).pipe(Layer.provide(services.store))
+    const window = { from: T0 + MINUTE, since: T0 }
+    expect(await at(T0 + 61_000, Cron.steps({ ...services, store: fault }).fire(window)))
+      .toMatchObject({ _tag: "Failure", failure: { _tag: "@smthrs/mvp/ci/ScheduleUnavailable", reason: "unclean" } })
+    expect(starts).toEqual([])
+    expect(count(Cron.ticks, { outcome: "unclean" })).toBe(1)
+    expect(await at(T0 + 62_000, steps.fire(window)))
+      .toEqual(Result.succeed({ at: T0 + 62_000, watermark: T0 + 62_000 }))
+    expect(await history(services.store)).toEqual([[T0 + MINUTE, "launched"]])
+  })
+
+  test("a corrupt row does not hold the watermark or stop healthy triggers; an unavailable store fails the tick", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    declared(github, [{ flow: "every", cron: "* * * * *" }])
+    const { services, schema, starts } = await scheduled(github)
+    const steps = Cron.steps(services)
+    await at(T0, steps.register({ request: request() }))
+    // A row the store can't decode: the tick dispatches the rest and advances its watermark.
     await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
       INSERT INTO ${sql(schema)}.flows_triggers (trigger_id, flow_id, input_json, cron, overlap, catch_up, max_catch_up, enabled, revision)
       VALUES ('acme/widgets#corrupt#* * * * *#', 'corrupt', 'not json', '* * * * *', 'skip', 'none', 0, 1, 1)`))
     expect(await at(T0 + 61_000, steps.fire({ from: T0 + MINUTE, since: T0 })))
-      .toMatchObject({ _tag: "Failure", failure: { _tag: "@smthrs/mvp/ci/ScheduleUnavailable", reason: "unclean" } })
-    expect(count(Cron.ticks, { outcome: "unclean" })).toBe(1)
+      .toEqual(Result.succeed({ at: T0 + 61_000, watermark: T0 + 61_000 }))
+    expect(starts.map((start) => start.payload)).toEqual([expect.objectContaining({ flow: "every", event: "schedule" })])
+    expect(count(Cron.ticks, { outcome: "clean" })).toBe(1)
     // The registration beside it skips the row it can't read.
     expect(await at(T0 + 62_000, steps.register({ request: request() })))
       .toEqual(Result.succeed({ outcome: "registered", registered: 0, unchanged: 1, disabled: 0, refused: 0 }))
@@ -448,9 +469,10 @@ describe("triggers/Tick", { timeout: 60_000 }, () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     declared(github, [{ flow: "every", cron: "* * * * *" }])
     const { services, starts } = await scheduled(github)
-    await at(Date.now(), Cron.steps(services).register({ request: request() }))
-    // The last tick, a minute and a second ago.
-    await at(Date.now() - 61_000, Effect.flatMap(TriggerStore.TriggerStore, (store) => store.heartbeat(Cron.HOST)).pipe(Effect.provide(services.store)))
+    const previous = Flows.windowAt(Date.now(), Cron.WINDOW).from - 1
+    await at(previous, Cron.steps(services).register({ request: request() }))
+    // The last tick and registration preceded the current minute's occurrence.
+    await at(previous, Effect.flatMap(TriggerStore.TriggerStore, (store) => store.heartbeat(Cron.HOST)).pipe(Effect.provide(services.store)))
     const now = Date.now()
     const window = { from: Flows.windowAt(now, Cron.WINDOW).from, until: now + 200 }
     const ran = await runFlow(
@@ -492,9 +514,10 @@ describe("on the execution host", { timeout: 120_000 }, () => {
           Effect.flatMap((intent) => ExecutionHost.recordStart(runObject.storage, intent)),
         ),
     }
-    await at(Date.now(), Cron.steps(hosted).register({ request: request() }))
-    // The last tick, a minute and a second ago: a minute boundary has passed since.
-    await at(Date.now() - 61_000, Effect.flatMap(TriggerStore.TriggerStore, (store) => store.heartbeat(Cron.HOST)).pipe(Effect.provide(services.store)))
+    const previous = Flows.windowAt(Date.now(), Cron.WINDOW).from - 1
+    await at(previous, Cron.steps(hosted).register({ request: request() }))
+    // The last tick and registration preceded the current minute's occurrence.
+    await at(previous, Effect.flatMap(TriggerStore.TriggerStore, (store) => store.heartbeat(Cron.HOST)).pipe(Effect.provide(services.store)))
     const url = (await Effect.runPromise(TestDatabase.serverUrl)).toString()
     const engine = TestSchemas.schemaName("flows")
     schemas.push(engine)

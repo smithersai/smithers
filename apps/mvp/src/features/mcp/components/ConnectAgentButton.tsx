@@ -31,12 +31,12 @@ function ConnectAgentButtonInner({ owner, name, mcp }: { readonly owner: string;
   const open = connect?.open === true && connect.owner === owner && connect.name === name
   const client = connect?.client ?? MCP_CLIENTS[0]
   const login = session?.status === "signed_in" ? session.login : null
-  const view = connectDialogView(client, window.location.origin, owner, name, answer?.role ?? null, login)
+  const view = open ? connectDialogView(client, window.location.origin, owner, name, answer?.role ?? null, login) : undefined
   return (
     <>
       <Button size="sm" variant="outline" onClick={() => actions.openConnect(owner, name)}>{CONNECT_AGENT}</Button>
       <Dialog open={open} onOpenChange={(next) => (next ? actions.openConnect(owner, name) : actions.closeConnect())}>
-        {open
+        {view !== undefined
           ? (
             <DialogContent>
               <DialogHeader>

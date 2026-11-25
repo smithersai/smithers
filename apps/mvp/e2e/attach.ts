@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto"
-import { expect, request as playwrightRequest, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test"
+import { expect, request as playwrightRequest, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test"
 import { RUNS_ROUTE } from "../src/features/status/contract.ts"
 import type { Report } from "../src/features/status/schema.ts"
 import { QUESTIONS_ROUTE } from "../src/features/chat/contract.ts"
@@ -46,7 +46,12 @@ export const attachAgent = async (request: APIRequestContext, baseUrl: string, p
     ceiling: ["conversation:write"],
   }, 201, person)
   // Pair and respond in a separate client that holds only the attach bearer.
-  const client = await playwrightRequest.newContext({ ignoreHTTPSErrors: onThisMachine(origin) })
+  let client: APIRequestContext
+  try {
+    client = await playwrightRequest.newContext({ ignoreHTTPSErrors: test.info().project.use.ignoreHTTPSErrors })
+  } catch {
+    client = await playwrightRequest.newContext({ ignoreHTTPSErrors: false })
+  }
   try {
     const verifier = randomBytes(32).toString("base64url")
     const challenge = createHash("sha256").update(verifier).digest("base64url")

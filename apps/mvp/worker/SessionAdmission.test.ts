@@ -50,6 +50,10 @@ test("the shared cookie guard observes a session end during body upload", async 
   expect(checksBeforeEof).toBe(0)
 })
 
+/** Exercise concurrent maintenance admission within the fixture pool's bounded pending queue. */
+const hundredWrites = (write: () => Promise<Response>) =>
+  Effect.runPromise(Effect.forEach(Array.from({ length: 100 }), () => Effect.promise(write), { concurrency: 32 }))
+
 test("100 requests seed maintenance once and answer normally", async () => {
   let starts = 0
   const auth = await signInHarness(runtime, { starter: Flows.FlowStarter.of({
@@ -64,9 +68,9 @@ test("100 requests seed maintenance once and answer normally", async () => {
     actions++
     return HttpServerResponse.empty({ status: 200 })
   }).pipe(Effect.provide(auth.sessions))).pipe(Effect.provide(auth.services)))
-  const responses = await Promise.all(Array.from({ length: 100 }, () => handler(new Request("http://smithers.test/api/write", {
+  const responses = await hundredWrites(() => handler(new Request("http://smithers.test/api/write", {
     method: "POST", body: "write", headers: { cookie: cookie(signed.cookies), [DEVICE_PERSON_HEADER]: NO_DEVICE_DATA },
-  }))))
+  })))
   expect(responses.map(response => response.status)).toEqual(Array(100).fill(200))
   expect(actions).toBe(100)
   expect(starts).toBe(1)
@@ -99,7 +103,7 @@ test("a maintenance seed that fails is tried again by the next request, under th
   unavailable = false
   expect((await write()).status).toBe(200)
   expect(intents).toHaveLength(3)
-  const responses = await Promise.all(Array.from({ length: 100 }, write))
+  const responses = await hundredWrites(write)
   expect(responses.map(response => response.status)).toEqual(Array(100).fill(200))
   expect(intents).toEqual(Array(3).fill("auth:session-maintenance:v1"))
 })

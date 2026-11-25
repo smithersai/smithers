@@ -97,17 +97,24 @@ describe("a Maintainer's Settings page", () => {
           state: "pending",
           verification: "pending",
           certificate: "unmanaged",
+          checkedAt: expect.any(String),
           records: [expect.objectContaining({ type: "CNAME", name: "docs.vibelang-e2e.example" })],
         },
       ])
     )
 
-    // Refresh checks it again; the row stays.
+    // ChatApi acknowledges launch before the verification flow checks DNS.
+    const firstCheck = tab.list()[0]!.checkedAt
     tab.domains.actions.refresh("docs.vibelang-e2e.example")
     expect(tab.saves()).toMatchObject([{ op: "refresh", state: "saving" }])
     await until(() => expect(tab.saves()).toEqual([]))
 
-    // Remove takes it off the list.
+    await until(() => {
+      expect(tab.list()).toMatchObject([{ state: "pending", checkedAt: expect.any(String) }])
+      expect(tab.list()[0]!.checkedAt).not.toBe(firstCheck)
+    })
+
+    // Remove takes the now-refreshed registration off the list.
     tab.domains.actions.remove("docs.vibelang-e2e.example")
     await until(() => expect(tab.list()).toEqual([]))
   })

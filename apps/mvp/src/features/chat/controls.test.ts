@@ -15,7 +15,7 @@ import {
   type TabOptions,
   TestChatApi
 } from "../../test/chatApi"
-import { EngineFaults, QuestionFaults } from "../../test/faults"
+import { QuestionFaults } from "../../test/faults"
 import { failRestore } from "../../test/restoreFailure"
 import { AuthStore, SESSION } from "../auth/store"
 import { Branch } from "../branch/branch"
@@ -26,6 +26,7 @@ import { replaceRole, RepoStore } from "../repo/store"
 import { ViewsStore } from "../views/store"
 import { ask, copyableText, retryAnswer, setDraft, show, takeBack } from "./actions"
 import { Chat } from "./chat"
+import { COULDNT_ANSWER, QUESTIONS_ROUTE } from "./contract"
 import { firstAnswerText } from "./metrics"
 import { HOME_DRAFT, PLACE } from "./schema"
 import { SharedPrompt } from "./sharedPrompt"
@@ -124,13 +125,12 @@ const openOffline = async () => {
   }
 }
 
-/** Asks `text` and has the model answer `answer`, settled. */
+/** Asks `text` and completes it through the attached agent. */
 const answered = async (tab: Tab, api: TestChatApi["Service"], text: string, answer: string) => {
   const result = await tab.actions.ask(text)
   if (!result.asked) throw new Error(result.reason)
-  const reply = await tab.run(api.answerTo(text))
-  reply.say(answer)
-  reply.done()
+  const attached = await tab.run(api.attachFor(result.questionId))
+  expect(await attached.respond(answer)).toEqual({ answered: true, answerId: result.answerId })
   await until(() => expect(tab.shown().slice(-2)).toEqual([`user done ${text}`, `assistant done ${answer}`]), 25_000)
   return result
 }
@@ -181,15 +181,24 @@ describe("Copy", () => {
   test("only finished messages copy: not an answer still streaming, a failed one, or a view", async () => {
     const { api, device } = await openApi()
     const tab = await openOn(api, device)
-    const { answerId } = (await tab.actions.ask("hello")) as { readonly answerId: string }
-    const reply = await tab.run(api.answerTo("hello"))
-    reply.say("Hal")
+    const asked = await tab.actions.ask("hello")
+    if (!asked.asked) throw new Error(asked.reason)
+    const { answerId } = asked
+    const attach = await tab.run(api.attachFor(asked.questionId))
+    expect(await attach.read()).toMatchObject({
+      messages: expect.arrayContaining([expect.objectContaining({ id: answerId, status: "streaming" })]),
+    })
+    // A retained partially written answer from before BYOA has text, so status alone prevents Copy.
+    await tab.run(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE messages SET text = 'Hal' WHERE id = ${answerId}`)))
     await until(() => expect(tab.shown()).toEqual(["user done hello", "assistant streaming Hal"]))
     expect(await tab.run(copyableText(answerId))).toEqual(Option.none())
     expect(await tab.run(copyableText())).toEqual(Option.none())
     expect(await tab.run(copyableText("hello"))).toEqual(Option.none())
-    reply.fail()
-    await until(() => expect(tab.shown().at(-1)).toMatch(/^assistant failed /))
+    // A persisted answer from before BYOA can still be failed.
+    await tab.run(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE messages SET status = 'failed', failure = 'model_error', text = ${COULDNT_ANSWER} WHERE id = ${answerId}`)))
+    await until(() => expect(tab.shown().at(-1)).toBe(`assistant failed ${COULDNT_ANSWER}`))
     expect(await tab.run(copyableText(answerId))).toEqual(Option.none())
   })
 })
@@ -330,17 +339,31 @@ describe("Edit on a queued question", () => {
 
   test("a question the outbox is sending stays where it is: it is sent, and the composer keeps its draft", async () => {
     const { api, device } = await openApi()
-    const tab = await openOn(api, device, true)
-    const engine = await tab.run(Effect.service(EngineFaults))
-    // ChatApi takes the question, and the send waits for this device's engine to record the run that answers it.
-    await tab.run(engine.holdStarts)
-    const asked = await tab.actions.ask("on its way")
-    if (!asked.asked) throw new Error(asked.reason)
-    await until(async () => expect((await tab.run(api.rows)).map(({ text }) => text)).toContain("on its way"))
-    tab.actions.setDraft("typing")
-    expect(await tab.run(takeBack(asked.questionId))).toBe("sent")
-    expect(tab.composer()).toMatchObject({ draft: "typing" })
-    await tab.run(engine.releaseStarts)
+    // Hold the real admission response after ChatApi stores it, while the browser's send is still in flight.
+    const stored = Promise.withResolvers<void>()
+    const returnResponse = Promise.withResolvers<void>()
+    const tab = await openOn(api, device, false, {
+      transport: (fetch) => async (input, init) => {
+        const request = new Request(input, init)
+        const response = await fetch(request)
+        if (request.method === "POST" && new URL(request.url).pathname === QUESTIONS_ROUTE && response.status === 202) {
+          stored.resolve()
+          await returnResponse.promise
+        }
+        return response
+      },
+    })
+    try {
+      const asked = await tab.actions.ask("on its way")
+      if (!asked.asked) throw new Error(asked.reason)
+      await stored.promise
+      expect((await tab.run(api.rows)).map(({ text }) => text)).toContain("on its way")
+      tab.actions.setDraft("typing")
+      expect(await tab.run(takeBack(asked.questionId))).toBe("sent")
+      expect(tab.composer()).toMatchObject({ draft: "typing" })
+    } finally {
+      returnResponse.resolve()
+    }
     await until(() => expect(tab.shown()[0]).toBe("user done on its way"))
   })
 
@@ -653,9 +676,8 @@ describe("drafts and delivery stay in their own conversation", () => {
     const { api, tab, conversationId } = await onBranch()
     const asked = await tab.actions.ask("branch question")
     if (!asked.asked) throw new Error(asked.reason)
-    const reply = await tab.run(api.answerTo("branch question"))
-    reply.say("answer")
-    reply.done()
+    const attached = await tab.run(api.attachFor(asked.questionId))
+    expect(await attached.respond("answer")).toEqual({ answered: true, answerId: asked.answerId })
     const opened = tab.store.opened(conversationId)!
     await until(
       async () => expect(Option.getOrThrow(await tab.run(opened.messages.get(asked.answerId))).status).toBe("done"),
@@ -763,9 +785,8 @@ describe("drafts and delivery stay in their own conversation", () => {
     const before = (await tab.run(Metric.value(firstAnswerText))).count
     const asked = await tab.actions.ask("branch timing")
     if (!asked.asked) throw new Error(asked.reason)
-    const reply = await tab.run(api.answerTo("branch timing"))
-    reply.say("first text")
-    reply.done()
+    const attached = await tab.run(api.attachFor(asked.questionId))
+    expect(await attached.respond("first text")).toEqual({ answered: true, answerId: asked.answerId })
     await until(async () => expect((await tab.run(Metric.value(firstAnswerText))).count).toBe(before + 1), 25_000)
   }, 60_000)
 
@@ -779,8 +800,10 @@ describe("drafts and delivery stay in their own conversation", () => {
       tab.store.scope,
       { startImmediately: true }
     ))
-    const reply = await tab.run(api.answerTo("branch empty answer"))
-    reply.fail()
+    // Admit through the real MCP route first, then exercise a retained failed row that has no text.
+    await tab.run(api.attachFor(asked.questionId))
+    await tab.run(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE messages SET status = 'failed', failure = 'model_error' WHERE id = ${asked.answerId}`)))
     await expect(tab.run(Fiber.join(follower).pipe(Effect.timeout("15 seconds")))).resolves.toBeUndefined()
     expect((await tab.run(Metric.value(firstAnswerText))).count).toBe(before)
   }, 60_000)

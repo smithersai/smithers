@@ -63,7 +63,7 @@ const sending = (tag: string, capabilities?: ReadonlyArray<string>) =>
   })
 
 // The registry's names, so the registry's marks: `run/answer` the person's and person-only, `watch/set` the person's,
-// `chat/Answer` an agent.
+// `flow/new` an agent.
 const Answer = sending("run/answer")
 const Watch = sending("watch/set")
 const Plugin = sending("repo/read", ["fs:read:src/**"])
@@ -82,13 +82,13 @@ const bearer = () =>
 const Write = bearing("issue/create")
 const Commit = bearing("todo/commit")
 
-/** `chat/Answer` as a test flow: reports through its own step, then calls `run/answer` nested, as an agent's cell would. */
+/** A drafting-agent flow reports through its own step, then calls `run/answer` as a nested operation. */
 const Nest = Action.make("test/nest", {
   payload: { answerId: Schema.String },
   success: Schema.Struct({ report: Got, nested: Got }),
   tier: "sealed",
 })
-const Agent = Flow.make("chat/Answer", {
+const Agent = Flow.make("flow/new", {
   payload: { answerId: Schema.String },
   success: Schema.Struct({ report: Got, nested: Got }),
   body: Node.capture({ nest: Nest.name }, (payload) => Nest.call(payload)),

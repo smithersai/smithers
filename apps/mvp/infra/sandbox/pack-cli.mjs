@@ -5,7 +5,7 @@
  * (decision 0144), so its runner is always the one this deploy built, never a registry version: the image build copies
  * these tarballs, and their content is the image's pin.
  *
- * Each package is built clean and packed exactly as a release packs it (.smithers/flows/release/pack-release.mjs), from
+ * The closure includes private runtime dependencies. Each package uses the release packer, from
  * a staged manifest whose exports point at the built artifacts. `cli/package.json` names each tarball as a `file:`
  * dependency, so `npm install` there installs the set together and satisfies their exact-version edges from each other.
  * `cli/manifest.json` lists each tarball's integrity.
@@ -29,11 +29,11 @@ import {
 /** The CLI the box runs. */
 export const CLI = "@smthrs/cli"
 
-/** The workspace directories `name` needs at runtime, itself included, in the order they must be built. */
-export const closureOf = (name, manifests = readWorkspaceManifests()) => {
+/** The workspace directories `name` needs at runtime, including private packages and `name` itself. */
+export const closureOf = (name, manifests = readWorkspaceManifests(undefined, { includePrivate: true })) => {
   const dependencies = workspaceDependencies(manifests)
   const root = [...manifests].find(([, manifest]) => manifest.name === name)?.[0]
-  if (root === undefined) throw new Error(`${name} is not a published workspace package`)
+  if (root === undefined) throw new Error(`${name} is not a workspace library`)
   const needed = new Set([root])
   const pending = [root]
   while (pending.length > 0) {

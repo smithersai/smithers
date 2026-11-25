@@ -129,8 +129,8 @@ test("the person's durable pin follows two devices, stays outside the window, an
   const c = await open(otherApi, nodeDevice({ agent: otherApi }))
   const asked = (await a.actions.ask("Explain the garden"))
   if (!asked.asked) throw new Error(asked.reason)
-  const reply = await root.runPromise(api.answerTo("Explain the garden"))
-  reply.say("A garden to discuss."); reply.done()
+  const attached = await root.runPromise(api.attachFor(asked.questionId))
+  expect(await attached.respond("A garden to discuss.")).toEqual({ answered: true, answerId: asked.answerId })
   await until(() => expect(a.queries.conversation.toArray.at(-1)?.text).toBe("A garden to discuss."))
   // Dispatch never blocks the caller on a network answer.
   expect(a.actions.pin(asked.answerId)).toBeUndefined()

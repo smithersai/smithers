@@ -50,17 +50,19 @@ export { publishedPackages }
  *
  * Membership is derived from `smthrs.group` and `private`, then checked against
  * {@link publishedPackages}. Every manifest must declare a known group so a new
- * package cannot silently fall outside a release train.
+ * package cannot silently fall outside a release train. Internal consumers
+ * can include private libraries in a local artifact without publishing them.
  */
-export const readWorkspaceManifests = (root = repoRoot) => {
+export const readWorkspaceManifests = (root = repoRoot, { includePrivate = false } = {}) => {
   const manifests = new Map()
+  const privateManifests = new Map()
   for (const entry of libraryPackages(root)) {
     const group = entry.manifest.smthrs?.group
     if (!releaseGroups.has(group)) {
       throw new Error(`${entry.manifestPath}: smthrs.group must be one of ${[...releaseGroups].join(", ")}`)
     }
-    if (entry.manifest.private) continue
-    manifests.set(entry.dir, entry.manifest)
+    const groupManifests = entry.manifest.private ? privateManifests : manifests
+    groupManifests.set(entry.dir, entry.manifest)
   }
   const declared = [...manifests.values()].map((manifest) => manifest.name).sort()
   const expected = [...publishedPackages].sort()
@@ -74,7 +76,7 @@ export const readWorkspaceManifests = (root = repoRoot) => {
         "\nEither restore the manifest's `private` flag and group or update publishedPackages in published-packages.mjse."
     )
   }
-  return manifests
+  return includePrivate ? new Map([...manifests, ...privateManifests]) : manifests
 }
 
 /**

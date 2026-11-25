@@ -132,7 +132,7 @@ describe("an agent's question to the person", { timeout: ENGINE_WITHIN }, () => 
     await until(() => expect(store.runs.tanstack.toArray.find((run) => run.id === runId)?.status).toBe("done"))
     const read = await api.fetch(`${asks}/${id}`, { headers: bearer })
     expect(await read.json()).toEqual({ status: "answered", answer: "yes", answeredAt: expect.any(String) })
-    await until(() => expect(queue.queries.current.current()).toEqual({ item: undefined, index: 0, total: 0 }))
+    await until(() => expect(queue.queries.current.current()).toEqual({ item: undefined, index: 0, total: 0, snoozed: 0, sort: "oldest" }))
     await until(() => expect(titles.at(-1)).toBe("Smithers"))
   })
 })

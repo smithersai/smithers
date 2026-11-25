@@ -10,6 +10,7 @@ export interface Page {
   readonly status?: number
   readonly headers?: Record<string, string>
   readonly html?: string
+  readonly body?: Uint8Array<ArrayBuffer>
 }
 
 /** A page that lets others frame it, with a title, a description and an icon. */
@@ -23,6 +24,14 @@ export const refusing = (title = "Frames refused"): Page => ({
   headers: { "x-frame-options": "DENY" },
   html: `<!doctype html><title>${title}</title><meta name="description" content="A page that never shows in a frame.">`,
 })
+
+/** A one-pixel PNG served by an outside site's icon URL. */
+const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jOioAAAAASUVORK5CYII="
+export const iconPage: Page = {
+  headers: { "content-type": "image/png" },
+  body: Uint8Array.from(atob(pixel), (byte) => byte.charCodeAt(0)),
+}
+export const inlineIcon = `data:image/png;base64,${pixel}`
 
 /** A Markdown page, as a docs site serves one of its pages or its `llms.txt` index. */
 export const markdown = (text: string): Page => ({ headers: { "content-type": "text/markdown; charset=utf-8" }, html: text })
@@ -45,7 +54,7 @@ export const outsideWeb = (
   const page = pages[url.href]
   if (page === undefined) return Promise.reject(new TypeError("fetch failed: the outside web is offline in tests"))
   return Promise.resolve(
-    new Response(page.html ?? "", {
+    new Response(page.body ?? page.html ?? "", {
       status: page.status ?? 200,
       headers: { "content-type": "text/html; charset=utf-8", ...page.headers },
     }),

@@ -1,7 +1,7 @@
 // The personal feed on the tab, driven as React drives it: through the feed layer's plain actions, reading its live
 // queries, with no React. Two people, Ann and Ben, each on their own Node devices (src/test/chatApi.ts), run the
-// browser's own layer (`appLayer`) against ChatApi's real handler over the compose Postgres and Electric. Only the model
-// is scripted. Proves decision 0009's first slice: a tab follows the conversation it shows; Ann's run reaches her feed
+// browser's own layer (`appLayer`) against ChatApi over Postgres and Electric, with run reports through the status API
+// and replies through MCP. A tab follows the conversation it shows, and Ann's run reaches her feed
 // on both her devices and Ben's as a quiet toast, because he is on its branch; Read, Hide and Dismiss on one of Ann's
 // devices reach the other; a finished toast hides by itself.
 // Its branches and clones are on the deployment's own repository (`octo/hello`), where the session's role holds; another
@@ -12,6 +12,7 @@ import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import { DispatchFailed, FlowDispatch, dispatches } from "../../flows/dispatch"
+import { finishRun, latestAnswerFor, recordedModelFailure, reportRun, waitOnPerson } from "../../test/attachedRun"
 import { asPerson, displayClock, nodeDevice, type NodeDevice, openFaultyTab, openTab, openTestApi, tabLayer, TestChatApi } from "../../test/chatApi"
 import { EngineFaults, ShapeRecovery } from "../../test/faults"
 import { SESSION } from "../auth/store"
@@ -33,7 +34,7 @@ import { ActRefused } from "./flows"
 import { panel as panelActs, shown } from "./metrics"
 import { AttentionStore } from "./store"
 
-/** A test that drives devices' engines through model calls and sync: seconds each, more on a loaded machine. */
+/** A test that drives run reports, device actions and sync: seconds each, more on a loaded machine. */
 const ENGINE_WITHIN = 120_000
 
 const ben: Actor = { subject: { kind: "person", id: "person-ben" }, role: "maintainer", login: "ben" }
@@ -113,8 +114,6 @@ const ask = async (device: Device, text: string) => {
   return asked.answerId
 }
 
-const askCell = (need: string) => `const heard = await ctx.call("app/agent/ask", ${need})\nconsole.log(JSON.stringify(heard))`
-
 /** What Postgres holds of `principal`'s watches. */
 const watchesOf = (api: TestChatApi["Service"], principal: string) =>
   Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
@@ -139,7 +138,7 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
 
     const answerId = await ask(ann, "Deploy the docs preview")
     const subject = `run:${answerId}`
-    const first = await Effect.runPromise(api.answerTo("Deploy the docs preview"))
+    await reportRun(api, answerId, { status: "working" })
     // Live: Ann sees it in the conversation, so no toast over it; Ben sees a quiet toast that an agent runs there, on
     // any page: only the launcher's row quotes the run (docs/features/notifications.md, Routing).
     await until(() => expect(benDevice.entry(subject)).toMatchObject({ state: "working", stack: true, listed: false }))
@@ -150,7 +149,7 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
     expect(ann.stackHere()).not.toContain(subject)
 
     // The agent asks Ann: her question toasts on both her devices, over the conversation too; Ben's reads waiting.
-    first.cell(askCell(`{ kind: "question", prompt: "Which branch should I deploy?", options: ["main", "docs-v2"] }`))
+    await waitOnPerson(api, answerId, { kind: "question", prompt: "Which branch should I deploy?", options: ["main", "docs-v2"] })
     for (const device of [ann, annToo]) {
       await until(() =>
         expect(device.entry(subject)).toMatchObject({
@@ -183,7 +182,7 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
     ann.attention.actions.open("run:nowhere", "page")
     expect(ann.host.navigated).toEqual([])
 
-    // Record the real transient toast before releasing the model. A slow assertion must not miss a
+    // Record the real transient toast before the agent replies. A slow assertion must not miss a
     // four-second state that was actually delivered, and a toast never delivered must still fail.
     const watchDone = async (device: Device, unread: boolean) => {
       const store = await device.run(Effect.service(AttentionStore))
@@ -212,7 +211,7 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
     await Effect.runPromise((await ann.shapes()).lag(NOTIFICATIONS_SHAPE_ROUTE, "5 seconds"))
     try {
       annToo.status.actions.answer(answerId, "docs-v2")
-      ;(await Effect.runPromise(api.answerTo("Deploy the docs preview", 1))).cell(`ctx.done("Deploying docs-v2.")`)
+      await finishRun(api, answerId, "Deploying docs-v2.", true)
       // Done: a new version, so it shows again, unread.
       await until(() => expect(annDone.observed(), JSON.stringify(annDone.frames)).toBe(true))
       await until(() => expect(benDone.observed(), JSON.stringify(benDone.frames)).toBe(true))
@@ -243,12 +242,12 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
     const tablet = await openDevice(api, { answers: false })
     const answerId = await ask(ann, "Clean up old previews")
     const subject = `run:${answerId}`
-    const first = await Effect.runPromise(api.answerTo("Clean up old previews"))
+    await reportRun(api, answerId, { status: "working" })
     // Ann's status shape can lag behind the tablet's independent feed. Hold its actual response to pin that order.
     const status = () => ann.status.queries.of(null).statuses.toArray.find((row) => row.id === answerId)
     await until(() => expect(status()).toMatchObject({ state: "working" }))
     const pause = await Effect.runPromise((await ann.shapes()).pause(RUNS_SHAPE_ROUTE))
-    first.cell(askCell(`{ kind: "approval", prompt: "Delete the stale preview docs-v1?" }`))
+    await waitOnPerson(api, answerId, { kind: "approval", prompt: "Delete the stale preview docs-v1?" })
     await until(() => expect(tablet.entry(subject)).toMatchObject({ state: "needs_you" }))
     tablet.attention.actions.dismiss(subject)
     await until(() => expect(tablet.entry(subject)).toBeUndefined())
@@ -258,7 +257,7 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
     // Answer on the device whose card actually shows the question; another device's feed is no sync receipt.
     await until(() => expect(status()).toMatchObject({ state: "needs_you" }))
     ann.status.actions.answer(answerId, true)
-    ;(await Effect.runPromise(api.answerTo("Clean up old previews", 1))).cell(`ctx.done("Deleted docs-v1.")`)
+    await finishRun(api, answerId, "Deleted docs-v1.", true)
     // Done is a new version: it shows on the tablet again until dismissed there too.
     await until(() => expect(tablet.entry(subject)).toMatchObject({ state: "done", listed: true }))
     tablet.attention.actions.dismiss(subject)
@@ -308,13 +307,15 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
 
     const doneId = await ask(ann, "Summarize the release notes")
     const done = `run:${doneId}`
-    ;(await Effect.runPromise(api.answerTo("Summarize the release notes"))).cell(`ctx.done("Three fixes, one feature.")`)
+    await finishRun(api, doneId, "Three fixes, one feature.")
     await until(() => expect(ann.entry(done)).toMatchObject({ state: "done", listed: true, unread: true }))
     const askId = await ask(ann, "Deploy the docs preview")
     const asks = `run:${askId}`
-    ;(await Effect.runPromise(api.answerTo("Deploy the docs preview"))).cell(
-      askCell(`{ kind: "question", prompt: "Which branch should I deploy?", options: ["main", "docs-v2"] }`),
-    )
+    await waitOnPerson(api, askId, { kind: "question", prompt: "Which branch should I deploy?", options: ["main", "docs-v2"] })
+    // Retained pre-BYOA answers can still include a saved step.
+    const parts = [{ id: crypto.randomUUID(), kind: "step", flow: "app/agent/ask", status: "running" }]
+    await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      UPDATE messages SET parts = ${JSON.stringify(parts)}::jsonb WHERE id = ${askId}`)))
     await until(() => expect(ann.entry(asks)).toMatchObject({ state: "needs_you", action: "answer" }))
     // Newest first, whatever the stack's order; both unread; the question waits on her.
     expect(ann.feed()).toEqual([asks, done])
@@ -380,7 +381,7 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     ann.status.actions.answer(askId, "docs-v2")
     await until(() => expect(ann.detail()!.question).toBeNull())
     await until(() => expect(ann.needs()).toEqual([]))
-    ;(await Effect.runPromise(api.answerTo("Deploy the docs preview", 1))).cell(`ctx.done("Deploying docs-v2.")`)
+    await finishRun(api, askId, "Deploying docs-v2.", true)
     await until(() => expect(ann.detail()).toMatchObject({ id: asks, note: "Deploying docs-v2." }))
     // A settled answer has nothing to answer, and its draft isn't kept.
     ann.status.actions.answer(askId, "main")
@@ -411,7 +412,8 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     ann.attention.actions.openPanel("more")
     expect(ann.panel()).toMatchObject({ open: true, focus: null, expanded: null })
     ann.attention.actions.closePanel()
-    ;(await Effect.runPromise(api.answerTo("Fail, please"))).fail()
+    await recordedModelFailure(api, failedId)
+    await reportRun(api, failedId, { status: "failed" })
     await until(() => expect(ann.entry(failed)).toMatchObject({ state: "failed", listed: true }))
     // Not expanded: nothing to retry from.
     await ann.attention.actions.retry(failed)
@@ -421,16 +423,16 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     ann.chat.queries.conversation.startSyncImmediate()
     await ann.attention.actions.retry(failed)
     await until(() => expect(ann.entry(failed)).toBeUndefined())
-    // Asked again, under new ids: the model hears it a second time.
+    // Asked again, under new ids: the attached agent responds to the new question.
     await until(() =>
       expect(ann.chat.queries.conversation.toArray.filter((row) => row.role === "user" && row.text === "Fail, please"))
         .toHaveLength(2)
     )
-    ;(await Effect.runPromise(api.answerTo("Fail, please", 1))).cell(`ctx.done("Done this time.")`)
+    await finishRun(api, await latestAnswerFor(api, "Fail, please", failedId), "Done this time.")
     expect(panelCount(ann, { act: "retry" })).toBe(1)
     // A finished entry, expanded, has no Retry.
     const doneId = await ask(ann, "Say hi")
-    ;(await Effect.runPromise(api.answerTo("Say hi"))).cell(`ctx.done("Hi.")`)
+    await finishRun(api, doneId, "Hi.")
     await until(() => expect(ann.entry(`run:${doneId}`)).toMatchObject({ state: "done" }))
     ann.attention.actions.expand(`run:${doneId}`)
     await until(() => expect(ann.detail()).toMatchObject({ id: `run:${doneId}`, retry: false }))
@@ -452,9 +454,7 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     await ann.run(show(conversationId))
     const answerId = await ask(ann, "Rename the feature branch")
     const subject = `run:${answerId}`
-    ;(await Effect.runPromise(api.answerTo("Rename the feature branch"))).cell(
-      askCell(`{ kind: "approval", prompt: "Rename feature to feature-2?" }`),
-    )
+    await waitOnPerson(api, answerId, { kind: "approval", prompt: "Rename feature to feature-2?" })
     await until(() => expect(ann.entry(subject)).toMatchObject({ state: "needs_you", here: true }))
     // Home again: the conversation there doesn't hold the branch's answer.
     await ann.run(show(null))
@@ -471,7 +471,7 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     }
     ann.status.actions.answer(answerId, true)
     await until(() => expect(ann.detail()!.question).toBeNull())
-    ;(await Effect.runPromise(api.answerTo("Rename the feature branch", 1))).cell(`ctx.done("Renamed.")`)
+    await finishRun(api, answerId, "Renamed.", true)
     await until(() => expect(ann.entry(subject)).toMatchObject({ state: "done" }))
     // Open takes the person to the branch, at the answer.
     ann.attention.actions.open(subject, "conversation")
@@ -630,9 +630,7 @@ describe("the data gate", { timeout: ENGINE_WITHIN }, () => {
       ], { discard: true }))))
     await ann.run(show(conversationId))
     const answerId = await ask(ann, "Pick the release branch")
-    ;(await Effect.runPromise(api.answerTo("Pick the release branch"))).cell(
-      askCell(`{ kind: "question", prompt: "Which branch?", options: ["main", "release"] }`),
-    )
+    await waitOnPerson(api, answerId, { kind: "question", prompt: "Which branch?", options: ["main", "release"] })
     const ui = await ann.run(Effect.service(PluginsUi) as unknown as Effect.Effect<PluginsUi["Service"]>)
     const statuses = await ann.run(Effect.service(StatusStore) as unknown as Effect.Effect<StatusStore["Service"]>)
     const repos = await ann.run(Effect.service(RepoStore) as unknown as Effect.Effect<RepoStore["Service"]>)
@@ -683,9 +681,7 @@ describe("the data gate", { timeout: ENGINE_WITHIN }, () => {
       ], { discard: true }))))
     await ann.run(show(conversationId))
     const answerId = await ask(ann, "Pick the gadget")
-    ;(await Effect.runPromise(api.answerTo("Pick the gadget"))).cell(
-      askCell(`{ kind: "question", prompt: "Which gadget?", options: ["one", "two"] }`),
-    )
+    await waitOnPerson(api, answerId, { kind: "question", prompt: "Which gadget?", options: ["one", "two"] })
     const statuses = await ann.run(Effect.service(StatusStore) as unknown as Effect.Effect<StatusStore["Service"]>)
     const repos = await ann.run(Effect.service(RepoStore) as unknown as Effect.Effect<RepoStore["Service"]>)
     // What a home's live run blocks read (`Home.queries.runs`).

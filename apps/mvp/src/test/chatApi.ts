@@ -8,7 +8,7 @@ import { ShapeSource } from "@smthrs/effect-electric"
 import { Outbox } from "@smthrs/effect-tanstack-db"
 import { FlowRuntime } from "@smthrs/flow"
 import { Journal as FlowJournal } from "@smthrs/flows"
-import { Model, ModelError, type ModelEvent, type ModelRequest } from "@smthrs/model"
+import { Model, type ModelEvent, type ModelRequest } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
 import { NodeHost, NodeRuntime } from "@smthrs/platform-node"
 import { BrowserEngine, BrowserRuntime, StoragePersistence, TabChannel, WebLock } from "@smthrs/platform-browser"
@@ -45,6 +45,16 @@ import { existsSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import * as TestDatabase from "../../db/TestDatabase.ts"
+import * as LiveMount from "../../worker/attach/LiveMount.ts"
+import { challengeFor } from "../../worker/attach/Attach.ts"
+import {
+  ATTACH_APPROVALS_ROUTE,
+  ATTACH_CAPABILITIES,
+  ATTACH_CLAIMS_ROUTE,
+  ATTACH_CONSENT_ROUTE,
+  ATTACH_INTENTS_ROUTE,
+  ATTACH_TOKENS_ROUTE,
+} from "../features/mcp/contract"
 import * as Actor from "../../worker/Actor.ts"
 import * as BranchApi from "../../worker/branch/BranchApi.ts"
 import * as Conversations from "../../worker/branch/Conversations.ts"
@@ -164,9 +174,9 @@ import { tempDirectory } from "./tempDirectory"
 const nodeRealm = ViewRealm.once(ViewRealm.loadNode)
 
 // ChatApi's real handler (worker/Chat.ts, and RepoApi for repositories, as worker/ChatApi.ts routes them), as the
-// browser reaches it, over the compose Postgres and Electric (`pnpm db:up`). Only the model is scripted: a test writes
-// each answer, which the device's agent (`chat/Answer`, run by a device opened with `answers`) reads as its cell. Every
-// request is signed in as a Member unless the ChatApi is opened signed out.
+// browser reaches it, over the compose Postgres and Electric (`pnpm db:up`). Tests answer admitted questions over the
+// live attachment routes. Prompt-flow tests can opt into a scripted model on their device. The browser's requests use
+// a Member session by default.
 //
 // Each instance gets its own schema (db/TestDatabase.ts), migrated by db/migrations and dropped when its scope closes,
 // so tests never touch the dev conversation. ChatApi's SQL reaches it through the connection's search_path; its shape
@@ -175,21 +185,6 @@ const nodeRealm = ViewRealm.once(ViewRealm.loadNode)
 //
 // The browser reaches ChatApi through `fetch`, which hands each request to the handler in this process. Faults are
 // never injected here: a test of an unhappy path gives the browser faulty services instead (src/test/faults.ts).
-
-/**
- * What a test writes into the answer to one question, as the model's reply to the agent: one cell that ends the run
- * with `ctx.done("<text>")`, the text streamed as it is said.
- */
-export interface Reply {
-  /** Streams `text` into the answer: the first time, the cell's opening and `ctx.done("` before it. */
-  readonly say: (text: string) => void
-  /** Closes the literal and the cell, reports usage and stops. */
-  readonly done: () => void
-  /** Ends the stream with a model error the agent doesn't retry: the answer settles failed, `model_error`. */
-  readonly fail: (error?: ModelError.ModelError) => void
-  /** Answers with one whole cell of `source`, such as a flow call, then reports usage and stops. */
-  readonly cell: (source: string) => void
-}
 
 /** Where a test ChatApi answers: the browser's origin in these tests. */
 export const CHATAPI_ORIGIN = "http://chatapi.test"
@@ -353,14 +348,16 @@ export class TestChatApi extends Context.Service<
     readonly origin: string
     /** The browser's way to ChatApi: each request handed to the handler in this process. */
     readonly fetch: typeof globalThis.fetch
-    /**
-     * The scripted answer to the first model request whose prompt includes `question` (the `nth`, from 0, when set),
-     * once the agent asks the model through ChatApi's model endpoint. The agent's prompt wraps the question with the
-     * conversation before it.
-     */
-    readonly answerTo: (question: string, nth?: number) => Effect.Effect<Reply>
-    /** How many model requests the agent made whose prompt includes `question`. */
-    readonly modelRequests: (question: string) => number
+    /** Attaches through LiveMount to the actual conversation where the question was admitted. */
+    readonly attachFor: (questionId: string) => Effect.Effect<{
+      readonly read: () => Promise<unknown>
+      readonly respond: (text: string) => Promise<{ readonly answered: boolean; readonly answerId?: string }>
+    }>
+    /** Supplies a cell to the nth scripted model request whose prompt includes the flow task. */
+    readonly scriptFlowReply: (task: string, source: string, nth?: number) => Effect.Effect<void>
+    /** How many requests to the scripted flow model had this text in their prompt. */
+    readonly flowModelRequests: (text: string) => number
+    readonly flowModel: Model.Model
     /** Reads status and journal stage counts only: no payloads, result text or credentials. */
     readonly answerDiagnostics: (answerId: string) => Effect.Effect<AnswerDiagnostics>
     /** The status of every answer to `POST /api/questions` the browser got, in order. */
@@ -515,18 +512,18 @@ export class TestChatApi extends Context.Service<
           )
         )
 
-        // The model: one queue of events per request, written by the test through `answerTo`.
+        // The opted-in flow model: one queue of events per request, written by the test through `scriptFlowReply`.
         const requests: Array<{
-          readonly question: string
+          readonly prompt: string
           readonly events: Queue.Queue<ModelEvent.ModelEvent, Model.ModelFailure | Cause.Done>
         }> = []
-        // The agent's task: the last part of its system prompt, the question wrapped with the conversation before it.
-        const questionOf = (request: ModelRequest.ModelRequest) => request.system.at(-1)?.text ?? ""
+        // The flow task is the last part of the model request’s system prompt.
+        const promptOf = (request: ModelRequest.ModelRequest) => request.system.at(-1)?.text ?? ""
         const model = Model.make({
           stream: (request) =>
             Stream.unwrap(
               Effect.map(Queue.unbounded<ModelEvent.ModelEvent, Model.ModelFailure | Cause.Done>(), (events) => {
-                requests.push({ question: questionOf(request), events })
+                requests.push({ prompt: promptOf(request), events })
                 return Stream.fromQueue(events)
               })
             )
@@ -855,8 +852,10 @@ export class TestChatApi extends Context.Service<
         for (const [name, person] of Object.entries(people)) signedIn.set(name, yield* signInOf(person, name))
         const roleChecks = SignIn.RoleChecks.of({ start: () => Effect.void })
 
+        const attach = LiveMount.make(database)
         const routed = Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
           const path = request.url.split("?")[0]!
+          if (LiveMount.handles(path)) return attach.fetch
           if (path === SESSION_ROUTE) {
             const named = request.headers[PERSON_HEADER]
             return signedIn.get(named !== undefined && Object.hasOwn(people, named) ? named : undefined)!.fetch.pipe(
@@ -981,7 +980,7 @@ export class TestChatApi extends Context.Service<
             })
           )
         const statuses: Array<number> = []
-        // Every other request and its status, for a test that fails waiting: `GET /api/answers/<id> 200`.
+        // Requests and response statuses, for diagnostics when a scripted flow request never arrives.
         const seen: Array<string> = []
         const fetch: typeof globalThis.fetch = async (input, init) => {
           const request = new Request(input, init)
@@ -995,62 +994,100 @@ export class TestChatApi extends Context.Service<
           return response
         }
 
-        const answerTo = (question: string, nth = 0) =>
+        const attachFor: TestChatApi["Service"]["attachFor"] = (questionId) =>
+          Effect.gen(function* () {
+            const target = yield* sql<{
+              readonly conversation: string
+              readonly branch: string
+              readonly repoId: string
+              readonly person: string
+            }>`
+              SELECT c.id AS conversation, b.name AS branch, b.repo_id AS "repoId", m.asked_by AS person
+              FROM messages m JOIN conversations c ON c.id = m.conversation_id
+              JOIN branches b ON b.id = c.branch_id
+              WHERE m.id = ${questionId} AND m.role = 'user'`.pipe(
+                Effect.flatMap(([row]) => row === undefined ? Effect.fail("question not stored") : Effect.succeed(row)),
+                Effect.retry({ schedule: Schedule.spaced("20 millis"), times: 750 }),
+                Effect.orDie,
+              )
+            return yield* Effect.promise(async () => {
+              const named = Object.entries(people).find(([, person]) => person.subject.id === target.person)?.[0]
+              const browser = new Headers({ origin })
+              if (named !== undefined) browser.set(PERSON_HEADER, named)
+              const post = async <A>(path: string, body: unknown, status: number, headers = new Headers()) => {
+                const requestHeaders = new Headers(headers)
+                requestHeaders.set("content-type", "application/json")
+                const response = await fetch(origin + path, {
+                  method: "POST", headers: requestHeaders, body: JSON.stringify(body),
+                })
+                const result: unknown = await response.json()
+                if (response.status !== status) {
+                  throw new Error(`Attachment ${path} returned ${response.status}: ${JSON.stringify(result)}`)
+                }
+                return result as A
+              }
+              const { reference } = await post<{ readonly reference: string }>(ATTACH_INTENTS_ROUTE, {
+                repo: target.repoId.slice("github/".length),
+                branch: target.branch,
+                conversation: target.conversation,
+                ceiling: ATTACH_CAPABILITIES,
+              }, 201, browser)
+              const verifier = crypto.randomUUID() + crypto.randomUUID()
+              const { claim, pairing } = await post<{ readonly claim: string; readonly pairing: string }>(
+                ATTACH_CLAIMS_ROUTE, { reference, client: "Codex", challenge: await challengeFor(verifier) }, 201,
+              )
+              await post(ATTACH_CONSENT_ROUTE, { reference }, 200, browser)
+              const { code } = await post<{ readonly code: string }>(ATTACH_APPROVALS_ROUTE, { claim, pairing }, 200, browser)
+              const { token, mcpPath } = await post<{ readonly token: string; readonly mcpPath: string }>(
+                ATTACH_TOKENS_ROUTE, { claim, code, verifier }, 200,
+              )
+              const bearer = new Headers({ authorization: "Bearer " + token })
+              const call = async <A>(name: string, args: unknown): Promise<A> => {
+                const { result, error } = await post<{ result?: { structuredContent?: A }; error?: unknown }>(mcpPath, {
+                  jsonrpc: "2.0", id: crypto.randomUUID(), method: "tools/call", params: { name, arguments: args },
+                }, 200, bearer)
+                if (result?.structuredContent === undefined) throw new Error(`MCP ${name} failed: ${JSON.stringify(error)}`)
+                return result.structuredContent
+              }
+              return {
+                read: () => call("conversation_read", {}),
+                respond: (text: string) => call<{ readonly answered: boolean; readonly answerId?: string }>(
+                  "conversation_respond", { questionId, text },
+                ),
+              }
+            })
+          })
+
+        const scriptFlowReply = (task: string, source: string, nth = 0) =>
           Effect.sync(() =>
-            Option.fromUndefinedOr(requests.filter((request) => request.question.includes(question))[nth])
+            Option.fromUndefinedOr(requests.filter((request) => request.prompt.includes(task))[nth])
           ).pipe(
-            Effect.flatMap(Option.match({ onNone: () => Effect.fail("not asked yet"), onSome: Effect.succeed })),
-            // Up to 20 s: the agent asks once its engine leads and its turn comes, later on a loaded machine.
+            Effect.flatMap(Option.match({ onNone: () => Effect.fail("flow model request not sent"), onSome: Effect.succeed })),
+            // Up to 20 s for the device's engine to lead and start the durable flow.
             Effect.retry({ schedule: Schedule.spaced("10 millis"), times: 2_000 }),
             Effect.catch(() =>
               Effect.die(
                 new Error(
-                  `The model was never asked this question; ${requests.length} model requests. ` +
+                  `The flow model did not receive this task; ${requests.length} model requests. ` +
                     `Requests: ${seen.filter((line) => !line.startsWith("GET /api/shapes/")).join(", ")}`
                 )
               )
             ),
-            Effect.map(({ events }): Reply => {
-              let opened = false
-              const delta = (text: string) => void Queue.offerUnsafe(events, { type: "text-delta", id: "t", text })
-              // The cell's opening, once: the agent reads the answer from the literal its reply passes to `ctx.done`.
-              const open = () => {
-                if (!opened) delta("```cell\nctx.done(\"")
-                opened = true
-              }
-              return {
-                say: (text) => {
-                  open()
-                  delta(JSON.stringify(text).slice(1, -1))
-                },
-                done: () => {
-                  open()
-                  delta("\")\n```")
-                  Queue.offerUnsafe(events, { type: "usage", inputTokens: 10, outputTokens: 20 })
-                  Queue.offerUnsafe(events, { type: "settle", stopReason: "stop" })
-                  Queue.endUnsafe(events)
-                },
-                cell: (source) => {
-                  delta("```cell\n" + source + "\n```")
-                  Queue.offerUnsafe(events, { type: "usage", inputTokens: 10, outputTokens: 20 })
-                  Queue.offerUnsafe(events, { type: "settle", stopReason: "stop" })
-                  Queue.endUnsafe(events)
-                },
-                // A refusal, which the agent's model step doesn't retry.
-                fail: (error = new ModelError.ModelError({ code: "content_policy", message: "scripted failure" })) =>
-                  void Queue.failCauseUnsafe(
-                    events,
-                    Cause.fail(error)
-                  )
-              }
+            Effect.map(({ events }) => {
+              Queue.offerUnsafe(events, { type: "text-delta", id: "t", text: "```cell\n" + source + "\n```" })
+              Queue.offerUnsafe(events, { type: "usage", inputTokens: 10, outputTokens: 20 })
+              Queue.offerUnsafe(events, { type: "settle", stopReason: "stop" })
+              Queue.endUnsafe(events)
             })
           )
 
         const service = TestChatApi.of({
           origin,
           fetch,
-          answerTo,
-          modelRequests: (question) => requests.filter((request) => request.question.includes(question)).length,
+          attachFor,
+          scriptFlowReply,
+          flowModelRequests: (text) => requests.filter((request) => request.prompt.includes(text)).length,
+          flowModel: model,
           answerDiagnostics: (answerId) =>
             Effect.gen(function*() {
               const [answer] = yield* sql<{ readonly status: string; readonly failure: string | null }>`
@@ -1336,14 +1373,17 @@ class LateCoordinator extends BrowserCollectionCoordinator {
   }
 }
 
-/** A device's own overrides of the host, and `agent`: the ChatApi whose questions its engine answers. */
+/** A device’s own host overrides and the ChatApi its flow engine calls. */
 export type DeviceOptions = Partial<Host> & {
   /**
-   * Runs the device's engine as the browser does: each tab's worker a leader in waiting over every client flow, the
-   * agent among them, reaching ChatApi `agent` through its `fetch`. Without it, no tab's worker ever leads, so nothing
-   * this device dispatches runs.
+   * Runs the device's engine as the browser does: each tab's worker tries to lead the client flows and reaches
+   * this ChatApi through its `fetch`. An omitted API gives the tab an idle worker.
    */
   readonly agent?: TestChatApi["Service"]
+  /** A test seat for drafting and running prompt flows. */
+  readonly flowModel?: Model.Model
+  /** A test seat for the timeline follower. */
+  readonly summaryModel?: Model.Model
   /** The device's SQLite file, such as one an older build's store was written to; a new one unless set. */
   readonly file?: string
   /** The device's outbox storage, such as one holding an older build's writes; empty unless set. */
@@ -1377,7 +1417,9 @@ export const idleWorker = (): BrowserEngine.WorkerLike & Endpoint => ({
  * of OPFS, and its HTTP through ChatApi's `fetch`. The worker is a `MessageChannel`: the leader reaches its
  * tab through one port (`TabPort`), and the tab answers on the other. Terminating it stops its leader.
  */
-const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineStore) => () => {
+const leaderWorker = (
+  api: TestChatApi["Service"], name: string, store: EngineStore, models: Pick<DeviceOptions, "flowModel" | "summaryModel">,
+) => () => {
   const started = performance.now()
   const waiting = setTimeout(() => {
     console.error("app.test.engine.await", { engine: store.id, backend: "sqlite", stage: "build", elapsedMs: Math.round(performance.now() - started) })
@@ -1395,7 +1437,7 @@ const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineSt
   const engine = BrowserRuntime.layer(
     // The flows' own schemas render their runs' values for the run page (decision 0014 §3), as the worker's do.
     { name, flows: clientFlows },
-    workerRegistrations(channel.port1, { origin: api.origin, name }).pipe(Layer.provide(http))
+    workerRegistrations(channel.port1, { origin: api.origin, name, ...models }).pipe(Layer.provide(http))
   ).pipe(
     Layer.provide(
       NodeRuntime.storage(store.filename).pipe(Layer.provide(Layer.merge(NodeHost.layer, NodeHost.NodeCrypto.layer)))
@@ -1449,7 +1491,7 @@ const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineSt
  */
 const outboxStorageLocks = new WeakMap<Map<string, string>, string>()
 
-export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceOptions = {}): NodeDevice => {
+export const nodeDevice = ({ agent, flowModel, summaryModel, file, outboxEntries, ...overrides }: DeviceOptions = {}): NodeDevice => {
   if (typeof navigator.locks?.request !== "function") throw new Error("nodeDevice requires native Web Locks; use the workspace's Node toolchain")
   const path = file ?? join(tempDirectory("mvp-device-"), "device.sqlite")
   const entries = outboxEntries ?? new Map<string, string>()
@@ -1512,7 +1554,10 @@ export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceO
     reopenRoute: () => {},
     // No person's click or key reaches a test device, so no tab opens from one; a test of the gesture gives its own.
     web: { policy: { localHttp: false, appOrigin: CHATAPI_ORIGIN }, openTab: () => false },
-    engineWorker: agent === undefined ? idleWorker : leaderWorker(agent, engineName, engineStore!),
+    engineWorker: agent === undefined ? idleWorker : leaderWorker(agent, engineName, engineStore!, {
+      ...(flowModel === undefined ? {} : { flowModel }),
+      ...(summaryModel === undefined ? {} : { summaryModel }),
+    }),
     engineName,
     // Sign-out's wipe: the device's SQLite file goes, and its outbox empties. The browser's reloads and deletes its
     // databases at the next boot; a tab here keeps any connection it holds open, so `stored` reads the new, empty file.
@@ -1624,9 +1669,8 @@ const sqliteFile = (path: string, turn: ReturnType<typeof deviceTurn>) => {
 }
 
 /**
- * A tab's deadlines, sync policy, page size and device (`AppOptions`). Without `host`, a device of its own, which runs
- * its agent (`nodeDevice`'s `agent`), as a browser's leading engine worker does, unless `answers` is `false`: then its
- * engine never leads, so a question it sends waits for a run to be recorded and nothing after it is sent.
+ * A tab's deadlines, sync policy, page size and device (`AppOptions`). Omitting `host` creates an isolated device.
+ * Setting `answers` to false gives that device an idle client-flow worker. Chat submission uses its own outbox.
  */
 export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">> & {
   /** A display-time service for transient UI assertions; engines and the server retain their own clocks. */

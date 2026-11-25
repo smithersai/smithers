@@ -1,8 +1,8 @@
 // Agent status on the tab, driven as React drives it: through the status layer's plain actions, reading its live
 // queries, with no React. Each device runs the browser's own layer (`appLayer`) on a Node device (src/test/chatApi.ts)
-// whose engine leads, against ChatApi's real handler over the compose Postgres and Electric. Only the model is
-// scripted. Proves decision 0015's first slice: the agent's question reaches the conversation's status, the header's
-// queries, `core/waits`, the toasts and the title on every device, and an answer from any of them resumes the run.
+// whose engine leads, against ChatApi over Postgres and Electric. Tests write run reports through the status API
+// and send replies through MCP. An agent's question reaches the conversation, the header's queries, `core/waits`,
+// and the title on every device. The attached agent can continue after a device records the person's answer.
 import { Effect, type ManagedRuntime, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import * as Conversations from "../../../worker/branch/Conversations.ts"
@@ -10,13 +10,14 @@ import { shaOf } from "../../../worker/test/branch.ts"
 import { Chat } from "../chat/chat"
 import { dispatches } from "../../flows/dispatch"
 import { nodeDevice, openFaultyTab, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { finishRun, personAnswered, recordedModelFailure, reportRun, waitOnPerson } from "../../test/attachedRun"
 import { plain } from "../../test/deviceFixture"
 import { EngineFaults } from "../../test/faults"
 import { renderHeaderStatus } from "./header-render"
 import { Status } from "./status"
 import { shown, StatusStore } from "./store"
 
-/** A test that drives devices' engines through model calls and sync: seconds each, more on a loaded machine. */
+/** A test that drives devices' engines through run reports and sync: seconds each, more on a loaded machine. */
 const ENGINE_WITHIN = 90_000
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -27,7 +28,7 @@ afterEach(async () => {
 const until = (assertion: () => void | Promise<void>, timeout = 60_000) =>
   vi.waitFor(assertion, { timeout, interval: 20 })
 
-/** ChatApi, from a first tab whose engine never leads: the devices below are the ones that answer. */
+/** ChatApi, from a first tab whose engine never leads: the devices below drive each person's actions. */
 const openApi = async () => {
   const runtime = openTestApp({ answers: false })
   runtimes.push(runtime)
@@ -74,19 +75,17 @@ const ask = async (device: Awaited<ReturnType<typeof openDevice>>, text: string)
   return asked.answerId
 }
 
-const askCell = (need: string) => `const heard = await ctx.call("app/agent/ask", ${need})\nconsole.log(JSON.stringify(heard))`
-
 describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
   test("shows on every device and in the title; an answer from another device resumes the run, and every view settles", async () => {
     const api = await openApi()
     const a = await openDevice(api)
     const b = await openDevice(api)
     const answerId = await ask(a, "Deploy the docs preview")
-    const first = await Effect.runPromise(api.answerTo("Deploy the docs preview"))
+    await reportRun(api, answerId, { status: "working" })
     // Working first: the answer streams.
     await until(() => expect(a.statusOf(answerId)?.state).toBe("working"))
     expect(a.latest()).toMatchObject({ id: answerId, state: "working" })
-    first.cell(askCell(`{ kind: "question", prompt: "Which branch should I deploy?", options: ["main", "docs-v2"] }`))
+    await waitOnPerson(api, answerId, { kind: "question", prompt: "Which branch should I deploy?", options: ["main", "docs-v2"] })
 
     for (const device of [a, b]) {
       await until(() => expect(device.statusOf(answerId)?.state).toBe("needs_you"))
@@ -123,11 +122,10 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     expect(b.statusOf(answerId)).toMatchObject({ draft: "", focus: 0 })
     expect(b.waits()).toEqual([expect.objectContaining({ runId: answerId })])
 
-    // The other device answers. Its engine doesn't hold the run; the device that does delivers it.
+    // The other device answers. The run receives the recorded answer and the attached agent replies.
     b.status.actions.answer(answerId, "docs-v2")
     expect(b.statusOf(answerId)?.sending).toBe(true)
-    const second = await Effect.runPromise(api.answerTo("Deploy the docs preview", 1))
-    second.cell(`ctx.done("Deploying docs-v2.")`)
+    await finishRun(api, answerId, "Deploying docs-v2.", true)
 
     for (const device of [a, b]) {
       await until(() => expect(device.statusOf(answerId)?.state).toBe("done"))
@@ -156,8 +154,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
       return { statusOf: (id: string) => statuses.toArray.find((row) => row.id === id), latest: () => latest.toArray[0] }
     }
     const answerId = await ask(a, "Deploy the branch preview")
-    const first = await Effect.runPromise(api.answerTo("Deploy the branch preview"))
-    first.cell(askCell(`{ kind: "question", prompt: "Which region?", options: ["us", "eu"] }`))
+    await waitOnPerson(api, answerId, { kind: "question", prompt: "Which region?", options: ["us", "eu"] })
 
     for (const device of [a, b]) {
       await until(() => expect(inBranch(device).statusOf(answerId)?.state).toBe("needs_you"))
@@ -173,11 +170,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     // Answer twice while the first is still sending: one answer goes.
     b.status.actions.answer(answerId, "eu")
     b.status.actions.answer(answerId, "eu")
-    const second = await Effect.runPromise(api.answerTo("Deploy the branch preview", 1)).catch(async (cause: unknown) => {
-      const diagnostics = await Effect.runPromise(api.answerDiagnostics(answerId)).catch(() => ({ unavailable: true }))
-      throw new Error(`Branch answer did not resume: ${JSON.stringify(diagnostics)}`, { cause })
-    })
-    second.cell(`ctx.done("Deploying to eu.")`)
+    await finishRun(api, answerId, "Deploying to eu.", true)
     for (const device of [a, b]) {
       await until(() => expect(inBranch(device).statusOf(answerId)?.state).toBe("done"))
       expect(inBranch(device).statusOf(answerId)?.answer).toEqual({ value: "eu" })
@@ -201,8 +194,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     a.status.actions.answer(answerId, true)
     a.status.actions.setDraft(answerId, "x")
     a.status.actions.focus(answerId)
-    const first = await Effect.runPromise(api.answerTo("Clean up old previews"))
-    first.cell(askCell(`{ kind: "approval", prompt: "Delete the stale preview docs-v1?" }`))
+    await waitOnPerson(api, answerId, { kind: "approval", prompt: "Delete the stale preview docs-v1?" })
     await until(() => expect(a.statusOf(answerId)?.state).toBe("needs_you"))
     expect(a.statusOf(answerId)).toMatchObject({ draft: "", focus: 0, wait: { kind: "approval", options: [] } })
     expect(a.store.local.tanstack.toArray).toEqual([])
@@ -211,8 +203,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
 
     // Approve, with a note.
     a.status.actions.answer(answerId, { approved: true, note: "Only docs-v1." })
-    const second = await Effect.runPromise(api.answerTo("Clean up old previews", 1))
-    second.cell(`ctx.done("Deleted docs-v1.")`)
+    await finishRun(api, answerId, "Deleted docs-v1.", true)
     await until(() =>
       expect(a.statusOf(answerId)).toMatchObject({ state: "done", answer: { value: { approved: true, note: "Only docs-v1." } } })
     )
@@ -224,8 +215,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     const a = await openDevice(api)
     const b = await openDevice(api, { faulty: true })
     const answerId = await ask(a, "Pick two regions")
-    const first = await Effect.runPromise(api.answerTo("Pick two regions"))
-    first.cell(askCell(`{ kind: "question", prompt: "First region?" }`))
+    await waitOnPerson(api, answerId, { kind: "question", prompt: "First region?" })
     // Both devices show the question before either answers: an answer to a question a device doesn't show yet is
     // nothing, and each device hears of it through its own sync.
     await until(() => expect(b.statusOf(answerId)?.state).toBe("needs_you"))
@@ -234,8 +224,8 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     await Effect.runPromise((await b.faults()).holdStarts)
     b.status.actions.answer(answerId, "us")
     a.status.actions.answer(answerId, "eu")
-    const second = await Effect.runPromise(api.answerTo("Pick two regions", 1))
-    second.cell(askCell(`{ kind: "question", prompt: "Second region?" }`))
+    await personAnswered(api, answerId)
+    await waitOnPerson(api, answerId, { kind: "question", prompt: "Second region?" })
     await until(() => expect(b.statusOf(answerId)).toMatchObject({ state: "needs_you", version: 2 }))
     b.status.actions.setDraft(answerId, "ap")
     // B's answer to the first question now goes, and is refused: that question closed.
@@ -249,17 +239,17 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     const api = await openApi()
     const a = await openDevice(api)
     const first = await ask(a, "First, deploy")
-    const reply = await Effect.runPromise(api.answerTo("First, deploy"))
-    reply.cell(askCell(`{ kind: "question", prompt: "Which branch?" }`))
+    await waitOnPerson(api, first, { kind: "question", prompt: "Which branch?" })
     await until(() => expect(a.statusOf(first)?.state).toBe("needs_you"))
     const second = await ask(a, "Then bump the version")
+    await reportRun(api, second, { status: "waiting", waiting: "turn" })
     await until(() => expect(a.statusOf(second)?.state).toBe("waiting"))
     expect(a.latest()).toMatchObject({ id: second, state: "waiting" })
     expect(a.waits().map((wait) => wait.runId)).toEqual([first])
 
     a.status.actions.answer(first, "main")
-    ;(await Effect.runPromise(api.answerTo("First, deploy", 1))).cell(`ctx.done("Deployed main.")`)
-    ;(await Effect.runPromise(api.answerTo("Then bump the version"))).cell(`ctx.done("Bumped.")`)
+    await finishRun(api, first, "Deployed main.", true)
+    await finishRun(api, second, "Bumped.")
     await until(() => expect(a.latest()).toMatchObject({ id: second, state: "done" }))
     expect(a.statusOf(first)?.state).toBe("done")
   })
@@ -268,7 +258,8 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     const api = await openApi()
     const a = await openDevice(api)
     const answerId = await ask(a, "Fail, please")
-    ;(await Effect.runPromise(api.answerTo("Fail, please"))).fail()
+    await reportRun(api, answerId, { status: "working" })
+    await recordedModelFailure(api, answerId)
     await until(() => expect(a.statusOf(answerId)?.state).toBe("failed"))
     expect(a.latest()).toMatchObject({ id: answerId, state: "failed" })
     const header = await renderHeaderStatus(a.chat, a.status)

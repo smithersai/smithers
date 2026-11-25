@@ -3,7 +3,7 @@ import { ConversationOwners } from "../conversations/owners"
 // a person's `/web` on the browser's own layer (`appLayer`) over a Node device whose engine leads, against ChatApi's
 // real handler over the compose Postgres and Electric (src/test/chatApi.ts). Branches are recorded as `POST
 // /api/branches` records them; another device asks in a branch's conversation through ChatApi's real questions route.
-// Only the model is scripted. Unhappy paths get the faulty ChatApi client and shape source (src/test/faults.ts).
+// Replies use the conversation's MCP attachment. Unhappy paths get the faulty ChatApi client and shape source.
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import { read as readTelemetry } from "../../test/otlp"
 import type { Outbox } from "@smthrs/effect-tanstack-db"
@@ -14,6 +14,8 @@ import * as ConversationPeople from "../../../worker/branch/ConversationPeople.t
 import * as Conversations from "../../../worker/branch/Conversations.ts"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { framable } from "../../../worker/test/pages.ts"
+import { FlowDispatch } from "../../flows/dispatch"
+import { recordedModelFailure } from "../../test/attachedRun"
 import { member, nodeDevice, openFaultyApp, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { QuestionFaults, ShapeRecovery } from "../../test/faults"
 import { AuthStore, SESSION } from "../auth/store"
@@ -153,12 +155,11 @@ describe("a branch's conversation", () => {
     await tab.chat.actions.show(branch)
     expect(tab.place()).toBe(branch)
 
-    const { answerId } = asked((await tab.chat.actions.ask("asked in the branch")))
+    const { questionId, answerId } = asked((await tab.chat.actions.ask("asked in the branch")))
     expect(tab.shown(branch)).toEqual(["user queued asked in the branch"])
     await until(() => expect(tab.shown(branch)).toEqual(["user done asked in the branch", "assistant streaming "]))
-    const reply = await tab.runtime.runPromise(tab.api.answerTo("asked in the branch"))
-    reply.say("Here.")
-    reply.done()
+    const attached = await tab.runtime.runPromise(tab.api.attachFor(questionId))
+    expect(await attached.respond("Here.")).toEqual({ answered: true, answerId })
     await until(() => expect(tab.shown(branch)).toEqual(["user done asked in the branch", "assistant done Here."]))
     expect(tab.store.opened(branch)?.messages.tanstack.get(answerId)?.conversationId).toBe(branch)
     expect(await tab.rows(branch)).toEqual(["asked in the branch", "Here."])
@@ -227,8 +228,8 @@ describe("a branch's conversation", () => {
     const branch = await tab.branch("feature/one")
     await tab.chat.actions.show(branch)
     const first = asked((await tab.chat.actions.ask("hello branch")))
-    const reply = await tab.runtime.runPromise(tab.api.answerTo("hello branch"))
-    reply.fail()
+    await until(() => expect(tab.shown(branch)).toEqual(["user done hello branch", "assistant streaming "]))
+    await recordedModelFailure(tab.api, first.answerId)
     await until(() => expect(tab.shown(branch)).toEqual(["user done hello branch", `assistant failed ${COULDNT_ANSWER}`]))
 
     tab.chat.actions.retryAnswer(first.answerId)
@@ -348,7 +349,7 @@ describe("delivering to a branch's conversation", () => {
     const shapes = await tab.runtime.runPromise(Effect.service(ShapeSource.Faults))
     const branch = await tab.branch("feature/one")
     await tab.chat.actions.show(branch)
-    // Rendering the branch starts its live query. A model request is not a receipt that this query has updated.
+    // Rendering the branch starts its live query, whose receipt is distinct from admission.
     tab.shown(branch)
     await until(() => expect(tab.history(branch)).toMatchObject({ opened: true }))
     // Electric's answers are held, so the device doesn't have the question when ChatApi says it has (200).
@@ -357,8 +358,8 @@ describe("delivering to a branch's conversation", () => {
 
     const { questionId } = asked((await tab.chat.actions.ask("sent twice")))
 
-    // The answer's run started: the send is past it, waiting for its own conversation to deliver the question.
-    await tab.runtime.runPromise(tab.api.answerTo("sent twice"))
+    // The duplicate was acknowledged, while its conversation still has to deliver the question.
+    await until(() => expect(tab.api.questionStatuses()).toEqual([202, 200]))
     await until(() => {
       expect(tab.store.asking.tanstack.has(questionId)).toBe(true)
       expect(tab.shown(branch)).toEqual(["user queued sent twice"])
@@ -581,20 +582,23 @@ describe("pages in a branch's conversation", () => {
     expect(rows.toArray).toEqual([])
   }, WITHIN)
 
-  test("the agent's page lands in its answer's conversation, however the asking tab moved", async () => {
+  test("the agent’s reply and page land in its answer’s conversation after the asking tab moves", async () => {
     const tab = await openWithPages()
     const [asking, moved] = [await tab.branch("feature/asking"), await tab.branch("feature/moved")]
     await tab.chat.actions.show(moved)
     await tab.chat.actions.show(asking)
-    asked((await tab.chat.actions.ask("Show me example.com")))
-    const call = await tab.runtime.runPromise(tab.api.answerTo("Show me example.com"))
+    const { questionId, answerId } = asked(await tab.chat.actions.ask("Show me example.com"))
+    const attached = await tab.runtime.runPromise(tab.api.attachFor(questionId))
 
-    // The person moves to another branch before the agent's call runs.
+    // The person moves to another branch before the reply and page are written.
     await tab.chat.actions.show(moved)
-    call.cell(`await ctx.call("app/web/open", { url: "https://example.com/" })`)
-    const done = await tab.runtime.runPromise(tab.api.answerTo("Show me example.com", 1))
-    done.say("Opened example.com.")
-    done.done()
+    const opened = await tab.runtime.runPromise(Effect.flatMap(FlowDispatch, (flows) => flows.dispatch(
+      "app/web/open",
+      { url: "https://example.com/", conversationId: moved },
+      { door: "agent", executionId: `${answerId}/chat/Respond@abc:1/call/1.0` },
+    )))
+    expect(opened).toMatchObject({ _tag: "Done", value: { shown: "page" } })
+    expect(await attached.respond("Opened example.com.")).toEqual({ answered: true, answerId })
 
     await until(() =>
       expect(tab.shown(asking)).toEqual([

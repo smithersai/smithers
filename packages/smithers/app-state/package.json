@@ -3,6 +3,9 @@
   "type": "module",
   "version": "1.0.0-rc.18",
   "private": true,
+  "smthrs": {
+    "group": "tooling"
+  },
   "license": "MIT",
   "description": "Pure reference state machine for the plan tree, chat, and shard sync envelope; mirrored and proven in Lean 4",
   "repository": {

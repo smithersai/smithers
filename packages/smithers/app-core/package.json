@@ -5,7 +5,7 @@
   "private": true,
   "license": "MIT",
   "smthrs": {
-    "group": "app"
+    "group": "tooling"
   },
   "description": "The one principal-bound Smithers core, and its four generated clients: MCP, CLI, SDK and GUI",
   "homepage": "https://github.com/smithersai/smithers",
@@ -34,8 +34,9 @@
     "./index": "./src/index.ts"
   },
   "scripts": {
-    "check": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
-    "test": "vitest"
+    "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest",
+    "build": "node scripts/build.mjs"
   },
   "dependencies": {
     "@smthrs/canonical": "1.0.0-rc.18",
@@ -50,5 +51,58 @@
   },
   "peerDependencies": {
     "effect": "4.1.1"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "types": "./dist/esm/index.d.ts",
+        "import": "./dist/esm/index.js",
+        "require": "./dist/cjs/index.js"
+      },
+      "./CauseReceipt": {
+        "types": "./dist/esm/CauseReceipt.d.ts",
+        "import": "./dist/esm/CauseReceipt.js",
+        "require": "./dist/cjs/CauseReceipt.js"
+      },
+      "./CliAdapter": {
+        "types": "./dist/esm/CliAdapter.d.ts",
+        "import": "./dist/esm/CliAdapter.js",
+        "require": "./dist/cjs/CliAdapter.js"
+      },
+      "./Core": {
+        "types": "./dist/esm/Core.d.ts",
+        "import": "./dist/esm/Core.js",
+        "require": "./dist/cjs/Core.js"
+      },
+      "./GuiAdapter": {
+        "types": "./dist/esm/GuiAdapter.d.ts",
+        "import": "./dist/esm/GuiAdapter.js",
+        "require": "./dist/cjs/GuiAdapter.js"
+      },
+      "./McpAdapter": {
+        "types": "./dist/esm/McpAdapter.d.ts",
+        "import": "./dist/esm/McpAdapter.js",
+        "require": "./dist/cjs/McpAdapter.js"
+      },
+      "./Principal": {
+        "types": "./dist/esm/Principal.d.ts",
+        "import": "./dist/esm/Principal.js",
+        "require": "./dist/cjs/Principal.js"
+      },
+      "./SdkAdapter": {
+        "types": "./dist/esm/SdkAdapter.d.ts",
+        "import": "./dist/esm/SdkAdapter.js",
+        "require": "./dist/cjs/SdkAdapter.js"
+      },
+      "./index": {
+        "types": "./dist/esm/index.d.ts",
+        "import": "./dist/esm/index.js",
+        "require": "./dist/cjs/index.js"
+      }
+    }
   }
 }

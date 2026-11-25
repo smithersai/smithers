@@ -35,6 +35,7 @@ import { Files } from "./features/files/files"
 import { Docs } from "./features/docs/docs"
 import { Domains } from "./features/domains/domains"
 import { PersonalModel } from "./features/personal-model/personalModel"
+import { Profile } from "./features/profile/profile"
 import { FirstRun } from "./features/first-run/firstRun"
 import { Mcp } from "./features/mcp/store"
 import { Pulls } from "./features/pulls/pulls"
@@ -129,6 +130,7 @@ test("renders the chat, sign-in, theme, repository, slash-command, views, web-pa
       Effect.service(PersonalModel),
       Effect.service(FirstRun),
       Effect.service(Mcp),
+      Effect.service(Profile),
     ]),
   )
   expect(views[0]).toHaveLength(layers.length)
@@ -452,6 +454,7 @@ test("start is the boundary: it builds the one runtime, renders the chat layer o
     "error",
     "focus",
     "focusin",
+    "keydown",
     "keydown",
     "keydown",
     "keydown",

@@ -25,7 +25,13 @@ import { Context, Effect, Exit, Fiber, Layer, type ManagedRuntime, Metric, Optio
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
-import * as Conversations from "../../../worker/branch/Conversations.ts"
+import { ImmutableCache } from "@smthrs/artifacts"
+import { FlowStarter } from "../../../worker/Flows.ts"
+import { repositoryOf } from "../../../worker/github/Config.ts"
+import * as RepoRoles from "../../../worker/github/RepoRoles.ts"
+import { agentActor, McpAuthServiceLive } from "../../../worker/mcp/Auth.ts"
+import { makeLiveDeps } from "../../../worker/mcp/LiveDeps.ts"
+import { makeMcpToolRegistry } from "../../../worker/mcp/Tools.ts"
 import * as Store from "../../../worker/github/Store.ts"
 import * as TriageStore from "../../../worker/github/TriageStore.ts"
 import { CHATAPI_ORIGIN, failingWorker, nodeDevice, openFaultyApp, openTab, openTestApp, type TabOptions, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
@@ -1463,31 +1469,43 @@ describe("sending", () => {
 })
 
 describe("doors", () => {
-  test("the agent's call opens the issue as the App, for the person; its door is the agent's", async () => {
-    // The default home conversation is a public copy without an installation: its access needs a visibility receipt.
-    // It is there before the app's first request: a tab that asks first (its watch of the home conversation, which it
-    // knows from the session answer) would have its role there decided from GitHub, which has no such repository, and
-    // kept for the role's freshness window.
-    const tab = await open({}, maya, (api) => Effect.runPromise(api.github.run(Effect.gen(function* () {
-      yield* Store.recordRepository(yield* Conversations.homeRepository, { private: false }, yield* Store.repositoryObservation)
-    }))))
+  test("the MCP issue tool admits a durable write as the App for the person", async () => {
+    const tab = await open({ answers: false })
     await tab.actions.open(OWNER, NAME)
-    const chat = await tab.runtime.runPromise(Effect.service(Chat))
-    const asked = (await chat.actions.ask("Open an issue about the crash"))
-    if (!asked.asked) throw new Error("not asked")
-    const first = await Effect.runPromise(tab.api.answerTo("Open an issue about the crash"))
-    first.cell(
-      `const opened = await ctx.call("issue/create", { repo: "${TEST_REPOSITORY}", title: "Crash on empty body" })\n` +
-        `console.log(JSON.stringify(opened))`,
-    )
-    const writeId = await pendingIssue(tab)
-    ;(await Effect.runPromise(tab.api.answerTo("Open an issue about the crash", 1))).cell(`ctx.done("Requested.")`)
-    await until(async () =>
-      expect(await server(tab.api).write(writeId)).toMatchObject({
-        _tag: "Some",
-        value: { via: "agent", op: "issue/create", payload: { title: "Crash on empty body", body: "" } },
+    const starts: Array<{ flow: string; executionId: string }> = []
+    const reply = await Effect.runPromise(tab.api.github.run(Effect.gen(function* () {
+      const database = Layer.succeed(SqlClient.SqlClient, yield* SqlClient.SqlClient)
+      const roles = yield* RepoRoles.make(database, { repository: repositoryOf(TEST_REPOSITORY), app: Option.none() })
+      const deps = yield* makeLiveDeps({
+        database,
+        reads: Option.none(),
+        repoCache: ImmutableCache.layerMemory(),
+        starter: FlowStarter.of({
+          start: (flow, { executionId }) => Effect.sync(() => void starts.push({ flow: flow._tag, executionId })),
+        }),
       })
-    )
+      const registry = yield* makeMcpToolRegistry(deps).pipe(Effect.provide(McpAuthServiceLive({ database, roles })))
+      const tokenId = crypto.randomUUID()
+      return yield* registry.callTool("issue_create", { title: "Crash on empty body", body: "" }, {
+        principal: Option.some({
+          tokenId, personId: maya.subject.id, login: "maya", clientName: "Codex", repoScope: REPO_ID,
+          scopes: ["mcp:write"], actor: agentActor(tokenId, maya.subject.id, "maya"),
+        }),
+        defaultRepo: { owner: OWNER, name: NAME },
+        requestId: "issue-create",
+        origin: tab.api.origin,
+      })
+    })))
+    const [receipt] = reply.content
+    expect(reply.content).toHaveLength(1)
+    if (receipt?.type !== "text") throw new Error("Expected an MCP write receipt")
+    const { writeId, status } = JSON.parse(receipt.text)
+    expect(status).toBe("pending")
+    expect(starts).toEqual([{ flow: "github/Write", executionId: writeExecutionId(writeId) }])
+    expect(await server(tab.api).write(writeId)).toMatchObject({
+      _tag: "Some",
+      value: { via: "agent", op: "issue/create", payload: { title: "Crash on empty body", body: "" } },
+    })
   }, WITHIN)
 
   test("/issue owner/repo <title> opens one with that title, and /comment owner/repo <n> <text> comments", async () => {

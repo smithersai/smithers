@@ -172,7 +172,7 @@ test("answer diagnostics work before any lazy engine has initialized", async () 
   } finally { await server.dispose() }
 })
 
-test("answer diagnostics retain a stalled local answer's run and journal without remote engines", async () => {
+test("answer diagnostics retain the pending and completed BYOA answer without opening an engine run", async () => {
   const server = openTestApi()
   let tab: ReturnType<typeof openTab> | undefined
   try {
@@ -181,21 +181,16 @@ test("answer diagnostics retain a stalled local answer's run and journal without
     const chat = await tab.runPromise(Effect.service(Chat))
     const asked = await chat.actions.ask("Hold this answer for diagnostics")
     if (!asked.asked) throw new Error("not asked")
-    const reply = await server.runPromise(api.answerTo("Hold this answer for diagnostics"))
-    const diagnostics = await server.runPromise(api.answerDiagnostics(asked.answerId))
-    expect(diagnostics.answer).toMatchObject({ status: "streaming", failure: null })
-    expect(diagnostics.engines).toHaveLength(1)
-    expect(diagnostics.engines[0]).toMatchObject({
-      status: "running",
-      attempts: expect.arrayContaining([expect.objectContaining({ state: expect.any(String), count: expect.any(Number) })]),
-      records: expect.arrayContaining([expect.objectContaining({ type: expect.any(String), count: expect.any(Number) })]),
+    const attached = await server.runPromise(api.attachFor(asked.questionId))
+    expect(await attached.read()).toMatchObject({
+      messages: expect.arrayContaining([expect.objectContaining({ id: asked.answerId, status: "streaming" })]),
     })
-    reply.say("Finished after inspection.")
-    reply.done()
+    expect(await server.runPromise(api.answerDiagnostics(asked.answerId)))
+      .toEqual({ answer: { status: "streaming", failure: null }, report: null, engines: [] })
+    expect(await attached.respond("Finished after inspection.")).toEqual({ answered: true, answerId: asked.answerId })
     await vi.waitFor(async () => {
-      const completed = await server.runPromise(api.answerDiagnostics(asked.answerId))
-      expect(completed.answer?.status).toBe("done")
-      expect(completed.engines).toEqual([expect.objectContaining({ status: "completed" })])
+      expect(await server.runPromise(api.answerDiagnostics(asked.answerId)))
+        .toEqual({ answer: { status: "done", failure: null }, report: null, engines: [] })
     }, { timeout: 15_000 })
   } finally {
     await tab?.dispose()

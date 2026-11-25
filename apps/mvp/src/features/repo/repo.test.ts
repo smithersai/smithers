@@ -208,12 +208,14 @@ describe("reading a ready repository", () => {
     await waitFor(() => expect(tab.file().file).toMatchObject({ state: "too-large", size: 600 * 1024 }))
     blob("nope.md")
     await waitFor(() => expect(tab.file().file).toMatchObject({ state: "failed", message: NOT_FOUND }))
-    expect(tab.histogramCount(blobLoadMs, { outcome: "text" })).toBe(1)
-    expect(tab.histogramCount(blobLoadMs, { outcome: "failed" })).toBe(1)
+    await waitFor(() => {
+      expect(tab.histogramCount(blobLoadMs, { outcome: "text" })).toBe(1)
+      expect(tab.histogramCount(blobLoadMs, { outcome: "failed" })).toBe(1)
+    })
     // A file loaded once is never fetched again.
     const reads = h.scripted.calls.filter((call) => call.startsWith("readFile")).length
     blob("src/index.ts")
-    expect(tab.file().file?.state).toBe("text")
+    await waitFor(() => expect(tab.file().file?.state).toBe("text"))
     expect(h.scripted.calls.filter((call) => call.startsWith("readFile"))).toHaveLength(reads)
   })
 
@@ -669,11 +671,14 @@ describe("reads RepoApi refuses", () => {
     tabs.push(tab)
     const client = await tab.runtime.runPromise(RepoClient)
     const head = await tab.runtime.runPromise(client.refs("octocat", "Spoon-Knife"))
+    // Reading refs starts a durable refresh. Let that earlier read finish before measuring forbidden reads.
+    await h.settled()
     const store = await tab.runtime.runPromise(RepoStore)
     await tab.runtime.runPromise(store.refuse(id))
     const key = refsKey(id, headSha, head.refsChangedAt)
     const stale = { id, owner: "octocat", name: "Spoon-Knife", defaultBranch: head.defaultBranch, headSha, refsKey: key, source: "refs" as const }
     const before = h.scripted.calls.length
+    expect(store.isRefused(id)).toBe(true)
     // A file tab can retain its previous metadata after the device has revoked this repository.
     await tab.runtime.runPromise(locate(stale, { ...root("octocat", "Spoon-Knife"), ref: headSha, path: "README.md" }))
     await tab.runtime.runPromise(ensureTree(stale, headSha, false))
@@ -683,7 +688,7 @@ describe("reads RepoApi refuses", () => {
       store.refs.get(key), store.trees.get(treeKey(id, headSha)), store.blobs.get(blobKey(id, headSha, "README.md")),
       store.abouts.get(id), store.heads.get(id),
     ]))) expect(row._tag).toBe("None")
-    expect(h.scripted.calls).toHaveLength(before)
+    expect(h.scripted.calls.slice(before)).toEqual([])
   })
 
   test("the read budget spent reads as paused; a gateway's error, as couldn't load", async () => {

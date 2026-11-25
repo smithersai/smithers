@@ -1,16 +1,15 @@
 import { SyncPolicy } from "@smthrs/effect-electric"
-import { Effect } from "effect"
+import { Model, type ModelEvent, type ModelRequest } from "@smthrs/model"
+import { Effect, Stream } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
-import { OPENAI_ORIGIN } from "../../../worker/personal/test/provider.ts"
-import { member, nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"
+import { nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
-import { PersonalModel } from "../personal-model/personalModel"
 import { revisionOf } from "./identity"
+import { SUMMARY_TOKENS } from "./steps"
 
-// The timeline's summaries on ChatApi's real routes and Postgres, with a person's own model (decision 0099) scripted
-// at the network: the production path whose calls drained a person's key on smithers.sh on 2026-10-25, when every tab,
-// device and fresh browser summarized the same messages again (docs/features/timeline.md#cost).
+// The timeline followers use a scripted summary seat and ChatApi's real Postgres ledger to deduplicate across devices
+// (docs/features/timeline.md#cost). The questions and answers travel through chat admission and a BYOA attachment.
 
 const opened: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => { for (const runtime of opened.reverse().splice(0)) await runtime.dispose() })
@@ -19,23 +18,25 @@ const WITHIN = 120_000
 
 /** What the agent answers: more than a label shows, so each answer needs one model summary. */
 const ANSWER = "The release retried twice.\nBoth recorded attempts kept the missing projection entry."
-/** The agent's reply: its REPL's one cell, which finishes with the answer. */
-const CELL = "```cell\nctx.done(" + JSON.stringify(ANSWER) + ")\n```"
 const SUMMARY = "Release retry check completed"
-const isSummary = (call: { readonly body: Record<string, unknown> } | undefined) => JSON.stringify(call?.body ?? {}).includes("navigation summary")
 
 test("an idle page and a page receiving N messages cause at most one summary call per message in total, across two tabs", async () => {
-  let api: TestChatApi["Service"] | undefined
-  const root = openTestApi({
-    actor: member,
-    provider: (index) => isSummary(api?.providerCalls[index]) ? { text: SUMMARY } : { text: CELL },
-  })
+  const root = openTestApi()
   opened.push(root)
-  api = await root.runPromise(Effect.service(TestChatApi))
-  const summaryCalls = () => api!.providerCalls.filter(isSummary).length
+  const api = await root.runPromise(Effect.service(TestChatApi))
+  const summaryCalls: Array<ModelRequest.ModelRequest> = []
+  const summaryModel = Model.make({
+    stream: request => {
+      summaryCalls.push(request)
+      return Stream.fromIterable<ModelEvent.ModelEvent>([
+        { type: "text-delta", id: "summary", text: SUMMARY },
+        { type: "settle", stopReason: "stop" },
+      ])
+    },
+  })
   /** A tab on its own device, as a second browser or a fresh test context is. */
   const tab = async () => {
-    const runtime = openTab(api!, { host: nodeDevice({ agent: api! }), retry: SyncPolicy.backoff({ initial: "20 millis", max: "50 millis" }) })
+    const runtime = openTab(api, { host: nodeDevice({ agent: api, summaryModel }), retry: SyncPolicy.backoff({ initial: "20 millis", max: "50 millis" }) })
     opened.push(runtime)
     const chat = await runtime.runPromise(Effect.service(Chat))
     const store = await runtime.runPromise(Effect.service(ChatStore))
@@ -45,20 +46,12 @@ test("an idle page and a page receiving N messages cause at most one summary cal
   }
 
   const a = await tab()
-  const model = await a.runtime.runPromise(Effect.service(PersonalModel))
-  for (const query of Object.values(model.queries)) query.startSyncImmediate()
-  expect(model.actions.save({
-    connections: [{ kind: "api_key", protocol: "openai-chat", baseUrl: `${OPENAI_ORIGIN}/v1/`, key: "sk-test-timeline-summaries", models: { fast: "gpt-test" } }],
-  })).toBe(true)
-  await until(() => expect(model.queries.form.toArray[0]).toMatchObject({ state: "done" }))
-
   const ask = async (text: string) => {
-    const asked = (await a.chat.actions.ask(text))
+    const asked = await a.chat.actions.ask(text)
     if (!asked.asked) throw new Error(asked.reason)
-    await until(() => expect(["done", "failed"]).toContain(a.answers().find(row => row.id === asked.answerId)?.status))
-    // A failed answer says which model calls it made, so a red run explains itself.
-    const calls = api!.providerCalls.map(call => JSON.stringify(call.body).slice(0, 160))
-    expect(a.answers().find(row => row.id === asked.answerId), JSON.stringify(calls)).toMatchObject({ status: "done", text: ANSWER })
+    const agent = await root.runPromise(api.attachFor(asked.questionId))
+    expect(await agent.respond(ANSWER)).toEqual({ answered: true, answerId: asked.answerId })
+    await until(() => expect(a.answers().find(row => row.id === asked.answerId)).toMatchObject({ status: "done", text: ANSWER }))
     return asked.answerId
   }
   /** Every answer `of` shows carries its one recorded summary, made from its content. */
@@ -66,8 +59,8 @@ test("an idle page and a page receiving N messages cause at most one summary cal
     const rows = of.answers().filter(row => ids.includes(row.id))
     expect(rows).toHaveLength(ids.length)
     // A missing summary says how far it got: the model calls made and the server's claims and records.
-    const claims = api!.spans.filter(span => span.name === "timeline.summary.claim").map(span => Object.fromEntries(span.attributes))
-    for (const row of rows) expect(row, JSON.stringify({ calls: summaryCalls(), claims })).toMatchObject({ summary: SUMMARY, summaryRevision: revisionOf(row) })
+    const claims = api.spans.filter(span => span.name === "timeline.summary.claim").map(span => Object.fromEntries(span.attributes))
+    for (const row of rows) expect(row, JSON.stringify({ calls: summaryCalls.length, claims })).toMatchObject({ summary: SUMMARY, summaryRevision: revisionOf(row) })
   })
 
   // An idle page: one finished exchange, then a second tab on another device opens the conversation and both sit.
@@ -76,7 +69,7 @@ test("an idle page and a page receiving N messages cause at most one summary cal
   const b = await tab()
   await summarized(b, [first])
   await a.runtime.runPromise(Effect.sleep("1500 millis"))
-  expect(summaryCalls()).toBe(2)
+  expect(summaryCalls.length).toBe(2)
 
   // The page receives four more messages (two exchanges), shown in both tabs.
   const more = [await ask("Did the deploy retry?"), await ask("Did the docs build retry?")]
@@ -84,10 +77,10 @@ test("an idle page and a page receiving N messages cause at most one summary cal
   await summarized(b, [first, ...more])
   await a.runtime.runPromise(Effect.sleep("1500 millis"))
   // Six messages arrived in all; one call each, however many tabs show them.
-  expect(summaryCalls()).toBe(6)
-  // Each call went to the person's own key, with no reasoning effort and a one-line budget.
-  for (const call of api.providerCalls.filter(isSummary)) {
-    expect(call.headers.get("authorization")).toBe("Bearer sk-test-timeline-summaries")
-    expect(call.body).not.toHaveProperty("reasoning_effort")
+  expect(summaryCalls.length).toBe(6)
+  for (const call of summaryCalls) {
+    expect(call.modelId).toBe("summary")
+    expect(call.params).toEqual({ maxTokens: SUMMARY_TOKENS })
+    expect(call.system.map(part => part.text).join(" ")).toContain("navigation summary")
   }
 }, WITHIN)

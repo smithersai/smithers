@@ -1,6 +1,6 @@
 // What the tab loads (decision 0011 §4, docs/features/flows.md#how-a-dispatch-runs): the page's module graph never
 // reaches @smthrs/agent or a Node built-in, and reaches @smthrs/std only through code intelligence's LanguageServer
-// seam. The agent runs in the engine worker, a bundle of its own (src/flows/engine.worker.ts →
+// seam. Prompt-flow agents run in the engine worker, a bundle of its own (src/flows/engine.worker.ts →
 // src/flows/registrations.ts); the tab dispatches by the registry's references. A tab that
 // imports the agent fails before it renders: Vite stubs `node:` modules in the page, and the stub throws when read.
 //
@@ -84,9 +84,9 @@ describe("the tab's modules", () => {
     expect(found.filter((edge) => languageServerSeam.has(edge)).sort()).toEqual([...languageServerSeam].sort())
   })
 
-  test("the check sees them where they are: the engine worker's registrations import the agent", async () => {
+  test("the engine worker imports the agent for prompt flows", async () => {
     expect(await reached("src/flows/registrations.ts")).toContainEqual(
-      expect.stringMatching(/^@smthrs\/agent <- src\/features\/agent\//),
+      "@smthrs/agent <- src/features/flows-ui/steps.ts",
     )
   })
 })

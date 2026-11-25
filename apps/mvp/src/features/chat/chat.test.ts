@@ -207,7 +207,7 @@ describe("asking", () => {
       expect(tab.store.asking.tanstack.has(questionId)).toBe(false)
       expect(tab.ids()).toEqual([questionId, answerId])
     })
-    expect(api.modelRequests("A question for my attached agent")).toBe(0)
+    expect(api.flowModelRequests("A question for my attached agent")).toBe(0)
   })
 
   test("Retry keeps a failed historical answer and asks the original question under new ids", async () => {

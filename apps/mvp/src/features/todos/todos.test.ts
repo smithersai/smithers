@@ -1,3 +1,4 @@
+import { TabRequests } from "../../flows/requests"
 import { reloadAfter } from "../../test/reloadTiming"
 import { deviceFrom, type Fixture, prepare } from "../../test/deviceFixture"
 import { deviceRegistry } from "../../device/registry"
@@ -110,7 +111,7 @@ const holdClient = (op: "commit" | "drop") => {
   return { layer, entered, release, settled }
 }
 
-type App = ManagedRuntime.ManagedRuntime<RepoStore | RepoClient | Todos | TodosStore | ChatStore | Chat | Commands | AuthStore | FlowDispatch | IssuesStore, unknown>
+type App = ManagedRuntime.ManagedRuntime<RepoStore | RepoClient | Todos | TodosStore | ChatStore | Chat | Commands | AuthStore | FlowDispatch | TabRequests | IssuesStore, unknown>
 
 /** A tab on `runtime`, with the TODOs layer's queries started as React starts them. */
 const tabOf = async (runtime: App) => {
@@ -161,7 +162,7 @@ type Tab = Awaited<ReturnType<typeof tabOf>>
 /** The app on a fresh ChatApi as `actor` (Maya unless set), its device's engine leading. */
 const open = async (options: TabOptions = {}, actor: Actor | null = maya) => {
   const runtime: ManagedRuntime.ManagedRuntime<
-    RepoClient | RepoStore | Todos | TodosStore | ChatStore | Chat | Commands | AuthStore | FlowDispatch | IssuesStore | TestChatApi,
+    RepoClient | RepoStore | Todos | TodosStore | ChatStore | Chat | Commands | AuthStore | FlowDispatch | TabRequests | IssuesStore | TestChatApi,
     unknown
   > = openTestApp(options, { actor })
   runtimes.push(runtime)
@@ -535,12 +536,15 @@ describe("the agent", () => {
     const chat = await tab.runtime.runPromise(Effect.service(Chat))
     const asked = (await chat.actions.ask("Make a TODO to retry webhooks"))
     if (!asked.asked) throw new Error("not asked")
-    const first = await Effect.runPromise(tab.api.answerTo("Make a TODO to retry webhooks"))
-    first.cell(
-      `const drafted = await ctx.call("todo/draft", { repo: "${TEST_REPOSITORY}", ` +
-        `prompt: "# Retry webhook delivery\\n\\nThree tries.", acceptance: ["three tries"] })\n` +
-        `console.log(JSON.stringify(drafted))`,
-    )
+    await tab.runtime.runPromise(Effect.gen(function* () {
+      yield* (yield* TabRequests).add(asked.answerId, "composer")
+      const flows = yield* FlowDispatch
+      expect(yield* flows.dispatch("todo/draft", {
+        repo: TEST_REPOSITORY,
+        prompt: "# Retry webhook delivery\n\nThree tries.",
+        acceptance: ["three tries"],
+      }, { door: "agent", executionId: asked.answerId + "/todo-draft" })).toMatchObject({ _tag: "Done" })
+    }))
     await until(() =>
       expect(draftsOfAnswer(asked.answerId, tab.drafts())).toEqual([
         expect.objectContaining({
@@ -555,7 +559,6 @@ describe("the agent", () => {
         }),
       ])
     )
-    ;(await Effect.runPromise(tab.api.answerTo("Make a TODO to retry webhooks", 1))).cell(`ctx.done("Drafted.")`)
     expect(other.drafts()).toEqual([])
     // Nothing reached the stack: the agent drafts, and only the person commits.
     expect(await sql(tab.api, `SELECT count(*)::int AS n FROM stack_ops`)).toEqual([{ n: 0 }])
@@ -574,25 +577,22 @@ describe("the agent", () => {
     expect(await sql(tab.api, `SELECT via FROM stack_ops`)).toEqual([{ via: "person" }])
   }, WITHIN)
 
-  test("can't commit or drop: its catalog has neither, so its call reaches no tab, outbox or stack", async () => {
+  test("the agent door cannot commit or drop a TODO", async () => {
     const tab = await open()
     await tab.actions.open(OWNER, NAME)
     await committed(tab, "Keep me", 1)
-    const chat = await tab.runtime.runPromise(Effect.service(Chat))
-    const question = "Commit a TODO and drop T1"
-    const asked = (await chat.actions.ask(question))
-    if (!asked.asked) throw new Error("not asked")
-    ;(await Effect.runPromise(tab.api.answerTo(question))).cell(
-      `const tried = []\n` +
-        `for (const [flow, input] of [["todo/commit", { repo: "${TEST_REPOSITORY}", title: "Mine", prompt: "By the agent" }], ` +
-        `["todo/drop", { repo: "${TEST_REPOSITORY}", number: 1 }]]) {\n` +
-        `  try { await ctx.call(flow, input); tried.push("ran") } catch { tried.push("refused") }\n` +
-        `}\n` +
-        `console.log(JSON.stringify(tried))`,
-    )
-    const second = await Effect.runPromise(tab.api.answerTo(question, 1))
-    second.cell(`ctx.done("No.")`)
-    await until(() => expect(tab.api.modelRequests(question)).toBe(2))
+    await tab.runtime.runPromise(Effect.gen(function* () {
+      const flows = yield* FlowDispatch
+      const commit = yield* Effect.result(flows.dispatch("todo/commit", {
+        repo: TEST_REPOSITORY, title: "Mine", prompt: "By the agent",
+      }, { door: "agent" }))
+      const drop = yield* Effect.result(flows.dispatch("todo/drop", {
+        repo: TEST_REPOSITORY, number: 1,
+      }, { door: "agent" }))
+      for (const refused of [commit, drop]) {
+        expect(refused).toMatchObject({ _tag: "Failure", failure: { reason: "refused", refusal: "person_only" } })
+      }
+    }))
     expect(await sql(tab.api, `SELECT op FROM stack_ops ORDER BY created_at`)).toEqual([{ op: "commit" }])
     expect(tab.store.sending.tanstack.size + tab.store.requested.tanstack.size).toBe(0)
     expect(tab.rows()).toEqual([expect.objectContaining({ number: 1, state: "queued" })])
@@ -656,6 +656,8 @@ describe("from an issue", () => {
     await tab.actions.open(OWNER, NAME)
     await tab.actions.commit(drafted(tab, "Private title", "Private prompt"))
     await until(() => expect(tab.stack().todos).toEqual([expect.objectContaining({ number: 1 })]))
+    // Remote settlement can arrive before the device finishes removing the committed draft.
+    await until(() => expect(tab.drafts()).toEqual([]))
     tab.actions.fromIssue(OWNER, NAME, 7)
     await until(() => expect(draftsOfRepo(REPO_ID, tab.drafts())).toEqual([expect.objectContaining({ issue: 7 })]))
     await tab.runtime.runPromise(Effect.flatMap(IssuesStore, (issues) => issues.forRepo(REPO_ID)))
@@ -746,16 +748,20 @@ describe("from an issue", () => {
     const question = "Make a TODO from issue 8"
     const asked = (await chat.actions.ask(question))
     if (!asked.asked) throw new Error("not asked")
-    ;(await Effect.runPromise(tab.api.answerTo(question))).cell(
-      `console.log(JSON.stringify(await ctx.call("todo/issue", { repo: "${TEST_REPOSITORY}", issue: 8, ` +
-        `prompt: "# Retry webhook delivery\\n\\nThree tries." })))`,
-    )
+    await tab.runtime.runPromise(Effect.gen(function* () {
+      yield* (yield* TabRequests).add(asked.answerId, "composer")
+      const flows = yield* FlowDispatch
+      expect(yield* flows.dispatch("todo/issue", {
+        repo: TEST_REPOSITORY,
+        issue: 8,
+        prompt: "# Retry webhook delivery\n\nThree tries.",
+      }, { door: "agent", executionId: asked.answerId + "/todo-issue" })).toMatchObject({ _tag: "Done" })
+    }))
     await until(() =>
       expect(draftsOfAnswer(asked.answerId, tab.drafts())).toEqual([
         expect.objectContaining({ title: "Retry webhook delivery", prompt: "# Retry webhook delivery\n\nThree tries.", issue: 8 }),
       ])
     )
-    ;(await Effect.runPromise(tab.api.answerTo(question, 1))).cell(`ctx.done("Drafted.")`)
     expect(await sql(tab.api, `SELECT count(*)::int AS n FROM stack_ops`)).toEqual([{ n: 0 }])
   }, WITHIN)
 

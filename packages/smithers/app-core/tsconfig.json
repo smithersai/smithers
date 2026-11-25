@@ -15,7 +15,10 @@
     "erasableSyntaxOnly": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "noEmit": true,
+    "rootDir": "src",
+    "outDir": "dist/esm",
+    "declaration": true,
+    "rewriteRelativeImportExtensions": true,
     "types": []
   },
   "include": ["src/**/*"]

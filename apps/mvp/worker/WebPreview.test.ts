@@ -8,7 +8,7 @@ import { describe, expect, test } from "vitest"
 import { MAX_PREVIEW_BODY_BYTES } from "../src/features/web/contract.ts"
 import * as Actor from "./Actor.ts"
 import { harness, recorded, testFile } from "./test/harness.ts"
-import { framable, outsideWeb, type Page, refusing } from "./test/pages.ts"
+import { framable, iconPage, inlineIcon, outsideWeb, type Page, refusing } from "./test/pages.ts"
 import * as WebPreview from "./WebPreview.ts"
 
 const runtime = testFile("web_preview")
@@ -17,6 +17,8 @@ const member: Actor.Actor = { subject: { kind: "person", id: "person-member" }, 
 
 const ALLOWS = "https://allows.example/guide"
 const DENIES = "https://denies.example/"
+const ALLOWS_ICON = "https://allows.example/icon.png"
+const DENIES_ICON = "https://denies.example/favicon.ico"
 
 /**
  * ChatApi as `actor` (a Member unless `null`), with `pages` as the outside web and `config` as its environment. `asked`
@@ -32,7 +34,7 @@ const open = async (
 ) => {
   const asked: Array<string> = []
   const h = await harness(runtime, () => Stream.empty, {
-    fetch: outsideWeb(options.pages ?? { [ALLOWS]: framable(), [DENIES]: refusing() }, asked),
+    fetch: outsideWeb(options.pages ?? { [ALLOWS]: framable(), [DENIES]: refusing(), [ALLOWS_ICON]: iconPage, [DENIES_ICON]: iconPage }, asked),
     ...(options.actor === null ? {} : { actor: options.actor ?? member }),
     ...(options.config === undefined ? {} : { config: options.config }),
     ...(options.sessions === undefined ? {} : { sessions: options.sessions }),
@@ -52,6 +54,8 @@ describe("POST /api/web/preview", () => {
       pages: {
         [ALLOWS]: framable(),
         [DENIES]: refusing(),
+        [ALLOWS_ICON]: iconPage,
+        [DENIES_ICON]: iconPage,
         "https://ancestors.example/": { headers: { "content-security-policy": "frame-ancestors http://chat.test" } },
         "https://elsewhere.example/": { headers: { "content-security-policy": "frame-ancestors https://chat.test" } },
       },
@@ -64,7 +68,7 @@ describe("POST /api/web/preview", () => {
       status: 200,
       title: "Frames welcome",
       description: "A page that lets others frame it.",
-      icon: "https://allows.example/icon.png",
+      icon: inlineIcon,
     })
     expect(await (await check({ url: DENIES, mode: "embed" })).json()).toEqual({
       framing: "refused",
@@ -72,7 +76,7 @@ describe("POST /api/web/preview", () => {
       status: 200,
       title: "Frames refused",
       description: "A page that never shows in a frame.",
-      icon: "https://denies.example/favicon.ico",
+      icon: inlineIcon,
     })
     // The app is http://chat.test here: the page's frame-ancestors is matched against it.
     expect(await (await check({ url: "https://ancestors.example/", mode: "embed" })).json()).toMatchObject({
@@ -97,33 +101,37 @@ describe("POST /api/web/preview", () => {
   })
 
   test("a page that can't be read is an answer, not a failure", async () => {
-    const { check, asked } = await open({ pages: { "https://broken.example/": { status: 500 } } })
+    const brokenIcon = "https://broken.example/favicon.ico"
+    const { check, asked } = await open({ pages: {
+      "https://broken.example/": { status: 500 },
+      [brokenIcon]: iconPage,
+    } })
     expect(await (await check({ url: "https://broken.example/", mode: "embed" })).json()).toEqual({
       framing: "unknown",
       reason: "status",
       status: 500,
-      icon: "https://broken.example/favicon.ico",
+      icon: inlineIcon,
     })
     expect(await (await check({ url: "https://offline.example/", mode: "embed" })).json()).toEqual({
       framing: "unknown",
       reason: "unreachable",
     })
-    expect(asked).toEqual(["https://broken.example/", "https://offline.example/"])
+    expect(asked).toEqual(["https://broken.example/", brokenIcon, "https://offline.example/"])
   })
 
   test("keeps a page's answer for WEB_PAGE_CHECK_KEPT, then asks the page again", async () => {
     const { h, check, asked } = await open()
     expect((await check({ url: ALLOWS, mode: "embed" })).status).toBe(200)
     expect(await (await check({ url: ALLOWS, mode: "tab" })).json()).toMatchObject({ framing: "allowed" })
-    expect(asked).toEqual([ALLOWS])
+    expect(asked).toEqual([ALLOWS, ALLOWS_ICON])
     expect(h.line("chat.web.preview").map((line) => line.annotations.cached)).toEqual([false, true])
 
     // Kept for a millisecond, the answer is asked again once a millisecond has passed.
     const brief = await open({ config: { WEB_PAGE_CHECK_KEPT: "1 millis" } })
-    for (let request = 0; brief.asked.length < 2 && request < 50; request++) {
+    for (let request = 0; brief.asked.length < 4 && request < 50; request++) {
       expect((await brief.check({ url: ALLOWS, mode: "embed" })).status).toBe(200)
     }
-    expect(brief.asked).toEqual([ALLOWS, ALLOWS])
+    expect(brief.asked).toEqual([ALLOWS, ALLOWS_ICON, ALLOWS, ALLOWS_ICON])
   })
 
   test("a zero cache duration asks the real page on every request", async () => {
@@ -210,7 +218,7 @@ describe("POST /api/web/preview", () => {
     for (const role of ["guest", null] as const) {
       const stranger = await open({ actor: { subject: { kind: "person", id: `person-${role ?? "none"}` }, role } })
       expect((await stranger.check({ url: ALLOWS, mode: "embed" })).status, String(role)).toBe(200)
-      expect(stranger.asked, String(role)).toHaveLength(1)
+      expect(stranger.asked, String(role)).toEqual([ALLOWS, ALLOWS_ICON])
     }
   })
 

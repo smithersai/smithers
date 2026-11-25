@@ -1,6 +1,5 @@
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
-import { Outbox } from "@smthrs/effect-tanstack-db"
-import { Effect, Metric } from "effect"
+import { Effect } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { failingWorker, nodeDevice, openFaultyApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { failRestore } from "../../test/restoreFailure"
@@ -64,15 +63,13 @@ test("asking: asked, stored and not sent, one trace from the ask through the out
   tab.actions.openComposer("button")
   const stored = (await tab.actions.ask(`What is ${secret}?`))
   if (!stored.asked) throw new Error("not asked")
-  const reply = await tab.onApi(tab.api.answerTo(`What is ${secret}?`))
-  reply.say(`It is ${secret}.`)
-  reply.done()
-  // The device's agent settles the answer: its engine's run, on a loaded machine, can take a while.
+  const attached = await tab.onApi(tab.api.attachFor(stored.questionId))
+  expect(await attached.respond(`It is ${secret}.`)).toEqual({ answered: true, answerId: stored.answerId })
   await until(() => expect(shown(tab)).toEqual(["user done", "assistant done"]), 15_000).catch(async (cause: unknown) => {
     const diagnostics = await tab.onApi(tab.api.answerDiagnostics(stored.answerId))
     throw new Error(`Answer did not settle: ${JSON.stringify(diagnostics)}`, { cause })
   })
-  expect(tab.api.modelRequests(`What is ${secret}?`)).toBe(1)
+  expect(tab.api.flowModelRequests(`What is ${secret}?`)).toBe(0)
   tab.fault(tab.questions.failNext("bad_request"))
   const refused = (await tab.actions.ask(`And ${secret} again?`))
   if (!refused.asked) throw new Error("not asked")
@@ -140,20 +137,19 @@ test("asking: asked, stored and not sent, one trace from the ask through the out
   expect(tab.api.telemetry.map(({ body }) => body).join("\n")).not.toContain(secret)
 })
 
-test("an answer not started: ChatApi took the question, but this tab has no engine to record its run, so it is sent again", async () => {
+test("a device whose engine cannot launch still sends the question once and receives a BYOA reply", async () => {
   const tab = await open({ host: nodeDevice({ engineWorker: failingWorker }) })
-  const asked = (await tab.actions.ask(`What is ${sentinel()}?`))
+  const question = `What is ${sentinel()}?`
+  const asked = await tab.actions.ask(question)
   if (!asked.asked) throw new Error("not asked")
-  const retried = Metric.withAttributes(Outbox.attempts, { name: "ask", outcome: "retry" })
-  await until(() => expect(tab.runtime.runSync(Metric.value(retried)).count).toBeGreaterThanOrEqual(1), 10_000)
+  const attached = await tab.onApi(tab.api.attachFor(asked.questionId))
+  expect(await attached.respond("An external agent answered.")).toEqual({ answered: true, answerId: asked.answerId })
+  await until(() => expect(shown(tab)).toEqual(["user done", "assistant done"]), 15_000)
+  expect(tab.api.flowModelRequests(question)).toBe(0)
   const records = await tab.exported()
-
-  expect(records.log("answer not started")).toContainEqual(
-    expect.objectContaining({
-      severity: "Warn",
-      attributes: { feature: "chat", questionId: asked.questionId, answerId: asked.answerId, reason: "unavailable" },
-    }),
-  )
+  expect(records.point("outbox_attempts", { name: "ask", outcome: "sent" })?.value).toBe(1)
+  expect(records.point("outbox_attempts", { name: "ask", outcome: "retry" })).toBeUndefined()
+  expect(records.log("answer not started")).toEqual([])
 })
 
 test("the connection and the window: offline, retried and up again, earlier messages shown, and their metrics", async () => {

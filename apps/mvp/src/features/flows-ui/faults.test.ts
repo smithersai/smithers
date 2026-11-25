@@ -34,7 +34,7 @@ const open = async (options: TabOptions = {}, route?: { current: string }) => {
   const app = openFaultyApp()
   runtimes.push(app)
   const api = await app.runPromise(Effect.service(TestChatApi))
-  const host = nodeDevice({ agent: api, ...(route === undefined ? {} : { pathname: () => route.current }) })
+  const host = nodeDevice({ agent: api, flowModel: api.flowModel, ...(route === undefined ? {} : { pathname: () => route.current }) })
   const tab = openFaultyTab(
     api,
     { ...options, host },
@@ -66,7 +66,7 @@ const open = async (options: TabOptions = {}, route?: { current: string }) => {
     /** How many dispatches of `flow` this tab made that the engine never ran. */
     refused: (flow: string) =>
       tab.runSync(Metric.value(Metric.withAttributes(dispatches, { flow, door: "button", outcome: "error" }))).count,
-    reply: async (task: string, source: string) => (await app.runPromise(api.answerTo(task))).cell(source),
+    reply: async (task: string, source: string) => app.runPromise(api.scriptFlowReply(task, source)),
   }
 }
 

@@ -35,6 +35,8 @@ describe("routeTemplate", () => {
     expect(routeTemplate("/api/runners/audit")).toBe("/api/runners/audit")
     expect(routeTemplate("/api/auth/broker/start")).toBe("/api/auth/broker/start")
     expect(routeTemplate("/api/auth/broker/exchange")).toBe("/api/auth/broker/exchange")
+    expect(routeTemplate("/api/attach/intents")).toBe("/api/attach/intents")
+    expect(routeTemplate("/api/attach/mcp/repos/sessions/runs/feature")).toBe("/api/attach/mcp/:owner/:repo/:branch")
   })
 
   it("keeps every route the app and ChatApi name as they are", () => {

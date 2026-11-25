@@ -2,8 +2,8 @@ import { PendingSnapshot } from "@smthrs/platform-browser"
 // Your own flows and this device's runs from a tab (docs/features/flows.md#the-browser, docs/features/runs.md): the
 // browser's own layer (`appLayer`) on a Node device whose engine leads, against ChatApi's real handler and the compose
 // Postgres and Electric (src/test/chatApi.ts). A person drafts a flow, answers its question, saves it, runs it, watches
-// its run page, stops a run and retries one, and opens, edits and saves its code. The model is the only scripted piece:
-// each model call waits for the test's answer.
+// its run page, stops a run and retries one, and opens, edits and saves its code. The host supplies a scripted
+// seat for drafting and running prompt flows.
 import { Deferred, Effect, Layer, ManagedRuntime } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"
@@ -51,7 +51,7 @@ const open = async () => {
   const app = openTestApi()
   runtimes.push(app)
   const api = await app.runPromise(Effect.service(TestChatApi))
-  const host = nodeDevice({ agent: api })
+  const host = nodeDevice({ agent: api, flowModel: api.flowModel })
   const tab = openTab(api, { host })
   runtimes.push(tab)
   const flows = await tab.runPromise(Effect.service(FlowsUi))
@@ -66,9 +66,9 @@ const open = async () => {
     flows,
     runs,
     went,
-    /** Answers the `nth` model call whose task includes `task` with one cell of `source`. */
+    /** Answers the `nth` prompt flow seat call whose task includes `task` with one cell of `source`. */
     reply: async (task: string, source: string, nth?: number) =>
-      (await app.runPromise(api.answerTo(task, nth))).cell(source),
+      app.runPromise(api.scriptFlowReply(task, source, nth)),
     draft: () => flows.queries.draft.toArray[0],
     page: () => runs.queries.page.toArray[0],
     inspection: () => runs.queries.page.toArray[0]?.page.inspection as Inspection | undefined,
@@ -537,7 +537,7 @@ test("a fresh persisted device opens a ready draft written through the API befor
     }),
   })
   expect(saved.status).toBe(200)
-  const runtime = openTab(t.api, { host: nodeDevice({ agent: t.api }) })
+  const runtime = openTab(t.api, { host: nodeDevice({ agent: t.api, flowModel: t.api.flowModel }) })
   runtimes.push(runtime)
   const flows = await runtime.runPromise(Effect.service(FlowsUi))
   flows.queries.draft.startSyncImmediate()
@@ -728,7 +728,7 @@ describe("a flow of your own, from a tab", () => {
     // Round 1 drafts with that answer: its model request is the one that says so.
     await t.reply("The person answered:\n- Which greeting? Hello", `ctx.done(${JSON.stringify(drafted())})`)
     await until(() => expect(t.draft()?.draft).toMatchObject({ status: "ready", round: 1 }))
-    expect(t.api.modelRequests("- Say it twice?")).toBe(0)
+    expect(t.api.flowModelRequests("- Say it twice?")).toBe(0)
     await awaitEditorWrites()
     expect(t.host.stored("flow-answers")).toBe(0)
   }, WITHIN)
@@ -763,7 +763,7 @@ describe("a flow of your own, from a tab", () => {
     const draftId = t.went("/app/flows/drafts/")!.split("/").at(-1)!
     await t.reply("The flow's name: hello", `ctx.done(${JSON.stringify(drafted())})`)
     await until(() => expect(t.flows.queries.drafts.toArray.map((draft) => [draft.id, draft.status])).toEqual([[draftId, "ready"]]))
-    expect(t.api.modelRequests("The flow's name: hello")).toBe(1)
+    expect(t.api.flowModelRequests("The flow's name: hello")).toBe(1)
     expect(new Set(host(t).navigated.filter((path) => path.startsWith("/app/flows/drafts/")))).toEqual(new Set([draftPath(draftId)]))
     // The form took a new draft id for the next one.
     expect(t.flows.queries.form.toArray[0]).toMatchObject({ name: "", request: "" })
@@ -780,7 +780,7 @@ describe("a flow of your own, from a tab", () => {
     const draftId = t.went("/app/flows/drafts/")!.split("/").at(-1)!
     await t.flows.actions.openDraft(draftId)
     // The drafting model call is in flight and never answered; the round's row says drafting.
-    await until(() => expect(t.api.modelRequests("The flow's name: hello")).toBe(1))
+    await until(() => expect(t.api.flowModelRequests("The flow's name: hello")).toBe(1))
     await until(() => expect(t.draft()?.draft).toMatchObject({ id: draftId, status: "drafting", round: 0 }))
     // Nothing settled yet: the card reads Drafting, with no Draft again.
     await until(() => expect(t.flows.queries.round.toArray[0]).toMatchObject({ runId: `${draftId}:0`, status: "running" }))
@@ -810,7 +810,7 @@ describe("a flow of your own, from a tab", () => {
     await until(() => expect(t.went("/app/flows/drafts/")).toBeDefined())
     const draftId = t.went("/app/flows/drafts/")!.split("/").at(-1)!
     await t.flows.actions.openDraft(draftId)
-    await until(() => expect(t.api.modelRequests("The flow's name: hello")).toBe(1))
+    await until(() => expect(t.api.flowModelRequests("The flow's name: hello")).toBe(1))
     await until(() => expect(t.flows.queries.drafts.toArray.map((draft) => draft.id)).toEqual([draftId]))
     const before = host(t).navigated.length
     t.flows.actions.deleteDraft(draftId)
@@ -853,7 +853,7 @@ describe("a flow of your own, from a tab", () => {
     const runId = decodeURIComponent(t.went(`${RUNS_PATH}/`)!.slice(RUNS_PATH.length + 1))
     await t.runs.actions.openRun(runId)
     // The model call is in flight and never answered: the run is live.
-    await until(() => expect(t.api.modelRequests(RUN_TASK)).toBe(1))
+    await until(() => expect(t.api.flowModelRequests(RUN_TASK)).toBe(1))
     await until(() => expect(t.inspection()?.run.status).toBe("running"))
     // A live run has nothing to retry yet.
     t.runs.actions.retry("pinned")
@@ -864,7 +864,8 @@ describe("a flow of your own, from a tab", () => {
     await until(() => expect(t.page()?.view).toMatchObject({ acting: null, refusal: null }))
     t.runs.actions.resume()
     await until(() => expect(t.page()?.view.refusal).toBe("settled"))
-    // A run this device's engine never held reads as on another device.
+    // The cloud engine is available and has never held this run either.
+    await t.runtime.runPromise(t.api.remote.run(Effect.void))
     await t.runs.actions.openRun("nothing-here")
     await until(() => expect(t.page()?.page.state).toBe("not_found"))
     // Nothing read of it: no act on it.
@@ -936,7 +937,7 @@ describe("a flow's code, from a tab", () => {
     await ran(3)
     await until(() => expect(t.inspection()?.run.status).toBe("failed"))
     expect(JSON.stringify(t.inspection()!.run.result)).toContain("FlowNeedsSandbox")
-    expect(t.api.modelRequests(RUN_TASK)).toBe(1)
+    expect(t.api.flowModelRequests(RUN_TASK)).toBe(1)
   }, WITHIN)
 
   test("a flow you don't have reads not found; a read that ends after the tab moved on changes nothing", async () => {

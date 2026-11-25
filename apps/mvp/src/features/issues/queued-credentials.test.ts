@@ -22,7 +22,7 @@ test("an expired version-2 queued agent write migrates, renews, delivers as the 
   const github = await githubHarness(server, { sessions: signedIn(alice) })
   const keys = await Effect.runPromise(SessionKeys.make(Redacted.make(RUN_CREDENTIAL_SECRET)))
   const authority = RunCredentials.make({ keys, person: () => Effect.succeedSome(alice) })
-  const parent = Result.getOrThrow(RunCredentials.claimsFor(alice, "queued-answer", { flow: "chat/Answer", ceiling: [["net:post:github/**"]] }, Date.now()))
+  const parent = Result.getOrThrow(RunCredentials.claimsFor(alice, "queued-answer", { flow: "flow/new", ceiling: [["net:post:github/**"]] }, Date.now()))
   const claims = Result.getOrThrow(RunCredentials.claimsFor({ ...alice, act: { kind: parent.act, id: parent.run, root: parent.root, chain: parent.chain, ceiling: parent.ceiling } }, "queued-answer/call/1", { flow: "issue/create" }, Date.now()))
   const token = await Effect.runPromise(authority.sign({ ...claims, exp: Date.now() - 1 }))
   expect(await Effect.runPromise(authority.verify(token))).toEqual(Option.none())

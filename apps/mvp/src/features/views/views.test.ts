@@ -6,7 +6,7 @@
 import { Effect, type ManagedRuntime, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
-import { framable, markdown, refusing } from "../../../worker/test/pages.ts"
+import { framable, iconPage, inlineIcon, markdown, refusing } from "../../../worker/test/pages.ts"
 import { CHATAPI_ORIGIN, member, nodeDevice, openTab, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { FlowDispatch } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
@@ -44,6 +44,8 @@ const PAGES = {
   "https://example.com/": framable("Example"),
   "https://example.com/docs": framable("Example docs"),
   "https://refuses.example/": refusing("Refuses"),
+  "https://example.com/icon.png": iconPage,
+  "https://refuses.example/favicon.ico": iconPage,
   // A repository's docs (docs/features/docs.md): its curated home names this index.
   "https://docs.example/llms.txt": markdown("# Example\n- [Retrying](/guide/retrying.md): Retry a failing effect."),
   "https://docs.example/guide/retrying.md": markdown("# Retrying\n\nUse `retry`.\n"),
@@ -135,7 +137,7 @@ describe("/web <url>", () => {
       expect(tab.count({ web_mode: "embed", door: "slash", outcome: "embedded", web_framing: "allowed" })).toBe(1)
     )
     expect(tab.preview()).toEqual([
-      { title: "Example", description: "A page that lets others frame it.", icon: "https://example.com/icon.png" },
+      { title: "Example", description: "A page that lets others frame it.", icon: inlineIcon },
     ])
     // Another device of the same conversation shows it from its own synced row.
     const other = openTab(tab.api)
@@ -181,7 +183,7 @@ describe("/web <url>", () => {
       {
         title: "Refuses",
         description: "A page that never shows in a frame.",
-        icon: "https://refuses.example/favicon.ico",
+        icon: inlineIcon,
       },
     ])
     await until(() =>

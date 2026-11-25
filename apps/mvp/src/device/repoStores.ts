@@ -62,19 +62,20 @@ export const UNSCOPED_LOCAL: Readonly<Record<string, string>> = Object.fromEntri
     "status-local", "terminal-panel", "terminal-tabs", "timeline-notice", "transcript-items", "transcript-panel",
     "views-opened", "views-showing", "effective-pins", "coedit-texts",
   ].map((id) => [id, "the person's own conversations, runs, flows, settings or UI"] as const),
+  ["profile-entries", "public GitHub profile metadata and listings keyed by owner"],
   ...["branch-current", "branch-publication", "branch-publish", "branch-pull-title"]
     .map((id) => [id, "by branch"] as const),
   ...["runs", "run-view", "repo-run-form", "repo-runs-loaded"]
     .map((id) => [id, "the person's own runs, or which repositories loaded (no rows)"] as const),
   ...[
-    "docs-current", "home-current", "issue-view", "pull-view", "repo-view", "secrets-view", "todo-view",
+    "docs-current", "home-current", "issue-view", "profile-view", "pull-view", "repo-view", "secrets-view", "todo-view",
     "domains-page", "domain-saves", "domains-list", "secret-forms", "issue-opened", "issue-detail-demand",
     "todo-access", "repo-clones", "repo-roles", "repo-visible", "repo-session-none", "conversation-owners", "views-home",
   ].map((id) => [id, "which page shows, what this tab asked, or authority itself: no repository content"] as const),
   ...[
     "home-no-access", "home-no-items", "home-no-syncs", "home-no-todos", "issue-comments-none", "issue-details-none",
     "issue-items-none", "issue-sync-none", "issue-triage-settings-none", "issue-work-links-none", "pull-checks-none",
-    "pull-commits-none", "pull-reviews-none", "pull-rows-none", "secrets-none", "todo-none", "todo-requests-none",
+    "profile-no-repositories", "pull-commits-none", "pull-reviews-none", "pull-rows-none", "secrets-none", "todo-none", "todo-requests-none",
   ].map((id) => [id, "always empty"] as const),
 ])
 

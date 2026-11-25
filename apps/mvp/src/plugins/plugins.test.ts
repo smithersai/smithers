@@ -1,7 +1,7 @@
 // The plugin host on a tab, driven as React and the window drive it: the built-in queue loaded through the public
 // loader, its tab built from `PluginHost` alone, the host's action strip and keys answering the agent's real waits. Each
 // device runs the browser's own layer (`appLayer`) on a Node device (src/test/chatApi.ts) whose engine leads, against
-// ChatApi's real handler over the compose Postgres and Electric; only the model is scripted. Proves decision 0017 slice
+// ChatApi over Postgres and Electric, including run reports and replies from an attached MCP client. Covers decision 0017 slice
 // 1's host contract and its trust boundaries at run time (docs/features/plugins.md).
 import { Host } from "@smthrs/plugin"
 import { createMemoryHistory } from "@tanstack/react-router"
@@ -12,8 +12,10 @@ import type { QueueTab } from "../../plugins/queue/src/tab"
 import { Chat } from "../features/chat/chat"
 import { Home } from "../features/home/home"
 import { Repo } from "../features/repo/repo"
+import type { Need } from "../features/status/schema"
 import { StatusStore } from "../features/status/store"
 import { dispatches } from "../flows/dispatch"
+import { finishRun, waitOnPerson } from "../test/attachedRun"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "../test/chatApi"
 import { shaOf } from "../../worker/test/branch"
 import { read as readTelemetry } from "../test/otlp"
@@ -64,11 +66,10 @@ const openDevice = async (api: TestChatApi["Service"]) => {
   const window = new Window()
   const keys = runtime.runFork(Effect.scoped(Effect.andThen(pluginKeys(window, true), Effect.never)))
   runtimes.push({ dispose: () => runtime.runPromise(Fiber.interrupt(keys)).then(() => undefined) })
-  const ask = async (text: string, need: string) => {
+  const ask = async (text: string, need: Need) => {
     const asked = (await chat.actions.ask(text))
     if (!asked.asked) throw new Error(`refused: ${asked.reason}`)
-    const reply = await Effect.runPromise(api.answerTo(text))
-    reply.cell(`const heard = await ctx.call("app/agent/ask", ${need})\nconsole.log(JSON.stringify(heard))`)
+    await waitOnPerson(api, asked.answerId, need)
     await until(() => expect(store.waits.tanstack.toArray.some((row) => row.runId === asked.answerId)).toBe(true))
     return asked.answerId
   }
@@ -95,7 +96,7 @@ const openDevice = async (api: TestChatApi["Service"]) => {
   }
 }
 
-const question = (word: string) => `{ kind: "question", prompt: "Deploy which branch for ${word}?", options: ["main", "docs-v2"] }`
+const question = (word: string): Need => ({ kind: "question", prompt: `Deploy which branch for ${word}?`, options: ["main", "docs-v2"] })
 
 describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
   test("loads the queue, whose tab and the host's strip answer the agent's question; the run goes on", async () => {
@@ -141,8 +142,7 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     expect(a.state()?.sending).toBe(true)
     // A second press while the first is on its way does nothing: one answer.
     a.plugins.actions.press(VIEW, docs)
-    const second = await Effect.runPromise(api.answerTo("Deploy the preview", 1))
-    second.cell(`ctx.done("Deploying docs-v2.")`)
+    await finishRun(api, answerId, "Deploying docs-v2.", true)
     await until(() => expect(a.run(answerId)?.answer).toEqual({ value: "docs-v2" }))
     await until(() => expect(a.run(answerId)?.status).toBe("done"))
     await until(() => expect(tab.queries.current.current()).toEqual({ item: undefined, index: 0, total: 0, snoozed: 0, sort: "oldest" }))
@@ -200,20 +200,20 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     expect(a.press("shift")).toBe(false)
     expect(a.press("2")).toBe(true)
     expect(a.state()?.sending).toBe(true)
-    ;(await Effect.runPromise(api.answerTo("Deploy one", 1))).cell(`ctx.done("Deploying docs-v2.")`)
+    await finishRun(api, first, "Deploying docs-v2.", true)
     await until(() => expect(a.run(first)?.answer).toEqual({ value: "docs-v2" }))
     await until(() => expect(a.run(first)?.status).toBe("done"))
     expect(a.count(Metric.withAttributes(presses, { plugin: "queue", event: "option", door: "key", outcome: "done" }))).toBe(1)
 
     // An approval: `a` sends Approve with the note. A note typed while the press is on its way never went: it stays.
-    const approval = await a.ask("Approve two", `{ kind: "approval", prompt: "Delete two?" }`)
+    const approval = await a.ask("Approve two", { kind: "approval", prompt: "Delete two?" })
     await until(() => expect(a.state()?.item).toBe(approval))
     expect(a.press("1")).toBe(false)
     a.plugins.actions.setDraft(VIEW, "ship it")
     expect(a.press("a")).toBe(true)
     expect(a.state()?.sending).toBe(true)
     a.plugins.actions.setDraft(VIEW, "ship it, then tag it")
-    ;(await Effect.runPromise(api.answerTo("Approve two", 1))).cell(`ctx.done("Approved")`)
+    await finishRun(api, approval, "Approved", true)
     await until(() => expect(a.run(approval)?.answer).toEqual({ value: { approved: true, note: "ship it" } }))
     await until(() => expect(a.run(approval)?.status).toBe("done"))
     expect(a.count(Metric.withAttributes(presses, { plugin: "queue", event: "approve", door: "key", outcome: "done" }))).toBe(1)
@@ -224,7 +224,7 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     await until(() => expect(a.state()?.item).toBe(third))
     a.plugins.actions.setDraft(VIEW, "release")
     expect(a.press("enter", { metaKey: true }, field)).toBe(true)
-    ;(await Effect.runPromise(api.answerTo("Deploy three", 1))).cell(`ctx.done("Deploying release.")`)
+    await finishRun(api, third, "Deploying release.", true)
     await until(() => expect(a.run(third)?.answer).toEqual({ value: "release" }))
     await until(() => expect(a.run(third)?.status).toBe("done"))
     await until(() => expect(tab.queries.current.current()).toEqual({ item: undefined, index: 0, total: 0, snoozed: 0, sort: "oldest" }))
