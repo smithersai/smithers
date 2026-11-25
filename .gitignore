@@ -171,6 +171,9 @@ worktrees/
 !/.smithers/workflows/
 /.smithers/workflows/*
 !/.smithers/workflows/ci.tsx
+# The tiered backpressure checks (plan tree M0) and the Obsidian plan tree are source.
+!/.smithers/workflows/fast-check.ts
+!/.smithers/plan-tree/
 # A pull request's checks: each `.smithers/checks/<name>.sh` runs on the head's check job (apps/mvp/docs/features/pulls.md).
 !/.smithers/checks/
 **/.smithers/*.db

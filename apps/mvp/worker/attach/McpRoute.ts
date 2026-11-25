@@ -1,0 +1,275 @@
+import { Option, Result, Schema } from "effect"
+import { MCP_MAX_REQUEST_BYTES } from "../../src/features/mcp/contract.ts"
+import { type Attach, type AttachRefusal, freezeGrant, type Grant } from "./Attach.ts"
+
+// The `/mcp/<owner>/<repo>/<branch>` route (decision 0173, Gate 4): MCP over Streamable HTTP for an attached agent.
+// Every request carries a grant's bearer token and is verified again, including `initialize`, so a revoked or expired
+// grant stops at its next request. The body is read, bounded, before the grant is verified, so a grant revoked while a
+// slow body streams in never runs a tool. The path names the target, and a token works only for its own repository
+// and branch. Every tool states its policy. A `person_only` tool is absent from `tools/list` and refused on
+// `tools/call`: an agent never acts as its person. A call's arguments decode strictly against the tool's schema, and
+// the tool's own `authorize` approves the resources they name, before the tool runs. The advertised `inputSchema` is
+// derived from that same schema, so what `tools/list` promises is what a call enforces. The tool gets its own frozen
+// copy of the grant. A body is read as a stream and refused past `MCP_MAX_REQUEST_BYTES` before any JSON is parsed.
+// Responses are single JSON bodies. The route offers no SSE stream, so GET is 405.
+
+/** The MCP revision this route speaks. */
+export const PROTOCOL_VERSION = "2025-06-18"
+
+/** Who may call a tool: an attached agent, or only the person from the host's own UI (merge, approve, publish). */
+export const MCP_POLICIES = ["agent", "person_only"] as const
+export type McpPolicy = (typeof MCP_POLICIES)[number]
+
+/** The JSON Schema a tool advertises in `tools/list`. MCP requires an object at the root. */
+export type McpInputSchema = { readonly type: "object"; readonly [key: string]: unknown }
+
+/** A tool as its author declares it. `policy` is required: a tool with none is refused when the route is built. */
+export interface McpToolDefinition<S extends Schema.Top> {
+  readonly name: string
+  readonly description: string
+  /**
+   * The schema a call's arguments decode against, as JSON (`Schema.toCodecJson`). An argument it does not declare
+   * refuses the call. `tools/list` advertises the JSON Schema derived from it, so the two cannot drift.
+   */
+  readonly input: S
+  /** Must be in the grant's ceiling. */
+  readonly capability: string
+  readonly policy: McpPolicy
+  /**
+   * Approves the resources the decoded arguments name, such as a run or file nested inside them, for this grant.
+   * Asked after decoding and before `call`. `false` refuses the call `forbidden`. A tool whose arguments name any
+   * resource beyond the top-level `repo`, `branch` and `conversation` must supply it.
+   */
+  readonly authorize?: (grant: Grant, args: S["Type"]) => boolean | Promise<boolean>
+  /** Runs with a frozen copy of the grant and the decoded arguments, never the raw ones. */
+  readonly call: (grant: Grant, args: S["Type"]) => Promise<unknown>
+}
+
+/** A registered tool. Only {@link defineTool} makes one, so every tool's arguments are decoded before it runs. */
+export interface McpTool {
+  readonly name: string
+  readonly description: string
+  readonly inputSchema: McpInputSchema
+  readonly capability: string
+  readonly policy: McpPolicy
+  readonly invoke: (grant: Grant, args: unknown) => Promise<Result.Result<unknown, "invalid_arguments" | "forbidden">>
+}
+
+const defined = new WeakSet<McpTool>()
+
+const isPolicy = (value: unknown): value is McpPolicy => MCP_POLICIES.some((policy) => policy === value)
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+/** A struct with no fields. Effect decodes one as any non-null value, keys and all, so it is treated as "no arguments". */
+const isEmptyStruct = (schema: Schema.Top): boolean =>
+  "fields" in schema && isRecord(schema.fields) && Object.keys(schema.fields).length === 0
+
+/**
+ * The JSON Schema `tools/list` advertises for `input`: the strict JSON Schema Effect derives from the schema the call
+ * decodes against. Throws when the root is not an object, which MCP requires.
+ */
+export const inputSchemaOf = (name: string, input: Schema.Top): McpInputSchema => {
+  if (isEmptyStruct(input)) return Object.freeze({ type: "object", properties: {}, additionalProperties: false })
+  const document = Schema.toJsonSchemaDocument(input, { onExcessProperty: "error" })
+  const root: unknown = document.schema
+  if (!isRecord(root) || root.type !== "object") throw new TypeError(`MCP tool ${name} input must be an object schema`)
+  const definitions = Object.keys(document.definitions).length === 0 ? {} : { $defs: document.definitions }
+  return Object.freeze({ ...root, ...definitions, type: "object" as const })
+}
+
+/** Registers a tool. Throws when the definition names no policy, so an untyped caller cannot default one open. */
+export const defineTool = <S extends Schema.Top>(definition: McpToolDefinition<S>): McpTool => {
+  if (!isPolicy(definition.policy)) throw new TypeError(`MCP tool ${definition.name} must declare its policy`)
+  const inputSchema = inputSchemaOf(definition.name, definition.input)
+  const empty = isEmptyStruct(definition.input)
+  // The JSON codec is the schema the advertised JSON Schema describes, so a value one admits the other decodes.
+  const decode = Schema.decodeUnknownOption(Schema.toCodecJson(definition.input as never), { onExcessProperty: "error" }) as (
+    input: unknown,
+  ) => Option.Option<S["Type"]>
+  const tool: McpTool = Object.freeze({
+    name: definition.name,
+    description: definition.description,
+    inputSchema,
+    capability: definition.capability,
+    policy: definition.policy,
+    invoke: async (grant: Grant, args: unknown) => {
+      if (!isRecord(args) || (empty && Object.keys(args).length > 0)) return Result.fail("invalid_arguments" as const)
+      const decoded = decode(args)
+      if (Option.isNone(decoded)) return Result.fail("invalid_arguments" as const)
+      // The tool's own frozen copy: nothing it does reaches the grant the verifier holds or another tool's copy.
+      const own = freezeGrant(grant)
+      if (definition.authorize !== undefined && (await definition.authorize(own, decoded.value)) !== true) {
+        return Result.fail("forbidden" as const)
+      }
+      return Result.succeed(await definition.call(own, decoded.value))
+    },
+  })
+  defined.add(tool)
+  return tool
+}
+
+export interface McpRouteOptions {
+  readonly attach: Pick<Attach, "verifyBearer">
+  readonly hostOrigin: string
+  readonly tools: ReadonlyArray<McpTool>
+}
+
+type Id = string | number | null
+
+const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
+
+const rpcError = (status: number, id: Id, code: number, reason: string, headers?: Record<string, string>) =>
+  json(status, { jsonrpc: "2.0", id, error: { code, message: reason, data: { reason } } }, headers)
+
+const STATUS: Record<AttachRefusal, number> = {
+  unauthenticated: 401,
+  expired: 401,
+  revoked: 401,
+  wrong_target: 403,
+  forbidden: 403,
+  person_only: 403,
+  unknown_reference: 401,
+  already_claimed: 401,
+  not_claimed: 401,
+  wrong_origin: 403,
+  wrong_person: 403,
+  invalid_challenge: 400,
+  consent_expired: 401,
+  wrong_pairing: 401,
+  invalid_code: 401,
+  invalid_verifier: 401,
+  too_many: 429,
+}
+
+/** Reads `/mcp/<owner>/<repo>/<branch>`. The branch may hold slashes. */
+const targetOf = (url: URL): { readonly repo: string; readonly branch: string } | undefined => {
+  const match = /^\/mcp\/([^/]+)\/([^/]+)\/(.+)$/.exec(url.pathname)
+  if (match === null) return undefined
+  try {
+    return { repo: `${decodeURIComponent(match[1]!)}/${decodeURIComponent(match[2]!)}`, branch: decodeURIComponent(match[3]!) }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Reads a body as UTF-8, at most `maxBytes` of it. A declared length over the cap is refused before any byte is read,
+ * and a stream is cancelled at the first chunk that crosses it, so an oversized body is never buffered or parsed.
+ */
+export const readBody = async (request: Request, maxBytes: number): Promise<Result.Result<string, "too_large" | "body">> => {
+  if (Number(request.headers.get("content-length")) > maxBytes) return Result.fail("too_large")
+  if (request.body === null) return Result.succeed("")
+  const reader = request.body.getReader()
+  const decoder = new TextDecoder("utf-8", { fatal: true })
+  let bytes = 0
+  let text = ""
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) return Result.succeed(text + decoder.decode())
+      bytes += value.byteLength
+      if (bytes > maxBytes) {
+        await reader.cancel().catch(() => undefined)
+        return Result.fail("too_large")
+      }
+      text += decoder.decode(value, { stream: true })
+    }
+  } catch {
+    return Result.fail("body")
+  }
+}
+
+export const makeMcpRoute = (options: McpRouteOptions) => {
+  const byName = new Map<string, McpTool>()
+  for (const tool of options.tools) {
+    // Fail closed while building: a hand-built tool skips argument decoding, and a missing policy would read as open.
+    if (!defined.has(tool) || !isPolicy(tool.policy)) throw new TypeError(`MCP tool ${String(tool.name)} is not from defineTool`)
+    if (byName.has(tool.name)) throw new TypeError(`MCP tool ${tool.name} is registered twice`)
+    byName.set(tool.name, tool)
+  }
+  const visible = (grant: Grant) =>
+    options.tools.filter((tool) => tool.policy === "agent" && grant.ceiling.includes(tool.capability))
+
+  return async (request: Request): Promise<Response> => {
+    const url = new URL(request.url)
+    const target = targetOf(url)
+    if (target === undefined) return json(404, { error: "not_found" })
+    // Streamable HTTP servers must check Origin against DNS rebinding. Agents send none, browsers on the host do.
+    // The value is the request's own header, never one a caller passes beside it.
+    const origin = request.headers.get("origin")
+    if (origin !== null && origin !== options.hostOrigin) return rpcError(403, null, -32001, "wrong_origin")
+    // The bounded body first, then the grant: a grant revoked while the body streams in is refused here, so the
+    // grant a tool runs with was verified after the last byte arrived.
+    const body = await readBody(request, MCP_MAX_REQUEST_BYTES)
+    const verified = await options.attach.verifyBearer(request.headers.get("authorization"), target)
+    if (Result.isFailure(verified)) {
+      const challenge = { "www-authenticate": `Bearer realm="smithers", error="invalid_token"` }
+      return rpcError(STATUS[verified.failure], null, -32001, verified.failure, STATUS[verified.failure] === 401 ? challenge : {})
+    }
+    const grant = verified.success
+    if (request.method !== "POST") return json(405, { error: "method_not_allowed" }, { allow: "POST" })
+    if (Result.isFailure(body)) {
+      return body.failure === "too_large" ? rpcError(413, null, -32600, "too_large") : rpcError(400, null, -32700, "parse_error")
+    }
+    let message: unknown
+    try {
+      message = JSON.parse(body.success)
+    } catch {
+      return rpcError(400, null, -32700, "parse_error")
+    }
+    if (!isRecord(message) || message.jsonrpc !== "2.0" || typeof message.method !== "string") {
+      return rpcError(400, null, -32600, "invalid_request")
+    }
+    const id: Id = typeof message.id === "string" || typeof message.id === "number" ? message.id : null
+    if (message.id === undefined) return new Response(null, { status: 202 })
+    const params = isRecord(message.params) ? message.params : {}
+    const ok = (result: unknown) => json(200, { jsonrpc: "2.0", id, result })
+
+    switch (message.method) {
+      case "initialize":
+        return ok({
+          protocolVersion: PROTOCOL_VERSION,
+          capabilities: { tools: { listChanged: false } },
+          serverInfo: { name: "smithers", version: "1" },
+        })
+      case "ping":
+        return ok({})
+      case "tools/list":
+        return ok({
+          tools: visible(grant).map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+        })
+      case "tools/call": {
+        const tool = typeof params.name === "string" ? byName.get(params.name) : undefined
+        if (tool === undefined) return rpcError(200, id, -32602, "unknown_tool")
+        if (tool.policy !== "agent") return rpcError(403, id, -32001, "person_only")
+        if (!grant.ceiling.includes(tool.capability)) return rpcError(403, id, -32001, "capability_exceeded")
+        const args = params.arguments === undefined ? {} : params.arguments
+        if (!isRecord(args)) return rpcError(200, id, -32602, "invalid_arguments")
+        for (const key of ["repo", "branch", "conversation"] as const) {
+          if (Object.hasOwn(args, key) && args[key] !== grant[key]) return rpcError(403, id, -32001, "wrong_target")
+        }
+        try {
+          const outcome = await tool.invoke(grant, args)
+          if (Result.isFailure(outcome)) {
+            return outcome.failure === "forbidden"
+              ? rpcError(403, id, -32001, "forbidden")
+              : rpcError(200, id, -32602, outcome.failure)
+          }
+          const value = outcome.success
+          return ok({
+            content: [{ type: "text", text: JSON.stringify(value) }],
+            ...(isRecord(value) ? { structuredContent: value } : {}),
+            isError: false,
+          })
+        } catch {
+          return ok({ content: [{ type: "text", text: "tool_failed" }], isError: true })
+        }
+      }
+      default:
+        return rpcError(200, id, -32601, "method_not_found")
+    }
+  }
+}
