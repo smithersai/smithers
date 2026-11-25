@@ -20,13 +20,6 @@
  *   `UNIQUE (shard, origin_node, command_id)` refuses a second entry for a key
  *   even if a receipt were lost.
  *
- * Reads run through the Effect client. A page reads the head first and bounds
- * its entries by it, so a submit that commits between the two reads never
- * tears a page.
- *
- * Compaction is not part of this slice: the snapshot is always the empty
- * state at seq 0, and a reader that resyncs replays from the start.
- *
  * ```ts
  * const shard = DoSqliteShard.layer(ctx.storage, { shard: "repo:acme/widgets" })
  * ```
@@ -35,12 +28,14 @@
  */
 
 import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient"
+import { ShardProtocol, ShardServer } from "@smthrs/sync"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Schema from "effect/Schema"
+import type * as Scope from "effect/Scope"
 import * as Reactivity from "effect/reactivity/Reactivity"
 import * as SqlClient from "effect/sql/SqlClient"
-import type { SqlError } from "effect/sql/SqlError"
 import type { Storage } from "./ObjectDatabase.ts"
 
 /**
@@ -49,7 +44,7 @@ import type { Storage } from "./ObjectDatabase.ts"
  * @category models
  * @since 1.0.0-rc.18
  */
-export type Json = null | boolean | number | string | ReadonlyArray<Json> | { readonly [key: string]: Json }
+export type Json = ShardProtocol.Command["payload"]
 
 /**
  * `[originNodeId, commandId]`.
@@ -57,7 +52,7 @@ export type Json = null | boolean | number | string | ReadonlyArray<Json> | { re
  * @category models
  * @since 1.0.0-rc.18
  */
-export type CommandKey = readonly [originNodeId: string, commandId: string]
+export type CommandKey = ShardProtocol.CommandKey
 
 /**
  * A command to sequence.
@@ -65,11 +60,7 @@ export type CommandKey = readonly [originNodeId: string, commandId: string]
  * @category models
  * @since 1.0.0-rc.18
  */
-export interface Command {
-  readonly key: CommandKey
-  readonly stream: string
-  readonly payload: Json
-}
+export type Command = ShardProtocol.Command
 
 /**
  * A position in the shard's order under an epoch.
@@ -77,11 +68,7 @@ export interface Command {
  * @category models
  * @since 1.0.0-rc.18
  */
-export interface Position {
-  readonly shard: string
-  readonly epoch: number
-  readonly seq: number
-}
+export type Position = ShardProtocol.ShardPosition
 
 /**
  * One sequenced entry.
@@ -89,13 +76,7 @@ export interface Position {
  * @category models
  * @since 1.0.0-rc.18
  */
-export interface Entry {
-  readonly seq: number
-  readonly epoch: number
-  readonly key: CommandKey
-  readonly stream: string
-  readonly events: ReadonlyArray<Json>
-}
+export type Entry = ShardProtocol.Entry
 
 /**
  * The answer to a submit, as `ShardProtocol.SubmitResponse`.
@@ -103,12 +84,7 @@ export interface Entry {
  * @category models
  * @since 1.0.0-rc.18
  */
-export type SubmitResponse =
-  | { readonly _tag: "Accepted"; readonly key: CommandKey; readonly position: Position }
-  | { readonly _tag: "Duplicate"; readonly key: CommandKey; readonly position: Position }
-  | { readonly _tag: "Refused"; readonly key: CommandKey; readonly reason: string }
-  | { readonly _tag: "StaleEpoch"; readonly key: CommandKey; readonly shard: string; readonly epoch: number }
-  | { readonly _tag: "IdempotencyConflict"; readonly key: CommandKey; readonly position: Position | null }
+export type SubmitResponse = ShardProtocol.SubmitResponse
 
 /**
  * The answer to a pull, as `ShardProtocol.PullResponse`.
@@ -116,17 +92,7 @@ export type SubmitResponse =
  * @category models
  * @since 1.0.0-rc.18
  */
-export type PullResponse =
-  | {
-    readonly _tag: "Page"
-    readonly shard: string
-    readonly epoch: number
-    readonly entries: ReadonlyArray<Entry>
-    readonly through: number
-    readonly head: number
-    readonly done: boolean
-  }
-  | { readonly _tag: "Resync"; readonly shard: string; readonly epoch: number; readonly snapshotSeq: number }
+export type PullResponse = ShardProtocol.PullResponse
 
 /**
  * The authority's verdict on one command.
@@ -134,9 +100,7 @@ export type PullResponse =
  * @category models
  * @since 1.0.0-rc.18
  */
-export type Decision =
-  | { readonly _tag: "Accepted"; readonly events: ReadonlyArray<Json> }
-  | { readonly _tag: "Refused"; readonly reason: string }
+export type Decision = ShardServer.Decision
 
 /**
  * The shard, as the object serves it.
@@ -144,26 +108,7 @@ export type Decision =
  * @category models
  * @since 1.0.0-rc.18
  */
-export interface Service {
-  readonly shard: string
-  readonly submit: (request: {
-    readonly version: 2
-    readonly shard: string
-    readonly epoch: number
-    readonly command: Command
-  }) => Effect.Effect<SubmitResponse>
-  readonly pull: (request: {
-    readonly version: 2
-    readonly shard: string
-    readonly epoch: number
-    readonly after: number
-    readonly limit: number
-  }) => Effect.Effect<PullResponse, SqlError>
-  readonly snapshot: (shard: string) => Effect.Effect<{ readonly position: Position; readonly state: Json }, SqlError>
-  readonly head: Effect.Effect<Position, SqlError>
-  /** Fences the current authority: writers and readers under the old epoch are refused or resynced. */
-  readonly advanceEpoch: Effect.Effect<Position>
-}
+export type Service = ShardServer.ShardServer
 
 /**
  * The shard this object sequences.
@@ -192,6 +137,8 @@ export interface Options {
 const tables = [
   `CREATE TABLE IF NOT EXISTS shard_head (
     shard TEXT PRIMARY KEY, epoch INTEGER NOT NULL, head INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS shard_snapshot (
+    shard TEXT PRIMARY KEY, floor INTEGER NOT NULL, state TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS shard_entries (
     shard TEXT NOT NULL, seq INTEGER NOT NULL, epoch INTEGER NOT NULL,
     origin_node TEXT NOT NULL, command_id TEXT NOT NULL, stream TEXT NOT NULL, events TEXT NOT NULL,
@@ -205,13 +152,8 @@ const tables = [
 interface HeadRow {
   readonly epoch: number
   readonly head: number
-}
-
-interface ReceiptRow {
-  readonly hash: string
-  readonly epoch: number
-  readonly seq: number | null
-  readonly reason: string | null
+  readonly floor: number
+  readonly state: string
 }
 
 interface EntryRow {
@@ -223,157 +165,103 @@ interface EntryRow {
   readonly events: string
 }
 
-const canonicalJson = (value: Json): string => {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`
-  if (value === null || typeof value !== "object") return JSON.stringify(value)
-  const object = value as { readonly [key: string]: Json }
-  return `{${
-    Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key]!)}`).join(",")
-  }}`
-}
-
-// The same hash as `ShardProtocol.contentHash`, so a key's receipt agrees across hosts.
-const contentHash = (command: Command) =>
-  Effect.promise(() =>
-    globalThis.crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(canonicalJson({ stream: command.stream, payload: command.payload }))
-    )
-  ).pipe(
-    Effect.map((digest) => Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""))
-  )
-
-const acceptAll = (command: Command): Decision => ({ _tag: "Accepted", events: [command.payload] })
-
 /**
- * The shard sequencer over `storage`, with the Effect client it reads
- * through. Creates its tables on first use.
+ * The shard sequencer over `storage`, with the Effect client for host queries. Creates its tables on first use.
+ * An empty shard name can only reopen existing history for reads.
  *
  * @category constructors
  * @since 1.0.0-rc.18
  */
-export const make = Effect.fnUntraced(function*(storage: Storage, options: Options) {
-  const { shard } = options
-  const decide = options.decide ?? acceptAll
+export const make: (
+  storage: Storage,
+  options: Options
+) => Effect.Effect<{ readonly client: SqliteClient.SqliteClient; readonly shard: Service }, never, Scope.Scope | Reactivity.Reactivity> =
+  Effect.fnUntraced(function*(storage: Storage, options: Options) {
+  const shard = yield* Schema.decodeUnknownEffect(ShardProtocol.PullRequest.fields.shard)(options.shard).pipe(Effect.orDie)
   const client = yield* SqliteClient.make({ storage })
   const exec = <T>(query: string, ...bindings: Array<unknown>): Array<T> =>
     storage.sql.exec(query, ...bindings).toArray() as unknown as Array<T>
   storage.transactionSync(() => {
     for (const table of tables) exec(table)
-    exec(`INSERT OR IGNORE INTO shard_head (shard, epoch, head) VALUES (?, 0, 0)`, shard)
-  })
-  const currentHead = () => exec<HeadRow>(`SELECT epoch, head FROM shard_head WHERE shard = ?`, shard)[0]!
-  const at = (epoch: number, seq: number): Position => ({ shard, epoch, seq })
-  // A request routed to the wrong object is a routing bug, not an answer.
-  const owned = (requested: string) =>
-    requested === shard ? Effect.void : Effect.die(new Error(`this object sequences ${shard}, not ${requested}`))
-
-  const sequence = (command: Command, epoch: number, hash: string): SubmitResponse => {
-    const { key } = command
-    const current = currentHead()
-    if (epoch !== current.epoch) return { _tag: "StaleEpoch", key, shard, epoch: current.epoch }
-    const prior = exec<ReceiptRow>(
-      `SELECT hash, epoch, seq, reason FROM shard_receipts WHERE shard = ? AND origin_node = ? AND command_id = ?`,
-      shard,
-      key[0],
-      key[1]
-    )[0]
-    if (prior !== undefined) {
-      const position = prior.seq === null ? null : at(prior.epoch, prior.seq)
-      if (prior.hash !== hash) return { _tag: "IdempotencyConflict", key, position }
-      return position === null ? { _tag: "Refused", key, reason: prior.reason! } : { _tag: "Duplicate", key, position }
+    if (shard === "") {
+      const [legacy] = exec(`SELECT 1 FROM shard_head WHERE shard = ?`, shard)
+      if (legacy === undefined) throw new Error("Cannot create a shard with an empty name")
+    } else {
+      exec(`INSERT OR IGNORE INTO shard_head (shard, epoch, head) VALUES (?, 0, 0)`, shard)
     }
-    const decision = decide(command)
-    const receipt = (seq: number | null, reason: string | null) =>
+  })
+  let pending: Array<Entry> = []
+  const store: ShardServer.ShardStore = {
+    atomic: (body) => storage.transactionSync(() => {
+      const outer = pending
+      const entries: Array<Entry> = []
+      pending = entries
+      try {
+        const result = body()
+        for (const entry of entries) options.beforeCommit?.(entry)
+        return result
+      } finally {
+        pending = outer
+      }
+    }),
+    head: () => {
+      const row = exec<HeadRow>(
+        `SELECT h.epoch, h.head, COALESCE(s.floor, 0) AS floor, COALESCE(s.state, 'null') AS state
+         FROM shard_head h LEFT JOIN shard_snapshot s ON s.shard = h.shard WHERE h.shard = ?`,
+        shard
+      )[0]!
+      return { epoch: row.epoch, head: row.head, floor: row.floor, snapshot: JSON.parse(row.state) as Json }
+    },
+    setHead: (next) => {
+      exec(`UPDATE shard_head SET epoch = ?, head = ? WHERE shard = ?`, next.epoch, next.head, shard)
+      if (next.floor > 0 || next.snapshot !== null) {
+        exec(
+          `INSERT INTO shard_snapshot (shard, floor, state) VALUES (?, ?, ?)
+           ON CONFLICT(shard) DO UPDATE SET floor = excluded.floor, state = excluded.state
+           WHERE floor <> excluded.floor OR state <> excluded.state`,
+          shard, next.floor, JSON.stringify(next.snapshot)
+        )
+      } else {
+        exec(`DELETE FROM shard_snapshot WHERE shard = ?`, shard)
+      }
+    },
+    receipt: (key) => exec<ShardServer.Receipt>(
+      `SELECT hash, epoch, seq, reason FROM shard_receipts WHERE shard = ? AND origin_node = ? AND command_id = ?`,
+      shard, ...key
+    )[0],
+    putReceipt: (key, receipt) => {
       exec(
         `INSERT INTO shard_receipts (shard, origin_node, command_id, hash, epoch, seq, reason) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        shard,
-        key[0],
-        key[1],
-        hash,
-        current.epoch,
-        seq,
-        reason
+        shard, ...key, receipt.hash, receipt.epoch, receipt.seq, receipt.reason
       )
-    if (decision._tag === "Refused") {
-      receipt(null, decision.reason)
-      return { _tag: "Refused", key, reason: decision.reason }
+    },
+    append: (entry) => {
+      exec(
+        `INSERT INTO shard_entries (shard, seq, epoch, origin_node, command_id, stream, events) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        shard, entry.seq, entry.epoch, ...entry.key, entry.stream, JSON.stringify(entry.events)
+      )
+      pending.push(entry)
+    },
+    read: (after, limit) => exec<EntryRow>(
+      `SELECT seq, epoch, origin_node, command_id, stream, events
+       FROM shard_entries WHERE shard = ? AND seq > ? ORDER BY seq LIMIT ?`,
+      shard, after, limit
+    ).map((row) => ({
+      seq: row.seq,
+      epoch: row.epoch,
+      key: [row.origin_node, row.command_id],
+      stream: row.stream,
+      events: JSON.parse(row.events) as ReadonlyArray<Json>
+    })),
+    dropThrough: (seq) => {
+      exec(`DELETE FROM shard_entries WHERE shard = ? AND seq <= ?`, shard, seq)
     }
-    const entry: Entry = {
-      seq: current.head + 1,
-      epoch: current.epoch,
-      key,
-      stream: command.stream,
-      events: decision.events
-    }
-    exec(
-      `INSERT INTO shard_entries (shard, seq, epoch, origin_node, command_id, stream, events) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      shard,
-      entry.seq,
-      entry.epoch,
-      key[0],
-      key[1],
-      entry.stream,
-      JSON.stringify(entry.events)
-    )
-    receipt(entry.seq, null)
-    exec(`UPDATE shard_head SET head = ? WHERE shard = ?`, entry.seq, shard)
-    options.beforeCommit?.(entry)
-    return { _tag: "Accepted", key, position: at(entry.epoch, entry.seq) }
   }
-
-  const readHead = Effect.map(
-    client<HeadRow>`SELECT epoch, head FROM shard_head WHERE shard = ${shard}`,
-    (rows) => rows[0]!
-  )
-
-  const service: Service = {
+  const service = ShardServer.make({
     shard,
-    submit: (request) =>
-      owned(request.shard).pipe(
-        Effect.andThen(contentHash(request.command)),
-        Effect.map((hash) => storage.transactionSync(() => sequence(request.command, request.epoch, hash)))
-      ),
-    pull: (request) =>
-      Effect.gen(function*() {
-        yield* owned(request.shard)
-        const current = yield* readHead
-        if (request.epoch !== current.epoch || request.after > current.head) {
-          return { _tag: "Resync", shard, epoch: current.epoch, snapshotSeq: 0 } as const
-        }
-        const through = Math.min(request.after + request.limit, current.head)
-        const rows = yield* client<EntryRow>`SELECT seq, epoch, origin_node, command_id, stream, events
-          FROM shard_entries WHERE shard = ${shard} AND seq > ${request.after} AND seq <= ${through} ORDER BY seq`
-        return {
-          _tag: "Page",
-          shard,
-          epoch: current.epoch,
-          entries: rows.map((row) => ({
-            seq: row.seq,
-            epoch: row.epoch,
-            key: [row.origin_node, row.command_id] as const,
-            stream: row.stream,
-            events: JSON.parse(row.events) as ReadonlyArray<Json>
-          })),
-          through,
-          head: current.head,
-          done: through === current.head
-        } as const
-      }),
-    snapshot: (requested) =>
-      owned(requested).pipe(
-        Effect.andThen(readHead),
-        Effect.map((current) => ({ position: at(current.epoch, 0), state: null }))
-      ),
-    head: Effect.map(readHead, (current) => at(current.epoch, current.head)),
-    advanceEpoch: Effect.sync(() =>
-      storage.transactionSync(() => {
-        exec(`UPDATE shard_head SET epoch = epoch + 1 WHERE shard = ?`, shard)
-        const current = currentHead()
-        return at(current.epoch, current.head)
-      })
-    )
-  }
+    store,
+    ...(options.decide === undefined ? {} : { decide: options.decide })
+  })
   return { client, shard: service }
 })
 

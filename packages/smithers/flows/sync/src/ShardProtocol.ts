@@ -79,13 +79,15 @@ export const streamKind = (stream: StreamId): StreamKind =>
   // The prefix runs to the first colon, so `repo-maint:x` is never read as `repo`.
   stream.slice(0, stream.indexOf(":")) as StreamKind
 
+const HistoricalShardId = Schema.String.pipe(Schema.brand("@smthrs/sync/ShardProtocol/ShardId"))
+
 /**
  * The name of one shard, such as `repo:acme/widgets`.
  *
  * @category models
  * @since 1.0.0-rc.18
  */
-export const ShardId = Schema.NonEmptyString.pipe(Schema.brand("@smthrs/sync/ShardProtocol/ShardId"))
+export const ShardId = HistoricalShardId.check(Schema.isMinLength(1))
 
 /**
  * The name of one shard.
@@ -151,7 +153,7 @@ export type CommandKey = typeof CommandKey.Type
  * @category models
  * @since 1.0.0-rc.18
  */
-export const ShardPosition = Schema.Struct({ shard: ShardId, epoch: Epoch, seq: Seq })
+export const ShardPosition = Schema.Struct({ shard: HistoricalShardId, epoch: Epoch, seq: Seq })
 
 /**
  * One position in one shard's history under one epoch.
@@ -188,8 +190,9 @@ export type Command = typeof Command.Type
 export const Entry = Schema.Struct({
   seq: Seq,
   epoch: Epoch,
-  key: CommandKey,
-  stream: StreamId,
+  // History predates the constraints on new command keys and stream names.
+  key: Schema.Tuple([Schema.String, Schema.String]),
+  stream: Schema.String,
   events: Schema.Array(Schema.Json)
 })
 
@@ -245,7 +248,7 @@ export const Duplicate = Schema.TaggedStruct("Duplicate", { key: CommandKey, pos
  * @category models
  * @since 1.0.0-rc.18
  */
-export const Refused = Schema.TaggedStruct("Refused", { key: CommandKey, reason: Schema.String })
+export const Refused = Schema.TaggedStruct("Refused", { key: CommandKey, shard: ShardId, reason: Schema.String })
 
 /**
  * The writer's epoch is not the shard's. Nothing was decided; resubmit under
@@ -265,6 +268,7 @@ export const StaleEpoch = Schema.TaggedStruct("StaleEpoch", { key: CommandKey, s
  */
 export const IdempotencyConflict = Schema.TaggedStruct("IdempotencyConflict", {
   key: CommandKey,
+  shard: ShardId,
   position: Schema.NullOr(ShardPosition)
 })
 
@@ -293,7 +297,7 @@ export type SubmitResponse = typeof SubmitResponse.Type
  */
 export const PullRequest = Schema.Struct({
   version: Schema.Literal(protocolVersion),
-  shard: ShardId,
+  shard: HistoricalShardId,
   epoch: Epoch,
   after: Seq,
   limit: Schema.Int.check(Schema.isGreaterThan(0))
@@ -315,7 +319,7 @@ export type PullRequest = typeof PullRequest.Type
  * @since 1.0.0-rc.18
  */
 export const Page = Schema.TaggedStruct("Page", {
-  shard: ShardId,
+  shard: HistoricalShardId,
   epoch: Epoch,
   entries: Schema.Array(Entry),
   through: Seq,
@@ -331,7 +335,7 @@ export const Page = Schema.TaggedStruct("Page", {
  * @category models
  * @since 1.0.0-rc.18
  */
-export const Resync = Schema.TaggedStruct("Resync", { shard: ShardId, epoch: Epoch, snapshotSeq: Seq })
+export const Resync = Schema.TaggedStruct("Resync", { shard: HistoricalShardId, epoch: Epoch, snapshotSeq: Seq })
 
 /**
  * The shard's answer to a {@link PullRequest}.

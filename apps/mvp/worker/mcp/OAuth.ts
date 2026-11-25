@@ -32,6 +32,9 @@ import { type Repository, repositoryOf } from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import { McpAuthError } from "./Contract.ts"
 import * as Metrics from "./Metrics.ts"
+import { timingSafeEqualString, validateCodeVerifier } from "./Pkce.ts"
+
+export { timingSafeEqual, timingSafeEqualString, validateCodeVerifier } from "./Pkce.ts"
 
 // OAuth 2.1 + RFC 9728 + RFC 8414 + RFC 7591 + PKCE S256 + Person-Only MCP Token Management.
 //
@@ -97,7 +100,6 @@ const BIDI_OVERRIDE_CHARS = /[\u200e\u200f\u202a-\u202e\u2066-\u2069]/
 const VISIBLE_ASCII = /^[\x21-\x7e]+$/
 const ENCODED_CONTROL = /%(?:0[0-9a-f]|1[0-9a-f]|7f)/i
 const CODE_CHALLENGE_PATTERN = /^[A-Za-z0-9_-]{43,128}$/
-const CODE_VERIFIER_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const IPV4_PATTERN = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
 const LOOPBACK_AUTHORITY_PATTERN = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::(\d{1,5}))?$/i
@@ -134,20 +136,6 @@ const encoder = new TextEncoder()
 // ---------------------------------------------------------------------------------------------------------------------
 // Pure crypto & PKCE helpers (workerd-safe: Web Crypto + @smthrs/crypto, zero `node:crypto`).
 // ---------------------------------------------------------------------------------------------------------------------
-
-/** Constant-time byte comparison using a length-padded XOR fold. */
-export const timingSafeEqual = (left: Uint8Array, right: Uint8Array): boolean => {
-  const maxLen = Math.max(left.byteLength, right.byteLength)
-  let diff = left.byteLength ^ right.byteLength
-  for (let i = 0; i < maxLen; i++) {
-    diff |= (left[i] ?? 0) ^ (right[i] ?? 0)
-  }
-  return diff === 0
-}
-
-/** Constant-time UTF-8 string comparison built over {@link timingSafeEqual}. */
-export const timingSafeEqualString = (left: string, right: string): boolean =>
-  timingSafeEqual(encoder.encode(left), encoder.encode(right))
 
 const hexToBytes = (hex: string): Uint8Array => {
   const out = new Uint8Array(hex.length / 2)
@@ -193,9 +181,6 @@ export const pkceS256 = (verifier: string): string => bytesToBase64Url(hexToByte
 
 /** Validates RFC 7636 `code_challenge` format (43..128 unpadded base64url chars). */
 export const validateCodeChallenge = (value: string): boolean => CODE_CHALLENGE_PATTERN.test(value)
-
-/** Validates RFC 7636 `code_verifier` format (43..128 unreserved ASCII chars). */
-export const validateCodeVerifier = (value: string): boolean => CODE_VERIFIER_PATTERN.test(value)
 
 /** Verifies PKCE S256 (`base64url(SHA-256(verifier)) === challenge`) in constant time. */
 export const verifyPkceS256 = (verifier: string, challenge: string): boolean =>

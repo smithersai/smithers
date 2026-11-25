@@ -144,6 +144,10 @@ const STATUS: Record<AttachRefusal, number> = {
   too_many: 429,
 }
 
+/** Builds the attached-agent MCP path from its verified repository and branch. */
+export const attachMcpPath = (target: Pick<Grant, "repo" | "branch">): string =>
+  "/mcp/" + [...target.repo.split("/"), target.branch].map(encodeURIComponent).join("/")
+
 /** Reads `/mcp/<owner>/<repo>/<branch>`. The branch may hold slashes. */
 const targetOf = (url: URL): { readonly repo: string; readonly branch: string } | undefined => {
   const match = /^\/mcp\/([^/]+)\/([^/]+)\/(.+)$/.exec(url.pathname)

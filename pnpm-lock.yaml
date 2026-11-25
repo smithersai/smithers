@@ -475,6 +475,12 @@ importers:
       '@smthrs/agent':
         specifier: workspace:*
         version: link:../../packages/smithers/agent
+      '@smthrs/app-core':
+        specifier: workspace:*
+        version: link:../../packages/smithers/app-core
+      '@smthrs/app-state':
+        specifier: workspace:*
+        version: link:../../packages/smithers/app-state
       '@smthrs/artifacts':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/artifacts
@@ -1875,6 +1881,9 @@ importers:
       '@smthrs/agent':
         specifier: 1.0.0-rc.18
         version: link:agent
+      '@smthrs/app-core':
+        specifier: workspace:*
+        version: link:app-core
       '@smthrs/build-cli':
         specifier: 1.0.0-rc.18
         version: link:build/build-cli
@@ -1972,7 +1981,7 @@ importers:
         specifier: 1.0.0-rc.18
         version: link:flows/step-cache
       '@smthrs/sync':
-        specifier: 1.0.0-rc.18
+        specifier: workspace:*
         version: link:flows/sync
       '@smthrs/targets':
         specifier: 1.0.0-rc.18
@@ -6057,6 +6066,9 @@ importers:
       '@smthrs/sandbox':
         specifier: 1.0.0-rc.18
         version: link:../sandbox
+      '@smthrs/sync':
+        specifier: workspace:*
+        version: link:../sync
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 5.20261019.1

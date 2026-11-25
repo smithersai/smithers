@@ -93,7 +93,8 @@
     "@smthrs/jj": "1.0.0-rc.18",
     "@smthrs/journal": "1.0.0-rc.18",
     "@smthrs/run-store": "1.0.0-rc.18",
-    "@smthrs/sandbox": "1.0.0-rc.18"
+    "@smthrs/sandbox": "1.0.0-rc.18",
+    "@smthrs/sync": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261019.1",

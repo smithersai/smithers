@@ -1,6 +1,5 @@
 import { Result } from "effect"
-import type { Actor } from "../Actor.ts"
-import { timingSafeEqualString, validateCodeVerifier } from "../mcp/OAuth.ts"
+import { timingSafeEqualString, validateCodeVerifier } from "../mcp/Pkce.ts"
 
 // BYOA attach (decision 0173, Gate 4): how a person's own agent (Claude Code, Codex, Cursor) gets a grant to act in one
 // conversation. The person copies a prompt holding an attach reference such as `K7QF-2MXD`. The reference is opaque,
@@ -136,7 +135,10 @@ interface Code {
  * value read from a body. `request` is the actual request, so the Origin checked is the one the browser sent.
  */
 export interface PersonRequest {
-  readonly actor: Actor
+  readonly actor: {
+    readonly subject: { readonly kind: "person"; readonly id: string }
+    readonly act?: { readonly kind: "agent" | "flow" | "app" | "sandbox" }
+  }
   readonly request: Request
 }
 
@@ -358,7 +360,7 @@ export const makeAttach = (options: AttachOptions) => {
     intent.approval = "pending"
     const claim = intent.claim
     if (!PAIRING_PATTERN.test(input.pairing) || !timingSafeEqualString(input.pairing, claim.pairing)) {
-      intent.approval = undefined
+      delete intent.approval
       claim.attempts += 1
       if (claim.attempts >= MAX_PAIRING_ATTEMPTS) dropIntent(intent)
       return Result.fail("wrong_pairing")

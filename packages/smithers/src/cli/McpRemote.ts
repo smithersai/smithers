@@ -496,6 +496,8 @@ export const loginMcpRemote = async (options: McpLoginOptions = {}): Promise<Mcp
  * @since 1.0.0
  */
 export interface McpServeOptions {
+  /** Uses only an already redeemed agent grant, with no login or credential-store fallback. */
+  readonly agentGrant?: { readonly token: string; readonly endpoint: URL }
   readonly origin?: string | undefined
   readonly repo?: string | undefined
   readonly token?: string | undefined
@@ -523,7 +525,7 @@ const writeLine = (output: Writable, line: string): Promise<void> =>
 export const serveMcpStdioBridge = async (options: McpServeOptions = {}): Promise<void> => {
   const origin = normalizeOrigin(options.origin)
   const repo = normalizeRepo(options.repo)
-  const endpoint = mcpEndpointUrl(origin, repo)
+  const endpoint = options.agentGrant?.endpoint.href ?? mcpEndpointUrl(origin, repo)
   const env = options.env ?? process.env
   const filePath = options.storePath ?? tokenStorePath(env)
   const input = options.input ?? process.stdin
@@ -532,6 +534,7 @@ export const serveMcpStdioBridge = async (options: McpServeOptions = {}): Promis
   const fetchImpl = options.fetchImpl ?? globalThis.fetch
 
   const resolveToken = (): string | undefined => {
+    if (options.agentGrant !== undefined) return options.agentGrant.token
     const direct = options.token?.trim() || env["SMITHERS_MCP_TOKEN"]?.trim()
     if (direct && TOKEN_PATTERN.test(direct)) return direct
     return readStoredToken(filePath, origin, repo)?.token
@@ -563,6 +566,7 @@ export const serveMcpStdioBridge = async (options: McpServeOptions = {}): Promis
     try {
       response = await fetchImpl(endpoint, {
         method: "POST",
+        ...(options.agentGrant === undefined ? {} : { redirect: "error" as const }),
         headers,
         body: trimmed,
         ...(options.signal === undefined ? {} : { signal: options.signal })
@@ -582,7 +586,17 @@ export const serveMcpStdioBridge = async (options: McpServeOptions = {}): Promis
     }
 
     if (response.status === 202) return
-    if (response.status === 401) {
+    if (response.status === 401 && options.agentGrant !== undefined) {
+      if (parsed.id !== undefined) {
+        await writeLine(output, JSON.stringify({
+          jsonrpc: "2.0",
+          id: parsed.id ?? null,
+          error: { code: -32001, message: "Agent grant refused" }
+        }))
+      }
+      return
+    }
+    if (response.status === 401 && options.agentGrant === undefined) {
       const hint = repo === undefined
         ? `smthrs mcp login --origin ${origin}`
         : `smthrs mcp login --origin ${origin} --repo ${repo}`

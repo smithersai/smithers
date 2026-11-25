@@ -679,3 +679,35 @@ describe("Medium 6: every payload field has an unambiguous CLI flag", () => {
     expect([shared.exitCode, JSON.parse(shared.stderr).code]).toEqual([2, "usage"])
   })
 })
+
+it("publishes a durable flow only after its persistence succeeds", async () => {
+  const { credentials } = await world()
+  let unavailable = true
+  const tag = "plan/record"
+  const engine = await run(Core.make({
+    credentials,
+    initialJournalSeq: 4,
+    flows: [{
+      tag,
+      title: "Record node",
+      payload: { type: "object", properties: {}, additionalProperties: false },
+      run: (_input, tx) => {
+        tx.put("plan", "one", { value: 1 })
+        return { value: 1 }
+      }
+    }],
+    projections: [{ name: "plan/read", title: "Read plan", collection: "plan" }],
+    persist: () => unavailable
+      ? Effect.fail(new Core.CoreError({ reason: "operation_failed", target: tag, detail: "Disk unavailable" }))
+      : Effect.void
+  }))
+  const api = await run(engine.open(evidence.strip))
+  expect(await refusal(api.submit({ operation: tag }))).toMatchObject({ reason: "operation_failed" })
+  expect(await run(api.read({ query: "plan/read" }))).toEqual({ cursor: "4", rows: [] })
+  expect(await refusal(api.read({ query: "ref/cause", params: { ref: "out/run-5" } }))).toMatchObject({
+    reason: "provenance_missing"
+  })
+  unavailable = false
+  expect(await run(api.submit({ operation: tag }))).toMatchObject({ runId: "run-5", journalSeq: 5 })
+  expect(await run(api.read({ query: "plan/read" }))).toEqual({ cursor: "5", rows: [{ value: 1 }] })
+})

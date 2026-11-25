@@ -45,6 +45,8 @@
     "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
     "@journeyapps/wa-sqlite": "1.7.2",
     "@smthrs/agent": "workspace:*",
+    "@smthrs/app-core": "workspace:*",
+    "@smthrs/app-state": "workspace:*",
     "@smthrs/artifacts": "workspace:*",
     "@smthrs/control": "workspace:*",
     "@smthrs/crypto": "workspace:*",

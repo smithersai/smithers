@@ -16,6 +16,7 @@ import {
   REFERENCE_PATTERN,
   type Target,
 } from "./Attach.ts"
+import { handleAttachAgent } from "./AttachAgentRoutes.ts"
 import { defineTool, inputSchemaOf, makeMcpRoute, type McpTool } from "./McpRoute.ts"
 
 const HOST = "https://smithers.sh"
@@ -669,6 +670,54 @@ describe("M4: explicit policy, strict arguments, immutable grant", () => {
     expect(first).not.toBe(grant)
     expect(first).toEqual({ ...grant, ceiling: ["flows:run", "tamper"] })
     expect(Object.isFrozen(first) && Object.isFrozen(first!.ceiling)).toBe(true)
+  })
+})
+
+describe("Attach agent HTTP routes", () => {
+  test.each(["claim", "redeem"])("refuses oversized chunked UTF-8 at %s before buffering the body", async (step) => {
+    const { attach } = setup()
+    const chunk = new TextEncoder().encode("é".repeat(1025))
+    let cancelled = false
+    const init = {
+      method: "POST",
+      duplex: "half" as const,
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(chunk)
+          controller.enqueue(chunk)
+        },
+        cancel() { cancelled = true },
+      }),
+    }
+    const request = new Request(HOST + "/api/attach/" + step, init)
+    expect(request.headers.has("content-length")).toBe(false)
+    const response = await handleAttachAgent(attach, request)
+    expect(response.status).toBe(413)
+    expect(cancelled).toBe(true)
+  })
+
+  test("redeem identifies the granted repository and branch MCP route", async () => {
+    const env = setup()
+    const branch = "feature/a+b"
+    const { reference } = unwrap(await env.attach.mintIntent({
+      ...as("will"), ...target, branch, ceiling: ["flows:run"],
+    }))
+    const post = (step: string, data: unknown) => handleAttachAgent(env.attach, new Request(
+      HOST + "/api/attach/" + step, { method: "POST", body: JSON.stringify(data) },
+    ))
+    const claimed = await post("claim", { reference, client: "Test", challenge: CHALLENGE })
+    const { claim, pairing } = Schema.decodeUnknownSync(Schema.Struct({
+      claim: Schema.String, pairing: Schema.String,
+    }))(await claimed.json())
+    const { code } = unwrap(await approve(env, reference, pairing))
+    const response = await post("redeem", { claim, code, verifier: VERIFIER })
+    expect(response.status).toBe(200)
+    const { token, mcpPath } = Schema.decodeUnknownSync(Schema.Struct({
+      token: Schema.String, mcpPath: Schema.String,
+    }))(await response.json())
+    expect(mcpPath).toBe("/mcp/evmts/voltaire/feature%2Fa%2Bb")
+    expect((await rpc(env.route, token, call("run_flow"), { path: mcpPath })).status).toBe(200)
+    expect((await rpc(env.route, token, call("run_flow"), { path: "/mcp/evmts/voltaire/main" })).status).toBe(403)
   })
 })
 

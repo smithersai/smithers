@@ -25,6 +25,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Queue from "effect/Queue"
 import * as Schema from "effect/Schema"
+import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import * as Cause from "./CauseReceipt.ts"
 import * as Principal from "./Principal.ts"
@@ -433,6 +434,19 @@ export const make = (options: {
   readonly credentials: Principal.Credentials
   readonly flows?: ReadonlyArray<Flow>
   readonly projections?: ReadonlyArray<Projection>
+  /** The durable journal sequence when mounting an engine over retained history. */
+  readonly initialJournalSeq?: number
+  readonly initialRows?: ReadonlyArray<{ readonly collection: string; readonly key: string; readonly row: Json }>
+  readonly initialReceipts?: ReadonlyArray<{ readonly receipt: Cause.CauseReceipt; readonly owner?: string }>
+  /** Persists an output at the core's next sequence before it becomes visible to readers. */
+  readonly persist?: (run: Requested) => Effect.Effect<void, CoreError>
+  /** Uses a host journal's sequence. A duplicate returns its saved run without publishing the draft. */
+  readonly commit?: (
+    output: Json,
+    atSequence: (journalSeq: number) => Requested
+  ) => Effect.Effect<{ readonly _tag: "Committed" | "Duplicate"; readonly run: Requested }, CoreError>
+  /** Capabilities required by the built-in cause query, including for restored receipts. */
+  readonly causeCapabilities?: ReadonlyArray<string>
 }): Effect.Effect<Engine, CoreError> =>
   Effect.suspend(() => {
     const { credentials } = options
@@ -447,14 +461,24 @@ export const make = (options: {
     }
     const flows = new Map<string, Registered>()
     const projections = new Map<string, { readonly entry: Entry; readonly collection: string }>()
+    const causeProjection = options.causeCapabilities === undefined
+      ? causeEntry
+      : immutable<Entry>({ ...causeEntry, capabilities: options.causeCapabilities })
     const order: Array<string> = [Cause.query]
     const state = new Map<string, Map<string, Json>>()
     const ledger = Cause.ledger()
     const listeners = new Set<() => void>()
-    let head = 0
+    let head = options.initialJournalSeq ?? 0
+    for (const { collection, key, row } of options.initialRows ?? []) {
+      const rows = state.get(collection) ?? new Map<string, Json>()
+      rows.set(key, immutable(row))
+      state.set(collection, rows)
+    }
+    for (const { receipt, owner } of options.initialReceipts ?? []) ledger.record(receipt, owner)
+    const commitLock = Semaphore.makeUnsafe(1)
 
     const entryOf = (tag: string): Entry | undefined =>
-      tag === Cause.query ? causeEntry : flows.get(tag)?.entry ?? projections.get(tag)?.entry
+      tag === Cause.query ? causeProjection : flows.get(tag)?.entry ?? projections.get(tag)?.entry
 
     const registerNow = (item: Flow | Projection): void | CoreError => {
       const tag = "run" in item ? item.tag : item.name
@@ -574,9 +598,13 @@ export const make = (options: {
       return { facts, flow, payload }
     }
 
-    // One synchronous step: run the flow on a draft, then commit the writes,
-    // the journal position and the receipt together, or nothing.
-    const commit = ({ facts, flow, payload }: Prepared, promptHash: string): Requested | CoreError => {
+    // Run the flow on a private draft. Publish only once its output is durable.
+    const draftRun = ({ facts, flow, payload }: Prepared, promptHash: string):
+      {
+        readonly output: Json
+        readonly atSequence: (journalSeq: number) => Requested
+        readonly publish: (requested: Requested) => void
+      } | CoreError => {
       const tag = flow.entry.tag
       const draft = new Map<string, Map<string, Json>>()
       const cause: { plan?: Cause.PlanRef } = {}
@@ -615,27 +643,29 @@ export const make = (options: {
       if (!output.ok) {
         return refuse("operation_failed", tag, "the flow's output is not JSON", { code: "invalid_output" })
       }
-      for (const [collection, rows] of draft) state.set(collection, merged(collection)), rows.clear()
-      head += 1
-      const runId = `run-${head}`
-      const receipt = Cause.stamp({
-        outputRef: `out/${runId}`,
-        runId,
-        nodeId: tag,
-        attempt: 1,
-        journalSeq: head,
-        planRef: cause.plan ?? { origin: "direct" },
-        promptHash
-      })
-      ledger.record(receipt, flow.private ? facts.subject : undefined)
-      for (const listener of Array.from(listeners)) listener()
-      return Object.freeze({
-        runId,
-        outputRef: receipt.outputRef,
-        journalSeq: head,
-        output: immutable(output.value),
-        cause: receipt
-      })
+      const value = immutable(output.value)
+      return {
+        output: value,
+        atSequence: (journalSeq) => {
+          const runId = `run-${journalSeq}`
+          const receipt = Cause.stamp({
+            outputRef: `out/${runId}`,
+            runId,
+            nodeId: tag,
+            attempt: 1,
+            journalSeq,
+            planRef: cause.plan ?? { origin: "direct" },
+            promptHash
+          })
+          return Object.freeze({ runId, outputRef: receipt.outputRef, journalSeq, output: value, cause: receipt })
+        },
+        publish: (requested) => {
+          for (const [collection, rows] of draft) state.set(collection, merged(collection)), rows.clear()
+          head = requested.journalSeq
+          ledger.record(requested.cause, flow.private ? facts.subject : undefined)
+          for (const listener of Array.from(listeners)) listener()
+        }
+      }
     }
 
     const bind = (principal: Principal.Principal): CoreApi => ({
@@ -669,7 +699,18 @@ export const make = (options: {
               Effect.mapError((refused) => refuse("receipt_required", tag, refused.detail, { code: refused.reason }))
             )
           }
-          return yield* fromResult(commit(prepared, promptHash))
+          return yield* commitLock.withPermit(Effect.uninterruptible(Effect.gen(function*() {
+            const draft = yield* fromResult(draftRun(prepared, promptHash))
+            if (options.commit !== undefined) {
+              const committed = yield* options.commit(draft.output, draft.atSequence)
+              if (committed._tag === "Committed") draft.publish(committed.run)
+              return committed.run
+            }
+            const requested = draft.atSequence(head + 1)
+            if (options.persist !== undefined) yield* options.persist(requested)
+            draft.publish(requested)
+            return requested
+          })))
         }),
       read: (query) => Effect.suspend(() => fromResult(readNow(principal, query))),
       changes: (query, after) =>

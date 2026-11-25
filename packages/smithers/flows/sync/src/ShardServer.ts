@@ -22,7 +22,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import type * as Schema from "effect/Schema"
+import * as Schema from "effect/Schema"
 import {
   type Command,
   type CommandKey,
@@ -34,7 +34,7 @@ import {
   type ShardId,
   type ShardPosition,
   type SnapshotResponse,
-  type SubmitRequest,
+  SubmitRequest,
   type SubmitResponse
 } from "./ShardProtocol.ts"
 
@@ -105,7 +105,11 @@ export type Decision =
  */
 export interface ShardServer {
   readonly shard: ShardId
-  readonly submit: (request: SubmitRequest) => Effect.Effect<SubmitResponse, ShardError>
+  /** Runs `onAccepted` inside the transaction for a newly sequenced command. */
+  readonly submit: (
+    request: SubmitRequest,
+    onAccepted?: (position: ShardPosition) => void
+  ) => Effect.Effect<SubmitResponse, ShardError>
   readonly pull: (request: PullRequest) => Effect.Effect<PullResponse, ShardError>
   readonly snapshot: (shard: ShardId) => Effect.Effect<SnapshotResponse, ShardError>
   readonly head: Effect.Effect<ShardPosition>
@@ -156,6 +160,8 @@ export const memoryStore = (): ShardStore => {
   }
 }
 
+const decodeSubmit = Schema.decodeUnknownEffect(SubmitRequest)
+
 const acceptAll = (command: Command): Decision => ({ _tag: "Accepted", events: [command.payload] })
 
 /**
@@ -188,13 +194,13 @@ export const make = (options: {
     const prior = store.receipt(key)
     if (prior !== undefined) {
       const position = prior.seq === null ? null : at(prior.epoch, prior.seq)
-      if (prior.hash !== hash) return { _tag: "IdempotencyConflict", key, position }
-      return position === null ? { _tag: "Refused", key, reason: prior.reason! } : { _tag: "Duplicate", key, position }
+      if (prior.hash !== hash) return { _tag: "IdempotencyConflict", key, shard, position }
+      return position === null ? { _tag: "Refused", key, shard, reason: prior.reason! } : { _tag: "Duplicate", key, position }
     }
     const decision = decide(request.command)
     if (decision._tag === "Refused") {
       store.putReceipt(key, { hash, epoch: current.epoch, seq: null, reason: decision.reason })
-      return { _tag: "Refused", key, reason: decision.reason }
+      return { _tag: "Refused", key, shard, reason: decision.reason }
     }
     const seq = current.head + 1
     store.append({ seq, epoch: current.epoch, key, stream: request.command.stream, events: decision.events })
@@ -223,11 +229,19 @@ export const make = (options: {
 
   return {
     shard,
-    submit: (request) =>
-      owned(request.shard).pipe(
-        Effect.andThen(contentHash(request.command)),
-        Effect.map((hash) => store.atomic(() => sequence(request, hash)))
-      ),
+    submit: (request, onAccepted) =>
+      Effect.gen(function*() {
+        yield* owned(request.shard)
+        const valid = yield* decodeSubmit(request).pipe(
+          Effect.mapError(() => new ShardError({ reason: "out_of_range", message: "Invalid shard submit request" }))
+        )
+        const hash = yield* contentHash(valid.command)
+        return store.atomic(() => {
+          const reply = sequence(valid, hash)
+          if (reply._tag === "Accepted") onAccepted?.(reply.position)
+          return reply
+        })
+      }),
     pull: (request) => owned(request.shard).pipe(Effect.map(() => store.atomic(() => page(request)))),
     snapshot: (requested) =>
       owned(requested).pipe(

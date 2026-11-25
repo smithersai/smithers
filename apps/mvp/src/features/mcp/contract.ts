@@ -1,4 +1,4 @@
-import type { Role } from "../auth/contract"
+import type { Role } from "../auth/contract.ts"
 
 // Bring Your Own Agent (BYOA) via MCP contract between the browser, site Worker, and ChatApi.
 // Zero runtime library imports so every side (browser, workerd, tests, docs) shares one source of truth.

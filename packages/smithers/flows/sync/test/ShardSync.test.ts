@@ -94,6 +94,7 @@ describe("ShardServer", () => {
       expect(yield* submit(server, command("a", "1", "one"))).toEqual({ ...first, _tag: "Duplicate" })
       expect(yield* submit(server, command("a", "1", "changed"))).toEqual({
         _tag: "IdempotencyConflict",
+        shard,
         key: ["a", "1"],
         position: { shard, epoch: 0, seq: 1 }
       })
@@ -115,16 +116,19 @@ describe("ShardServer", () => {
       })
       expect(yield* submit(server, command("a", "1", "bad"))).toEqual({
         _tag: "Refused",
+        shard,
         key: ["a", "1"],
         reason: "bad payload"
       })
       expect(yield* submit(server, command("a", "1", "bad"))).toEqual({
         _tag: "Refused",
+        shard,
         key: ["a", "1"],
         reason: "bad payload"
       })
       expect(yield* submit(server, command("a", "1", "good"))).toEqual({
         _tag: "IdempotencyConflict",
+        shard,
         key: ["a", "1"],
         position: null
       })
@@ -433,8 +437,90 @@ describe("ShardClient review regressions", () => {
       yield* node.enqueue(stream, "good")
       expect(Exit.isFailure(yield* Effect.exit(node.push))).toBe(true)
       expect((yield* store.load).outbox).toHaveLength(2)
+      expect((yield* store.load).terminalFailures).toBeUndefined()
       expect((yield* node.push).map((answer) => answer._tag)).toEqual(["Refused", "Accepted"])
-      expect((yield* store.load).outbox).toEqual([])
+      expect(yield* store.load).toMatchObject({
+        outbox: [],
+        terminalFailures: [{ _tag: "Refused", key: ["a", "0"], reason: "no" }]
+      })
+    }))
+
+  it.effect("keeps a pending command when the reply names a different command", () =>
+    Effect.gen(function*() {
+      const server = ShardServer.make({ shard })
+      const transport: ShardClient.Transport = {
+        ...server,
+        submit: () => Effect.succeed({ _tag: "Refused", shard, key: ["other", "0"], reason: "no" })
+      }
+      const node = yield* ShardClient.make({
+        shard, node: "a", transport, store: ShardClient.memoryStore(), apply: () => Effect.void
+      })
+      const pending = yield* node.enqueue(stream, "pending")
+      expect(Exit.isFailure(yield* Effect.exit(node.push))).toBe(true)
+      expect((yield* node.state).outbox).toEqual([pending])
+      expect((yield* node.state).terminalFailures).toBeUndefined()
+    }))
+
+  it.effect("does not dequeue when a submit reply names another shard", () =>
+    Effect.gen(function*() {
+      const other = Schema.decodeUnknownSync(ShardProtocol.ShardId)("repo:acme/other")
+      const server = ShardServer.make({ shard })
+      const key = ["a", "0"] as const
+      const decode = Schema.decodeUnknownSync(ShardProtocol.SubmitResponse)
+      expect(() => decode({ _tag: "Refused", key, reason: "no" })).toThrow()
+      expect(() => decode({ _tag: "IdempotencyConflict", key, position: null })).toThrow()
+      const position = { shard: other, epoch: 1, seq: 1 }
+      const replies: ReadonlyArray<ShardProtocol.SubmitResponse> = [
+        { _tag: "Accepted", key, position },
+        { _tag: "Duplicate", key, position },
+        { _tag: "StaleEpoch", key, shard: other, epoch: 1 },
+        { _tag: "Refused", key, shard: other, reason: "no" },
+        { _tag: "IdempotencyConflict", key, shard: other, position: null },
+        { _tag: "IdempotencyConflict", key, shard, position }
+      ]
+      for (const reply of replies) {
+        const store = ShardClient.memoryStore()
+        const node = yield* ShardClient.make({
+          shard, node: "a", store, apply: () => Effect.void,
+          transport: { ...server, submit: () => Effect.succeed(reply) }
+        })
+        yield* node.enqueue(stream, "pending")
+        const before = yield* store.load
+        expect(yield* Effect.flip(node.push)).toMatchObject({ reason: "wrong_shard" })
+        expect(yield* store.load).toEqual(before)
+      }
+    }))
+
+  it.effect("does not apply or advance when a pull page or snapshot names another shard", () =>
+    Effect.gen(function*() {
+      const other = Schema.decodeUnknownSync(ShardProtocol.ShardId)("repo:acme/other")
+      const local = ShardServer.make({ shard })
+      const remote = ShardServer.make({ shard: other })
+      yield* remote.submit({ version: 2, shard: other, epoch: 0, command: command("w", "1", "foreign") })
+      const view = projection()
+      const store = ShardClient.memoryStore()
+      let reads = 0
+      const snapshot = () => Effect.suspend(() => {
+        reads += 1
+        return remote.snapshot(other)
+      })
+      const open = (pull: ShardClient.Transport["pull"]) => ShardClient.make({
+        shard, node: "a", store, apply: view.apply, transport: { ...local, pull, snapshot }
+      })
+      const foreignPull: ShardClient.Transport["pull"] = (request) => remote.pull({ ...request, shard: other })
+      const foreign = yield* open(foreignPull)
+      expect(yield* Effect.flip(foreign.pull)).toMatchObject({ reason: "wrong_shard" })
+      yield* remote.compact(1, ["foreign"])
+      expect(yield* Effect.flip(foreign.pull)).toMatchObject({ reason: "wrong_shard" })
+      expect(reads).toBe(0)
+
+      yield* submit(local, command("w", "1", "local"))
+      yield* local.compact(1, ["local"])
+      const wrongSnapshot = yield* open(local.pull)
+      expect(yield* Effect.flip(wrongSnapshot.pull)).toMatchObject({ reason: "wrong_shard" })
+      expect(reads).toBe(1)
+      expect(view.deliveries).toEqual([])
+      expect(yield* store.load).toEqual(ShardClient.initialState)
     }))
 
   it.effect("M6: a limit that is not a positive safe integer is a defect at construction", () =>
