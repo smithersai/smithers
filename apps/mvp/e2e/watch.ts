@@ -1,3 +1,4 @@
+import { browserModelRequests } from "./attach"
 import { Effect } from "effect"
 import { type Browser, type BrowserContext, expect, test as base, type Page, type Request, type TestInfo } from "@playwright/test"
 import { appendFile } from "node:fs/promises"
@@ -15,6 +16,7 @@ import { baseURL, DOT_ENV, dotEnvSets, meets, onThisMachine, target } from "./ta
 
 /** A test's problems, fed by every context it opens. */
 export class Watched extends Problems {
+  private readonly modelRequests: Array<Array<string>> = []
   private readonly contexts = new WeakSet<BrowserContext>()
   private readonly pages = new WeakSet<Page>()
   private readonly cancellationRecords: string[] = []
@@ -50,6 +52,7 @@ export class Watched extends Problems {
   watch(context: BrowserContext): void {
     if (this.contexts.has(context)) return
     this.contexts.add(context)
+    this.modelRequests.push(browserModelRequests(context))
     context.on("page", (page) => this.watchPage(page))
     for (const page of context.pages()) this.watchPage(page)
     context.on("request", request => {
@@ -155,7 +158,10 @@ export class Watched extends Problems {
     log.push(...this.report(declared))
     // On the run's output, passing or not: a passing test keeps no browser.log, and a test's directory goes with the next run.
     for (const line of this.serverErrors(declared)) console.info(`server error: ${line}`)
-    const undeclared = this.undeclared(declared)
+    const undeclared = [
+      ...this.undeclared(declared),
+      ...this.modelRequests.flat().map((path) => `Browser requested a retired model route: ${path}`),
+    ]
     if (undeclared.length > 0 && this.cancellationRecords.length > 0) console.info(`Network cancellation witnesses:\n${this.cancellationRecords.join("\n")}`)
     return undeclared
   }
@@ -164,14 +170,14 @@ export class Watched extends Problems {
 export { UNDECLARED }
 
 /**
- * The services a local dev server runs without (e2e/problems.ts `environmentAnnotations`): Code Storage and a model key
- * as their needs read them, and the GitHub App, set in this run's environment or the dev server's apps/mvp/.env. A
+ * The services a local dev server runs without (e2e/problems.ts `environmentAnnotations`): Code Storage as its need
+ * reads it, and the GitHub App, set in this run's environment or the dev server's apps/mvp/.env. A
  * deployment lacks none.
  */
 const lacks = () => {
   const local = target === "local"
   const githubApp = (process.env.GITHUB_APP_ID ?? "") !== "" || dotEnvSets(process.env.E2E_DOT_ENV ?? DOT_ENV, "GITHUB_APP_ID")
-  return { codeStorage: local && !meets("codeStorage"), model: local && !meets("liveModel"), github: local && !githubApp }
+  return { codeStorage: local && !meets("codeStorage"), github: local && !githubApp }
 }
 
 /**

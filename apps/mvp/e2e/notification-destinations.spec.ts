@@ -1,9 +1,11 @@
+import { recordExchange, withAttachedAgent } from "./attach"
 import { expect, test } from "./devices"
 import { requires, syncedRepository } from "./target"
 
-requires("member", "githubApp", "syncedRepository")
+requires("member")
 
 test("commit notification opens its recorded revision", async ({ devices }) => {
+  requires("githubApp", "syncedRepository")
   const [tab] = await devices.open("Reader")
   await tab.page.goto(`/${syncedRepository()}`)
   await tab.page.getByRole("button", { name: /^Notifications/ }).click()
@@ -16,6 +18,7 @@ test("commit notification opens its recorded revision", async ({ devices }) => {
 })
 
 test("failed clone stays at its reason and Retry", async ({ devices }) => {
+  requires("githubApp", "syncedRepository")
   const [tab] = await devices.open("Reader")
   await tab.page.goto(`/${syncedRepository()}`)
   await tab.page.getByRole("button", { name: /^Notifications/ }).click()
@@ -29,6 +32,7 @@ test("failed clone stays at its reason and Retry", async ({ devices }) => {
 })
 
 test("timeline previews use readable times", async ({ devices }) => {
+  requires("githubApp", "syncedRepository")
   const [tab] = await devices.open("Reader")
   await tab.page.goto("/app")
   const timeline = tab.page.getByRole("navigation", { name: "Conversation timeline" })
@@ -42,10 +46,10 @@ test("failed header opens the failed answer's run", async ({ devices }) => {
   requires("localServer")
   const [tab] = await devices.open("Reader")
   const id = crypto.randomUUID(), answerId = crypto.randomUUID()
-  const question = await tab.page.request.post("/api/questions", { data: { id, answerId, text: `Header failure ${devices.word}` } })
-  expect(question.ok()).toBe(true)
-  const answer = await tab.page.request.post(`/api/answers/${answerId}`, { data: { status: "failed", failure: "unfinished" } })
-  expect(answer.ok()).toBe(true)
+  await withAttachedAgent(tab.page, async (agent) => {
+    await recordExchange(agent, { id, answerId, text: "Header failure " + devices.word }, "The run did not finish.")
+    await agent.reportRunAsPerson(answerId, { status: "failed" })
+  })
   await tab.page.goto("/app")
   const header = tab.page.getByRole("link", { name: "Answer failed — view run" })
   await expect(header).toHaveAttribute("href", `/app/runs/${answerId}`, { timeout: 30_000 })
@@ -54,6 +58,7 @@ test("failed header opens the failed answer's run", async ({ devices }) => {
 })
 
 test("failed notification opens the answer it names", async ({ devices }) => {
+  requires("githubApp", "syncedRepository")
   const [tab] = await devices.open("Reader")
   await tab.page.goto(`/${syncedRepository()}`)
   await tab.page.getByRole("button", { name: /^Notifications/ }).click()

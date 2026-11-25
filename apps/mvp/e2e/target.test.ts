@@ -269,12 +269,6 @@ describe("needs", () => {
     expect(NEEDS.duplicateDrafts.met({ ...local, env: { E2E_DUPLICATE_DRAFT_NAME: "existing duplicates" } })).toBe(true)
     expect(NEEDS.inspectRun.met({ ...local, env: { E2E_INSPECT_RUN: "existing-run" } })).toBe(true)
   })
-  it("quota-refusal needs an explicitly refusing provider", () => {
-    expect(NEEDS.modelQuotaRefusal.met(local)).toBe(false)
-    expect(NEEDS.modelQuotaRefusal.met({ ...local, env: { E2E_MODEL_QUOTA_REFUSED: "1" } })).toBe(true)
-    expect(NEEDS.modelQuotaRefusal.met({ ...local, env: { E2E_MODEL_QUOTA_REFUSED: "0" } })).toBe(false)
-  })
-
   it("a feed key: alchemy dev's own locally unless FEED_KEYS replaced it, a named repository and key on a deployment", () => {
     expect(NEEDS.feedKey.met(local)).toBe(true)
     expect(NEEDS.feedKey.met({ ...local, env: { FEED_KEYS: "a/b=" } })).toBe(false)
@@ -334,6 +328,7 @@ describe("needs", () => {
       "sandboxSecrets",
       "webhookSecret",
       "alertProviders",
+      "alertTriageIssue",
       "oldBuild",
       "githubSignIn",
       "aliasSignIn",
@@ -343,7 +338,6 @@ describe("needs", () => {
       "repositoryRun",
       "emptySecretsRepository",
       "syncedRepository",
-      "modelQuotaRefusal",
       "liveModel",
       "claudeSubscription",
       "codexSubscription",

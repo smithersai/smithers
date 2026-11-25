@@ -183,20 +183,18 @@ export const serverErrorAnnotation = (status: Status, path: string) => {
 }
 
 /** The services a run's target runs without, for `environmentAnnotations`. */
-export type Lacks = { readonly codeStorage: boolean; readonly model: boolean; readonly github: boolean }
+export type Lacks = { readonly codeStorage: boolean; readonly github: boolean }
 
 /**
  * The server errors a local dev server answers in place of a service it runs without, which no test causes: without
- * Code Storage its clones and repository reads answer `503 not_configured` (worker/RepoApi.ts), without a model key its
- * model endpoint answers `502`, and without the GitHub App, GitHub's anonymous allowance runs out in a suite and its
- * About reads answer `503 rate_limited`. A deployment has all three, so it declares none.
+ * Code Storage its clones and repository reads answer `503 not_configured` (worker/RepoApi.ts). Without the GitHub App,
+ * GitHub's anonymous allowance runs out in a suite and its About reads answer `503 rate_limited`.
  */
 export const environmentAnnotations = (lacks: Lacks) => [
   ...(lacks.codeStorage
     ? ["/api/repos", "/api/repos/launch", "/api/repos/*/refs", "/api/repos/*/tree/*", "/api/repos/*/blob/*", "/api/repos/*/raw/*"]
       .map((path) => serverErrorAnnotation(503, path))
     : []),
-  ...(lacks.model ? [serverErrorAnnotation(502, "/api/model/*")] : []),
   ...(lacks.github ? [serverErrorAnnotation(503, "/api/repos/*/about")] : []),
 ]
 

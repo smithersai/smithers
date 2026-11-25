@@ -1,25 +1,28 @@
+import { recordExchange, withAttachedAgent } from "./attach"
+import { recordSummary } from "./timeline-fixture"
 import { expect, test } from "./devices"
-import { requires, scriptedAgent } from "./target"
+import { requires } from "./target"
 
-requires("scriptedAgent", "member")
+requires("member", "ownConversation")
 
-test("Timeline summaries: each question and answer keeps its own model words after reload", {
-  annotation: { type: "summary", description: "Distinct model summaries replace the question and answer placeholders and survive a fresh page." },
-}, async ({ devices, request }) => {
+test("Timeline summaries: each question and answer keeps its own recorded words after reload", {
+  annotation: { type: "summary", description: "Distinct recorded summaries replace the question and answer placeholders and survive a fresh page." },
+}, async ({ devices }) => {
   test.setTimeout(180_000)
   const exchanges = [
     { question: "Investigate stale login cookie expiration", answer: "Fixed cookie expiry during session refresh" },
     { question: "Inspect release validation test coverage", answer: "Added missing checkout validation regression tests" },
   ].map(row => ({ ...row, id: crypto.randomUUID(), answerId: crypto.randomUUID() }))
-  await test.step("Record two completed exchanges", async () => {
-    for (const row of exchanges) {
-      expect((await request.post("/api/questions", { data: { id: row.id, answerId: row.answerId, text: `Topic: summary proof. ${row.question}` } })).status()).toBe(202)
-      expect((await request.post(`/api/answers/${row.answerId}`, { data: { status: "done", text: `Topic: summary proof. ${row.answer}` } })).status()).toBe(200)
-    }
-  })
   const [a] = await devices.open("Message summaries")
-  await a.page.goto(scriptedAgent("echo"))
-  await a.ready()
+  await test.step("Record two completed exchanges", () => withAttachedAgent(a.page, async (agent) => {
+    for (const row of exchanges) {
+      const question = "Topic: summary proof. " + row.question
+      const reply = "Topic: summary proof. " + row.answer
+      await recordExchange(agent, { id: row.id, answerId: row.answerId, text: question }, reply)
+      await recordSummary(a.page.request, { id: row.id, role: "user", text: question }, row.question)
+      await recordSummary(a.page.request, { id: row.answerId, role: "assistant", text: reply }, row.answer)
+    }
+  }))
   const rail = a.page.getByRole("navigation", { name: "Conversation timeline" })
   const summaries = async () => {
     await expect(rail).toBeVisible()
@@ -33,7 +36,7 @@ test("Timeline summaries: each question and answer keeps its own model words aft
     }
     expect(new Set(labels).size).toBe(4)
   }
-  await test.step("Read four distinct model summaries", summaries)
+  await test.step("Read four distinct summaries", summaries)
   await test.step("Reload and read the same persisted summaries", async () => {
     await a.page.reload()
     await a.ready()

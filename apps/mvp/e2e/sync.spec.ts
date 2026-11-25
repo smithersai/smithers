@@ -1,3 +1,4 @@
+import { withAttachedAgent } from "./attach"
 import { expect, expectSameThread, test } from "./devices"
 import { step } from "./fixtures"
 import { requires, scriptedAgent } from "./target"
@@ -5,13 +6,15 @@ import { requires, scriptedAgent } from "./target"
 // Both tests ask, which needs a Member or above.
 requires("personalModel", "member", "ownConversation")
 
-// Two separate browsers hold the conversation Electric syncs from Postgres; the asking browser's agent answers.
+// Two separate browsers hold the conversation Electric syncs from Postgres; an MCP client answers.
 test("sync: a message and Smithers' answer sent in one browser appear in another", { annotation: { type: "summary", description: "A question and its answer from one browser show in another." } }, async ({ devices }) => {
-  requires("liveModel")
   const word = devices.word
   const [alice, bob] = await devices.open("Alice", "Bob")
   const question = `Reply with exactly the word: sync-${word}`
-  await alice.ask(question)
+  await withAttachedAgent(alice.page, async (agent) => {
+    await alice.askAndWaitTaken(question)
+    await agent.respond(await alice.idOf(question), "sync-" + word)
+  })
   await bob.expectAnswered(question, `sync-${word}`)
   await alice.expectAnswered(question, `sync-${word}`)
   await expectSameThread([alice, bob], word, 2)

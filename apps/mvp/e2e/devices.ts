@@ -368,7 +368,7 @@ export class Tab {
   send(text: string) {
     // A slash command runs on the device and asks nothing; anything else is a question.
     if (!text.startsWith("/")) {
-      requires("personalModel", "ownConversation")
+      requires("ownConversation")
       // In a deployment the tab must be in the run's own conversation, or the question would reach the team's home.
       if (target === "deployment" && !atOwnPlace(this.page.url())) throw new UndeclaredNeed("ownConversation")
     }
@@ -394,7 +394,7 @@ export class Tab {
     return (await this.question(text).first().getAttribute("data-id"))!
   }
 
-  // Asks a question and waits until ChatApi took it (202): from then on the server answers it, whatever this tab does.
+  // Asks a question and waits until ChatApi took it (202), so an attached agent can answer even if this tab closes.
   async askAndWaitTaken(text: string) {
     const taken = this.page.waitForResponse((response) => isQuestions(response.url()) && response.request().postDataJSON()?.text === text)
     await this.ask(text)

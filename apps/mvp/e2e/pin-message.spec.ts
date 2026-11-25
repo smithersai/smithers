@@ -1,21 +1,24 @@
+import { withAttachedAgent } from "./attach"
 import { expect } from "@playwright/test"
 import { COULDNT_ANSWER, test } from "./devices"
 import { step } from "./fixtures"
-import { ownPlace, requires, scriptedAgent } from "./target"
+import { ownPlace, requires } from "./target"
 
 for (const width of [390, 768, 1280]) {
   test(`pin at ${width}: stays above a long conversation and follows only its person`, {
     annotation: { type: "summary", description: "Pin, scroll, collapse, sync across devices, and unpin without changing another person's view." },
   }, async ({ devices }) => {
-    requires("devPeople", "scriptedAgent")
+    requires("devPeople", "member", "ownConversation")
     test.setTimeout(180_000)
     devices.atWidth(width)
     const [first, second] = await devices.open("First device", "Second device")
     const [other] = await devices.openTeammate("Another person")
-    await first!.page.goto(scriptedAgent("pin-message"))
-    await first!.ready()
     const question = `${devices.word}: Write 35 numbered lines about a garden, one short sentence per line. Start with GARDEN.`
-    await first!.ask(question)
+    await withAttachedAgent(first!.page, async (agent) => {
+      await first!.askAndWaitTaken(question)
+      const garden = ["GARDEN", ...Array.from({ length: 35 }, (_, n) => (n + 1) + ". The garden path leads past bed " + (n + 1) + ".")].join("\n\n")
+      await agent.respond(await first!.idOf(question), garden)
+    })
     await first!.expectAnswered(question, "GARDEN")
     const reply = first!.answerTo(question)
     const id = (await reply.getAttribute("data-id"))!

@@ -98,3 +98,35 @@ test("a fake 503 shows its body code and ray in the report, declared or not, pas
     await new Promise<void>(resolve => server.close(() => resolve()))
   }
 }, 15_000)
+
+test("a successful request to a retired model route still fails the browser guard", async () => {
+  const server = createServer((_request, response) => {
+    response.setHeader("content-type", "text/plain")
+    response.end("ok")
+  })
+  server.listen(0, "127.0.0.1")
+  await once(server, "listening")
+  const address = server.address()
+  if (address === null || typeof address === "string") throw new Error("missing test address")
+  const origin = "http://127.0.0.1:" + address.port
+  const browser = await chromium.launch()
+  try {
+    const page = await browser.newPage()
+    const watched = new Watched(origin)
+    watched.watch(page.context())
+    await page.goto(origin)
+    await page.evaluate(async () => {
+      await fetch("/api/model")
+      await fetch("/api/model/summary?secret=excluded")
+      await fetch("/api/models")
+    })
+    expect(await watched.check({ annotations: [] }, [])).toEqual([
+      "Browser requested a retired model route: /api/model",
+      "Browser requested a retired model route: /api/model/summary",
+    ])
+  } finally {
+    await browser.close()
+    server.closeAllConnections()
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  }
+}, 15_000)

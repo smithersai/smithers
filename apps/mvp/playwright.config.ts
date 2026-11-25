@@ -14,11 +14,9 @@ if (!(process.env.NODE_OPTIONS ?? "").includes(VIBELANG_LOADER)) {
   process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ""} ${VIBELANG_LOADER}`.trim()
 }
 
-// Real browsers against the real app, Worker, Durable Object and model: no mocks. The target is local by default:
-// Playwright starts `alchemy dev` (which needs the chat model's credential, CEREBRAS_API_KEY by default, in the
-// environment). BASE_URL points the tests at a deployment, and `pnpm e2e:prod` at production (e2e/target.ts,
-// docs/infrastructure.md#against-a-deployment). Locally the tests open the dev server over HTTPS and HTTP/2
-// (dev/https.ts), as production serves the app.
+// Real browsers against the app and Worker. Conversation tests use a separate MCP client to answer.
+// Playwright starts Alchemy locally, and BASE_URL selects an existing server. The local app is served over
+// HTTPS and HTTP/2 (dev/https.ts), as in production. See e2e/target.ts for deployment runs.
 
 // The dev server on this machine, on whatever port: its certificate may be self-signed (dev/https.ts).
 const devCertificate = onThisMachine(baseURL)
@@ -60,7 +58,7 @@ const deployment = (): PlaywrightTestConfig => {
 
 /** The specs that answer in the local shared conversation and waits for its turn there. */
 const TAKES_TURNS = [
-  "agent", "coedit", "factory", "files", "forms", "generated-view", "model-quota", "notifications", "pin-message",
+  "agent", "coedit", "factory", "files", "forms", "generated-view", "notifications", "pin-message",
   "queue", "repo-in-chat", "run-credentials", "run-graph", "sandbox-tools", "status", "sync", "timeline", "timeline-look", "toast-overlap",
   "todos",
 ].map((name) => `**/${name}.spec.ts`)

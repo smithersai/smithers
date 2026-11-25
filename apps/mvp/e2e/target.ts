@@ -322,6 +322,10 @@ const needs = {
       run.env.MODEL_SPEND_ALERTS === "true",
     reason: "it reads alerts from the local stand-in providers: start the dev server with ALERT_TELEGRAM_API_URL and ALERT_EMAIL_API_URL both at them and MODEL_SPEND_ALERTS=true",
   },
+  alertTriageIssue: {
+    met: (run) => /^(?!smithersai\/)[w.-]+\/[w.-]+\/issues\/[1-9]\d*$/i.test(run.env.E2E_ALERT_TRIAGE_ISSUE ?? ""),
+    reason: "Set E2E_ALERT_TRIAGE_ISSUE to an issue in a disposable triage-enabled repository",
+  },
   oldBuild: {
     met: (run) => run.target === "local" && existsSync(join(oldBuildDir(run.env), "index.html")),
     reason: "it upgrades from a deployed build kept on this machine: put one at OLD_BUILD_DIR",
@@ -370,10 +374,6 @@ const needs = {
     met: (run) => /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_SYNCED_REPOSITORY ?? ""),
     reason: "it needs existing synced issues and pull requests, at least one issue open: set E2E_SYNCED_REPOSITORY to the deployment's synced public owner/name; an empty or unfinished sync fails the fixture check",
     blocked: true,
-  },
-  modelQuotaRefusal: {
-    met: (run) => run.env.E2E_MODEL_QUOTA_REFUSED === "1",
-    reason: "it needs a real deployment model refusing for quota or credit: set E2E_MODEL_QUOTA_REFUSED=1 only while that provider is refusing",
   },
   liveModel: {
     met: (run) =>

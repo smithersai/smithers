@@ -1,31 +1,26 @@
+import { withAttachedAgent } from "./attach"
 import { Effect } from "effect"
 import { clearGrants, SharingCleanup } from "./sharingCleanup"
 import type { Page } from "@playwright/test"
 import { expect } from "@playwright/test"
-import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../src/features/auth/contract"
+import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract"
 import { PERSONAL_MODEL_SHAPE_ROUTE, resolveTier, type SavedConnection } from "../src/features/personal-model/contract"
 import { OWN_BRANCH, requiresVerified, target, writeHeaders } from "./target"
 import { shapeRows } from "./shape"
 import type { Tab } from "./devices"
 
 /** Settle the test's questions while the asker still has edit access, before removing any grants. */
-export const settleSharingQuestions = async (tab: Tab) => {
-  const failures: Error[] = []
-  for (const { answerId, status } of tab.asked) {
-    if (status !== undefined && status >= 400) continue
-    try {
-      const response = await tab.page.request.post(`/api/answers/${answerId}`, {
-        headers: { ...writeHeaders(), [DEVICE_PERSON_HEADER]: NO_DEVICE_DATA },
-        data: { status: "failed", failure: "unfinished" },
-      })
-      if (response.status() === 200) continue
-      if (response.status() === 409 && (await response.json() as { code?: string }).code === "settled") continue
-      failures.push(new Error(`Sharing question cleanup returned ${response.status()}`))
-    } catch {
-      failures.push(new Error("Sharing question cleanup transport failed (details withheld)"))
-    }
-  }
-  if (failures.length > 0) throw new AggregateError(failures, "Sharing questions were not settled before revocation")
+export const settleSharingQuestions = async (
+  tab: Tab,
+  branch: SharedBranch,
+  kind: "sharing" | "coedit",
+) => {
+  const pending = tab.asked.filter(({ status }) => status === 202 || status === 200)
+  if (pending.length === 0) return
+  const { owner, name, ref } = sharingRepository(kind)
+  await withAttachedAgent(tab.page, async (agent) => {
+    for (const { questionId } of pending) await agent.respond(questionId, "Received.")
+  }, { repo: owner + "/" + name, branch: ref, conversation: branch.conversationId })
 }
 
 /** Read readiness as the UI does; no key, provider response or saved connection is put in an artifact. */

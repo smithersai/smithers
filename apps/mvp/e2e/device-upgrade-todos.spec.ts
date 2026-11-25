@@ -34,9 +34,8 @@ const WEBKIT_ENDED = [
 
 
 // What the test causes on purpose (2026-11-03, each read from the server's own answers in both browsers): it refuses one
-// commit (403 forbidden), and the dev server has no summary model (409 no_route).
+// commit (403 forbidden).
 expectServerError(403, "/api/repos/*/stack")
-expectServerError(409, "/api/model/summary")
 expectOfflineErrors()
 
 test(

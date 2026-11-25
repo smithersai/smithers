@@ -1,3 +1,5 @@
+import { recordExchange, withAttachedAgent } from "./attach"
+import { recordSummary } from "./timeline-fixture"
 import { capturesOf, fullPageScreenshot, painted } from "./fullPageScreenshot"
 import { expect, request as apiRequests, type Page, type TestInfo, type Locator, type Request } from "@playwright/test"
 import { expectServerError, strictTest as base } from "./watch"
@@ -411,8 +413,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           await audit(page, info, "your-model", form)
         })
         if (signedIn) test("composer: controls and text fit", async ({ page }, info) => {
-          requires("scriptedAgent")
-          await page.goto(scriptedAgent("echo"))
+          await page.goto("/app")
           const composer = await openComposer(page)
           await composer.fill("Review mobile layouts and preserve all available actions on a narrow screen.")
           await audit(page, info)
@@ -527,16 +528,15 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           await page.goto(scriptedAgent("needs-you"))
           // A real settled conversation makes the rail use multiple zoom levels
           // even when this case runs alone, without earlier route fixtures.
-          for (let index = 0; index < 8; index++) {
-            const answerId = crypto.randomUUID()
-            expect((await page.request.post("/api/questions", { headers: writeHeaders(), data: {
-              id: crypto.randomUUID(), answerId, text: `Inspect release regression ${index + 1}`,
-            } })).status()).toBe(202)
-            expect((await page.request.post(`/api/answers/${answerId}`, { headers: writeHeaders(), data: {
-              // Longer than a label shows, so the rail asks the summary model for it, once (docs/features/timeline.md#cost).
-              status: "done", text: `Release regression ${index + 1} checked both recorded attempts and found the missing projection entry.`,
-            } })).status()).toBe(200)
-          }
+          await withAttachedAgent(page, async (agent) => {
+            for (let index = 0; index < 8; index++) {
+              const id = crypto.randomUUID(), answerId = crypto.randomUUID()
+              const text = "Inspect release regression " + (index + 1)
+              const reply = "Release regression " + (index + 1) + " checked both recorded attempts and found the missing projection entry."
+              await recordExchange(agent, { id, answerId, text }, reply)
+              await recordSummary(page.request, { id: answerId, role: "assistant", text: reply }, "Release regression check completed")
+            }
+          })
           const composer = await openComposer(page)
           const question = `Deploy the docs preview, mobile-${crypto.randomUUID()}`
           const accepted = page.waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname === "/api/questions" && request.postDataJSON().text === question)
@@ -602,22 +602,29 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           requires("devSignIn")
           await page.goto("/app")
           await expect(page.getByRole("main", { name: "App" })).toBeVisible()
-          const answers: string[] = []
+          const answers: Array<{ id: string; answerId: string }> = []
           try {
-            for (let index = 0; index < 5; index++) {
-              const answerId = crypto.randomUUID()
-              answers.push(answerId)
-              expect((await page.request.post("/api/questions", { headers: writeHeaders(), data: { id: crypto.randomUUID(), answerId, text: `Mobile notice ${answerId}` } })).ok()).toBe(true)
-              expect((await page.request.post(`/api/runs/${answerId}`, { headers: writeHeaders(), data: { status: "working" } })).ok()).toBe(true)
-            }
+            await withAttachedAgent(page, async (agent) => {
+              for (let index = 0; index < 5; index++) {
+                const id = crypto.randomUUID(), answerId = crypto.randomUUID()
+                await agent.ask({ id, answerId, text: "Mobile notice " + answerId })
+                answers.push({ id, answerId })
+                await agent.reportRunAsPerson(answerId, { status: "working" })
+              }
+            })
             // A conversation intentionally suppresses its own working notices.
             await page.goto("/app/flows")
             await expect(page.locator('[data-slot="toast"]')).toHaveCount(3, { timeout: 30_000 })
             await audit(page, info)
           } finally {
-            for (const answerId of answers) {
-              await page.request.post(`/api/answers/${answerId}`, { headers: writeHeaders(), data: { status: "failed", failure: "unfinished" } })
-              await page.request.post("/api/notifications/ack", { headers: writeHeaders(), data: { subject: `run:${answerId}`, version: 2, act: "dismiss" } })
+            if (answers.length > 0) {
+              await withAttachedAgent(page, async (agent) => {
+                for (const { id, answerId } of answers) {
+                  await agent.respond(id, "The notice test is complete.")
+                  await agent.reportRunAsPerson(answerId, { status: "failed" })
+                  await page.request.post("/api/notifications/ack", { headers: writeHeaders(), data: { subject: "run:" + answerId, version: 2, act: "dismiss" } })
+                }
+              })
             }
           }
         })

@@ -45,8 +45,7 @@ test("channels: an Admin sets email and Telegram, and each spend alert's deliver
     description: "An Admin sets where spend alerts go; the next alert reaches the email address and the Telegram chat.",
   },
 }, async ({ devices }) => {
-  requires("alertProviders")
-  test.skip(!scratchIssue, "Set E2E_ALERT_TRIAGE_ISSUE to an issue in a disposable triage-enabled repository")
+  requires("alertProviders", "alertTriageIssue")
   test.setTimeout(240_000)
   const [a] = await devices.open("Admin")
   const page = a.page

@@ -178,7 +178,7 @@ test("branch sharing: shared to view, Ben watches Maya's terminal and can't type
     await ben!.composer.press("Enter")
     await expect(questionIn(conversation(maya!.page), question), "Maya sees Ben's question").toBeVisible({ timeout: SYNC })
 
-    await settleSharingQuestions(ben!)
+    await settleSharingQuestions(ben!, branch, "sharing")
     settled = true
 
     // Hold independent sockets: the app unmounting its views cannot supply the server's revocation proof.
@@ -214,7 +214,7 @@ test("branch sharing: shared to view, Ben watches Maya's terminal and can't type
     await expect(avatar(maya!, BEN), "Ben left Maya's header").toHaveCount(0, { timeout: 30_000 })
   } finally {
     try {
-        if (!settled) await settleSharingQuestions(ben!)
+        if (!settled) await settleSharingQuestions(ben!, branch, "sharing")
     } finally {
       await clearShares(maya!.page, branch, [other.personId, "repository"])
     }

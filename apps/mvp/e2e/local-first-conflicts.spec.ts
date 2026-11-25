@@ -1,9 +1,10 @@
+import { recordExchange, withAttachedAgent } from "./attach"
 import type { APIRequestContext } from "@playwright/test"
 import { chooseIssue } from "./todoDraft"
 import { COULDNT_ANSWER, expect, expectSameThread, NOT_SENT, pairs, serverRows, type Tab, test } from "./devices"
 import { faults, faultyApp } from "./faults"
 import { step } from "./fixtures"
-import { appHome, questionPost, requires, writeHeaders } from "./target"
+import { appHome, questionPost, requires } from "./target"
 
 // Every kind of conflict the device store and the outbox resolve (docs/decisions/0002-local-first.md §2, §3 and §5;
 // docs/decisions/0016-todos-and-the-stack.md), one test each, on separate devices (browser contexts) or two tabs of one
@@ -56,7 +57,6 @@ test.describe("Local-first conflicts", () => {
       description: "Two writers claim one question id: Postgres keeps the first, A keeps its own Not sent, and Edit asks it again under a new id.",
     },
   }, async ({ devices, request }) => {
-    requires("liveModel")
     const word = devices.word
     const [a, b] = await devices.open("A", "B")
     const mine = question(`mine-${word}`)
@@ -70,15 +70,10 @@ test.describe("Local-first conflicts", () => {
       id = await a.idOf(mine)
     })
 
-    // Another client of ChatApi's API asks under the same question id, and answers its own question through the answer
-    // routes, as an asking device's agent does.
     await step("Another writer stores a different question under the same id; B shows it", async () => {
-      const answerId = crypto.randomUUID()
-      const asked = await request.post("/api/questions", questionPost({ id, answerId, text: theirs }))
-      expect(asked.status(), await asked.text()).toBe(202)
-      const answered = await request.post(`/api/answers/${answerId}`, { data: { status: "done", text: `theirs-${word}` }, headers: writeHeaders() })
-      expect(answered.status(), await answered.text()).toBe(200)
-      await b.expectAnswered(theirs, `theirs-${word}`)
+      await withAttachedAgent(b.page, (agent) =>
+        recordExchange(agent, { id, answerId: crypto.randomUUID(), text: theirs }, "theirs-" + word))
+      await b.expectAnswered(theirs, "theirs-" + word)
     })
 
     await step("A comes back: ChatApi refuses A's question under that id (409), and A keeps it, Not sent", async () => {
@@ -93,7 +88,12 @@ test.describe("Local-first conflicts", () => {
       await a.question(mine).getByRole("button", { name: "Edit", exact: true }).click()
       await expect(a.composer).toHaveValue(mine)
       await expect(a.question(mine)).toHaveCount(0)
+      const taken = a.page.waitForResponse((response) =>
+        new URL(response.url()).pathname === "/api/questions" && response.request().postDataJSON()?.text === mine)
       await a.composer.press("Enter")
+      const admitted = await taken
+      expect(admitted.status()).toBe(202)
+      await withAttachedAgent(a.page, (agent) => agent.respond(admitted.request().postDataJSON().id, "mine-" + word))
       for (const tab of [a, b]) await tab.expectAnswered(mine, `mine-${word}`)
     })
 

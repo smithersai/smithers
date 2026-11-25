@@ -28,7 +28,7 @@ export const watchPaint = () => {
     const shown = window.__shown!
     const now = performance.now()
     if (shown.chrome === undefined && painted('nav[aria-label="Branch"]')) shown.chrome = now
-    if (shown.conversation === undefined && painted('.branch-screen-conversation[aria-label="Conversation"]')) {
+    if (shown.conversation === undefined && painted('.branch-screen-conversation [aria-label="Conversation"], .branch-screen-conversation[aria-label="Conversation"]')) {
       shown.conversation = now
     }
     if (shown.chrome === undefined || shown.conversation === undefined) requestAnimationFrame(frame)

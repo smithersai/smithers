@@ -1,33 +1,30 @@
+import { recordExchange, withAttachedAgent } from "./attach"
+import { recordSummary } from "./timeline-fixture"
 import { expect, test } from "./devices"
 import { requires, scriptedAgent } from "./target"
 import { openComposer } from "./composer"
 
-// The scripted agent's model (a dev build) answers, and the test records questions and answers, which needs a Member.
-requires("scriptedAgent", "member")
+requires("member", "ownConversation")
 
 test("Conversation timeline: scroll, jump by key and receive durable summaries", {
   annotation: { type: "summary", description: "A long conversation stays in sync with its rail; keys jump and summaries remain readable inside the available rail." },
-}, async ({ devices, request }) => {
+}, async ({ devices }) => {
   test.setTimeout(180_000)
   const [a] = await devices.open("Timeline")
-  await a.page.goto(scriptedAgent("echo"))
-  await a.ready()
   const word = `rail-${Date.now()}`
   const firstQuestionId = crypto.randomUUID()
   await test.step("Build a long conversation", async () => {
-    // Another real API client records the conversation, as in local-first-conflicts.spec.ts.
-    // This journey tests rail navigation and summaries independently of the agent-answer journey.
-    for (let n = 0; n < 8; n++) {
-      const id = n === 0 ? firstQuestionId : crypto.randomUUID()
-      const answerId = crypto.randomUUID()
-      const question = `Inspect release retry ${n + 1}: ${word}`
-      const asked = await request.post("/api/questions", { data: { id, answerId, text: question } })
-      expect(asked.status()).toBe(202)
-      const answered = await request.post(`/api/answers/${answerId}`, {
-        data: { status: "done", text: `Release retry ${n + 1} retained both recorded attempts. The check found a missing projection entry. ${word}` },
-      })
-      expect(answered.status()).toBe(200)
-    }
+    await withAttachedAgent(a.page, async (agent) => {
+      for (let n = 0; n < 8; n++) {
+        const id = n === 0 ? firstQuestionId : crypto.randomUUID()
+        const answerId = crypto.randomUUID()
+        const question = "Inspect release retry " + (n + 1) + ": " + word
+        const reply = "Release retry " + (n + 1) + " retained both recorded attempts. The check found a missing projection entry. " + word
+        await recordExchange(agent, { id, answerId, text: question }, reply)
+        await recordSummary(a.page.request, { id, role: "user", text: question }, "Inspect release retry " + (n + 1))
+        await recordSummary(a.page.request, { id: answerId, role: "assistant", text: reply }, "Release retry retained both attempts")
+      }
+    })
     await expect(a.conversation.locator('[data-role="assistant"]', { hasText: word })).toHaveCount(8, { timeout: 30_000 })
   })
   const rail = a.page.getByRole("navigation", { name: "Conversation timeline" })
@@ -161,6 +158,7 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
 test("Branch timeline: a TODO draft's question and answer name themselves, and the draft adds no entry", {
   annotation: { type: "summary", description: "On a branch, the rail holds the question and its answer, each named, and no row for the TODO draft." },
 }, async ({ devices }) => {
+  requires("scriptedAgent")
   test.setTimeout(180_000)
   const [a] = await devices.open("Branch timeline")
   await a.page.goto(scriptedAgent("todo-draft", "/octocat/Spoon-Knife/tree/main"))

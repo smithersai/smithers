@@ -1,3 +1,4 @@
+import { recordExchange, withAttachedAgent } from "./attach"
 import { expect, test } from "./devices"
 import { requires, syncedRepository } from "./target"
 
@@ -38,15 +39,17 @@ for (const width of [1280, 390]) {
       expect(response.ok(), `${path}: ${await response.text()}`).toBe(true)
     }
     try {
-      for (let i = 0; i < 8; i++) {
-        const id = crypto.randomUUID(), answerId = crypto.randomUUID()
-        await post("/api/questions", { id, answerId, text: `Notification history ${devices.word} ${i}` })
-        answers.push(answerId)
-        await post(`/api/runs/${answerId}`, { status: "working" })
-        await post(`/api/answers/${answerId}`, { status: "failed", failure: "unfinished" })
-        await post("/api/notifications/ack", { subject: `run:${answerId}`, version: 2, act: "hide" })
-      }
-      await page.goto("/acme/widgets")
+      await withAttachedAgent(page, async (agent) => {
+        for (let i = 0; i < 8; i++) {
+          const id = crypto.randomUUID(), answerId = crypto.randomUUID()
+          await recordExchange(agent, { id, answerId, text: "Notification history " + devices.word + " " + i }, "The run did not finish.")
+          answers.push(answerId)
+          await agent.reportRunAsPerson(answerId, { status: "working" })
+          await agent.reportRunAsPerson(answerId, { status: "failed" })
+          await post("/api/notifications/ack", { subject: "run:" + answerId, version: 2, act: "hide" })
+        }
+      })
+      await page.goto("/octocat/Spoon-Knife")
       const header = page.locator(".repo-header")
       // A full page load boots the app again, which takes seconds on a busy dev server.
       await expect(header).toBeVisible({ timeout: 30_000 })

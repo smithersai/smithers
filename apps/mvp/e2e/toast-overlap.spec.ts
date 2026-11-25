@@ -1,3 +1,4 @@
+import { withAttachedAgent } from "./attach"
 import { digestSync } from "@smthrs/crypto"
 import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source"
 import { expect, test } from "./devices"
@@ -25,16 +26,16 @@ for (const width of [1280, 390]) {
       questions: [], failure: null, flowId: null,
     })
     const saved = await post("/api/flows/save", { draftId, name, description: "Toast regression", source, digest: digestSync(source) })
-    const runIds: Array<string> = []
+    const runs: Array<{ id: string; answerId: string }> = []
     try {
-      await test.step("Open several live notices", async () => {
+      await test.step("Open several live notices", () => withAttachedAgent(page, async (agent) => {
         for (let i = 0; i < 5; i++) {
           const id = crypto.randomUUID(), answerId = crypto.randomUUID()
-          await post("/api/questions", { id, answerId, text: `Use the sandbox tools on this branch ${name} ${i}` })
-          runIds.push(answerId)
-          await post(`/api/runs/${answerId}`, { status: "working" })
+          await agent.ask({ id, answerId, text: "Use the sandbox tools on this branch " + name + " " + i })
+          runs.push({ id, answerId })
+          await agent.reportRunAsPerson(answerId, { status: "working" })
         }
-      })
+      }))
       await page.goto(`/app/flows/code/${name}`)
       const stack = page.getByRole("region", { name: "Smithers", exact: true })
       await expect(stack.locator('[data-slot="toast"]')).toHaveCount(3, { timeout: 30_000 })
@@ -60,9 +61,14 @@ for (const width of [1280, 390]) {
           .toBe(2)
       })
     } finally {
-      for (const id of runIds) {
-        await post(`/api/answers/${id}`, { status: "failed", failure: "unfinished" })
-        await post("/api/notifications/ack", { subject: `run:${id}`, version: 2, act: "dismiss" })
+      if (runs.length > 0) {
+        await withAttachedAgent(page, async (agent) => {
+          for (const { id, answerId } of runs) {
+            await agent.respond(id, "The notice test is complete.")
+            await agent.reportRunAsPerson(answerId, { status: "failed" })
+            await post("/api/notifications/ack", { subject: "run:" + answerId, version: 2, act: "dismiss" })
+          }
+        })
       }
       const flow = await saved.json()
       if (flow.flowId) await post(`/api/flows/${flow.flowId}/delete`, {})

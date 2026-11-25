@@ -5,7 +5,7 @@ import { serveBuilds } from "./builds"
 import { serverRows } from "./devices"
 import { expect, QUEUED, step, test } from "./fixtures"
 import { oldBuildDir, requires } from "./target"
-import { expectConsoleError, expectOfflineErrors, expectServerError } from "./watch"
+import { expectConsoleError, expectOfflineErrors } from "./watch"
 
 // A deploy, on one device (decisions 0021 and 0023): the build production ran before it (its files, mirrored from
 // production, in OLD_BUILD_DIR) makes a synced message, a question queued offline and a draft while signed in. Then
@@ -29,11 +29,6 @@ const WEBKIT_ENDED = [
 ]
 
 
-// What the test causes on purpose (2026-11-03, each read from the server's own answers): the dev server has no summary
-// model (409 no_route), and locally every spec asks in one shared conversation, so an answer read while another run's
-// goes first is 409 not_your_turn (playwright.config.ts TAKES_TURNS).
-expectServerError(409, "/api/model/summary")
-expectServerError(409, "/api/answers/*")
 expectOfflineErrors()
 
 test(

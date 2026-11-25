@@ -208,18 +208,16 @@ describe("declarations", () => {
 
 describe("environmentAnnotations", () => {
   it("declares what a local dev server answers for each service it runs without, and nothing for a full deployment", () => {
-    expect(environmentAnnotations({ codeStorage: false, model: false, github: false })).toEqual([])
+    expect(environmentAnnotations({ codeStorage: false, github: false })).toEqual([])
     const declared = (lacks: Parameters<typeof environmentAnnotations>[0], observation: Observation) =>
       declarationsOf(environmentAnnotations(lacks)).some((each) => declares(each, problemOf(ORIGIN, observation)!))
     const refs = response(503, app("/api/repos/octocat/Spoon-Knife/refs"))
     const tree = response(503, app("/api/repos/octocat/Spoon-Knife/tree/abc123"))
     const clone = response(503, app("/api/repos"), "POST")
-    const model = response(502, app("/api/model/summary"), "POST")
     const about = response(503, app("/api/repos/octocat/linguist/about"))
-    const all = { codeStorage: true, model: true, github: true }
-    for (const each of [refs, tree, clone, model, about]) expect(declared(all, each)).toBe(true)
+    const all = { codeStorage: true, github: true }
+    for (const each of [refs, tree, clone, about]) expect(declared(all, each)).toBe(true)
     expect(declared({ ...all, codeStorage: false }, refs)).toBe(false)
-    expect(declared({ ...all, model: false }, model)).toBe(false)
     expect(declared({ ...all, github: false }, about)).toBe(false)
     // Only what each missing service answers: another status or route is still the app's.
     expect(declared(all, response(500, app("/api/repos/octocat/Spoon-Knife/refs")))).toBe(false)

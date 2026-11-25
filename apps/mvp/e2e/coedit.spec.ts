@@ -240,7 +240,7 @@ test("co-editing: Maya and Ben type in one prompt and one file at once, see each
     })
   } finally {
     try {
-      await settleSharingQuestions(ben!)
+      await settleSharingQuestions(ben!, branch, "coedit")
     } finally {
       await clearShares(maya!.page, branch, [other.personId, "repository"])
     }

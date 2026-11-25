@@ -1,3 +1,4 @@
+import { withAttachedAgent } from "./attach"
 import { Effect } from "effect"
 import type { Locator, Page } from "@playwright/test"
 import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract"
@@ -131,7 +132,13 @@ const ask = async (asker: Tab, person: string, word: string, conversationId: str
     // Ends the run and clears the asker's own entry: housekeeping, outside the page's watched network, never an assertion.
     settle: async () => {
       const headers = { [DEVICE_PERSON_HEADER]: person }
-      await asker.page.request.post(`/api/answers/${answerId}`, { headers, data: { status: "failed", failure: "unfinished" } })
+      const conversation = conversationId === null ? undefined : {
+        repo: REPO.owner + "/" + REPO.name, branch: ELSEWHERE, conversation: conversationId,
+      }
+      await withAttachedAgent(asker.page, async (agent) => {
+        await agent.respond(id, "The notice test is complete.")
+        await agent.reportRunAsPerson(answerId, { status: "failed" })
+      }, conversation)
       await asker.page.request.post("/api/notifications/ack", { headers, data: { subject: `run:${answerId}`, version: 2, act: "dismiss" } })
     },
   }

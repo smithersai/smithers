@@ -1,7 +1,8 @@
+import { recordExchange, withAttachedAgent } from "./attach"
 import { allServerRows, expect, expectSameThread, NOT_SENT, PAGE_SIZE, pairs, serverRows, test } from "./devices"
 import { faultyApp, faults } from "./faults"
 import { step } from "./fixtures"
-import { questionPost, requires, target, writeHeaders } from "./target"
+import { requires, target } from "./target"
 
 // Local-first guarantees across real devices (docs/decisions/0002-local-first.md §7): separate browser contexts, each
 // keeping the conversation on the device (SQLite on OPFS) and every question in its outbox (IndexedDB) until Postgres
@@ -130,8 +131,9 @@ test("closed before its run started: a question ChatApi took, whose tab closed b
 test("late joiner: a device that opens later shows the same latest messages, and Load earlier pages back through Postgres' order", { annotation: { type: "summary", description: "A device that opens later shows the same conversation, and Load earlier pages back in order." } }, async ({ devices, request }) => {
   const word = devices.word
   const asked = [`Reply with exactly the word: first-${word}`, `Reply with exactly the word: second-${word}`]
-  await step("Record a conversation longer than one page", async () => {
-    // A real client writes completed exchanges before either device joins. No model is needed to prove paging.
+  const [a] = await devices.open("A")
+  await step("Record a conversation longer than one page", () => withAttachedAgent(a.page, async (agent) => {
+    // The second device joins after the attached agent settles the history.
     const history = crypto.randomUUID()
     const questions = [
       ...Array.from({ length: Math.ceil(PAGE_SIZE / 2) }, (_, n) => `Earlier exchange ${n + 1}: ${history}`),
@@ -140,13 +142,9 @@ test("late joiner: a device that opens later shows the same latest messages, and
     for (const [n, text] of questions.entries()) {
       const id = crypto.randomUUID()
       const answerId = crypto.randomUUID()
-      const question = await request.post("/api/questions", questionPost({ id, answerId, text }))
-      expect(question.status()).toBe(202)
-      const answer = await request.post(`/api/answers/${answerId}`, { data: { status: "done", text: `Recorded exchange ${n + 1}.` }, headers: writeHeaders() })
-      expect(answer.status()).toBe(200)
+      await recordExchange(agent, { id, answerId, text }, "Recorded exchange " + (n + 1) + ".")
     }
-  })
-  const [a] = await devices.open("A")
+  }))
 
   // A new device, with nothing in memory, gets this test's messages exactly as A has them...
   const [late] = await devices.open("Late")
