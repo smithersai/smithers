@@ -3,11 +3,11 @@ import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { DEV_URL } from "../dev/https"
-import { DEVICE_PERSON_HEADER, type Role, ROLES } from "../src/features/auth/contract"
-import { sessionDirOf } from "./settings"
-import { personSettings } from "./people"
-import { shipAcceptance, shipFeaturesOf } from "./ship"
+import { DEV_URL } from "../dev/https.ts"
+import { DEVICE_PERSON_HEADER, type Role, ROLES } from "../src/features/auth/contract.ts"
+import { sessionDirOf } from "./settings.ts"
+import { personSettings } from "./people.ts"
+import { shipAcceptance, shipFeaturesOf } from "./ship.ts"
 
 // What the e2e tests run against, and what each test needs from it (docs/rules.md, test.e2e-declared-needs). One suite
 // runs locally against `alchemy dev` and against a deployment (docs/rulings.md TEST-4). A test that needs something a
@@ -684,8 +684,10 @@ export const partly = (name: NeedName) => {
 
 /** A test used something its target lacks without declaring it: fail at once, saying which `requires` is missing. */
 export class UndeclaredNeed extends Error {
-  constructor(readonly need: NeedName) {
+  readonly need: NeedName
+  constructor(need: NeedName) {
     super(`This test needs ${need} (${NEEDS[need].reason}). Declare it with requires("${need}").`)
+    this.need = need
     this.name = "UndeclaredNeed"
   }
 }

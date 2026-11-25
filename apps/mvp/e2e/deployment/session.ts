@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
-import { type Role, ROLES } from "../../src/features/auth/contract"
+import { type Role, ROLES } from "../../src/features/auth/contract.ts"
 
 // The deployment's stored session (docs/infrastructure.md#against-a-deployment): what e2e/deployment/sign-in.setup.ts
 // keeps, and when it signs in again. It keeps one cookie, the app's own session on the app's origin, and nothing from

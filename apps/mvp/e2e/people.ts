@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path"
 import { readFileSync, statSync } from "node:fs"
-import { personOf, sessionState, type SessionAnswer, type StorageState } from "./deployment/session"
+import { personOf, sessionState, type SessionAnswer, type StorageState } from "./deployment/session.ts"
 
 /** Independently signed-in test accounts. Never a development cookie on a deployment. */
 export type OtherPerson = "teammate" | "guest"
