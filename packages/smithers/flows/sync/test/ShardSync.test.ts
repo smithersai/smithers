@@ -568,4 +568,13 @@ describe("ShardServer review regressions", () => {
       ;(snapshot.state as { rows: Array<number> }).rows.push(3)
       expect((yield* server.snapshot(shard)).state).toEqual({ rows: [1] })
     }))
+
+  it.effect("M9: submit refuses a malformed request with out_of_range", () =>
+    Effect.gen(function*() {
+      const server = ShardServer.make({ shard })
+      const err = yield* Effect.flip(
+        server.submit({ shard, command: { origin: "", commandId: "", type: "", payload: null } } as unknown as ShardProtocol.SubmitRequest)
+      )
+      expect(err).toMatchObject({ reason: "out_of_range" })
+    }))
 })
