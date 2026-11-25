@@ -3,15 +3,14 @@
 A person keeps an ordered list of connections, as in Amp's Model Routing: each is one credential plus its settings, and
 each is active or not. It is how a person uses Smithers: the model endpoint answers everything that person causes with
 their tiers' models, outside the deployment's daily budget. `fast` serves chat, views and summaries, `implement` their
-`todo` runs, `hard` plans and reviews. A person who saved none sees "Add your model" where the composer would be while
-the deployment's own model is off ([hosted inference](model-endpoint.md#hosted-inference)). Decisions:
+`todo` runs, `hard` plans and reviews. Chat uses [attached agents](mcp.md) ([decision 0173](../decisions/0173-byoa-only-mcp-attach-and-jev-config.md)). Server workflows use these saved connections through `worker/ModelSeats.ts` when [hosted inference](model-endpoint.md#hosted-inference) is off. Decisions:
 [0096](../decisions/0096-personal-models.md), [0099](../decisions/0099-hosted-inference-flag.md),
 [0107](../decisions/0107-model-tiers.md), [0132](../decisions/0132-model-connections.md).
 
 | Kind | Credential | Serves |
 |---|---|---|
 | `api_key` | a key at any OpenAI- or Anthropic-compatible URL | the tiers it names, or presets at the provider's host |
-| `moonshot` | a Moonshot key; `MOONSHOT_BASE_URL` and `MOONSHOT_MODEL` fill in the rest (`https://api.moonshot.ai`, `kimi-k3`) | every tier unless it names another model |
+| `moonshot` | a Moonshot key, `MOONSHOT_BASE_URL` and `MOONSHOT_MODEL` fill in the rest (`https://api.moonshot.ai`, `kimi-k3`) | every tier unless it names another model |
 | `claude_subscription` | the token `claude setup-token` prints | `todo` runs, through Claude Code in the box |
 | `codex_subscription` | OpenAI's device-code tokens | `todo` runs, through Codex in the box |
 | `jev` | a Vercel AI Gateway key | the `judge` role ([Jev](jev.md)) |
@@ -25,7 +24,7 @@ Settings ▸ Your model (the person, in person)
   Remove ── model/remove ── DELETE /api/me/model ── model/Delete
   Test   ── model/test   ── POST /api/me/model/test ── 200 TestResult
 
-POST /api/model/<role>                     a todo run                       POST /api/me/model/jev
+worker/ModelSeats.ts (<role>)              a todo run                       POST /api/me/model/jev
   the role's tier ─▶ first active            todo/Route ─▶ codingChoice       the person's jev connection
   connection naming it ─▶ its key            ├ smithers ─▶ todo/Implement     none ─▶ 404, the fast tier answers
   personal_model_usage · no budget           └ claude-code, codex
@@ -37,10 +36,10 @@ POST /api/model/<role>                     a todo run                       POST
 ## Saving
 
 `PUT /api/me/model` with `{ connections, known }` saves the person's whole list, in order, and answers `202 {}` once
-`model/Put` started; the rows arrive in the shape. A saved connection the body leaves out is removed. `known` is the ids
+`model/Put` started, the rows arrive in the shape. A saved connection the body leaves out is removed. `known` is the ids
 of the saved connections the device edited the list from. Unless they are exactly the saved ones, the save is refused
 `stale` 409, and `model/Store` checks again under its lock: a device that hasn't yet seen a connection saved or
-removed elsewhere never removes it. The section sends the rows it has; a body without `known` replaces whatever is
+removed elsewhere never removes it. The section sends the rows it has, a body without `known` replaces whatever is
 saved.
 
 ```json
@@ -59,7 +58,7 @@ saved.
   and `jev`.
 - **Credentials:** a connection without `key` keeps its saved one only when its id, kind, protocol and base URL are
   unchanged, refused `key_required` otherwise: a saved credential never moves host unless the person types it again. A
-  Codex connection carries no key here; its link saves it.
+  Codex connection carries no key here, its link saves it.
 - **Claude token:** must start `sk-ant-oat`, else `invalid_token`. It may name a base URL, its `ANTHROPIC_BASE_URL`, and
   the token then goes to that host alone.
 - **Who:** anyone signed in, in person: it is their key (ruling AUTH-8, decision [0122](../decisions/0122-who-may-ask.md)). An agent, flow, frame or sandbox acting for them is refused
@@ -119,8 +118,8 @@ names for it, else the first active connection whose host and protocol have a pr
 | `hard` | `implement`, then `fast` | `claude-opus-5-5` at `api.anthropic.com`, `gpt-6-astra` at `api.openai.com` |
 
 So one model saved answers every tier, and two keys on the providers' own hosts need no model named. With no model
-named, moving a key above another changes which provider's presets answer the tiers; the table's provider order gives
-no preference. A key at any other host (a gateway, a self-hosted server) needs some model named. The presets are data (`TIER_PRESETS`); no code branches
+named, moving a key above another changes which provider's presets answer the tiers, the table's provider order gives
+no preference. A key at any other host (a gateway, a self-hosted server) needs some model named. The presets are data (`TIER_PRESETS`), no code branches
 on a provider.
 
 ## Answering
@@ -135,9 +134,9 @@ models and other hosts speak the protocol the key was saved under.
 
 - **Everything they cause, by tier.** Every role a person's calls name goes to its tier's model among their keys:
   `agent`, `renderer`, `judge` (Jev and the memory opening's judge) and `summary` (the timeline's summaries, which their
-  tab asks for as they view a conversation, a shared branch's included) on `fast`; `coding` (their `todo` runs) on
-  `implement`; `review` (their TODO's review) and `plan` (drafting a flow) on `hard`. The role's reasoning effort is set
-  on the call (`judge` and `summary` low, a heavy chat turn high). The model id is theirs; the request bounds
+  tab asks for as they view a conversation, a shared branch's included) on `fast`, `coding` (their `todo` runs) on
+  `implement`, `review` (their TODO's review) and `plan` (drafting a flow) on `hard`. The role's reasoning effort is set
+  on the call (`judge` and `summary` low, a heavy chat turn high). The model id is theirs, the request bounds
   (messages, caps, body size) are the endpoint's. Decision 0099 replaced 0096's amendment, under which summaries stayed
   on the deployment's model.
 - **Outside the budget.** The call reserves nothing against `MODEL_DAILY_TOKEN_BUDGET`, writes no `model_usage` row and
@@ -145,27 +144,27 @@ models and other hosts speak the protocol the key was saved under.
   tokens the model reported, its outcome, its failure's code and the provider's status. Failed Jev judgments retain
   reported token counts too, even when the answers are missing or invalid. A settle Postgres refuses is
   logged and counted (`smithers_personal_model_usage_errors`) and leaves the row unsettled, as the deployment's ledger
-  does; a test cancelled while the provider answers settles as `interrupted`.
+  does, a test cancelled while the provider answers settles as `interrupted`.
 - **No fallback to the deployment.** A saved model that can't be used here (its key doesn't open, SECRETS_KEY is unset,
   no tier resolves to a model) is `409 no_route`, "Your model can't be used. Save it again in Settings.", logged
   `own_unusable:<reason>` (`key`, `off`, `no_model` or the planner's code). Postgres that can't say is
   `503 provider_internal`.
 - **A refused key.** A provider's 401, 402 or 403, or a 429 that says the key ran out (`quota_exceeded`,
-  `out_of_credit`), fails the call and sets that key's `failure_status` and `failed_at`, never the other key's; a later successful call, a
+  `out_of_credit`), fails the call and sets that key's `failure_status` and `failed_at`, never the other key's, a later successful call, a
   passing test or a new save clears them. Only a call made with the row's current key marks it, so a slow call on a key
   the person has since replaced says nothing of the new one. The opened model carries the sealed credential's
-  non-secret nonce into its ledger row as `credential_nonce`; marking or clearing a refusal requires that nonce to
+  non-secret nonce into its ledger row as `credential_nonce`, marking or clearing a refusal requires that nonce to
   match the saved connection, even when replacement happened before ledger insertion. Editing tiers, order or
   activity while keeping the same credential preserves its identity. Legacy calls with no recorded nonce cannot
   change a connection's refusal. A plain rate limit marks nothing. Quota and credit refusals
   (HTTP 402, `quota_exceeded`, `out_of_credit`) lose their retry hints (`final` in `worker/ModelRefusal.ts`), so the browser's
-  model step and a `todo` run fail at once instead of parking; the model package's request executor never retries
+  model step and a `todo` run fail at once instead of parking, the model package's request executor never retries
   them. A plain rate limit (429 without a quota code) keeps its hints and is waited out as before.
 
 ### Todo runs
 
 A `todo` run's agent calls the `coding` seat in process (`ModelEndpoint.local`). The seat reads the run it is called in
-(`FlowRuntime.FlowInstance`), and `TodoMachine.ownerOf` its committer from `todos.created_by`; that person's model answers
+(`FlowRuntime.FlowInstance`), and `TodoMachine.ownerOf` its committer from `todos.created_by`, that person's model answers
 it exactly as their endpoint calls are answered, so the run works on their key while every device is off.
 
 ### Triage
@@ -197,7 +196,7 @@ agent ─ Authorization: Bearer <placeholder> ─▶ box egress ─ host in the 
   marks it, a success clears it. A box's other traffic to that host never does.
 - **Codex tokens** are refreshed in the Worker before a Codex run, when under `FRESH_FOR_MS` from expiring, and on Check
   Access, one at a time per connection (the row is held). Check Access refreshes only the requested connection, even
-  when it is inactive. Each auth request has a `30`-second deadline through response-body reading and decoding; a
+  when it is inactive. Each auth request has a `30`-second deadline through response-body reading and decoding, a
   timeout is unreachable and leaves the connection unmarked. The answer is sealed at once, since refresh tokens rotate,
   and any status OpenAI refuses a refresh with marks the connection. The box's `auth.json` holds the placeholder.
 - **Records.** Log and span `todo.agent_cli` (agent, outcome, exit code, duration, tokens Claude Code reports), span
@@ -210,13 +209,13 @@ refresh, or one tiny real call on its first model (`Reply with the single word: 
 most), kept in the ledger with role `test`. With no `id` it tests each key the tiers use. It answers `200` with one `TestResult`: `{ ok: true, latencyMs, sample }`
 (the model's first 80 characters), or `{ ok: false, latencyMs, code, status, host }`:
 the `ModelError` code (`unusable` for a saved model that can't be used here), the provider's HTTP status or `null`, and
-the provider's host. Nothing saved is `404 none`; anyone signed in may test their own.
+the provider's host. Nothing saved is `404 none`, anyone signed in may test their own.
 
 `e2e/subscriptions.spec.ts` proves each subscription against a deployment: it adds the connection in Settings, commits a
 TODO on the scratch stack, checks the run took `todo/ImplementCli` and not `todo/Implement`, and reads the pull request's
 one-line `NOTES.md` change on GitHub. Claude needs `E2E_CLAUDE_SUBSCRIPTION_TOKEN` (what `claude setup-token` printed).
 Codex's device code needs a person signed in to ChatGPT, so a person links Codex once in Settings and the run sets
-`E2E_CODEX_SUBSCRIPTION=linked`; the spec Checks Access on it first. Restoring the test account's API key, in setup
+`E2E_CODEX_SUBSCRIPTION=linked`, the spec Checks Access on it first. Restoring the test account's API key, in setup
 and after each test, keeps that Codex connection by its id and replaces every other one. Run it with
 `--project=deployment`: each browser project opens its own pull request.
 
@@ -225,7 +224,7 @@ and after each test, keeps that Codex connection by its id and replaces every ot
 `/app/settings`, the header's Settings link, shows **Your model** to anyone signed in: one row per connection, in order,
 with its kind, its key's last four characters, Active, Move up, Move down, Test and Remove, and its last refusal with
 when it happened. **Add** offers the five kinds. Claude's form shows `claude setup-token` with a copy button and takes
-the token. Codex's shows the code, Copy code and Open OpenAI, and waits; the connection arrives in the shape. An API key
+the token. Codex's shows the code, Copy code and Open OpenAI, and waits, the connection arrives in the shape. An API key
 takes protocol, Base URL, key and the tiers' models. A key is read from the form once, held `Redacted`, sent in one
 `PUT`, and never kept on the device: not in a collection, the outbox, a browser flow's journal or a record.
 
@@ -247,17 +246,17 @@ model, so every tier falls back to it), `0075_model_connections.ts` and `0123_pe
 
 | Table | Columns | |
 |---|---|---|
-| `personal_models` | `person_id` and `id` (key), `kind`, `position`, `active`, `protocol`, `base_url`, `fast_model`, `implement_model`, `hard_model`, `ciphertext`, `nonce`, `key_version`, `key_last4`, `failure_status`, `failed_at`, `updated_at` | one person's ordered connections; the failure is set and cleared together; one active row each of the single kinds |
+| `personal_models` | `person_id` and `id` (key), `kind`, `position`, `active`, `protocol`, `base_url`, `fast_model`, `implement_model`, `hard_model`, `ciphertext`, `nonce`, `key_version`, `key_last4`, `failure_status`, `failed_at`, `updated_at` | one person's ordered connections, the failure is set and cleared together, one active row each of the single kinds |
 | `personal_model_events` | `id`, `person_id`, `action` (`set`, `replace`, `delete`), `invocation_key` (unique), `at` | the audit of `model/Put` and `model/Delete` |
-| `personal_model_usage` | `invocation_id` (key), `request_id`, `person_id`, `role`, `model_id`, `protocol`, `connection_id` (the connection that answered), `credential_nonce` (the opened credential's non-secret identity; `NULL` for legacy calls), `tier` (the tier that answered; none for a test), `input_tokens`, `output_tokens`, `outcome`, `error_code`, `http_status`, `settled_at`, `created_at` | the person's ledger, apart from the deployment's |
+| `personal_model_usage` | `invocation_id` (key), `request_id`, `person_id`, `role`, `model_id`, `protocol`, `connection_id` (the connection that answered), `credential_nonce` (the opened credential's non-secret identity, `NULL` for legacy calls), `tier` (the tier that answered, none for a test), `input_tokens`, `output_tokens`, `outcome`, `error_code`, `http_status`, `settled_at`, `created_at` | the person's ledger, apart from the deployment's |
 
 ## Observability
 
 Counters `smithers_personal_model_requests` (op, outcome), `smithers_personal_model_shape_requests`,
 `smithers_personal_model_writes` (op, change), `smithers_personal_model_calls` (role, outcome),
-`smithers_personal_model_tokens` (role, type) and `smithers_personal_model_usage_errors` (op); log lines
+`smithers_personal_model_tokens` (role, type) and `smithers_personal_model_usage_errors` (op), log lines
 `personal_model.request`, `personal_model.write`, `personal_model.call` (a failed or interrupted call: role, outcome,
-code, the provider's status) and `personal_model.usage`; spans `personal_model.request` and `personal_model.write`. They
+code, the provider's status) and `personal_model.usage`, spans `personal_model.request` and `personal_model.write`. They
 carry ops, outcomes, codes, statuses, roles and counts: never a key, a base URL, a model id or a prompt.
 
 ## Tests
@@ -279,7 +278,7 @@ carry ops, outcomes, codes, statuses, roles and counts: never a key, a base URL,
   on its committer's model, and a sentinel search for the key in every table, the flow journal and everything
   recorded.
 - `worker/PersonOnly.test.ts`: `PUT /api/me/model` refuses an agent, a flow and a frame.
-- `db/Database.test.ts`: `0056_personal_models`' tables and their rules; `0065_model_tiers` keeping a saved model as
+- `db/Database.test.ts`: `0056_personal_models`' tables and their rules, `0065_model_tiers` keeping a saved model as
   the fast model, two protocols per person, and the tier and ledger columns' rules.
 - `src/features/personal-model/`: the Settings section and the two browser flows against ChatApi's real
   handler.
@@ -291,9 +290,9 @@ An unnamed tier labels its fallback as `Default: <model>` so the placeholder can
 ### Testing edits
 
 Test validates the on-screen form with Save's `checkSave` before dispatching anything. A valid draft that differs
-from the synced configuration says **Save first**; it never tests a different, saved configuration on behalf of the
+from the synced configuration says **Save first**, it never tests a different, saved configuration on behalf of the
 draft. Typing any key requires saving, even if its last four characters match. Only an unchanged configuration
-runs the existing durable `model/test {}`. No draft key enters a collection, flow, journal, log or metric; refusals
+runs the existing durable `model/test {}`. No draft key enters a collection, flow, journal, log or metric, refusals
 record only their code through `personal_model.test` and `smithers_web_personal_model_writes`.
 
 
@@ -302,8 +301,8 @@ Each model tier has one purpose label and one unique description id: Fast is
 visibly labels its model and supplies that input's accessible description.
 
 Writes resolve the session after the complete request body, with a fixed 60-second read deadline.
-`model/Put`, `model/Delete` and `model/CodexLink` retain that session and alias for their final transaction;
-revocation refuses a delayed write as `stale`. Missing legacy admission is refused; local development explicitly
+`model/Put`, `model/Delete` and `model/CodexLink` retain that session and alias for their final transaction,
+revocation refuses a delayed write as `stale`. Missing legacy admission is refused, local development explicitly
 carries no session. Connection writes have 1-second lock, 2-second statement and 5-second transaction limits.
 Every list replacement, including a PUT removing only Codex, supersedes pending device links through the existing
 audit generation. This conservatively cancels links on other list replacements too, without another query or migration.
