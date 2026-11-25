@@ -1000,3 +1000,32 @@ test("shell highlighting keeps comments, commands, strings, numbers and unknown 
   expect(tokens[2]?.find(token => token.text === "12")?.kind).toBe("number");
   expect(tokens[3]).toEqual([{ text: "unknown" }]);
 });
+
+describe("RepositoryHome: view", () => {
+  const playground = { type: "view", flow: "playground.exec" } as const;
+
+  test("renders view blocks through renderView when offered and hides them otherwise", async () => {
+    await render(<RepositoryHome sections={one([playground])} />);
+    expect($("[data-slot='repository-home-view']")).toBeNull();
+
+    await render(
+      <RepositoryHome
+        sections={one([playground])}
+        offered={(flow) => flow === "other.flow"}
+        renderView={(block) => <div>{block.flow}</div>}
+      />,
+    );
+    expect($("[data-slot='repository-home-view']")).toBeNull();
+
+    await render(
+      <RepositoryHome
+        sections={one([playground])}
+        offered={(flow) => flow === "playground.exec"}
+        renderView={(block) => <span data-slot="custom-playground">Playground {block.flow}</span>}
+      />,
+    );
+    const viewEl = $("[data-slot='repository-home-view']");
+    expect(viewEl?.getAttribute("data-flow")).toBe("playground.exec");
+    expect(viewEl?.textContent).toBe("Playground playground.exec");
+  });
+});

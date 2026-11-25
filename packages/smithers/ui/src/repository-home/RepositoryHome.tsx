@@ -60,6 +60,11 @@ export type RepositoryHomeProps = Omit<ComponentProps<"section">, "children"> & 
   onRun?: (flow: string) => void;
   /** The action blocks' flows running now: their buttons are disabled until they finish. */
   running?: ReadonlyArray<string>;
+  /**
+   * Renders a `view` block's sandboxed presentation surface (for example an interactive EVM playground).
+   * When omitted, or when `offered` does not include `block.flow`, `view` blocks are not drawn.
+   */
+  renderView?: (block: Extract<Home.Block, { readonly type: "view" }>) => ReactNode;
 };
 
 /** How an audience's section is labelled for the people who may see it; everyone's isn't. */
@@ -255,6 +260,7 @@ export function RepositoryHome({
   onCopy,
   onRun,
   running,
+  renderView,
   className,
   ...props
 }: RepositoryHomeProps) {
@@ -545,8 +551,17 @@ export function RepositoryHome({
         );
       }
       // A flow's own view comes with the presentation realm (decision 0014 L3).
-      case "view":
-        return null;
+      case "view": {
+        if (renderView === undefined) return null;
+        if (offered !== undefined && !offered(block.flow)) return null;
+        const rendered = renderView(block);
+        if (rendered === null || rendered === undefined) return null;
+        return shell(
+          <div className="sui-rh-view" data-slot="repository-home-view" data-flow={block.flow}>
+            {rendered}
+          </div>,
+        );
+      }
     }
   };
 
