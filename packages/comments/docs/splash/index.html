@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Keep code comments accurate inline, or move them to .comments/ and generate commented virtual files with Smithers workflows.">
+<title>Smithers Comments · Agentic comment workflows</title>
+<!-- Splash page. Self-contained: no network resource of any kind. -->
+<style>
+  :root {
+    --bg: #fbfbf9;
+    --surface: #ffffff;
+    --code-bg: #f2f3f0;
+    --text: #1b2421;
+    --muted: #55615c;
+    --line: #dfe3df;
+    --accent: #0b6e5b;
+    --accent-soft: #e2f1ec;
+    --accent-text: #ffffff;
+    --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111614;
+      --surface: #171d1b;
+      --code-bg: #0c100f;
+      --text: #e8ede9;
+      --muted: #a3afa9;
+      --line: #2a3330;
+      --accent: #4fd1b1;
+      --accent-soft: #15302a;
+      --accent-text: #08201b;
+    }
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 1rem;
+    line-height: 1.6;
+  }
+  a { color: var(--accent); }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+  code { font-family: var(--mono); font-size: 0.92em; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 1.5rem; }
+
+  /* Hero */
+  .hero { position: relative; padding: 5rem 0 4rem; overflow: hidden; }
+  .hero__art {
+    position: absolute; inset: 0; pointer-events: none;
+    background-image:
+      radial-gradient(circle at 72% 38%, color-mix(in srgb, var(--accent) 14%, transparent) 0, transparent 50%),
+      linear-gradient(color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px);
+    background-size: auto, 42px 42px, 42px 42px;
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 15%, #000 70%, transparent);
+    mask-image: linear-gradient(to bottom, transparent, #000 15%, #000 70%, transparent);
+  }
+  .hero__grid {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 440px);
+    gap: 4rem;
+    align-items: center;
+  }
+  .eyebrow {
+    margin: 0 0 0.8rem;
+    color: var(--accent);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  h1 {
+    margin: 0 0 1.5rem;
+    font-size: clamp(3rem, 8.5vw, 5.2rem);
+    font-weight: 750;
+    letter-spacing: -0.055em;
+    line-height: 0.95;
+  }
+  h1 span { color: var(--accent); }
+  .tagline { margin: 0; max-width: 34rem; color: var(--muted); font-size: 1.25rem; line-height: 1.55; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 2rem; }
+  .button {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 2.6rem; padding: 0 1.1rem;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--surface); color: var(--text);
+    font: inherit; font-weight: 600; text-decoration: none; cursor: pointer;
+    white-space: nowrap;
+  }
+  .button:hover { border-color: var(--accent); }
+  .button--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); min-width: 9.5rem; }
+
+  /* Install panel */
+  .try { display: flex; flex-direction: column; gap: 1rem; }
+  .install {
+    border: 1px solid var(--line); border-radius: 12px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .install__label {
+    margin: 0; padding: 0.6rem 1rem;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted); font-size: 0.8rem; font-weight: 600;
+  }
+  .install pre {
+    margin: 0; padding: 1.1rem 1rem;
+    background: var(--code-bg);
+    font-family: var(--mono); font-size: 1rem;
+    overflow-x: auto;
+  }
+  .install pre code::before { content: "$ "; color: var(--muted); }
+
+  /* Sections */
+  section { padding: 3.5rem 0; border-top: 1px solid var(--line); }
+  h2 { margin: 0 0 1.5rem; font-size: 1.6rem; letter-spacing: -0.02em; line-height: 1.2; }
+  h3 { margin: 0 0 0.45rem; font-size: 1.05rem; }
+  .steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+  .card {
+    padding: 1.25rem;
+    border: 1px solid var(--line); border-radius: 12px;
+    background: var(--surface);
+  }
+  .card p { margin: 0; color: var(--muted); }
+  .card p + p { margin-top: 0.65rem; }
+  .steps .card { counter-increment: step; }
+  .steps .card h3::before {
+    content: counter(step);
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.6rem; height: 1.6rem; margin-right: 0.5rem;
+    border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent);
+    font-size: 0.85rem; font-weight: 700;
+  }
+  .modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+  .mode__tag {
+    display: inline-block;
+    margin-bottom: 0.55rem;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .codeblock {
+    margin: 0;
+    padding: 1.15rem 1.25rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--code-bg);
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    line-height: 1.55;
+    overflow-x: auto;
+  }
+  .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+  .commands { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.75rem 2rem; margin: 0; }
+  .commands dt code { padding: 0.2rem 0.45rem; border-radius: 6px; background: var(--code-bg); white-space: nowrap; }
+  .commands dd { margin: 0; color: var(--muted); }
+  footer { padding: 2rem 0 3rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; }
+
+  @media (max-width: 960px) {
+    .hero__grid { grid-template-columns: minmax(0, 1fr); gap: 2.5rem; }
+    .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .split { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 640px) {
+    .wrap { padding: 0 1.1rem; }
+    .hero { padding: 3rem 0 2.5rem; }
+    .tagline { font-size: 1.1rem; }
+    .steps, .modes { grid-template-columns: minmax(0, 1fr); }
+    .commands { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; }
+    .commands dd { margin-bottom: 0.9rem; }
+    .commands dt code { white-space: normal; }
+  }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="hero__art" aria-hidden="true"></div>
+  <div class="wrap hero__grid">
+    <div>
+      <p class="eyebrow">Agentic comment workflows</p>
+      <h1>Smithers <span>Comments</span></h1>
+      <p class="tagline">Keep comments accurate inline, or store them in <code>.comments/</code> and project commented virtual files with Smithers workflows.</p>
+      <div class="actions">
+        <button type="button" class="button button--primary" id="copy" data-command="bunx smithers-comments check">Copy command</button>
+        <a class="button" href="../README.md">Docs</a>
+        <a class="button" href="../../src/index.ts">Source</a>
+      </div>
+    </div>
+    <div class="try">
+      <div class="install">
+        <p class="install__label">Validate comments in any repository</p>
+        <pre><code id="command">bunx smithers-comments check</code></pre>
+      </div>
+      <div class="install">
+        <p class="install__label">Or move comments out of source files</p>
+        <pre><code>bunx smithers-comments extract</code></pre>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section aria-labelledby="how">
+    <h2 id="how">How it works</h2>
+    <ol class="steps">
+      <li class="card"><h3>Parse</h3><p>Reads comments across TypeScript, Python, Go, Rust, SQL, and more without touching strings, regexes, or compiler pragmas.</p></li>
+      <li class="card"><h3>Anchor</h3><p>Binds each comment to its symbol, line, or pattern plus a SHA-256 hash of the anchored code region.</p></li>
+      <li class="card"><h3>Validate &amp; cache</h3><p>Runs structural checks and agentic verification inside a cached Smithers flow. Unchanged comments cost zero model calls.</p></li>
+      <li class="card"><h3>Project</h3><p>In external mode, weaves <code>.comments/</code> back into source files as a Smithers virtual file overlay or materialized directory.</p></li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="modes">
+    <h2 id="modes">Two modes</h2>
+    <div class="modes">
+      <div class="card">
+        <span class="mode__tag">mode: "inline"</span>
+        <h3>Inline mode</h3>
+        <p>Comments live in your source files. Smithers continuously lints structure, verifies symbol references, and runs cached agent checks whenever a comment or the code beneath it changes.</p>
+      </div>
+      <div class="card">
+        <span class="mode__tag">mode: "external"</span>
+        <h3>External mode</h3>
+        <p>Source files stay clean of prose comments while pragmas remain intact. Comments live in <code>.comments/</code> (or any configured folder), and Smithers virtual files generate commented files on demand.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="virtual">
+    <h2 id="virtual">External sidecars and virtual files</h2>
+    <div class="split">
+      <pre class="codeblock"><code># .comments/src/auth/token.ts.md
+---
+source: src/auth/token.ts
+version: 1
+---
+
+## @verify-token-doc
+anchor: symbol verifyToken
+line: 14
+placement: before
+style: doc
+code-hash: 9f81c2a0
+
+Verifies a signed session token and rejects
+tokens issued before the latest key rotation.</code></pre>
+      <pre class="codeblock"><code>// PACKAGE.ts
+import { Smithers } from "@smthrs/targets"
+import { targets } from "smithers-comments"
+
+const comments = targets({
+  mode: "external",
+  commentsDir: ".comments",
+  include: ["src/**/*.ts"]
+})
+
+export const Package = Smithers.Package({
+  targets: { ...comments }
+})</code></pre>
+    </div>
+  </section>
+
+  <section aria-labelledby="commands">
+    <h2 id="commands">Commands</h2>
+    <dl class="commands">
+      <dt><code>smithers-comments init</code></dt><dd>Configure inline or external mode, comments folder, and Smithers targets.</dd>
+      <dt><code>smithers-comments check</code></dt><dd>Lint and validate comments incrementally using Smithers caching. Alias: <code>lint</code>.</dd>
+      <dt><code>smithers-comments fix</code></dt><dd>Run the agentic workflow to update stale comments or re-anchor drifted entries.</dd>
+      <dt><code>smithers-comments extract</code></dt><dd>Move inline comments into <code>.comments/</code> while preserving compiler and linter pragmas.</dd>
+      <dt><code>smithers-comments render</code></dt><dd>Generate commented virtual files to stdout, an output directory, or back in place.</dd>
+      <dt><code>smithers-comments status</code></dt><dd>Show active mode, comment counts, anchor health, and cache hit statistics.</dd>
+    </dl>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">Smithers Comments is part of <a href="https://github.com/smithersai/smithers">Smithers</a>. MIT licensed.</div>
+</footer>
+
+<script>
+  (function () {
+    var button = document.getElementById("copy");
+    var command = document.getElementById("command");
+    var reset;
+    function done() {
+      button.textContent = "Copied";
+      clearTimeout(reset);
+      reset = setTimeout(function () { button.textContent = "Copy command"; }, 2000);
+    }
+    function select() {
+      var range = document.createRange();
+      range.selectNodeContents(command);
+      var selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      try { if (document.execCommand("copy")) done(); } catch (error) { /* selection remains active */ }
+    }
+    button.addEventListener("click", function () {
+      var text = button.getAttribute("data-command");
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done, select);
+      } else {
+        select();
+      }
+    });
+  })();
+</script>
+</body>
+</html>

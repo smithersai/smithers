@@ -181,6 +181,8 @@
         "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
         "@journeyapps/wa-sqlite": "1.7.2",
         "@smthrs/agent": "workspace:*",
+        "@smthrs/app-core": "workspace:*",
+        "@smthrs/app-state": "workspace:*",
         "@smthrs/artifacts": "workspace:*",
         "@smthrs/control": "workspace:*",
         "@smthrs/crypto": "workspace:*",
@@ -541,6 +543,44 @@
         "effect": "4.1.1",
       },
     },
+    "packages/comments": {
+      "name": "smithers-comments",
+      "version": "1.0.0-rc.18",
+      "bin": {
+        "smithers-comments": "./bin/smithers-comments.mjs",
+      },
+      "dependencies": {
+        "@smthrs/engine": "1.0.0-rc.18",
+        "@smthrs/flows": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
+        "@smthrs/targets": "1.0.0-rc.18",
+      },
+      "devDependencies": {
+        "@effect/language-service": "0.87.2",
+        "@effect/vitest": "4.1.1",
+        "@eslint/js": "9.39.5",
+        "@smthrs/fuzz": "1.0.0-rc.18",
+        "@types/node": "26.4.1",
+        "@vitest/coverage-v8": "5.0.0",
+        "dprint": "0.57.1",
+        "effect": "4.1.1",
+        "esbuild": "0.28.2",
+        "eslint": "9.39.5",
+        "eslint-import-resolver-typescript": "4.4.5",
+        "eslint-plugin-import": "2.32.0",
+        "eslint-plugin-jsdoc": "64.3.4",
+        "eslint-plugin-unicorn": "65.0.0",
+        "madge": "8.0.0",
+        "typescript": "5.9.3",
+        "typescript-eslint": "8.69.0",
+        "vibelang": "0.0.13",
+        "vibelang-vite": "0.0.13",
+        "vitest": "5.0.0",
+      },
+      "peerDependencies": {
+        "effect": "4.1.1",
+      },
+    },
     "packages/effect-code-storage": {
       "name": "@smthrs/effect-code-storage",
       "version": "0.1.0",
@@ -783,6 +823,7 @@
         "@opentui/core": "0.5.11",
         "@opentui/react": "0.5.11",
         "@smthrs/agent": "1.0.0-rc.18",
+        "@smthrs/app-core": "workspace:*",
         "@smthrs/build-cli": "1.0.0-rc.18",
         "@smthrs/canonical": "1.0.0-rc.18",
         "@smthrs/capability": "1.0.0-rc.18",
@@ -815,7 +856,7 @@
         "@smthrs/scorers": "1.0.0-rc.18",
         "@smthrs/std": "1.0.0-rc.18",
         "@smthrs/step-cache": "1.0.0-rc.18",
-        "@smthrs/sync": "1.0.0-rc.18",
+        "@smthrs/sync": "workspace:*",
         "@smthrs/targets": "1.0.0-rc.18",
         "@smthrs/time-travel": "1.0.0-rc.18",
         "@smthrs/triggers": "1.0.0-rc.18",
@@ -1515,6 +1556,37 @@
         "typescript-eslint": "8.69.0",
         "vibelang": "0.0.13",
         "vibelang-vite": "0.0.13",
+        "vitest": "5.0.0",
+      },
+      "peerDependencies": {
+        "effect": "4.1.1",
+      },
+    },
+    "packages/smithers/app-core": {
+      "name": "@smthrs/app-core",
+      "version": "1.0.0-rc.18",
+      "dependencies": {
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/plugin": "1.0.0-rc.18",
+      },
+      "devDependencies": {
+        "@types/node": "26.4.1",
+        "effect": "4.1.1",
+        "fast-check": "4.9.0",
+        "typescript": "5.9.3",
+        "vitest": "5.0.0",
+      },
+      "peerDependencies": {
+        "effect": "4.1.1",
+      },
+    },
+    "packages/smithers/app-state": {
+      "name": "@smthrs/app-state",
+      "version": "1.0.0-rc.18",
+      "devDependencies": {
+        "@types/node": "26.4.1",
+        "effect": "4.1.1",
+        "typescript": "5.9.3",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2615,6 +2687,7 @@
         "@smthrs/journal": "1.0.0-rc.18",
         "@smthrs/run-store": "1.0.0-rc.18",
         "@smthrs/sandbox": "1.0.0-rc.18",
+        "@smthrs/sync": "workspace:*",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "5.20261019.1",
@@ -4973,6 +5046,10 @@
     "@smithers/site": ["@smithers/site@workspace:apps/site"],
 
     "@smthrs/agent": ["@smthrs/agent@workspace:packages/smithers/agent"],
+
+    "@smthrs/app-core": ["@smthrs/app-core@workspace:packages/smithers/app-core"],
+
+    "@smthrs/app-state": ["@smthrs/app-state@workspace:packages/smithers/app-state"],
 
     "@smthrs/artifacts": ["@smthrs/artifacts@workspace:packages/smithers/flows/artifacts"],
 
@@ -7413,6 +7490,8 @@
     "smart-buffer": ["smart-buffer@4.2.0", "", {}, "sha512-94hK0Hh8rPqQl2xXc3HsaBoOXKV20MToPkcXvwbISWLEs+64sBq5kFgn2kJDHb1Pry9yrP0dxrCI9RRci7RXKg=="],
 
     "smithers-ci": ["smithers-ci@workspace:packages/ci"],
+
+    "smithers-comments": ["smithers-comments@workspace:packages/comments"],
 
     "smithers-tui": ["smithers-tui@workspace:apps/tui"],
 

@@ -1397,6 +1397,82 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
+  packages/comments:
+    dependencies:
+      '@smthrs/engine':
+        specifier: 1.0.0-rc.18
+        version: link:../smithers/flows/engine
+      '@smthrs/flows':
+        specifier: 1.0.0-rc.18
+        version: link:../smithers/flows
+      '@smthrs/plan':
+        specifier: 1.0.0-rc.18
+        version: link:../smithers/flows/plan
+      '@smthrs/targets':
+        specifier: 1.0.0-rc.18
+        version: link:../smithers/build/targets
+    devDependencies:
+      '@effect/language-service':
+        specifier: 0.87.2
+        version: 0.87.2
+      '@effect/vitest':
+        specifier: 4.1.1
+        version: 4.1.1(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(vitest@5.0.0)
+      '@eslint/js':
+        specifier: 9.39.5
+        version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: 1.0.0-rc.18
+        version: link:../fuzz
+      '@types/node':
+        specifier: 26.4.1
+        version: 26.4.1
+      '@vitest/coverage-v8':
+        specifier: 5.0.0
+        version: 5.0.0(patch_hash=ed8a636d093a32080b0d4ea4e716aae1b4cc4c0f24cd17ca109467fa8abd00a5)(vitest@5.0.0)
+      dprint:
+        specifier: 0.57.1
+        version: 0.57.1
+      effect:
+        specifier: 4.1.1
+        version: 4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c)
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      eslint:
+        specifier: 9.39.5
+        version: 9.39.5(jiti@2.7.0)(supports-color@10.2.2)
+      eslint-import-resolver-typescript:
+        specifier: 4.4.5
+        version: 4.4.5(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-import:
+        specifier: 2.32.0
+        version: 2.32.0(@typescript-eslint/parser@8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2))(eslint-import-resolver-typescript@4.4.5)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-jsdoc:
+        specifier: 64.3.4
+        version: 64.3.4(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-unicorn:
+        specifier: 65.0.0
+        version: 65.0.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))
+      madge:
+        specifier: 8.0.0
+        version: 8.0.0(supports-color@10.2.2)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      typescript-eslint:
+        specifier: 8.69.0
+        version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      vibelang:
+        specifier: 0.0.13
+        version: 0.0.13(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(typescript@5.9.3)
+      vibelang-vite:
+        specifier: 0.0.13
+        version: 0.0.13(vibelang@0.0.13(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(typescript@5.9.3))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      vitest:
+        specifier: 5.0.0
+        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+
   packages/effect-code-storage:
     devDependencies:
       '@effect/language-service':

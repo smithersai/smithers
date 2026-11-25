@@ -1,0 +1,85 @@
+{
+  "name": "smithers-comments",
+  "version": "1.0.0-rc.18",
+  "private": true,
+  "license": "MIT",
+  "author": "Smithers",
+  "description": "Agentic comment workflows powered by Smithers — inline lint and external .comments/ virtual files",
+  "sideEffects": [],
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "smithers-comments": "./bin/smithers-comments.mjs"
+  },
+  "files": [
+    "bin/*.mjs",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "docs/**/*.md",
+    "docs/splash/index.html",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -p tsconfig.json --noEmit && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../repo-targets/scripts/circular.mjs",
+    "format": "dprint fmt",
+    "lint": "vibelang -p tsconfig.test.json --noEmit && eslint \"src/**/*.ts\" --no-error-on-unmatched-pattern --max-warnings=0 && dprint check",
+    "test": "vitest run",
+    "benchmark": "vitest run --config vitest.benchmark.config.ts",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/engine": "1.0.0-rc.18",
+    "@smthrs/flows": "1.0.0-rc.18",
+    "@smthrs/plan": "1.0.0-rc.18",
+    "@smthrs/targets": "1.0.0-rc.18"
+  },
+  "peerDependencies": {
+    "effect": "4.1.1"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/vitest": "4.1.1",
+    "@eslint/js": "9.39.5",
+    "@smthrs/fuzz": "1.0.0-rc.18",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.1.1",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vibelang": "0.0.13",
+    "vibelang-vite": "0.0.13",
+    "vitest": "5.0.0"
+  },
+  "smthrs": {
+    "group": "tooling"
+  },
+  "homepage": "https://github.com/smithersai/smithers",
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/comments"
+  }
+}

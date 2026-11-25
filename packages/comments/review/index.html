@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smithers Comments — Complete Review Hub</title>
+    <style>
+      :root {
+        --bg: #fafafa;
+        --surface: #ffffff;
+        --ink: #111111;
+        --muted: #555555;
+        --line: #e4e4e7;
+        --code-bg: #f4f4f5;
+        --accent: #0f766e;
+        --accent-soft: #ccfbf1;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0c0c0d;
+          --surface: #141416;
+          --ink: #f4f4f5;
+          --muted: #a1a1aa;
+          --line: #27272a;
+          --code-bg: #1c1c1f;
+          --accent: #2dd4bf;
+          --accent-soft: #134e4a;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      main {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 40px 24px 80px;
+      }
+      header {
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 24px;
+        margin-bottom: 32px;
+      }
+      .eyebrow {
+        font: 600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 8px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 32px;
+        letter-spacing: -0.02em;
+      }
+      .subtitle {
+        margin: 0;
+        color: var(--muted);
+        max-width: 72ch;
+      }
+      .badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 16px;
+      }
+      .badge {
+        font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        padding: 6px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+      }
+      .badge.pass {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      h2 {
+        margin: 40px 0 16px;
+        font-size: 20px;
+        letter-spacing: -0.01em;
+      }
+      .video-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+        gap: 20px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 16px;
+      }
+      .card h3 {
+        margin: 0 0 6px;
+        font-size: 16px;
+      }
+      .card p {
+        margin: 0 0 12px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      video {
+        width: 100%;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        background: #000;
+        display: block;
+      }
+      .card-links {
+        display: flex;
+        gap: 14px;
+        margin-top: 10px;
+        font-size: 13px;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover { text-decoration: underline; }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+        font-size: 13px;
+      }
+      th, td {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+      }
+      th {
+        background: var(--code-bg);
+        font-weight: 600;
+      }
+      tr:last-child td { border-bottom: 0; }
+      .num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .strong { font-weight: 700; color: var(--accent); }
+      .columns {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+        gap: 16px;
+      }
+      ul.file-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      ul.file-list li {
+        padding: 4px 0;
+        font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        border-bottom: 1px dashed var(--line);
+      }
+      ul.file-list li:last-child { border-bottom: 0; }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        background: var(--code-bg);
+        padding: 2px 5px;
+        border-radius: 4px;
+        font-size: 0.92em;
+      }
+      footer {
+        margin-top: 48px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 13px;
+      }
+      @media (max-width: 540px) {
+        .video-grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="eyebrow">Smithers Comments · Deliverables 1–5</div>
+        <h1>Smithers Comments — Review Hub</h1>
+        <p class="subtitle">
+          Agentic codebase comment workflows powered by <code>~/smithers</code> (workflows, content-addressed caching, and virtual files) in both <strong>inline</strong> and <strong>external</strong> (<code>.comments/</code>) modes. Every deliverable below is readable directly and available as a narrated walkthrough video.
+        </p>
+        <div class="badges">
+          <span class="badge pass">vibelang --noEmit: 0 errors</span>
+          <span class="badge pass">Tests: 43 / 43 (10/10 files)</span>
+          <span class="badge pass">@smthrs/fuzz: 3,800 execs (339 ms)</span>
+          <span class="badge pass">Benchmarks: 3 / 3 PASS</span>
+          <span class="badge pass">Dogfood check: 0 diagnostics</span>
+        </div>
+      </header>
+
+      <h2>Video Walkthroughs (Narrated HD · H.264 + AAC)</h2>
+      <div class="video-grid">
+        <div class="card">
+          <h3>01 · One-Pager &amp; Product Overview</h3>
+          <p>Inline vs. external modes, zero-config CLI verbs, sidecar format, and Smithers <code>PACKAGE.ts</code> virtual files.</p>
+          <video controls preload="metadata" src="videos/01-one-pager.mp4"></video>
+          <div class="card-links">
+            <a href="../docs/splash/index.html">Open 1-Pager HTML</a>
+            <a href="../README.md">README.md</a>
+            <a href="scripts/01-one-pager.md">Video Script</a>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>02 · Docs-Driven Specification</h3>
+          <p>All 9 end-user docs written before code: pragma preservation, symbol/pattern anchors, cache keys, and CLI exit codes.</p>
+          <video controls preload="metadata" src="videos/02-docs.mp4"></video>
+          <div class="card-links">
+            <a href="../docs/README.md">Docs Index</a>
+            <a href="../docs/getting-started/quickstart.md">Quickstart</a>
+            <a href="scripts/02-docs.md">Video Script</a>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>03 · Tests, Fuzzing &amp; Benchmarks</h3>
+          <p>Unit, property (<code>Arbitrary.checkEffect</code>), feedback-guided fuzz (<code>@smthrs/fuzz</code>), E2E CLI, docs parity, and measured wall-time benchmarks.</p>
+          <video controls preload="metadata" src="videos/03-tests-and-benchmarks.mp4"></video>
+          <div class="card-links">
+            <a href="../PACKAGE.ts">PACKAGE.ts</a>
+            <a href="../test/fuzz.test.ts">fuzz.test.ts</a>
+            <a href="../test/comments.benchmark.test.ts">benchmarks</a>
+            <a href="scripts/03-tests-and-benchmarks.md">Video Script</a>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>04 · 3-Builder Synthesis &amp; Final Architecture</h3>
+          <p>Gemini vs. Claude Fable vs. Codex Astra head-to-head benchmarks, best-of-three synthesis, and final from-scratch Effect + Smithers Flow architecture.</p>
+          <video controls preload="metadata" src="videos/04-source-architecture.mp4"></video>
+          <div class="card-links">
+            <a href="../REVIEW_SYNTHESIS.md">REVIEW_SYNTHESIS.md</a>
+            <a href="../src/Flows.ts">src/Flows.ts</a>
+            <a href="../src/Targets.ts">src/Targets.ts</a>
+            <a href="scripts/04-source-architecture.md">Video Script</a>
+          </div>
+        </div>
+      </div>
+
+      <h2>3-Builder Benchmark Comparison (nyc-01 · Node 26.5 · Effect 4.1.1 · Smithers rc.18)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Gemini (Independent)</th>
+            <th>Claude Fable (<code>claude-fable-5-2</code>)</th>
+            <th>Codex Astra (<code>gpt-6-astra</code>)</th>
+            <th>Final From-Scratch (<code>src/</code>)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Strict typecheck (<code>vibelang --noEmit</code>)</td>
+            <td class="num">PASS (0 errors)</td>
+            <td class="num">PASS (0 errors)</td>
+            <td class="num">PASS (0 errors)</td>
+            <td class="num strong">PASS (0 errors)</td>
+          </tr>
+          <tr>
+            <td>Full test suite (unit, prop, fuzz, e2e, docs)</td>
+            <td class="num">43 / 43 (10/10)</td>
+            <td class="num">43 / 43 (10/10)</td>
+            <td class="num">43 / 43 (10/10)</td>
+            <td class="num strong">43 / 43 (10/10)</td>
+          </tr>
+          <tr>
+            <td>Lexer (500 files, 1.35 MB, 20k comments)</td>
+            <td class="num">100.3 ms (13.2 MB/s)</td>
+            <td class="num">124.1 ms (10.6 MB/s)</td>
+            <td class="num">299.5 ms (4.4 MB/s)</td>
+            <td class="num strong">60.5 ms (21.8 MB/s)</td>
+          </tr>
+          <tr>
+            <td>Cache Cold &rarr; Warm (100 comments)</td>
+            <td class="num">261.9 &rarr; 8.5 ms (30.8&times;)</td>
+            <td class="num">486.4 &rarr; 110.0 ms (4.4&times;)</td>
+            <td class="num">1,542.1 &rarr; 217.6 ms (7.1&times;)</td>
+            <td class="num strong">317.3 &rarr; 11.3 ms (28.1&times;)</td>
+          </tr>
+          <tr>
+            <td>VirtualFileTree (200 files, 1k comments)</td>
+            <td class="num">34.4 ms</td>
+            <td class="num">19.8 ms</td>
+            <td class="num">136.8 ms</td>
+            <td class="num strong">22.8 ms</td>
+          </tr>
+          <tr>
+            <td>Implementation footprint</td>
+            <td class="num">13 files (~37 KB)</td>
+            <td class="num">19 files (~187 KB)</td>
+            <td class="num">15 files (~96 KB)</td>
+            <td class="num strong">17 files (~158 KB, 4,627 LOC)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Readable Deliverables</h2>
+      <div class="columns">
+        <div class="card">
+          <h3>1. One-Pager &amp; 2. End-User Docs</h3>
+          <ul class="file-list">
+            <li><a href="../docs/splash/index.html">docs/splash/index.html</a> (1-pager)</li>
+            <li><a href="../README.md">README.md</a></li>
+            <li><a href="../docs/README.md">docs/README.md</a></li>
+            <li><a href="../docs/getting-started/quickstart.md">docs/getting-started/quickstart.md</a></li>
+            <li><a href="../docs/concepts/modes.md">docs/concepts/modes.md</a></li>
+            <li><a href="../docs/concepts/sidecar-format.md">docs/concepts/sidecar-format.md</a></li>
+            <li><a href="../docs/concepts/virtual-files.md">docs/concepts/virtual-files.md</a></li>
+            <li><a href="../docs/concepts/caching-and-workflows.md">docs/concepts/caching-and-workflows.md</a></li>
+            <li><a href="../docs/reference/cli.md">docs/reference/cli.md</a></li>
+            <li><a href="../docs/reference/config.md">docs/reference/config.md</a></li>
+            <li><a href="../docs/reference/api.md">docs/reference/api.md</a></li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>3. Tests, Benchmarks &amp; Smithers Targets</h3>
+          <ul class="file-list">
+            <li><a href="../PACKAGE.ts">PACKAGE.ts</a></li>
+            <li><a href="../test/lexer.test.ts">test/lexer.test.ts</a> (9 tests)</li>
+            <li><a href="../test/sidecar.test.ts">test/sidecar.test.ts</a> (4 tests)</li>
+            <li><a href="../test/anchor.test.ts">test/anchor.test.ts</a> (5 tests)</li>
+            <li><a href="../test/config.test.ts">test/config.test.ts</a> (3 tests)</li>
+            <li><a href="../test/virtual-file.test.ts">test/virtual-file.test.ts</a> (5 tests)</li>
+            <li><a href="../test/workflow-cache.test.ts">test/workflow-cache.test.ts</a> (3 tests)</li>
+            <li><a href="../test/properties.test.ts">test/properties.test.ts</a> (5 tests)</li>
+            <li><a href="../test/fuzz.test.ts">test/fuzz.test.ts</a> (3 tests · 3,800 execs)</li>
+            <li><a href="../test/e2e.test.ts">test/e2e.test.ts</a> (3 tests)</li>
+            <li><a href="../test/docs.test.ts">test/docs.test.ts</a> (3 tests)</li>
+            <li><a href="../test/comments.benchmark.test.ts">test/comments.benchmark.test.ts</a> (3 bench)</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>4. Synthesis &amp; Final From-Scratch Source</h3>
+          <ul class="file-list">
+            <li><a href="../REVIEW_SYNTHESIS.md">REVIEW_SYNTHESIS.md</a></li>
+            <li><a href="../implementations/gemini/NOTES.md">implementations/gemini/NOTES.md</a></li>
+            <li><a href="../implementations/fable/NOTES.md">implementations/fable/NOTES.md</a></li>
+            <li><a href="../implementations/astra/NOTES.md">implementations/astra/NOTES.md</a></li>
+            <li><a href="../src/index.ts">src/index.ts</a> · <a href="../src/Cli.ts">Cli.ts</a> · <a href="../src/Config.ts">Config.ts</a></li>
+            <li><a href="../src/Lexer.ts">src/Lexer.ts</a> · <a href="../src/Anchor.ts">Anchor.ts</a> · <a href="../src/Sidecar.ts">Sidecar.ts</a></li>
+            <li><a href="../src/VirtualFile.ts">src/VirtualFile.ts</a> · <a href="../src/Extract.ts">Extract.ts</a></li>
+            <li><a href="../src/Cache.ts">src/Cache.ts</a> · <a href="../src/Validator.ts">Validator.ts</a> · <a href="../src/Agent.ts">Agent.ts</a></li>
+            <li><a href="../src/Flows.ts">src/Flows.ts</a> · <a href="../src/Targets.ts">Targets.ts</a></li>
+            <li><a href="../src/internal/FsSafe.ts">internal/FsSafe.ts</a> · <a href="../src/internal/DocTags.ts">DocTags.ts</a></li>
+            <li><a href="../src/internal/Repair.ts">internal/Repair.ts</a> · <a href="../src/internal/Repository.ts">Repository.ts</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <footer>
+        Generated with the VibeLang <code>runthrough.py</code> pipeline (1280&times;720 animated slides + macOS TTS narration) and verified end-to-end on <code>nyc-01</code>.
+      </footer>
+    </main>
+  </body>
+</html>
