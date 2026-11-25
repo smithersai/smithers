@@ -759,14 +759,17 @@ export const commandLineOf = (pid: number): string =>
  * @category running
  * @since 0.1.0
  */
-export const stillIn = (first: ReadonlyArray<number>): ReadonlyArray<Left> => {
-  const own = namespaceOf(process.pid)
+export const stillIn = (
+  first: ReadonlyArray<number>,
+  readNamespace: (pid: number) => string | undefined = namespaceOf
+): ReadonlyArray<Left> => {
+  const own = readNamespace(process.pid)
   if (own === undefined) return []
-  const spaces = new Set(first.map(namespaceOf).filter((space) => space !== undefined && space !== own))
-  const pids = first.filter((pid) => namespaceOf(pid) === own)
+  const spaces = new Set(first.map(readNamespace).filter((space) => space !== undefined && space !== own))
+  const pids = first.filter((pid) => readNamespace(pid) === own)
   if (spaces.size > 0) {
     for (const entry of entriesOf("/proc")) {
-      if (/^[0-9]+$/.test(entry) && spaces.has(namespaceOf(Number(entry)))) pids.push(Number(entry))
+      if (/^[0-9]+$/.test(entry) && spaces.has(readNamespace(Number(entry)))) pids.push(Number(entry))
     }
   }
   return pids.map((pid) => ({ pid, command: commandLineOf(pid) }))

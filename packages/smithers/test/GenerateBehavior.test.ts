@@ -305,7 +305,14 @@ describe("generator command behavior", () => {
     expect(generated.codes, generated.stdout + generated.stderr).toEqual([])
     expect(JSON.parse(generated.stdout)).toMatchObject({ ok: true })
     const packageRoot = join(root, "packages/library")
-    expect(await readdir(packageRoot)).toEqual(["README.md", "package.json", "src", "test", "tsconfig.json"])
+    expect(await readdir(packageRoot)).toEqual([
+      "PACKAGE.ts",
+      "README.md",
+      "package.json",
+      "src",
+      "test",
+      "tsconfig.json"
+    ])
     expect(JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"))).toMatchObject({
       name: "@fixture/library",
       license: "MIT",

@@ -267,7 +267,9 @@ const stack = Layer.merge(GatewayServer.layerHandlers, layerNoopAuth({ id: "loca
     Layer.provideMerge(ControlLive.layer),
     Layer.provideMerge(
       Layer.mergeAll(
-        SqlControlRuntime.layer({ flows: [durableFlow] }).pipe(Layer.orDie),
+        SqlControlRuntime.layer({ flows: [durableFlow], principal: { id: "local", kind: "operator" } }).pipe(
+          Layer.orDie
+        ),
         NotificationQueue.layer,
         Registry.layerNoop(),
         executor

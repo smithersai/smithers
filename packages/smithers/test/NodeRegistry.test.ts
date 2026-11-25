@@ -46,7 +46,9 @@ describe("NodeControl.projectSources", () => {
         naming: "path",
         optionalRoot: true,
         lockfileRoot: "/work",
-        retiredRoot: join("/work", "flows")
+        retiredRoot: join("/work", "flows"),
+        confinementRoot: "/work",
+        undeclaredCapabilities: "all"
       }
     ])
   })

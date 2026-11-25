@@ -511,10 +511,9 @@ describe("Forensics.digest boundaries", () => {
       event("control.run.failed", { runId: "run-1", cause: "first" }, 2),
       event("control.run.completed", { runId: "run-1" }, 3)
     ])
-    // The status is the last transition seen; the cause is only read on the
-    // transition that recorded it, so a later status does not erase it.
+    // Resuming and completing a previously failed run clears the stale failure cause.
     expect(d.status).toBe("completed")
-    expect(d.cause).toBe("first")
+    expect(d.cause).toBeUndefined()
   })
 })
 

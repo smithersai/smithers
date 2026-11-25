@@ -227,7 +227,8 @@ describe("EngineStore Wave-8 RunDriver, RunListing, ExecutionFacts, CallFacts & 
           try {
             const sqlitePath = join(tmpDir, "test.sqlite")
             const resolved = await Effect.runPromise(Effect.scoped(TestStores.matrixAt(sqlitePath)))
-            expect(resolved).toBe(sqlitePath)
+            if (process.env.SMITHERS_TEST_PG_URL) expect(resolved).toContain("postgres")
+            else expect(resolved).toBe(sqlitePath)
           } finally {
             rmSync(tmpDir, { recursive: true, force: true })
           }

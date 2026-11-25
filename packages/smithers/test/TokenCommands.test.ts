@@ -102,7 +102,17 @@ describe("smthrs token mint", () => {
     const claims = await Effect.runPromise(ScopedToken.verify(key, token!, Date.now()))
     expect(claims.exp - claims.iat).toBe(60 * 60 * 1000)
     expect(claims.flowId).toBe("demo")
-    expect(claims.procedures).toEqual(["Plan", "Run", "Steer", "Signal", "Cancel", "Resume", "Run.Fork", "Run.Verify"])
+    expect(claims.procedures).toEqual([
+      "Plan",
+      "Run",
+      "Steer",
+      "Signal",
+      "Cancel",
+      "Pause",
+      "Resume",
+      "Run.Fork",
+      "Run.Verify"
+    ])
   })
 
   it.each(["read:runs", "write:runs", "approve:runs"])(

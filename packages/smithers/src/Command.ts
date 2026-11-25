@@ -739,7 +739,10 @@ const doctor = Command.make("doctor", {}, () =>
   })).pipe(Command.withDescription(Verb.find("doctor")!.help))
 
 const gc = Command.make("gc", {
-  yes: Flag.Boolean("yes").pipe(Flag.withDefault(false)),
+  yes: Flag.Boolean("yes").pipe(
+    Flag.withDefault(false),
+    Flag.withDescription("Delete matching runs without an interactive confirmation")
+  ),
   olderThan: Flag.String("older-than").pipe(
     Flag.withDefault(Gc.defaultRetention),
     Flag.withDescription("Delete terminal runs older than this duration, for example 7d")

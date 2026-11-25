@@ -15,7 +15,7 @@ const stores = Layer.mergeAll(SqlJournal.layer({ capacity: 1024, overflow: "reje
   Layer.provideMerge(database),
   Layer.orDie
 )
-const runtime = SqlControlRuntime.layer({ owner }).pipe(
+const runtime = SqlControlRuntime.layer({ owner, principal: { id: "local", kind: "operator" } }).pipe(
   Layer.provideMerge(stores),
   Layer.provide(NodeCrypto.layer),
   Layer.orDie

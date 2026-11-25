@@ -1052,6 +1052,21 @@ const openRuntime = (
         runtime.setMemoryLimit(realmLimits.memoryBytes)
       }
       runtime.setMaxStackSize(QuickJSLifecycle.stackBytes)
+      runtime.setInterruptHandler(() => {
+        const hit = interrupt.poll()
+        if (hit === "time") {
+          exhausted = exhausted ?? timeLimitExceeded(timeMs)
+          return true
+        }
+        if (hit === "steps") {
+          exhausted = exhausted ?? new Cell.Rejected({
+            code: "limit_exceeded",
+            message: `This cell exceeded its limit of ${stepBudget} interpreter steps`
+          })
+          return true
+        }
+        return false
+      })
     })
     const context: QuickJSContext = yield* Effect.acquireRelease(
       Effect.sync(() => runtime.newContext()),
@@ -1088,23 +1103,6 @@ const openRuntime = (
           if (!broken) handle.dispose()
         })
     )
-    yield* Effect.sync(() => {
-      runtime.setInterruptHandler(() => {
-        const hit = interrupt.poll()
-        if (hit === "time") {
-          exhausted = exhausted ?? timeLimitExceeded(timeMs)
-          return true
-        }
-        if (hit === "steps") {
-          exhausted = exhausted ?? new Cell.Rejected({
-            code: "limit_exceeded",
-            message: `This cell exceeded its limit of ${stepBudget} interpreter steps`
-          })
-          return true
-        }
-        return false
-      })
-    })
 
     const install = (name: string, implementation: Parameters<QuickJSContext["newFunction"]>[1]): void => {
       const handle = context.newFunction(name, implementation)

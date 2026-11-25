@@ -512,7 +512,7 @@ describe("@smthrs/platform-node fuzz invariants", () => {
                     })
                 )
                 const target = join(tempRoot, `priv-${safeTag}`)
-                const canonicalTempRoot = nodeFs.realpathSync(tempRoot)
+                const canonicalTempRoot = nodeFs.realpathSync.native(tempRoot)
                 const pinned = yield* svc.directory(canonicalTempRoot, join(canonicalTempRoot, `priv-${safeTag}`))
                 yield* svc.write(canonicalTempRoot, join(pinned, "a.bin"), new Uint8Array([1, 2, 3]))
                 yield* svc.append(join(canonicalTempRoot, "log.txt"), safeTag)

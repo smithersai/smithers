@@ -420,7 +420,7 @@ it("discovers runs committed through an independent SQLite journal instance", ()
             ControlLive.layer.pipe(
               Layer.provideMerge(
                 Layer.mergeAll(
-                  SqlControlRuntime.layer().pipe(Layer.orDie),
+                  SqlControlRuntime.layer({ principal: { id: "local", kind: "operator" } }).pipe(Layer.orDie),
                   NotificationQueue.layer,
                   ControlExecutor.layer(ControlExecutor.makeNoop()),
                   Registry.layerNoop()

@@ -9,28 +9,39 @@ import assert from "node:assert/strict"
 import * as Target from "@smthrs/targets/Target"
 import * as Exec from "@smthrs/targets/Exec"
 import { Smithers } from "@smthrs/targets"
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, WorkspaceSources } from "@smthrs/repo-targets"
+import * as Input from "@smthrs/targets/Input"
 import { plannedCalls } from "@smthrs/targets/test-support/plan"
 import { suppliedEnv } from "./packages/repo-targets/contracts/check-test-pins.mjs"
 import { Package } from "./packages/smithers/flows/engine-store/PACKAGE.ts"
+const cwd = "packages/smithers/flows/engine-store"
 const old = BuildAndCheckTypeScriptPackage({
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
-  deps: [], cwd: "packages/smithers/flows/engine-store"
+  testData: ["test/fixtures/**/*.mjs"],
+  testTimeoutMs: 1_200_000,
+  deps: [],
+  reads: Object.values(WorkspaceSources({ cwd })),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
+  examples: [{
+    page: Input.file("docs/quickstart.md"),
+    example: Input.file("examples/vibe/quickstart.vibe"),
+    test: Input.file("test/quickstart.test.vibe")
+  }],
+  cwd
 })
 const actual = Target.metadata(Package.test)
 const previous = Target.metadata(old.test)
-// The matrix adds the tested examples, coverage-lint configuration and process fixtures to the stock inputs.
-const srcs = [...previous.attrs.srcs]
-srcs.splice(2, 0, Smithers.glob("examples/**/*.ts"))
-srcs.splice(7, 0,
-  Smithers.file("eslint.config.js"),
-  Smithers.file("//eslint.invariants.js"),
-  Smithers.file("//eslint.jsdoc.js"),
-  Smithers.glob("test/fixtures/**/*.mjs")
+assert.deepEqual({ ...actual.attrs, env: {}, deps: [] }, { ...previous.attrs, deps: [] })
+assert.equal(actual.attrs.deps[0], Package.lib)
+assert.equal(actual.dependencies[0], Package.lib)
+assert.deepEqual(
+  actual.attrs.deps.slice(1).map((dep) => Target.metadata(dep).attrs),
+  previous.attrs.deps.slice(1).map((dep) => Target.metadata(dep).attrs)
 )
-assert.deepEqual({ ...actual.attrs, env: {}, deps: [] }, { ...previous.attrs, srcs, deps: [] })
-assert.deepEqual(actual.attrs.deps, [Package.lib])
-assert.deepEqual(actual.dependencies, [Package.lib])
+assert.deepEqual(
+  actual.dependencies.slice(1).map((dep) => Target.metadata(dep).attrs),
+  previous.dependencies.slice(1).map((dep) => Target.metadata(dep).attrs)
+)
 assert.equal(actual.cacheable, false)
 assert.deepEqual(actual.kinds, previous.kinds)
 assert.deepEqual(actual.workspaceAttrs, previous.workspaceAttrs)

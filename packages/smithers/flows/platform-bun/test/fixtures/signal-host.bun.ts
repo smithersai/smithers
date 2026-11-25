@@ -48,10 +48,14 @@ const Host = Flow.make("flows/signal/host", {
  * never returns is a finalizer that never returns, which is exactly the
  * shutdown a host has to be able to walk away from.
  */
+let entered = false
 const probe = () =>
-  hang
-    ? Effect.as(Effect.sleep("10 minutes"), "woke").pipe(Effect.onInterrupt(() => Effect.never))
-    : Effect.as(Effect.sleep("10 minutes"), "woke")
+  Effect.suspend(() => {
+    entered = true
+    return hang
+      ? Effect.as(Effect.sleep("10 minutes"), "woke").pipe(Effect.onInterrupt(() => Effect.never))
+      : Effect.as(Effect.sleep("10 minutes"), "woke")
+  })
 
 const flows = Interpreter.layer(Host).pipe(
   Layer.provideMerge(Probe.toLayer(probe)),
@@ -73,7 +77,7 @@ const program = Effect.gen(function*() {
     { startImmediately: true }
   )
   let row = yield* runs.get(executionId)
-  for (let attempt = 0; attempt < 400 && row.status !== "running"; attempt++) {
+  for (let attempt = 0; attempt < 400 && (row.status !== "running" || !entered); attempt++) {
     yield* Effect.sleep("25 millis")
     row = yield* runs.get(executionId)
   }

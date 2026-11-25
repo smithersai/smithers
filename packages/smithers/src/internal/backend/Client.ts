@@ -455,11 +455,11 @@ export class Client {
     if (result.code !== 0) {
       throw withCause(
         new Refused({ fault: "dependency", code: "tool_failed", message: `${command} failed` }),
-        new Error(
-          `Exit ${result.code}: ${
+        {
+          message: `Exit ${result.code}: ${
             Failure.terminalSafeLines(str(this.redact(Failure.terminalSafeLines(result.stderr)))).slice(-8192)
           }`
-        )
+        }
       )
     }
     return result.stdout.trim()

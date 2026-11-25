@@ -652,7 +652,7 @@ const splitSearchPath = (searchPath: string): ReadonlyArray<string> => {
 const pathApi = (path: string): typeof NodePath.posix =>
   /^(?:[a-z]:[\\/]|\\\\)/i.test(path) ? NodePath.win32 : NodePath.posix
 
-const toPosix = (path: string): string => path.split(pathApi(path).sep).join("/")
+const toPosix = (path: string): string => path.replaceAll("\\", "/")
 
 /**
  * The path with the symlinks of its existing ancestors resolved. A path that

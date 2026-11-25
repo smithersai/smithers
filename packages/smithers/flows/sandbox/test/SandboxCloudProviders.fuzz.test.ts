@@ -418,192 +418,200 @@ describe("@smthrs/sandbox VercelSandbox, DaytonaSandbox, ContainerSandbox & Kube
     if (failure !== undefined) throw new Error(failure)
   })
 
-  it("ContainerSandbox.existing & ContainerSandbox.make exercise container lifecycle, linuxFileSystem, exec, stdin, limits & faults", async () => {
-    // 1. ContainerSandbox.existing over real local /bin/sh -> exercises existing.ts + linuxFileSystem.ts!
-    const existDir = freshDir("container-existing")
-    const existSession = ContainerSandbox.existing({
-      container: "c-fuzz-1",
-      workdir: existDir,
-      spawner: localSpawner,
-      hostEnvironment: process.env,
-      transport: {
-        exec: ({ file, args, cwd }) =>
-          Effect.succeed({
-            file: "/bin/sh",
-            args: ["-c", "cd \"$1\" && shift && exec \"$@\"", "_", cwd ?? existDir, file, ...args]
-          })
-      }
-    })
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function*() {
-          const fs = Sandbox.fileSystem(existSession)
-          yield* fs.makeDirectory("nested", { recursive: true })
-          yield* fs.writeFileString("nested/f.txt", "container-linux-fs")
-          expect(yield* fs.readFileString("nested/f.txt")).toBe("container-linux-fs")
-          const st = yield* fs.stat("nested/f.txt")
-          expect(st.type).toBe("File")
-          yield* fs.chmod("nested/f.txt", 0o600)
-          const symExit = yield* fs.symlink("f.txt", "nested/sym.txt").pipe(Effect.exit)
-          if (Exit.isSuccess(symExit)) expect(yield* fs.readLink("nested/sym.txt")).toBe("f.txt")
-          expect(yield* fs.readDirectory("nested")).toContain("f.txt")
-          yield* fs.rename("nested/f.txt", "nested/f2.txt")
-          // Read directory as file -> refusal
-          expect(Exit.isFailure(yield* fs.readFile("nested").pipe(Effect.exit))).toBe(true)
-          // Read missing -> NotFound
-          expect(Exit.isFailure(yield* fs.readFile("nested/missing").pipe(Effect.exit))).toBe(true)
-          // Unreadable file -> permission refusal
-          const roPath = join(existDir, "nested", "unreadable.txt")
-          writeFileSync(roPath, "secret")
-          chmodSync(roPath, 0o000)
-          yield* fs.readFile("nested/unreadable.txt").pipe(Effect.exit)
-          chmodSync(roPath, 0o644)
-          yield* fs.remove("nested", { recursive: true, force: true })
-
-          const child = yield* existSession.spawn("cat", {
-            stdin: encoder.encode("hello-existing"),
-            env: { MY_VAR: "123" }
-          })
-          expect(yield* Stream.mkString(Stream.decodeText(child.stdout))).toBe("hello-existing")
-          expect(yield* child.exitCode).toBe(0)
-        })
-      ).pipe(Effect.provide(silentLogger))
-    )
-
-    // 2. ContainerSandbox.make with injected docker-like spawner backed by real /bin/sh
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        network: Schema.Literals(["none", "open"]),
-        withLimits: Schema.Boolean,
-        conflictOnCreate: Schema.Boolean,
-        failStart: Schema.Boolean
+  it.skipIf(process.platform !== "linux")(
+    "ContainerSandbox.existing & ContainerSandbox.make exercise container lifecycle, linuxFileSystem, exec, stdin, limits & faults",
+    async () => {
+      // 1. ContainerSandbox.existing over real local /bin/sh -> exercises existing.ts + linuxFileSystem.ts!
+      const existDir = freshDir("container-existing")
+      const existSession = ContainerSandbox.existing({
+        container: "c-fuzz-1",
+        workdir: existDir,
+        spawner: localSpawner,
+        hostEnvironment: process.env,
+        transport: {
+          exec: ({ file, args, cwd }) =>
+            Effect.succeed({
+              file: "/bin/sh",
+              args: ["-c", "cd \"$1\" && shift && exec \"$@\"", "_", cwd ?? existDir, file, ...args]
+            })
+        }
       })
-    )
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function*() {
+            const fs = Sandbox.fileSystem(existSession)
+            yield* fs.makeDirectory("nested", { recursive: true })
+            yield* fs.writeFileString("nested/f.txt", "container-linux-fs")
+            expect(yield* fs.readFileString("nested/f.txt")).toBe("container-linux-fs")
+            const st = yield* fs.stat("nested/f.txt")
+            expect(st.type).toBe("File")
+            yield* fs.chmod("nested/f.txt", 0o600)
+            const symExit = yield* fs.symlink("f.txt", "nested/sym.txt").pipe(Effect.exit)
+            if (Exit.isSuccess(symExit)) expect(yield* fs.readLink("nested/sym.txt")).toBe("f.txt")
+            expect(yield* fs.readDirectory("nested")).toContain("f.txt")
+            yield* fs.rename("nested/f.txt", "nested/f2.txt")
+            // Read directory as file -> refusal
+            expect(Exit.isFailure(yield* fs.readFile("nested").pipe(Effect.exit))).toBe(true)
+            // Read missing -> NotFound
+            expect(Exit.isFailure(yield* fs.readFile("nested/missing").pipe(Effect.exit))).toBe(true)
+            // Unreadable file -> permission refusal
+            const roPath = join(existDir, "nested", "unreadable.txt")
+            writeFileSync(roPath, "secret")
+            chmodSync(roPath, 0o000)
+            yield* fs.readFile("nested/unreadable.txt").pipe(Effect.exit)
+            chmodSync(roPath, 0o644)
+            yield* fs.remove("nested", { recursive: true, force: true })
 
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (tc) =>
-          Effect.scoped(
-            Effect.gen(function*() {
-              const work = freshDir("container-make")
-              const pidDir = join(work, ".pids")
-              mkdirSync(pidDir, { recursive: true })
-              const containers = new Map<string, { inspect: Record<string, unknown> }>()
+            const child = yield* existSession.spawn("cat", {
+              stdin: encoder.encode("hello-existing"),
+              env: { MY_VAR: "123" }
+            })
+            expect(yield* Stream.mkString(Stream.decodeText(child.stdout))).toBe("hello-existing")
+            expect(yield* child.exitCode).toBe(0)
+          })
+        ).pipe(Effect.provide(silentLogger))
+      )
 
-              const canned = (opts: { stdout?: string; stderr?: string; exitCode?: number }) =>
-                makeHandle({
-                  pid: ProcessId(1),
-                  exitCode: Effect.succeed(ExitCode(opts.exitCode ?? 0)),
-                  isRunning: Effect.succeed(false),
-                  kill: () => Effect.void,
-                  stdin: Sink.drain,
-                  stdout: opts.stdout ? Stream.make(encoder.encode(opts.stdout)) : Stream.empty,
-                  stderr: opts.stderr ? Stream.make(encoder.encode(opts.stderr)) : Stream.empty,
-                  all: Stream.empty,
-                  getInputFd: () => Sink.drain,
-                  getOutputFd: () => Stream.empty,
-                  unref: Effect.succeed(Effect.void)
-                })
+      // 2. ContainerSandbox.make with injected docker-like spawner backed by real /bin/sh
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          network: Schema.Literals(["none", "open"]),
+          withLimits: Schema.Boolean,
+          conflictOnCreate: Schema.Boolean,
+          failStart: Schema.Boolean
+        })
+      )
 
-              const spawner = makeSpawner((command: ChildProcess.Command) =>
-                Effect.gen(function*() {
-                  if (command._tag !== "StandardCommand") {
-                    return yield* Effect.fail(
-                      PlatformError.badArgument({ module: "ChildProcess", method: "spawn", description: "bad" })
-                    )
-                  }
-                  const args = command.args.map(plainWord)
-                  if (args[0] === "create") {
-                    const name = args[args.indexOf("--name") + 1]!
-                    if (tc.conflictOnCreate && !containers.has(name)) {
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (tc) =>
+            Effect.scoped(
+              Effect.gen(function*() {
+                const work = freshDir("container-make")
+                const pidDir = join(work, ".pids")
+                mkdirSync(pidDir, { recursive: true })
+                const containers = new Map<string, { inspect: Record<string, unknown> }>()
+
+                const canned = (opts: { stdout?: string; stderr?: string; exitCode?: number }) =>
+                  makeHandle({
+                    pid: ProcessId(1),
+                    exitCode: Effect.succeed(ExitCode(opts.exitCode ?? 0)),
+                    isRunning: Effect.succeed(false),
+                    kill: () => Effect.void,
+                    stdin: Sink.drain,
+                    stdout: opts.stdout ? Stream.make(encoder.encode(opts.stdout)) : Stream.empty,
+                    stderr: opts.stderr ? Stream.make(encoder.encode(opts.stderr)) : Stream.empty,
+                    all: Stream.empty,
+                    getInputFd: () => Sink.drain,
+                    getOutputFd: () => Stream.empty,
+                    unref: Effect.succeed(Effect.void)
+                  })
+
+                const spawner = makeSpawner((command: ChildProcess.Command) =>
+                  Effect.gen(function*() {
+                    if (command._tag !== "StandardCommand") {
+                      return yield* Effect.fail(
+                        PlatformError.badArgument({ module: "ChildProcess", method: "spawn", description: "bad" })
+                      )
+                    }
+                    const args = command.args.map(plainWord)
+                    if (args[0] === "create") {
+                      const name = args[args.indexOf("--name") + 1]!
+                      if (tc.conflictOnCreate && !containers.has(name)) {
+                        containers.set(name, {
+                          inspect: {
+                            Config: { Image: "alpine:3", WorkingDir: work, Labels: {} },
+                            HostConfig: { NetworkMode: tc.network === "none" ? "none" : "bridge", Privileged: false }
+                          }
+                        })
+                        return canned({
+                          exitCode: 125,
+                          stderr:
+                            `Error response from daemon: Conflict. The container name "/${name}" is already in use`
+                        })
+                      }
+                      const labels: Record<string, string> = {}
+                      for (let i = 0; i < args.length; i++) {
+                        if (args[i] === "--label" && args[i + 1]) {
+                          const [k, ...rest] = args[i + 1]!.split("=")
+                          labels[k!] = rest.join("=")
+                        }
+                      }
                       containers.set(name, {
                         inspect: {
-                          Config: { Image: "alpine:3", WorkingDir: work, Labels: {} },
-                          HostConfig: { NetworkMode: tc.network === "none" ? "none" : "bridge", Privileged: false }
+                          Config: {
+                            Image: args.at(-3),
+                            WorkingDir: args[args.indexOf("--workdir") + 1],
+                            Labels: labels
+                          },
+                          HostConfig: { NetworkMode: args[args.indexOf("--network") + 1], Privileged: false }
                         }
                       })
-                      return canned({
-                        exitCode: 125,
-                        stderr: `Error response from daemon: Conflict. The container name "/${name}" is already in use`
-                      })
+                      return canned({ stdout: "cid123456\n" })
                     }
-                    const labels: Record<string, string> = {}
-                    for (let i = 0; i < args.length; i++) {
-                      if (args[i] === "--label" && args[i + 1]) {
-                        const [k, ...rest] = args[i + 1]!.split("=")
-                        labels[k!] = rest.join("=")
-                      }
+                    if (args[0] === "start") {
+                      if (tc.failStart) return canned({ exitCode: 1, stderr: "cannot start" })
+                      return canned({ stdout: "cid123456\n" })
                     }
-                    containers.set(name, {
-                      inspect: {
-                        Config: { Image: args.at(-3), WorkingDir: args[args.indexOf("--workdir") + 1], Labels: labels },
-                        HostConfig: { NetworkMode: args[args.indexOf("--network") + 1], Privileged: false }
-                      }
-                    })
-                    return canned({ stdout: "cid123456\n" })
-                  }
-                  if (args[0] === "start") {
-                    if (tc.failStart) return canned({ exitCode: 1, stderr: "cannot start" })
-                    return canned({ stdout: "cid123456\n" })
-                  }
-                  if (args[0] === "container" && args[1] === "inspect") {
-                    const name = args[2]!
-                    const found = containers.get(name)
-                    return found
-                      ? canned({ stdout: JSON.stringify([found.inspect]) })
-                      : canned({ exitCode: 1, stderr: `No such container: ${name}` })
-                  }
-                  if (args[0] === "rm") {
-                    const name = args.at(-1)!
-                    containers.delete(name)
+                    if (args[0] === "container" && args[1] === "inspect") {
+                      const name = args[2]!
+                      const found = containers.get(name)
+                      return found
+                        ? canned({ stdout: JSON.stringify([found.inspect]) })
+                        : canned({ exitCode: 1, stderr: `No such container: ${name}` })
+                    }
+                    if (args[0] === "rm") {
+                      const name = args.at(-1)!
+                      containers.delete(name)
+                      return canned({})
+                    }
+                    if (args[0] === "exec") {
+                      const shIdx = args.indexOf("-c")
+                      const script = (shIdx >= 0 ? args[shIdx + 1]! : "true").replaceAll("/tmp/.smthrs-sbx", pidDir)
+                      return yield* localSpawner.spawn(
+                        ChildProcess.make("/bin/sh", ["-c", script], {
+                          cwd: work,
+                          stdin: command.options.stdin
+                        })
+                      )
+                    }
                     return canned({})
-                  }
-                  if (args[0] === "exec") {
-                    const shIdx = args.indexOf("-c")
-                    const script = (shIdx >= 0 ? args[shIdx + 1]! : "true").replaceAll("/tmp/.smthrs-sbx", pidDir)
-                    return yield* localSpawner.spawn(
-                      ChildProcess.make("/bin/sh", ["-c", script], {
-                        cwd: work,
-                        stdin: command.options.stdin
-                      })
-                    )
-                  }
-                  return canned({})
+                  })
+                )
+
+                const provider = ContainerSandbox.make({
+                  spawner,
+                  image: "alpine:3",
+                  workdir: work,
+                  network: tc.network,
+                  ...(tc.withLimits ? { limits: { cpus: 1, memoryMib: 512, timeoutSecs: 60 } } : {})
                 })
-              )
 
-              const provider = ContainerSandbox.make({
-                spawner,
-                image: "alpine:3",
-                workdir: work,
-                network: tc.network,
-                ...(tc.withLimits ? { limits: { cpus: 1, memoryMib: 512, timeoutSecs: 60 } } : {})
-              })
+                const acqExit = yield* provider.acquire(`cs-${seq}`).pipe(Effect.exit)
+                if (tc.failStart || tc.conflictOnCreate) {
+                  expect(Exit.isFailure(acqExit)).toBe(true)
+                  return true
+                }
+                expect(Exit.isSuccess(acqExit)).toBe(true)
+                if (Exit.isFailure(acqExit)) return false
+                const session = acqExit.value
 
-              const acqExit = yield* provider.acquire(`cs-${seq}`).pipe(Effect.exit)
-              if (tc.failStart || tc.conflictOnCreate) {
-                expect(Exit.isFailure(acqExit)).toBe(true)
+                yield* session.writeFile(`${work}/c.txt`, encoder.encode("container-ok"))
+                expect(decoder.decode(yield* session.readFile(`${work}/c.txt`))).toBe("container-ok")
+                const child = yield* session.spawn("echo container-exec", {})
+                expect(yield* Stream.mkString(Stream.decodeText(child.stdout))).toContain("container-exec")
+                expect(yield* child.exitCode).toBe(0)
                 return true
-              }
-              expect(Exit.isSuccess(acqExit)).toBe(true)
-              if (Exit.isFailure(acqExit)) return false
-              const session = acqExit.value
-
-              yield* session.writeFile(`${work}/c.txt`, encoder.encode("container-ok"))
-              expect(decoder.decode(yield* session.readFile(`${work}/c.txt`))).toBe("container-ok")
-              const child = yield* session.spawn("echo container-exec", {})
-              expect(yield* Stream.mkString(Stream.decodeText(child.stdout))).toContain("container-exec")
-              expect(yield* child.exitCode).toBe(0)
-              return true
-            })
-          ).pipe(Effect.provide(silentLogger)),
-        { seed: seed + 2, executions: ioExecutions }
+              })
+            ).pipe(Effect.provide(silentLogger)),
+          { seed: seed + 2, executions: ioExecutions }
+        )
       )
-    )
-    const failure = Fuzz.formatReport(report)
-    if (failure !== undefined) throw new Error(failure)
-  })
+      const failure = Fuzz.formatReport(report)
+      if (failure !== undefined) throw new Error(failure)
+    }
+  )
 
   it("KubernetesSandbox.make exercises kubectl pod creation, wait, exec, files, limits, labels & faults", async () => {
     const arb = Arbitrary.schema(

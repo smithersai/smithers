@@ -656,13 +656,13 @@ export const layer: Layer.Layer<
 
     const acknowledge = (
       id: RunId,
-      nonce: string | undefined,
+      nonce: string,
       acceptance: "accepted" | "pending"
     ) =>
       transact(
         "run.acceptance",
         Effect.gen(function*() {
-          if (nonce !== undefined) yield* runtime.finishLaunch(id, nonce, false)
+          yield* runtime.finishLaunch(id, nonce, false)
           // A fast executor may already have completed or parked. Never
           // regress its durable outcome with the launch acknowledgment.
           const current = yield* runtime.getRun(id)

@@ -382,7 +382,7 @@ describe("the tools on PATH under a home directory", () => {
   it.each(layouts)("reads $name and its install root, and nothing else of the home", (layout) => {
     const searchPath = layout.path.map((entry) => p(home, entry)).join(NodePath.delimiter)
     const found = ProcessSandbox.toolchain(searchPath, workspace, facts(searchPath))
-    const absolute = (path: string) => (path.startsWith(".") ? path : p(base, path))
+    const absolute = (path: string) => (path.startsWith(".") ? path.replaceAll("/", NodePath.sep) : p(base, path))
     expect([...found.reads].sort()).toEqual(layout.reads.map(absolute).sort())
     expect(found.links).toEqual((layout.links ?? []).map(([path, target]) => ({
       path: absolute(path),

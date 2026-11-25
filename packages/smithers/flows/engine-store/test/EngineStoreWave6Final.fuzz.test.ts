@@ -814,7 +814,9 @@ describe("EngineStore Wave-6 Final Coverage Targets fuzz", () => {
                 }
 
                 // deferred_persistence_sweep_flows_and_matrix: DeferredPersistence.sweepFlows + TestStores.matrixFilename/matrixLayer
-                expect(TestStores.matrixFilename(":memory:")).toBe(":memory:")
+                const matrixFile = TestStores.matrixFilename(":memory:")
+                if (process.env.SMITHERS_TEST_PG_URL) expect(matrixFile).toContain("postgres")
+                else expect(matrixFile).toBe(":memory:")
                 const matLayer = Layer.mergeAll(TestStores.matrixLayer(), TestClock.layer())
                 return yield* Effect.gen(function*() {
                   const state = yield* DurableEngineState.DurableEngineState

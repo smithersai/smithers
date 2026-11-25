@@ -96,7 +96,11 @@ it(
               )
           })
           const stack = ControlLive.layer.pipe(Layer.provideMerge(Layer.mergeAll(
-            SqlControlRuntime.layer().pipe(Layer.provideMerge(stores), Layer.provide(NodeCrypto.layer), Layer.orDie),
+            SqlControlRuntime.layer({ principal: { id: "local", kind: "operator" } }).pipe(
+              Layer.provideMerge(stores),
+              Layer.provide(NodeCrypto.layer),
+              Layer.orDie
+            ),
             NotificationQueue.layer.pipe(Layer.provide(stores)),
             ControlExecutor.layer(executor),
             Registry.layerNoop()

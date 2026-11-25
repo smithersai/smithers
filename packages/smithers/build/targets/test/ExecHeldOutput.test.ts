@@ -45,13 +45,17 @@ const alive = (pid: number): boolean => {
  */
 const payload = (leaves: boolean): Exec.Payload => ({
   cwd: ".",
-  argv: [
-    "/bin/sh",
-    "-c",
-    leaves
-      ? "echo started; setsid sh -c 'echo $$ > pid.part && mv pid.part pid; exec sleep 300' & sleep 1; exit 0"
-      : "echo done"
-  ],
+  argv: leaves
+    ? [
+      process.execPath,
+      "-e",
+      "const { spawn } = require('node:child_process'); const fs = require('node:fs'); " +
+      "process.stdout.write('started\\n'); " +
+      "const child = spawn('/bin/sh', ['-c', 'exec sleep 300'], { detached: true, stdio: ['ignore', 1, 2] }); " +
+      "fs.writeFileSync('pid.part', String(child.pid)); fs.renameSync('pid.part', 'pid'); " +
+      "child.unref(); setTimeout(() => process.exit(0), 200);"
+    ]
+    : ["/bin/sh", "-c", "echo done"],
   env: {},
   secrets: [],
   expectedExitCodes: [0],
@@ -64,7 +68,7 @@ const leftPid = async (): Promise<number> => {
   return pid
 }
 
-const linuxIt = it.skipIf(process.platform !== "linux")
+const linuxIt = it.skipIf(process.platform === "win32")
 
 describe("a tool whose output a program it started still holds", () => {
   linuxIt("ends that program and returns the tool's own result", async () => {

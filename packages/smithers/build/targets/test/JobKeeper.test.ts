@@ -452,6 +452,7 @@ describe.runIf(process.platform === "linux")("what still runs when a job's end i
       await new Promise((resolve) => setTimeout(resolve, 100))
       expect(JobKeeper.stillIn([sleeper.pid!])).toEqual([{ pid: sleeper.pid, command: `sleep ${seconds}` }])
       expect(JobKeeper.stillIn([2 ** 22 + 1])).toEqual([])
+      expect(JobKeeper.stillIn([sleeper.pid!], () => undefined)).toEqual([])
       expect(JobKeeper.commandLineOf(2 ** 22 + 1)).toBe("")
       expect(await JobKeeper.endedOrNamed([], 50)).toBeUndefined()
       expect(await JobKeeper.endedOrNamed([sleeper.pid!], 50)).toBe(

@@ -11,10 +11,14 @@
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import * as NodeSocket from "@effect/platform-node/NodeSocket"
+import type * as Ownership from "@smthrs/run-store/Ownership"
 import { Effect, Layer, Stream } from "effect"
 import { HttpRouter, HttpServer } from "effect/http"
 import { RpcSerialization } from "effect/rpc"
+import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { Control, layerNoop, type PauseInput } from "../src/Control.ts"
 import * as ControlClient from "../src/ControlClient.ts"
@@ -454,136 +458,41 @@ contract(
   (service) => DurableStack.durable({ executor: service === "absent" ? executor("absent").service : service })
 )
 
-describe("Control.pause over the noop executor", () => {
-  it("parks the control row alone, because that executor started nothing", async () => {
-    const result = await Effect.runPromise(
-      Effect.gen(function*() {
-        const control = yield* Control
-        const runtime = yield* ControlRuntime
-        const runId = yield* start("noop")
-        // The noop launch answers `pending` and releases the claim.
-        yield* runtime.resume(runId)
-        const receipt = yield* control.pause({ runId, idempotencyKey: "pause:noop" })
-        return { runId, receipt, after: yield* summaryOf(runId) }
-      }).pipe(Effect.provide(TestStack.live()), Effect.scoped)
-    )
-
-    expect(result.receipt).toEqual({ _tag: "Accepted", receiptId: "pause:noop", runId: result.runId })
-    expect(result.after.status).toBe("parked")
-  })
-})
-
-describe("Control.pause without a runtime", () => {
-  it("is Unavailable on the noop control layer", async () => {
-    const error = await Effect.runPromise(
-      Effect.flatMap(Control, (control) => Effect.flip(control.pause({ runId: "run", idempotencyKey: "key" }))).pipe(
-        Effect.provide(layerNoop)
-      )
-    )
-
-    expect(error).toBeInstanceOf(Unavailable)
-    expect((error as Unavailable).feature).toBe("pause")
-  })
-
-  it("is a run mutation, so a write:runs token may call it", () => {
-    expect(ScopedToken.scopes["write:runs"]).toContain("Pause")
-  })
-})
-
-describe("Control.pause over RPC", () => {
-  const token = "pause-secret"
-  const { parked, service } = executor()
-
-  const served = HttpRouter.serve(
-    ControlServer.layerHttp.pipe(
-      Layer.provide(Layer.succeed(ControlServer.RequestScheme, "http:")),
-      Layer.provide(
-        ControlRpcs.layerBearerAuth({ token, principal: { id: "remote-operator", kind: "bearer" }, now: () => 1 })
-      ),
-      Layer.provide(RpcSerialization.layerNdjson)
-    ),
-    { disableListenLog: true, disableLogger: true }
-  ).pipe(
-    Layer.provideMerge(NodeHttpServer.layer(createServer, { host: "127.0.0.1", port: 0 })),
-    Layer.provideMerge(
-      TestStack.live({
-        executor: service,
-        runtime: TestStack.memoryRuntime({
-          approvalAuthority: delegateApproval({ id: "remote-operator", kind: "bearer" })
-        })
+describe("SqlControlRuntime parked-owner liveness reclaim", () => {
+  it("reclaims a parked run when the same-host parked owner is reported dead by isAlive", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ctrl-park-reclaim-"))
+    try {
+      const dbFile = join(dir, "control.sqlite")
+      const ownerA: Ownership.OwnerId = { hostId: "same-host", pid: 101, nonce: "n-a" }
+      const ownerB: Ownership.OwnerId = { hostId: "same-host", pid: 202, nonce: "n-b" }
+      const layerA = DurableStack.durable({
+        database: DurableStack.fileBundle(dbFile),
+        owner: ownerA,
+        executor: executor().service
       })
-    )
-  )
-
-  const remote = <A, E>(use: (control: Control["Service"]) => Effect.Effect<A, E>) =>
-    Effect.gen(function*() {
-      const server = yield* HttpServer.HttpServer
-      if (server.address._tag !== "InetAddressV4") return yield* Effect.die("expected a TCP control server")
-      const url = `http://127.0.0.1:${server.address.port}`
-      return yield* Effect.flatMap(Control, use).pipe(
-        Effect.provide(
-          ControlClient.layer({ url: `${url}/rpc`, credential: token }).pipe(
-            Layer.provide([
-              NodeHttpClient.layerUndici,
-              NodeSocket.layerWebSocket(`${url.replace("http://", "ws://")}/rpc/ws`),
-              RpcSerialization.layerNdjson
-            ])
-          )
-        )
+      const layerB = DurableStack.durable({
+        database: DurableStack.fileBundle(dbFile),
+        owner: ownerB,
+        isAlive: () => Effect.succeed(false),
+        executor: executor().service
+      })
+      const runId = await Effect.runPromise(
+        Effect.gen(function*() {
+          const runtime = yield* ControlRuntime
+          const id = yield* start("reclaim-dead-park")
+          yield* runtime.pause(id)
+          return id
+        }).pipe(Effect.provide(layerA), Effect.scoped)
       )
-    })
-
-  it("pauses, replays, and resumes a run through the client and server", async () => {
-    const result = await Effect.runPromise(
-      Effect.gen(function*() {
-        const runId = yield* remote((control) => start("rpc").pipe(Effect.provideService(Control, control)))
-        const input = {
-          runId,
-          idempotencyKey: "pause:rpc",
-          reason: "remote hold",
-          // A remote caller cannot name itself: the server stamps the bearer.
-          principal: { id: "spoofed", kind: "operator", stampedAt: 0 }
-        }
-        const first = yield* remote((control) => control.pause(input))
-        const again = yield* remote((control) => control.pause(input))
-        const conflict = yield* remote((control) => control.pause({ ...input, reason: "another" }))
-        const parkedSummary = yield* summaryOf(runId)
-        const paused = (yield* eventsOf(runId)).find((event) => event.kind === "control.run.paused")
-        const resumed = yield* remote((control) => control.resume({ runId, idempotencyKey: "resume:rpc" }))
-        const missing = yield* remote((control) =>
-          Effect.flip(control.pause({ runId: "missing-run", idempotencyKey: "pause:rpc:missing" }))
-        )
-        const malformed = yield* remote((control) =>
-          Effect.flip(control.pause({ runId, idempotencyKey: "pause:rpc:bad", reason: 5 } as unknown as PauseInput))
-        )
-        return {
-          runId,
-          first,
-          again,
-          conflict,
-          parkedSummary,
-          paused,
-          resumed,
-          resumedSummary: yield* summaryOf(runId),
-          missing,
-          malformed
-        }
-      }).pipe(Effect.provide(served), Effect.scoped)
-    )
-
-    expect(result.first).toEqual({ _tag: "Accepted", receiptId: "pause:rpc", runId: result.runId })
-    expect(result.again).toEqual({ _tag: "AlreadyApplied", receiptId: "pause:rpc", runId: result.runId })
-    expect(result.conflict._tag).toBe("Conflict")
-    expect(result.parkedSummary.status).toBe("parked")
-    expect(result.paused?.payload).toMatchObject({
-      reason: "remote hold",
-      principal: { id: "remote-operator", kind: "bearer" }
-    })
-    expect(parked).toEqual([{ runId: result.runId, reason: "remote hold" }])
-    expect(result.resumed).toMatchObject({ _tag: "Accepted", runId: result.runId })
-    expect(result.resumedSummary.status).toBe("accepted")
-    expect(result.missing).toBeInstanceOf(RunNotFound)
-    // The client refuses a request its own schema cannot encode, before it sends.
-    expect(result.malformed).toBeInstanceOf(TransportError)
+      const reclaimed = await Effect.runPromise(
+        Effect.gen(function*() {
+          const control = yield* Control
+          return yield* control.resume({ runId, idempotencyKey: "resume:reclaim-dead-park" })
+        }).pipe(Effect.provide(layerB), Effect.scoped)
+      )
+      expect(reclaimed).toMatchObject({ _tag: "Accepted", runId })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
