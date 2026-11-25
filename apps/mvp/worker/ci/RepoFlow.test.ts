@@ -138,6 +138,19 @@ describe("repo/Run", { timeout: 60_000 }, () => {
     expect(RepoFlow.workflowPaths("../ci")).toEqual([])
   })
 
+  test("refuses a workflows file at the pinned commit instead of running a legacy flow", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const legacy = ".smithers/flows/ci/flow.ts"
+    const sha = github.push("main", { ".smithers/workflows": "not a directory", [legacy]: CI })
+    github.push("main", { ".smithers/workflows/ci.ts": CI, [legacy]: CI })
+    const box = machine()
+    const ran = await run(github, box, request(sha))
+    expect(ran.exit).toMatchObject(Exit.succeed({ state: "failure", outcome: "sent", jobs: [] }))
+    expect(box.commands).toEqual([])
+    expect(github.statuses.get(sha)?.at(-1)).toMatchObject({ state: "failure", description: "Couldn't run the flow (unreadable)" })
+    expect(github.calls.some((call) => call.path.endsWith(`/contents/${legacy}`))).toBe(false)
+  })
+
   test("a job that fails fails the flow, its sibling still runs, and the status names the failed job", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     const sha = github.push("main", { ".smithers/flows/ci/flow.ts": CI })

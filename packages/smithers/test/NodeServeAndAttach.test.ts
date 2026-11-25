@@ -3,7 +3,7 @@ import { ShardProtocol, ShardServer } from "@smthrs/sync"
 import { Effect, Result, Schema } from "effect"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
-import { mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { createServer, request as httpRequest } from "node:http"
 import { tmpdir } from "node:os"
 import { DatabaseSync } from "node:sqlite"
@@ -422,6 +422,50 @@ test("node counts chunked raw bytes before buffering and decodes split UTF-8", a
   }
 })
 
+test.each(["SMITHERS_HUB_AGENT_TOKEN", "SMITHERS_HUB_TOKEN", "SMITHERS_TOKEN"])(
+  "node serve refuses unbound or mismatched hub origins for %s before opening the node",
+  { timeout: 30_000 },
+  async (tokenName) => {
+    const dir = mkdtempSync(join(tmpdir(), "smithers-hub-binding-"))
+    const file = join(dir, "node.sqlite")
+    let requests = 0
+    const server = createServer((_request, response) => {
+      requests++
+      response.writeHead(500).end()
+    })
+    try {
+      server.listen(0, "127.0.0.1")
+      await once(server, "listening")
+      const address = server.address()
+      if (address === null || typeof address === "string") throw new Error("Expected loopback listener")
+      const hub = `http://127.0.0.1:${address.port}`
+      for (const [approved, message] of [
+        ["", "Hub replication requires SMITHERS_HUB_ORIGIN"],
+        ["https://APPROVED.example:443/", "--hub must match SMITHERS_HUB_ORIGIN"]
+      ]) {
+        const cli = makeCli({ environment: {
+          SMITHERS_NODE_AGENT_TOKEN: token,
+          [tokenName]: replicationToken,
+          SMITHERS_HUB_ORIGIN: approved,
+        } })
+        let output = ""
+        const exitCodes: Array<number | undefined> = []
+        await cli.serve(["node", "serve", "--file", file, "--shard", shard, "--node", "replica", "--hub", hub], {
+          stdout: (chunk) => { output += chunk },
+          exit: (code) => { exitCodes.push(code) },
+        })
+        expect(exitCodes).toEqual([1])
+        expect(output).toContain(message)
+        expect(existsSync(file)).toBe(false)
+        expect(requests).toBe(0)
+      }
+    } finally {
+      if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()))
+      rmSync(dir, { recursive: true, force: true })
+    }
+  },
+)
+
 test("the top-level CLI serves a loopback node and invokes the attach claim endpoint", { timeout: 60_000 }, async () => {
   const dir = mkdtempSync(join(tmpdir(), "smithers-node-cli-"))
   const server = createServer((request, response) => {
@@ -465,7 +509,14 @@ test("the top-level CLI serves a loopback node and invokes the attach claim endp
     expect(attached.output()).toContain("HTTP 409")
     expect(claims).toEqual([["POST", "/api/attach/claim"]])
 
-    const node = runCli("node", "serve", "--file", join(dir, "node.sqlite"), "--shard", shard, "--node", "local")
+    Object.assign(environment, {
+      SMITHERS_HUB_ORIGIN: `http://127.0.0.1:${addr.port}/`,
+      SMITHERS_HUB_AGENT_TOKEN: replicationToken,
+    })
+    const node = runCli(
+      "node", "serve", "--file", join(dir, "node.sqlite"), "--shard", shard, "--node", "local",
+      "--hub", `http://127.0.0.1:${addr.port}`,
+    )
     try {
       const origin = await new Promise<string>((resolve, reject) => {
         node.child.stderr.on("data", () => {

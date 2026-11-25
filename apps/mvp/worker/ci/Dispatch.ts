@@ -227,9 +227,7 @@ export const asApp = (services: Pick<Services<unknown, unknown>, "tokens" | "htt
           RepoFlow.isUnreadable(error) ? Effect.succeed(Option.none<string>()) : Effect.fail(new DispatchUnavailable())
         ),
       )
-    const workflow = (name: string, ref: string) => RepoFlow.readWorkflow(name, (path) =>
-      call(GitHub.Contents.getText(repository.owner, repository.name, path, { ref })),
-    ).pipe(Effect.catch((error) =>
+    const workflow = (name: string, ref: string) => call(RepoFlow.readWorkflow(repository, name, ref)).pipe(Effect.catch((error) =>
       RepoFlow.isUnreadable(error) ? Effect.succeedNone : Effect.fail(new DispatchUnavailable())
     ))
     return Option.some({ repository, call, read, workflow })

@@ -317,19 +317,29 @@ export const startNode = async (options: NodeOptions) => {
   }
 }
 
-export const registerNode = () => Cli.create("node", { description: "Local Smithers node" }).command("serve", {
+export const registerNode = (environment: Record<string, string | undefined> = process.env) => Cli.create("node", { description: "Local Smithers node" }).command("serve", {
   description: "Serve a local SQLite shard and stdio MCP",
   options: z.object({
     file: z.string(), shard: z.string(), node: z.string(), port: z.coerce.number().int().min(0).max(65_535).default(0),
-    hub: z.string().optional(), replicationNode: z.string().min(1).optional()
+    hub: z.string().optional().describe("Hub URL with the origin approved by SMITHERS_HUB_ORIGIN"),
+    replicationNode: z.string().min(1).optional()
   }),
   run: async ({ options }) => {
-    const token = process.env["SMITHERS_NODE_AGENT_TOKEN"] ?? ""
-    const hubToken = process.env["SMITHERS_HUB_AGENT_TOKEN"]
-    const replicationToken = process.env["SMITHERS_NODE_REPLICATION_TOKEN"]
-    const syncToken = process.env["SMITHERS_NODE_SYNC_TOKEN"]
+    const token = environment["SMITHERS_NODE_AGENT_TOKEN"] ?? ""
+    const hubToken = environment["SMITHERS_HUB_AGENT_TOKEN"] ??
+      environment["SMITHERS_HUB_TOKEN"] ?? environment["SMITHERS_TOKEN"]
+    const replicationToken = environment["SMITHERS_NODE_REPLICATION_TOKEN"]
+    const syncToken = environment["SMITHERS_NODE_SYNC_TOKEN"]
     const { hub, replicationNode, ...local } = options
-    if (hub !== undefined && !hubToken) throw new Error("A hub replication token is required")
+    let transport: NodeHub | undefined
+    if (hub !== undefined) {
+      if (!hubToken) throw new Error("A hub replication token is required")
+      const approved = environment["SMITHERS_HUB_ORIGIN"]
+      if (!approved) throw new Error("Hub replication requires SMITHERS_HUB_ORIGIN")
+      const origin = normalizeOrigin(hub)
+      if (origin !== normalizeOrigin(approved)) throw new Error("--hub must match SMITHERS_HUB_ORIGIN")
+      transport = httpTransport(origin, hubToken)
+    }
     if ((replicationToken === undefined) !== (replicationNode === undefined) || replicationNode === local.node) {
       throw new Error("Configure a dedicated node replication token and a distinct replication node ID")
     }
@@ -354,7 +364,7 @@ export const registerNode = () => Cli.create("node", { description: "Local Smith
     }
     const node = await startNode({
       ...local, token, verify: Principal.sessions(grants),
-      ...(hub === undefined ? {} : { hub: httpTransport(hub, hubToken!) })
+      ...(transport === undefined ? {} : { hub: transport })
     })
     const abort = new AbortController()
     const stop = () => abort.abort()

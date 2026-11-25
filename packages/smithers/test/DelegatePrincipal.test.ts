@@ -180,6 +180,26 @@ describe("H4: the real executable refuses an inherited delegate mark at both ent
     expect(JSON.parse(child.stdout)).toMatchObject({ code: "person_only", message: refusal(command).message })
   })
 
+  it.each([
+    [["ssh-key", "add", "--help"], "--title", "Add an SSH key"],
+    [["approvals", "approve", "-h"], "--scope", "Approve the exact serialized payload"],
+    [["approve", "--help"], "--scope", "Approve the exact serialized payload"]
+  ] as const)("scoped help for %j hides person-only details from delegates", (argv, option, description) => {
+    const child = invoke(argv, { ...inherited, SMITHERS_AUDIENCE: "human" })
+    const output = child.stdout + child.stderr
+    expect(output).not.toContain(option)
+    expect(output).not.toContain(description)
+    expect(child.state).toBe(false)
+  })
+
+  it("implicit SSH-key group help shows only delegate commands", () => {
+    const child = invoke(["ssh-key"], { ...inherited, SMITHERS_AUDIENCE: "human" })
+    expect(child.status, child.stderr).toBe(0)
+    expect(child.stdout).toContain("List SSH keys")
+    expect(child.stdout).not.toContain("Add an SSH key")
+    expect(child.stdout).not.toContain("Delete an SSH key")
+  })
+
   it("the same commands from a person are not refused as person_only", () => {
     for (
       const argv of [["approve", "{}", "--json"], ["deny", "{}", "--json"], ["approvals", "approve", "{}", "--json"]]

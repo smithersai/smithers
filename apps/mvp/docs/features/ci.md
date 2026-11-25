@@ -91,7 +91,7 @@ A signed-in repository Member can download a run artifact from `GET /api/repos/<
 
 ## Repository flows
 
-A repository declares its CI with one `Flow.make` whose body returns the flow's jobs. Smithers checks `.smithers/workflows/<flow>.vibe`, `.smithers/workflows/<flow>.ts`, then `.smithers/flows/<flow>/flow.ts` at the selected commit. The Worker's QuickJS planner accepts TypeScript-compatible source in these files. It type-checks against the real SDK; the realm reads only its tag and its body (e2e/fixtures/ci-repo is one).
+A repository declares its CI with one `Flow.make` whose body returns the flow's jobs. Smithers checks `.smithers/workflows/<flow>.vibe`, `.smithers/workflows/<flow>.ts`, then `.smithers/flows/<flow>/flow.ts` at the selected commit. If `.smithers/workflows` exists as a file, lookup fails before trying the legacy path. The Worker's QuickJS planner accepts TypeScript-compatible source in these files. It type-checks against the real SDK; the realm reads only its tag and its body (e2e/fixtures/ci-repo is one).
 
 ```ts
 // .smithers/flows/ci/flow.ts

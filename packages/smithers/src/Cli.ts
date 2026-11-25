@@ -350,7 +350,7 @@ export const makeCli = (
     .command(createRunnerCli(config))
     .command(createNodeCli())
     .command(registerAttach({ ...config.mcpStdio, approve: config.attachApproval, signal: config.signal }))
-    .command(registerNode())
+    .command(registerNode(environment))
     .command(alerts)
     .command(createTriggersCli(config))
     .command(createIntegrationsCli())
@@ -768,13 +768,17 @@ export const makeCli = (
   project(Cli.toCommands.get(cli as never)!, humanTree, [], humanDoors)
   // Only explicitly scoped help uses this projection. Root help, manifests,
   // skills and MCP continue to consume their reviewed discovery trees.
+  const scopedDoors = [...libraryDoors, ...(documentation.humanHelp ? humanDoors : doors)]
   const commandHelp = makeHelpCli()
   const commandHelpTree = Cli.toCommands.get(commandHelp as never)!
   commandHelpTree.clear()
-  project(Cli.toCommands.get(cli as never)!, commandHelpTree, [], [
-    ...libraryDoors,
-    ...(documentation.humanHelp ? humanDoors : doors)
-  ])
+  project(Cli.toCommands.get(cli as never)!, commandHelpTree, [], scopedDoors)
+  const delegateHelp = makeHelpCli()
+  const delegateHelpTree = Cli.toCommands.get(delegateHelp as never)!
+  delegateHelpTree.clear()
+  project(Cli.toCommands.get(cli as never)!, delegateHelpTree, [], [...libraryDoors, ...doors].filter((door) =>
+    !personOnlyCommands.some((path) => door === path || door.startsWith(path + " "))
+  ))
 
   const invoke = cli.serve.bind(cli)
   const serve: typeof cli.serve = async (argv = [], serveOptions) => {
@@ -790,13 +794,16 @@ export const makeCli = (
       helpOffset += !flag.includes("=") && typeof value === "string" ? 2 : 1
     }
     let invocationTree = Cli.toCommands.get(cli as never)!
-    let visibleTree = commandHelpTree
+    const delegated = served || Delegate.principalOf(environment) === "agent"
+    let visibleTree = delegated ? delegateHelpTree : commandHelpTree
     let hiddenHelp = false
     let scopedHelp = false
-    for (const word of parsed.rest.slice(helpOffset)) {
+    let implicitGroupHelp = false
+    for (const [index, word] of parsed.rest.slice(helpOffset).entries()) {
       if (word.startsWith("-")) break
       const entry = invocationTree.get(word)
       if (entry === undefined) break
+      implicitGroupHelp = helpOffset + index === parsed.rest.length - 1 && "_group" in entry && entry.root === undefined
       const visible = visibleTree.get(word)
       if (visible === undefined) {
         hiddenHelp = true
@@ -807,16 +814,19 @@ export const makeCli = (
       invocationTree = entry.commands
       visibleTree = visible.commands
     }
-    const explicitHelp = (argv.includes("--help") || argv.includes("-h")) &&
+    const helpRequested = argv.includes("--help") || argv.includes("-h")
+    const explicitHelp = helpRequested &&
       !parsed.mcp && !argv.includes("--http") && !argv.includes("--schema") &&
       !argv.includes("--llms") && !argv.includes("--llms-full")
-    const explicitHiddenHelp = hiddenHelp && explicitHelp
+    const explicitHiddenHelp = !delegated && hiddenHelp && explicitHelp
     const rootDiscovery = parsed.rest[0] === undefined || parsed.rest[0]?.startsWith("-") ||
       parsed.rest[0] === "skills" || parsed.mcp || argv.includes("--help") || argv.includes("-h") ||
       argv.includes("--llms") || argv.includes("--llms-full")
-    const helpDiscovery = explicitHelp && scopedHelp ?
-      commandHelp :
-      documentation.humanHelp && !parsed.mcp && parsed.rest[0] !== "skills" &&
+    const delegatedGroupHelp = delegated && implicitGroupHelp && !parsed.mcp && !argv.includes("--http") &&
+      !argv.includes("--schema") && !argv.includes("--llms") && !argv.includes("--llms-full")
+    const helpDiscovery = (explicitHelp || delegatedGroupHelp) && scopedHelp ?
+      (delegated ? delegateHelp : commandHelp) :
+      !delegated && documentation.humanHelp && !parsed.mcp && parsed.rest[0] !== "skills" &&
         !argv.includes("--llms") && !argv.includes("--llms-full") && (argv.includes("--help") || argv.includes("-h"))
       ? humanDiscovery :
       discovery
@@ -827,7 +837,7 @@ export const makeCli = (
       ) {
         await RetiredSkills.register(homedir(), process.env.XDG_DATA_HOME || resolve(homedir(), ".local/share"))
       }
-      return rootDiscovery && !explicitHiddenHelp ? helpDiscovery.serve(argv, options) : invoke(argv, options)
+      return (rootDiscovery || delegatedGroupHelp) && !explicitHiddenHelp ? helpDiscovery.serve(argv, options) : invoke(argv, options)
     }
     // Incur selects stdio before help/schema/manifests/version, but after
     // update checks and a requested update (unless help suppresses it).
@@ -960,7 +970,9 @@ export const makeCli = (
       DidYouMean.didYouMean(
         typed,
         [],
-        DidYouMean.commands(documentation.humanHelp ? humanDiscovery : discovery)
+        DidYouMean.commands(documentation.humanHelp && !served && Delegate.principalOf(environment) === "person"
+          ? humanDiscovery
+          : discovery)
       ).pipe(
         Effect.provide(evaluator(environment))
       ),

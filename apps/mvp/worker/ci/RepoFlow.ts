@@ -40,13 +40,19 @@ export const workflowPaths = (name: string): ReadonlyArray<string> => FLOW_NAME.
   : []
 
 /** Reads the first entry present at the supplied ref, stopping on a read failure. */
-export const readWorkflow = <A, E, R>(name: string, read: (path: string) => Effect.Effect<Option.Option<A>, E, R>) =>
+export const readWorkflow = (repository: Repository, name: string, ref: string) =>
   Effect.gen(function* () {
-    for (const path of workflowPaths(name)) {
+    const [vibe, ts, legacy] = workflowPaths(name)
+    if (vibe === undefined || ts === undefined || legacy === undefined) return Option.none<GitHub.Contents.TextFile>()
+    const read = (path: string) => GitHub.Contents.getText(repository.owner, repository.name, path, { ref })
+    for (const path of [vibe, ts]) {
       const entry = yield* read(path)
       if (Option.isSome(entry)) return entry
     }
-    return Option.none<A>()
+    // A child 404 also occurs when its parent is a file. Only a directory
+    // or an absent entry permits falling back to the legacy layout.
+    yield* GitHub.Contents.isDirectory(repository.owner, repository.name, ".smithers/workflows", { ref })
+    return yield* read(legacy)
   })
 
 /**
@@ -278,12 +284,11 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const repository = repositoryOfRequest(request)
       const token = yield* tokenFor(request, "contents")
       if (token._tag === "Failure") return { _tag: "refused", reason: "unreadable" } as const
-      const source = yield* readWorkflow(request.flow, (path) =>
-        GitHub.Contents.getText(repository.owner, repository.name, path, { ref: request.sha }).pipe(
-          withToken(token.success, services.apiBaseUrl),
-          Effect.provideService(HttpClient.HttpClient, services.http),
-        )
-      ).pipe(Effect.result)
+      const source = yield* readWorkflow(repository, request.flow, request.sha).pipe(
+        withToken(token.success, services.apiBaseUrl),
+        Effect.provideService(HttpClient.HttpClient, services.http),
+        Effect.result,
+      )
       if (source._tag === "Failure") {
         if (isUnreadable(source.failure)) return { _tag: "refused", reason: "unreadable" } as const
         return yield* new RepoFlowUnavailable()

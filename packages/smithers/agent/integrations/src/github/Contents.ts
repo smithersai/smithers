@@ -130,3 +130,26 @@ export const getText = (
   }).pipe(
     Effect.withSpan("GitHub.Contents.getText", { attributes: { "github.owner": owner, "github.repo": repo } })
   )
+
+/**
+ * Checks whether a path is a directory at the given ref. A missing path returns
+ * false; a present non-directory fails with `decode-failed`.
+ * @category getters
+ * @since 1.0.0
+ */
+export const isDirectory = (owner: string, repo: string, path: string, options: { readonly ref: string }) =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const directory = yield* requireFilePath(path)
+    const ref = yield* requireRef(options.ref)
+    return yield* client.request("GET", `/repos/${repository}/contents/${directory}`, undefined, {
+      schema: Schema.Array(Schema.Unknown),
+      query: { ref }
+    }).pipe(
+      Effect.as(true),
+      Effect.catchIf((error) => error.details?.["status"] === 404, () => Effect.succeed(false))
+    )
+  }).pipe(
+    Effect.withSpan("GitHub.Contents.isDirectory", { attributes: { "github.owner": owner, "github.repo": repo } })
+  )
