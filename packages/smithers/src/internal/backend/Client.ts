@@ -11,6 +11,7 @@ import { StringDecoder } from "node:string_decoder"
 import type { Runtime } from "../../cli/ControlBridge.ts"
 import { type Fault, Refused, UsageError } from "../../CliError.ts"
 import { processHost, repoFromRemote, resolveRepo } from "../../commands/Open.ts"
+import * as Delegate from "../../Delegate.ts"
 import { packageVersion } from "../../Version.ts"
 import * as Failure from "../Failure.ts"
 import { pathSegment } from "./PathSegment.ts"
@@ -328,6 +329,10 @@ export class Client {
     this.env = runtime.environment ?? process.env
     this.session = session ?? new Session(this.env)
   }
+  /** Whether this client acts for an agent: its environment or its process carries the delegate mark. */
+  get delegated(): boolean {
+    return Delegate.principalOf(this.env) === "agent"
+  }
   get home() {
     return this.env.HOME || homedir()
   }
@@ -567,6 +572,16 @@ export class Client {
     const credential = !options.anonymous && options.token == null
       ? await this.credential(origin, requestSignal)
       : undefined
+    // Decision 0017 §9: a delegate uses only a credential handed to its own process. The person's saved login
+    // (keyring, login file, config) is never a fallback, so the request fails closed before anything is sent.
+    if (this.delegated && credential !== undefined && !["env", "token_file"].includes(credential.resolved.source)) {
+      throw new Refused({
+        fault: "policy",
+        code: "delegate_credential_required",
+        message:
+          "An agent cannot use the saved personal login. Give it a credential issued for the agent in SMITHERS_TOKEN."
+      })
+    }
     const token = options.anonymous ? undefined : options.token ?? credential?.resolved.token
     if (token) this.protect(token)
     const remember = (value: unknown) => {
@@ -604,7 +619,11 @@ export class Client {
       ...(token && via && !Object.keys(options.headers ?? {}).some((key) => key.toLowerCase() === "smithers-via")
         ? { "Smithers-Via": via }
         : {}),
-      ...options.headers,
+      ...Object.fromEntries(
+        Object.entries(options.headers ?? {}).filter(([key]) => !this.delegated || key.toLowerCase() !== "smithers-act")
+      ),
+      // The delegate states who it acts as on every request; no caller header removes or replaces the statement.
+      ...(this.delegated ? { "Smithers-Act": "agent" } : {}),
       ...(token && this.session.terminalSession !== undefined
         ? { "Smithers-Terminal-Session": this.session.terminalSession }
         : {})

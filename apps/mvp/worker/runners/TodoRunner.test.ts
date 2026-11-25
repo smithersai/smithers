@@ -538,7 +538,7 @@ describe("overflow on Cloudflare (decision 0144)", { timeout: 240_000 }, () => {
     // object), which sends them on to this deployment's runner routes and to the model.
     const keys = Option.getOrThrow(await Effect.runPromise(Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layer(KEY)))))
     const overflow = Option.getOrThrow(await runtime.runPromise(Overflow.read(REPOSITORY.id)))
-    const guest = { repoId: REPOSITORY.id, branchId: Overflow.boxId(REPOSITORY.id), generation: 1 }
+    const guest: SandboxEgress.Guest = { kind: "branch", repoId: REPOSITORY.id, branchId: Overflow.boxId(REPOSITORY.id), generation: 1 }
     const credentials: SandboxEgress.OverflowCredentials = {
       repoId: REPOSITORY.id, origin: overflow.origin, token: overflow.token,
       personId: overflow.personId, connectionId: overflow.connectionId, baseUrl: MODEL,

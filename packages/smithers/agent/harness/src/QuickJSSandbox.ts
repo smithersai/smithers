@@ -73,6 +73,28 @@ const preludeIntrinsics = `  var keysOf = Object.keys
   var argumentsOf = Array.prototype.slice
   var settleWith = Function.prototype.call.bind(Promise.prototype.then)`
 
+/** The longest flow name `ctx.call` hands the host, in UTF-16 code units. */
+const callFlowUnits = 1024
+
+/**
+ * The largest encoded `ctx.call` input the host copies out of the realm, in
+ * UTF-16 code units. The realm refuses a larger one before the bridge, and the
+ * bridge refuses it again unread.
+ */
+const callInputUnits = 16 * 1024 * 1024
+
+/** The largest encoded `at` option, a checkpoint handle, in UTF-16 code units. */
+const callAtUnits = 64 * 1024
+
+/**
+ * The longest text of anything a cell threw that crosses the boundary: the
+ * thrown string, an error's `name` and `message`, and its JSON description.
+ */
+const raisedTextUnits = 64 * 1024
+
+/** The largest panel probe reading the host copies out, in UTF-16 code units. */
+const probeUnits = 4 * 1024 * 1024
+
 /**
  * The realm-side helpers both preludes install.
  *
@@ -133,7 +155,14 @@ const preludeHelpers = `${preludeIntrinsics}
     }
     return value
   }
-  var settleEnvelope = function (settled) {
+  // The host settles a call with JSON text and nothing else: a primitive string
+  // has no \`then\` for promise resolution to consult, so nothing a cell put on
+  // \`Object.prototype\` runs while the host settles. The text is decoded here,
+  // in the cell's own continuation and under its budget, with the parser held
+  // from before any cell ran. \`parse\` defines every member as an own data
+  // property, so the reads below reach no accessor a cell wrote either.
+  var settleEnvelope = function (reply) {
+    var settled = parse(reply)
     // A failed call RESOLVES with the failure envelope; only teardown throws.
     // See Cell.callFailure for why.
     if (settled.ok) return succeeded(settled.value)
@@ -141,6 +170,13 @@ const preludeHelpers = `${preludeIntrinsics}
     return settled.failure
   }
   var dispatch = function (flow, input, at, declared) {
+    // Refused here, before the bridge: the host copies none of an oversized
+    // payload, and the cell is told which bound it crossed.
+    if (flow.length > ${callFlowUnits} || input.length > ${callInputUnits} || at.length > ${callAtUnits}) {
+      return Deferred.reject(new Fault(
+        "ctx.call accepts a flow name of at most ${callFlowUnits}, an encoded input of at most ${callInputUnits} and an encoded at of at most ${callAtUnits} UTF-16 code units; pass a smaller value"
+      ))
+    }
     return settleWith(bridge(flow, input, at, declared ? "declared" : ""), settleEnvelope)
   }
   // Whether a call is the run's own check: rule 7 has a cell keep it as
@@ -388,67 +424,149 @@ const catalogOf = (flows: Readonly<Record<string, Cell.FlowProjection>>): string
   return JSON.stringify(normalized)
 }
 
-const raisedFrom = (dumped: unknown): Cell.Raised => {
-  if (typeof dumped === "object" && dumped !== null) {
-    const record = dumped as { readonly name?: unknown; readonly message?: unknown }
-    return new Cell.Raised({
-      name: typeof record.name === "string" ? record.name : "Error",
-      // Never `String(object)`: a cell that threw a structured value is told
-      // what it threw. See `Sandbox` `describe`.
-      message: typeof record.message === "string" ? record.message : Sandbox.raisedOutcome(dumped).message
-    })
+/**
+ * Whether a handle is a primitive string of at most `limit` UTF-16 code units.
+ *
+ * The length is read inside QuickJS, before anything is copied: `getString`
+ * would first copy the whole string into host memory. Only a primitive string
+ * is measured, because its `length` is the string's own, where an object's
+ * `length` would be a getter of the cell's choosing.
+ */
+const stringWithin = (context: QuickJSContext, handle: QuickJSHandle, limit: number): boolean =>
+  context.typeof(handle) === "string" &&
+  context.getProp(handle, "length").consume((length) => context.getNumber(length) <= limit)
+
+/**
+ * A handle's text, only when the realm says it is a primitive string of at
+ * most `limit` UTF-16 code units. `getString` on anything else runs the cell's
+ * own `toString` in the host's call, and on a longer string copies it whole
+ * before any limit is checked, so no other value is ever read as text.
+ */
+const stringOf = (context: QuickJSContext, handle: QuickJSHandle, limit: number): string | undefined =>
+  stringWithin(context, handle, limit) ? context.getString(handle) : undefined
+
+/**
+ * The value a host-authored evaluation answered, or a host error naming why
+ * there is none. The realm's error is read as its two bounded strings and
+ * released; it is never dumped, which would serialize a realm object in the
+ * host's call.
+ */
+const evaluated = (
+  context: QuickJSContext,
+  result: ReturnType<QuickJSContext["evalCode"]>,
+  what: string
+): QuickJSHandle => {
+  /* v8 ignore start -- these sources are the host's own, evaluated in a realm no cell has run in, so they fail only when the heap or the opening budget runs out inside them; a realm that small is refused earlier, at the prelude's own budget */
+  if (result.error !== undefined) {
+    const cause = result.error.consume((error) => causeOf(context, error))
+    throw new Error(`${what}: ${cause.message ?? "the realm gave no message"}`)
   }
-  return new Cell.Raised({ name: "Error", message: String(dumped) })
+  /* v8 ignore stop */
+  return result.value
 }
 
 /**
- * Builds one owned QuickJS handle from the already-validated JSON result.
- *
- * Materializing the value directly also avoids parsing a multi-megabyte JSON
- * string inside a promise job, which leaves QuickJS 0.32's runtime heap in an
- * uncollectable state during disposal.
+ * One string property of a value the realm holds, read by handle. A getter or
+ * proxy trap behind the property runs in the realm under its interrupt
+ * budget; what it answers crosses only as a primitive string, and anything
+ * else, a boxed `String` included, reads as absent.
  */
-const handleFromJson = (
-  context: QuickJSContext,
-  defineDataProperty: QuickJSHandle,
-  value: Schema.Json,
-  depth = 0
-): QuickJSHandle => {
-  if (value === null) return context.null
-  switch (typeof value) {
-    case "boolean":
-      return value ? context.true : context.false
-    case "number":
-      return context.newNumber(value)
-    case "string":
-      return context.newString(value)
-  }
+const stringProperty = (context: QuickJSContext, handle: QuickJSHandle, key: string): string | undefined =>
+  context.getProp(handle, key).consume((property) => stringOf(context, property, raisedTextUnits))
 
-  // Leave enough host stack to release every ancestor handle on refusal.
-  if (depth >= 128) throw new Error("The flow result exceeds 128 levels of JSON nesting")
-  const container = Array.isArray(value) ? context.newArray() : context.newObject()
-  try {
-    for (const [key, item] of Object.entries(value)) {
-      const child = handleFromJson(context, defineDataProperty, item, depth + 1)
-      try {
-        const property = context.newString(key)
-        try {
-          context.unwrapResult(
-            context.callFunction(defineDataProperty, context.undefined, container, property, child)
-          ).dispose()
-        } finally {
-          property.dispose()
-        }
-      } finally {
-        child.dispose()
-      }
-    }
-    return container
-  } catch (error) {
-    container.dispose()
-    throw error
+/** The name and message of an error the realm raised, as the two strings they are. */
+const causeOf = (
+  context: QuickJSContext,
+  error: QuickJSHandle
+): { readonly name: string | undefined; readonly message: string | undefined } => ({
+  name: stringProperty(context, error, "name"),
+  message: stringProperty(context, error, "message")
+})
+
+/**
+ * Encodes a thrown value as bounded JSON text inside the realm, where its
+ * accessors and `toJSON` run under the frame's interrupt budget. Evaluated
+ * before the prelude, so `JSON.stringify` is the realm's own.
+ */
+const describeThrown = `(function (stringify) {
+  return function (value) {
+    var text = stringify(value)
+    return typeof text === "string" && text.length <= ${raisedTextUnits} ? text : undefined
   }
+})(JSON.stringify)`
+
+/**
+ * Projects what a cell threw into a raised outcome from what crossed the
+ * boundary as primitive strings: the thrown string itself, the value's `name`
+ * and `message`, and its bounded JSON description.
+ */
+const raisedFrom = (
+  thrown: string | undefined,
+  cause: ReturnType<typeof causeOf>,
+  described: string | undefined
+): Cell.Raised =>
+  new Cell.Raised({
+    name: cause.name ?? "Error",
+    // Never `String(object)`: a cell that threw a structured value is told
+    // what it threw. See `Sandbox` `describe`.
+    message: thrown ?? cause.message ??
+      (described === undefined
+        ? "The cell threw a value that has no bounded JSON form"
+        : Sandbox.raisedOutcome(JSON.parse(described)).message)
+  })
+
+/** The part of quickjs-emscripten-core's runtime `executePendingJobs` reads its out-pointer through. */
+interface JobMemory {
+  newMutablePointerArray: (length: number) => { readonly value: { readonly ptr: number } }
+  readonly module: { readonly HEAPU8: Uint8Array }
 }
+
+/**
+ * Makes `runtime.executePendingJobs` safe to call when a job grows the
+ * WebAssembly memory, and answers whether it could.
+ *
+ * quickjs-emscripten-core 0.32 learns which context a job ran in from an
+ * out-pointer, and reads it through a typed-array view made before the job
+ * ran. Growing the memory detaches that view, the read answers `undefined`,
+ * and the runtime builds a second context nobody owns: disposal then aborts
+ * the whole module on `list_empty(&rt->gc_obj_list)`. A cell reaches it with
+ * one large string after an `await`, and so does the realm's own parse of a
+ * large flow result. The view is therefore rebuilt over the current buffer on
+ * every read.
+ */
+const growthSafeJobs = (runtime: QuickJSRuntime): boolean => {
+  const memory = (runtime as unknown as { readonly memory?: Partial<JobMemory> }).memory
+  /* v8 ignore next 3 -- the pinned quickjs-emscripten-core has both members; a release that renames either fails every realm open here instead of running unguarded */
+  if (typeof memory?.newMutablePointerArray !== "function" || !(memory.module?.HEAPU8 instanceof Uint8Array)) {
+    return false
+  }
+  const module = memory.module
+  const allocate = memory.newMutablePointerArray.bind(memory)
+  memory.newMutablePointerArray = (length) => {
+    const lifetime = allocate(length)
+    const ptr = lifetime.value.ptr
+    Object.defineProperty(lifetime.value, "typedArray", {
+      get: () => new Int32Array(module.HEAPU8.buffer, ptr, length)
+    })
+    return lifetime
+  }
+  return true
+}
+
+/**
+ * Makes one pending promise in the realm and hands its resolver to `keep`.
+ * Evaluated before the prelude, so `Promise` is the realm's own. The host
+ * settles the promise by calling that resolver with a primitive string; see
+ * `queue`.
+ */
+const deferredFactory = `(function (Deferred) {
+  return function (keep) {
+    return new Deferred(function (resolve) { keep(resolve) })
+  }
+})(Promise)`
+
+/** The deepest JSON nesting a flow result may have and still be handed to the realm's parser. */
+const replyDepth = 128
 
 export {
   /**
@@ -1046,6 +1164,13 @@ const openRuntime = (
           if (!broken) runtime.dispose()
         })
     )
+    /* v8 ignore next 6 -- see `growthSafeJobs`: the pinned binding always has the members the guard needs */
+    if (!growthSafeJobs(runtime)) {
+      return yield* new Sandbox.SandboxError({
+        code: "runtime_failed",
+        message: "This QuickJS binding cannot run promise jobs safely across memory growth"
+      })
+    }
     yield* Effect.sync(() => {
       /* v8 ignore else -- `withDefaults` fills `memoryBytes` whenever the `memoryBytes` capability is declared, and this binding declares it, so the heap ceiling is always set */
       if (realmLimits.memoryBytes !== undefined) {
@@ -1076,33 +1201,54 @@ const openRuntime = (
         })
     )
 
-    // Its own scoped resource rather than part of the context acquire, and that
-    // is the whole point: a helper the realm cannot evaluate used to be caught
-    // by hand, which meant a hand-written teardown and a branch no test could
-    // reach once a zero budget stopped being accepted. With scoped ownership,
-    // failure closes the scope and disposes the context and runtime. Finalizers run
-    // in reverse, so this handle is still released before them.
-    const defineDataProperty = yield* Effect.acquireRelease(
+    // Each a scoped resource of its own rather than part of the context
+    // acquire: a helper the realm cannot evaluate fails the open, the scope
+    // closes, and the context and runtime are disposed. Finalizers run in
+    // reverse, so these handles are still released before them.
+    const newDeferred = yield* Effect.acquireRelease(
+      Effect.sync(() => evaluated(context, context.evalCode(deferredFactory), "The realm could not install its deferred factory")),
+      (handle) =>
+        Effect.sync(() => {
+          if (!broken) handle.dispose()
+        })
+    )
+    // The resolver of the promise `newDeferred` is making, owned by the host
+    // from the moment the realm hands it over.
+    let resolver: QuickJSHandle | undefined
+    const keep = yield* Effect.acquireRelease(
       Effect.sync(() =>
-        context.unwrapResult(context.evalCode(
-          `(function (defineProperty) {
-  return function (object, key, value) {
-    defineProperty(object, key, {
-      __proto__: null,
-      value: value,
-      writable: true,
-      enumerable: true,
-      configurable: true
-    })
-  }
-})(Object.defineProperty)`
-        ))
+        context.newFunction("keep", (resolve) => {
+          resolver = resolve.dup()
+          return context.undefined
+        })
       ),
       (handle) =>
         Effect.sync(() => {
           if (!broken) handle.dispose()
         })
     )
+
+    // Captured beside it, before the prelude or any cell runs.
+    const describe = yield* Effect.acquireRelease(
+      Effect.sync(() => evaluated(context, context.evalCode(describeThrown), "The realm could not install its describer")),
+      (handle) =>
+        Effect.sync(() => {
+          if (!broken) handle.dispose()
+        })
+    )
+
+    /**
+     * A bridge argument's text. The prelude passes only strings it encoded
+     * itself, so anything else is refused back into the realm unread.
+     */
+    const bridged = (handle: QuickJSHandle, limit: number): string => {
+      const text = stringOf(context, handle, limit)
+      /* v8 ignore next 3 -- the prelude holds the only references to the bridge functions and calls them with strings it built and measured, so no cell can pass anything else or anything longer; the refusal exists so a future prelude cannot hand `getString` an object or an unbounded string */
+      if (text === undefined) {
+        throw new TypeError(`The host bridge accepts primitive strings of at most ${limit} UTF-16 code units only`)
+      }
+      return text
+    }
 
     const install = (name: string, implementation: Parameters<QuickJSContext["newFunction"]>[1]): void => {
       const handle = context.newFunction(name, implementation)
@@ -1111,13 +1257,15 @@ const openRuntime = (
     }
 
     const heapUsed = (): number => {
-      const snapshot = runtime.computeMemoryUsage()
-      try {
-        const usage = context.dump(snapshot) as { readonly memory_used_size: number }
-        return usage.memory_used_size
-      } finally {
-        snapshot.dispose()
-      }
+      // The usage record is QuickJS's own object: its one counter is read by
+      // handle, as the number it is, and nothing else of it crosses.
+      return runtime.computeMemoryUsage().consume((snapshot) =>
+        context.getProp(snapshot, "memory_used_size").consume((used) => {
+          /* v8 ignore next -- QuickJS writes the counter as a number on every usage record; reading no heap as available is the closed answer if it ever does not */
+          if (context.typeof(used) !== "number") return Number.POSITIVE_INFINITY
+          return context.getNumber(used)
+        })
+      )
     }
 
     const abort = (message: string): void => {
@@ -1133,55 +1281,78 @@ const openRuntime = (
       declared = false
     ): QuickJSHandle => {
       if (closing) throw new Error("The cell is closing; no further host calls are accepted")
-      const deferred = context.newPromise()
+      resolver = undefined
+      const made = context.callFunction(newDeferred, context.undefined, keep)
+      const resolve = resolver as QuickJSHandle | undefined
+      resolver = undefined
+      /* v8 ignore start -- the factory is the realm's own Promise constructor, captured before any cell ran, and it calls `keep` synchronously, so it fails only when the heap or the frame's budget runs out inside this one allocation */
+      if (made.error !== undefined || resolve === undefined) {
+        resolve?.dispose()
+        if (made.error === undefined) made.value.dispose()
+        else made.error.dispose()
+        throw new Error("The realm could not allocate a host call")
+      }
+      /* v8 ignore stop */
+      const heapRefusal = (message: string): Cell.Rejected =>
+        new Cell.Rejected({ code: "limit_exceeded", reason: "heap", message })
+      // The promise is settled with a primitive handle only: `undefined` when
+      // the reply is refused, the reply's JSON text otherwise. Resolving with
+      // an object would have promise resolution read its `then`, which a cell
+      // can define on `Object.prototype`, in the host's call. The failure is
+      // released unread; nothing of it is dumped into the host.
+      const settle = (value: QuickJSHandle): void => {
+        const settled = context.callFunction(resolve, context.undefined, value)
+        if (settled.error === undefined) settled.value.dispose()
+        /* v8 ignore start -- resolving with a primitive runs no cell code, so it fails only when queueing the reaction job itself runs out of heap */
+        else {
+          settled.error.dispose()
+          exhausted = exhausted ?? heapRefusal("Materializing the flow result exceeded the realm's limits.")
+        }
+        /* v8 ignore stop */
+        resolve.dispose()
+      }
       const reply = (payload: Schema.Json): void => {
         const remaining = Math.max(0, memoryBytes - heapUsed())
-        // JSON byte length misses the storage for values, properties and array
-        // slots. Reserve scratch space for the bridge and conservatively price
-        // each allocation before any handle can poison the realm on failure.
+        // The realm's parser builds the reply, so its cost is priced before the
+        // text is handed over: a parse that ran out of heap part-way would
+        // surface inside the cell as an error it could catch. JSON byte length
+        // misses the storage for values, properties and array slots, so each
+        // allocation is priced conservatively on top of scratch space for the
+        // bridge. Nesting is bounded too, on the host's stack and the realm's.
         let payloadBytes = 64 * 1024
-        const values: Array<Schema.Json> = [payload]
-        while (values.length > 0 && payloadBytes < remaining) {
-          const value = values.pop()!
+        let tooDeep = false
+        const values: Array<readonly [Schema.Json, number]> = [[payload, 0]]
+        while (values.length > 0 && payloadBytes < remaining && !tooDeep) {
+          const [value, depth] = values.pop()!
           payloadBytes += 64
           if (typeof value === "string") payloadBytes += bytes.size(value) * 2
           else if (value !== null && typeof value === "object") {
-            for (const [key, child] of Object.entries(value)) {
-              payloadBytes += 128 + bytes.size(key) * 2
-              values.push(child)
+            if (depth >= replyDepth) tooDeep = true
+            else {
+              for (const [key, child] of Object.entries(value)) {
+                payloadBytes += 128 + bytes.size(key) * 2
+                values.push([child, depth + 1])
+              }
             }
           }
         }
-        if (payloadBytes >= remaining) {
-          exhausted = exhausted ?? new Cell.Rejected({
-            code: "limit_exceeded",
-            reason: "heap",
-            message:
-              `The flow result is estimated to need ${payloadBytes} bytes of QuickJS heap, but only ${remaining} bytes remain ` +
-              `under this run's ceiling of ${memoryBytes}. The result was not materialized.`
-          })
-          deferred.resolve(context.undefined)
-          deferred.dispose()
+        if (tooDeep) {
+          exhausted = heapRefusal("Materializing the flow result exceeded the realm's limits.")
+          settle(context.undefined)
           return
         }
-        let handle: QuickJSHandle | undefined
-        try {
-          handle = handleFromJson(context, defineDataProperty, payload)
-          deferred.resolve(handle)
-        } catch {
-          // Deep JSON can exhaust the host stack while building handles even
-          // when its allocation fits. Settle the bridge after cleanup so the
-          // rejected frame remains recordable and realm disposal stays safe.
-          exhausted = new Cell.Rejected({
-            code: "limit_exceeded",
-            reason: "heap",
-            message: "Materializing the flow result exceeded the realm's limits."
-          })
-          deferred.resolve(context.undefined)
-        } finally {
-          handle?.dispose()
-          deferred.dispose()
+        // The text itself is held beside the tree the parser builds from it.
+        const text = payloadBytes < remaining ? JSON.stringify(payload) : ""
+        payloadBytes += text.length * 2
+        if (payloadBytes >= remaining) {
+          exhausted = exhausted ?? heapRefusal(
+            `The flow result is estimated to need ${payloadBytes} bytes of QuickJS heap, but only ${remaining} bytes remain ` +
+              `under this run's ceiling of ${memoryBytes}. The result was not materialized.`
+          )
+          settle(context.undefined)
+          return
         }
+        context.newString(text).consume(settle)
       }
       pending.push({
         ordinal: ordinal++,
@@ -1203,28 +1374,21 @@ const openRuntime = (
             failure: Cell.callFailure(refusal(undefined, message))
           })
       })
-      return deferred.handle
+      return made.value
     }
     install("__call", (flowHandle, inputHandle, atHandle, declaredHandle) =>
       queue(
         "call",
-        context.getString(flowHandle),
-        Schema.decodeUnknownSync(Schema.Json)(JSON.parse(context.getString(inputHandle))),
-        decodedAt(context.getString(atHandle)),
-        declaredHandle !== undefined && context.getString(declaredHandle) === "declared"
+        bridged(flowHandle, callFlowUnits),
+        Schema.decodeUnknownSync(Schema.Json)(JSON.parse(bridged(inputHandle, callInputUnits))),
+        decodedAt(bridged(atHandle, callAtUnits)),
+        declaredHandle !== undefined && bridged(declaredHandle, callFlowUnits) === "declared"
       ))
     install("__checkpoint", () => queue("checkpoint", checkpointFlow, null, undefined))
-    // String.length is read inside QuickJS: getString would first copy the
-    // whole payload into host memory. Bound encoded UTF-16 units separately
-    // from the print channel's rendered UTF-8 byte budgets.
-    const payloadFits = (handle: QuickJSHandle, limit: number): boolean => {
-      const length = context.getProp(handle, "length")
-      try {
-        return context.getNumber(length) <= limit
-      } finally {
-        length.dispose()
-      }
-    }
+    // Each payload is measured inside QuickJS before it is copied; see
+    // `stringWithin`. Encoded UTF-16 units are bounded separately from the
+    // print channel's rendered UTF-8 byte budgets.
+    const payloadFits = (handle: QuickJSHandle, limit: number): boolean => stringWithin(context, handle, limit)
 
     install("__print", (partsHandle) => {
       // Check this payload before copying, parsing or rendering it, even
@@ -1236,15 +1400,15 @@ const openRuntime = (
         unread = unread + 1
         return context.undefined
       }
-      const line = printed(context.getString(partsHandle))
+      const line = printed(bridged(partsHandle, Sandbox.printRetainedBytes))
       retained = retained + bytes.size(line.text) + 1
       lines.push(line)
       return context.undefined
     })
     install("__intent", (kindHandle, payloadHandle) => {
       if (!payloadFits(payloadHandle, intentPayloadUnits)) return context.false
-      const kind = context.getString(kindHandle)
-      const payload = Schema.decodeUnknownSync(Schema.Json)(JSON.parse(context.getString(payloadHandle)))
+      const kind = bridged(kindHandle, callFlowUnits)
+      const payload = Schema.decodeUnknownSync(Schema.Json)(JSON.parse(bridged(payloadHandle, intentPayloadUnits)))
       if (kind === "done") recorded = { kind: "done", output: Cell.renderText(payload), value: payload }
       else if (kind === "park") {
         const park = parkPayload(payload)
@@ -1255,8 +1419,7 @@ const openRuntime = (
 
     const installed = context.evalCode(replPrelude(catalogOf(options.flows), options.task ?? ""))
     if (installed.error !== undefined) {
-      const failure = context.dump(installed.error)
-      installed.error.dispose()
+      const failure = installed.error.consume((error) => causeOf(context, error))
       return yield* new Sandbox.SandboxError({
         code: "runtime_failed",
         message: "The sandbox prelude failed to install",
@@ -1277,16 +1440,21 @@ const openRuntime = (
     // `ctx` and `console` are part of the baseline rather than part of the
     // panel. Doubly encoded so no name — `__proto__` included — can reach the
     // probe's source as anything but data.
-    const snapshot = context.unwrapResult(
-      context.evalCode("JSON.stringify(Object.getOwnPropertyNames(globalThis))")
+    const snapshot = evaluated(
+      context,
+      context.evalCode("JSON.stringify(Object.getOwnPropertyNames(globalThis))"),
+      "The realm could not list its own names"
     )
-    const baseline = context.getString(snapshot)
-    snapshot.dispose()
+    const baseline = snapshot.consume((names) => bridged(names, probeUnits))
 
     // Built once, called every frame. The handle lives on this scope beside the
     // context that made it, which is what keeps the probe's intrinsics the ones
     // a fresh realm had rather than the ones a cell left behind.
-    const probe = context.unwrapResult(context.evalCode(panelProbe(JSON.stringify(baseline))))
+    const probe = evaluated(
+      context,
+      context.evalCode(panelProbe(JSON.stringify(baseline))),
+      "The realm could not install its panel probe"
+    )
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         if (!broken) probe.dispose()
@@ -1306,18 +1474,18 @@ const openRuntime = (
         read.error.dispose()
         return
       }
-      try {
-        const measured = decodeProbe(JSON.parse(context.getString(read.value)))
-        weighed = measured.names
-        held = measured.bytes
-        unweighed = measured.partial ? { root: measured.partialRoot, bytes: measured.partialBytes } : undefined
-        bindings = measured.names.map((entry) =>
-          new VariablesPanel.Binding({ name: entry.name, type: entry.type, size: entry.size })
-        )
-        needsProbe = false
-      } finally {
-        read.value.dispose()
-      }
+      // A reading too large to copy out is no reading: admission stays closed,
+      // exactly as it does for a probe the realm could not finish.
+      const reading = read.value.consume((text) => stringOf(context, text, probeUnits))
+      if (reading === undefined) return
+      const measured = decodeProbe(JSON.parse(reading))
+      weighed = measured.names
+      held = measured.bytes
+      unweighed = measured.partial ? { root: measured.partialRoot, bytes: measured.partialBytes } : undefined
+      bindings = measured.names.map((entry) =>
+        new VariablesPanel.Binding({ name: entry.name, type: entry.type, size: entry.size })
+      )
+      needsProbe = false
     }
 
     const evaluateFrame = (
@@ -1360,8 +1528,7 @@ const openRuntime = (
         )
         catalog?.dispose()
         if (opened.error !== undefined) {
-          const failure = context.dump(opened.error)
-          opened.error.dispose()
+          const failure = opened.error.consume((error) => causeOf(context, error))
           return yield* new Sandbox.SandboxError({
             code: "runtime_failed",
             message: "The realm could not open the frame",
@@ -1410,17 +1577,12 @@ const openRuntime = (
         needsProbe = true
         const started = enter(() => context.evalCode(compiled, `cell-${evaluation.frame}.js`, 128))
         if (started.error !== undefined) {
-          const failure = context.dump(started.error)
-          started.error.dispose()
+          const failure = started.error.consume((error) => causeOf(context, error))
           return frameOf(
             new Cell.Rejected({
               code: "compile_failed",
-              /* v8 ignore next -- QuickJS reports a compile failure as an Error object, so the `message` arm is what a parser disagreement takes; `String(failure)` only discharges the `unknown` `context.dump` is typed as */
-              message: `The cell did not compile: ${
-                typeof failure === "object" && failure !== null && "message" in failure
-                  ? String((failure as { readonly message: unknown }).message)
-                  : String(failure)
-              }`
+              /* v8 ignore next -- QuickJS reports a compile failure as an Error object whose `message` is a string, so the fallback only discharges the absent case the boundary read is typed with */
+              message: `The cell did not compile: ${failure.message ?? "the realm gave no message"}`
             })
           )
         }
@@ -1445,9 +1607,31 @@ const openRuntime = (
             settled = replOutcome(recorded, justification)
             return
           }
-          const error = context.dump(state.error)
-          state.error.dispose()
-          settled = raisedFrom(error)
+          // What the cell threw never leaves the realm as an object. A thrown
+          // string is read as it is; of anything else its `name` and `message`
+          // are read by handle, and its shape as bounded JSON the realm wrote.
+          // Each can run the cell's accessors, in the realm and under this
+          // frame's budget, and a frame they exhaust settles on that limit.
+          const raised = state.error.consume((error) => {
+            if (context.typeof(error) === "string" && !stringWithin(context, error, raisedTextUnits)) {
+              return new Cell.Raised({
+                name: "Error",
+                message: `The cell threw a string longer than ${raisedTextUnits} UTF-16 code units`
+              })
+            }
+            const thrown = stringOf(context, error, raisedTextUnits)
+            const cause = causeOf(context, error)
+            const encoded = thrown === undefined && cause.message === undefined
+              ? enter(() => context.callFunction(describe, context.undefined, error))
+              : undefined
+            const described = encoded === undefined
+              ? undefined
+              : encoded.error === undefined
+              ? encoded.value.consume((text) => stringOf(context, text, raisedTextUnits))
+              : encoded.error.consume(() => undefined)
+            return raisedFrom(thrown, cause, described)
+          })
+          settled = exhausted ?? raised
         }
 
         const outcome = yield* Sandbox.driveCell({

@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto"
 import { mkdir, rename, rm, writeFile } from "node:fs/promises"
 import { basename, dirname, resolve } from "node:path"
 import { Refused, UsageError } from "../../CliError.ts"
+import * as Delegate from "../../Delegate.ts"
 import { chunksOf, type Client, esc, list, object, pick, positive, query, str, type Values } from "./Client.ts"
 import * as ProductApi from "./ProductApi.ts"
 
@@ -159,8 +160,14 @@ add(
 add("variable get", (c, a, o) => c.request("GET", repo(c, o, `/variables/${esc(a.name)}`)))
 add("variable set", (c, a, o) => c.request("POST", repo(c, o, "/variables"), { name: a.name, value: str(o.body) }))
 add("ssh-key list", (c) => ProductApi.getApiUserKeys(c))
-add("ssh-key add", (c, _a, o) => ProductApi.postApiUserKeys(c, { body: { title: str(o.title), key: str(o.key) } }))
+// An account SSH key is a credential of the person. The handler itself refuses a delegate, so no entry point
+// that skips a middleware reaches the mutation.
+add("ssh-key add", async (c, _a, o) => {
+  if (c.delegated) throw Delegate.personOnly("ssh-key add")
+  return ProductApi.postApiUserKeys(c, { body: { title: str(o.title), key: str(o.key) } })
+})
 add("ssh-key delete", async (c, a) => {
+  if (c.delegated) throw Delegate.personOnly("ssh-key delete")
   const id = positive(a.id)
   await ProductApi.deleteApiUserKeysId(c, { path: { id } })
   return { status: "deleted", id }

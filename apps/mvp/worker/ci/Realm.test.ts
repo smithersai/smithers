@@ -156,6 +156,16 @@ export default Flow.make("ci", { body: (run) => Node.all({ ${jobs} }) })`
     expect(await plan(`JSON.stringify = () => 42\n${CI}`)).toEqual({ _tag: "refused", reason: "invalid_plan" })
     expect(await plan(`JSON.stringify = () => "{"\n${CI}`)).toEqual({ _tag: "refused", reason: "invalid_plan" })
     expect(await plan(`JSON.stringify = () => "x".repeat(300000)\n${CI}`)).toEqual({ _tag: "refused", reason: "invalid_plan" })
+    // Astra W2-A M1: `planBytes` is a UTF-8 budget. The same number of UTF-16 units fits it as ASCII and is over it
+    // as two-byte characters, where comparing `String.length` admitted both.
+    const sized = (character: string) =>
+      plan(`JSON.stringify = () => '{"tag":"ci","jobs":[{"name":"a","steps":[{"name":"a","run":"true"}]}],"pad":"' + ${JSON.stringify(character)}.repeat(${Realm.LIMITS.planBytes - 200}) + '"}'\n${CI}`)
+    expect(await sized("x")).toMatchObject({ _tag: "planned", tag: "ci" })
+    expect(await sized("é")).toEqual({ _tag: "refused", reason: "invalid_plan" })
+    // What a flow threw is read only within its own bound: a longer message is none of the sentinels, uncopied.
+    expect(await plan(`throw new Error("out of memory")`)).toEqual({ _tag: "refused", reason: "limit" })
+    expect(await plan(`throw new Error("out of memory".padEnd(${Realm.LIMITS.messageUnits + 1}))`)).toEqual({ _tag: "refused", reason: "evaluation" })
+    expect(await plan(`throw "interrupted".padEnd(${Realm.LIMITS.messageUnits + 1})`)).toEqual({ _tag: "refused", reason: "evaluation" })
   })
 
   test("plans the e2e test repository's flow as committed: a typed payload and success, inert in the realm", async () => {
@@ -213,6 +223,35 @@ export default Flow.make("release", {
   body: (payload: { readonly dryRun: boolean }) => (payload.dryRun ? publish.call(payload) : publish.call(payload)),
 })
 `
+
+describe("the realm's boundary carries primitive strings only", () => {
+  const limit = { _tag: "refused", reason: "limit" }
+  const evaluation = { _tag: "refused", reason: "evaluation" }
+  const invalid = { _tag: "refused", reason: "invalid_plan" }
+
+  test("a getter or proxy trap behind what a flow threw runs in the realm, and its budget stops it", async () => {
+    const started = Date.now()
+    expect(await plan(`throw { get message() { while (true) {} } }\n${CI}`)).toEqual(limit)
+    expect(await plan(`throw new Proxy({}, { get() { while (true) {} } })\n${CI}`)).toEqual(limit)
+    expect(await plan(`throw new Proxy({}, { get: () => "__import__" })\n${CI}`)).toEqual({ _tag: "refused", reason: "import" })
+    expect(Date.now() - started).toBeLessThan(10_000)
+  })
+
+  test("a boxed string is not a message, and no coercion trap of a thrown value ever runs", async () => {
+    // Were any of these coerced, the reason would be the sentinel's (`import`, `invalid_plan`) or `limit`.
+    expect(await plan(`throw new String("__import__")\n${CI}`)).toEqual(evaluation)
+    expect(await plan(`throw { message: new String("__plan__") }\n${CI}`)).toEqual(evaluation)
+    expect(await plan(`throw { message: { toString() { while (true) {} }, valueOf() { while (true) {} } } }\n${CI}`)).toEqual(evaluation)
+    expect(await plan(`throw { toString() { while (true) {} }, [Symbol.toPrimitive]() { while (true) {} } }\n${CI}`)).toEqual(evaluation)
+  })
+
+  test("a plan that comes back as anything but a primitive string is refused unread", async () => {
+    const answered = (value: string) => `(JSON as any).stringify = () => (${value})\n${CI}`
+    expect(await plan(answered(`new String('{"tag":"ci","jobs":[]}')`))).toEqual(invalid)
+    expect(await plan(answered(`{ toString() { while (true) {} }, toJSON() { while (true) {} } }`))).toEqual(invalid)
+    expect(await plan(answered(`new Proxy({}, { get() { while (true) {} } })`))).toEqual(invalid)
+  })
+})
 
 describe("a repository flow's inputs in the realm", () => {
   test("reads the form a person fills: each field beyond the run's own, its type, choices, notes and default", async () => {

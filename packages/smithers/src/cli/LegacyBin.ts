@@ -77,6 +77,9 @@ const report = (error: unknown): void => {
     // how the value travelled.
     : NodeDatabase.isUnsupportedDatabase(error)
     ? `${error.code}: ${error.message}`
+    // A typed refusal is rendered the same way: its stable code (`person_only`), then its sentence.
+    : error instanceof CliError.Refused
+    ? `${error.code}: ${error.message}`
     : Failure.operatorLine(error, verboseRequested())
   // A failure sentence is written here rather than logged, so it misses the
   // redacting logger below. It is still a line an operator reads and a

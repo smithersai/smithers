@@ -280,6 +280,67 @@ describe("PresentationRealm bounds every render", () => {
     expect(after).toContain("<table>")
   })
 
+  it("measures an answer inside the realm before copying it, then holds what it copied to the UTF-8 budget", async () => {
+    // Astra W2-A M1. More units than the budget has bytes is over it unread;
+    // fewer units can still be more bytes, and that is counted exactly.
+    const answering = (render: string, reduce: string) => (use: (realm: PresentationRealm.Realm) => Effect.Effect<unknown, PresentationRealm.RealmError>) =>
+      withRealm((realm) => failure(use(realm)), {
+        bundle: `globalThis.__smithersPresentation = { components: [], render: () => ${render}, reduce: () => ${reduce} }`
+      }).then(described)
+    const render = (realm: PresentationRealm.Realm) =>
+      realm.render({ module: unchecked(""), props: {}, state: null })
+    const interact = (realm: PresentationRealm.Realm) =>
+      realm.interact({ module: unchecked(""), props: {}, state: null, event: { name: "go" } })
+    expect(await answering(`"x".repeat(${Bridge.maxHtmlBytes + 1})`, `"null"`)(render)).toMatchObject({
+      reason: "limit_exceeded",
+      limit: "html",
+      detail: `The view rendered more than ${Bridge.maxHtmlBytes} UTF-16 code units of HTML, over the ${Bridge.maxHtmlBytes}-byte limit`
+    })
+    expect(await answering(`"é".repeat(${Bridge.maxHtmlBytes / 2 + 1})`, `"null"`)(render)).toMatchObject({
+      reason: "limit_exceeded",
+      limit: "html",
+      detail: `The view rendered ${Bridge.maxHtmlBytes + 2} bytes of HTML, over the ${Bridge.maxHtmlBytes}-byte limit`
+    })
+    expect(await answering(`""`, `"x".repeat(${Bridge.maxStateBytes + 1})`)(interact)).toMatchObject({
+      reason: "limit_exceeded",
+      limit: "state",
+      detail: `reduce returned more than ${Bridge.maxStateBytes} UTF-16 code units of state, over the ${Bridge.maxStateBytes}-byte limit`
+    })
+    expect(await answering(`""`, `"é".repeat(${Bridge.maxStateBytes / 2 + 1})`)(interact)).toMatchObject({
+      reason: "limit_exceeded",
+      limit: "state",
+      detail: `reduce returned ${Bridge.maxStateBytes + 2} bytes of state, over the ${Bridge.maxStateBytes}-byte limit`
+    })
+  })
+
+  it("reads an error's name and message, and a bundle's component names, only within their own bounds", async () => {
+    const thrown = (body: string) =>
+      withRealm((realm) => failure(realm.render({ module: unchecked(compiled(body)), props: {}, state: null }))).then(described)
+    const long = "The module threw a message longer than 8192 UTF-16 code units"
+    expect(await thrown(`throw new RangeError("x".repeat(8193))`)).toMatchObject({
+      reason: "render_failed",
+      detail: `RangeError: ${long}`
+    })
+    expect(await thrown(`throw "x".repeat(8193)`)).toMatchObject({ reason: "render_failed", detail: long })
+    expect(await thrown(`throw { name: "n".repeat(8193), message: "x".repeat(8192) }`)).toMatchObject({
+      reason: "render_failed",
+      detail: "x".repeat(8192)
+    })
+    const error = await Effect.runPromise(
+      Effect.flip(
+        Effect.scoped(
+          PresentationRealm.make({
+            bundle: `globalThis.__smithersPresentation = { components: ["n".repeat(${64 * 1024})], render: () => "", reduce: () => "null" }`
+          })
+        ).pipe(Effect.provide(layerSingleFile))
+      )
+    )
+    expect(described(error)).toMatchObject({
+      reason: "load_failed",
+      detail: "The bundle names its components in more than 65536 UTF-16 code units of JSON"
+    })
+  })
+
   it("refuses props and state over their bounds, and values that are not JSON", async () => {
     const module = checked(comparison)
     const errors = await withRealm((realm) =>
@@ -343,6 +404,57 @@ describe("PresentationRealm reports what a module got wrong", () => {
       reason: "render_failed",
       detail: "bare"
     })
+  })
+
+  it("only as primitive strings: an accessor behind the error runs inside the render's budget, and a coercion trap never runs", async () => {
+    const limited = (body: string) =>
+      withRealm((realm) => failure(realm.render({ module: unchecked(compiled(body)), props: {}, state: null })), {
+        limits: { steps: 200 }
+      }).then(described)
+    const started = Date.now()
+    // A getter that never returns is the module's own code: the step limit stops it. The realm has no `Proxy`,
+    // so an accessor is the only trap a module can put behind a property.
+    expect(await limited("throw { get message() { while (true) {} } }")).toMatchObject({ reason: "limit_exceeded", limit: "steps" })
+    expect(await limited("throw { get name() { while (true) {} }, message: 'm' }")).toMatchObject({
+      reason: "limit_exceeded",
+      limit: "steps"
+    })
+    expect(await limited("throw typeof Proxy")).toMatchObject({ reason: "render_failed", detail: "undefined" })
+    // A boxed string is not a string, and nothing is coerced into one: `toString` and `valueOf` never run.
+    expect(await limited("throw { name: new String('Boxed'), message: new String('words') }")).toMatchObject({
+      reason: "render_failed",
+      detail: "The module threw a value with no message"
+    })
+    expect(
+      await limited("throw { toString() { while (true) {} }, valueOf() { while (true) {} }, message: { toString() { while (true) {} } } }")
+    ).toMatchObject({ reason: "render_failed", detail: "The module threw a value with no message" })
+    expect(await limited("throw { get message() { throw new Error('trap') } }")).toMatchObject({
+      reason: "render_failed",
+      detail: "The module threw a value with no message"
+    })
+    expect(await limited("throw { name: '', message: 'nameless' }")).toMatchObject({ reason: "render_failed", detail: "nameless" })
+    expect(await limited("throw 42")).toMatchObject({ reason: "render_failed", detail: "The module threw a value with no message" })
+    expect(Date.now() - started).toBeLessThan(20_000)
+  })
+
+  it("a renderer that answers anything but a primitive string, unread", async () => {
+    const answering = (value: string) =>
+      withRealm((realm) => failure(realm.render({ module: unchecked(compiled("return null")), props: {}, state: null })), {
+        bundle: `globalThis.__smithersPresentation = { render() { return ${value} }, reduce() { return 'null' } }`,
+        limits: { steps: 200 }
+      }).then(described)
+    for (
+      const value of [
+        "new String('<p>boxed</p>')",
+        "{ toString() { while (true) {} }, valueOf() { while (true) {} } }",
+        "7"
+      ]
+    ) {
+      expect(await answering(value), value).toMatchObject({
+        reason: "render_failed",
+        detail: "The view answered a value that is not a string"
+      })
+    }
   })
 
   it("in a redacted detail, never in the error's message, stack or printed form", async () => {
@@ -612,6 +724,24 @@ describe("PresentationRealm loads its bundle", () => {
       )
     )
     expect(names).toEqual([[], ["Card", "Badge"]])
+  })
+
+  it("reads component names as JSON text the realm wrote, never as the bundle's own array", async () => {
+    const minimal = "globalThis.__smithersPresentation = { render() { return '' }, reduce() { return 'null' }"
+    const reported = (components: string) =>
+      PresentationRealm.make({ bundle: `${minimal}, components: ${components} }`, limits: { loadMs: 200 } }).pipe(
+        Effect.map((realm) => realm.components)
+      )
+    const names = await Effect.runPromise(
+      Effect.all([
+        // An accessor element and a boxed string are not names.
+        reported(`Object.defineProperty(["Card"], 1, { get() { for (;;) {} }, enumerable: true })`),
+        reported(`["Card", new String("Boxed"), { toString() { for (;;) {} } }, "Badge"]`),
+        // Anything that is not an array lists nothing.
+        reported(`{ length: 1, 0: "Card" }`)
+      ]).pipe(Effect.scoped, Effect.provide(layerSingleFile))
+    )
+    expect(names).toEqual([["Card"], ["Card", "Badge"], []])
   })
 
   it("fails a bundle that runs past its load limit", async () => {

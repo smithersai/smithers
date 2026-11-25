@@ -30,6 +30,7 @@ export const LIMITS = {
   stackBytes: QuickJSLifecycle.stackBytes,
   polls: 2_000,
   planBytes: 256 * 1024,
+  messageUnits: 1024,
   jobs: CiJob.limits.jobs,
 } as const
 
@@ -237,13 +238,22 @@ ${compiled}
 })(__module, __module.exports, __require);
 ${invocation};`
         const result = context.evalCode(code, "flow.js")
+        // Only a primitive string crosses the boundary, and only one the realm has measured: `getString` on anything
+        // else would run the flow's own `toString` in the Worker's call, and on a long string would copy all of it into
+        // the Worker before any limit was checked. The length is read in the realm, where a primitive string's is its own.
+        const stringOf = (handle: typeof context.undefined, units: number): string | undefined =>
+          context.typeof(handle) === "string" &&
+            context.getProp(handle, "length").consume((length) => context.getNumber(length) <= units)
+            ? context.getString(handle)
+            : undefined
         if (result.error !== undefined) {
-          // What the flow threw is its own value: `dump` copies it out as data, and only a string message is read,
-          // never coerced, so nothing it built runs here.
-          const error: unknown = context.dump(result.error)
+          // What the flow threw is its own value. A string is read as it is; of anything else only `message` is asked
+          // for, by handle: a getter or proxy trap behind it runs in the realm under this evaluation's budget, and what
+          // it answers is read only when it is a primitive string. Nothing the flow built is copied out or coerced.
+          // A message past `messageUnits` is not read: it is none of the sentinels, so the flow is refused as `evaluation`.
+          const message = stringOf(result.error, LIMITS.messageUnits) ??
+            context.getProp(result.error, "message").consume((value) => stringOf(value, LIMITS.messageUnits)) ?? ""
           result.error.dispose()
-          const thrown = typeof error === "object" && error !== null ? (error as { message?: unknown }).message : error
-          const message = typeof thrown === "string" ? thrown : ""
           return hit || /out of memory|stack overflow|interrupted/i.test(message)
             ? refused("limit")
             : message === "__import__"
@@ -254,9 +264,11 @@ ${invocation};`
             ? { _tag: "refused" as const, reason: "inputs" as const }
             : refused("evaluation")
         }
-        const text: unknown = context.dump(result.value)
+        // UTF-8 has at least one byte for each UTF-16 unit, so a plan with more units than `planBytes` is over the
+        // budget uncopied. A shorter one is copied, at most three bytes a unit, and held to the byte budget itself.
+        const text = stringOf(result.value, LIMITS.planBytes)
         result.value.dispose()
-        if (typeof text !== "string" || text.length > LIMITS.planBytes) return refused("invalid_plan")
+        if (text === undefined || new TextEncoder().encode(text).length > LIMITS.planBytes) return refused("invalid_plan")
         try {
           return { _tag: "evaluated" as const, value: JSON.parse(text) as unknown }
         } catch {

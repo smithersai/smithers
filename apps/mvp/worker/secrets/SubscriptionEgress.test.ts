@@ -28,7 +28,7 @@ beforeEach(async () => {
 })
 
 const CLAUDE_TOKEN = "sk-ant-oat01-SENTINEL-claude"
-const guest: SandboxEgress.Guest = { repoId: "github/acme/widgets", branchId: "branch-1", generation: 1 }
+const guest: SandboxEgress.BranchGuest = { kind: "branch", repoId: "github/acme/widgets", branchId: "branch-1", generation: 1 }
 
 const keys = () =>
   Effect.runPromise(Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layer(KEY)))).then(Option.getOrThrow)
@@ -116,6 +116,49 @@ describe("forwardSubscription", () => {
     await h.subscriptionEgress(guest, subscription)(bearer(placeholder, "https://chatgpt.com/backend-api/codex/responses"))
     expect(upstream.seen.map((request) => request.headers.get("authorization"))).toEqual([`Bearer ${CODEX_ACCESS}-1`])
     expect(subscription.hosts).toEqual(Agents.CODEX_HOSTS)
+  })
+
+  test("a plugin installation's box gets the person's credential only when its grant names the connection and the vendor's origin", async () => {
+    const subscription = await claude()
+    const name = `connection:${subscription.connectionId}`
+    const installation = (grant: SandboxEgress.Grant | undefined): SandboxEgress.InstallationGuest => ({
+      ...guest,
+      kind: "installation",
+      installationId: "plugin-a@1",
+      grant,
+    })
+    const vendorOrigin = "https://api.anthropic.com"
+    const granted = installation({ secrets: new Set([name]), origins: new Set([vendorOrigin]) })
+    const upstream = vendor(200)
+    const h = await open(upstream)
+    // The placeholder is the installation's own: the branch's box's is unknown in it.
+    const own = await Effect.runPromise(SandboxEgress.subscriptionPlaceholder(granted, await keys(), subscription))
+    const branch = await Effect.runPromise(SandboxEgress.subscriptionPlaceholder(guest, await keys(), subscription))
+    expect(own).not.toBe(branch)
+    // No grant binding, the connection without its origin, the origin without the connection, and the origin under
+    // another scheme or port: each is refused before the credential is opened.
+    const refusals: ReadonlyArray<readonly [SandboxEgress.InstallationGuest, string]> = [
+      [installation(undefined), "grant_missing"],
+      [installation({ secrets: new Set([name]), origins: new Set() }), "origin_not_granted"],
+      [installation({ secrets: new Set([name]), origins: new Set(["http://api.anthropic.com"]) }), "origin_not_granted"],
+      [installation({ secrets: new Set([name]), origins: new Set(["https://api.anthropic.com:8443"]) }), "origin_not_granted"],
+      [installation({ secrets: new Set([name]), origins: new Set(["api.anthropic.com"]) }), "origin_not_granted"],
+      [installation({ secrets: new Set(), origins: new Set([vendorOrigin]) }), "unknown_placeholder"],
+    ]
+    for (const [ungranted, code] of refusals) {
+      for (const placeholder of [own, branch]) {
+        const refused = await h.subscriptionEgress(ungranted, subscription)(bearer(placeholder))
+        expect([refused.status, await refused.text()], JSON.stringify([...(ungranted.grant?.origins ?? [])])).toEqual([403, code])
+      }
+    }
+    // A refused request says nothing of the connection: it was never used.
+    expect((await audit()).map((row) => row.names).flat()).toEqual([])
+    const foreign = await h.subscriptionEgress(granted, subscription)(bearer(branch))
+    expect([foreign.status, await foreign.text()]).toEqual([403, "unknown_placeholder"])
+    expect(upstream.seen).toEqual([])
+    const answer = await h.subscriptionEgress(granted, subscription)(bearer(own))
+    expect(answer.status).toBe(200)
+    expect(upstream.seen.map((request) => request.headers.get("authorization"))).toEqual([`Bearer ${CLAUDE_TOKEN}`])
   })
 
   test("refuses every other host, with or without the placeholder, and sends nothing", async () => {

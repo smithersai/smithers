@@ -10,6 +10,7 @@ import { Effect, Option } from "effect"
 import { randomUUID } from "node:crypto"
 import { resolve } from "node:path"
 import * as CliError from "../CliError.ts"
+import * as Delegate from "../Delegate.ts"
 import * as Detached from "../Detached.ts"
 import * as Environment from "../Environment.ts"
 import * as Project from "../Project.ts"
@@ -303,6 +304,8 @@ export const start = (config: StartOptions) =>
  */
 export const approve = (serialized: string, scope: ControlService.ApprovalInput["scope"] = "run", quiet = false) =>
   Effect.gen(function*() {
+    // Decision 0017 §9: checked here, at the mutation every entry point reaches, before the payload is read.
+    if ((yield* Delegate.Principal) === "agent") return yield* Effect.fail(Delegate.personOnly("approvals approve"))
     const payload = yield* approval(serialized)
     const control = yield* ControlService.Control
     const parkSequence = yield* Settlement.decisionPark(control, payload.target)
@@ -323,6 +326,7 @@ export const approve = (serialized: string, scope: ControlService.ApprovalInput[
  */
 export const deny = (serialized: string, quiet = false) =>
   Effect.gen(function*() {
+    if ((yield* Delegate.Principal) === "agent") return yield* Effect.fail(Delegate.personOnly("approvals deny"))
     const payload = yield* approval(serialized)
     const control = yield* ControlService.Control
     const parkSequence = yield* Settlement.decisionPark(control, payload.target)

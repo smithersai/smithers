@@ -572,6 +572,43 @@ Object.defineProperty(globalThis.probedArray, "0", {
     )
   })
 
+  it("reads what a cell threw only as primitive strings, and runs its accessors only inside the frame's budget", async () => {
+    const limits = { steps: 5_000, memoryBytes: Sandbox.defaultLimits.memoryBytes, timeMs: 60_000 }
+    const exhausted = new Cell.Rejected({
+      code: "limit_exceeded",
+      message: "This cell exceeded its limit of 5000 interpreter steps"
+    })
+    const started = Date.now()
+    // A getter and a `toJSON` that never return run in the realm, and the frame's budget stops each. The realm
+    // has no `Proxy`, so an accessor is the only trap a cell can put behind a property.
+    expect(await outcomeOf(`throw { get message() { for (;;) {} } }`, { limits })).toStrictEqual(exhausted)
+    expect(await outcomeOf(`throw typeof Proxy`, { limits })).toStrictEqual(
+      new Cell.Raised({ name: "Error", message: "undefined" })
+    )
+    expect(await outcomeOf(`throw { toJSON() { for (;;) {} } }`, { limits })).toStrictEqual(exhausted)
+    // A boxed string is not a string: it is described as data, never read as the message.
+    expect(await outcomeOf(`throw { name: new String("Boxed"), message: new String("x") }`, { limits })).toStrictEqual(
+      new Cell.Raised({ name: "Error", message: `{"message":"x","name":"Boxed"}` })
+    )
+    // Coercion traps never run: the host asks for no string the realm did not already hold.
+    expect(
+      await outcomeOf(`throw { toString() { for (;;) {} }, valueOf() { for (;;) {} }, [Symbol.toPrimitive]() { for (;;) {} } }`, {
+        limits
+      })
+    ).toStrictEqual(new Cell.Raised({ name: "Error", message: "{}" }))
+    // A value JSON cannot carry is named as one, and a throwing accessor is only an absent message.
+    expect(await outcomeOf(`const loop = {}; loop.self = loop; throw loop`, { limits })).toStrictEqual(
+      new Cell.Raised({ name: "Error", message: "The cell threw a value that has no bounded JSON form" })
+    )
+    expect(await outcomeOf(`throw { get message() { throw new Error("trap") }, code: 7 }`, { limits })).toStrictEqual(
+      new Cell.Raised({ name: "Error", message: "The cell threw a value that has no bounded JSON form" })
+    )
+    expect(await outcomeOf(`throw undefined`, { limits })).toStrictEqual(
+      new Cell.Raised({ name: "Error", message: "The cell threw a value that has no bounded JSON form" })
+    )
+    expect(Date.now() - started).toBeLessThan(20_000)
+  })
+
   it("names a park reason the contract does not declare, rather than throwing at the cell", async () => {
     // `ctx.park` is checked on the host, not inside the realm: a reason the
     // contract does not declare is a transition the next frame is asked to fix,
@@ -715,6 +752,175 @@ describe("QuickJSSandbox calls", () => {
     expect(observed).toHaveLength(1)
     expect(outcome).toMatchObject({ _tag: "settled", transition: { _tag: "complete", output: "2" } })
   })
+})
+
+describe("QuickJSSandbox settlement", () => {
+  // Astra W2-A H1. The host used to settle a call by resolving the realm's
+  // promise with an object it had built, and promise resolution reads `then`
+  // off any object it is handed: an accessor on `Object.prototype` ran in the
+  // host's own call. A reply now crosses as JSON text and is decoded by the
+  // realm's own parser inside the cell's continuation.
+  const traps = `globalThis.trapped = []
+    for (const key of ["then", "ok", "value", "aborted", "failure"]) {
+      Object.defineProperty(Object.prototype, key, {
+        __proto__: null,
+        configurable: true,
+        get() { trapped.push(key); return undefined },
+        set() { trapped.push("set:" + key) }
+      })
+    }`
+
+  it("settles a call without reading then or any reply member through Object.prototype", async () => {
+    const outcome = await outcomeOf(
+      `${traps}
+       const answer = await ctx.call("fs/list", {})
+       ctx.done(answer + "|" + trapped.join(","))`,
+      { call: () => Effect.succeed(Cell.CallResult.new({ outcome: "success", value: "listing" })) }
+    )
+    expect(outcome).toMatchObject({ _tag: "settled", transition: { _tag: "complete", output: "listing|" } })
+  })
+
+  it("reads a failure reply's members as own data, and its then only inside the cell's continuation", async () => {
+    const outcome = await outcomeOf(
+      `${traps}
+       const result = await ctx.call("fs/list", {})
+       ctx.done(result.ok + "|" + result.error.code + "|" + trapped.join(","))`,
+      { call: () => Effect.succeed(Cell.CallResult.new({ outcome: "failure", value: { why: "denied" } })) }
+    )
+    // The one `then` is the realm resolving the cell's own promise with the
+    // failure object, in a job the frame's budget covers.
+    expect(outcome).toMatchObject({
+      _tag: "settled",
+      transition: { _tag: "complete", output: "false|flow_failed|then" }
+    })
+  })
+
+  it("never runs a then trap that does not return while the host settles, and bounds one the cell's own job reaches", async () => {
+    const limits = { steps: 5_000, memoryBytes: Sandbox.defaultLimits.memoryBytes, timeMs: 60_000 }
+    // Loops only for a reply envelope or a failure, the two objects that carry
+    // their own `ok`; the cell's own completion value is left alone.
+    const trap = `const owns = Function.prototype.call.bind(Object.prototype.hasOwnProperty)
+      Object.defineProperty(Object.prototype, "then", {
+        __proto__: null,
+        get() { if (owns(this, "ok")) for (;;) {} return undefined }
+      })`
+    const started = Date.now()
+    // The envelope never meets promise resolution, in the host or in the realm.
+    expect(
+      await outcomeOf(`${trap}\nctx.done(await ctx.call("fs/list", {}))`, {
+        limits,
+        call: () => Effect.succeed(Cell.CallResult.new({ outcome: "success", value: "listing" }))
+      })
+    ).toMatchObject({ _tag: "settled", transition: { _tag: "complete", output: "listing" } })
+    // A failure is resolved by the realm's continuation, so the trap runs
+    // there and the frame's step budget ends it.
+    expect(
+      await outcomeOf(`${trap}\nctx.done(String(await ctx.call("fs/list", {})))`, {
+        limits,
+        call: () => Effect.succeed(Cell.CallResult.new({ outcome: "failure", value: { why: "denied" } }))
+      })
+    ).toStrictEqual(
+      new Cell.Rejected({ code: "limit_exceeded", message: "This cell exceeded its limit of 5000 interpreter steps" })
+    )
+    expect(Date.now() - started).toBeLessThan(20_000)
+  })
+
+  it("survives a job that grows the WebAssembly memory, from a cell or from a large reply", async () => {
+    // quickjs-emscripten-core 0.32 read a job's context through a view the
+    // growth detached, and disposal then aborted the module for every realm.
+    expect(
+      await outcomeOf(
+        `await null
+         globalThis.held = "x".repeat(40 * 1024 * 1024) + "🗼"
+         ctx.done(String(held.length))`
+      )
+    ).toMatchObject({ _tag: "settled", transition: { _tag: "complete", output: String(40 * 1024 * 1024 + 2) } })
+    expect(
+      await outcomeOf(`const text = await ctx.call("fs/list", {}); ctx.done(String(text.length))`, {
+        call: () =>
+          Effect.succeed(Cell.CallResult.new({ outcome: "success", value: `${"y".repeat(12 * 1024 * 1024)}🗼` }))
+      })
+    ).toMatchObject({ _tag: "settled", transition: { _tag: "complete", output: String(12 * 1024 * 1024 + 2) } })
+    expect(await outcomeOf(`ctx.done("still usable")`)).toMatchObject({
+      _tag: "settled",
+      transition: { _tag: "complete", output: "still usable" }
+    })
+  }, 60_000)
+
+  it("settles every reply size around the heap ceiling as a value or a heap refusal, and the module survives", async () => {
+    for (const count of [1_000, 2_000, 3_000, 4_000, 5_000, 6_000, 8_000, 12_000]) {
+      const exit = await evaluate(`const listed = await ctx.call("fs/list", {}); ctx.done(String(listed.length))`, {
+        limits: { memoryBytes: Sandbox.minimumMemoryBytes, steps: Number.MAX_SAFE_INTEGER },
+        call: () =>
+          Effect.succeed(
+            Cell.CallResult.new({ outcome: "success", value: Array.from({ length: count }, (_, index) => ({ index })) })
+          )
+      })
+      expect(Exit.isSuccess(exit)).toBe(true)
+      if (Exit.isSuccess(exit)) {
+        expect(
+          exit.value._tag === "settled" || (exit.value._tag === "rejected" && exit.value.reason === "heap")
+        ).toBe(true)
+      }
+    }
+    expect(await outcomeOf(`ctx.done("still usable")`)).toMatchObject({ _tag: "settled" })
+  }, 60_000)
+})
+
+describe("QuickJSSandbox boundary sizes", () => {
+  // Astra W2-A M1. Every string is measured inside QuickJS before any of it is
+  // copied into host memory.
+  it("refuses an oversized call input in the realm, before the host copies or dispatches it", async () => {
+    let calls = 0
+    const outcome = await outcomeOf(
+      `let refused = ""
+       try { await ctx.call("fs/list", { blob: "x".repeat(16 * 1024 * 1024) }) } catch (error) { refused = error.name }
+       let named = ""
+       try { await ctx.call("f".repeat(1025), {}) } catch (error) { named = error.name }
+       ctx.done(refused + "|" + named)`,
+      {
+        call: () =>
+          Effect.sync(() => {
+            calls++
+            return Cell.CallResult.new({ outcome: "success", value: null })
+          })
+      }
+    )
+    expect(outcome).toMatchObject({ _tag: "settled", transition: { _tag: "complete", output: "TypeError|TypeError" } })
+    expect(calls).toBe(0)
+  }, 60_000)
+
+  it("names an oversized thrown string and drops an oversized message, copying neither", async () => {
+    expect(await outcomeOf(`throw "x".repeat(64 * 1024 + 1)`)).toStrictEqual(
+      new Cell.Raised({ name: "Error", message: "The cell threw a string longer than 65536 UTF-16 code units" })
+    )
+    expect(await outcomeOf(`throw "x".repeat(64 * 1024)`)).toStrictEqual(
+      new Cell.Raised({ name: "Error", message: "x".repeat(64 * 1024) })
+    )
+    const raised = await outcomeOf(`throw new RangeError("x".repeat(64 * 1024 + 1))`)
+    expect(raised).toMatchObject({ _tag: "raised", name: "RangeError" })
+    expect((raised as Cell.Raised).message.length).toBeLessThan(1024)
+  })
+
+  it("keeps admission closed when the panel reading is too large to copy out", async () => {
+    const frames = await Effect.gen(function*() {
+      const sandbox = yield* QuickJSSandbox.make
+      const realm = yield* sandbox.openRealm!({ flows })
+      const first = yield* realm.evaluate({
+        cell: Cell.source(`globalThis["n".repeat(5 * 1024 * 1024)] = 1`),
+        frame: 0,
+        call: succeeds
+      })
+      const second = yield* realm.evaluate({ cell: Cell.source(`ctx.done("ran")`), frame: 1, call: succeeds })
+      return { first: first.outcome, second: second.outcome }
+    }).pipe(Effect.scoped, Effect.runPromise)
+    expect(frames.first._tag).toBe("settled")
+    expect(frames.second).toMatchObject({
+      _tag: "rejected",
+      code: "limit_exceeded",
+      message: expect.stringContaining("too large to measure")
+    })
+  }, 60_000)
 })
 
 describe("QuickJSSandbox interruption", () => {

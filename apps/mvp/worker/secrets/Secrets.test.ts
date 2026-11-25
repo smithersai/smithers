@@ -276,7 +276,7 @@ describe("GET /api/shapes/secrets", () => {
 })
 
 describe("the sandbox egress", () => {
-  const guest = { repoId: REPO_ID, branchId: "branch-1", generation: 3 }
+  const guest: SandboxEgress.BranchGuest = { kind: "branch", repoId: REPO_ID, branchId: "branch-1", generation: 3 }
   const seen: Array<{ readonly url: string; readonly headers: Record<string, string>; readonly redirect?: string }> = []
   const upstream: typeof globalThis.fetch = async (input, init) => {
     const request = new Request(input, init)
@@ -290,7 +290,7 @@ describe("the sandbox egress", () => {
   }
   beforeEach(() => void (seen.length = 0))
 
-  const placeholderOf = async (h: Awaited<ReturnType<typeof open>>, target = guest) =>
+  const placeholderOf = async (h: Awaited<ReturnType<typeof open>>, target: SandboxEgress.Guest = guest) =>
     /^STRIPE_KEY=(.+)$/m.exec(await h.environment(target))![1]!
 
   test("a box's placeholder reaches its secret's host as the value, and the answer comes back scrubbed", async () => {
@@ -358,6 +358,248 @@ describe("the sandbox egress", () => {
         ["api.stripe.com", "unknown_placeholder"],
         ["api.stripe.com", "forwarded"],
       ])
+  })
+
+  // Decision 0017 §10: an Admin grants each secret to each plugin installation, and the egress narrows to the grant.
+  describe("for a plugin installation", () => {
+    const OTHER_VALUE = "ghp_SENTINEL other/+=value"
+    /** An installation's box: with no `secrets`, one the host bound no grant to. */
+    const installation = (
+      installationId: string,
+      secrets?: ReadonlyArray<string>,
+      origins: ReadonlyArray<string> = [],
+    ): SandboxEgress.InstallationGuest => ({
+      ...guest,
+      kind: "installation",
+      installationId,
+      grant: secrets === undefined ? undefined : { secrets: new Set(secrets), origins: new Set(origins) },
+    })
+    /** Secrets on, counting every value the cipher opens: none is opened for a request a grant refuses. */
+    const watchedKeys = () => {
+      const opened: Array<unknown> = []
+      const layer = Layer.effect(
+        Keys.SecretKeys,
+        Effect.map(Keys.make(KEY), (keys) =>
+          Option.some({
+            ...keys,
+            cipher: new Proxy(keys.cipher, {
+              get: (target, property, receiver) =>
+                property === "open"
+                  ? (...args: Parameters<typeof target.open>) => {
+                    opened.push(args[1])
+                    return target.open(...args)
+                  }
+                  : Reflect.get(target, property, receiver),
+            }),
+          })),
+      )
+      return { layer, opened }
+    }
+    const stored = async (keys?: Layer.Layer<Keys.SecretKeys>) => {
+      const h = await open({ actor: admin, upstream, config: { EGRESS_ALLOW_HOSTS: "api.example.com" }, ...(keys === undefined ? {} : { keys }) })
+      await h.fetch(path(), put({ value: VALUE, hosts: ["api.stripe.com"] }))
+      await h.fetch(path("OTHER_KEY"), put({ value: OTHER_VALUE, hosts: ["api.other.example"] }))
+      return h
+    }
+    const held = async (h: Awaited<ReturnType<typeof open>>, target: SandboxEgress.Guest) =>
+      Object.fromEntries((await h.environment(target)).split("\n").filter((line) => line !== "").map((line) => line.split("=")))
+    const sent = () => JSON.stringify(seen)
+
+    test("installation B cannot use installation A's granted secret, by A's placeholder or by a grant of its own", async () => {
+      const h = await stored()
+      const a = installation("plugin-a@1", ["STRIPE_KEY"], ["https://api.stripe.com"])
+      const b = installation("plugin-b@1", ["OTHER_KEY"], ["https://api.other.example"])
+      // The branch's own box holds both; each installation holds exactly what its grant names.
+      expect(Object.keys(await held(h, guest))).toEqual(["OTHER_KEY", "STRIPE_KEY"])
+      const [ofA, ofB, ofBranch] = [await held(h, a), await held(h, b), await held(h, guest)]
+      expect(Object.keys(ofA)).toEqual(["STRIPE_KEY"])
+      expect(Object.keys(ofB)).toEqual(["OTHER_KEY"])
+      // No placeholder is shared: not with the branch's box, and not between installations granted the same name.
+      const alsoGranted = installation("plugin-b@1", ["STRIPE_KEY"], ["https://api.stripe.com"])
+      const ofAlso = await held(h, alsoGranted)
+      expect(new Set([ofA.STRIPE_KEY, ofBranch.STRIPE_KEY, ofAlso.STRIPE_KEY]).size).toBe(3)
+
+      // A's box, with A's placeholder, reaches its host with the value.
+      const charged = await h.egress(a)(
+        new Request("https://api.stripe.com/v1/charges", { headers: { authorization: `Bearer ${ofA.STRIPE_KEY}` } }),
+      )
+      expect(charged.status).toBe(200)
+      expect(seen).toHaveLength(1)
+      expect(seen[0]!.headers.authorization).toBe(`Bearer ${VALUE}`)
+
+      // B's box with A's placeholder: the secret's origin is not in B's grant.
+      const stolen = await h.egress(b)(
+        new Request("https://api.stripe.com/v1/charges", { headers: { authorization: `Bearer ${ofA.STRIPE_KEY}` } }),
+      )
+      expect([stolen.status, await stolen.text()]).toEqual([403, "origin_not_granted"])
+      // B's box with A's placeholder on a host B does reach: unknown there, and never swapped.
+      const smuggled = await h.egress(b)(
+        new Request("https://api.other.example/echo", { headers: { "x-key": ofA.STRIPE_KEY! } }),
+      )
+      expect([smuggled.status, await smuggled.text()]).toEqual([403, "unknown_placeholder"])
+      // Granted the same secret, B's box still refuses A's placeholder, and the branch's.
+      for (const foreign of [ofA.STRIPE_KEY!, ofBranch.STRIPE_KEY!]) {
+        const reused = await h.egress(alsoGranted)(
+          new Request("https://api.stripe.com/v1/charges", { headers: { authorization: `Bearer ${foreign}` } }),
+        )
+        expect([reused.status, await reused.text()]).toEqual([403, "unknown_placeholder"])
+      }
+      // B's own secret still works for B, and nothing but the two honest requests left the egress.
+      const own = await h.egress(b)(
+        new Request("https://api.other.example/v1", { headers: { authorization: `Bearer ${ofB.OTHER_KEY}` } }),
+      )
+      expect(own.status).toBe(200)
+      expect(seen.map((request) => new URL(request.url).hostname)).toEqual(["api.stripe.com", "api.other.example"])
+      expect(seen[1]!.headers.authorization).toBe(`Bearer ${OTHER_VALUE}`)
+
+      // Each decision is recorded under its installation.
+      expect((await events(runtime)).filter((event) => event.action === "use").map((event) => [event.scope, event.outcome]))
+        .toEqual([
+          ["branch-1:3:plugin-a@1", "forwarded"],
+          ["branch-1:3:plugin-b@1", "origin_not_granted"],
+          ["branch-1:3:plugin-b@1", "unknown_placeholder"],
+          ["branch-1:3:plugin-b@1", "unknown_placeholder"],
+          ["branch-1:3:plugin-b@1", "unknown_placeholder"],
+          ["branch-1:3:plugin-b@1", "forwarded"],
+        ])
+      expect(leaks(h.recorded(), [VALUE, OTHER_VALUE])).toEqual([])
+    })
+
+    test("an installation with no grant binding, or an empty grant, holds no placeholder, reaches no host, and opens no value", async () => {
+      const watched = watchedKeys()
+      const h = await stored(watched.layer)
+      const branchHeld = await held(h, guest)
+      const cases: ReadonlyArray<readonly [SandboxEgress.InstallationGuest, string]> = [
+        [installation("plugin-u@1"), "grant_missing"],
+        [installation("plugin-u@1", [], []), "origin_not_granted"],
+      ]
+      for (const [ungranted, code] of cases) {
+        expect(await h.environment(ungranted)).toBe("")
+        const box = h.egress(ungranted)
+        // Its secrets' hosts, with any placeholder it could have copied; the registries; the deployment's allowance.
+        for (
+          const request of [
+            new Request("https://api.stripe.com/v1/charges", { headers: { authorization: `Bearer ${branchHeld.STRIPE_KEY}` } }),
+            new Request("https://api.other.example/v1"),
+            new Request(`https://${RegistryEgress.HOSTS[0]}/left-pad`),
+            new Request("https://api.example.com/left-pad"),
+          ]
+        ) {
+          const answer = await box(request)
+          expect([answer.status, await answer.text()], request.url).toEqual([403, code])
+        }
+      }
+      expect(seen).toEqual([])
+      expect(watched.opened).toEqual([])
+      expect(leaks(sent(), [VALUE, OTHER_VALUE])).toEqual([])
+      // Each refusal is recorded under the installation, with its typed code.
+      expect((await events(runtime)).filter((event) => event.action === "use").map((event) => [event.scope, event.outcome]))
+        .toEqual([...Array(4).fill(["branch-1:3:plugin-u@1", "grant_missing"]), ...Array(4).fill(["branch-1:3:plugin-u@1", "origin_not_granted"])])
+      // The branch's own box is unchanged: the deployment's allowance and the registries still answer it.
+      expect((await h.egress(guest)(new Request("https://api.example.com/left-pad"))).status).toBe(200)
+    })
+
+    test("an installation reaches, with no secret, only the exact origins its grant names", async () => {
+      const h = await stored()
+      const granted = installation("plugin-o@1", [], ["https://hooks.granted.example", "bare.granted.example", "not a host"])
+      // A bare host is not an origin: it grants nothing.
+      expect(SandboxEgress.reachable(granted, ["api.example.com"])).toEqual(["hooks.granted.example"])
+      const box = h.egress(granted)
+      expect((await box(new Request("https://hooks.granted.example/ping"))).status).toBe(200)
+      // The granted host under another scheme or port, a host granted by name alone, the deployment's allowance and
+      // the registries are not this installation's grant.
+      for (
+        const url of [
+          "http://hooks.granted.example/ping",
+          "https://hooks.granted.example:8443/ping",
+          "https://bare.granted.example/ping",
+          "https://api.example.com/left-pad",
+          `https://${RegistryEgress.HOSTS[0]}/left-pad`,
+        ]
+      ) {
+        const answer = await box(new Request(url))
+        expect([answer.status, await answer.text()], url).toEqual([403, "origin_not_granted"])
+      }
+      expect(seen.map((request) => request.url)).toEqual(["https://hooks.granted.example/ping"])
+      // An http origin is reached only when the grant names http, and never the https one with it.
+      const plain = h.egress(installation("plugin-o@1", [], ["http://hooks.granted.example"]))
+      expect((await plain(new Request("http://hooks.granted.example/ping"))).status).toBe(200)
+      const secure = await plain(new Request("https://hooks.granted.example/ping"))
+      expect([secure.status, await secure.text()]).toEqual([403, "origin_not_granted"])
+      // A granted origin on another port admits that port only, and the egress itself still refuses the port.
+      const ported = h.egress(installation("plugin-o@1", [], ["https://hooks.granted.example:8443"]))
+      const byDefault = await ported(new Request("https://hooks.granted.example/ping"))
+      expect([byDefault.status, await byDefault.text()]).toEqual([403, "origin_not_granted"])
+      const byPort = await ported(new Request("https://hooks.granted.example:8443/ping"))
+      expect([byPort.status, await byPort.text()]).toEqual([403, "port_not_allowed"])
+      expect(seen.map((request) => request.url)).toEqual(["https://hooks.granted.example/ping", "http://hooks.granted.example/ping"])
+    })
+
+    test("a granted secret is held and sent only when the grant also names its binding's https origin, and is never opened otherwise", async () => {
+      const watched = watchedKeys()
+      const h = await stored(watched.layer)
+      const branchHeld = await held(h, guest)
+      const charge = (placeholder: string, url = "https://api.stripe.com/v1/charges") =>
+        new Request(url, { headers: { authorization: `Bearer ${placeholder}` } })
+      // The secret granted, but its binding's origin not: another origin, the host under http, another port, the bare host.
+      for (
+        const origins of [
+          ["https://hooks.granted.example"],
+          ["http://api.stripe.com"],
+          ["https://api.stripe.com:8443"],
+          ["api.stripe.com"],
+        ]
+      ) {
+        const target = installation("plugin-x@1", ["STRIPE_KEY", "OTHER_KEY"], origins)
+        // No placeholder is derived for it, so its box holds none.
+        expect(await h.environment(target), origins[0]).toBe("")
+        // Its own placeholder, had it one, and the branch's: refused at the secret's host before any value is opened.
+        const own = await Effect.runPromise(
+          Effect.flatMap(Keys.make(KEY), (keys) => keys.minter.derive(SandboxEgress.scopeOf(target), "STRIPE_KEY")),
+        )
+        for (const placeholder of [own, branchHeld.STRIPE_KEY!]) {
+          const answer = await h.egress(target)(charge(placeholder))
+          expect([answer.status, await answer.text()], origins[0]).toEqual([403, "origin_not_granted"])
+        }
+        // On an origin it does reach, the placeholder is unknown: the secret is not in its policy.
+        const reached = origins[0]!.startsWith("http") ? `${origins[0]}/v1/charges` : undefined
+        if (reached !== undefined) {
+          const answer = await h.egress(target)(charge(own, reached))
+          expect(answer.status, reached).toBe(403)
+          expect(["unknown_placeholder", "port_not_allowed"], reached).toContain(await answer.text())
+        }
+      }
+      expect(seen).toEqual([])
+      expect(watched.opened).toEqual([])
+      // The origin granted but not the secret: the host is reached with no secret, and its placeholder is unknown.
+      const originOnly = installation("plugin-x@1", [], ["https://api.stripe.com"])
+      expect(await h.environment(originOnly)).toBe("")
+      const unknown = await h.egress(originOnly)(charge(branchHeld.STRIPE_KEY!))
+      expect([unknown.status, await unknown.text()]).toEqual([403, "unknown_placeholder"])
+      expect(watched.opened).toEqual([])
+      // Both granted: held, and opened exactly once, for the one request that uses it.
+      const both = installation("plugin-x@1", ["STRIPE_KEY"], ["https://api.stripe.com"])
+      const ofBoth = await held(h, both)
+      expect(Object.keys(ofBoth)).toEqual(["STRIPE_KEY"])
+      expect((await h.egress(both)(charge(ofBoth.STRIPE_KEY!))).status).toBe(200)
+      expect(seen.map((request) => [request.url, request.headers.authorization])).toEqual([
+        ["https://api.stripe.com/v1/charges", `Bearer ${VALUE}`],
+      ])
+      expect(watched.opened).toHaveLength(1)
+      expect(leaks(h.recorded(), [VALUE, OTHER_VALUE])).toEqual([])
+    })
+
+    test("a granted secret keeps its binding's methods", async () => {
+      const h = await open({ actor: admin, upstream })
+      await h.fetch(path(), put({ value: VALUE, hosts: ["api.stripe.com"], methods: ["GET"] }))
+      const target = installation("plugin-m@1", ["STRIPE_KEY"], ["https://api.stripe.com"])
+      const placeholder = await placeholderOf(h, target)
+      const posted = await h.egress(target)(
+        new Request("https://api.stripe.com/v1/charges", { method: "POST", headers: { authorization: `Bearer ${placeholder}` }, body: "{}" }),
+      )
+      expect([posted.status, await posted.text()]).toEqual([403, "secret_not_allowed"])
+      expect(seen).toEqual([])
+    })
   })
 
   test("EGRESS_ALLOW_HOSTS lets a box reach a host with no secret; anything else answers off or unavailable", async () => {

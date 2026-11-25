@@ -47,6 +47,17 @@ const start = async (): Promise<void> => {
   } catch { /* The selected entrypoint renders invalid presentation configuration. */ }
   const legacy = agentAlias === undefined ? legacyArguments(parsed) : undefined
   if (legacy !== undefined) {
+    // Decision 0017 §9: an agent never decides an approval. The legacy tree opens the project store while it builds
+    // its services, before `Launch.approve` and `Launch.deny` refuse a delegate themselves, so the inherited mark
+    // (`Delegate.DELEGATE_ACT`, spelled here because this entry loads no Effect module yet) is read first.
+    const decision = parsed.rest[0]
+    if (process.env["SMITHERS_DELEGATE_ACT"] === "agent" && (decision === "approve" || decision === "deny")) {
+      process.stderr.write(
+        `person_only: smthrs approvals ${decision} needs a person. An agent can propose it; a person runs it from their own terminal.\n`
+      )
+      process.exitCode = 1
+      return
+    }
     installEffectResolution()
     process.argv.splice(2, process.argv.length - 2, ...legacy)
     await import("./cli/LegacyBin.ts")

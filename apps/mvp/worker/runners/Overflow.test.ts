@@ -317,7 +317,7 @@ describe("an overflow box's egress", () => {
     await asAdmin.close()
     const token = await tokenNow()
     const overflow = Option.getOrThrow(await runtime.runPromise(Overflow.read(REPO)))
-    const guest = { repoId: REPO, branchId: Overflow.boxId(REPO), generation: 1 }
+    const guest: SandboxEgress.Guest = { kind: "branch", repoId: REPO, branchId: Overflow.boxId(REPO), generation: 1 }
     const placeholders = await Effect.runPromise(SandboxEgress.overflowPlaceholders(guest, await keys(), overflow))
     const credentials: SandboxEgress.OverflowCredentials = {
       repoId: REPO,

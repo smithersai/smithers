@@ -272,6 +272,102 @@ const close = (loaded: Loaded): void => {
   loaded.runtime.dispose()
 }
 
+/** The longest `name` or `message` of what a module threw that the host reads, in UTF-16 code units. */
+const errorTextUnits = 8 * 1024
+
+/** The longest JSON text of component names the host reads from a bundle, in UTF-16 code units. */
+const componentsUnits = 64 * 1024
+
+/**
+ * The length of a primitive string in UTF-16 code units, read inside the
+ * realm; absent for anything else. A primitive string's `length` is its own,
+ * where an object's would be a getter of the module's choosing.
+ */
+const unitsOf = (context: QuickJSContext, handle: QuickJSHandle): number | undefined =>
+  context.typeof(handle) === "string"
+    ? context.getProp(handle, "length").consume((length) => context.getNumber(length))
+    : undefined
+
+/**
+ * A handle's text, only when the realm says it is a primitive string of at
+ * most `limit` UTF-16 code units. `getString` on anything else runs the
+ * module's own `toString` in the host's call, and on a longer string copies
+ * all of it into host memory before any limit is checked, so no other value
+ * is ever read as text.
+ */
+const stringOf = (context: QuickJSContext, handle: QuickJSHandle, limit: number): string | undefined => {
+  const units = unitsOf(context, handle)
+  return units !== undefined && units <= limit ? context.getString(handle) : undefined
+}
+
+/** What a module threw as text: a string within `errorTextUnits`, or a sentence standing in for a longer one. */
+const thrownText = (context: QuickJSContext, handle: QuickJSHandle): string | undefined => {
+  const units = unitsOf(context, handle)
+  return units === undefined
+    ? undefined
+    : units <= errorTextUnits
+    ? context.getString(handle)
+    : `The module threw a message longer than ${errorTextUnits} UTF-16 code units`
+}
+
+/**
+ * One string property of a value the realm holds, read by handle. A getter or
+ * proxy trap behind the property runs in the realm, under the interrupt
+ * budget armed for the call; what it answers crosses only as a primitive
+ * string, and anything else, a boxed `String` included, reads as absent.
+ */
+const stringProperty = (context: QuickJSContext, handle: QuickJSHandle, key: string): string | undefined =>
+  context.getProp(handle, key).consume((property) => stringOf(context, property, errorTextUnits))
+
+/** An output bound of the bridge: which limit it is, its UTF-8 byte budget, and how crossing it reads. */
+interface OutputBound {
+  readonly limit: "html" | "state"
+  readonly bytes: number
+  readonly over: (size: string) => string
+}
+
+const htmlBound: OutputBound = {
+  limit: "html",
+  bytes: Bridge.maxHtmlBytes,
+  over: (size) => `The view rendered ${size} of HTML, over the ${Bridge.maxHtmlBytes}-byte limit`
+}
+
+const stateBound: OutputBound = {
+  limit: "state",
+  bytes: Bridge.maxStateBytes,
+  over: (size) => `reduce returned ${size} of state, over the ${Bridge.maxStateBytes}-byte limit`
+}
+
+/**
+ * Lists an array's string elements as JSON text, inside the realm. Evaluated
+ * before the bundle loads, so its intrinsics are the realm's own.
+ */
+const listStrings = `(function () {
+  "use strict";
+  var apply = Reflect.apply, isArray = Array.isArray, stringify = JSON.stringify;
+  var describe = Object.getOwnPropertyDescriptor, own = Object.prototype.hasOwnProperty;
+  return function (value) {
+    var text = "";
+    if (!isArray(value)) return "[]";
+    for (var index = 0; index < 4096; index++) {
+      var found = describe(value, index);
+      if (found === undefined) break;
+      if (apply(own, found, ["value"]) && typeof found.value === "string") {
+        text += (text === "" ? "" : ",") + stringify(found.value);
+      }
+    }
+    return "[" + text + "]";
+  };
+})()`
+
+/**
+ * The string names in the JSON array the realm listed. Flattening one level
+ * reads an array's members and leaves anything else as one member, so only
+ * strings the realm listed are kept either way.
+ */
+const namesOf = (text: string): ReadonlyArray<string> =>
+  [JSON.parse(text) as unknown].flat().filter((name): name is string => typeof name === "string")
+
 const serialize = (value: unknown, limit: "props" | "state", max: number): Outcome<string> => {
   const bytes = jsonLength(value)
   if (bytes === undefined) return failed("invalid_input", `The view's ${limit} must be JSON`)
@@ -317,28 +413,39 @@ export const make = (
       reason: "load_failed" | "render_failed",
       internalError: Loaded["internalError"]
     ) => {
-      const dumped: unknown = context.dump(error)
-      const genuine = error.consume((value) => {
-        if (hit !== undefined) return false
+      // What the module threw is its own value, and it never leaves the realm
+      // as an object. A thrown string is read as it is; of anything else only
+      // `name` and `message` are asked for, by handle, and each is read only
+      // when it is a primitive string. A getter or proxy trap behind either
+      // runs in the realm under the budget armed for this call, and a trap
+      // that runs past it is the limit crossing reported below.
+      const { genuine, name, message } = error.consume((value) => {
+        if (hit !== undefined) return { genuine: false, name: undefined, message: undefined }
         const prototype = context.callFunction(internalError.getPrototypeOf, context.undefined, value)
         const matches = prototype.error === undefined && context.sameValue(prototype.value, internalError.prototype)
         prototype.dispose()
-        return matches
+        // `null` and `undefined` have no properties to ask for, so each is named as itself.
+        const text = thrownText(context, value) ??
+          (context.typeof(value) === "undefined" ? "undefined" : context.sameValue(value, context.null) ? "null" : undefined)
+        return text !== undefined
+          ? { genuine: matches, name: undefined, message: text }
+          : {
+            genuine: matches,
+            name: stringProperty(context, value, "name"),
+            message: context.getProp(value, "message").consume((message) => thrownText(context, message))
+          }
       })
       if (hit !== undefined) {
         return crossed(hit, hit === "time" ? "The view ran past its time limit" : "The view ran past its step limit")
       }
-      const name = typeof dumped === "object" && dumped !== null ? String((dumped as { name?: unknown }).name) : ""
-      const message = typeof dumped === "object" && dumped !== null
-        ? String((dumped as { message?: unknown }).message)
-        : String(dumped)
       if (genuine && name === "InternalError" && message === "out of memory") {
         return crossed("memory", "The view ran out of memory")
       }
       if (genuine && name === "InternalError" && message === "stack overflow") {
         return crossed("stack", "The view overflowed its stack")
       }
-      return failed(reason, name === "" || name === "undefined" ? message : `${name}: ${message}`)
+      const said = message ?? "The module threw a value with no message"
+      return failed(reason, name === undefined || name === "" ? said : `${name}: ${said}`)
     }
 
     const load = (): Outcome<Loaded> => {
@@ -350,6 +457,8 @@ export const make = (
         return hit !== undefined
       })
       const context = runtime.newContext()
+      // Set by the first source evaluated below, before the prelude or the bundle runs.
+      let lister: QuickJSHandle = context.undefined
       const internalError = {
         prototype: context.getProp(context.global, "InternalError").consume((constructor) =>
           context.getProp(constructor, "prototype")
@@ -359,6 +468,7 @@ export const make = (
         )
       }
       const abandon = (outcome: Outcome<never>): Outcome<never> => {
+        if (lister.alive) lister.dispose()
         internalError.prototype.dispose()
         internalError.getPrototypeOf.dispose()
         context.dispose()
@@ -366,20 +476,46 @@ export const make = (
         return outcome
       }
       arm(limits.loadMs, Number.POSITIVE_INFINITY)
-      for (const [code, filename] of [[prelude, "prelude.js"], [options.bundle, "presentation.js"]] as const) {
+      const sources = [[listStrings, "boundary.js"], [prelude, "prelude.js"], [options.bundle, "presentation.js"]] as const
+      for (const [code, filename] of sources) {
         const result = context.evalCode(code, filename)
         if (result.error !== undefined) {
           return abandon(thrown(context, result.error, "load_failed", internalError))
         }
-        result.value.dispose()
+        if (code === listStrings) lister = result.value
+        else result.value.dispose()
       }
       const installed = context.getProp(context.global, globalName)
       const render = context.getProp(installed, "render")
       const reduce = context.getProp(installed, "reduce")
       const names = context.getProp(installed, "components")
-      const components: unknown = context.dump(names)
+      // The names cross as JSON text the realm wrote, never as its array; a
+      // bundle that reports no object reports no names.
+      let text: string | undefined = "[]"
+      if (context.typeof(names) === "object") {
+        const listed = context.callFunction(lister, context.undefined, names)
+        /* v8 ignore next -- the realm has no Proxy and the lister reads own descriptors through intrinsics captured before the bundle ran, so it always answers; only the load's time limit expiring inside it can stop it */
+        text = listed.error === undefined ? listed.value.consume((value) => stringOf(context, value, componentsUnits)) : listed.error.consume(() => "")
+      }
+      lister.dispose()
       names.dispose()
       installed.dispose()
+      /* v8 ignore start -- the lister answers a string whenever it answers (see above), so this is the load's time limit expiring inside it: a bundle stopped there has not loaded */
+      if (text === "") {
+        render.dispose()
+        reduce.dispose()
+        return abandon(crossed("time", "The bundle ran past its load limit"))
+      }
+      /* v8 ignore stop */
+      // The lister answers a string, so no text is a list too long to copy out.
+      if (text === undefined) {
+        render.dispose()
+        reduce.dispose()
+        return abandon(
+          failed("load_failed", `The bundle names its components in more than ${componentsUnits} UTF-16 code units of JSON`)
+        )
+      }
+      const components = namesOf(text)
       if (context.typeof(render) !== "function" || context.typeof(reduce) !== "function") {
         render.dispose()
         reduce.dispose()
@@ -394,7 +530,7 @@ export const make = (
           internalError,
           render,
           reduce,
-          components: Array.isArray(components) ? components.filter((name) => typeof name === "string") : []
+          components
         }
       }
     }
@@ -442,12 +578,22 @@ export const make = (
         )
       )
 
-    /** Calls one of the installed functions with the module's factory and JSON string arguments. */
+    /**
+     * Calls one of the installed functions with the module's factory and JSON
+     * string arguments, and reads its answer within `bound`.
+     *
+     * The answer is measured in the realm before any of it is copied: a
+     * string's UTF-8 form has at least one byte per UTF-16 code unit, so one
+     * with more units than the budget has bytes is over it without being read.
+     * A shorter one is copied, at most three bytes a unit, and held to the
+     * exact UTF-8 budget.
+     */
     const invoke = (
       realm: Loaded,
       fn: QuickJSHandle,
       checked: ViewCode.CheckedModule,
-      args: ReadonlyArray<string>
+      args: ReadonlyArray<string>,
+      bound: OutputBound
     ): Outcome<string> => {
       const { context } = realm
       arm(limits.renderMs, limits.steps)
@@ -462,9 +608,16 @@ export const make = (
         for (const handle of handles) handle.dispose()
         factory.value.dispose()
         if (result.error !== undefined) return thrown(context, result.error, "render_failed", realm.internalError)
-        const text = context.getString(result.value)
-        result.value.dispose()
-        return { ok: true, value: text }
+        const answered = result.value.consume((value) => {
+          const units = unitsOf(context, value)
+          return units === undefined || units > bound.bytes ? units : context.getString(value)
+        })
+        if (answered === undefined) return failed("render_failed", "The view answered a value that is not a string")
+        if (typeof answered === "number") {
+          return crossed(bound.limit, bound.over(`more than ${bound.bytes} UTF-16 code units`))
+        }
+        const bytes = utf8Length(answered)
+        return bytes > bound.bytes ? crossed(bound.limit, bound.over(`${bytes} bytes`)) : { ok: true, value: answered }
       } catch {
         // The host's own stack overflowed inside the interpreter. Disposing the
         // runtime now would abort on its unbalanced heap, so it is abandoned.
@@ -474,14 +627,8 @@ export const make = (
       }
     }
 
-    const renderIn = (realm: Loaded, checked: ViewCode.CheckedModule, props: string, state: string) => {
-      const html = invoke(realm, realm.render, checked, [props, state])
-      if (!html.ok) return html
-      const bytes = utf8Length(html.value)
-      return bytes > Bridge.maxHtmlBytes
-        ? crossed("html", `The view rendered ${bytes} bytes of HTML, over the ${Bridge.maxHtmlBytes}-byte limit`)
-        : html
-    }
+    const renderIn = (realm: Loaded, checked: ViewCode.CheckedModule, props: string, state: string) =>
+      invoke(realm, realm.render, checked, [props, state], htmlBound)
 
     const inputs = (input: RenderInput): Outcome<readonly [string, string]> => {
       const props = serialize(input.props, "props", limits.propsBytes)
@@ -502,15 +649,8 @@ export const make = (
         const args = inputs(input)
         if (!args.ok) return args
         const [props, state] = args.value
-        const reduced = invoke(realm, realm.reduce, input.module, [state, JSON.stringify(input.event)])
+        const reduced = invoke(realm, realm.reduce, input.module, [state, JSON.stringify(input.event)], stateBound)
         if (!reduced.ok) return reduced
-        const bytes = utf8Length(reduced.value)
-        if (bytes > Bridge.maxStateBytes) {
-          return crossed(
-            "state",
-            `reduce returned ${bytes} bytes of state, over the ${Bridge.maxStateBytes}-byte limit`
-          )
-        }
         const next: unknown = JSON.parse(reduced.value)
         const html = renderIn(realm, input.module, props, reduced.value)
         return html.ok ? { ok: true, value: { state: next, html: html.value } } : html

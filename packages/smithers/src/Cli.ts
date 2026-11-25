@@ -42,6 +42,7 @@ import * as OpenCmd from "./commands/Open.ts"
 import { createRunnerCli } from "./commands/Runner.ts"
 import * as TuiCmd from "./commands/Tui.ts"
 import * as UpdateCmd from "./commands/Update.ts"
+import * as Delegate from "./Delegate.ts"
 import * as DidYouMean from "./DidYouMean.ts"
 import * as Doctor from "./Doctor.ts"
 import { createEvalCli } from "./evaluation/EvalCli.ts"
@@ -75,6 +76,40 @@ const evaluator = (environment: Record<string, string | undefined>): Layer.Layer
   )
 
 /**
+ * The environment variable that marks an invocation as made for an agent, never a person. `smthrs --mcp` and
+ * `smthrs --http` set it to `agent` for their own process, so every command they run, and every `smthrs` a tool they
+ * serve spawns, acts as a delegate. No value turns a delegate back into a person.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const DELEGATE_ACT = Delegate.DELEGATE_ACT
+
+/**
+ * The commands only a person may run: the catalog operations no agent may ever invoke, and the local commands that
+ * decide an approval or change a credential. A delegate invocation of any of them is refused with `person_only`
+ * before its handler runs.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const personOnlyCommands: ReadonlyArray<string> = [
+  ...catalogCommands.filter((row) => row.agent === "never").map((row) => row.cli!.join(" ")),
+  "approvals approve",
+  "approvals deny",
+  "approvals grant",
+  "approvals grant-trigger",
+  "approvals revoke-trigger",
+  "credentials add",
+  "credentials rotate",
+  "credentials revoke",
+  "token mint",
+  // Account SSH keys are credentials: adding one grants repository and workspace access as the person.
+  "ssh-key add",
+  "ssh-key delete"
+]
+
+/**
  * Construct the public command tree without opening stores or evaluating declarations.
  * @category constructors
  * @since 1.0.0
@@ -87,6 +122,41 @@ export const makeCli = (
   const environment = config.environment ?? process.env
   /** The shared guard's inputs. */
   const globalsOf = (): Globals.Options => ({ environment })
+  // Decision 0017 §9: agents never act as the person. A served transport marks this process a delegate, in the
+  // environment its children inherit as well as here, and the mark outlives the call that set it.
+  let served = false
+  const delegate = (): void => {
+    served = true
+    Reflect.set(environment, DELEGATE_ACT, "agent")
+  }
+  /**
+   * Refuses a person-only command to a delegate: this process once it serves `--mcp` or `--http`, any process the
+   * environment marks, and every call that arrives as an HTTP request. An MCP tool's name joins its path with `_`.
+   */
+  const personOnly = (
+    context: {
+      readonly command: string
+      readonly request?: Request | undefined
+      readonly error: (options: {
+        readonly code: string
+        readonly message: string
+        readonly exitCode: number
+      }) => never
+    },
+    next: () => Promise<void>
+  ): Promise<void> => {
+    const delegated = served || Delegate.principalOf(environment) === "agent" || context.request !== undefined
+    const command = personOnlyCommands.find((path) =>
+      path === context.command || path.replaceAll(" ", "_") === context.command
+    )
+    return delegated && command !== undefined
+      ? context.error({
+        code: "person_only",
+        message: `smthrs ${command} needs a person. An agent can propose it; a person runs it from their own terminal.`,
+        exitCode: 1
+      })
+      : next()
+  }
   const mcpGlobals = z.object({
     audience: z.enum(["auto", "human", "agent"]).default("auto"),
     silent: z.boolean().default(false),
@@ -168,6 +238,7 @@ export const makeCli = (
         })
     })
     Positionals.guard(mcp, mcpGlobals)
+    mcp.use(personOnly)
     mcp.use((context, next) => Presentation.scope(context, config, next))
     return mcp
   }
@@ -263,6 +334,7 @@ export const makeCli = (
     cacheSteps: createStepCacheCli(config),
     approvals: config.approvals ?? TargetApprovals.store
   })
+  cli.use(personOnly)
   cli.use((context, next) => Presentation.scope(context, config, next))
   cli
     .command(createFlowCli(config))
@@ -601,6 +673,7 @@ export const makeCli = (
       cacheSteps: createStepCacheCli(config),
       approvals: config.approvals ?? TargetApprovals.store
     })
+    made.use(personOnly)
     made.use((context, next) => Presentation.scope(context, config, next))
     return made
   }
@@ -624,8 +697,7 @@ export const makeCli = (
     // The paged issues list (`GET /api/repos/<owner>/<name>/issues`, apps/mvp worker/github/IssueList.ts): the
     // catalog's issue doors (`issue show`, `issue new`, `issue comment`) open one issue; this one finds it.
     "issue list",
-    "ssh-key add",
-    "ssh-key delete",
+    // Adding or deleting an account SSH key is a credential mutation a person makes; an agent only lists them.
     "ssh-key list",
     "workspace ssh",
     "ssh",
@@ -701,6 +773,8 @@ export const makeCli = (
   const invoke = cli.serve.bind(cli)
   const serve: typeof cli.serve = async (argv = [], serveOptions) => {
     const parsed = Argv.parse(argv, cli)
+    // A served transport speaks for an agent from here on, whatever it goes on to run.
+    if (parsed.mcp || argv.includes("--http")) delegate()
     // Resolve scoped help against the supported command projection, so a
     // group lists its library children as well as its install doors.
     let helpOffset = 0
@@ -766,7 +840,7 @@ export const makeCli = (
               input,
               output: stdio.output,
               version: packageVersion,
-              middlewares: [(context, next) => Presentation.scope(context, config, next)]
+              middlewares: [personOnly, (context, next) => Presentation.scope(context, config, next)]
             })
           )
           const cleanup = () => {
