@@ -8,6 +8,7 @@ import { withRequestRay } from "./RequestRay.ts"
 // the Worker first builds its program, not when Cloudflare starts the Worker, so its modules are evaluated then and
 // count against the first request's CPU instead of the Worker's startup limit (docs/infrastructure.md#limits).
 import * as ArtifactRoutes from "./ops/ArtifactRoutes.ts"
+import * as Waitlist from "./waitlist/Waitlist.ts"
 import * as PlanTreeRoutes from "./plan/PlanTreeRoutes.ts"
 import * as SshKeyAccess from "./SshKeyAccess.ts"
 import * as Artifacts from "./branch/Artifacts.ts"
@@ -453,6 +454,10 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       namespaceId: 71005,
       simple: { limit: 1200, period: 60 }
     })
+    const waitlistLimit = yield* Cloudflare.RateLimit("WAITLIST_LIMIT", {
+      namespaceId: 71006,
+      simple: { limit: 60, period: 60 }
+    })
 
     /**
      * Starts `auth/RecheckRole` on its own Durable Object, one execution per session and the check it replaces, so one
@@ -516,7 +521,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
             },
             broker: { limit: (key) => brokerLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) },
             attach: { limit: (key) => attachLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) },
-            "attach-mcp": { limit: (key) => attachMcpLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) }
+            "attach-mcp": { limit: (key) => attachMcpLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) },
+            waitlist: { limit: (key) => waitlistLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) }
           })
         )
         // Every hosted site's sign-in shares one object: a network past its allowance never reaches it.
@@ -552,6 +558,17 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
               if (SshKeyAccess.handles(request.method, path)) {
                 return yield* SshKeyAccess.guard(Effect.succeed(HttpServerResponse.empty({ status: 404 }))).pipe(
                   Effect.provide(signedIn),
+                )
+              }
+              if (Waitlist.handles(path)) {
+                return yield* Waitlist.join.pipe(
+                  Effect.provide(database),
+                  Effect.provide(signedIn),
+                  Effect.catch(() =>
+                    Effect.succeed(
+                      HttpServerResponse.jsonUnsafe({ error: "unavailable" }, { status: 503, headers: { "cache-control": "no-store" } }),
+                    ),
+                  ),
                 )
               }
               if (PlanTreeRoutes.handles(path)) {

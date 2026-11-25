@@ -3,6 +3,7 @@ import { type HttpServerRequest, HttpServerResponse } from "effect/http"
 import { GitHub } from "@smthrs/integrations"
 import { TELEMETRY_ROUTE } from "../src/features/chat/contract.ts"
 import { ATTACH_CLAIMS_ROUTE, ATTACH_MCP_ROUTE, ATTACH_TOKENS_ROUTE } from "../src/features/mcp/contract.ts"
+import { WAITLIST_JOIN_ROUTE } from "../src/features/waitlist/contract.ts"
 
 // The edge throttle on ChatApi's open routes (docs/features/chat.md#throttling, decision 0008 §7.3): every Electric
 // shape and the browser's telemetry relay answer anyone, signed in or not, so each network may call them only so often.
@@ -14,7 +15,7 @@ import { ATTACH_CLAIMS_ROUTE, ATTACH_MCP_ROUTE, ATTACH_TOKENS_ROUTE } from "../s
  * The routes the throttle covers: every Electric shape, the telemetry relay, and the hosted-site sign-in broker, whose
  * four routes answer anyone and share one Durable Object (decision 0165).
  */
-export type Route = "shape" | "telemetry" | "broker" | "attach" | "attach-mcp"
+export type Route = "shape" | "telemetry" | "broker" | "attach" | "attach-mcp" | "waitlist"
 
 /** Throttle decisions, by `route` and `outcome` (`admitted`, `limited`, or `error` when the limiter failed). */
 export const decisions = Metric.counter("smithers_throttle_decisions", {
@@ -39,6 +40,7 @@ const SHAPES = "/api/shapes/"
 export const routeOf = (url: string): Route | undefined => {
   if (GitHub.Auth.Broker.handles(url)) return "broker"
   const path = url.split("?")[0]!
+  if (path === WAITLIST_JOIN_ROUTE) return "waitlist"
   if (path === ATTACH_CLAIMS_ROUTE || path === ATTACH_TOKENS_ROUTE) return "attach"
   if (path.startsWith(ATTACH_MCP_ROUTE + "/")) return "attach-mcp"
   return path.startsWith(SHAPES) && path.length > SHAPES.length
@@ -111,6 +113,14 @@ export const make = (limiters: Readonly<Record<Route, Limiter>>) =>
     yield* Metric.update(Metric.withAttributes(decisions, { route, outcome }), 1)
     if (outcome === "error") {
       yield* Effect.logWarning("chat.throttle").pipe(Effect.annotateLogs({ route, outcome }))
+      if (route === "waitlist") {
+        return Option.some(
+          HttpServerResponse.jsonUnsafe({ code: "unavailable" }, {
+            status: 503,
+            headers: { "cache-control": "no-store" },
+          }),
+        )
+      }
     }
     if (outcome !== "limited") return Option.none()
     return Option.some(

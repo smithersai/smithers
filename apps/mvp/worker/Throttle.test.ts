@@ -10,6 +10,7 @@ import {
   ATTACH_REVOCATIONS_ROUTE,
   ATTACH_TOKENS_ROUTE,
 } from "../src/features/mcp/contract.ts"
+import { WAITLIST_JOIN_ROUTE } from "../src/features/waitlist/contract.ts"
 import * as Throttle from "./Throttle.ts"
 
 /** A limiter that admits `allowed` requests per key, recording each key it was asked about. */
@@ -76,7 +77,7 @@ describe("routeOf", () => {
     const open = counting(1).limiter
     const attach = counting(1).limiter
     const mcp = counting(1).limiter
-    const check = Throttle.make({ shape: open, telemetry: open, broker: open, attach, "attach-mcp": mcp })
+    const check = Throttle.make({ shape: open, telemetry: open, broker: open, attach, "attach-mcp": mcp, waitlist: open })
     const tool = ATTACH_MCP_ROUTE + "/owner/repo/main"
     expect(run(check, ATTACH_CLAIMS_ROUTE + "?ignored=1").result._tag).toBe("None")
     expect(run(check, ATTACH_TOKENS_ROUTE).result._tag).toBe("Some")
@@ -145,7 +146,7 @@ describe("make", () => {
   test("the broker's routes count on their own limiter, so a flood of sign-in requests answers 429 before the object", () => {
     const shapes = counting(5)
     const broker = counting(1)
-    const check = Throttle.make({ shape: shapes.limiter, telemetry: shapes.limiter, broker: broker.limiter, attach: broker.limiter, "attach-mcp": broker.limiter })
+    const check = Throttle.make({ shape: shapes.limiter, telemetry: shapes.limiter, broker: broker.limiter, attach: broker.limiter, "attach-mcp": broker.limiter, waitlist: broker.limiter })
     const from = { "cf-connecting-ip": "203.0.113.5" }
 
     const first = run(check, "/api/auth/broker/start?origin=x&return_to=y", from)
@@ -162,7 +163,7 @@ describe("make", () => {
   test("lets a route through until its limiter refuses the network, then answers 429 rate_limited", async () => {
     const shapes = counting(2)
     const telemetry = counting(1)
-    const check = Throttle.make({ shape: shapes.limiter, telemetry: telemetry.limiter, broker: counting(0).limiter, attach: counting(0).limiter, "attach-mcp": counting(0).limiter })
+    const check = Throttle.make({ shape: shapes.limiter, telemetry: telemetry.limiter, broker: counting(0).limiter, attach: counting(0).limiter, "attach-mcp": counting(0).limiter, waitlist: counting(0).limiter })
     const from = { "cf-connecting-ip": "203.0.113.5" }
 
     const first = run(check, "/api/shapes/messages", from)
@@ -190,14 +191,14 @@ describe("make", () => {
 
   test("a route it doesn't cover never reaches a limiter", () => {
     const shapes = counting(0)
-    const check = Throttle.make({ shape: shapes.limiter, telemetry: shapes.limiter, broker: shapes.limiter, attach: shapes.limiter, "attach-mcp": shapes.limiter })
+    const check = Throttle.make({ shape: shapes.limiter, telemetry: shapes.limiter, broker: shapes.limiter, attach: shapes.limiter, "attach-mcp": shapes.limiter, waitlist: shapes.limiter })
 
     expect(Option.isNone(run(check, "/api/questions").result)).toBe(true)
     expect(shapes.seen).toEqual([])
   })
 
   test("a limiter that fails lets the request through, logged by its route and counted, never by its address", () => {
-    const check = Throttle.make({ shape: broken, telemetry: broken, broker: broken, attach: broken, "attach-mcp": broken })
+    const check = Throttle.make({ shape: broken, telemetry: broken, broker: broken, attach: broken, "attach-mcp": broken, waitlist: broken })
 
     const ran = run(check, "/api/shapes/messages", { "cf-connecting-ip": "203.0.113.5" })
 
@@ -208,5 +209,21 @@ describe("make", () => {
     expect(line).toContain("chat.throttle")
     expect(line).toContain("shape")
     expect(line).not.toContain("203.0.113")
+  })
+
+  test("waitlist has its own budget separate from attach and fails closed on limiter error", () => {
+    const open = counting(5).limiter
+    const attach = counting(1).limiter
+    const waitlist = counting(1).limiter
+    const check = Throttle.make({ shape: open, telemetry: open, broker: open, attach, "attach-mcp": open, waitlist })
+    expect(Throttle.routeOf(WAITLIST_JOIN_ROUTE)).toBe("waitlist")
+    expect(Option.isNone(run(check, WAITLIST_JOIN_ROUTE).result)).toBe(true)
+    expect(Option.getOrThrow(run(check, WAITLIST_JOIN_ROUTE).result).status).toBe(429)
+    expect(Option.isNone(run(check, ATTACH_CLAIMS_ROUTE).result)).toBe(true)
+
+    const brokenCheck = Throttle.make({ shape: open, telemetry: open, broker: open, attach: open, "attach-mcp": open, waitlist: broken })
+    const failed = run(brokenCheck, WAITLIST_JOIN_ROUTE)
+    expect(Option.getOrThrow(failed.result).status).toBe(503)
+    expect(failed.count({ route: "waitlist", outcome: "error" })).toBe(1)
   })
 })

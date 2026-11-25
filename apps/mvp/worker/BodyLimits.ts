@@ -28,6 +28,7 @@ import { MAX_SUMMARY_BODY_BYTES } from "../src/features/timeline/contract.ts"
 import { MAX_PLAN_MCP_BYTES } from "./Body.ts"
 import { ATTACH_ROUTE, MCP_MAX_REQUEST_BYTES, MCP_ROUTE } from "../src/features/mcp/contract.ts"
 import { TELEMETRY_LIMITS } from "../src/telemetry.ts"
+import { WAITLIST_JOIN_ROUTE, WAITLIST_MAX_BODY_BYTES } from "../src/features/waitlist/contract.ts"
 
 export const MAX_BODY_BYTES = 8 * 1024 * 1024
 /** Match the existing write-route contracts before consuming their streams. Unknown routes retain the aggregate cap. */
@@ -40,6 +41,7 @@ export const forRequest = (url: string) => Effect.gen(function* () {
   if (path === "/api/auth/sign-out" || path === "/api/auth/handoff") return 4096
   if (path === "/api/github/webhook") return MAX_WEBHOOK_BYTES
   if (path === "/api/questions") return MAX_QUESTION_BODY_BYTES
+  if (path === WAITLIST_JOIN_ROUTE) return WAITLIST_MAX_BODY_BYTES
   if (path === "/api/message-pin" || path === "/api/message-pin/stamp") return 512
   if (path === "/api/timeline/summaries") return MAX_SUMMARY_BODY_BYTES
   if (path === "/api/views") return MAX_GENERATED_BODY_BYTES

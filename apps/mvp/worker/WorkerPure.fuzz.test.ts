@@ -102,7 +102,7 @@ describe("apps/mvp worker pure & Effect-layer fuzz invariants", () => {
             const limiter: Throttle.Limiter = {
               limit: () => limiterFails ? Effect.fail(new Error("boom")) : Effect.succeed({ success: allowed })
             }
-            const throttle = Throttle.make({ shape: limiter, telemetry: limiter, broker: limiter, attach: limiter, "attach-mcp": limiter })
+            const throttle = Throttle.make({ shape: limiter, telemetry: limiter, broker: limiter, attach: limiter, "attach-mcp": limiter, waitlist: limiter })
             const req = HttpServerRequest.fromWeb(
               new Request("https://app.example/api/shapes/messages", {
                 headers: { "cf-connecting-ip": `${a}.${b}.${c}.${d1}` }

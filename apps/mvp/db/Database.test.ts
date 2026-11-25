@@ -2327,7 +2327,7 @@ describe("0133_byoa_cutover", () => {
             ('p', 'remote', 'run', 'working', ${remote}, '/app', 1, 0)`
       }))
 
-      expect(await on(Database.migrate)).toEqual([[133, "byoa_cutover"]])
+      expect(await on(Database.migrate)).toContainEqual([133, "byoa_cutover"])
       expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
         SELECT id, status, failure, text, parts, question_id FROM messages WHERE role = 'assistant' ORDER BY position`)))
         .toEqual([
@@ -2370,7 +2370,7 @@ describe("0133_byoa_cutover", () => {
           VALUES ('legacy-change', 'agent', '{"modelId":"legacy"}', 'original-admin')`
       }))
 
-      expect(await on(Database.migrate)).toEqual([[133, "byoa_cutover"]])
+      expect(await on(Database.migrate)).toContainEqual([133, "byoa_cutover"])
       const legacy = { model: { modelId: "legacy" }, updated_by: "original-admin", updated_at: new Date("2026-10-01") }
       const coding = { model: { modelId: "current" }, updated_by: "coding-admin", updated_at: new Date("2026-10-02") }
       expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`

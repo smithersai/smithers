@@ -83,7 +83,7 @@ describe("apps/mvp Worker SecurityBoundary fuzz invariants (Throttle, appRoute, 
                 return Effect.succeed({ success: limiterOutcome === "admitted" })
               }
             }
-            const throttle = Throttle.make({ shape: limiter, telemetry: limiter, broker: limiter, attach: limiter, "attach-mcp": limiter })
+            const throttle = Throttle.make({ shape: limiter, telemetry: limiter, broker: limiter, attach: limiter, "attach-mcp": limiter, waitlist: limiter })
             const req = HttpServerRequest.fromWeb(
               new Request(`https://app.smithers.sh${url}`, {
                 method: "GET",
