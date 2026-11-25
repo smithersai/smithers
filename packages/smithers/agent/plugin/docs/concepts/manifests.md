@@ -70,6 +70,35 @@ Pressing `2` sends `option` with `index` 1, and the host binds `value` to the
 selected row's `options[1]`. The full fixture is
 `test/fixtures/queue.plugin.json`.
 
+## View sizes
+
+A view or card lists the `sizes` it draws at, at most one of each:
+
+| Size     | Where it shows                         |
+| -------- | -------------------------------------- |
+| `inline` | In the conversation.                   |
+| `side`   | In the drawer beside the conversation. |
+| `full`   | As the whole pane.                     |
+
+## Egress
+
+`egress` is optional. It names what the plugin's sandboxes may send out:
+
+```json
+{
+  "egress": {
+    "secrets": ["OPENAI_API_KEY"],
+    "origins": ["https://api.openai.com"]
+  }
+}
+```
+
+`secrets` are the names of the secrets the egress proxy may swap into a
+request, and `origins` are the origins it may reach. Each list holds at most 64
+non-empty strings, and both are required when `egress` is present. The
+manifest only declares them: an admin grants them per installation. A manifest
+without `egress` asks for none.
+
 ## Decoding
 
 `Manifest.decode` copies the input as bounded, inert JSON and decodes it with

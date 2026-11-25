@@ -159,6 +159,68 @@ describe("Manifest.decode", () => {
   })
 })
 
+describe("view sizes", () => {
+  const sized = (sizes: ReadonlyArray<string>) => ({
+    ...minimal("sized"),
+    contributes: {
+      views: [{
+        id: "sized/v",
+        title: "V",
+        scope: "app",
+        path: "",
+        sizes,
+        minimum: "anyone",
+        render: { kind: "blocks", blocks: [] }
+      }],
+      cards: [{ kind: "sized/c", payload: {}, sizes, render: { kind: "blocks", blocks: [] } }]
+    }
+  })
+
+  it("admits side beside inline and full, on views and cards", async () => {
+    const manifest = await Effect.runPromise(Manifest.decode(sized(["inline", "side", "full"])))
+    expect(manifest.contributes?.views?.[0]?.sizes).toEqual(["inline", "side", "full"])
+    expect(manifest.contributes?.cards?.[0]?.sizes).toEqual(["inline", "side", "full"])
+    expect((await Effect.runPromise(Manifest.decode(sized(["side"])))).contributes?.views?.[0]?.sizes).toEqual(["side"])
+  })
+
+  it("still refuses a size outside the three, and more than three entries", async () => {
+    expect(await refusal(Manifest.decode(sized(["drawer"])))).toMatchObject({
+      reason: "invalid",
+      path: "contributes.views[0].sizes[0]"
+    })
+    const refused = await refusal(Manifest.decode(sized(["inline", "side", "full", "side"]))) as { path: string }
+    expect(refused.path).toBe("contributes.views[0].sizes")
+  })
+})
+
+describe("egress", () => {
+  it("is optional, and decodes the secrets and origins a plugin declares", async () => {
+    expect((await Effect.runPromise(Manifest.decode(minimal("quiet")))).egress).toBeUndefined()
+    const egress = { secrets: ["OPENAI_API_KEY"], origins: ["https://api.openai.com"] }
+    expect((await Effect.runPromise(Manifest.decode(minimal("caller", { egress })))).egress).toEqual(egress)
+    expect((await Effect.runPromise(Manifest.decode(minimal("none", { egress: { secrets: [], origins: [] } })))).egress)
+      .toEqual({ secrets: [], origins: [] })
+  })
+
+  it("refuses a missing half, an empty name, an unknown field and more than 64 entries", async () => {
+    const refusedAt = async (egress: unknown) =>
+      (await refusal(Manifest.decode(minimal("caller", { egress }))) as { reason: string; path: string }).path
+    expect(await refusedAt({ secrets: [] })).toBe("egress.origins")
+    expect(await refusedAt({ origins: [] })).toBe("egress.secrets")
+    expect(await refusedAt({ secrets: [""], origins: [] })).toBe("egress.secrets[0]")
+    expect(await refusedAt({ secrets: [], origins: [1] })).toBe("egress.origins[0]")
+    expect(await refusedAt({ secrets: [], origins: [], hosts: [] })).toBe("egress.hosts")
+    const many = Array.from({ length: 65 }, (_, at) => `S${at}`)
+    expect(await refusedAt({ secrets: many, origins: [] })).toBe("egress.secrets")
+    expect(await refusedAt({ secrets: [], origins: many })).toBe("egress.origins")
+    expect(
+      (await Effect.runPromise(Manifest.decode(minimal("caller", {
+        egress: { secrets: many.slice(0, 64), origins: many.slice(0, 64) }
+      })))).egress?.secrets
+    ).toHaveLength(64)
+  })
+})
+
 describe("Manifest.parse", () => {
   it("parses JSON text", async () => {
     const manifest = await Effect.runPromise(Manifest.parse(JSON.stringify(queueManifest())))

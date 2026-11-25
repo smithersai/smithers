@@ -290,7 +290,8 @@ export const Render = Schema.Union([
 export type Render = typeof Render.Type
 
 /**
- * A view in the chat shell, inline and/or full.
+ * A view in the chat shell: `inline` in the conversation, `side` in the
+ * drawer beside it, `full` as the whole pane. At most one of each.
  *
  * @category schemas
  * @since 1.1.0
@@ -300,7 +301,7 @@ export const View = Schema.Struct({
   title: Title,
   scope: Schema.Literals(["app", "repository"]),
   path: viewPath,
-  sizes: bounded(Schema.Literals(["inline", "full"]), 2),
+  sizes: bounded(Schema.Literals(["inline", "side", "full"]), 3),
   minimum: Minimum,
   render: Render,
   reads: Schema.optional(bounded(QueryRef, 16)),
@@ -481,6 +482,27 @@ export const Records = Schema.Struct({
 })
 
 /**
+ * What a plugin's sandboxes may send out: the names of the secrets the egress
+ * proxy may swap in, and the origins it may reach. Static data: an admin
+ * grants it per installation, and the proxy checks it on every request.
+ *
+ * @category schemas
+ * @since 1.3.0
+ */
+export const Egress = Schema.Struct({
+  secrets: bounded(Schema.NonEmptyString, 64),
+  origins: bounded(Schema.NonEmptyString, 64)
+})
+
+/**
+ * What a plugin's sandboxes may send out.
+ *
+ * @category models
+ * @since 1.3.0
+ */
+export type Egress = typeof Egress.Type
+
+/**
  * A plugin manifest, `plugin.json`.
  *
  * @category schemas
@@ -499,6 +521,7 @@ export const Manifest = Schema.Struct({
   skills: Schema.optional(bounded(RelativePath, 16)),
   owns: Schema.optional(bounded(Name, 64)),
   userOnly: Schema.optional(Schema.Record(FlowTag, Prose)),
+  egress: Schema.optional(Egress),
   $defs: Schema.optional(Schema.Record(DefName, JsonSchema)),
   contributes: Schema.optional(Schema.Struct({
     views: Schema.optional(bounded(View)),

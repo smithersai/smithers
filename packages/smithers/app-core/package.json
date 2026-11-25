@@ -1,0 +1,54 @@
+{
+  "name": "@smthrs/app-core",
+  "type": "module",
+  "version": "1.0.0-rc.18",
+  "private": true,
+  "license": "MIT",
+  "smthrs": {
+    "group": "app"
+  },
+  "description": "The one principal-bound Smithers core, and its four generated clients: MCP, CLI, SDK and GUI",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/app-core"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./CauseReceipt": "./src/CauseReceipt.ts",
+    "./CliAdapter": "./src/CliAdapter.ts",
+    "./Core": "./src/Core.ts",
+    "./GuiAdapter": "./src/GuiAdapter.ts",
+    "./McpAdapter": "./src/McpAdapter.ts",
+    "./Principal": "./src/Principal.ts",
+    "./SdkAdapter": "./src/SdkAdapter.ts",
+    "./index": "./src/index.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@smthrs/canonical": "1.0.0-rc.18",
+    "@smthrs/plugin": "1.0.0-rc.18"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.1",
+    "effect": "4.1.1",
+    "fast-check": "4.9.0",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  },
+  "peerDependencies": {
+    "effect": "4.1.1"
+  }
+}
