@@ -18,7 +18,7 @@ const optionsOf = (element: Readonly<Record<string, unknown>>): ReadonlyArray<st
  * id, so a second press, or a press retried after a lost reply, records one answer; a changed element is a new item.
  */
 export const itemsOf = (repo: string, document: string, body: unknown): Effect.Effect<ReadonlyArray<FeedItem>> =>
-  Effect.gen(function* () {
+  (effect {
     if (!Array.isArray(body)) return []
     const [owner = "", name = ""] = repo.split("/")
     const seen = new Set<string>()
@@ -29,8 +29,8 @@ export const itemsOf = (repo: string, document: string, body: unknown): Effect.E
       const item = fields.id
       if (typeof item !== "string" || item === "" || seen.has(item)) continue
       seen.add(item)
-      const answer = yield* Uuid.v5(FEED_ANSWER_NAMESPACE, JSON.stringify([repo, document, element]))
-      const options = optionsOf(fields)
+      const answer = try Uuid.v5(FEED_ANSWER_NAMESPACE, try sync(() => JSON.stringify([repo, document, element])))
+      const options = try sync(() => optionsOf(fields))
       items.push({
         key: `${repo}:${document}:${item}`,
         repo,

@@ -2,7 +2,7 @@
 // `core/feed-items` serves them, each with an answer id that stays the same for the same element.
 import { Effect } from "effect"
 import { describe, expect, test } from "vitest"
-import { itemsOf } from "./items"
+import { itemsOf } from "./items.vibe"
 
 const items = (body: unknown, repo = "octo/hello", document = "decisions") => Effect.runPromise(itemsOf(repo, document, body))
 

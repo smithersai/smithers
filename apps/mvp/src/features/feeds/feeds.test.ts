@@ -3,17 +3,18 @@
 // `feed/answer` runs on the device's engine and reaches the collector's read. Only the model is scripted.
 import { type Host } from "@smthrs/plugin"
 import { ShapeSource } from "@smthrs/effect-electric"
-import { Deferred, Effect, Layer, Metric, Option } from "effect"
+import { Deferred, Effect, Layer, ManagedRuntime, Metric, Option } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import queue from "../../../plugins/queue/plugin.json" with { type: "json" }
 import { FlowDispatch } from "../../flows/dispatch"
 import type { BuiltIn } from "../../plugins/builtin"
 import { hostFor, Plugins, queryOf, readable, selectedOf, stateOf } from "../../plugins/plugins"
 import { PluginsUi } from "../../plugins/ui"
-import { member, nodeDevice, openTab, openTestApp, TEST_FEED_KEY, TestChatApi } from "../../test/chatApi"
+import { member, nodeDevice, openTab, openTestApi, openTestApp, TEST_FEED_KEY, TestChatApi } from "../../test/chatApi"
 import { FEEDS_SHAPE_ROUTE, feedAnswersRoute, feedsRoute } from "./contract"
 import type { FeedDocument, FeedItem } from "./schema"
-import { documents, FeedsStore } from "./store"
+import { documents, FeedsStore } from "./store.vibe"
 import { AuthStore, SESSION } from "../auth/store"
 import { repoId } from "../repo/contract"
 import { replaceRole, RepoStore } from "../repo/store"
@@ -94,6 +95,45 @@ const open = async (refusing: ReadonlySet<string> = new Set()) => {
 const names = (live: Host.Live<FeedDocument>) => live.current().map((row) => row.name)
 
 describe("repository feeds on a tab", { timeout: WITHIN * 2 }, () => {
+  test("the standalone store reads the index and a document without a repository gate", async ({ signal }) => {
+    const root = openTestApi()
+    runtimes.push(root)
+    const api = await root.runPromise(Effect.service(TestChatApi))
+    expect((await api.fetch(`${api.origin}${feedsRoute(REPO.owner, REPO.name)}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${TEST_FEED_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ set: {
+        lanes: { visibility: "public", body: [] },
+        "transcript/a": { visibility: "public", body: 1 },
+      } }),
+    })).status).toBe(200)
+    const runtime = ManagedRuntime.make(FeedsStore.layer({ origin: api.origin }).pipe(
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, api.fetch)),
+    ))
+    runtimes.push(runtime)
+    const store = await runtime.runPromise(Effect.service(FeedsStore))
+    const index = await runtime.runPromise(store.index("octo/hello"))
+    const document = store.document("octo/hello", "transcript/a")
+    expect(store.document("octo/hello", "transcript/a")).toBe(document)
+    const stopFirst = document.subscribe(() => {})
+    const stopLast = document.subscribe(() => {})
+    try {
+      await runtime.runPromise(index.byName.preload, { signal })
+      expect((await runtime.runPromise(index.byName.toArray)).map((row) => row.name)).toEqual(["lanes"])
+      await until(() => expect(document.current()).toMatchObject([{ name: "transcript/a", body: 1 }]))
+      stopFirst()
+      expect(document.current()).toHaveLength(1)
+    } finally {
+      stopFirst()
+      stopLast()
+    }
+    stopLast()
+    expect(document.current()).toEqual([])
+
+    document.subscribe(() => {})
+    await until(() => expect(document.current()).toHaveLength(1))
+  })
+
   test("concurrent first reads join the same live index after both real shape reads begin", async () => {
     const { tab, collector } = await open()
     expect((await collector(feedsRoute(REPO.owner, REPO.name), {
@@ -306,6 +346,10 @@ describe("repository feeds on a tab", { timeout: WITHIN * 2 }, () => {
     // Startup checks run in the background. Finish that real check before this test owns the session transitions;
     // otherwise its late successful answer can restore visibility during the deliberately unverifiable interval.
     await until(() => expect(auth.session.tanstack.get(SESSION)?.status).toBe("signed_in"))
+    const id = repoId(REPO.owner, REPO.name)
+    await tab.runPromise(replaceRole(repos, { id, role: "maintainer", own: false }))
+    await tab.runPromise(repos.rolesState.preload)
+    expect(await tab.runPromise(repos.rolesState.toArray)).toEqual(expect.arrayContaining([expect.objectContaining({ id })]))
     const index = await tab.runPromise(store.index("octo/hello"))
     const document = store.document("octo/hello", "transcript/a")
     const stop = document.subscribe(() => {})
@@ -327,7 +371,6 @@ describe("repository feeds on a tab", { timeout: WITHIN * 2 }, () => {
         expect((await tab.runPromise(index.byName.toArray)).map((row) => row.name)).toEqual(["lanes"])
         expect(document.current()).toHaveLength(1)
       })
-      const id = repoId(REPO.owner, REPO.name)
       const held = Option.getOrUndefined(await tab.runPromise(repos.roles.get(id)))
       /** The index's names, read in the same Effect as `change`, with nothing run between. */
       const namesAfter = (change: Effect.Effect<unknown, unknown>) => tab.runPromise(Effect.gen(function* () {
@@ -341,6 +384,17 @@ describe("repository feeds on a tab", { timeout: WITHIN * 2 }, () => {
       expect(await namesAfter(replaceRole(repos, { id, role: null, own: false, refused: "forbidden" }))).toEqual([])
       await namesAfter(held === undefined ? Effect.orDie(repos.roles.delete(id)) : replaceRole(repos, held))
       await until(async () => expect((await tab.runPromise(index.byName.toArray)).map((row) => row.name)).toEqual(["lanes"]))
+
+      const unopened = repoId(REPO.owner, "unopened")
+      await tab.runPromise(repos.refuse(unopened))
+      await tab.runPromise(repos.wiped(unopened))
+      expect(repos.isRefused(unopened)).toBe(true)
+      await tab.runPromise(repos.refuse(id))
+      await tab.runPromise(repos.wiped(id))
+      await until(async () => {
+        expect(await tab.runPromise(index.byName.toArray)).toEqual([])
+        expect(document.current()).toEqual([])
+      })
     } finally { record("cleanup"); stop() }
   })
 

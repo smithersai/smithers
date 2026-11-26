@@ -1,6 +1,6 @@
 import { Interpreter } from "@smthrs/flow"
 import { Effect, Layer, Metric } from "effect"
-import { type AnswerNotTaken, FeedsClient } from "./api"
+import { type AnswerNotTaken, FeedsClient } from "./api.vibe"
 import { type Refusal, REFUSALS } from "./contract"
 import { AnswerRequestStep, FeedAnswer, type FeedAnswerFailure, FeedAnswerRefused, FeedAnswerUnsent } from "./flows"
 import type { FeedAnswerPayload } from "./schema"
@@ -31,27 +31,27 @@ export const failureOf = (refused: AnswerNotTaken): FeedAnswerFailure =>
  * ChatApi's status and code; never the item, the choice or the text.
  */
 export const requestAnswer = (payload: FeedAnswerPayload) =>
-  Effect.gen(function* () {
-    const client = yield* FeedsClient
-    const answer = yield* Effect.result(client.answer(payload))
-    const failure = answer._tag === "Failure" ? failureOf(answer.failure) : undefined
+  effect {
+    const client = try FeedsClient
+    const answer = try Effect.result(client.answer(payload))
+    const failure = answer._tag === "Failure" ? try sync(() => failureOf(answer.failure)) : undefined
     const outcome = failure === undefined
       ? "sent"
       : failure._tag === "@smthrs/mvp/feeds/FeedAnswerRefused"
       ? "refused"
       : "unsent"
-    yield* Metric.update(Metric.withAttributes(answers, { outcome }), 1)
-    yield* Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("feed.answer").pipe(
+    try Metric.update(Metric.withAttributes(answers, { outcome }), 1)
+    try (Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("feed.answer").pipe(
       Effect.annotateLogs({
         outcome,
         ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
         ...(answer._tag === "Failure" && answer.failure.code !== undefined ? { code: answer.failure.code } : {}),
         feature: "feeds",
       }),
-    )
+    ))
     if (answer._tag === "Success") return answer.success
-    return yield* Effect.fail(failure!)
-  })
+    throw failure!
+  }
 
 /** Registers `feed/answer` with its step, asking through the host's `FeedsClient`. */
 export const registration = Interpreter.layerWithImplementations(FeedAnswer, AnswerRequestStep.toLayer(requestAnswer))

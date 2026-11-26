@@ -31,27 +31,27 @@ export class FeedsClient extends Context.Service<
   static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
     Layer.effect(
       FeedsClient,
-      Effect.gen(function* () {
-        const client = yield* HttpClient.HttpClient
+      effect {
+        const client = try HttpClient.HttpClient
         return FeedsClient.of({
           answer: ({ owner, name, id, item, choice, text }) =>
-            Effect.gen(function* () {
-              const request = HttpClientRequest.post(`${options.origin}${feedAnswersRoute(owner, name)}`).pipe(
+            (effect {
+              const request = try sync(() => HttpClientRequest.post(`${options.origin}${feedAnswersRoute(owner, name)}`).pipe(
                 HttpClientRequest.bodyJsonUnsafe({ id, item, choice: choice ?? null, text: text ?? null }),
-              )
-              const response = yield* client.execute(request).pipe(Effect.mapError(() => new AnswerNotTaken({})))
-              yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+              ))
+              const response = try (client.execute(request).pipe(Effect.mapError(() => new AnswerNotTaken({}))))
+              try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
               if (response.status !== 200) {
-                const refusal = yield* response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option)
-                return yield* new AnswerNotTaken({
+                const refusal = try (response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option))
+                throw new AnswerNotTaken({
                   status: response.status,
                   ...Option.match(refusal, { onNone: () => ({}), onSome: ({ code }) => ({ code }) }),
                 })
               }
-              return yield* response.json.pipe(
+              return try (response.json.pipe(
                 Effect.flatMap(decodeAnswered),
                 Effect.mapError(() => new AnswerNotTaken({ status: response.status })),
-              )
+              ))
             }).pipe(
               // Interrupting the request aborts its fetch, so a stalled body stops too.
               (effect) =>
@@ -62,6 +62,6 @@ export class FeedsClient extends Context.Service<
               Effect.withSpan("feed.answer.send", { kind: "client" }),
             ),
         })
-      }),
+      },
     )
 }

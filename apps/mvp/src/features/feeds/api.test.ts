@@ -1,10 +1,12 @@
 // `FeedsClient` against every answer ChatApi's answer route gives (worker/feeds/Api.vibe), through the host's `fetch`: the
 // browser's own capability, given here as a function answering the request it is handed. The step that calls it
 // (`feed/answer/request`) is driven over a client that answers as told, and the contract's helpers are checked here too.
+import { Engine } from "@smthrs/flows"
+import { NodeHost } from "@smthrs/platform-node"
 import { Cause, Effect, Exit, Layer, Metric } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
-import { AnswerNotTaken, FeedsClient } from "./api"
+import { AnswerNotTaken, FeedsClient } from "./api.vibe"
 import {
   feedAnswersRoute,
   feedDocumentId,
@@ -15,9 +17,9 @@ import {
   parseFeedRepo,
   parseFeedRoute,
 } from "./contract"
-import { FeedAnswerRefused, FeedAnswerUnsent } from "./flows"
+import { FeedAnswer, FeedAnswerRefused, FeedAnswerUnsent } from "./flows"
 import type { Answered } from "./schema"
-import { answers, failureOf, requestAnswer } from "./steps"
+import { answers, failureOf, registrationAt, requestAnswer } from "./steps.vibe"
 
 /** The client over a `fetch` that answers with `respond`, recording each request it was handed. */
 const client = (respond: (request: Request) => Promise<Response>, within?: `${number} millis`) => {
@@ -127,6 +129,30 @@ describe("feed/answer/request", () => {
     const { exit, counts } = await step(Effect.succeed({ id: ID, seq: 1 }))
     expect(exit).toEqual(Exit.succeed({ id: ID, seq: 1 }))
     expect(counts).toEqual({ sent: 1, refused: 0, unsent: 0 })
+  })
+
+  test("the registered flow reports a permanent ChatApi refusal without retrying", async () => {
+    const requests: Array<string> = []
+    const refusingFetch: typeof globalThis.fetch = async (input, init) => {
+      const request = new Request(input, init)
+      requests.push(request.url)
+      return Response.json({ code: "person_only" }, { status: 403 })
+    }
+    const registration = registrationAt("http://chat.test").pipe(
+      Layer.provideMerge(Engine.FlowEngine.layerMemory),
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, refusingFetch)),
+    )
+    const result = await Effect.runPromise(FeedAnswer.execute(decision, { executionId: ID }).pipe(
+      Effect.exit,
+      Effect.provide(registration),
+      Effect.provide(NodeHost.NodeCrypto.layer),
+      Effect.scoped,
+    ))
+    expect(Exit.isFailure(result) && Cause.squash(result.cause)).toEqual(
+      new FeedAnswerRefused({ status: 403, code: "person_only" }),
+    )
+    expect(requests).toEqual([`http://chat.test${feedAnswersRoute(decision.owner, decision.name)}`])
   })
 
   test("a refusal fails for good, and an unreachable ChatApi fails to be tried again", async () => {
