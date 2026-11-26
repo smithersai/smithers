@@ -23,3 +23,9 @@ Latest pushed `origin/main` revision: `e477666aedec` (47 verified commits landed
 2. `W6-VIBE-22` (Codex Sol `codex-2`): Migrate `mcp/{Auth,LiveDeps}` and `plan/{PlanTreeRoutes,PlanTreeShard}` to `.vibe`.
 3. `W6-VIBE-23` (Codex Sol `codex-5`): Complete `runners/{RunContent,TranscriptHost}` and start `ci/{Cron,Dispatch}` in `.vibe`.
 4. `M3-MEDIUM-CHECK-AND-NODESERVE` (Claude Opus): Full tier-2 `medium-check.ts` verification across `worker`, `src`, `db`, fuzz, and Lean.
+
+## Latest Progress Receipt
+
+- **Live Quiet Launch (`https://smithers.sh`):** deployed revision `f97d8fa14875`, 17/17 live canary PASS, 5/5 Playwright deploy-smoke PASS (Chromium + WebKit).
+- **ADR 0170 Sync Engine (Slices 1 through 4c landed on `main` at `7220a2b9`):** Codex Astra `APPROVE_TO_LAND` on Slices 3, 4b, and 4c, Lean 4.36.0 clean (24 jobs, 0 `sorry`/`admit`/`axiom`), 500-trace real Lean oracle byte-identical across 37,001 operations, 100% V8 coverage, whole-app `apps/mvp` ESLint 0 errors / 0 warnings. Slice 5a (full message parity + browser `ChatStore` read adapter) in progress.
+- **VibeLang Worker Migration:** 164 `.vibe` worker modules landed on `main` (100% V8 coverage on every migrated file, 100% of `domains/*`, `secrets/*`, `personal/*`, `stack/*`, `profile/*`, `plan/*`, `runners/*`, `ci/*`, `mcp/*`, and `flows/*` migrated, final 5 files of `branch/*` in flight).
