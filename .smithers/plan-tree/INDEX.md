@@ -25,6 +25,13 @@ sources:
 
 Target: Quiet launch of `smithers.sh` (`apps/mvp`) plus self-hostable local-first node runtime first, loud launch next week. Ship above slop. Dogfood inside Smithers from Day 1 (`smithers.sh/evmts/voltaire` baseline, private `Smithers-Ops` visible only to `roninjin10`).
 
+## Live Execution Progress (2026-11-25)
+
+- **Landed on main:** 17 verified commits (`85aa0fc1` to `3b38cfaf`)
+- **M1 Core, Sync & UX:** BYOA stdio MCP bridge, multi-node SQLite swarm convergence + overflow burst tests, WorkbenchScreen + WaitlistScreen + Command Palette, approval typing-focus guard, conversation pane restoration, PR keyboard review navigation, Decision 0017 plugin deletion gate, and zero-`jjhub` gate are landed on `main`. ADR 0170 Slice 3 `MessagesShard` Astra security fixes + Lean 4 specs are finishing verification.
+- **M2 Factories, Playgrounds & VibeLang:** 30 worker modules migrated to idiomatic `.vibe` at 100% V8 coverage (Slices 1-5 landed, Slices 6-7 in flight), canonical `.smithers/workflows/gate.vibe` + 4-client parity landed, 9-repo factory matrix + 7 `smithersai/` fork attribution landed, VibeStack UI patterns doc landed, and Astra-approved `PlaygroundBridge` (`sandbox="allow-scripts"`) landed.
+- **M3 Release Gate:** Production canary suite (`apps/mvp/ops/canary/run.ts`) with `maxRedirects: 0` SPA checks, 7-fork checks, and private `Smithers-Ops` fail-closed checks added. Quiet launch Alchemy deploy queued right after `W5-SYNC` clears Astra and lands.
+
 ## Gate Decisions
 
 - [x] Gate 1: Sync Engine & Node Swarm. Approved by Will 2026-11-24. [Decision 0170](../../apps/mvp/docs/decisions/0170-sqlite-shards-replace-electric.md)
