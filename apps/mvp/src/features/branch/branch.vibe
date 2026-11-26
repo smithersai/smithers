@@ -1,6 +1,6 @@
 import { runners } from "../../boundary.vibe"
 import { ChatStore } from "../chat/store"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { Coedit, type CoeditView } from "../coedit/coedit.vibe"
 import { Conversations, type ConversationsView } from "../conversations/conversations"
 import { ConversationsStore } from "../conversations/store"

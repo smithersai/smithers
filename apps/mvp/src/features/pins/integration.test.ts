@@ -5,7 +5,7 @@ import { afterEach, expect, test, vi } from "vitest"
 import { asPerson, member, nodeDevice, openTab, openTestApi, TestChatApi, type NodeDevice } from "../../test/chatApi"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 
 const opened: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => { for (const r of opened.reverse().splice(0)) await r.dispose() })

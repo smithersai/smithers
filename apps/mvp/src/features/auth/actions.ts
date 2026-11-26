@@ -1,6 +1,6 @@
 import { Effect, Metric, Option, Ref } from "effect"
 import { codeOf } from "../../errorCode"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { AuthClient, type AuthUnreachable } from "./api"
 import type { CheckOutcome } from "./contract"
 import { DeviceWipe, type WipeFailed } from "./device"

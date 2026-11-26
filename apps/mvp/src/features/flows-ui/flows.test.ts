@@ -18,7 +18,7 @@ import { ModelError } from "@smthrs/model"
 import { EngineStore } from "@smthrs/flows"
 import { Layer } from "effect"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
-import * as Catalog from "../../flows/catalog"
+import * as Catalog from "../../flows/catalog.vibe"
 import { cell, member, openFlowHost } from "../../test/flowHost"
 import {
   type CodeState,

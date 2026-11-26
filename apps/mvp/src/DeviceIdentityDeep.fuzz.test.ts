@@ -66,7 +66,7 @@ import * as Identity from "./device/identity.ts"
 import * as Registry from "./device/registry.ts"
 import * as AskingTab from "./flows/askingTab.vibe"
 import { DOORS } from "./flows/contract.ts"
-import { TabRequests } from "./flows/requests.ts"
+import { TabRequests } from "./flows/requests.vibe"
 
 const ORIGIN = "https://smithers.test"
 

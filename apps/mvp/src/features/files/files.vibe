@@ -1,7 +1,7 @@
 import type { FileTabsFocusEvent } from "@smthrs/ui"
 import { runners } from "../../boundary.vibe"
 import { Context, Layer, Metric } from "effect"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { closeTab, FilesPage, openTab } from "./actions.vibe"
 import { fileFocus } from "./metrics"
 import { FilesStore } from "./store.vibe"

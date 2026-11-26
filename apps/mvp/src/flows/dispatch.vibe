@@ -1,0 +1,389 @@
+import { admissionReceipt } from "../writeAdmission"
+import type { Flow as FlowTypes } from "@smthrs/flow"
+import { FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
+import { WebCrypto } from "effect/crypto/WebCrypto"
+import { BrowserEngine } from "@smthrs/platform-browser"
+import { EngineStore } from "@smthrs/flows"
+import { Cause, Clock, Context, Deferred, Exit, Layer, Metric, Option, Result, Schema } from "effect"
+import { type DOORS, PERSON_DOORS } from "./contract"
+import { codeOfFailure, TabHistory } from "./history"
+import { refusesCredential } from "./personOnly"
+import { type Entry, type FlowName, type FlowOf, FlowRegistry } from "./registry"
+import { TabRequests } from "./requests.vibe"
+
+// Dispatch (docs/features/flows.md#dispatch): the one way the UI runs a flow. A button, a slash command, a view and
+// the composer call `FlowDispatch.dispatch` with a registered name; the agent calls the same declarations from its
+// cells. Every registered flow runs on this device's durable engine (`ClientEngine`). Every dispatch is a span, a log
+// line and a count, and none carries the flow's input. Dispatch reads only a flow's reference, its tag and schemas
+// (src/flows/registry.ts), so the tab never loads a flow's steps.
+
+/** What started a dispatch: one of `DOORS`. */
+export type Door = (typeof DOORS)[number]
+
+/** How a dispatch ended: the flow's value, its declared failure, or not run at all (`error`). */
+export type DispatchOutcome = "done" | "failed" | "error"
+
+/** A flow's success and declared failure. */
+export type SuccessOf<N extends FlowName> = FlowOf<N>["successSchema"]["Type"]
+export type FailureOf<N extends FlowName> = FlowOf<N>["errorSchema"]["Type"]
+export type PayloadOf<N extends FlowName> = FlowOf<N>["payloadSchema"]["Type"]
+
+/** What a dispatch answers: the flow's end. */
+export type Dispatched<N extends FlowName> =
+  | { readonly _tag: "Done"; readonly value: SuccessOf<N> }
+  | { readonly _tag: "Failed"; readonly error: FailureOf<N> }
+
+/**
+ * The flow didn't run to an answer: the engine refused it (`refused`), this tab has no engine because
+ * its worker failed (`unavailable`), its input didn't encode (`invalid`), it died (`defect`) or was interrupted
+ * (`interrupted`). A run the engine's interpreter refused died with its refusal's code as `refusal`, such as
+ * `plan_changed` for a run parked under one build of the app and resumed under the next (`Interpreter.refusalCode`).
+ * Never a message: those can quote the input.
+ */
+export class DispatchFailed extends Schema.TaggedError<DispatchFailed>()("@smthrs/mvp/flows/DispatchFailed", {
+  flow: Schema.String,
+  reason: Schema.Literals(["refused", "unavailable", "invalid", "defect", "interrupted"]),
+  refusal: Schema.optional(Schema.String),
+}) {}
+
+/** A client flow's run: its execution id and payload. */
+export interface Run {
+  readonly executionId: string
+  readonly payload: unknown
+}
+
+/**
+ * This device's durable engine, as dispatch reaches it: `start` admits a client flow's run and returns once the engine
+ * recorded it, so the run outlives the tab that asked; `result` waits for the run started with the same `Run` to end
+ * and answers how it ended. Starting the same execution again is a no-op.
+ */
+export class ClientEngine extends Context.Service<
+  ClientEngine,
+  {
+    readonly start: (flow: BrowserEngine.FlowReference, run: Run) => void!DispatchFailed
+    readonly result: (flow: BrowserEngine.FlowReference, run: Run) => Exit.Exit<unknown, unknown>!DispatchFailed
+    /** Whether the engine holds `executionId` at all, settled or not. */
+    readonly known: (flow: BrowserEngine.FlowReference, executionId: string) => boolean!DispatchFailed
+    /**
+     * The engine's explicit retry: admits `executionId` as a retry of the settled run `source` from the step that ran
+     * `action`. What ran before that step keeps its journaled result.
+     */
+    readonly retry: (
+      flow: BrowserEngine.FlowReference,
+      options: { readonly executionId: string; readonly source: string; readonly action: string },
+    ) => void!DispatchFailed
+  }
+>()("@smthrs/mvp/flows/ClientEngine") {
+  /**
+   * The tab's engine: the leader tab's worker, reached through `@smthrs/platform-browser`'s `BrowserEngine`
+   * (decision 0011 §4). A refused request or a payload that won't encode is `DispatchFailed`.
+   */
+  static readonly layerBrowser = Layer.effect(
+    ClientEngine,
+    effect {
+      const engine = try BrowserEngine.BrowserEngine
+      const failed = (flow: BrowserEngine.FlowReference) =>
+      (error: { readonly _tag: string }) =>
+        new DispatchFailed({
+          flow: flow._tag,
+          reason: error._tag === "SchemaError"
+            ? "invalid"
+            : error._tag === "@smthrs/platform-browser/EngineUnavailable"
+            ? "unavailable"
+            : "refused",
+        })
+      return ClientEngine.of({
+        start: (flow, run) => engine.start(flow, run as never).pipe(mapError(failed(flow))),
+        result: (flow, run) => engine.result(flow, run.executionId).pipe(mapError(failed(flow))),
+        known: (flow, executionId) => engine.inspect(executionId, { limit: 1 }).pipe(
+          as(true),
+          // expected: a run this engine never held
+          catchTag("@smthrs/platform-browser/RequestRefused", (refused) =>
+            refused.error === RUN_NOT_FOUND ? succeed(false) : Effect.fail(refused)),
+          mapError(failed(flow)),
+        ),
+        retry: (flow, { executionId, source, action }) => engine.inspect(source).pipe(
+          flatMap((inspection) => engine.retry(flow, { executionId, source, step: stepOf(inspection.steps, action) })),
+          mapError(failed(flow)),
+        ),
+      })
+    },
+  )
+
+  /**
+   * An engine in this process: the `FlowRuntime` a Node or Bun host composes, for the native app and the tests. It
+   * runs the declaration in `flows` that a dispatched reference names (src/flows/declarations.ts `clientFlows`); a
+   * name none of them declares is `refused`, and so is a start the runtime refuses, with the refusal's code: a typed
+   * failure, or a defect the engine refuses with, such as `execution_identity_conflict` for an execution started again
+   * with another payload. A start that dies with no code is a `defect`. A run that ends with a failure its flow doesn't
+   * declare, such as `flow_cycle_detected`, was refused by the engine: it is `refused` with that code, never the flow's
+   * own failure.
+   */
+  static readonly layerRuntime = (flows: ReadonlyArray<FlowTypes.Any>) =>
+    Layer.effect(
+      ClientEngine,
+      effect {
+        const runtime = try FlowRuntime.FlowRuntime
+        const declared = new Map(flows.map((flow) => [flow._tag, flow]))
+        const declarationOf = effect (flow: BrowserEngine.FlowReference) => {
+          const declaration = declared.get(flow._tag)
+          if (declaration === undefined) throw new DispatchFailed({ flow: flow._tag, reason: "refused" })
+          return declaration
+        }
+        const refused = (flow: BrowserEngine.FlowReference, error: unknown) =>
+          new DispatchFailed({ flow: flow._tag, reason: "refused", ...codeOf(error) })
+        // A host with no run history holds nothing to rejoin or retry.
+        const inspection = try serviceOption(EngineStore.RunInspection.RunInspection)
+        return ClientEngine.of({
+          known: (flow, executionId) => Option.isNone(inspection) ? succeed(false) : inspection.value.inspect(executionId, { limit: 1 }).pipe(
+            as(true),
+            // expected: a run this engine never held
+            catchTag("@smthrs/engine-store/RunNotFound", () => succeed(false)),
+            mapError((error) => refused(flow, error)),
+          ),
+          retry: effect (flow, { executionId, source, action }) => {
+            const declaration = try declarationOf(flow)
+            if (Option.isNone(inspection) || runtime.retryFrom === undefined) {
+              throw new DispatchFailed({ flow: flow._tag, reason: "refused" })
+            }
+            const retryFrom = runtime.retryFrom
+            try inspection.value.inspect(source).pipe(
+              flatMap(({ steps }) => retryFrom(declaration, { source, step: stepOf(steps, action), executionId })),
+              mapError((error) => refused(flow, error)),
+            )
+          },
+          start: effect (flow, run) => {
+            const declaration = try declarationOf(flow)
+            try (runtime.execute(declaration as never, { ...run, discard: true } as never) as (unknown!unknown)).pipe(
+              asVoid,
+              mapError((error) => refused(flow, error)),
+              catchDefect(effect (defect) => {
+                throw codeOf(defect).refusal === undefined
+                  ? new DispatchFailed({ flow: flow._tag, reason: "defect" })
+                  : refused(flow, defect)
+              }),
+            )
+          },
+          // The same execution again joins the run its start admitted.
+          result: effect (flow, run) => {
+            const declaration = try declarationOf(flow)
+            const ended = try exit(runtime.execute(declaration as never, run as never) as (unknown!unknown))
+            const error = Exit.isFailure(ended) ? Cause.findErrorOption(ended.cause) : Option.none()
+            if (Option.isSome(error) && !Schema.is(declaration.errorSchema)(error.value)) throw refused(flow, error.value)
+            return ended
+          },
+        })
+      },
+    )
+}
+
+/** The refusal a tab reads for a run its engine never held. */
+const RUN_NOT_FOUND = "@smthrs/engine-store/RunNotFound"
+
+/** The node that ran `action` in a run's steps: a first attempt's, as `retryFrom` names it. */
+const stepOf = (steps: ReadonlyArray<{ readonly action: string | null; readonly nodeId: string }>, action: string) =>
+  steps.find((step) => step.action === action)?.nodeId ?? action
+
+/** The retries one dispatch walks past. Each app open adds at most one to a run's chain. */
+export const MOST_RETRIES = 64
+
+/**
+ * What a dispatch is given besides the flow and its payload: the door it came through; its execution id, a new one
+ * unless set; and `admitted`, which the dispatch completes once the engine has recorded the run (so a caller can wait
+ * for the run to exist without waiting for it to end), or fails with the dispatch's failure if it never is.
+ */
+export interface DispatchOptions {
+  readonly door: Door
+  readonly executionId?: string
+  readonly admitted?: Deferred.Deferred<void, DispatchFailed>
+  /**
+   * For an `executionId` that names a piece of work, not one attempt at it. A run of that id that already settled in a
+   * way `when` accepts is retried through the engine's explicit retry from the step that ran `action`, as
+   * `<executionId>.retry.<n>`, which is how work whose run ended in an earlier app open gets another go. Reusing the
+   * id alone would only answer that old ending.
+   */
+  readonly retry?: { readonly action: string; readonly when: (ended: Dispatched<never>) => boolean }
+}
+
+/**
+ * The kind of actor behind a door, as the engine's usage metrics count it (`RunMetrics`): a person presses a button, runs
+ * a slash command, uses a view or the composer; the agent acts through its door; sync is the app acting on a row another
+ * device wrote.
+ */
+export const actorOf = (door: Door): RunMetrics.Actor =>
+  door === "agent" ? "agent" : door === "sync" ? "app" : "person"
+
+/** Dispatches, by `flow`, `door` and `outcome`. */
+export const dispatches = Metric.counter("smithers_flow_dispatches", {
+  description: "Flows the app dispatched, by flow, door and outcome",
+  incremental: true,
+})
+
+/**
+ * Dispatch over `entries`, a registry: runs the entry named `name` on this device's engine, remembers the execution as
+ * this tab's (`TabRequests`, src/flows/requests.ts), and records the dispatch as a span `flow.dispatch`, a log line and
+ * a count of `dispatches`, with the flow, the door and the outcome, never the payload. A flow only the person may run
+ * at its route (`refusesCredential`) starts only through a person door: through any other it is `refused`
+ * (`person_only`) and never starts, so each such run is the person's own press (src/flows/credentials.ts).
+ * `FlowDispatch.layer` binds the app's registry; a test binds its own.
+ */
+export const makeDispatch = effect <Entries extends Readonly<Record<string, Entry>>>(entries: Entries) => {
+  const engine = try ClientEngine
+  const requests = try TabRequests
+  // What this tab ran lately, for a bug report (src/flows/history.ts); a dispatch without one keeps nothing.
+  const history = try serviceOption(TabHistory)
+  /**
+   * The run of the work `asked` names that a dispatch should join: the last of its chain, or the next one, with the
+   * run it retries. A run still going is joined, so a chain's end is only ever read settled.
+   */
+  const latest = effect (
+    flow: BrowserEngine.FlowReference,
+    name: string,
+    asked: string,
+    payload: unknown,
+    retry: NonNullable<DispatchOptions["retry"]>,
+  ) => {
+    let executionId = asked
+    let source: string | undefined
+    for (let n = 1; n <= MOST_RETRIES && (try engine.known(flow, executionId)); n++) {
+      const ended = try flatMap(engine.result(flow, { executionId, payload }), (exit) => settled(name, exit))
+      if (!retry.when(ended)) return { executionId, source: undefined }
+      source = executionId
+      executionId = `${asked}.retry.${n}`
+    }
+    return { executionId, source }
+  }
+  return (
+    name: keyof Entries & string,
+    payload: unknown,
+    options: DispatchOptions,
+  ): Dispatched<never>!DispatchFailed => {
+    const entry = entries[name]!
+    // `admitted` learns how the start went, and a dispatch that ends before its start is a failure to it, so its
+    // waiter never hangs. Completing it again changes nothing.
+    const admit = <A>(exit: Exit.Exit<A, DispatchFailed>) =>
+      options.admitted === undefined
+        ? Effect.void
+        : Deferred.done(options.admitted, admission(name, Exit.map(exit, () => undefined)))
+    return (effect {
+      const startedAt = try Clock.currentTimeMillis
+      const asked = options.executionId ?? (try sync(() => WebCrypto.defaultValue().randomUUID()))
+      const { executionId, source } = options.retry === undefined
+        ? { executionId: asked, source: undefined }
+        : (try latest(entry.flow, name, asked, payload, options.retry))
+      try requests.add(executionId, options.door)
+      const fields: Record<string, string | number> = { flow: name, door: options.door, executionId }
+      const run = { executionId, payload }
+      const admit_run = source === undefined || options.retry === undefined
+        ? engine.start(entry.flow, run)
+        : engine.retry(entry.flow, { executionId, source, action: options.retry.action })
+      // The engine labels the run's usage metrics with the door and its actor kind, never who.
+      const write = name.startsWith("issue/") || name.startsWith("todo/") || name.startsWith("triage/") || name === "run/steer"
+      const started = onExit(RunMetrics.withOrigin(
+        write ? admissionReceipt(admit_run, executionId, name, "engine") : admit_run,
+        { door: options.door, actor: actorOf(options.door) },
+      ), admit)
+      const personOnly = try sync(() => refusesCredential(name))
+      const dispatched = personOnly && !PERSON_DOORS.includes(options.door)
+        ? Result.fail(new DispatchFailed({ flow: name, reason: "refused", refusal: "person_only" }))
+        : (try result(
+          started.pipe(
+            andThen(engine.result(entry.flow, run)),
+            flatMap((exit) => settled(name, exit)),
+          ),
+        ))
+      const outcome: DispatchOutcome = dispatched._tag === "Failure"
+        ? "error"
+        : dispatched.success._tag === "Done"
+        ? "done"
+        : "failed"
+      if (dispatched._tag === "Failure") fields.reason = dispatched.failure.reason
+      if (dispatched._tag === "Failure" && dispatched.failure.refusal !== undefined) {
+        fields.refusal = dispatched.failure.refusal
+      }
+      fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+      if (Option.isSome(history)) {
+        // Inside `flow.dispatch`'s span, which is always there.
+        const span = try orDie(currentSpan)
+        const code = dispatched._tag === "Failure"
+          ? dispatched.failure.refusal ?? dispatched.failure.reason
+          : dispatched.success._tag === "Failed"
+          ? codeOfFailure(dispatched.success.error)
+          : undefined
+        try history.value.record({
+          flow: name,
+          executionId,
+          door: options.door,
+          outcome,
+          traceId: span.traceId,
+          ...(code === undefined ? {} : { code }),
+        })
+      }
+      try Metric.update(
+        Metric.withAttributes(dispatches, { flow: name, door: options.door, outcome }),
+        1,
+      )
+      try annotateCurrentSpan({ "smithers.flow.outcome": outcome })
+      try logWithLevel(outcome === "error" ? "Error" : outcome === "failed" ? "Warn" : "Info")(
+        "flow.dispatch",
+      ).pipe(annotateLogs({ ...fields, outcome }))
+      if (dispatched._tag === "Failure") throw dispatched.failure
+      return dispatched.success
+    }).pipe(
+      onExit(admit),
+      withSpan("flow.dispatch", {
+        attributes: {
+          "smithers.flow.name": name,
+          "smithers.flow.door": options.door,
+        },
+      }),
+    )
+  }
+}
+
+/** How a start ended, as `admitted` learns it: admitted, or `DispatchFailed`, `interrupted` for an interrupted start. */
+const admission = (name: string, exit: Exit.Exit<void, DispatchFailed>): Exit.Exit<void, DispatchFailed> =>
+  Exit.isFailure(exit) && Option.isNone(Cause.findErrorOption(exit.cause))
+    ? Exit.fail(new DispatchFailed({ flow: name, reason: Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "defect" }))
+    : exit
+
+/** An engine error's stable `code`, as `DispatchFailed`'s `refusal`; nothing for an error without one. */
+const codeOf = (error: unknown): { readonly refusal?: string } =>
+  typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? { refusal: error.code }
+    : {}
+
+/** A client flow's end as dispatch answers it: its value, its declared failure, or `DispatchFailed`. */
+const settled = effect (name: string, ended: Exit.Exit<unknown, unknown>): Dispatched<never>!DispatchFailed => {
+  if (Exit.isSuccess(ended)) return { _tag: "Done", value: ended.value as never }
+  const error = Cause.findErrorOption(ended.cause)
+  if (Option.isSome(error)) return { _tag: "Failed", error: error.value as never }
+  if (Cause.hasInterruptsOnly(ended.cause)) throw new DispatchFailed({ flow: name, reason: "interrupted" })
+  const refusal = try sync(() => Interpreter.refusalCode(ended.cause))
+  throw new DispatchFailed({ flow: name, reason: "defect", ...(Option.isSome(refusal) ? { refusal: refusal.value } : {}) })
+}
+
+/** Runs registered flows for the UI: `dispatch(name, payload, { door })`. */
+export class FlowDispatch extends Context.Service<
+  FlowDispatch,
+  {
+    readonly dispatch: <N extends FlowName>(
+      name: N,
+      payload: PayloadOf<N>,
+      options: DispatchOptions,
+    ) => Dispatched<N>!DispatchFailed
+  }
+>()("@smthrs/mvp/flows/FlowDispatch") {
+  /**
+   * Dispatch of the app's registry over this device's engine, with this tab's `TabRequests`, which it fills and
+   * provides.
+   */
+  static readonly layer = Layer.effect(
+    FlowDispatch,
+    effect {
+      const registered = try FlowRegistry
+      const dispatch = try makeDispatch(registered.entries)
+      return FlowDispatch.of({ dispatch: dispatch as never })
+    },
+  ).pipe(Layer.provideMerge(Layer.merge(TabRequests.layer(), TabHistory.layer())))
+}

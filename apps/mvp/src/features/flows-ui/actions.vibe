@@ -1,7 +1,7 @@
 import { answersToSend } from "@smthrs/ui"
 import { Deferred, Effect, Option, Stream } from "effect"
 import { WebCrypto } from "effect/crypto/WebCrypto"
-import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
+import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch.vibe"
 import { RunsNavigation } from "../runs/actions.vibe"
 import { runPath } from "../runs/contract"
 import { codePath, draftPath, FLOWS_PATH, MAX_REQUEST_CHARS, NAME_PATTERN, NEW_FLOW_PATH, RESERVED_NAMES } from "./contract"

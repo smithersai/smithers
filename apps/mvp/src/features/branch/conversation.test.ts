@@ -14,7 +14,7 @@ import * as ConversationPeople from "../../../worker/branch/ConversationPeople.v
 import * as Conversations from "../../../worker/branch/Conversations.vibe"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { framable } from "../../../worker/test/pages.ts"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { recordedModelFailure } from "../../test/attachedRun"
 import { member, nodeDevice, openFaultyApp, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { QuestionFaults, ShapeRecovery } from "../../test/faults"

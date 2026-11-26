@@ -1,7 +1,7 @@
 import { Effect, FiberHandle, Option, Stream } from "effect"
 import { Clipboard } from "../../clipboard.vibe"
 import { codeOf } from "../../errorCode"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { repoId } from "../repo/contract"
 import { normalizeHostname } from "./contract"
 import type { Domain, DomainOp } from "./schema"

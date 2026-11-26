@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Metric, Semaphore } from "effect"
-import { requesterOf } from "../../flows/requests"
+import { requesterOf } from "../../flows/requests.vibe"
 import { RunsClient, type RunsRefused } from "./api"
 import type { Report } from "./schema"
 

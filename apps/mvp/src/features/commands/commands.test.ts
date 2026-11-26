@@ -4,7 +4,7 @@ import { Deferred, Effect, Exit, Logger, type ManagedRuntime, Metric, Scope } fr
 import { slashMenu, slashSubmit } from "@smthrs/ui"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { DispatchFailed, FlowDispatch, dispatches } from "../../flows/dispatch"
+import { DispatchFailed, FlowDispatch, dispatches } from "../../flows/dispatch.vibe"
 import { WriteIntents } from "../../writeAdmission"
 import { NavigationRefused } from "../navigation/flows.vibe"
 import { choose as chooseCommand, submit as submitCommand, type as typeCommand } from "./actions.vibe"

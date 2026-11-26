@@ -1,6 +1,6 @@
 import { Effect, Metric, Option } from "effect"
 import { codeOf } from "../../errorCode"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import type { AppTemplate } from "./contract"
 import { type IssuesProps, OPENED, type RepoProps } from "./schema"
 import { ViewsStore } from "./store"

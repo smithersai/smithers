@@ -1,5 +1,5 @@
 import { Exit } from "effect"
-import type { Dispatched } from "../../flows/dispatch"
+import type { Dispatched } from "../../flows/dispatch.vibe"
 import type { RepoAnswer } from "../auth/viewer"
 import { NOT_SENT_COPY, type NotSentReason } from "../issues/contract"
 import { pageOf, refusedOf } from "../issues/view"

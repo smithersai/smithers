@@ -6,7 +6,7 @@ import { Context, Deferred, Duration, Effect, Exit, Latch, Layer, Ref, Stream, S
 import { AuthClient } from "../features/auth/api"
 import { ChatClient, type Question, QuestionNotTaken } from "../features/chat/api"
 import { type AppOptions, realServices } from "../boot"
-import { ClientEngine, DispatchFailed } from "../flows/dispatch"
+import { ClientEngine, DispatchFailed } from "../flows/dispatch.vibe"
 import { faultyAuth } from "./authFaults"
 
 export { AuthFaults } from "./authFaults"

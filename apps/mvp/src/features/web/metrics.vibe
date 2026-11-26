@@ -1,5 +1,5 @@
 import type { WebPage } from "@smthrs/views"
-import type { Door } from "../../flows/dispatch"
+import type { Door } from "../../flows/dispatch.vibe"
 import type { WebMode, WebOutcome } from "./contract"
 import type { Refusal } from "./url"
 

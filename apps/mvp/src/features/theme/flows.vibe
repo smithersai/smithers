@@ -1,6 +1,6 @@
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
-import { TabCallFailed, TabPort } from "../../flows/tabPort"
+import { TabCallFailed, TabPort } from "../../flows/tabPort.vibe"
 import { Mode } from "./schema"
 
 // `app/theme/set { mode }` (docs/features/flows.md#the-theme): the first client flow. A setter, not a toggle, so a

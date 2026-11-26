@@ -1,6 +1,6 @@
 import type { AuthStore } from "../auth/store"
 import { runners } from "../../boundary.vibe"
-import type { FlowDispatch } from "../../flows/dispatch"
+import type { FlowDispatch } from "../../flows/dispatch.vibe"
 import {
   setCommitment,
   comment,

@@ -1,6 +1,6 @@
 import { Duration, Effect, Exit, Option, Redacted } from "effect"
 import { recordUnhandled } from "../../boundary.vibe"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { PersonalModelClient } from "./api.vibe"
 import { checkSave, type ConnectionPut, type Refusal } from "./contract"
 import { record } from "./metrics"

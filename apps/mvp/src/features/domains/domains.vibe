@@ -1,7 +1,7 @@
 import { Context, Data, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
 import type { Clipboard } from "../../clipboard.vibe"
-import type { FlowDispatch } from "../../flows/dispatch"
+import type { FlowDispatch } from "../../flows/dispatch.vibe"
 import { add, copy, open, refresh, remove } from "./actions.vibe"
 import { type DomainsConfig, DomainsStore } from "./store.vibe"
 

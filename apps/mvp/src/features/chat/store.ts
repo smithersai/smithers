@@ -22,7 +22,7 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { ChatWrites } from "./writes"
 import { ViewsStore } from "../views/store"
 import { ConversationOwners } from "../conversations/owners"

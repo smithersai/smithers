@@ -19,8 +19,8 @@ import { ThemeStore } from "../features/theme/store.vibe"
 import { openFlowHost } from "../test/flowHost"
 import { openDevice } from "../test/device"
 import { EngineFailed, engineRequests, failFastOnEngine, tabAnswers, tabEngine, TabWorker } from "./engine"
-import { ClientEngine } from "./dispatch"
-import { type Endpoint, TabCallFailed, TabPort } from "./tabPort"
+import { ClientEngine } from "./dispatch.vibe"
+import { type Endpoint, TabCallFailed, TabPort } from "./tabPort.vibe"
 
 const runtime = testFile("device")
 

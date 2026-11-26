@@ -11,11 +11,11 @@ import { Pause } from "../../worker/flows/Pause.vibe"
 import { build } from "../../worker/test/flowHost.ts"
 import { Preferences, PreferencesUnavailable, registration as themeRegistration, SetTheme } from "../features/theme/flows.vibe"
 import { tabPreferences, ThemeStore } from "../features/theme/store.vibe"
-import { clientFlows } from "./declarations"
-import { ClientEngine, dispatches, DispatchFailed, FlowDispatch, makeDispatch } from "./dispatch"
+import { clientFlows } from "./declarations.vibe"
+import { ClientEngine, dispatches, DispatchFailed, FlowDispatch, makeDispatch } from "./dispatch.vibe"
 import { registry } from "./registry"
 import { KEPT, TabHistory } from "./history"
-import { TabRequests } from "./requests"
+import { TabRequests } from "./requests.vibe"
 
 /** What an exit failed with, stack traces aside. */
 const failure = (exit: Exit.Exit<unknown, unknown>) => (Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit)

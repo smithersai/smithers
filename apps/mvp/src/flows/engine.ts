@@ -8,8 +8,8 @@ import { tabHandlers } from "../features/theme/store.vibe"
 import { apiRoute } from "../apiRoutes"
 import { BROWSER_TELEMETRY, ENGINE_SERVICE, EXPORTED_SPANS, FAILURE_CODES, TELEMETRY_LIMITS } from "../telemetry"
 import { ENGINE_NAME } from "./contract"
-import { ClientEngine } from "./dispatch"
-import { answer, type Endpoint } from "./tabPort"
+import { ClientEngine } from "./dispatch.vibe"
+import { answer, type Endpoint } from "./tabPort.vibe"
 
 // This device's engine as the tab sees it (docs/features/flows.md#the-engine-and-the-tab-port): the tab's view of the
 // leader's engine (`tabEngine`), the tab's answers to its own worker's calls (`tabAnswers`), and where the engine

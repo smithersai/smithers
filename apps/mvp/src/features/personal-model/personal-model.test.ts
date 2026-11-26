@@ -15,7 +15,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.vibe"
 import { leaks } from "../../../worker/personal/test/harness.ts"
 import { ANTHROPIC_ORIGIN, OPENAI_ORIGIN, type Reply } from "../../../worker/personal/test/provider.ts"
-import { dispatches } from "../../flows/dispatch"
+import { dispatches } from "../../flows/dispatch.vibe"
 import {
   CHATAPI_ORIGIN,
   member,

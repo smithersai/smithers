@@ -2,7 +2,7 @@
 // overwrite the next editor; the underlying storage, API and durable engine are the real app's Node services.
 import { Deferred, Effect, Layer, ManagedRuntime, Option } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
-import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
+import { DispatchFailed, FlowDispatch } from "../../flows/dispatch.vibe"
 import { nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"
 import { RunsNavigation } from "../runs/actions.vibe"
 import { answer, deleteDraft, editCode, openCode, openDraft, openNew, save, saveCode, setAnswer, setForm, startDraft } from "./actions.vibe"

@@ -1,7 +1,7 @@
 import { Effect, Metric, Stream } from "effect"
 import { WebCrypto } from "effect/crypto/WebCrypto"
 import { codeOf } from "../../errorCode"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { open as openIssues, reconnectShapes as reconnectIssueShapes } from "../issues/actions.vibe"
 import { recordShapeRetry } from "../issues/shapeSync"
 import { repoId } from "../repo/contract"

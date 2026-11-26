@@ -3,7 +3,7 @@ import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import type { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer, Metric } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
-import { requesterOf } from "../../flows/requests"
+import { requesterOf } from "../../flows/requests.vibe"
 import { type CallRefused, SandboxClient, type Target } from "./api.vibe"
 import { CALL_ID_NAMESPACE } from "./contract"
 import {

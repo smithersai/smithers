@@ -8,10 +8,10 @@ import { readdirSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"
 import ts from "typescript"
-import { agentFlows, catalogDescription, childExecutionId, publicError } from "./catalog"
-import { clientFlows, declarationOf, declarations, modelInvocable } from "./declarations"
+import { agentFlows, catalogDescription, childExecutionId, publicError } from "./catalog.vibe"
+import { clientFlows, declarationOf, declarations, modelInvocable } from "./declarations.vibe"
 import { entryOf, FlowRegistry, names, registry } from "./registry"
-import { requesterOf } from "./requests"
+import { requesterOf } from "./requests.vibe"
 import { AGENT_FLOWS, PERSON_ONLY_FLOWS } from "../../worker/Actor.vibe"
 
 /** Every source file under `src/`, tests and test support left out. */

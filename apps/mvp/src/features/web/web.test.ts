@@ -17,7 +17,7 @@ import { framable, outsideWeb, type Page, refusing } from "../../../worker/test/
 import { BROWSER_TELEMETRY } from "../../telemetry"
 import { COMMANDS } from "../commands/catalog"
 import { ViewRefused, ViewsClient } from "../views/api"
-import { DispatchFailed, type Dispatched, FlowDispatch } from "../../flows/dispatch"
+import { DispatchFailed, type Dispatched, FlowDispatch } from "../../flows/dispatch.vibe"
 import { dispatchOpen, openFromGesture, refusedPage, WebTab } from "./actions.vibe"
 import { PreviewClient, PreviewRefused } from "./api.vibe"
 import { WEB_TELEMETRY } from "./contract"

@@ -4,7 +4,7 @@ import { admissionReceipt, beginAdmission, executionOf, finishAdmission, finishR
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import type { Collection } from "@smthrs/effect-tanstack-db"
 import { WebCrypto as WebCryptoReference } from "effect/crypto/WebCrypto"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { startOperation } from "../commands/admission.vibe"
 import { followRun } from "../../resumeAdmissions"
 import { repoId } from "../repo/contract"

@@ -1,7 +1,7 @@
 import { Bind, Keys, When } from "@smthrs/plugin"
 import { runners } from "../boundary.vibe"
 import { Effect, Metric, Result } from "effect"
-import { FlowDispatch } from "../flows/dispatch"
+import { FlowDispatch } from "../flows/dispatch.vibe"
 import type { FlowName } from "../flows/registry"
 import { CHORD_WITHIN_MS } from "./contract"
 import { deliver, Plugins, press, selectedOf, shownView } from "./plugins"

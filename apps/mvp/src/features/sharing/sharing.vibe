@@ -1,6 +1,6 @@
 import { Context } from "effect"
 import { runners } from "../../boundary.vibe"
-import type { FlowDispatch } from "../../flows/dispatch"
+import type { FlowDispatch } from "../../flows/dispatch.vibe"
 import type { ShareAccess } from "../branch/contract"
 import { add, closeDialog, openDialog, set } from "./actions.vibe"
 import { type SharingConfig, SharingStore } from "./store.vibe"

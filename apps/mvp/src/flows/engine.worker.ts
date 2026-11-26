@@ -14,7 +14,7 @@ import { getSession } from "../features/auth/api"
 import { NO_DEVICE_DATA, SESSION_ROUTE } from "../features/auth/contract"
 import { ENGINE_NAME, OUTBOX_DATABASE } from "./contract"
 import { firstReadFrom } from "./sessionRead"
-import { clientFlows } from "./declarations"
+import { clientFlows } from "./declarations.vibe"
 import { engineRequests, engineTelemetry } from "./engine"
 import { workerRegistrations } from "./registrations"
 

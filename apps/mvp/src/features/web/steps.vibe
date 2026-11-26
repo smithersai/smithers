@@ -1,6 +1,6 @@
 import { WebCrypto as WebCryptoReference } from "effect/crypto/WebCrypto"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
-import { requesterOf } from "../../flows/requests"
+import { requesterOf } from "../../flows/requests.vibe"
 import { ViewsClient } from "../views/api"
 import { viewConversation } from "../views/conversation"
 import { PreviewClient } from "./api.vibe"

@@ -4,12 +4,12 @@ import { EngineStore } from "@smthrs/flows"
 import { Clock, Context, type Duration, Effect, Layer, Metric, Option, Schema } from "effect"
 import { codeOf } from "../../errorCode"
 import { asker } from "../../flows/askingTab"
-import { RunCredentials } from "../../flows/credentials"
-import { declarationOf as declared } from "../../flows/declarations"
-import type { Door } from "../../flows/dispatch"
+import { RunCredentials } from "../../flows/credentials.vibe"
+import { declarationOf as declared } from "../../flows/declarations.vibe"
+import type { Door } from "../../flows/dispatch.vibe"
 import { type FlowName, names } from "../../flows/registry"
 import { FLOW_CODE } from "../flows-ui/reference"
-import { requesterOf } from "../../flows/requests"
+import { requesterOf } from "../../flows/requests.vibe"
 import {
   listed,
   RUN_LIST_LIMIT,

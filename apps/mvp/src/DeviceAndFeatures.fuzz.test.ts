@@ -12,7 +12,7 @@ import * as StatusFlows from "./features/status/flows.ts"
 import * as StatusReporter from "./features/status/reporter.ts"
 import * as TodoView from "./features/todos/view.ts"
 import * as ViewForm from "./features/views/form.ts"
-import * as TabPort from "./flows/tabPort.ts"
+import * as TabPort from "./flows/tabPort.vibe"
 import * as Pwa from "./pwa.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "250" : "100"))

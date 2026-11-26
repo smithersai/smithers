@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
-import type { FlowDispatch } from "../../flows/dispatch"
+import type { FlowDispatch } from "../../flows/dispatch.vibe"
 import type { AuthStore } from "../auth/store"
 import type { DraftSelection } from "../chat/sharedPrompt"
 import type { ChatStore } from "../chat/store"

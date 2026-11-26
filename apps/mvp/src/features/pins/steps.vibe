@@ -1,6 +1,6 @@
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { PinClient } from "./api.vibe"
-import { requesterOf } from "../../flows/requests"
+import { requesterOf } from "../../flows/requests.vibe"
 import { ChatPin, ChatUnpin, Pinned, PinRefused, PinUnavailable, PinStamp, PinWrite, UnpinWrite } from "./flows"
 
 export const pins = Metric.counter("smithers_message_pins", { incremental: true })

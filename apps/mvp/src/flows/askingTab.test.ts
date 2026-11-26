@@ -2,7 +2,7 @@ import { TabChannel } from "@smthrs/platform-browser"
 import { type Duration, Effect, Exit, Layer, Option, Schema, Scope, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import { answerAskingTab, asker } from "./askingTab"
-import { TabRequests } from "./requests"
+import { TabRequests } from "./requests.vibe"
 
 // The engine worker's line to the tab that asked, over real `BroadcastChannel`s in one Node process: a step asks, only
 // the tab that started the requester answers, and every other message on the channel is ignored.

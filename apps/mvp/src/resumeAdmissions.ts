@@ -1,7 +1,7 @@
 import { clearComposerSource } from "./admissionSource.vibe"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Clock, Effect, Exit, Fiber, Option, type Scope } from "effect"
-import type { DispatchFailed } from "./flows/dispatch"
+import type { DispatchFailed } from "./flows/dispatch.vibe"
 import { repoOf } from "./features/attention/progress"
 import { admissionNamespace, admitCommand, hasEngineAdmission, hasOutboxAdmission, startOperation } from "./features/commands/admission.vibe"
 import type { FlowName } from "./flows/registry"

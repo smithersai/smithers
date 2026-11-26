@@ -2,7 +2,7 @@
 // global scope, the other the tab's `Worker`.
 import { Deferred, Effect, Exit, Layer, Logger, ManagedRuntime, References, Scope, type Schema } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { answer, type Endpoint, type Handlers, TabCallFailed, TabPort } from "./tabPort"
+import { answer, type Endpoint, type Handlers, TabCallFailed, TabPort } from "./tabPort.vibe"
 
 const channels: Array<MessageChannel> = []
 const scopes: Array<Scope.Closeable> = []

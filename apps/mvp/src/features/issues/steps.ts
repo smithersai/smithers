@@ -2,9 +2,9 @@ import { Uuid } from "@smthrs/crypto"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Clock, Context, type Duration, Effect, Layer, Metric, Option } from "effect"
 import { asker } from "../../flows/askingTab"
-import { RunCredentials } from "../../flows/credentials"
-import type { Door } from "../../flows/dispatch"
-import { requesterOf } from "../../flows/requests"
+import { RunCredentials } from "../../flows/credentials.vibe"
+import type { Door } from "../../flows/dispatch.vibe"
+import { requesterOf } from "../../flows/requests.vibe"
 import { issuesChannel, QUEUE_WITHIN, type TriageDecision, WRITE_ID_NAMESPACE } from "./contract"
 import {
   IssueCommitment,

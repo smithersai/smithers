@@ -1,6 +1,6 @@
 import { Clock, Context, Data, Effect, Layer, Metric, Option } from "effect"
 import { runners } from "../../boundary.vibe"
-import type { FlowDispatch } from "../../flows/dispatch"
+import type { FlowDispatch } from "../../flows/dispatch.vibe"
 import { aboutOf, fileAtTree, knownName, clone, copy, navigate, open, rawHref, refresh, retryAbout, retryClone, role, warm } from "./actions"
 import type { RepoClient } from "./api"
 import type { CopyKind } from "./contract"

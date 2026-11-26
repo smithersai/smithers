@@ -16,8 +16,8 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import type { ThemeMode } from "../features/theme/contract"
 import { ThemeStore } from "../features/theme/store.vibe"
 import { Theme } from "../features/theme/theme.vibe"
-import { FlowDispatch } from "../flows/dispatch"
-import { clientFlows } from "../flows/declarations"
+import { FlowDispatch } from "../flows/dispatch.vibe"
+import { clientFlows } from "../flows/declarations.vibe"
 import { tabAnswers, tabEngine } from "../flows/engine"
 import { tabNavigation } from "../features/navigation/tab.vibe"
 import { tabDoors } from "../flows/doors"
@@ -26,7 +26,7 @@ import type { Here } from "../features/files/schema"
 import { FilesStore } from "../features/files/store.vibe"
 import { tabFiles } from "../features/files/tab"
 import { workerRegistrations } from "../flows/registrations"
-import type { Endpoint } from "../flows/tabPort"
+import type { Endpoint } from "../flows/tabPort.vibe"
 import { ORIGIN } from "./flowHost"
 import { repoAuthority } from "./repoAuthority"
 
@@ -118,7 +118,7 @@ export const openDevice = async (
     removeEventListener: (type: string, listener: (event: never) => void) =>
       type === "message" && channel.port2.removeEventListener("message", listener as never),
     terminate: () => void terminated.push(true),
-  } as unknown as BrowserEngine.WorkerLike & import("../flows/tabPort").Endpoint
+  } as unknown as BrowserEngine.WorkerLike & import("../flows/tabPort.vibe").Endpoint
   const store = ThemeStore.layer({
     paint: (mode) => void painted.push(mode),
     mirror: () => {},

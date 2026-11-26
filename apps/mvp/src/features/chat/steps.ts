@@ -1,8 +1,8 @@
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Clock, Context, type Duration, Effect, Layer, Metric, Option } from "effect"
 import { type Ask, asker } from "../../flows/askingTab"
-import type { Door } from "../../flows/dispatch"
-import { requesterOf } from "../../flows/requests"
+import type { Door } from "../../flows/dispatch.vibe"
+import { requesterOf } from "../../flows/requests.vibe"
 import {
   ASK_TAB_WITHIN,
   type CopyOutcome,

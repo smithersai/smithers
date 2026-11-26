@@ -1,6 +1,6 @@
 import { Exit } from "effect"
 import { describe, expect, test } from "vitest"
-import { DispatchFailed } from "../../flows/dispatch"
+import { DispatchFailed } from "../../flows/dispatch.vibe"
 import { pageOf } from "../issues/view"
 import { ReviewRefused, ReviewUnsent } from "./flows"
 import {

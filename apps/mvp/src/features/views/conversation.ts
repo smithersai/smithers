@@ -1,6 +1,6 @@
 import { FlowRuntime } from "@smthrs/flow"
 import { Effect } from "effect"
-import { requesterOf } from "../../flows/requests"
+import { requesterOf } from "../../flows/requests.vibe"
 
 // Where a step's view goes (decision 0013 §1), for every flow that adds views (`app/web/open`, `app/docs/search`): an
 // agent's call is a child of its answer's run, so it goes to that answer's conversation, which ChatApi looks up, however

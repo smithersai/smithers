@@ -1,5 +1,5 @@
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import type { Handlers } from "../../flows/tabPort"
+import type { Handlers } from "../../flows/tabPort.vibe"
 import type { ThemeMode } from "./contract"
 import { Preferences, WriteTheme } from "./flows.vibe"
 import { Mode, Preference, THEME } from "./schema"

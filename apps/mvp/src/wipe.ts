@@ -1,7 +1,7 @@
 import type { Outbox } from "@smthrs/effect-tanstack-db"
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import type { Host } from "./boot"
-import type { Endpoint } from "./flows/tabPort"
+import type { Endpoint } from "./flows/tabPort.vibe"
 import type { AppReloadReason } from "./reloadReason"
 
 // Sign-out's device wipe as each page takes part in it (decision 0008 §4.6, docs/features/sign-in.md#signing-out). The

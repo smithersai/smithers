@@ -1,4 +1,4 @@
-import { agentFlows } from "../src/flows/catalog"
+import { agentFlows } from "../src/flows/catalog.vibe"
 import { entryOf } from "../src/flows/registry"
 import { type AgentCase, READS } from "./cases"
 import {

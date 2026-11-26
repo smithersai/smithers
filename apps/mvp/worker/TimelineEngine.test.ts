@@ -5,7 +5,7 @@ import { Cause, Context, Deferred, Effect, Exit, Layer, Metric, Scope, Stream } 
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, expect, test } from "vitest"
-import { ClientEngine, FlowDispatch } from "../src/flows/dispatch.ts"
+import { ClientEngine, FlowDispatch } from "../src/flows/dispatch.vibe"
 import { FlowRegistry } from "../src/flows/registry.ts"
 import { Phases, Summarize, SummaryFailed } from "../src/features/timeline/flow.ts"
 import { revisionOf, segmentRevision } from "../src/features/timeline/identity.ts"

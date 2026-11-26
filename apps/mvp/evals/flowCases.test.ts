@@ -4,7 +4,7 @@
 import { describe, expect, test } from "vitest"
 import { caseNamed, inputOf } from "./cases"
 import { everyAnswer, safe, type Trial } from "./checks"
-import { agentFlows } from "../src/flows/catalog"
+import { agentFlows } from "../src/flows/catalog.vibe"
 import { FLOW_CASES } from "./flowCases"
 import { call, trial } from "./fixtures"
 

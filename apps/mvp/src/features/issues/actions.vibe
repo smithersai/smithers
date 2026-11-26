@@ -4,7 +4,7 @@ import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { keep } from "./writes"
 import type { Commitment } from "./lifecycle"
 import { AuthStore } from "../auth/store"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { repoId } from "../repo/contract"
 import {
   commentDraftKey,
@@ -317,7 +317,7 @@ export const comment = (owner: string, name: string, number: number) =>
 
 /** Every issue outbox operation owns its durable admission before the button's action resolves. */
 const operation = <N extends "issue/triage" | "triage/run" | "triage/enable" | "triage/pause" | "issue/commitment">(
-  op: N, payload: import("../../flows/dispatch").PayloadOf<N>, fields: Partial<QueuedWrite>,
+  op: N, payload: import("../../flows/dispatch.vibe").PayloadOf<N>, fields: Partial<QueuedWrite>,
 ) => effect {
   const flows = try FlowDispatch
   return try admitWrite({ repo: payload.repo, op, title: "", body: "", number: 0, ...fields },

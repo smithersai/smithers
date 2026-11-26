@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
-import type { FlowDispatch } from "../../flows/dispatch"
+import type { FlowDispatch } from "../../flows/dispatch.vibe"
 import { add, link, move, remove, removeAll, save, setActive, showAdd, test } from "./actions.vibe"
 import type { PersonalModelClient } from "./api.vibe"
 import type { ConnectionPut } from "./contract"

@@ -14,7 +14,7 @@ import * as StatusApi from "./features/status/api.ts"
 import * as StatusFlows from "./features/status/flows.ts"
 import * as StatusReporter from "./features/status/reporter.ts"
 import * as TodosView from "./features/todos/view.ts"
-import * as TabRequests from "./flows/requests.ts"
+import * as TabRequests from "./flows/requests.vibe"
 
 const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")
 const execs = Math.max(20, Math.min(Math.ceil(baseExecs / 3), 60))

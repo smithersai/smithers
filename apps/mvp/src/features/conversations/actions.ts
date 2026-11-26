@@ -1,5 +1,5 @@
 import { Clock, Effect, Metric, Option } from "effect"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { timeOf } from "../attention/entries"
 import { dropped } from "./metrics"
 import { SEARCH } from "./schema"

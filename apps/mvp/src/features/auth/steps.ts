@@ -1,7 +1,7 @@
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Clock, Context, type Duration, Effect, Layer, Option } from "effect"
 import { type Ask, asker } from "../../flows/askingTab"
-import { requesterOf } from "../../flows/requests"
+import { requesterOf } from "../../flows/requests.vibe"
 import { ASK_SESSION_WITHIN, sessionChannel } from "./contract"
 import { AuthRefresh, CheckSession, SessionUnreachable } from "./flows"
 import { SessionAnswer, type SessionCall } from "./schema"

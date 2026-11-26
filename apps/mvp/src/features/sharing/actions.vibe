@@ -1,4 +1,4 @@
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import type { ShareAccess } from "../branch/contract"
 import type { ShareError } from "./contract"
 import { DIALOG, type Change, type Dialog, type ShareRow } from "./schema"

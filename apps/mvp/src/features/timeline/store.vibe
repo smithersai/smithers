@@ -3,7 +3,7 @@ import { exchangeUnits, phaseUnits, planOf, type PhaseRow } from "./marks"
 import type { Collection } from "@smthrs/effect-tanstack-db"
 import { Deferred, Duration, Effect, Metric, Semaphore, Stream, SubscriptionRef } from "effect"
 import { codeOf } from "../../errorCode"
-import type { FlowDispatch } from "../../flows/dispatch"
+import type { FlowDispatch } from "../../flows/dispatch.vibe"
 import type { Message } from "../chat/schema"
 import { SegmentSpans, SummarizeEntry } from "./flow"
 

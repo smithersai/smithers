@@ -6,7 +6,7 @@ import { Notice } from "../attention/schema"
 import { followNotice, noticeRow, NOTICE_TEXT, TimelineNotice } from "./notice.vibe"
 import { makeLane, followPhases, followSummaries, STOPPING_FAILURES, type Everything } from "./store.vibe"
 import { SummaryFailed } from "./flow"
-import { DispatchFailed, type FlowDispatch } from "../../flows/dispatch"
+import { DispatchFailed, type FlowDispatch } from "../../flows/dispatch.vibe"
 import { Message } from "../chat/schema"
 import { exchangeUnits, planOf } from "./marks"
 

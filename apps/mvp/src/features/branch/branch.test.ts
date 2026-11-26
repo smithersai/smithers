@@ -12,7 +12,7 @@ import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.vibe"
 import { shaOf } from "../../../worker/test/branch.ts"
-import { dispatches } from "../../flows/dispatch"
+import { dispatches } from "../../flows/dispatch.vibe"
 import {
   type ChatApiOptions,
   failingWorker,

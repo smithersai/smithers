@@ -1,5 +1,5 @@
 import type { Scope } from "effect"
-import { type Door, FlowDispatch } from "../../flows/dispatch"
+import { type Door, FlowDispatch } from "../../flows/dispatch.vibe"
 import { PLACE } from "../chat/schema"
 import { ChatStore } from "../chat/store"
 import type { WebMode, WebOutcome } from "./contract"

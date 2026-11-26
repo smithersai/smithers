@@ -1,4 +1,4 @@
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { ThemeStore } from "./store.vibe"
 
 // What a person does with the theme. The button never writes the theme itself: it dispatches `app/theme/set`, the

@@ -2,8 +2,8 @@ import { TabChannel } from "@smthrs/platform-browser"
 import { type Duration, Option, Schema, Stream } from "effect"
 import { WebCrypto } from "effect/crypto/WebCrypto"
 import { DOORS } from "./contract"
-import type { Door } from "./dispatch"
-import { TabRequests } from "./requests"
+import type { Door } from "./dispatch.vibe"
+import { TabRequests } from "./requests.vibe"
 
 // The engine worker's line to the tab that asked (docs/features/flows.md#the-tab-that-asked). Every client flow runs in
 // the leader tab's engine worker, so a step that acts on the tab whose request started its run, such as moving it,

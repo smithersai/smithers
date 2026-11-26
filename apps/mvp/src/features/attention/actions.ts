@@ -1,6 +1,6 @@
 import type { Inbox } from "@smthrs/notifications"
 import { Deferred, Effect, Exit, Metric, Option } from "effect"
-import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
+import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch.vibe"
 import { retryAnswer } from "../chat/actions"
 import { focus } from "../status/actions"
 import { type PanelVia, type Surface } from "./contract"

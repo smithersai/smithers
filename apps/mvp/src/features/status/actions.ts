@@ -1,5 +1,5 @@
 import { Effect, Option } from "effect"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { readDocumentFocusTarget, resolveApprovalFocus } from "./approvalGuard"
 import { type AnswerValue, isOpen, type Local } from "./schema"
 import { StatusStore } from "./store"

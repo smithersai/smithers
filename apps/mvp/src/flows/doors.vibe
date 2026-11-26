@@ -2,7 +2,7 @@ import type { TabChannel } from "@smthrs/platform-browser"
 import { Layer, Schema } from "effect"
 import { answerAskingTab } from "./askingTab"
 import { doorChannel } from "./contract"
-import type { TabRequests } from "./requests"
+import type { TabRequests } from "./requests.vibe"
 
 // The tab's side of run credentials (decision 0017 slice 0, src/flows/credentials.ts): before a root run of a person's
 // flow sends its first request, the engine asks which door it came through, and only the tab that dispatched it answers

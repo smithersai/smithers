@@ -1,5 +1,5 @@
 import { Effect, Exit, Metric, Option } from "effect"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import type { AlertChannelName, SandboxLimitsRequest } from "./schema"
 import { hidden, SpendStore } from "./store.vibe"
 

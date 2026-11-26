@@ -2,7 +2,7 @@
 // execution's requester is the run it belongs to.
 import { Effect, Option } from "effect"
 import { describe, expect, test } from "vitest"
-import { REMEMBERED, requesterOf, TabRequests } from "./requests"
+import { REMEMBERED, requesterOf, TabRequests } from "./requests.vibe"
 
 const tab = (remembered?: number) => Effect.runSync(Effect.provide(Effect.service(TabRequests), TabRequests.layer(remembered)))
 

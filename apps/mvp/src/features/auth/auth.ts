@@ -1,6 +1,6 @@
 import { Context, Deferred, Effect, Layer, Queue, Stream } from "effect"
 import { runners } from "../../boundary.vibe"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { cancelSignOut, check, pressSignIn, promptSignOut, refresh, restore, setHostedModel, signOut } from "./actions"
 import type { AuthClient } from "./api"
 import type { DeviceWipe } from "./device"

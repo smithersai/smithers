@@ -1,5 +1,5 @@
 import { runners } from "../../boundary.vibe"
-import type { FlowDispatch } from "../../flows/dispatch"
+import type { FlowDispatch } from "../../flows/dispatch.vibe"
 import { attach, configureStack, retryChange, retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setAfter, setAttachmentIssue, setIssue, setPrompt, setTitle, warm } from "./actions.vibe"
 import type { StackClient } from "./api.vibe"
 import type { StackBase } from "./contract"

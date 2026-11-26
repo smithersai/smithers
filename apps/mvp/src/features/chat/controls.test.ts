@@ -5,7 +5,7 @@ import * as Arr from "effect/Array"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { shaOf } from "../../../worker/test/branch"
-import { dispatches, FlowDispatch } from "../../flows/dispatch"
+import { dispatches, FlowDispatch } from "../../flows/dispatch.vibe"
 import {
   type NodeDevice,
   nodeDevice,

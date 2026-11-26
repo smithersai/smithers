@@ -1,5 +1,5 @@
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
-import { requesterOf } from "../../flows/requests"
+import { requesterOf } from "../../flows/requests.vibe"
 import { BugsClient, type BugsNotTaken } from "./api.vibe"
 import { UNANSWERED } from "./context"
 import { randomReportId } from "./contract"

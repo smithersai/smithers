@@ -1,7 +1,7 @@
 import type { TabChannel } from "@smthrs/platform-browser"
 import { Layer } from "effect"
 import { answerAskingTab } from "../../flows/askingTab"
-import type { TabRequests } from "../../flows/requests"
+import type { TabRequests } from "../../flows/requests.vibe"
 import { navigationChannel } from "./contract"
 import { appPath } from "./paths"
 import { GoCall } from "./schema"

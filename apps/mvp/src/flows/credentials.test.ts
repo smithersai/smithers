@@ -17,9 +17,9 @@ import { harness, testFile } from "../../worker/test/harness.ts"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { AuthStore, SESSION, signedOut } from "../features/auth/store"
 import { credentialRoute, DOORS } from "./contract"
-import * as RunCredentials from "./credentials"
+import * as RunCredentials from "./credentials.vibe"
 import { tabDoors } from "./doors"
-import { TabRequests } from "./requests"
+import { TabRequests } from "./requests.vibe"
 
 const runtime = testFile("device_credentials")
 const ORIGIN = "http://chat.test"

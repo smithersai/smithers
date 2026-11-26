@@ -1,6 +1,6 @@
 import type { Collection } from "@smthrs/effect-tanstack-db"
 import { Clock, Deferred, Effect, FiberHandle, Metric, Option, Stream } from "effect"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { mayAsk } from "../auth/contract"
 import { nearestManifest } from "../generated/detect"
 import { RepoClient, type RepoRefused } from "./api"

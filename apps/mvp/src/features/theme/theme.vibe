@@ -1,6 +1,6 @@
 import { runners } from "../../boundary.vibe"
 import { codeOf } from "../../errorCode"
-import { FlowDispatch } from "../../flows/dispatch"
+import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { toggleTheme } from "./actions.vibe"
 import type { ThemeMode } from "./contract"
 import { ThemeStore } from "./store.vibe"

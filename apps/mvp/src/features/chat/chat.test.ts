@@ -9,7 +9,7 @@ import { Context, Deferred, Effect, Exit, Fiber, ManagedRuntime, Metric, Option,
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { read as readTelemetry } from "../../test/otlp"
-import { TabRequests } from "../../flows/requests"
+import { TabRequests } from "../../flows/requests.vibe"
 import {
   CHATAPI_ORIGIN,
   type Busy,

@@ -41,9 +41,9 @@ import { PreviewClient } from "../features/web/api.vibe"
 import * as WebPages from "../features/web/steps.vibe"
 import { DocsClient } from "../features/docs/api.vibe"
 import * as DocsSearch from "../features/docs/steps.vibe"
-import * as RunCredentials from "./credentials"
-import { clientFlows } from "./declarations"
-import { type Endpoint, TabPort } from "./tabPort"
+import * as RunCredentials from "./credentials.vibe"
+import { clientFlows } from "./declarations.vibe"
+import { type Endpoint, TabPort } from "./tabPort.vibe"
 
 // Every client flow's registration (docs/features/flows.md#the-engine-and-the-tab-port): what the leader tab's engine
 // worker (src/flows/engine.worker.ts) and a Node or Bun host register alike. An engine's host imports this module (src/flows/tab.test.ts).

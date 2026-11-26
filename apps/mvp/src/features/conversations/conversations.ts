@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
-import type { FlowDispatch } from "../../flows/dispatch"
+import type { FlowDispatch } from "../../flows/dispatch.vibe"
 import { archive, resume, search, showArchived } from "./actions"
 import { type ConversationsConfig, ConversationsStore } from "./store"
 

@@ -1,13 +1,13 @@
 import { FlowRuntime } from "@smthrs/flow"
 import { EngineStore } from "@smthrs/flows"
 import { type Cell, FlowBinding } from "@smthrs/harness"
-import { Effect, Option, Schema } from "effect"
+import { Option, Schema } from "effect"
 import { codeOf } from "../errorCode"
 import { PROMPT_CALLABLE } from "../features/flows-ui/callable"
 import { AUTHOR_TOOLS } from "../features/flows-ui/contract"
 import { FlowPromptReference, FlowNewReference } from "../features/flows-ui/reference"
 import { Ask } from "../features/status/flows"
-import { declarationOf, modelInvocable } from "./declarations"
+import { declarationOf, modelInvocable } from "./declarations.vibe"
 import { asksApproval, deniedHere } from "./approvals"
 import { entryOf, FlowRegistry, type FlowName, names } from "./registry"
 
@@ -53,7 +53,10 @@ export const agentFlows: ReadonlyArray<FlowName> = names.filter(modelInvocable)
  * (the registry's `changes`), which the agent runs only when the person asked for that effect. A read says nothing
  * more. The slash menu and the drafting agent read the declaration's own description.
  */
-export const catalogDescription = (name: FlowName, registered: Pick<FlowRegistry["Service"], "entryOf"> = { entryOf }): string => {
+export const catalogDescription = (
+  name: FlowName,
+  registered: Pick<FlowRegistry["Service"], "entryOf"> = { entryOf: (name) => entryOf(name) },
+): string => {
   // Every registered flow describes itself (src/flows/registry.test.ts), though `Flow.make` leaves it optional.
   const description = declarationOf(name).description as string
   const { changes, confirm } = registered.entryOf(name)
@@ -64,7 +67,7 @@ export const catalogDescription = (name: FlowName, registered: Pick<FlowRegistry
 /** What a run's agent may call: every flow of the catalog, or only these. */
 export type Scope = "all" | ReadonlyArray<string>
 
-const PinnedList = Schema.Struct({ allowed: Schema.Array(Schema.String) })
+schema PinnedList { readonly allowed: ReadonlyArray<string> }
 const decodePinned = Schema.decodeUnknownOption(PinnedList)
 
 /**
@@ -84,22 +87,25 @@ export const scopeOf = (flow: string, allowed: ReadonlyArray<string> | undefined
 export const scopeFor = (
   flow: string,
   executionId: string,
-  pinned: (executionId: string) => Effect.Effect<unknown, unknown>,
-): Effect.Effect<Scope> =>
-  flow === FlowPromptReference._tag
-    ? pinned(executionId).pipe(
-      Effect.map((payload) =>
-        scopeOf(flow, Option.match(decodePinned(payload), { onNone: () => [], onSome: ({ allowed }) => allowed }))
-      ),
+  pinned: (executionId: string) => unknown!unknown,
+): Scope!! => {
+  if (flow !== FlowPromptReference._tag) return succeed(scopeOf(flow, undefined))
+  const read = map(pinned(executionId), (payload) => {
+    const list = decodePinned(payload)
+    return scopeOf(flow, Option.isNone(list) ? [] : list.value.allowed)
+  })
+  return effect {
+    return read catch effect (failure) => {
       // The agent then calls nothing; the read's failure is logged by its code.
-      Effect.catch((failure) =>
-        Effect.logWarning("flow.scope.read").pipe(
-          Effect.annotateLogs({ feature: "flows", outcome: "unreadable", errorCode: codeOf(failure) }),
-          Effect.as(scopeOf(flow, [])),
-        )
-      ),
-    )
-    : Effect.succeed(scopeOf(flow, undefined))
+      const errorCode = try sync(() => codeOf(failure))
+      try annotateLogs(logWarning("flow.scope.read"), { feature: "flows", outcome: "unreadable", errorCode })
+      return scopeOf(flow, [])
+    }
+  }
+}
+
+const confirmOf = (registered: Pick<FlowRegistry["Service"], "entryOf">, name: FlowName): string | undefined =>
+  registered.entryOf(name).confirm
 
 /**
  * Runs registry flow `name` with `input` as child execution `child` of the current run, the one way the agent's catalog
@@ -114,33 +120,37 @@ export const callFlow = (
   runtime: FlowRuntime.FlowRuntime["Service"],
   inspection: EngineStore.RunInspection.RunInspection["Service"],
 ) =>
-(name: FlowName, input: unknown, child: string): Effect.Effect<unknown, unknown> => {
+(name: FlowName, input: unknown, child: string): unknown!unknown => {
   const confirmId = `${child}/confirm`
-  const run = runtime.execute(declarationOf(name) as never, { executionId: child, payload: input as never }) as Effect.Effect<
-    unknown,
-    unknown
-  >
+  const run = runtime.execute(declarationOf(name) as never, { executionId: child, payload: input as never }) as (unknown!unknown)
   const refused = deniedHere(inspection, [child, confirmId])
   if (asksApproval(name, input)) {
-    return Effect.flatMap(refused, (no) => (no.any ? Effect.succeed({ answered: true, approved: false }) : run))
+    return effect {
+      const no = try refused
+      if (no.any) return { answered: true, approved: false }
+      return try run
+    }
   }
-  const { confirm } = registered.entryOf(name)
-  return confirm === undefined ? run : Effect.flatMap(refused, (no) =>
-    no.flows.has(name) ? Effect.fail(new NotApproved()) : Effect.flatMap(
-      runtime.execute(Ask, { executionId: confirmId, payload: { kind: "approval", prompt: confirm } }),
-      (outcome): Effect.Effect<unknown, unknown> => (outcome.approved === true ? run : Effect.fail(new NotApproved())),
-    ))
+  const confirm = confirmOf(registered, name)
+  if (confirm === undefined) return run
+  return effect {
+    const no = try refused
+    if (no.flows.has(name)) throw new NotApproved()
+    const outcome = try runtime.execute(Ask, { executionId: confirmId, payload: { kind: "approval", prompt: confirm } })
+    if (outcome.approved !== true) throw new NotApproved()
+    return try run
+  }
 }
 
 /**
  * The agent's catalog over this engine's `FlowRuntime`, scoped to the asking run (`scopeOf`). A flow's declared
  * failure reaches the cell as a failed call naming the failure's kind, never its message.
  */
-export const source = Effect.gen(function* () {
-  const registry = yield* FlowRegistry
-  const runtime = yield* FlowRuntime.FlowRuntime
-  const inspection = yield* EngineStore.RunInspection.RunInspection
-  const pinned = (executionId: string) => Effect.map(inspection.payload(executionId), ({ payload }) => payload)
+export const source = effect {
+  const registry = try FlowRegistry
+  const runtime = try FlowRuntime.FlowRuntime
+  const inspection = try EngineStore.RunInspection.RunInspection
+  const pinned = (executionId: string) => map(inspection.payload(executionId), ({ payload }) => payload)
   const call = callFlow(registry, runtime, inspection)
   const bindings = registry.names.filter(modelInvocable).map((name) => {
     const flow = declarationOf(name)
@@ -161,11 +171,11 @@ export const source = Effect.gen(function* () {
   return {
     name: SOURCE,
     // Outside a run, no agent asks: the whole catalog. Inside one, the asking run's scope.
-    bindings: () =>
-      Effect.flatMap(Effect.serviceOption(FlowRuntime.FlowInstance), (instance) =>
-        Option.isNone(instance)
-          ? Effect.succeed(bindings)
-          : Effect.map(scopeFor(instance.value.flow._tag, instance.value.executionId, pinned), (scope) =>
-            scope === "all" ? bindings : bindings.filter((binding) => scope.includes(binding.descriptor.name)))),
+    bindings: effect () => {
+      const instance = try serviceOption(FlowRuntime.FlowInstance)
+      if (Option.isNone(instance)) return bindings
+      const scope = try scopeFor(instance.value.flow._tag, instance.value.executionId, pinned)
+      return scope === "all" ? bindings : bindings.filter((binding) => scope.includes(binding.descriptor.name))
+    },
   } satisfies FlowBinding.Source
-})
+}

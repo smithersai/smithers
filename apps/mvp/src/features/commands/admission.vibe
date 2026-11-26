@@ -1,6 +1,6 @@
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import type { Scope } from "effect"
-import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
+import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch.vibe"
 import { entryOf, type FlowName } from "../../flows/registry"
 import { ENGINE_OPERATIONS } from "../../writeAdmission"
 import { WRITE_ID_NAMESPACE } from "../issues/contract"
