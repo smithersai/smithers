@@ -27,7 +27,7 @@ import { Transcript } from "../features/transcript/transcript.vibe"
 import { Views } from "../features/views/views"
 import { Web } from "../features/web/web.vibe"
 import { PluginsUi } from "../plugins/ui"
-import { Mcp } from "../features/mcp/store"
+import { Mcp } from "../features/mcp/store.vibe"
 import { Profile } from "../features/profile/profile.vibe"
 
 /** Every view of a test app, as `AppProviders` takes them. */

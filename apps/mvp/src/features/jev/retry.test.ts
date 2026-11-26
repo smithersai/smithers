@@ -1,7 +1,7 @@
 import { RetryPolicy } from "@smthrs/flow"
 import { ModelError } from "@smthrs/model"
 import { expect, test } from "vitest"
-import { MODEL_RETRY } from "./steps"
+import { MODEL_RETRY } from "./steps.vibe"
 
 test("quota and credit end on attempt one, while plain rate limits retain durable backoff", () => {
   for (const code of ModelError.ModelErrorCode.literals) {

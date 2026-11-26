@@ -1,5 +1,7 @@
-import { Effect, Layer } from "effect"
+import type { TabChannel } from "@smthrs/platform-browser"
+import { Layer } from "effect"
 import { answerAskingTab } from "../../flows/askingTab"
+import type { TabRequests } from "../../flows/requests"
 import { navigationChannel } from "./contract"
 import { appPath } from "./paths"
 import { GoCall } from "./schema"
@@ -22,19 +24,16 @@ export interface NavigationHost {
  * Answers the navigation channel for this tab's requests until its scope closes: goes to the call's path, checked once
  * more (`appPath`), and answers whether the tab moved. A navigate that throws or rejects answers that it did not move.
  */
-export const tabNavigation = (host: NavigationHost) =>
+export const tabNavigation = (host: NavigationHost): Layer.Layer<never, never, TabChannel.TabChannel | TabRequests> =>
   Layer.effectDiscard(
     answerAskingTab({
       channel: navigationChannel(host.name),
       input: GoCall,
-      answer: ({ path }) => {
-        const target = path === undefined ? undefined : appPath(path, host.origin)
+      answer: effect ({ path }) => {
+        const target = path === undefined ? undefined : try sync(() => appPath(path, host.origin))
         return target === undefined || target._tag === "Refused"
-          ? Effect.succeed({ moved: false })
-          : Effect.tryPromise(async () => { await host.navigate(target.path) }).pipe(
-            Effect.as({ moved: true }),
-            Effect.orElseSucceed(() => ({ moved: false })),
-          )
+          ? { moved: false }
+          : (as(tryPromise(async () => { await host.navigate(target.path) }), { moved: true }) catch () => ({ moved: false }))
       },
     }),
   )

@@ -27,15 +27,15 @@ export interface Judgment {
 
 /** Records one judgment: its counts, the log line `jev.judge` (Warn when it failed) and its outcome on the span. */
 export const recordJudgment = (judgment: Judgment) =>
-  Effect.gen(function* () {
+  effect {
     const { flow, items, outcome, codes, durationMs } = judgment
     const count = (code: VerdictCode) => codes.filter((each) => each === code).length
-    yield* Metric.update(Metric.withAttributes(judgments, { flow, outcome }), 1)
+    try Metric.update(Metric.withAttributes(judgments, { flow, outcome }), 1)
     for (const verdict of ["yes", "no", "label", "unsure"] as const) {
-      if (count(verdict) > 0) yield* Metric.update(Metric.withAttributes(verdicts, { flow, verdict }), count(verdict))
+      if (count(verdict) > 0) try Metric.update(Metric.withAttributes(verdicts, { flow, verdict }), count(verdict))
     }
-    yield* Effect.annotateCurrentSpan({ "smithers.jev.outcome": outcome })
-    yield* Effect.logWithLevel(outcome === "judged" ? "Info" : "Warn")("jev.judge").pipe(
+    try Effect.annotateCurrentSpan({ "smithers.jev.outcome": outcome })
+    try Effect.logWithLevel(outcome === "judged" ? "Info" : "Warn")("jev.judge").pipe(
       Effect.annotateLogs({
         feature: "jev",
         flow,
@@ -48,7 +48,7 @@ export const recordJudgment = (judgment: Judgment) =>
         durationMs,
       }),
     )
-  })
+  }
 
 /** Runs `effect` inside the span `jev.judge`, with its flow and how many items it judges. */
 export const withJudgeSpan = (flow: JevFlow, items: number) => <A, E, R>(effect: Effect.Effect<A, E, R>) =>

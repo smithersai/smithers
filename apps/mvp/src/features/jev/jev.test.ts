@@ -5,12 +5,12 @@ import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Schema, Scope, Str
 import { afterEach, describe, expect, test } from "vitest"
 import { build } from "../../../worker/test/flowHost.ts"
 import { contents, harness, stop, usage } from "../../../worker/test/harness.ts"
-import { clientSeat } from "../model/clientSeat"
-import { JudgeSeat, registration } from "./steps"
+import { clientSeat } from "../model/clientSeat.vibe"
+import { JudgeSeat, registration } from "./steps.vibe"
 import { BROWSER_TELEMETRY } from "../../telemetry"
 import { JEV_TELEMETRY, MAX_CRITERIA, MAX_ITEMS, MAX_LABELS } from "./contract"
 import { Classify, Evaluate, JudgeFailed } from "./flows"
-import { judgments, verdicts } from "./metrics"
+import { judgments, verdicts } from "./metrics.vibe"
 
 /** A failed call's error. The engine annotates an action's failed cause with its FailureSite, which the outcome doesn't depend on. */
 const failureOf = (exit: Exit.Exit<unknown, unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit

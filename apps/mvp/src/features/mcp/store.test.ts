@@ -2,7 +2,7 @@ import { Cause, Effect, Exit, Layer, ManagedRuntime } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test } from "vitest"
 import type { McpConsentDetails, McpTokenSummary } from "./contract"
-import { type Decision, Mcp, McpClient, McpNotTaken, McpStore, type McpView } from "./store"
+import { type Decision, Mcp, McpClient, McpNotTaken, McpStore, type McpView } from "./store.vibe"
 
 // The MCP layer driven as React drives it: its plain actions and its live queries' rows, over a scripted `McpClient`
 // (the only seam: ChatApi's routes).

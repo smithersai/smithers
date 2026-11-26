@@ -33,7 +33,7 @@ import { IssueCommitment, IssueComment, IssueCreate, IssueTriage, TriageEnable, 
 import { Classify, Evaluate } from "../features/jev/flows"
 import { Cancel, Inspect, List, RepoRun, Resume, Retry, RetryFrom, Steer } from "../features/runs/flows"
 import { CloseFile, OpenFile } from "../features/files/flows.vibe"
-import { Navigate } from "../features/navigation/flows"
+import { Navigate } from "../features/navigation/flows.vibe"
 import { RepoAbout, RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../features/repo/flows"
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"

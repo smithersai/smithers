@@ -11,7 +11,7 @@ import { Cause, type Duration, Effect, Exit, Fiber, Layer, Option, Schema, Strea
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { incarnation, runFlow } from "../../../worker/test/flowHost.ts"
-import { JudgeSeat, judgeOn } from "./steps"
+import { JudgeSeat, judgeOn } from "./steps.vibe"
 
 const QUESTIONS = { ok: Classifier.boolean({ instructions: "Is ok true?" }) }
 const REQUEST: Evaluator.Request = { state: { ok: true }, questions: QUESTIONS }

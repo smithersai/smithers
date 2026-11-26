@@ -16,11 +16,11 @@ import { openFlowHost } from "../../test/flowHost"
 import { COMMANDS } from "../commands/catalog"
 import { openDevice } from "../../test/device"
 import { MAX_TO_LENGTH, NAVIGATE_WITHIN, NAVIGATION_TELEMETRY, navigationChannel } from "./contract"
-import { Navigate, NavigationRefused, registration, Tabs } from "./flows"
+import { Navigate, NavigationRefused, registration, Tabs } from "./flows.vibe"
 import { navigations } from "./metrics"
 import { appPath } from "./paths"
 import { GoCall, To } from "./schema"
-import { tabNavigation } from "./tab"
+import { tabNavigation } from "./tab.vibe"
 
 /** A failed call's error. The engine annotates an action's failed cause with its FailureSite, which the outcome doesn't depend on. */
 const failureOf = (exit: Exit.Exit<unknown, unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit

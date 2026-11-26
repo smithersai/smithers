@@ -1,6 +1,6 @@
 import { Seat, SeatResolver } from "@smthrs/agent"
 import type { Model } from "@smthrs/model"
-import { clientSeat } from "../model/clientSeat"
+import { clientSeat } from "../model/clientSeat.vibe"
 import { DRAFT_MODEL_ROLE, FLOW_MODEL_ROLE } from "./contract"
 
 /** Resolves the model roles used to draft and run a person's flow. */

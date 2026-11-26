@@ -1,6 +1,6 @@
 import { Effect, Exit, Metric, Scope } from "effect"
 import { describe, expect, test } from "vitest"
-import { buttonFor, buttonShortcuts, shortcutPresses } from "./keys"
+import { buttonFor, buttonShortcuts, shortcutPresses } from "./keys.vibe"
 
 // One-key shortcuts over the browser's own event model (Node's `EventTarget`): the page as a target that holds its
 // buttons, each as the attributes and state the listener reads. The real page, keys and buttons are end-to-end tested

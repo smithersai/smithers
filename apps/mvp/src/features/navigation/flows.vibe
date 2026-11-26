@@ -1,3 +1,4 @@
+import type { TabChannel } from "@smthrs/platform-browser"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { Clock, Context, type Duration, Effect, Layer, Metric, Option, Schema } from "effect"
@@ -49,11 +50,11 @@ export class Tabs extends Context.Service<
     readonly name: string
     readonly origin: string
     readonly within?: Duration.Input
-  }) =>
+  }): Layer.Layer<Tabs, never, TabChannel.TabChannel> =>
     Layer.effect(
       Tabs,
-      Effect.gen(function* () {
-        const ask = yield* asker<{ readonly path?: string }, typeof Moved>({
+      effect {
+        const ask = try asker<{ readonly path?: string }, typeof Moved>({
           channel: navigationChannel(options.name),
           output: Moved,
           within: options.within ?? NAVIGATE_WITHIN,
@@ -65,7 +66,7 @@ export class Tabs extends Context.Service<
               Effect.map(Option.map(({ door, output }) => ({ door, moved: output.moved }))),
             ),
         })
-      }),
+      },
     )
 }
 
@@ -99,13 +100,13 @@ export const Navigate = Flow.make("app/navigate", {
  * `NavigationRefused`; a tab that is gone, or that didn't move, answers `moved: false`.
  */
 export const goTo = ({ to }: { readonly to: string }) =>
-  Effect.gen(function* () {
-    const startedAt = yield* Clock.currentTimeMillis
-    const { executionId } = yield* FlowRuntime.FlowInstance
-    const tabs = yield* Tabs
-    const target = appPath(to, tabs.origin)
+  effect {
+    const startedAt = try Clock.currentTimeMillis
+    const { executionId } = try FlowRuntime.FlowInstance
+    const tabs = try Tabs
+    const target = try sync(() => appPath(to, tabs.origin))
     const requester = requesterOf(executionId)
-    const reply = yield* tabs.ask({ requester, ...(target._tag === "Path" ? { path: target.path } : {}) })
+    const reply = try tabs.ask({ requester, ...(target._tag === "Path" ? { path: target.path } : {}) })
     // The agent's call belongs to the answer its tab asked for; a tab's own dispatch names its door in its reply.
     const door: Door | "unknown" = executionId !== requester
       ? "agent"
@@ -117,10 +118,10 @@ export const goTo = ({ to }: { readonly to: string }) =>
       : reply.value.moved
       ? "navigated"
       : "failed"
-    yield* Metric.update(Metric.withAttributes(navigations, { door, outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ "smithers.navigation.door": door, "smithers.navigation.outcome": outcome })
-    const durationMs = (yield* Clock.currentTimeMillis) - startedAt
-    yield* Effect.logWithLevel(outcome === "refused" ? "Warn" : outcome === "failed" ? "Error" : "Info")("web.navigate")
+    try Metric.update(Metric.withAttributes(navigations, { door, outcome }), 1)
+    try Effect.annotateCurrentSpan({ "smithers.navigation.door": door, "smithers.navigation.outcome": outcome })
+    const durationMs = (try Clock.currentTimeMillis) - startedAt
+    try Effect.logWithLevel(outcome === "refused" ? "Warn" : outcome === "failed" ? "Error" : "Info")("web.navigate")
       .pipe(
         Effect.annotateLogs({
           door,
@@ -130,9 +131,9 @@ export const goTo = ({ to }: { readonly to: string }) =>
           ...(target._tag === "Refused" ? { reason: target.reason } : {}),
         }),
       )
-    if (target._tag === "Refused") return yield* new NavigationRefused({ reason: target.reason })
+    if (target._tag === "Refused") throw new NavigationRefused({ reason: target.reason })
     return { path: target.path, moved: outcome === "navigated" }
-  }).pipe(Effect.withSpan("web.navigate"))
+  }.pipe(Effect.withSpan("web.navigate"))
 
 /** Registers `app/navigate` with its step, reaching the tabs through the host's `Tabs`. */
 export const registration = Interpreter.layerWithImplementations(Navigate, GoTo.toLayer(goTo))

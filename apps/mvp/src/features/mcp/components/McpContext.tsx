@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { McpView } from "../store"
+import type { McpView } from "../store.vibe"
 
 // What React components get: MCP's live queries to render and plain actions to call (features/mcp/store.ts `Mcp`).
 

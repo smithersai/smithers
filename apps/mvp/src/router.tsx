@@ -17,7 +17,7 @@ import { canonicalRepoHref, lineSearch, staysInRepository } from "./features/rep
 import type { RepoView } from "./features/repo/repo"
 import type { RunsView } from "./features/runs/runs"
 import type { SecretsLayer } from "./features/secrets/secrets.vibe"
-import type { McpView } from "./features/mcp/store"
+import type { McpView } from "./features/mcp/store.vibe"
 import type { WorkbenchView } from "./features/workbench/store.vibe"
 import { isProfileOwner } from "./features/profile/contract"
 import type { ProfileView } from "./features/profile/profile.vibe"

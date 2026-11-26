@@ -137,15 +137,15 @@ export class McpClient extends Context.Service<
           expected: ReadonlyArray<number>,
           read: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, unknown>,
         ) =>
-          Effect.gen(function* () {
-            const response = yield* client.execute(request).pipe(Effect.mapError(() => new McpNotTaken({})))
+          effect {
+            const response = try client.execute(request).pipe(Effect.mapError(() => new McpNotTaken({})))
             if (!expected.includes(response.status)) {
-              const refusal = yield* response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option)
+              const refusal = try response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option)
               const code = Option.match(refusal, { onNone: () => undefined, onSome: (body) => body.code ?? body.error })
-              return yield* new McpNotTaken({ status: response.status, ...(code === undefined ? {} : { code }) })
+              throw new McpNotTaken({ status: response.status, ...(code === undefined ? {} : { code }) })
             }
-            return yield* read(response).pipe(Effect.mapError(() => new McpNotTaken({ status: response.status })))
-          }).pipe(
+            return try read(response).pipe(Effect.mapError(() => new McpNotTaken({ status: response.status })))
+          }.pipe(
             // Interrupting the request aborts its fetch, so a stalled body stops too.
             Effect.timeoutOrElse({ duration: options.within ?? MCP_WITHIN, orElse: () => Effect.fail(new McpNotTaken({})) }),
           )
@@ -204,21 +204,21 @@ export class McpStore extends Context.Service<
   /** The store; its collections cleaned up when the scope closes. */
   static readonly layer = Layer.effect(
     McpStore,
-    Effect.gen(function* () {
-      const scope = yield* Effect.scope
-      const connect = yield* Collection.local<ConnectRow, string>({
+    effect {
+      const scope = try Effect.scope
+      const connect = try Collection.local<ConnectRow, string>({
         id: "mcp-connect",
         schema: ConnectRow,
         getKey: (row) => row.id,
         initialData: [{ id: CONNECT, open: false, client: "claude", owner: "", name: "" }],
       })
-      const tokens = yield* Collection.local<TokensRow, string>({
+      const tokens = try Collection.local<TokensRow, string>({
         id: "mcp-tokens",
         schema: TokensRow,
         getKey: (row) => row.id,
         initialData: [{ id: TOKENS, status: "idle", tokens: [], revokingId: null, error: null }],
       })
-      const consent = yield* Collection.local<ConsentRow, string>({
+      const consent = try Collection.local<ConsentRow, string>({
         id: "mcp-consent",
         schema: ConsentRow,
         getKey: (row) => row.id,
@@ -226,14 +226,14 @@ export class McpStore extends Context.Service<
       })
       return McpStore.of({
         connect,
-        connectState: yield* connectQuery(connect),
+        connectState: try connectQuery(connect),
         tokens,
-        tokensState: yield* tokensQuery(tokens),
+        tokensState: try tokensQuery(tokens),
         consent,
-        consentState: yield* consentQuery(consent),
+        consentState: try consentQuery(consent),
         scope,
       })
-    }),
+    },
   )
 }
 
@@ -258,55 +258,55 @@ export const closeConnect = setConnect({ open: false })
 export const selectClient = (client: McpClientId) => setConnect({ client })
 
 /** Asks ChatApi for the person's connected agents: `loading`, then `ready` with them or `failed` with why. */
-export const loadTokens = Effect.gen(function* () {
-  const client = yield* McpClient
-  yield* setTokens({ status: "loading", error: null })
-  yield* client.tokens.pipe(
+export const loadTokens = effect {
+  const client = try McpClient
+  try setTokens({ status: "loading", error: null })
+  try client.tokens.pipe(
     Effect.matchEffect({
       onSuccess: (tokens) => setTokens({ status: "ready", tokens: [...tokens] }),
       onFailure: (refused) => setTokens({ status: "failed", error: codeOf(refused) }),
     }),
   )
-}).pipe(Effect.annotateLogs({ feature: "mcp" }))
+}.pipe(Effect.annotateLogs({ feature: "mcp" }))
 
 /**
  * Revokes `tokenId`: marks it in flight, and once ChatApi took it, marks the row revoked as of `now`. A token ChatApi no
  * longer has (`404`) is as revoked as one it just revoked. A refusal leaves the list as it was, with why.
  */
 export const revokeToken = (tokenId: string, now: () => string = () => new Date().toISOString()) =>
-  Effect.gen(function* () {
-    const client = yield* McpClient
-    const { tokens } = yield* McpStore
-    yield* setTokens({ revokingId: tokenId, error: null })
-    const outcome = yield* client.revoke(tokenId).pipe(
+  effect {
+    const client = try McpClient
+    const { tokens } = try McpStore
+    try setTokens({ revokingId: tokenId, error: null })
+    const outcome = try client.revoke(tokenId).pipe(
       Effect.as(undefined),
       // expected: a refused revoke is a state the row's `error` shows, not a fault
       Effect.catch((refused) => Effect.succeed(refused.status === 404 ? undefined : codeOf(refused))),
     )
-    if (outcome !== undefined) return yield* setTokens({ revokingId: null, error: outcome })
-    const listed = Option.getOrThrow(yield* tokens.get(TOKENS)).tokens
-    yield* setTokens({
+    if (outcome !== undefined) return try setTokens({ revokingId: null, error: outcome })
+    const listed = Option.getOrThrow(try tokens.get(TOKENS)).tokens
+    try setTokens({
       revokingId: null,
       tokens: listed.map((token) => (token.id === tokenId && token.revokedAt === null ? { ...token, revokedAt: now() } : token)),
     })
-  }).pipe(Effect.annotateLogs({ feature: "mcp" }))
+  }.pipe(Effect.annotateLogs({ feature: "mcp" }))
 
 /**
  * Asks ChatApi what the authorization request in `search` asks for: `ready` with its details, `signed_out` on a `401`,
  * or `failed` with why. Nothing from an earlier request stays.
  */
 export const loadConsent = (search: string) =>
-  Effect.gen(function* () {
-    const client = yield* McpClient
-    yield* setConsent({ status: "loading", details: null, submitting: null, error: null, redirectTo: null })
-    yield* client.consent(search).pipe(
+  effect {
+    const client = try McpClient
+    try setConsent({ status: "loading", details: null, submitting: null, error: null, redirectTo: null })
+    try client.consent(search).pipe(
       Effect.matchEffect({
         onSuccess: (details) => setConsent({ status: "ready", details }),
         onFailure: (refused) =>
           refused.status === 401 ? setConsent({ status: "signed_out" }) : setConsent({ status: "failed", error: codeOf(refused) }),
       }),
     )
-  }).pipe(Effect.annotateLogs({ feature: "mcp" }))
+  }.pipe(Effect.annotateLogs({ feature: "mcp" }))
 
 /**
  * Sends the person's `decision` on the request in `search`, and answers where the browser goes: ChatApi's `redirectTo`,
@@ -314,26 +314,26 @@ export const loadConsent = (search: string) =>
  * answers nothing and leaves the screen up with why. One decision at a time, and only on a request that loaded.
  */
 export const submitConsent = (decision: Decision, search: string) =>
-  Effect.gen(function* () {
-    const client = yield* McpClient
-    const { consent } = yield* McpStore
-    const row = Option.getOrThrow(yield* consent.get(CONSENT))
+  effect {
+    const client = try McpClient
+    const { consent } = try McpStore
+    const row = Option.getOrThrow(try consent.get(CONSENT))
     if (row.status !== "ready" || row.details === null || row.submitting !== null) return undefined
     const { redirectUri } = row.details
-    yield* setConsent({ submitting: decision, error: null })
-    const answer = yield* client.decide(decision, search).pipe(Effect.result)
+    try setConsent({ submitting: decision, error: null })
+    const answer = try client.decide(decision, search).pipe(Effect.result)
     if (answer._tag === "Failure") {
-      yield* setConsent({ submitting: null, error: codeOf(answer.failure) })
+      try setConsent({ submitting: null, error: codeOf(answer.failure) })
       return undefined
     }
-    const redirectTo = verifiedRedirect(redirectUri, answer.success)
+    const redirectTo = try sync(() => verifiedRedirect(redirectUri, answer.success))
     if (redirectTo === undefined) {
-      yield* setConsent({ submitting: null, error: "invalid_redirect" })
+      try setConsent({ submitting: null, error: "invalid_redirect" })
       return undefined
     }
-    yield* setConsent({ status: "done", submitting: null, redirectTo })
+    try setConsent({ status: "done", submitting: null, redirectTo })
     return redirectTo
-  }).pipe(Effect.annotateLogs({ feature: "mcp" }))
+  }.pipe(Effect.annotateLogs({ feature: "mcp" }))
 
 type Store = McpStore["Service"]
 
@@ -365,9 +365,9 @@ export class Mcp extends Context.Service<Mcp, { readonly queries: McpQueries; re
   /** Binds the store's queries and actions for frontends, over the `McpClient` this layer is given. */
   static readonly layer = Layer.effect(
     Mcp,
-    Effect.gen(function* () {
-      const store = yield* McpStore
-      const context = yield* Effect.context<McpStore | McpClient>()
+    effect {
+      const store = try McpStore
+      const context = try Effect.context<McpStore | McpClient>()
       const { runSync: run, runPromise: promise } = runners(context, "mcp")
       return Mcp.of({
         queries: { connect: store.connectState.tanstack, tokens: store.tokensState.tanstack, consent: store.consentState.tanstack },
@@ -381,7 +381,7 @@ export class Mcp extends Context.Service<Mcp, { readonly queries: McpQueries; re
           submitConsent: (decision, search) => promise(submitConsent(decision, search)),
         },
       })
-    }),
+    },
   ).pipe(Layer.provideMerge(McpStore.layer))
 
   /** The same over ChatApi at `origin`; it needs the page's `HttpClient`. */

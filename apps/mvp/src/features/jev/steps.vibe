@@ -2,9 +2,10 @@ import { type FlowEngineLike, ModelStep } from "@smthrs/agent"
 import { Action, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Classifier, Evaluator, type Model, ModelError } from "@smthrs/model"
 import { Clock, Context, type Duration, Effect, Layer, Option, Schema } from "effect"
+import { identity } from "effect/Function"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { quotaRefused } from "../model/contract"
-import { clientSeat } from "../model/clientSeat"
+import { clientSeat } from "../model/clientSeat.vibe"
 import { JEV_ROUTE } from "../personal-model/contract"
 import { type JevFlow, JUDGE_ROLE, SURE_LABEL, SURE_YES_NO, UNSURE, type VerdictCode } from "./contract"
 import {
@@ -18,7 +19,7 @@ import {
   type Verdict,
   type Verdicts,
 } from "./flows"
-import { recordJudgment, withJudgeSpan } from "./metrics"
+import { recordJudgment, withJudgeSpan } from "./metrics.vibe"
 
 // Each step declares one question per item with `Classifier.make`. It checks the person's own Jev in a
 // sealed action first. An explicit host seat can then judge through `ModelStep`, which replays the recorded verdict.
@@ -61,15 +62,15 @@ export class JudgeSeat extends Context.Service<
   static readonly layer = (origin: string, options: { readonly ownJevWithin?: Duration.Input } = {}) =>
     Layer.effect(
       JudgeSeat,
-      Effect.gen(function* () {
-        const client = yield* HttpClient.HttpClient
+      effect {
+        const client = try HttpClient.HttpClient
         return {
           ...clientSeat(origin, JUDGE_ROLE),
           unconfigured: true as const,
           retryPolicy: MODEL_RETRY,
           ownJev: ownJev(`${origin}${JEV_ROUTE}`, client, options.ownJevWithin ?? OWN_JEV_WITHIN),
         }
-      }),
+      },
     )
 }
 
@@ -80,18 +81,18 @@ export class JudgeSeat extends Context.Service<
  * an answer with no code is `unreachable`.
  */
 const ownJev = (url: string, client: HttpClient.HttpClient, within: Duration.Input) => (request: Evaluator.Request) =>
-  Effect.gen(function* () {
+  effect {
     const body = { state: request.state, questions: request.questions }
-    const sent = yield* client.execute(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url), body)).pipe(Effect.option)
+    const sent = try client.execute(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url), body)).pipe(Effect.option)
     if (Option.isNone(sent) || sent.value.status === 404) return Option.none<Evaluator.Response>()
     const answer = sent.value
-    const json = yield* answer.json
+    const json = try answer.json
     if (answer.status !== 200) {
-      const { code } = yield* decodeJevFailure(json)
-      return yield* new Evaluator.EvaluatorError({ code, message: "Your Jev connection refused the judgment." })
+      const { code } = try decodeJevFailure(json)
+      throw new Evaluator.EvaluatorError({ code, message: "Your Jev connection refused the judgment." })
     }
     return Option.some(json as unknown as Evaluator.Response)
-  }).pipe(
+  }.pipe(
     // Interrupting the request aborts its fetch, so a stalled body stops too.
     Effect.timeoutOrElse({ duration: within, orElse: () => Effect.succeed(Option.none<Evaluator.Response>()) }),
     Effect.catch((failure) =>
@@ -113,19 +114,22 @@ type OwnJudgment = typeof OwnJudgment.Type
 
 /** What the person's route is sent for `request`, as JSON: the key of the judgment's sealed step. */
 const sent = (request: Evaluator.Request) =>
-  JSON.parse(JSON.stringify({ state: request.state, questions: request.questions })) as typeof Schema.JsonObject.Type
+  orDie(Effect.try({
+    try: () => JSON.parse(JSON.stringify({ state: request.state, questions: request.questions })) as typeof Schema.JsonObject.Type,
+    catch: identity,
+  }))
 
 /**
  * One judgment on the person's own Jev as the sealed step `name` of the run, keyed by what their route is sent: a run
  * resumed after their Jev answered reads the record back, so their key pays for a judgment once. Its failure is
  * recorded as the step's value, so a resumed run fails the same way and the seat never answers on a refused key's behalf.
  */
-const ownStep = (name: string, own: NonNullable<JudgeSeat["Service"]["ownJev"]>, request: Evaluator.Request) =>
-  Action.make({
+const ownStep = (name: string, own: NonNullable<JudgeSeat["Service"]["ownJev"]>, request: Evaluator.Request) => effect {
+  return try Action.make({
     name,
     success: OwnJudgment,
     tier: "sealed",
-    idempotencyKey: { step: name, sent: sent(request) },
+    idempotencyKey: { step: name, sent: try sent(request) },
     execute: own(request).pipe(
       Effect.map(Option.match({
         onNone: (): OwnJudgment => ({ _tag: "none" }),
@@ -135,6 +139,7 @@ const ownStep = (name: string, own: NonNullable<JudgeSeat["Service"]["ownJev"]>,
       Effect.catch((failure) => Effect.succeed<OwnJudgment>({ _tag: "failed", failure })),
     ),
   })
+}
 
 /**
  * The judge for one judgment: the person's own Jev when they have one, as the sealed step `name`, else `model` through
@@ -202,25 +207,25 @@ const judge = <A>(
   questions: Readonly<Record<string, Classifier.BooleanQuestion | Classifier.ChoiceQuestion>>,
   read: (answer: A) => Read,
 ) =>
-  Effect.gen(function* () {
-    const started = yield* Clock.currentTimeMillis
-    const seat = yield* JudgeSeat
-    const model = yield* ModelStep.model({ name: `${flow}/model`, ...seat })
-    const classifier = Classifier.make(flow, { description: "One question per item, about the items.", state: Schema.Json, questions })
-    const answered = yield* classifier.evaluate(state).pipe(
-      Effect.provide(yield* judgeOn(`${flow}/own`, seat, model)),
+  effect {
+    const started = try Clock.currentTimeMillis
+    const seat = try JudgeSeat
+    const model = try ModelStep.model({ name: `${flow}/model`, ...seat })
+    const classifier = try sync(() => Classifier.make(flow, { description: "One question per item, about the items.", state: Schema.Json, questions }))
+    const answered = try classifier.evaluate(state).pipe(
+      Effect.provide(try judgeOn(`${flow}/own`, seat, model)),
       Effect.result,
     )
-    const durationMs = (yield* Clock.currentTimeMillis) - started
+    const durationMs = (try Clock.currentTimeMillis) - started
     if (answered._tag === "Failure") {
       const { code } = answered.failure
-      yield* recordJudgment({ flow, items: ids.length, outcome: code, codes: [], durationMs })
-      return yield* new JudgeFailed({ code })
+      try recordJudgment({ flow, items: ids.length, outcome: code, codes: [], durationMs })
+      throw new JudgeFailed({ code })
     }
     const reads = ids.map((id) => read(answered.success[id] as A))
-    yield* recordJudgment({ flow, items: ids.length, outcome: "judged", codes: reads.map(([, code]) => code), durationMs })
+    try recordJudgment({ flow, items: ids.length, outcome: "judged", codes: reads.map(([, code]) => code), durationMs })
     return { verdicts: reads.map(([verdict]) => verdict) } satisfies Verdicts
-  }).pipe(withJudgeSpan(flow, ids.length))
+  }.pipe(withJudgeSpan(flow, ids.length))
 
 /** `app/jev/classify/judge`: the question about each item, yes or no, or one of the labels when there are labels. */
 export const classify = ({ question, items, labels }: ClassifyPayload) => {

@@ -2,7 +2,7 @@ import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { Schema } from "effect"
 import { BranchName, BranchTrackRefused, BranchTrackUnavailable } from "../branch/flows"
-import { GoTo, NavigationRefused } from "../navigation/flows"
+import { GoTo, NavigationRefused } from "../navigation/flows.vibe"
 import { RepoName } from "../repo/flows"
 import { Archived, Made } from "./schema"
 
