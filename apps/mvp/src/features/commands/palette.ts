@@ -69,6 +69,7 @@ const CORE_DESTINATIONS: ReadonlyArray<{
   { id: "go:flows", label: "Flows", detail: "/app/flows", to: "/app/flows", minimum: "member" },
   { id: "go:runs", label: "Runs", detail: "/app/runs", to: "/app/runs", minimum: "member" },
   { id: "go:settings", label: "Settings", detail: "/app/settings", to: "/app/settings", minimum: "guest" },
+  { id: "go:waitlist", label: "Host a repository", detail: "/app/waitlist", to: "/app/waitlist", minimum: "anyone" },
 ]
 
 const REPO_SECTIONS: ReadonlyArray<{ readonly slug: string; readonly label: string; readonly suffix: string }> = [
@@ -77,6 +78,7 @@ const REPO_SECTIONS: ReadonlyArray<{ readonly slug: string; readonly label: stri
   { slug: "pulls", label: "Pull requests", suffix: "/pulls" },
   { slug: "runs", label: "Repository runs", suffix: "/runs" },
   { slug: "stack", label: "TODO stack", suffix: "/stack" },
+  { slug: "workbench", label: "Workbench", suffix: "/workbench" },
   { slug: "docs", label: "Repository docs", suffix: "/docs" },
   { slug: "settings", label: "Repository settings", suffix: "/settings" },
 ]
