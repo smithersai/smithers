@@ -1239,7 +1239,7 @@ describe("the resolved context window arms or disarms compaction", () => {
       stream: (request) =>
         Stream.suspend(() => {
           requests.push(request)
-          const cell = `throw new Error("detail ".repeat(12000))`
+          const cell = `throw new Error("detail ".repeat(8000))`
           return Stream.fromIterable([
             ModelEvent.ModelEvent.TextStart({ type: "text-start", id: `text-${requests.length}` }),
             ModelEvent.ModelEvent.TextDelta({

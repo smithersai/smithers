@@ -2378,7 +2378,7 @@ describe("Agent.run", () => {
       const modelIds: Array<string> = []
       const routeModelIds: Array<string> = []
       const delegate = recordedCells([], [
-        compact ? "throw new Error(\"detail \".repeat(12000))" : "ctx.done(\"done\")"
+        compact ? "throw new Error(\"detail \".repeat(8000))" : "ctx.done(\"done\")"
       ])
       const model = Model.make({
         stream: (request) => {
