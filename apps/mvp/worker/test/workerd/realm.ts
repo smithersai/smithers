@@ -5,7 +5,7 @@
 // This file is the program boundary: it runs Effects with `Effect.runPromise`.
 import { Effect } from "effect"
 import * as AgentSandbox from "../../AgentSandbox.ts"
-import * as Realm from "../../ci/Realm.ts"
+import * as Realm from "../../ci/Realm.vibe"
 
 export default {
   fetch: async (request: Request): Promise<Response> => {

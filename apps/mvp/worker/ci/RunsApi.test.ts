@@ -32,9 +32,9 @@ import { SandboxCall } from "../flows/SandboxCall.ts"
 import { noCommands } from "../test/commands.ts"
 import { build } from "../test/flowHost.ts"
 import { eventually, signedIn, testFile, uuid } from "../test/harness.ts"
-import type * as Realm from "./Realm.ts"
-import * as RepoFlow from "./RepoFlow.ts"
-import * as RunsApi from "./RunsApi.ts"
+import type * as Realm from "./Realm.vibe"
+import * as RepoFlow from "./RepoFlow.vibe"
+import * as RunsApi from "./RunsApi.vibe"
 
 const runtime = testFile("repo_runs_api")
 

@@ -1,7 +1,7 @@
 import { EngineStore } from "@smthrs/flows"
 import type { QuickJSVariant } from "@smthrs/harness"
 import { GitHub } from "@smthrs/integrations"
-import { Cause, Clock, Effect, Function, type Layer, Metric, Option, Predicate, type Redacted, Schema } from "effect"
+import { Cause, Clock, Effect, Function as Fn, type Layer, Metric, Option, Predicate, type Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { manualExecutionId, MAX_INPUT_BYTES, type RunsRefusal } from "../../src/features/actions/contract.ts"
@@ -18,9 +18,9 @@ import * as RepoRuns from "../RepoRuns.ts"
 import * as ShapeAccess from "../ShapeAccess.vibe"
 import { stillAdmitted } from "../RunAuthority.ts"
 import { mayRead } from "../stack/Access.vibe"
-import * as Realm from "./Realm.ts"
-import * as RepoFlow from "./RepoFlow.ts"
-import * as Triggers from "./Triggers.ts"
+import * as Realm from "./Realm.vibe"
+import * as RepoFlow from "./RepoFlow.vibe"
+import * as Triggers from "./Triggers.vibe"
 
 // Running a repository's flow by hand, and a run again (docs/features/actions.md#running-a-flow-by-hand,
 // docs/features/actions.md#acts): three routes on a repository `REPO_FLOWS_REPOSITORIES` allows, for a Member or above
@@ -176,20 +176,24 @@ const statusOf: Readonly<Record<RunsRefusal, number>> = {
 
 /** The routes over `database`, the app's tables. `Sessions` and `FlowStarter` come from the request's context. */
 export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E, R>, options: Options<R, EE, ER>) =>
-  Effect.sync(() => {
+  sync(() => {
     const inspection = EngineStore.RunInspection.layerWith({ flows: [RepoFlow.Run] })
 
     /** The routes for one repository, as the App reads it. */
     const on = (app: GitHubApp, repository: Repository) => {
-      /** Runs `effect` against GitHub as the App, with read access to the repository's contents. */
-      const asApp = <A, X>(effect: Effect.Effect<A, X, GitHub.GitHubClient.GitHubClient | HttpClient.HttpClient>) =>
-        Effect.gen(function* () {
+      /** Runs `program` against GitHub as the App, with read access to the repository's contents. */
+      const asApp = <A, X>(program: A!X!(GitHub.GitHubClient.GitHubClient | HttpClient.HttpClient)) =>
+        effect {
           // The signer is built for each request, never shared across them (worker/github/RepoRoles.ts).
-          const auth = yield* GitHub.AppAuth.make({ appId: app.appId, privateKey: app.privateKey, apiBaseUrl: app.apiBaseUrl })
-          const tokens = Tokens.make({ app: auth, keys: Option.none(), refresh: Function.constant(Effect.void) })
-          const token: Redacted.Redacted<string> = yield* tokens.forInstallation(repository, "contents")
-          return yield* effect.pipe(withToken(token, app.apiBaseUrl))
-        }).pipe(
+          const auth = try GitHub.AppAuth.make({ appId: app.appId, privateKey: app.privateKey, apiBaseUrl: app.apiBaseUrl })
+          const tokens = try sync(() => Tokens.make({
+            app: auth,
+            keys: Option.none(),
+            refresh: Fn.constant<void!!>(Effect.void),
+          }))
+          const token: Redacted.Redacted<string> = try tokens.forInstallation(repository, "contents")
+          return try withToken(token, app.apiBaseUrl)(program)
+        }.pipe(
           options.http === undefined
             ? Effect.provide(FetchHttpClient.layer)
             : Effect.provideService(HttpClient.HttpClient, options.http),
@@ -219,22 +223,22 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
        * why not.
        */
       const flowAt = (flow: string, ref: string, at: Option.Option<string> = Option.none()) =>
-        Effect.gen(function* () {
-          if (!(yield* manualFlows).flows.some((manual) => manual.name === flow)) {
+        effect {
+          if (!(try manualFlows).flows.some((manual) => manual.name === flow)) {
             return { _tag: "refused", code: "not_manual" } as const
           }
           const head = Option.isSome(at)
             ? Option.some({ sha: at.value })
-            : yield* asApp(GitHub.Refs.getBranch(repository.owner, repository.name, ref))
+            : try asApp(GitHub.Refs.getBranch(repository.owner, repository.name, ref))
           if (Option.isNone(head)) return { _tag: "refused", code: "not_found" } as const
-          const source = yield* asApp(
+          const source = try asApp(
             RepoFlow.readWorkflow(repository, flow, head.value.sha),
           )
           if (Option.isNone(source)) return { _tag: "refused", code: "not_found" } as const
-          const described = yield* Realm.describe(flow, source.value.text).pipe(Effect.provide(options.variant))
+          const described = try Effect.provide(Realm.describe(flow, source.value.text), options.variant)
           if (described._tag === "refused") return { _tag: "refused", code: "inputs" } as const
           return { _tag: "found", sha: head.value.sha, inputs: described.inputs } as const
-        })
+        }
 
       return { manualFlows, flowAt }
     }
@@ -245,8 +249,8 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
      * at its commit, never the branch's head now.
      */
     const startRun = (repository: Repository, request: RepoFlow.RunRequest, actor: Actor, authority: RepoRoles.Resolved) =>
-      Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
-        const fresh = yield* RepoRuns.record({
+      Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(effect {
+        const fresh = try RepoRuns.record({
           execution: request.run,
           repoId: repository.id,
           flow: request.flow,
@@ -256,16 +260,15 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
           launchedBy: actor.subject.id,
         })
         // The ownership insert acquired the run's lock. Refusal must fail the transaction, leaving no row behind.
-        const refusal = yield* stillAdmitted(actor, authority)
-        if (refusal !== undefined) return yield* Effect.fail(new AdmissionRefused({ code: refusal }))
+        const refusal = try stillAdmitted(actor, authority)
+        if (refusal !== undefined) throw new AdmissionRefused({ code: refusal })
         // Not new: its row is there, with the commit it recorded.
         const sha = fresh
           ? request.sha
-          : Option.getOrThrow(yield* RepoRuns.recordedSha(request.run))
-        return yield* (yield* FlowStarter).start(RepoFlow.Run, { executionId: request.run, payload: { ...request, sha } }).pipe(
-          Effect.as(fresh ? "started" as const : "existing" as const),
-        )
-      }))).pipe(
+          : Option.getOrThrow(try RepoRuns.recordedSha(request.run))
+        try (try FlowStarter).start(RepoFlow.Run, { executionId: request.run, payload: { ...request, sha } })
+        return fresh ? "started" as const : "existing" as const
+      })).pipe(
         // A conflicting intent or stale authority must roll ownership back before the refusal becomes a success value.
         Effect.catchTag("@smthrs/mvp/flows/StartConflict", () => Effect.succeed("conflict" as const)),
         Effect.catchTag("@smthrs/mvp/ci/RunAdmissionRefused", (refusal) => Effect.succeed(refusal.code)),
@@ -274,21 +277,23 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
 
     /** A run Retry starts again: the run's own request, or why not. */
     const retried = (repository: Repository, retryOf: string, failed: boolean) =>
-      Effect.gen(function* () {
-        const admitted = yield* RepoRuns.admit(retryOf, options.engine).pipe(Effect.provide(database))
+      effect {
+        const admitted = try Effect.provide(RepoRuns.admit(retryOf, options.engine), database)
         if (Option.isNone(admitted) || admitted.value.execution !== retryOf || admitted.value.repoId !== repository.id) {
           return { _tag: "refused", code: "not_found" } as const
         }
-        const engine = yield* EngineStore.RunInspection.RunInspection
-        const read = yield* engine.inspect(retryOf, { limit: 1 }).pipe(Effect.option)
-        const stored = yield* engine.payload(retryOf).pipe(Effect.option)
+        const engine = try EngineStore.RunInspection.RunInspection
+        const read = try option(engine.inspect(retryOf, { limit: 1 }))
+        const stored = try option(engine.payload(retryOf))
         if (Option.isNone(read) || Option.isNone(stored)) return { _tag: "refused", code: "not_settled" } as const
         // The projection alone cannot authorize copying a payload or its repository secrets setting.
-        const owned = RepoRuns.repositoryIntent({ flow: stored.value.flowName, executionId: retryOf, payload: stored.value.payload })
+        const owned = try sync(() => RepoRuns.repositoryIntent({
+          flow: stored.value.flowName, executionId: retryOf, payload: stored.value.payload,
+        }))
         if (Option.isNone(owned) || owned.value.repoId !== repository.id) return { _tag: "refused", code: "not_found" } as const
-        if (!settled(read.value.run.status)) return { _tag: "refused", code: "not_settled" } as const
+        if (!(try sync(() => settled(read.value.run.status)))) return { _tag: "refused", code: "not_settled" } as const
         // A repository's run is a repo/Run: its payload is the run's request.
-        const request = yield* decodeRequest(stored.value.payload)
+        const request = try decodeRequest(stored.value.payload)
         if (!failed) return { _tag: "found", request } as const
         const result = Option.flatMap(Option.fromNullishOr(read.value.run.result), (value) => decodeReported(value.text))
         const names = Option.match(result, {
@@ -297,13 +302,13 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
         })
         if (names.length === 0) return { _tag: "refused", code: "nothing_failed" } as const
         return { _tag: "found", request: { ...request, only: names } } as const
-      }).pipe(Effect.provide(inspection), Effect.provide(options.engine))
+      }.pipe(Effect.provide(inspection), Effect.provide(options.engine))
 
-    const fetch = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
+    const fetch = effect {
+      const request = try HttpServerRequest.HttpServerRequest
       const url = new URL(request.url, "http://localhost")
       const route = parsePath(url.pathname)!
-      const startedAt = yield* Clock.currentTimeMillis
+      const startedAt = try Clock.currentTimeMillis
       const fields: Record<string, string | number> = { route: route.kind }
       const refused = (code: RunsRefusal) => {
         fields.outcome = code
@@ -314,30 +319,30 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
         })
       }
       const answered = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status, headers: noStore })
-      const response = yield* Effect.gen(function* () {
+      const response = try catchCause(effect {
         const method = route.kind === "runs" ? "POST" : "GET"
         if (request.method !== method) {
           fields.outcome = "method"
           return HttpServerResponse.empty({ status: 405, headers: { allow: method } })
         }
-        const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+        const actor = try option((try Sessions).resolve)
         if (Option.isNone(actor)) return refused("unavailable")
         if (Option.isNone(actor.value)) return refused("authentication")
         fields.via = actor.value.value.act === undefined ? "person" : "agent"
         const full = `${route.owner}/${route.name}`.toLowerCase()
         // Only a repository repository flows run for: any other has no flows here.
         if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(full) || !options.repositories.has(full)) return refused("not_found")
-        const repository = repositoryOf(full)
+        const repository = try sync(() => repositoryOf(full))
         fields.repoId = repository.id
         if (!options.repoFlows || Option.isNone(options.app)) return refused("off")
         // A Member or above on the repository, in person or through an agent acting for them: running a flow neither
         // approves nor merges.
-        const admitted = yield* admission(options.roles, actor.value.value, repository).pipe(Effect.provide(database))
+        const admitted = try Effect.provide(admission(options.roles, actor.value.value, repository), database)
         if (typeof admitted === "string") return refused(admitted)
         const github = on(options.app.value, repository)
 
         if (route.kind === "flows") {
-          const found = yield* github.manualFlows
+          const found = try github.manualFlows
           fields.outcome = "read"
           fields.flows = found.flows.length
           return answered(found)
@@ -346,25 +351,25 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
         if (route.kind === "inputs") {
           fields.flow = route.flow
           const ref = url.searchParams.get("ref") ?? ""
-          if (!RepoFlow.FLOW_NAME.test(route.flow) || !GitHub.Refs.isBranch(ref)) return refused("invalid")
-          const found = yield* github.flowAt(route.flow, ref)
+          if (!RepoFlow.FLOW_NAME.test(route.flow) || !(try sync(() => GitHub.Refs.isBranch(ref)))) return refused("invalid")
+          const found = try github.flowAt(route.flow, ref)
           if (found._tag === "refused") return refused(found.code)
           fields.outcome = "read"
           return answered({ inputs: found.inputs, sha: found.sha })
         }
 
-        const text = yield* readBounded(request, MAX_INPUT_BYTES * 2).pipe(Effect.option)
+        const text = try option(readBounded(request, MAX_INPUT_BYTES * 2))
         const body = Option.flatMap(text, decodeBody)
         if (Option.isNone(body)) return refused("invalid")
         if ("retryOf" in body.value) {
           const { id, retryOf, failed } = body.value
           fields.kind = failed ? "retry_failed" : "retry"
-          const found = yield* retried(repository, retryOf, failed)
+          const found = try retried(repository, retryOf, failed)
           if (found._tag === "refused") return refused(found.code)
-          const run = manualExecutionId(found.request.flow, id)
+          const run = try sync(() => manualExecutionId(found.request.flow, id))
           const { only, ...again } = found.request
           const next: RepoFlow.RunRequest = { ...again, run, ...(failed && only !== undefined ? { only } : {}) }
-          const started = yield* startRun(repository, next, actor.value.value, admitted)
+          const started = try startRun(repository, next, actor.value.value, admitted)
           if (started !== "started" && started !== "existing") return refused(started)
           fields.outcome = started
           fields.runId = run
@@ -373,16 +378,16 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
         const { id, flow, ref, input = {} } = body.value
         fields.kind = "manual"
         fields.flow = flow
-        if (!GitHub.Refs.isBranch(ref) || new TextEncoder().encode(JSON.stringify(input)).length > MAX_INPUT_BYTES) {
+        if (!(try sync(() => GitHub.Refs.isBranch(ref))) || new TextEncoder().encode(JSON.stringify(input)).length > MAX_INPUT_BYTES) {
           return refused("invalid")
         }
-        const run = manualExecutionId(flow, id)
+        const run = try sync(() => manualExecutionId(flow, id))
         // A request sent again reads the form at the commit its run recorded, so it replays the same run.
-        const recorded = yield* RepoRuns.recordedSha(run).pipe(Effect.provide(database))
-        const found = yield* github.flowAt(flow, ref, recorded)
+        const recorded = try Effect.provide(RepoRuns.recordedSha(run), database)
+        const found = try github.flowAt(flow, ref, recorded)
         if (found._tag === "refused") return refused(found.code)
         if (!fits(found.inputs, input)) return refused("inputs")
-        const started = yield* startRun(repository, {
+        const started = try startRun(repository, {
           run,
           repo: full,
           flow,
@@ -397,29 +402,30 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
         fields.outcome = started
         fields.runId = run
         return answered({ runId: run }, started === "started" ? 202 : 200)
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.sync(() => {
-            const error = Cause.squash(cause)
-            if (!Predicate.isTagged(error, "@smthrs/mvp/ci/RunsUnavailable")) fields.errorCode = codeOf(error)
-            return refused("unavailable")
-          })
-        ),
+      }, (cause) =>
+        sync(() => {
+          const error = Cause.squash(cause)
+          if (!Predicate.isTagged(error, "@smthrs/mvp/ci/RunsUnavailable")) fields.errorCode = codeOf(error)
+          return refused("unavailable")
+        })
       )
       const outcome = String(fields.outcome)
       fields.status = response.status
-      fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+      fields.durationMs = (try Clock.currentTimeMillis) - startedAt
       if (route.kind === "runs") {
-        yield* Metric.update(Metric.withAttributes(starts, { kind: String(fields.kind ?? "unknown"), outcome }), 1)
+        try Metric.update(Metric.withAttributes(starts, { kind: String(fields.kind ?? "unknown"), outcome }), 1)
       } else {
-        yield* Metric.update(Metric.withAttributes(reads, { read: route.kind, outcome }), 1)
+        try Metric.update(Metric.withAttributes(reads, { read: route.kind, outcome }), 1)
       }
-      yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
-      yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
-        route.kind === "runs" ? "repo.run.start" : "repo.flow.read",
-      ).pipe(Effect.annotateLogs({ ...fields, outcome }))
+      try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+      try annotateLogs(
+        logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+          route.kind === "runs" ? "repo.run.start" : "repo.flow.read",
+        ),
+        { ...fields, outcome },
+      )
       return response
-    }).pipe(Effect.withSpan("repo.runs", { kind: "server" }))
+    }.pipe(withSpan("repo.runs", { kind: "server" }))
 
     return { fetch }
   })

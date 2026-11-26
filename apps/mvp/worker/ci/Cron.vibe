@@ -9,9 +9,9 @@ import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import * as RepoRuns from "../RepoRuns.ts"
 import * as Dispatch from "./Dispatch.vibe"
-import * as RepoFlow from "./RepoFlow.ts"
+import * as RepoFlow from "./RepoFlow.vibe"
 import { triggerDigest } from "./ScheduleIdentity.ts"
-import * as Triggers from "./Triggers.ts"
+import * as Triggers from "./Triggers.vibe"
 
 // A repository's schedules (docs/features/ci.md#schedules): the `cron` rows of its `.smithers/factory.json` start its
 // flows on time through `@smthrs/triggers`, on Cloudflare, with no process between ticks.

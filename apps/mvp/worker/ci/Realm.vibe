@@ -208,94 +208,95 @@ const decodeJobs = Schema.decodeUnknownOption(Schema.Struct({ tag: Schema.String
  * text it answers, parsed, or why there is none.
  */
 const evaluate = (source: string, invocation: string) =>
-  Effect.gen(function* () {
+  effect {
     if (new TextEncoder().encode(source).length > LIMITS.sourceBytes) return refused("too_large")
     // Imports are checked in the source: the type stripper drops an import nothing uses, so the realm would never see it.
     if ([...source.matchAll(IMPORT)].some((match) => !(MODULES as ReadonlyArray<string>).includes(match[1] ?? match[2] ?? ""))) {
       return refused("import")
     }
-    let compiled: string
-    try {
-      compiled = transform(source, { transforms: ["typescript", "imports"], production: true }).code
-    } catch {
-      return refused("syntax")
-    }
-    const module = yield* Effect.orDie(QuickJSVariant.compiledModule)
-    const runtime = module.newRuntime()
-    const budget = QuickJSLifecycle.interruptBudget(() => Date.now())
-    let hit = false
-    try {
-      runtime.setMemoryLimit(LIMITS.memoryBytes)
-      runtime.setMaxStackSize(LIMITS.stackBytes)
-      budget.arm(2_000, LIMITS.polls)
-      runtime.setInterruptHandler(() => (hit = budget.poll() !== undefined))
-      const context = runtime.newContext()
+    const compiled = try Effect.result(Effect.try(() => transform(source, {
+      transforms: ["typescript", "imports"],
+      production: true,
+    }).code))
+    if (Result.isFailure(compiled)) return refused("syntax")
+    const module = try orDie(QuickJSVariant.compiledModule)
+    return try sync(() => {
+      const runtime = module.newRuntime()
+      const budget = QuickJSLifecycle.interruptBudget(() => Date.now())
+      let hit = false
       try {
-        const code = `${PRELUDE}
+        runtime.setMemoryLimit(LIMITS.memoryBytes)
+        runtime.setMaxStackSize(LIMITS.stackBytes)
+        budget.arm(2_000, LIMITS.polls)
+        runtime.setInterruptHandler(() => (hit = budget.poll() !== undefined))
+        const context = runtime.newContext()
+        try {
+          const code = `${PRELUDE}
 const __module = { exports: {} };
 (function (module, exports, require) {
-${compiled}
+${compiled.success}
 })(__module, __module.exports, __require);
 ${invocation};`
-        const result = context.evalCode(code, "flow.js")
-        // Only a primitive string crosses the boundary, and only one the realm has measured: `getString` on anything
-        // else would run the flow's own `toString` in the Worker's call, and on a long string would copy all of it into
-        // the Worker before any limit was checked. The length is read in the realm, where a primitive string's is its own.
-        const stringOf = (handle: typeof context.undefined, units: number): string | undefined =>
-          context.typeof(handle) === "string" &&
-            context.getProp(handle, "length").consume((length) => context.getNumber(length) <= units)
-            ? context.getString(handle)
-            : undefined
-        if (result.error !== undefined) {
-          // What the flow threw is its own value. A string is read as it is; of anything else only `message` is asked
-          // for, by handle: a getter or proxy trap behind it runs in the realm under this evaluation's budget, and what
-          // it answers is read only when it is a primitive string. Nothing the flow built is copied out or coerced.
-          // A message past `messageUnits` is not read: it is none of the sentinels, so the flow is refused as `evaluation`.
-          const message = stringOf(result.error, LIMITS.messageUnits) ??
-            context.getProp(result.error, "message").consume((value) => stringOf(value, LIMITS.messageUnits)) ?? ""
-          result.error.dispose()
-          return hit || /out of memory|stack overflow|interrupted/i.test(message)
-            ? refused("limit")
-            : message === "__import__"
-            ? refused("import")
-            : message === "__plan__"
-            ? refused("invalid_plan")
-            : message === "__inputs__"
-            ? { _tag: "refused" as const, reason: "inputs" as const }
-            : refused("evaluation")
-        }
-        // UTF-8 has at least one byte for each UTF-16 unit, so a plan with more units than `planBytes` is over the
-        // budget uncopied. A shorter one is copied, at most three bytes a unit, and held to the byte budget itself.
-        const text = stringOf(result.value, LIMITS.planBytes)
-        result.value.dispose()
-        if (text === undefined || new TextEncoder().encode(text).length > LIMITS.planBytes) return refused("invalid_plan")
-        try {
-          return { _tag: "evaluated" as const, value: JSON.parse(text) as unknown }
-        } catch {
-          return refused("invalid_plan")
+          const result = context.evalCode(code, "flow.js")
+          // Only a primitive string crosses the boundary, and only one the realm has measured: `getString` on anything
+          // else would run the flow's own `toString` in the Worker's call, and on a long string would copy all of it into
+          // the Worker before any limit was checked. The length is read in the realm, where a primitive string's is its own.
+          const stringOf = (handle: typeof context.undefined, units: number): string | undefined =>
+            context.typeof(handle) === "string" &&
+              context.getProp(handle, "length").consume((length) => context.getNumber(length) <= units)
+              ? context.getString(handle)
+              : undefined
+          if (result.error !== undefined) {
+            // What the flow threw is its own value. A string is read as it is; of anything else only `message` is asked
+            // for, by handle: a getter or proxy trap behind it runs in the realm under this evaluation's budget, and what
+            // it answers is read only when it is a primitive string. Nothing the flow built is copied out or coerced.
+            // A message past `messageUnits` is not read: it is none of the sentinels, so the flow is refused as `evaluation`.
+            const message = stringOf(result.error, LIMITS.messageUnits) ??
+              context.getProp(result.error, "message").consume((value) => stringOf(value, LIMITS.messageUnits)) ?? ""
+            result.error.dispose()
+            return hit || /out of memory|stack overflow|interrupted/i.test(message)
+              ? refused("limit")
+              : message === "__import__"
+              ? refused("import")
+              : message === "__plan__"
+              ? refused("invalid_plan")
+              : message === "__inputs__"
+              ? { _tag: "refused" as const, reason: "inputs" as const }
+              : refused("evaluation")
+          }
+          // UTF-8 has at least one byte for each UTF-16 unit, so a plan with more units than `planBytes` is over the
+          // budget uncopied. A shorter one is copied, at most three bytes a unit, and held to the byte budget itself.
+          const text = stringOf(result.value, LIMITS.planBytes)
+          result.value.dispose()
+          if (text === undefined || new TextEncoder().encode(text).length > LIMITS.planBytes) return refused("invalid_plan")
+          try {
+            return { _tag: "evaluated" as const, value: JSON.parse(text) as unknown }
+          } catch {
+            return refused("invalid_plan")
+          }
+        } finally {
+          context.dispose()
         }
       } finally {
-        context.dispose()
+        runtime.dispose()
       }
-    } finally {
-      runtime.dispose()
-    }
-  })
+    })
+  }
 
 /**
  * Plans flow `name` from its `flow.ts` source for `payload`: the jobs its body declares, or why it couldn't be planned.
  * The flow's `Flow.make` tag must be `name`, the directory it lives in.
  */
-export const plan = (name: string, source: string, payload: Payload): Effect.Effect<Plan, never, QuickJSVariant.Variant> =>
-  Effect.gen(function* () {
-    const evaluated = yield* evaluate(source, `__plan(__module.exports, ${JSON.stringify(payload)})`)
+export const plan = (name: string, source: string, payload: Payload): Plan!never!QuickJSVariant.Variant =>
+  effect {
+    const evaluated = try evaluate(source, `__plan(__module.exports, ${JSON.stringify(payload)})`)
     // A plan's body can't declare inputs: the realm reads them only when asked to describe the flow.
     if (evaluated._tag === "refused") return evaluated.reason === "inputs" ? refused("invalid_plan") : evaluated
     const decoded = decodeJobs(evaluated.value)
     if (decoded._tag === "None") return refused("invalid_plan")
     if (decoded.value.tag !== name) return refused("tag")
     return { _tag: "planned", tag: decoded.value.tag, jobs: decoded.value.jobs } satisfies Planned
-  }).pipe(Effect.withSpan("ci.realm.plan", { attributes: { "smithers.ci.flow": name } }))
+  }.pipe(withSpan("ci.realm.plan", { attributes: { "smithers.ci.flow": name } }))
 
 const decodeDescribed = Schema.decodeUnknownOption(Schema.Struct({ tag: Schema.String, inputs: Inputs }))
 
@@ -306,9 +307,9 @@ const decodeDescribed = Schema.decodeUnknownOption(Schema.Struct({ tag: Schema.S
 export const describe = (
   name: string,
   source: string,
-): Effect.Effect<Described | InputsRefused, never, QuickJSVariant.Variant> =>
-  Effect.gen(function* () {
-    const evaluated = yield* evaluate(source, `__describe(__module.exports, ${JSON.stringify(RUN_FIELDS)})`)
+): (Described | InputsRefused)!never!QuickJSVariant.Variant =>
+  effect {
+    const evaluated = try evaluate(source, `__describe(__module.exports, ${JSON.stringify(RUN_FIELDS)})`)
     if (evaluated._tag === "refused") return evaluated
     const decoded = decodeDescribed(evaluated.value)
     if (decoded._tag === "None" || Object.keys(decoded.value.inputs.properties).length > MAX_INPUTS) {
@@ -316,4 +317,4 @@ export const describe = (
     }
     if (decoded.value.tag !== name) return refused("tag")
     return { _tag: "described", tag: decoded.value.tag, inputs: decoded.value.inputs } satisfies Described
-  }).pipe(Effect.withSpan("ci.realm.describe", { attributes: { "smithers.ci.flow": name } }))
+  }.pipe(withSpan("ci.realm.describe", { attributes: { "smithers.ci.flow": name } }))

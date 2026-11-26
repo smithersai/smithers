@@ -4,6 +4,7 @@
 // GitHub are the only stand-ins.
 import wasmfile from "@jitl/quickjs-wasmfile-release-sync"
 import { QuickJSVariant } from "@smthrs/harness"
+import { GitHub } from "@smthrs/integrations"
 import type { SandboxTools } from "@smthrs/sandbox"
 import { FlowRuntime } from "@smthrs/flow"
 import { Context, Effect, Exit, Layer, Option } from "effect"
@@ -19,7 +20,7 @@ import * as RepoRuns from "../RepoRuns.ts"
 import { build, runFlow } from "../test/flowHost.ts"
 import { testFile, uuid } from "../test/harness.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
-import * as RepoFlow from "./RepoFlow.ts"
+import * as RepoFlow from "./RepoFlow.vibe"
 
 const runtime = testFile("repo_flow")
 beforeEach(() => reset(runtime))
@@ -102,6 +103,16 @@ const run = async (
     { executionId: input.run },
   )
 }
+
+test("readWorkflow refuses an invalid name without requesting any repository contents", async () => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  const client = GitHub.GitHubClient.layer({}, {}).pipe(Layer.provide(github.layer))
+  const result = await Effect.runPromise(
+    RepoFlow.readWorkflow(REPOSITORY, "../ci", "main").pipe(Effect.provide(client)),
+  )
+  expect(result).toEqual(Option.none())
+  expect(github.calls).toEqual([])
+})
 
 describe("repo/Run", { timeout: 60_000 }, () => {
   test("plans flow.ts at the commit, runs every job on its own machine, and reports smithers/ci passed", async () => {

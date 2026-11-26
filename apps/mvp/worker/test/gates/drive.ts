@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process"
 import { readFileSync, writeFileSync } from "node:fs"
 import { gzipSync } from "node:zlib"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
-import * as Realm from "../../ci/Realm.ts"
+import * as Realm from "../../ci/Realm.vibe"
 
 const [urlFile, tokenFile, sha, flowFile, out] = process.argv.slice(2) as [string, string, string, string, string]
 const url = readFileSync(urlFile, "utf8").trim()

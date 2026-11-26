@@ -13,10 +13,10 @@ import { codeOf } from "../ErrorCode.ts"
 import { classify, withToken } from "../github/Calls.ts"
 import { type Repository, repositoryOf } from "../github/Config.ts"
 import type { GitHubTokens } from "../github/Tokens.ts"
-import * as Realm from "./Realm.ts"
+import * as Realm from "./Realm.vibe"
 
 // A repository's own flow on Smithers (docs/features/ci.md#repository-flows): a workflow entry point at the
-// run's commit, planned in the QuickJS realm (worker/ci/Realm.ts), its jobs each a `ci/job` on its own machine
+// run's commit, planned in the QuickJS realm (worker/ci/Realm.vibe), its jobs each a `ci/job` on its own machine
 // (worker/flows/CiJobMachine.ts), its result a GitHub commit status `smithers/<flow>` on that commit (ruling GH-10).
 //
 //   repo/Run    repo/Plan     reads the workflow at the commit as the App (Contents: read) and plans it in the realm
@@ -41,19 +41,19 @@ export const workflowPaths = (name: string): ReadonlyArray<string> => FLOW_NAME.
 
 /** Reads the first entry present at the supplied ref, stopping on a read failure. */
 export const readWorkflow = (repository: Repository, name: string, ref: string) =>
-  Effect.gen(function* () {
+  effect {
     const [vibe, ts, legacy] = workflowPaths(name)
     if (vibe === undefined || ts === undefined || legacy === undefined) return Option.none<GitHub.Contents.TextFile>()
     const read = (path: string) => GitHub.Contents.getText(repository.owner, repository.name, path, { ref })
     for (const path of [vibe, ts]) {
-      const entry = yield* read(path)
+      const entry = try read(path)
       if (Option.isSome(entry)) return entry
     }
     // A child 404 also occurs when its parent is a file. Only a directory
     // or an absent entry permits falling back to the legacy layout.
-    yield* GitHub.Contents.isDirectory(repository.owner, repository.name, ".smithers/workflows", { ref })
-    return yield* read(legacy)
-  })
+    try GitHub.Contents.isDirectory(repository.owner, repository.name, ".smithers/workflows", { ref })
+    return try read(legacy)
+  }
 
 /**
  * Whether GitHub's answer to a file read means no retry will read it: a refusal, or a file it won't give as text (a
@@ -245,56 +245,57 @@ export const steps = <E, R>(services: Services<E, R>) => {
     token: Redacted.Redacted<string>,
     state: "pending" | "success" | "failure",
     description: string,
-  ) => {
+  ) => effect {
     const repository = repositoryOfRequest(request)
-    return GitHub.Statuses.create(repository.owner, repository.name, request.sha, {
+    const context = try sync(() => statusContextOf(request.flow))
+    try (GitHub.Statuses.create(repository.owner, repository.name, request.sha, {
       state,
-      context: statusContextOf(request.flow),
+      context,
       description,
-    }).pipe(withToken(token, services.apiBaseUrl), Effect.provideService(HttpClient.HttpClient, services.http))
+    }).pipe(withToken(token, services.apiBaseUrl), provideService(HttpClient.HttpClient, services.http)))
   }
 
   const statusRecorded = (request: RunRequest, state: string, outcome: string, error?: unknown) =>
-    Effect.andThen(
-      Metric.update(Metric.withAttributes(statuses, { state, outcome }), 1),
-      Effect.logInfo("ci.repo_flow.status").pipe(Effect.annotateLogs({
+    effect {
+      const details = error === undefined ? {} : { errorCode: try sync(() => codeOf(error)) }
+      try Metric.update(Metric.withAttributes(statuses, { state, outcome }), 1)
+      try annotateLogs(logInfo("ci.repo_flow.status"), {
         run: request.run,
         repo: request.repo,
         flow: request.flow,
         sha: request.sha,
         state,
         outcome,
-        ...(error === undefined ? {} : { errorCode: codeOf(error) }),
-      })),
-    )
+        ...details,
+      })
+    }
 
   /** The App's token for `access`, or the refusal when the App can't have one (not installed, not granted); an outage fails, to be retried. */
   const tokenFor = (request: RunRequest, access: "contents" | "status") =>
-    services.tokens.forInstallation(repositoryOfRequest(request), access).pipe(
-      Effect.result,
-      Effect.flatMap((token) =>
-        token._tag === "Failure" && (token.failure.reason === "unavailable" || token.failure.reason === "refreshing")
-          ? Effect.fail(new RepoFlowUnavailable())
-          : Effect.succeed(token)
-      ),
-    )
+    effect {
+      const token = try Effect.result(services.tokens.forInstallation(repositoryOfRequest(request), access))
+      if (token._tag === "Failure" && (token.failure.reason === "unavailable" || token.failure.reason === "refreshing")) {
+        throw new RepoFlowUnavailable()
+      }
+      return token
+    }
 
   const plan = ({ request }: typeof Plan.payloadSchema.Type) =>
-    Effect.gen(function* () {
+    effect {
       const repository = repositoryOfRequest(request)
-      const token = yield* tokenFor(request, "contents")
+      const token = try tokenFor(request, "contents")
       if (token._tag === "Failure") return { _tag: "refused", reason: "unreadable" } as const
-      const source = yield* readWorkflow(repository, request.flow, request.sha).pipe(
+      const source = try (readWorkflow(repository, request.flow, request.sha).pipe(
         withToken(token.success, services.apiBaseUrl),
         Effect.provideService(HttpClient.HttpClient, services.http),
         Effect.result,
-      )
+      ))
       if (source._tag === "Failure") {
         if (isUnreadable(source.failure)) return { _tag: "refused", reason: "unreadable" } as const
-        return yield* new RepoFlowUnavailable()
+        throw new RepoFlowUnavailable()
       }
       if (Option.isNone(source.success)) return { _tag: "refused", reason: "not_found" } as const
-      const planned = yield* Realm.plan(request.flow, source.success.value.text, {
+      const planned = try Realm.plan(request.flow, source.success.value.text, {
         ...request.input,
         run: request.run,
         repo: request.repo,
@@ -318,7 +319,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
           job.needs === undefined ? job : { ...job, needs: job.needs.filter((need) => only.includes(need)) }
         ),
       }
-    }).pipe(
+    }.pipe(
       Effect.tap((planned) =>
         Effect.andThen(
           Metric.update(Metric.withAttributes(plans, { outcome: planned._tag === "planned" ? "planned" : planned.reason }), 1),
@@ -334,49 +335,47 @@ export const steps = <E, R>(services: Services<E, R>) => {
       ),
       Effect.provide(services.database),
       Effect.mapError(() => new RepoFlowUnavailable()),
-      Effect.withSpan("ci.repo_flow.plan", { attributes: { "smithers.ci.flow": request.flow } }),
+      withSpan("ci.repo_flow.plan", { attributes: { "smithers.ci.flow": request.flow } }),
     )
 
   /** `pending` as the jobs start, best effort: `repo/Report` sends the result durably. */
   const pending = ({ request }: typeof Pending.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const token = yield* services.tokens.forInstallation(repositoryOfRequest(request), "status")
-      yield* sendStatus(request, token, "pending", descriptionOf("pending", [], null))
-      yield* statusRecorded(request, "pending", "sent")
-    }).pipe(
-      Effect.provide(services.database),
-      Effect.catch((error) => statusRecorded(request, "pending", "dropped", error)),
-    )
+    effect {
+      return Effect.provide(effect {
+        const token = try services.tokens.forInstallation(repositoryOfRequest(request), "status")
+        try sendStatus(request, token, "pending", descriptionOf("pending", [], null))
+        try statusRecorded(request, "pending", "sent")
+      }, services.database) catch effect (error) => {
+        try statusRecorded(request, "pending", "dropped", error)
+      }
+    }
 
   /**
    * The run's result as a commit status: success when every job passed, else failure. A refusal (no Commit statuses
    * permission, the App not installed, a commit GitHub doesn't have) is recorded and ends the report; an outage is retried.
    */
   const report = ({ names, refused, request, results }: typeof Report.payloadSchema.Type) =>
-    Effect.gen(function* () {
+    effect {
       const jobs = names.map((name, index) => ({ name, outcome: results[jobKey(index)]!.outcome }))
       const failed = jobs.filter((job) => job.outcome !== "passed").map((job) => job.name)
       const state = refused === null && failed.length === 0 && jobs.length > 0 ? "success" as const : "failure" as const
       const description = descriptionOf(state, failed, refused)
-      const token = yield* tokenFor(request, "status")
+      const token = try tokenFor(request, "status")
       if (token._tag === "Failure") {
-        yield* statusRecorded(request, state, "refused", token.failure)
+        try statusRecorded(request, state, "refused", token.failure)
         return { state, outcome: "refused" as const, jobs } satisfies Reported
       }
-      const outcome = yield* sendStatus(request, token.success, state, description).pipe(
-        Effect.as("sent" as const),
-        Effect.catch((error) =>
-          classify(error).kind === "refused"
-            ? Effect.as(statusRecorded(request, state, "refused", error), "refused" as const)
-            : Effect.fail(new RepoFlowUnavailable())
-        ),
-      )
-      if (outcome === "sent") yield* statusRecorded(request, state, "sent")
+      const outcome = as(sendStatus(request, token.success, state, description), "sent" as const) catch effect (error) => {
+        if ((try sync(() => classify(error))).kind !== "refused") throw new RepoFlowUnavailable()
+        try statusRecorded(request, state, "refused", error)
+        return "refused" as const
+      }
+      if (outcome === "sent") try statusRecorded(request, state, "sent")
       return { state, outcome, jobs } satisfies Reported
-    }).pipe(
+    }.pipe(
       Effect.provide(services.database),
       Effect.mapError(() => new RepoFlowUnavailable()),
-      Effect.withSpan("ci.repo_flow.report", { attributes: { "smithers.ci.flow": request.flow } }),
+      withSpan("ci.repo_flow.report", { attributes: { "smithers.ci.flow": request.flow } }),
     )
 
   return { plan, pending, report }

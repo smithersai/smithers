@@ -1,6 +1,6 @@
 import { Data, Result } from "effect"
 import { decodeJevConfig, isRepoPath, type JevConfig, type JevConfigError, resolveRepoPath } from "../../src/features/jev/config.ts"
-import { FLOW_NAME, flowPath, workflowPaths } from "./RepoFlow.ts"
+import { FLOW_NAME, flowPath, workflowPaths } from "./RepoFlow.vibe"
 
 // A repository's workflows and Jev config in a checkout on disk (docs/features/ci.md#repository-flows).
 //

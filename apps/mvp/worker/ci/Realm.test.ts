@@ -6,7 +6,7 @@ import { Effect } from "effect"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
 import { describe, expect, test } from "vitest"
 import { sourceText } from "../../../../packages/repo-targets/test-utils/source-readers.mjs"
-import * as Realm from "./Realm.ts"
+import * as Realm from "./Realm.vibe"
 
 const payload: Realm.Payload = {
   run: "ci:delivery-1",

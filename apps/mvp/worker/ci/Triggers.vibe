@@ -1,6 +1,6 @@
 import { Schedule } from "@smthrs/triggers"
 import { Option, Schema } from "effect"
-import { FLOW_NAME } from "./RepoFlow.ts"
+import { FLOW_NAME } from "./RepoFlow.vibe"
 
 // When a repository's flows run (docs/features/ci.md#triggers): the trigger rows of the repository's plugin manifest,
 // `.smithers/factory.json` on its default branch (ruling FLOW-10: "a flow file never says when it runs"; decision 0017's
@@ -73,14 +73,14 @@ const decodeTrigger = Schema.decodeUnknownOption(Trigger)
 const decodeCron = Schema.decodeUnknownOption(CronTrigger)
 
 /** Manifest `text`'s trigger rows, at most `MAX_TRIGGERS`, each decoded by `decode`: what it can't read is skipped. */
-const rowsOf = <A>(text: string, decode: (row: unknown) => Option.Option<A>): ReadonlyArray<A> =>
-  Option.match(decodeManifest(text), {
-    onNone: () => [],
-    onSome: (manifest) =>
-      (manifest.contributes?.triggers ?? []).slice(0, MAX_TRIGGERS).flatMap((row) =>
-        Option.match(decode(row), { onNone: () => [], onSome: (trigger) => [trigger] })
-      ),
+const rowsOf = <A>(text: string, decode: (row: unknown) => Option.Option<A>): ReadonlyArray<A> => {
+  const manifest = decodeManifest(text)
+  if (Option.isNone(manifest)) return []
+  return (manifest.value.contributes?.triggers ?? []).slice(0, MAX_TRIGGERS).flatMap((row) => {
+    const trigger = decode(row)
+    return Option.isSome(trigger) ? [trigger.value] : []
   })
+}
 
 /**
  * The trigger rows of manifest `text`: none when it isn't a `Plugin.Manifest` (`apiVersion: 1`), as `.smithers/factory.json`

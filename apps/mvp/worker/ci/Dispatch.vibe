@@ -10,8 +10,8 @@ import { withToken } from "../github/Calls.ts"
 import { repositoryOf } from "../github/Config.ts"
 import type { GitHubTokens } from "../github/Tokens.ts"
 import * as RepoRuns from "../RepoRuns.ts"
-import * as RepoFlow from "./RepoFlow.ts"
-import * as Triggers from "./Triggers.ts"
+import * as RepoFlow from "./RepoFlow.vibe"
+import * as Triggers from "./Triggers.vibe"
 
 // GitHub's events start a repository's flows (docs/features/ci.md#triggers): the webhook route starts one
 // `triggers/Dispatch` per push or pull request delivery (`triggers/dispatch:<delivery>`), and it starts each active flow whose
