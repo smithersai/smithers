@@ -1,5 +1,5 @@
 import { Docs } from "@smthrs/views"
-import { Clock, Effect, Metric } from "effect"
+import { Effect, Metric } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import {
   DOCS_SEGMENT,
@@ -73,9 +73,9 @@ type Fields = Record<string, string | number | boolean>
 
 /** The routes over the `DocsSource` in context. */
 export const make = () => ({
-  fetch: Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest
-    const startedAt = yield* Clock.currentTimeMillis
+  fetch: effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const startedAt = try Clock.currentTimeMillis
     const url = new URL(request.url, "http://localhost")
     const target = parseDocsPath(url.pathname)!
     const fields: Fields = {}
@@ -87,22 +87,22 @@ export const make = () => ({
         headers: code === "unavailable" ? { ...noStore, "retry-after": "5" } : noStore,
       })
     }
-    const response = yield* Effect.gen(function* () {
+    const response = try effect {
       if (request.method !== "GET") {
         fields.outcome = "method"
         return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
       }
-      if (!isRepository(target.owner, target.name)) return refuse("not_found")
-      const source = yield* DocsSource
+      if (!(try sync(() => isRepository(target.owner, target.name)))) return refuse("not_found")
+      const source = try DocsSource
       if (target.route === "index") {
         const query = (url.searchParams.get("q") ?? "").trim()
         if (query.length > MAX_QUERY) return refuse("invalid")
         fields.searched = query !== ""
-        const read = yield* source.index(target.owner, target.name)
+        const read = try source.index(target.owner, target.name)
         if (read._tag === "Refused") return refuse(read.code, read.reason)
         fields.source = read.source
         fields.cached = read.cached
-        const pages = query === "" ? read.index.pages.slice(0, MAX_LISTED) : Docs.search(read.index, query, SEARCH_LIMIT)
+        const pages = query === "" ? read.index.pages.slice(0, MAX_LISTED) : try sync(() => Docs.search(read.index, query, SEARCH_LIMIT))
         fields.outcome = "ok"
         fields.results = pages.length
         const answer: DocsListing = {
@@ -114,24 +114,24 @@ export const make = () => ({
       }
       const path = url.searchParams.get("path") ?? ""
       if (!path.startsWith("/") || path.length > MAX_PATH) return refuse("invalid")
-      const read = yield* source.page(target.owner, target.name, path)
+      const read = try source.page(target.owner, target.name, path)
       if (read._tag === "Refused") return refuse(read.code, read.reason)
       fields.cached = read.cached
       fields.outcome = "ok"
       fields.characters = read.text.length
       const answer: DocsPage = { title: read.page.title, path: read.page.path, url: read.page.url, text: read.text }
       return HttpServerResponse.jsonUnsafe(answer, { headers: kept })
-    })
+    }
     fields.status = response.status
-    fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
-    yield* Metric.update(Metric.withAttributes(requests, { route: target.route, status: String(response.status) }), 1)
-    yield* Effect.annotateCurrentSpan({
+    fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+    try Metric.update(Metric.withAttributes(requests, { route: target.route, status: String(response.status) }), 1)
+    try annotateCurrentSpan({
       "http.response.status_code": response.status,
       "smithers.docs.outcome": String(fields.outcome),
     })
-    yield* Effect.logWithLevel(response.status >= 500 ? "Warn" : "Info")(
+    try (logWithLevel(response.status >= 500 ? "Warn" : "Info")(
       target.route === "index" ? "repo.docs" : "repo.docs.page",
-    ).pipe(Effect.annotateLogs(fields))
+    ) |> annotateLogs(%, fields))
     return response
-  }).pipe(Effect.withSpan("repo.docs", { kind: "server" })),
+  } |> withSpan(%, "repo.docs", { kind: "server" }),
 })

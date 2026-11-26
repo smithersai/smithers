@@ -8,7 +8,7 @@ import { credentialRoute } from "../src/flows/contract.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
 import { repositoryOf } from "./github/Config.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
-import * as HomeApi from "./home/Api.ts"
+import * as HomeApi from "./home/Api.vibe"
 import { harness, testFile } from "./test/harness.ts"
 import { cookie, signInHarness } from "./test/signIn.ts"
 

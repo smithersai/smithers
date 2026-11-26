@@ -1,4 +1,4 @@
-// A repository's docs routes (worker/docs/Api.ts, docs/features/docs.md#chatapi) through ChatApi's real handlers, as
+// A repository's docs routes (worker/docs/Api.vibe, docs/features/docs.md#chatapi) through ChatApi's real handlers, as
 // worker/ChatApi.ts routes them: what GitHub says of the repository (its own home) from the scripted GitHub, Smithers'
 // curated homes, and the docs site from the scripted outside web (worker/test/pages.ts), through `@smthrs/views`' real
 // `Docs.fetchText` and Effect's real fetch client.
@@ -9,7 +9,7 @@ import { recorded, testFile } from "../test/harness.ts"
 import { markdown, type Page } from "../test/pages.ts"
 import { repoHarness } from "../test/repos.ts"
 import type { CuratedFile } from "../home/Curated.ts"
-import * as DocsApi from "./Api.ts"
+import * as DocsApi from "./Api.vibe"
 
 const runtime = testFile("docs_api")
 

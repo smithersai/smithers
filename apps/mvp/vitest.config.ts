@@ -142,7 +142,8 @@ export default defineConfig({
         "db/migrations/0010_views.ts",
         // A repository's docs and the docs view (docs/features/docs.md).
         "worker/docs/**/*.{ts,vibe}",
-        "worker/profile/{Store,Metrics}.vibe",
+        "worker/profile/{Api,Store,Metrics}.vibe",
+        "worker/home/Api.vibe",
         "db/migrations/0043_docs_views.ts",
         // A repository's view and its issues view in the conversation (docs/features/views.md).
         "db/migrations/0063_app_template_views.ts",
@@ -229,7 +230,7 @@ export default defineConfig({
         // Sequence-ordered session role receipts (decision 0122).
         "db/migrations/0072_role_observations.ts",
         // Bug reports: filing one, the Admins' read and the reports' shape (docs/features/bugs.md).
-        "worker/bugs/*.ts",
+        "worker/bugs/Api.vibe",
         "db/migrations/0064_bug_reports.ts",
         "db/migrations/0067_bug_report_errors.ts",
         // Repository feeds: the collector's writes and answers, a Maintainer's answer and the feeds' shape

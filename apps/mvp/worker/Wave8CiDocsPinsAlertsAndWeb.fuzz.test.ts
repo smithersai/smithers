@@ -26,7 +26,7 @@ import * as AlertChannels from "./AlertChannels.vibe"
 import * as BranchAccess from "./branch/Access.ts"
 import * as CiRealm from "./ci/Realm.ts"
 import * as RepoFlow from "./ci/RepoFlow.ts"
-import * as DocsApi from "./docs/Api.ts"
+import * as DocsApi from "./docs/Api.vibe"
 import * as DocsSourceMod from "./docs/Source.vibe"
 import * as AlertDelivery from "./flows/AlertDelivery.ts"
 import * as AskFlow from "./flows/Ask.ts"
@@ -705,7 +705,7 @@ describe("Wave8: worker/AlertChannels.ts, worker/Pins.ts, worker/WebPreview.vibe
   }, 60_000)
 })
 
-describe("Wave8: worker/docs/Source.ts & worker/docs/Api.ts", () => {
+describe("Wave8: worker/docs/Source.ts & worker/docs/Api.vibe", () => {
   it("fuzzes DocsSource index/page and DocsApi routes", async () => {
     const modeArb = Arbitrary.schema(
       Schema.Literals([

@@ -2,7 +2,7 @@ import { Duration, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import { describe, expect, test } from "vitest"
 import * as ReadToken from "../github/ReadToken.ts"
-import * as ProfileApi from "./Api.ts"
+import * as ProfileApi from "./Api.vibe"
 import * as ProfileSource from "./Source.ts"
 import type { Kept, KeptAnswer, KeptRefusal, ProfileStore, Via } from "./Store.vibe"
 
@@ -156,6 +156,7 @@ describe("worker/profile/Api", () => {
 
     expect((await send("/api/profiles/app")).status).toBe(404)
     expect((await send("/api/profiles/bad_user")).status).toBe(404)
+    expect((await send("/api/profiles/%E0%A4%A")).status).toBe(404)
     expect((await send("/api/profiles/roninjin10/extra")).status).toBe(404)
     expect((await send("/api/profiles/roninjin10", "POST")).status).toBe(405)
     expect(calls).toBe(0)
@@ -170,5 +171,26 @@ describe("worker/profile/Api", () => {
     expect(held.status).toBe(503)
     expect(held.headers.get("retry-after")).toBeTruthy()
     expect(calls).toBe(1)
+  })
+
+  test("a missing GitHub owner returns an uncached 404 response", async () => {
+    const { send } = makeApi(() => Response.json({ data: { repositoryOwner: null } }))
+    const response = await send("/api/profiles/missing-owner")
+
+    expect([response.status, response.headers.get("cache-control"), response.headers.get("retry-after")])
+      .toEqual([404, "no-store", null])
+    expect(await response.json()).toEqual({ code: "not_found" })
+  })
+
+  test("a source defect returns an uncached 503 correlated to the request", async () => {
+    const { fetch } = ProfileApi.make({ answer: () => Effect.die(new Error("Profile source defect")) })
+    const handler = HttpEffect.toWebHandler(Effect.provide(fetch, FetchHttpClient.layer))
+    const response = await handler(new Request("https://smithers.test/api/profiles/owner", {
+      headers: { "cf-ray": "0123456789abcdef-SJC" },
+    }))
+
+    expect([response.status, response.headers.get("cache-control"), response.headers.get("x-smithers-ray")])
+      .toEqual([503, "no-store", "0123456789abcdef-SJC"])
+    expect(await response.json()).toEqual({ code: "unavailable" })
   })
 })

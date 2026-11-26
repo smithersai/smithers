@@ -78,19 +78,19 @@ import {
   type ScriptedGitHub,
   scriptedGitHub
 } from "../../worker/github/test/scriptedGitHub.ts"
-import * as DocsApi from "../../worker/docs/Api.ts"
+import * as DocsApi from "../../worker/docs/Api.vibe"
 import * as DocsSource from "../../worker/docs/Source.vibe"
 import * as DomainsApi from "../../worker/domains/Api.ts"
 import * as DomainsConfig from "../../worker/domains/Config.vibe"
 import * as DomainFlows from "../../worker/domains/DomainFlows.ts"
 import { DomainProvider } from "../../worker/domains/Provider.vibe"
-import * as HomeApi from "../../worker/home/Api.ts"
+import * as HomeApi from "../../worker/home/Api.vibe"
 import type { CuratedFile } from "../../worker/home/Curated.ts"
 import * as RemoteRuns from "../../worker/RemoteRuns.ts"
 import * as RepoApi from "../../worker/RepoApi.ts"
 import * as RunCredentials from "../../worker/RunCredentials.ts"
 import * as PersonalApi from "../../worker/personal/Api.ts"
-import * as BugsApi from "../../worker/bugs/Api.ts"
+import * as BugsApi from "../../worker/bugs/Api.vibe"
 import * as FeedsApi from "../../worker/feeds/Api.ts"
 import * as FleetShapes from "../../worker/fleet/FleetShapes.vibe"
 import * as FleetApi from "../../worker/runners/FleetApi.ts"
@@ -384,7 +384,7 @@ export class TestChatApi extends Context.Service<
      * owns and removes the temporary files after every device closes.
      */
     readonly engineStore: () => EngineStore
-    /** Bug reports' routes (worker/bugs/Api.ts): every `ops/BugReport` they started, recorded and never run. */
+    /** Bug reports' routes (worker/bugs/Api.vibe): every `ops/BugReport` they started, recorded and never run. */
     readonly bugs: { readonly starts: ReadonlyArray<Started> }
     /**
      * An agent's questions to people (worker/Asks.ts, docs/features/agent-status.md#addressed-waits), as ChatApi routes
@@ -800,7 +800,7 @@ export class TestChatApi extends Context.Service<
         // through the same `PersonalModels`; its provider is the scripted one at the network (`options.provider`).
         const personalApi = yield* PersonalApi.make(database).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         const personalModels = PersonalModels.layer(database).pipe(Layer.provide(SecretKeys.layer(TEST_SECRETS_KEY)))
-        // Bug reports (worker/bugs/Api.ts): filed into Postgres for real and synced back through Electric; the Admins'
+        // Bug reports (worker/bugs/Api.vibe): filed into Postgres for real and synced back through Electric; the Admins'
         // `ops/BugReport` start is recorded, never run (worker/flows/BugReport.test.ts runs it).
         const bugsApi = yield* BugsApi.make(database).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         const bugStarts: Array<Started> = []

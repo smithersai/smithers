@@ -1,6 +1,6 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Core } from "@smthrs/integrations"
-import { Cause, Clock, Config, Effect, type Layer, Metric, Option, Redacted, Schema } from "effect"
+import { Config, Effect, type Layer, Metric } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import {
@@ -101,19 +101,19 @@ export const limitOf = (raw: string | null): number | undefined => {
  * The count and the insert are one transaction under the person's advisory lock, so concurrent filings can't each see
  * room for the last report. A report filed again is answered before the allowance is read: a retry never spends it.
  */
-export const file = (report: ReportRequest, actor: Actor, allowance: number = DAILY_ALLOWANCE) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
+export const file = effect (report: ReportRequest, actor: Actor, allowance: number = DAILY_ALLOWANCE) => {
+  const sql = try SqlClient.SqlClient
+  return try sql.withTransaction(effect {
     const reporter = actor.subject.id
-    yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${`bugs:allowance:${reporter}`}, 0))`
-    const known = yield* sql<{ readonly mine: boolean }>`
+    try sql`SELECT pg_advisory_xact_lock(hashtextextended(${`bugs:allowance:${reporter}`}, 0))`
+    const known = try sql<{ readonly mine: boolean }>`
       SELECT reporter_id = ${reporter} AS mine FROM bug_reports WHERE id = ${report.id}`
     if (known[0] !== undefined) return known[0].mine ? null : "conflict" as const
-    const filed = yield* sql<{ readonly n: number }>`
+    const filed = try sql<{ readonly n: number }>`
       SELECT count(*)::int AS n FROM bug_reports
       WHERE reporter_id = ${reporter} AND created_at > now() - interval '24 hours'`
     if (filed[0]!.n >= allowance) return "rate_limited" as const
-    const written = yield* sql<{ readonly txid: string }>`
+    const written = try sql<{ readonly txid: string }>`
       INSERT INTO bug_reports (id, reporter_id, reporter_login, reporter_role, acted_by, what, route, repo, build, traces,
         runs, failures, errors, browser, viewport)
       VALUES (${report.id}, ${reporter}, ${actor.login ?? null}, ${actor.role}, ${actor.act?.kind ?? null},
@@ -123,137 +123,136 @@ export const file = (report: ReportRequest, actor: Actor, allowance: number = DA
       ON CONFLICT (id) DO NOTHING
       RETURNING pg_current_xact_id()::xid::text AS txid`
     if (written[0] !== undefined) return Number(written[0].txid)
-    const mine = yield* sql<{ readonly mine: boolean }>`
+    const mine = try sql<{ readonly mine: boolean }>`
       SELECT reporter_id = ${reporter} AS mine FROM bug_reports WHERE id = ${report.id}`
     return mine.some((row) => row.mine) ? null : "conflict" as const
-  }).pipe((effect) => Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(effect)))
+  })
+}
 
 /** The latest `limit` reports, newest first, against the `SqlClient` in context, as the read route answers them. */
-export const latest = (limit: number) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql<Report>`
+export const latest = effect (limit: number) => {
+  const sql = try SqlClient.SqlClient
+  return try sql<Report>`
       SELECT id::text AS id, reporter_id AS "reporterId", reporter_login AS "reporterLogin", reporter_role AS "reporterRole",
         acted_by AS "actedBy", what, route, repo, build, traces, runs, failures, errors, browser, viewport,
         to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt"
-      FROM bug_reports ORDER BY created_at DESC, id DESC LIMIT ${limit}`)
+      FROM bug_reports ORDER BY created_at DESC, id DESC LIMIT ${limit}`
+}
 
 /**
  * The bug reports' routes over `database`. They read who is asking from `Sessions` and start `ops/BugReport` through
  * `Flows.FlowStarter`. The deployment's read token (`BUG_REPORTS_READ_TOKEN`) is read here, while the program is built.
  */
-export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
-  Effect.gen(function* () {
-    const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
-    const token = Option.filter(
-      yield* Config.option(Config.Redacted(BUG_READ_TOKEN_VARIABLE)),
-      (value) => Redacted.value(value).trim() !== "",
-    )
-    const allowance = yield* Config.Int(DAILY_LIMIT_VARIABLE).pipe(Config.withDefault(DAILY_ALLOWANCE))
+export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => effect {
+  const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+  const token = Option.filter(
+    try Config.option(Config.Redacted(BUG_READ_TOKEN_VARIABLE)),
+    (value) => Redacted.value(value).trim() !== "",
+  )
+  const allowance = try Config.withDefault(Config.Int(DAILY_LIMIT_VARIABLE), DAILY_ALLOWANCE)
 
-    /** `GET /api/shapes/bug-reports`: every report for an Admin in person, a person's own otherwise. */
-    const shape = ShapeProxy.make({
-      ...connection,
-      shape: Effect.map(ShapeAccess.actor, (actor) =>
-        Option.isSome(actor) && actor.value.role === "admin" && actor.value.act === undefined
-          ? { table: BUG_REPORTS_TABLE, columns: BUG_REPORT_COLUMNS }
-          : {
-            table: BUG_REPORTS_TABLE,
-            where: "reporter_id = $1",
-            params: { "1": Option.isSome(actor) ? actor.value.subject.id : NOBODY },
-            columns: BUG_REPORT_COLUMNS,
-          }),
-      name: "bug.shape",
-      metric: shapes,
-    })
-
-    /** `POST` and `GET /api/bugs`. */
-    const route = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      const startedAt = yield* Clock.currentTimeMillis
-      const op = request.method === "GET" ? "list" : "file"
-      const fields: Fields = { op }
-      const refuse = (status: number, code: Refused) => {
-        fields.code = code
-        return HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
-      }
-      const response = yield* Effect.gen(function* () {
-        if (request.method !== "GET" && request.method !== "POST") {
-          return HttpServerResponse.empty({ status: 405, headers: { allow: "GET, POST", ...noStore } })
+  /** `GET /api/shapes/bug-reports`: every report for an Admin in person, a person's own otherwise. */
+  const shape = ShapeProxy.make({
+    ...connection,
+    shape: effect {
+      const actor = try ShapeAccess.actor
+      return Option.isSome(actor) && actor.value.role === "admin" && actor.value.act === undefined
+        ? { table: BUG_REPORTS_TABLE, columns: BUG_REPORT_COLUMNS }
+        : {
+          table: BUG_REPORTS_TABLE,
+          where: "reporter_id = $1",
+          params: { "1": Option.isSome(actor) ? actor.value.subject.id : NOBODY },
+          columns: BUG_REPORT_COLUMNS,
         }
-        if (op === "list") {
-          // A bearer of the read token is let in before sessions read the header as a run's credential.
-          const bearer = bearerOf(request)
-          const byToken = Option.isSome(bearer) && Option.isSome(token) && sameToken(bearer.value, token.value)
-          if (!byToken) {
-            const actor = yield* (yield* Sessions).resolve
-            if (Option.isNone(actor)) return refuse(401, "authentication")
-            if (actor.value.role !== "admin") return refuse(403, "forbidden")
-            // In person or their agent only: a sandbox, flow or app credential running for an Admin reads no report.
-            if (actor.value.act !== undefined) {
-              fields.by = actor.value.act.kind
-              if (actor.value.act.kind !== "agent") return refuse(403, "forbidden")
-            }
-          }
-          fields.door = byToken ? "token" : "session"
-          const limit = limitOf(new URL(request.url, "http://chat.invalid").searchParams.get("limit"))
-          if (limit === undefined) return refuse(400, "invalid")
-          const reports = yield* latest(limit).pipe(Effect.provide(database))
-          fields.outcome = "listed"
-          fields.count = reports.length
-          return HttpServerResponse.jsonUnsafe({ reports }, { status: 200, headers: noStore })
-        }
-        const actor = yield* (yield* Sessions).resolve
-        if (Option.isNone(actor)) return refuse(401, "authentication")
-        if (actor.value.act !== undefined) fields.by = actor.value.act.kind
-        const body = yield* readBounded(request, MAX_REPORT_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
-          Effect.result,
-        )
-        if (body._tag === "Failure") {
-          return body.failure.reason === "too_large" ? refuse(413, "too_large") : refuse(400, "invalid")
-        }
-        // A decoding failure would quote its input, what the person wrote: it is dropped whole.
-        const decoded = yield* decodeReport(body.success).pipe(Effect.option)
-        if (Option.isNone(decoded) || hasNul(decoded.value)) return refuse(400, "invalid")
-        const report = decoded.value
-        fields.reportId = report.id
-        const txid = yield* file(report, actor.value, allowance).pipe(Effect.provide(database))
-        if (txid === "conflict") return refuse(409, "conflict")
-        if (txid === "rate_limited") return refuse(429, "rate_limited")
-        if (txid === null) fields.existing = true
-        // Filed again, it starts again: a start an earlier request couldn't record runs now, and one it did is the same.
-        const started = yield* (yield* Flows.FlowStarter).start(BugReport, {
-          executionId: bugAlertId(report.id),
-          payload: { id: report.id },
-        }).pipe(Effect.catchTag("@smthrs/mvp/flows/StartConflict", () => Effect.void), Effect.result)
-        if (started._tag === "Failure") {
-          fields.errorCode = started.failure.errorCode
-          return refuse(503, "unavailable")
-        }
-        fields.outcome = "filed"
-        return HttpServerResponse.jsonUnsafe({ id: report.id, txid }, { status: 200, headers: noStore })
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.sync(() => {
-            fields.errorCode = codeOf(Cause.squash(cause))
-            return refuse(503, "unavailable")
-          })
-        ),
-      )
-      fields.status = response.status
-      fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
-      const outcome = String(fields.outcome ?? fields.code ?? "refused")
-      yield* Metric.update(Metric.withAttributes(requests, { op, outcome }), 1)
-      yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, op, outcome })
-      yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
-        "bug.request",
-      ).pipe(Effect.annotateLogs({ ...fields, outcome }))
-      return response
-    }).pipe(Effect.withSpan("bug.request", { kind: "server" }))
-
-    const fetch = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      return request.url.split("?")[0] === BUG_REPORTS_SHAPE_ROUTE ? yield* shape : yield* route
-    })
-
-    return { fetch }
+    },
+    name: "bug.shape",
+    metric: shapes,
   })
+
+  /** `POST` and `GET /api/bugs`. */
+  const route = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const startedAt = try Clock.currentTimeMillis
+    const op = request.method === "GET" ? "list" : "file"
+    const fields: Fields = { op }
+    const refuse = (status: number, code: Refused) => {
+      fields.code = code
+      return HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
+    }
+    const response = try catchCause(effect {
+      if (request.method !== "GET" && request.method !== "POST") {
+        return HttpServerResponse.empty({ status: 405, headers: { allow: "GET, POST", ...noStore } })
+      }
+      if (op === "list") {
+        // A bearer of the read token is let in before sessions read the header as a run's credential.
+        const bearer = try sync(() => bearerOf(request))
+        const byToken = Option.isSome(bearer) && Option.isSome(token) && sameToken(bearer.value, token.value)
+        if (!byToken) {
+          const actor = try (try Sessions).resolve
+          if (Option.isNone(actor)) return refuse(401, "authentication")
+          if (actor.value.role !== "admin") return refuse(403, "forbidden")
+          // In person or their agent only: a sandbox, flow or app credential running for an Admin reads no report.
+          if (actor.value.act !== undefined) {
+            fields.by = actor.value.act.kind
+            if (actor.value.act.kind !== "agent") return refuse(403, "forbidden")
+          }
+        }
+        fields.door = byToken ? "token" : "session"
+        const limit = limitOf(new URL(request.url, "http://chat.invalid").searchParams.get("limit"))
+        if (limit === undefined) return refuse(400, "invalid")
+        const reports = try (latest(limit) |> Effect.provide(%, database))
+        fields.outcome = "listed"
+        fields.count = reports.length
+        return HttpServerResponse.jsonUnsafe({ reports }, { status: 200, headers: noStore })
+      }
+      const actor = try (try Sessions).resolve
+      if (Option.isNone(actor)) return refuse(401, "authentication")
+      if (actor.value.act !== undefined) fields.by = actor.value.act.kind
+      const body = try result(readBounded(request, MAX_REPORT_BODY_BYTES, (bytes) => (fields.bytes = bytes)))
+      if (body._tag === "Failure") {
+        return body.failure.reason === "too_large" ? refuse(413, "too_large") : refuse(400, "invalid")
+      }
+      // A decoding failure would quote its input, what the person wrote: it is dropped whole.
+      const decoded = try option(decodeReport(body.success))
+      if (Option.isNone(decoded) || hasNul(decoded.value)) return refuse(400, "invalid")
+      const report = decoded.value
+      fields.reportId = report.id
+      const txid = try (file(report, actor.value, allowance) |> Effect.provide(%, database))
+      if (txid === "conflict") return refuse(409, "conflict")
+      if (txid === "rate_limited") return refuse(429, "rate_limited")
+      if (txid === null) fields.existing = true
+      // Filed again, it starts again: a start an earlier request couldn't record runs now, and one it did is the same.
+      const starter = try Flows.FlowStarter
+      const executionId = try sync(() => bugAlertId(report.id))
+      const started = try (starter.start(BugReport, {
+        executionId,
+        payload: { id: report.id },
+      }) |> catchTag(%, "@smthrs/mvp/flows/StartConflict", () => Effect.void) |> result(%))
+      if (started._tag === "Failure") {
+        fields.errorCode = started.failure.errorCode
+        return refuse(503, "unavailable")
+      }
+      fields.outcome = "filed"
+      return HttpServerResponse.jsonUnsafe({ id: report.id, txid }, { status: 200, headers: noStore })
+    }, (cause) => sync(() => {
+      fields.errorCode = codeOf(Cause.squash(cause))
+      return refuse(503, "unavailable")
+    }))
+    fields.status = response.status
+    fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+    const outcome = String(fields.outcome ?? fields.code ?? "refused")
+    try Metric.update(Metric.withAttributes(requests, { op, outcome }), 1)
+    try annotateCurrentSpan({ "http.response.status_code": response.status, op, outcome })
+    try (logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+      "bug.request",
+    ) |> annotateLogs(%, { ...fields, outcome }))
+    return response
+  } |> withSpan(%, "bug.request", { kind: "server" })
+
+  const fetch = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    return request.url.split("?")[0] === BUG_REPORTS_SHAPE_ROUTE ? try shape : try route
+  }
+
+  return { fetch }
+}

@@ -1,9 +1,9 @@
-// Bug reports' routes (worker/bugs/Api.ts, docs/features/bugs.md) through their real handler, over this file's
+// Bug reports' routes (worker/bugs/Api.vibe, docs/features/bugs.md) through their real handler, over this file's
 // schema of the compose Postgres and through the compose Electric. Remote flow starts are recorded by a `FlowStarter`
 // unless a test injects a failing one; Postgres and sessions fail only through injected faulty layers. Every test that
 // files a report also searches what was recorded for what the person wrote, the page and the login.
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { ConfigProvider, Data, Effect, Layer, Logger, Metric, Schema, Tracer } from "effect"
+import { ConfigProvider, Data, Deferred, Effect, Layer, Logger, Metric, Schema, Tracer } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
@@ -20,7 +20,7 @@ import { Listed } from "../../src/features/bugs/schema.ts"
 import * as Actor from "../Actor.ts"
 import * as Flows from "../Flows.ts"
 import { recorded, signedIn, signedOut, testFile } from "../test/harness.ts"
-import * as BugsApi from "./Api.ts"
+import * as BugsApi from "./Api.vibe"
 
 const runtime = testFile("bug_reports")
 
@@ -287,6 +287,44 @@ describe("POST /api/bugs", () => {
     expect(await rows()).toMatchObject([{ id: body.id, reporterId: "person-admin", what: WHAT }])
     expect(h.starts).toEqual([])
     expect(h.line("bug.request")).toMatchObject([{ level: "WARN", annotations: { code: "conflict", status: 409 } }])
+  })
+
+  test.each([
+    ["the same person", member.subject.id, true],
+    ["someone else", admin.subject.id, false],
+  ] as const)("rechecks ownership when a concurrent insert by %s wins", async (_, winner, mine) => {
+    const h = await open({ actor: member })
+    const pending = report()
+    const inserted = Deferred.makeUnsafe<number>()
+    const commit = Deferred.makeUnsafe<void>()
+    const writing = runtime.runPromise(Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql.withTransaction(Effect.gen(function* () {
+        yield* sql`INSERT INTO bug_reports (id, reporter_id, what, build, browser, viewport)
+          VALUES (${pending.id}, ${winner}, 'Concurrent report', ${pending.build}, ${pending.browser}, ${pending.viewport})`
+        const [row] = yield* sql<{ readonly pid: number }>`SELECT pg_backend_pid() AS pid`
+        yield* Deferred.succeed(inserted, row!.pid)
+        yield* Deferred.await(commit)
+      }))
+    }))
+    const pid = await Promise.race([
+      runtime.runPromise(Deferred.await(inserted)),
+      writing.then(() => { throw new Error("Concurrent insert committed before admission") }),
+    ])
+    const filing = post(h, pending)
+    try {
+      await expect.poll(() => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`SELECT 1 FROM pg_stat_activity WHERE ${pid} = ANY(pg_blocking_pids(pid))`
+      )).then((blocked) => blocked.length)).toBe(1)
+    } finally {
+      await runtime.runPromise(Deferred.succeed(commit, undefined))
+      await writing
+    }
+    expect(await json(await filing)).toEqual(mine
+      ? [200, { id: pending.id, txid: null }]
+      : [409, { code: "conflict" }])
+    expect(await rows()).toMatchObject([{ id: pending.id, reporterId: winner, what: "Concurrent report" }])
+    expect(h.starts).toHaveLength(mine ? 1 : 0)
   })
 
   test("a person's daily allowance: the next new report is refused 429, storing and starting nothing; a retry of a filed one still answers", async () => {

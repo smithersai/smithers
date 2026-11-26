@@ -1,6 +1,5 @@
-import { withRequestRay } from "../RequestRay.vibe"
 import { Home } from "@smthrs/views"
-import { Clock, Effect, Metric, Option } from "effect"
+import { Effect, Metric } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { audienceOf, HOME_SEGMENT } from "../../src/features/home/contract.ts"
 import { REPO_ROLE_SEGMENT } from "../../src/features/auth/contract.ts"
@@ -10,6 +9,7 @@ import { isRepository, REPOS_ROUTE } from "../../src/features/repo/contract.ts"
 import { type Actor, type Role, Sessions } from "../Actor.ts"
 import { repositoryOf } from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
+import { withRequestRay } from "../RequestRay.vibe"
 import * as Curated from "./Curated.ts"
 
 // `GET /api/repos/<owner>/<name>/home` (docs/features/home.md#who-sees-what): who the asker is on the repository, and
@@ -83,14 +83,14 @@ export interface Options<R> {
    * Whether the person may read the repository's content by the shapes' check: `unavailable` when that check couldn't
    * decide, which the route answers 503 with a wait, never `readable: false` (a refusal to the client's data gate).
    */
-  readonly mayRead?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<Readable, never, R | Sessions>
+  readonly mayRead?: (target: ReturnType<typeof repositoryOf>) => Readable!never!(R | Sessions)
   /**
    * Whether anyone may browse the repository's home though the deployment syncs none of it (worker/github/Api.ts
    * `mayBrowse`): asked only when `mayRead` refuses. `unavailable` when GitHub's metadata couldn't say now.
    */
-  readonly mayBrowse?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<Readable, never, R>
+  readonly mayBrowse?: (target: ReturnType<typeof repositoryOf>) => Readable!never!R
   /** Whether the deployment syncs the repository's issues and pull requests (decision 0079 slice 1b), for anyone. */
-  readonly maySync?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<boolean, never, R>
+  readonly maySync?: (target: ReturnType<typeof repositoryOf>) => boolean!never!R
   /** The curated homes: worker/home/curated/ unless a test gives its own. */
   readonly files?: ReadonlyArray<Curated.CuratedFile>
 }
@@ -109,19 +109,20 @@ export const make = <R>({ roles, files = Curated.files, mayRead, mayBrowse, mayS
    * The person's role on `target`: none signed out, or where the deployment can't act; a role GitHub or Postgres can't
    * say now is the refusal, never a guess.
    */
-  const decide = (actor: Option.Option<Actor>, target: { readonly owner: string; readonly name: string }) =>
-    Option.match(actor, {
-      onNone: () => Effect.succeed<Decided>({ role: null, source: "signed_out" }),
-      onSome: (signed) =>
-        roles.resolve(signed, repositoryOf(`${target.owner}/${target.name}`)).pipe(
-          Effect.map((resolved): Decided => ({ role: resolved.role, source: "role" })),
-          Effect.catch((refused) =>
-            RepoRoles.CANT_ACT.has(refused.code)
-              ? Effect.succeed<Decided>({ role: null, source: "no_role_here", refused: refused.code, refusal: refused })
-              : Effect.fail(refused)
-          ),
-        ),
-    })
+  const decide = effect (
+    actor: Option.Option<Actor>,
+    target: { readonly owner: string; readonly name: string },
+  ): Decided!RepoRoles.RoleRefused!R => {
+    if (Option.isNone(actor)) return { role: null, source: "signed_out" }
+    const repository = try sync(() => repositoryOf(`${target.owner}/${target.name}`))
+    return map(roles.resolve(actor.value, repository), (resolved): Decided => ({
+      role: resolved.role,
+      source: "role",
+    })) catch effect (refused) => {
+      if (!RepoRoles.CANT_ACT.has(refused.code)) throw refused
+      return { role: null, source: "no_role_here", refused: refused.code, refusal: refused }
+    }
+  }
 
   /** A refusal's answer: its status, with GitHub's wait when it said one. */
   const refusedAnswer = (refused: RepoRoles.RoleRefused) =>
@@ -130,11 +131,11 @@ export const make = <R>({ roles, files = Curated.files, mayRead, mayBrowse, mayS
       headers: { ...headers, "retry-after": String(refused.retryAfterSeconds ?? 5) },
     })
 
-  const home = Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest
-    const startedAt = yield* Clock.currentTimeMillis
+  const home = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const startedAt = try Clock.currentTimeMillis
     const target = parseHomePath(request.url.split("?")[0]!)!
-    const record = (
+    const record = effect (
       response: HttpServerResponse.HttpServerResponse,
       fields: {
         readonly outcome: string
@@ -145,45 +146,50 @@ export const make = <R>({ roles, files = Curated.files, mayRead, mayBrowse, mayS
         readonly refused?: RepoRoles.Refusal
         readonly refusal?: RepoRoles.RoleRefused
       },
-    ) =>
-      Effect.gen(function* () {
-        const { refusal, ...safeFields } = fields
-        const durationMs = (yield* Clock.currentTimeMillis) - startedAt
-        const audience = fields.audience ?? "none"
-        yield* Metric.update(Metric.withAttributes(requests, { outcome: fields.outcome, audience }), 1)
-        yield* Effect.annotateCurrentSpan({ "smithers.home.outcome": fields.outcome, "smithers.home.audience": audience })
-        yield* Effect.logWithLevel(fields.outcome === "unavailable" || fields.outcome === "invalid" || fields.outcome === "role_unavailable" ? "Warn" : "Info")(
-          "home.curated",
-        ).pipe(Effect.annotateLogs({ ...safeFields, ...(refusal === undefined ? {} : RepoRoles.refusalFields(refusal)), status: response.status, durationMs }))
-        return response
-      })
-    if (request.method !== "GET") {
-      return yield* record(HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } }), { outcome: "method" })
+    ) => {
+      const { refusal, ...safeFields } = fields
+      const durationMs = (try Clock.currentTimeMillis) - startedAt
+      const audience = fields.audience ?? "none"
+      try Metric.update(Metric.withAttributes(requests, { outcome: fields.outcome, audience }), 1)
+      try annotateCurrentSpan({ "smithers.home.outcome": fields.outcome, "smithers.home.audience": audience })
+      const level = fields.outcome === "unavailable" || fields.outcome === "invalid" || fields.outcome === "role_unavailable"
+        ? "Warn"
+        : "Info"
+      try (logWithLevel(level)("home.curated") |> annotateLogs(%, {
+        ...safeFields,
+        ...(refusal === undefined ? {} : try sync(() => RepoRoles.refusalFields(refusal))),
+        status: response.status,
+        durationMs,
+      }))
+      return response
     }
-    const actor = yield* Effect.result((yield* Sessions).resolve)
+    if (request.method !== "GET") {
+      return try record(HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } }), { outcome: "method" })
+    }
+    const actor = try result((try Sessions).resolve)
     if (actor._tag === "Failure") {
-      return yield* record(
+      return try record(
         HttpServerResponse.jsonUnsafe({ code: "unavailable" }, { status: 503, headers: { ...headers, "retry-after": "5" } }),
         { outcome: "unavailable" },
       )
     }
-    const decided = yield* decide(actor.success, target).pipe(Effect.result)
+    const decided = try result(decide(actor.success, target))
     if (decided._tag === "Failure") {
-      return yield* record(refusedAnswer(decided.failure), { outcome: "role_unavailable", refused: decided.failure.code, refusal: decided.failure })
+      return try record(refusedAnswer(decided.failure), { outcome: "role_unavailable", refused: decided.failure.code, refusal: decided.failure })
     }
     const { role, ...why } = decided.success
-    const ownView = audienceOf(role)
-    const found = Curated.find(target.owner, target.name, files)
+    const ownView = try sync(() => audienceOf(role))
+    const found = try sync(() => Curated.find(target.owner, target.name, files))
     if (found === undefined || found === "invalid") {
       const answer: HomeAnswer = { audience: ownView, curated: null }
-      return yield* record(HttpServerResponse.jsonUnsafe(answer, { headers }), {
+      return try record(HttpServerResponse.jsonUnsafe(answer, { headers }), {
         outcome: found === undefined ? "absent" : "invalid",
         audience: ownView,
         ...why,
       })
     }
-    const audience = Home.widen(ownView, found.contributors)
-    const sections = Home.visible(found.sections, audience)
+    const audience = try sync(() => Home.widen(ownView, found.contributors))
+    const sections = try sync(() => Home.visible(found.sections, audience))
     const answer: HomeAnswer = {
       audience,
       curated: {
@@ -192,20 +198,20 @@ export const make = <R>({ roles, files = Curated.files, mayRead, mayBrowse, mayS
         ...(found.docs === undefined ? {} : { docs: found.docs }),
       },
     }
-    return yield* record(HttpServerResponse.jsonUnsafe(answer, { headers }), {
+    return try record(HttpServerResponse.jsonUnsafe(answer, { headers }), {
       outcome: "curated",
       audience,
       sections: sections.length,
       hidden: found.sections.length - sections.length,
       ...why,
     })
-  }).pipe(Effect.withSpan("home.curated"))
+  } |> withSpan(%, "home.curated")
 
-  const role = Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest
-    const startedAt = yield* Clock.currentTimeMillis
+  const role = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const startedAt = try Clock.currentTimeMillis
     const target = parseRolePath(request.url.split("?")[0]!)!
-    const record = (
+    const record = effect (
       response: HttpServerResponse.HttpServerResponse,
       fields: {
         readonly outcome: string
@@ -215,41 +221,46 @@ export const make = <R>({ roles, files = Curated.files, mayRead, mayBrowse, mayS
         readonly refused?: RepoRoles.Refusal
         readonly refusal?: RepoRoles.RoleRefused
       },
-    ) =>
-      Effect.gen(function* () {
-        const { refusal, ...safeFields } = fields
-        const durationMs = (yield* Clock.currentTimeMillis) - startedAt
-        const role = fields.role === undefined ? "none" : fields.role ?? "no_role"
-        yield* Metric.update(Metric.withAttributes(roleRequests, { outcome: fields.outcome, role }), 1)
-        yield* Effect.annotateCurrentSpan({ "smithers.role.outcome": fields.outcome, "smithers.role.role": role })
-        yield* Effect.logWithLevel(fields.outcome === "answered" || fields.outcome === "method" ? "Info" : "Warn")(
-          "repo.role",
-        ).pipe(Effect.annotateLogs({ ...safeFields, ...(refusal === undefined ? {} : RepoRoles.refusalFields(refusal)), status: response.status, durationMs }))
-        return response
-      })
-    if (request.method !== "GET") {
-      return yield* record(HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } }), { outcome: "method" })
+    ) => {
+      const { refusal, ...safeFields } = fields
+      const durationMs = (try Clock.currentTimeMillis) - startedAt
+      const role = fields.role === undefined ? "none" : fields.role ?? "no_role"
+      try Metric.update(Metric.withAttributes(roleRequests, { outcome: fields.outcome, role }), 1)
+      try annotateCurrentSpan({ "smithers.role.outcome": fields.outcome, "smithers.role.role": role })
+      const level = fields.outcome === "answered" || fields.outcome === "method" ? "Info" : "Warn"
+      try (logWithLevel(level)("repo.role") |> annotateLogs(%, {
+        ...safeFields,
+        ...(refusal === undefined ? {} : try sync(() => RepoRoles.refusalFields(refusal))),
+        status: response.status,
+        durationMs,
+      }))
+      return response
     }
-    const actor = yield* Effect.result((yield* Sessions).resolve)
+    if (request.method !== "GET") {
+      return try record(HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } }), { outcome: "method" })
+    }
+    const actor = try result((try Sessions).resolve)
     if (actor._tag === "Failure") {
-      return yield* record(
+      return try record(
         HttpServerResponse.jsonUnsafe({ code: "unavailable" }, { status: 503, headers: { ...headers, "retry-after": "5" } }),
         { outcome: "unavailable" },
       )
     }
-    const decided = yield* decide(actor.success, target).pipe(Effect.result)
+    const decided = try result(decide(actor.success, target))
     if (decided._tag === "Failure") {
-      return yield* record(refusedAnswer(decided.failure), { outcome: "role_unavailable", refused: decided.failure.code, refusal: decided.failure })
+      return try record(refusedAnswer(decided.failure), { outcome: "role_unavailable", refused: decided.failure.code, refusal: decided.failure })
     }
-    const own = repositoryOf(`${target.owner}/${target.name}`).id === roles.repository.id
-    const workspaceRole = decided.success.source === "no_role_here" && Option.isSome(actor.success)
-      ? RepoRoles.uninstalledRole(roles, actor.success.value, repositoryOf(`${target.owner}/${target.name}`))
+    const repository = sync(() => repositoryOf(`${target.owner}/${target.name}`))
+    const own = (try repository).id === roles.repository.id
+    const signed = actor.success
+    const workspaceRole = decided.success.source === "no_role_here" && Option.isSome(signed)
+      ? try (repository |> map(%, (target) => RepoRoles.uninstalledRole(roles, signed.value, target)))
       : decided.success.role
     // Any role there reads its shapes: only a person with none needs the shapes' own check (a public repository),
     // which resolves the role again.
     const readable = mayRead === undefined ? undefined
       : decided.success.role !== null ? true
-      : yield* mayRead(repositoryOf(`${target.owner}/${target.name}`))
+      : try mayRead(try repository)
     const undecided = (check: Exclude<Readable, boolean>) =>
       record(
         HttpServerResponse.jsonUnsafe({ code: "unavailable" }, {
@@ -258,25 +269,27 @@ export const make = <R>({ roles, files = Curated.files, mayRead, mayBrowse, mayS
         }),
         { outcome: "readable_unavailable", own, ...decided.success },
       )
-    if (typeof readable === "object") return yield* undecided(readable)
+    if (typeof readable === "object") return try undecided(readable)
     // A public repository's home shows to anyone, signed in with no role or signed out, though the App is absent there
     // and its shapes refuse everyone (rulings GH-4 and AUTH-1; lead decision 2026-11-11 on RepositoryPages). GitHub's
     // current metadata says so (`public`); `readable` stays the shapes' answer.
     const browsable = readable === false && mayBrowse !== undefined
-      ? yield* mayBrowse(repositoryOf(`${target.owner}/${target.name}`))
+      ? try mayBrowse(try repository)
       : false
-    if (typeof browsable === "object") return yield* undecided(browsable)
+    if (typeof browsable === "object") return try undecided(browsable)
     const answer: RepoRoleAnswer = { role: decided.success.role, own,
       ...(workspaceRole === decided.success.role ? {} : { workspaceRole }),
       ...(readable === undefined ? {} : { readable }),
       ...(browsable === true ? { public: true } : {}),
-      ...(maySync === undefined ? {} : { synced: yield* maySync(repositoryOf(`${target.owner}/${target.name}`)) }),
+      ...(maySync === undefined ? {} : { synced: try maySync(try repository) }),
     }
-    return yield* record(HttpServerResponse.jsonUnsafe(answer, { headers }), { outcome: "answered", own, ...decided.success })
-  }).pipe(Effect.withSpan("repo.role"))
+    return try record(HttpServerResponse.jsonUnsafe(answer, { headers }), { outcome: "answered", own, ...decided.success })
+  } |> withSpan(%, "repo.role")
 
   return {
-    fetch: withRequestRay(Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) =>
-      parseRolePath(request.url.split("?")[0]!) === undefined ? home : role)),
+    fetch: withRequestRay(effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      return try (parseRolePath(request.url.split("?")[0]!) === undefined ? home : role)
+    }),
   }
 }

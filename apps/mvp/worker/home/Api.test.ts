@@ -13,7 +13,7 @@ import { reset, sql } from "../github/test/fixtures.ts"
 import { app } from "../github/test/harness.ts"
 import { accountIdOf, appKey, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { signedIn, testFile } from "../test/harness.ts"
-import { handles, make, parseHomePath, parseRolePath, type Readable, requests, roleRequests } from "./Api.ts"
+import { handles, make, parseHomePath, parseRolePath, type Readable, requests, roleRequests } from "./Api.vibe"
 import * as Curated from "./Curated.ts"
 
 // `GET /api/repos/<owner>/<name>/home`: who the asker is and the curated home, with only the sections their audience
