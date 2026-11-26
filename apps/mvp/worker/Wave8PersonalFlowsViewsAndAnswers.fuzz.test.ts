@@ -1,6 +1,6 @@
 import { digestSync } from "@smthrs/crypto"
 import { Fuzz } from "@smthrs/fuzz"
-import { type PresentationRealm } from "@smthrs/views"
+import { type PresentationRealm, ViewCode } from "@smthrs/views"
 import {
   Arbitrary,
   ConfigProvider,
@@ -50,7 +50,7 @@ const VALID_FLOW_DIGEST = digestSync(VALID_FLOW_SOURCE)
 const VALID_VIEW_CODE = `
 export const interactions = {
   inc: { kind: "state" },
-  send: { kind: "message" },
+  send: { kind: "message", label: "Send" },
 }
 export function reduce(state, event) {
   return { count: (state?.count ?? 0) + 1 }
@@ -712,6 +712,18 @@ describe("Wave8: worker/PersonalFlows.ts", () => {
 })
 
 describe("Wave8: worker/Views.ts", () => {
+  // The add_gen_ok oracle expects 202, so the fixture must pass ViewCode.check: a message interaction needs a label
+  // (decision 0004's module contract, @smthrs/views Interactions.Declared). Without one the route answers 422.
+  it("VALID_VIEW_CODE passes ViewCode.check, and the same module without a message label is refused", async () => {
+    const options = { components: ["div", "span", "p", "button"] as any }
+    const checked = await Effect.runPromiseExit(ViewCode.check(VALID_VIEW_CODE, options))
+    expect(Exit.isSuccess(checked)).toBe(true)
+    const unlabeled = VALID_VIEW_CODE.replace('{ kind: "message", label: "Send" }', '{ kind: "message" }')
+    expect(unlabeled).not.toBe(VALID_VIEW_CODE)
+    const refused = await Effect.runPromiseExit(ViewCode.check(unlabeled, options))
+    expect(Exit.isFailure(refused)).toBe(true)
+  })
+
   it("fuzzes stateViewId, localHttpConfig, policyFor, add, state, shape, and askFrom", async () => {
     const modeArb = Arbitrary.schema(
       Schema.Literals([

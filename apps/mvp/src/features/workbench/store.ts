@@ -1,10 +1,12 @@
 import { PlanTree as PlanTreeSchema, type PlanNodeState, type PlanTree } from "@smthrs/app-state"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
 import type { AttachTransportMode, AudienceRole, PlanTreeNodeItem, WaitlistStatus } from "@smthrs/ui"
-import { Context, Data, type Duration, Effect, Layer, Schema, type Scope } from "effect"
+import { Context, Data, type Duration, Effect, Layer, Option, Schema, type Scope } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { runners } from "../../boundary"
 import type { Role } from "../auth/contract"
+import { repoId } from "../repo/contract"
+import { RepoStore } from "../repo/store"
 import { submitWaitlist as submitWaitlistRequest, waitlistErrorMessage } from "../waitlist/api"
 import { conversationStateKey, restoreConversationSnapshot, saveConversationSnapshot, type ConversationPaneSnapshot, type ConversationPaneStore } from "./conversationState"
 import type { WorkbenchLayout } from "./layout"
@@ -63,6 +65,9 @@ export const WaitlistRow = Schema.Struct({
   errorMessage: Schema.NullOr(Schema.String),
 })
 export type WaitlistRow = typeof WaitlistRow.Type
+
+/** The plan row before any load, and after its repository is refused. */
+const EMPTY_PLAN: PlanRow = { id: PLAN_ROW_ID, repoSlug: "", status: "idle", nodes: [], totalFrames: 1, error: null }
 
 export const WORKBENCH_WITHIN: Duration.Input = "15 seconds"
 
@@ -238,8 +243,22 @@ export class WorkbenchStore extends Context.Service<
         id: "workbench-plan",
         schema: PlanRow,
         getKey: (row) => row.id,
-        initialData: [{ id: PLAN_ROW_ID, repoSlug: "", status: "idle", nodes: [], totalFrames: 1, error: null }],
+        initialData: [EMPTY_PLAN],
       })
+      // A refused repository's plan leaves this tab: the plan row returns to idle when it holds that repository.
+      const repos = yield* Effect.serviceOption(RepoStore)
+      if (Option.isSome(repos)) {
+        yield* repos.value.registerCache(["workbench-plan"], (id) =>
+          Effect.flatMap(plan.toArray, (rows) =>
+            Effect.forEach(
+              rows.filter((row) => {
+                const [owner, name] = row.repoSlug.split("/")
+                return owner !== undefined && name !== undefined && repoId(owner, name) === id
+              }),
+              (row) => Effect.ignore(plan.update(row.id, (draft) => void Object.assign(draft, EMPTY_PLAN))),
+              { discard: true },
+            )))
+      }
       const attach = yield* Collection.local<AttachRow, string>({
         id: "workbench-attach",
         schema: AttachRow,

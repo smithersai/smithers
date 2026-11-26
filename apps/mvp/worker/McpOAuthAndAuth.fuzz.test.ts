@@ -141,17 +141,6 @@ const createMemoryOAuthDb = () => {
           }
         ] as unknown as ReadonlyArray<A>
       }
-      if (q.includes("FROM mcp_oauth_codes") && q.includes("used_at IS NOT NULL")) {
-        const row = codes.get(values[0] as string)
-        if (row === undefined || row.usedAtMs === null) return [] as ReadonlyArray<A>
-        return [
-          {
-            personId: row.personId,
-            clientId: row.clientId,
-            usedAt: new Date(row.usedAtMs).toISOString()
-          }
-        ] as unknown as ReadonlyArray<A>
-      }
       if (q.includes("SELECT count(*)::int AS count FROM mcp_tokens")) {
         const personId = values[0] as string
         let count = 0
@@ -186,15 +175,12 @@ const createMemoryOAuthDb = () => {
         })
         return [] as ReadonlyArray<A>
       }
-      if (q.startsWith("UPDATE mcp_tokens SET revoked_at") && q.includes("created_at >=")) {
-        const [personId, clientId, usedAtIso] = values as [string, string, string]
-        const threshold = Date.parse(usedAtIso) - 5_000
-        for (const t of tokens.values()) {
-          if (t.personId === personId && t.clientId === clientId && t.revokedAtMs === null && t.createdAtMs >= threshold) {
-            t.revokedAtMs = nowMs
-          }
-        }
-        return [] as ReadonlyArray<A>
+      // A replayed code revokes exactly its grant: the token whose id is the code digest's UUIDv5 (OAuth.ts).
+      if (q.startsWith("UPDATE mcp_tokens SET revoked_at") && q.endsWith("WHERE id = $ ::uuid AND revoked_at IS NULL RETURNING id")) {
+        const found = tokens.get(values[0] as string)
+        if (found === undefined || found.revokedAtMs !== null) return [] as ReadonlyArray<A>
+        found.revokedAtMs = nowMs
+        return [{ id: found.id }] as unknown as ReadonlyArray<A>
       }
       if (q.startsWith("UPDATE mcp_tokens SET revoked_at") && q.includes("RETURNING id::text AS id")) {
         const [tokenId, personId] = values as [string, string]
@@ -262,6 +248,222 @@ const createMemoryOAuthDb = () => {
       nowMs += ms
     }
   }
+}
+
+const LifecycleCase = Schema.Struct({
+    role: Schema.NullOr(Schema.Literals(["guest", "member", "maintainer", "admin"])),
+    isPublic: Schema.Boolean,
+    signedIn: Schema.Boolean,
+    decision: Schema.Literals(["approve", "deny"]),
+    wrongVerifier: Schema.Boolean,
+    replayCode: Schema.Boolean,
+    expireCode: Schema.Boolean,
+    expireToken: Schema.Boolean,
+    revokeToken: Schema.Boolean,
+    scopeInput: Schema.Literals(["mcp:read", "mcp:write", "mcp:read mcp:write"]),
+    repoScope: Schema.NullOr(Schema.Literals(["acme/widgets", "other/repo"])),
+    tokenContentType: Schema.Literals(["form", "json"]),
+    badOrigin: Schema.Boolean
+})
+
+/** One OAuth lifecycle against the in-memory store; true when every step answers as the MCP auth contract says. */
+const lifecycle = async (c: typeof LifecycleCase.Type): Promise<boolean> => {
+  const db = createMemoryOAuthDb()
+  let currentActor: Option.Option<Actor> = c.signedIn
+    ? Option.some({ subject: { kind: "person", id: ALICE_ID }, role: c.role, login: "alice" })
+    : Option.none()
+  const sessions: Sessions["Service"] = {
+    resolve: Effect.suspend(() => Effect.succeed(currentActor))
+  }
+  const service = Effect.runSync(
+    makeMcpAuthService({
+      database: db.database,
+      sessions,
+      resolveRole: () => Effect.succeed(c.role),
+      isRepoPublic: () => Effect.succeed(c.isPublic)
+    })
+  )
+
+  const send = async (method: string, path: string, headers: Record<string, string> = {}, body?: string) => {
+    const req = HttpServerRequest.fromWeb(new Request(`${ORIGIN}${path}`, { method, headers, body }))
+    const opt = await Effect.runPromise(
+      service.handleOAuthOrTokenRoute(req, ORIGIN).pipe(Effect.provide(silentLogger))
+    )
+    if (Option.isNone(opt)) return { status: 404, headers: new Headers(), text: "", json: null as Record<string, unknown> | null }
+    const web = HttpServerResponse.toWeb(opt.value)
+    const text = await web.text()
+    let json: Record<string, unknown> | null = null
+    try {
+      json = text ? (JSON.parse(text) as Record<string, unknown>) : null
+    } catch {
+      json = null
+    }
+    return { status: web.status, headers: web.headers, text, json }
+  }
+
+  // 1. Metadata endpoints (root, repo-scoped, invalid)
+  const m1 = await send("GET", MCP_OAUTH_PROTECTED_RESOURCE_ROUTE)
+  const m1b = await send("GET", `${MCP_OAUTH_PROTECTED_RESOURCE_ROUTE}/acme/widgets/mcp`)
+  const m1c = await send("GET", `${MCP_OAUTH_PROTECTED_RESOURCE_ROUTE}/acme/widgets/bad`)
+  const m2 = await send("GET", MCP_OAUTH_AUTH_SERVER_ROUTE)
+  if (m1.status !== 200 || m1b.status !== 200 || m1c.status !== 404 || m2.status !== 200) return false
+
+  // 2. Dynamic Client Registration (invalid JSON, oversized, confidential, valid)
+  const badReg = await send("POST", MCP_OAUTH_REGISTER_ROUTE, { "content-type": "application/json" }, "{bad")
+  const secretReg = await send(
+    "POST",
+    MCP_OAUTH_REGISTER_ROUTE,
+    { "content-type": "application/json" },
+    JSON.stringify({ client_name: "Conf", redirect_uris: [CALLBACK], token_endpoint_auth_method: "client_secret_basic" })
+  )
+  if (badReg.status !== 400 || secretReg.status !== 400) return false
+  const reg = await send(
+    "POST",
+    MCP_OAUTH_REGISTER_ROUTE,
+    { "content-type": "application/json" },
+    JSON.stringify({ client_name: "Fuzz Client", redirect_uris: [CALLBACK] })
+  )
+  if (reg.status !== 201) return false
+  const clientId = reg.json?.["client_id"] as string
+
+  // 3. GET /oauth/authorize (HTML redirect + JSON consent details)
+  const verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+  const challenge = OAuth.pkceS256(verifier)
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: clientId,
+    redirect_uri: CALLBACK,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    scope: c.scopeInput,
+    state: "st-1",
+    ...(c.repoScope ? { repo: c.repoScope } : {})
+  })
+  const authHtml = await send("GET", `${MCP_OAUTH_AUTHORIZE_ROUTE}?${params.toString()}`, { accept: "text/html" })
+  if (authHtml.status !== 302) return false
+  const authJson = await send("GET", `${MCP_OAUTH_AUTHORIZE_ROUTE}?${params.toString()}`, { accept: "application/json" })
+  if (!c.signedIn) {
+    if (authJson.status !== 401) return false
+  } else if (authJson.status !== 200) {
+    return false
+  }
+
+  // 4. POST /oauth/authorize?params (consent decision)
+  const consentHeaders: Record<string, string> = {
+    "content-type": "application/json",
+    [DEVICE_PERSON_HEADER]: c.signedIn ? ALICE_ID : NO_DEVICE_DATA,
+    origin: c.badOrigin ? "https://evil.example" : ORIGIN
+  }
+  const consentRes = await send(
+    "POST",
+    `${MCP_OAUTH_AUTHORIZE_ROUTE}?${params.toString()}`,
+    consentHeaders,
+    JSON.stringify({ decision: c.decision })
+  )
+  if (!c.signedIn) {
+    return consentRes.status === 401 || consentRes.status === 403
+  }
+  if (c.badOrigin) {
+    return consentRes.status === 403
+  }
+  if (consentRes.status !== 200) return false
+  const redirectUrl = new URL(consentRes.json?.["redirectTo"] as string)
+  if (c.decision === "deny") {
+    return redirectUrl.searchParams.get("error") === "access_denied"
+  }
+  const authCode = redirectUrl.searchParams.get("code")
+  if (!authCode) return false
+
+  // 5. POST /oauth/token
+  if (c.expireCode) db.advanceMs(10 * 60_000)
+  const usedVerifier = c.wrongVerifier ? "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz" : verifier
+  const tokenPayload =
+    c.tokenContentType === "json"
+      ? JSON.stringify({
+          grant_type: "authorization_code",
+          code: authCode,
+          client_id: clientId,
+          redirect_uri: CALLBACK,
+          code_verifier: usedVerifier
+        })
+      : new URLSearchParams({
+          grant_type: "authorization_code",
+          code: authCode,
+          client_id: clientId,
+          redirect_uri: CALLBACK,
+          code_verifier: usedVerifier
+        }).toString()
+  const tokenRes = await send(
+    "POST",
+    MCP_OAUTH_TOKEN_ROUTE,
+    { "content-type": c.tokenContentType === "json" ? "application/json" : "application/x-www-form-urlencoded" },
+    tokenPayload
+  )
+  if (c.expireCode || c.wrongVerifier) {
+    return tokenRes.status === 400
+  }
+  if (tokenRes.status !== 200) return false
+  const accessToken = tokenRes.json?.["access_token"] as string
+  if (!accessToken.startsWith("sma_")) return false
+
+  // 6. Replay code attack -> must fail and revoke issued token
+  if (c.replayCode) {
+    const replay = await send(
+      "POST",
+      MCP_OAUTH_TOKEN_ROUTE,
+      { "content-type": "application/json" },
+      JSON.stringify({
+        grant_type: "authorization_code",
+        code: authCode,
+        client_id: clientId,
+        redirect_uri: CALLBACK,
+        code_verifier: verifier
+      })
+    )
+    if (replay.status !== 400) return false
+  }
+
+  // 7. Authenticate via McpAuthService
+  if (c.expireToken) db.advanceMs(100 * 24 * 3600 * 1000)
+  const mcpReq = HttpServerRequest.fromWeb(
+    new Request(`${ORIGIN}${MCP_ROUTE}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${accessToken}` }
+    })
+  )
+  const authExit = await Effect.runPromise(
+    Effect.exit(
+      service.authenticate(mcpReq, "github/acme/widgets").pipe(Effect.provide(silentLogger))
+    )
+  )
+  // `authenticate` never fails (`McpAuthResult!!`): a revoked or expired token is a `Rejected` value. A replayed
+  // code revokes the token it issued, and revocation is checked before expiry.
+  if (authExit._tag !== "Success") return false
+  const rejected = c.replayCode ? "token_revoked" : c.expireToken ? "token_expired" : undefined
+  if (rejected !== undefined) {
+    if (authExit.value._tag !== "Rejected" || authExit.value.code !== rejected) return false
+  } else if (authExit.value._tag !== (c.repoScope === "other/repo" ? "Rejected" : "Authenticated")) {
+    return false
+  }
+
+  // 8. List & revoke tokens
+  const listed = await send("GET", MCP_TOKENS_ROUTE)
+  if (listed.status !== 200) return false
+  const tokenList = (listed.json?.["tokens"] as ReadonlyArray<{ id: string }>) ?? []
+  if (c.revokeToken && tokenList[0] !== undefined) {
+    const rev = await send("DELETE", `${MCP_TOKENS_ROUTE}/${tokenList[0].id}`, {
+      origin: ORIGIN,
+      [DEVICE_PERSON_HEADER]: ALICE_ID
+    })
+    if (rev.status !== 200 && rev.status !== 204 && rev.status !== 404) return false
+    currentActor = Option.some({ subject: { kind: "person", id: BOB_ID }, role: "member", login: "bob" })
+    const bobRev = await send("DELETE", `${MCP_TOKENS_ROUTE}/${tokenList[0].id}`, {
+      origin: ORIGIN,
+      [DEVICE_PERSON_HEADER]: BOB_ID
+    })
+    if (bobRev.status !== 404) return false
+  }
+  return true
 }
 
 describe("apps/mvp MCP OAuth & Auth deep fuzz invariants", () => {
@@ -349,225 +551,26 @@ describe("apps/mvp MCP OAuth & Auth deep fuzz invariants", () => {
   })
 
   it("Full OAuth lifecycle (register -> authorize -> consent -> token exchange -> replay revocation -> MCP authenticate -> list/revoke)", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        role: Schema.NullOr(Schema.Literals(["guest", "member", "maintainer", "admin"])),
-        isPublic: Schema.Boolean,
-        signedIn: Schema.Boolean,
-        decision: Schema.Literals(["approve", "deny"]),
-        wrongVerifier: Schema.Boolean,
-        replayCode: Schema.Boolean,
-        expireCode: Schema.Boolean,
-        expireToken: Schema.Boolean,
-        revokeToken: Schema.Boolean,
-        scopeInput: Schema.Literals(["mcp:read", "mcp:write", "mcp:read mcp:write"]),
-        repoScope: Schema.NullOr(Schema.Literals(["acme/widgets", "other/repo"])),
-        tokenContentType: Schema.Literals(["form", "json"]),
-        badOrigin: Schema.Boolean
-      })
-    )
-
+    const arb = Arbitrary.schema(LifecycleCase)
     const report = await Effect.runPromise(
       Fuzz.run(
         arb,
-        (c) =>
-          Effect.promise(async () => {
-            const db = createMemoryOAuthDb()
-            let currentActor: Option.Option<Actor> = c.signedIn
-              ? Option.some({ subject: { kind: "person", id: ALICE_ID }, role: c.role, login: "alice" })
-              : Option.none()
-            const sessions: Sessions["Service"] = {
-              resolve: Effect.suspend(() => Effect.succeed(currentActor))
-            }
-            const service = Effect.runSync(
-              makeMcpAuthService({
-                database: db.database,
-                sessions,
-                resolveRole: () => Effect.succeed(c.role),
-                isRepoPublic: () => Effect.succeed(c.isPublic)
-              })
-            )
-
-            const send = async (method: string, path: string, headers: Record<string, string> = {}, body?: string) => {
-              const req = HttpServerRequest.fromWeb(new Request(`${ORIGIN}${path}`, { method, headers, body }))
-              const opt = await Effect.runPromise(
-                service.handleOAuthOrTokenRoute(req, ORIGIN).pipe(Effect.provide(silentLogger))
-              )
-              if (Option.isNone(opt)) return { status: 404, headers: new Headers(), text: "", json: null as Record<string, unknown> | null }
-              const web = HttpServerResponse.toWeb(opt.value)
-              const text = await web.text()
-              let json: Record<string, unknown> | null = null
-              try {
-                json = text ? (JSON.parse(text) as Record<string, unknown>) : null
-              } catch {
-                json = null
-              }
-              return { status: web.status, headers: web.headers, text, json }
-            }
-
-            // 1. Metadata endpoints (root, repo-scoped, invalid)
-            const m1 = await send("GET", MCP_OAUTH_PROTECTED_RESOURCE_ROUTE)
-            const m1b = await send("GET", `${MCP_OAUTH_PROTECTED_RESOURCE_ROUTE}/acme/widgets/mcp`)
-            const m1c = await send("GET", `${MCP_OAUTH_PROTECTED_RESOURCE_ROUTE}/acme/widgets/bad`)
-            const m2 = await send("GET", MCP_OAUTH_AUTH_SERVER_ROUTE)
-            if (m1.status !== 200 || m1b.status !== 200 || m1c.status !== 404 || m2.status !== 200) return false
-
-            // 2. Dynamic Client Registration (invalid JSON, oversized, confidential, valid)
-            const badReg = await send("POST", MCP_OAUTH_REGISTER_ROUTE, { "content-type": "application/json" }, "{bad")
-            const secretReg = await send(
-              "POST",
-              MCP_OAUTH_REGISTER_ROUTE,
-              { "content-type": "application/json" },
-              JSON.stringify({ client_name: "Conf", redirect_uris: [CALLBACK], token_endpoint_auth_method: "client_secret_basic" })
-            )
-            if (badReg.status !== 400 || secretReg.status !== 400) return false
-            const reg = await send(
-              "POST",
-              MCP_OAUTH_REGISTER_ROUTE,
-              { "content-type": "application/json" },
-              JSON.stringify({ client_name: "Fuzz Client", redirect_uris: [CALLBACK] })
-            )
-            if (reg.status !== 201) return false
-            const clientId = reg.json?.["client_id"] as string
-
-            // 3. GET /oauth/authorize (HTML redirect + JSON consent details)
-            const verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
-            const challenge = OAuth.pkceS256(verifier)
-            const params = new URLSearchParams({
-              response_type: "code",
-              client_id: clientId,
-              redirect_uri: CALLBACK,
-              code_challenge: challenge,
-              code_challenge_method: "S256",
-              scope: c.scopeInput,
-              state: "st-1",
-              ...(c.repoScope ? { repo: c.repoScope } : {})
-            })
-            const authHtml = await send("GET", `${MCP_OAUTH_AUTHORIZE_ROUTE}?${params.toString()}`, { accept: "text/html" })
-            if (authHtml.status !== 302) return false
-            const authJson = await send("GET", `${MCP_OAUTH_AUTHORIZE_ROUTE}?${params.toString()}`, { accept: "application/json" })
-            if (!c.signedIn) {
-              if (authJson.status !== 401) return false
-            } else if (authJson.status !== 200) {
-              return false
-            }
-
-            // 4. POST /oauth/authorize?params (consent decision)
-            const consentHeaders: Record<string, string> = {
-              "content-type": "application/json",
-              [DEVICE_PERSON_HEADER]: c.signedIn ? ALICE_ID : NO_DEVICE_DATA,
-              origin: c.badOrigin ? "https://evil.example" : ORIGIN
-            }
-            const consentRes = await send(
-              "POST",
-              `${MCP_OAUTH_AUTHORIZE_ROUTE}?${params.toString()}`,
-              consentHeaders,
-              JSON.stringify({ decision: c.decision })
-            )
-            if (!c.signedIn) {
-              return consentRes.status === 401 || consentRes.status === 403
-            }
-            if (c.badOrigin) {
-              return consentRes.status === 403
-            }
-            if (consentRes.status !== 200) return false
-            const redirectUrl = new URL(consentRes.json?.["redirectTo"] as string)
-            if (c.decision === "deny") {
-              return redirectUrl.searchParams.get("error") === "access_denied"
-            }
-            const authCode = redirectUrl.searchParams.get("code")
-            if (!authCode) return false
-
-            // 5. POST /oauth/token
-            if (c.expireCode) db.advanceMs(10 * 60_000)
-            const usedVerifier = c.wrongVerifier ? "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz" : verifier
-            const tokenPayload =
-              c.tokenContentType === "json"
-                ? JSON.stringify({
-                    grant_type: "authorization_code",
-                    code: authCode,
-                    client_id: clientId,
-                    redirect_uri: CALLBACK,
-                    code_verifier: usedVerifier
-                  })
-                : new URLSearchParams({
-                    grant_type: "authorization_code",
-                    code: authCode,
-                    client_id: clientId,
-                    redirect_uri: CALLBACK,
-                    code_verifier: usedVerifier
-                  }).toString()
-            const tokenRes = await send(
-              "POST",
-              MCP_OAUTH_TOKEN_ROUTE,
-              { "content-type": c.tokenContentType === "json" ? "application/json" : "application/x-www-form-urlencoded" },
-              tokenPayload
-            )
-            if (c.expireCode || c.wrongVerifier) {
-              return tokenRes.status === 400
-            }
-            if (tokenRes.status !== 200) return false
-            const accessToken = tokenRes.json?.["access_token"] as string
-            if (!accessToken.startsWith("sma_")) return false
-
-            // 6. Replay code attack -> must fail and revoke issued token
-            if (c.replayCode) {
-              const replay = await send(
-                "POST",
-                MCP_OAUTH_TOKEN_ROUTE,
-                { "content-type": "application/json" },
-                JSON.stringify({
-                  grant_type: "authorization_code",
-                  code: authCode,
-                  client_id: clientId,
-                  redirect_uri: CALLBACK,
-                  code_verifier: verifier
-                })
-              )
-              if (replay.status !== 400) return false
-            }
-
-            // 7. Authenticate via McpAuthService
-            if (c.expireToken) db.advanceMs(100 * 24 * 3600 * 1000)
-            const mcpReq = HttpServerRequest.fromWeb(
-              new Request(`${ORIGIN}${MCP_ROUTE}`, {
-                method: "POST",
-                headers: { authorization: `Bearer ${accessToken}` }
-              })
-            )
-            const authExit = await Effect.runPromise(
-              Effect.exit(
-                service.authenticate(mcpReq, "github/acme/widgets").pipe(Effect.provide(silentLogger))
-              )
-            )
-            if (c.replayCode || c.expireToken) {
-              if (authExit._tag !== "Failure") return false
-            }
-
-            // 8. List & revoke tokens
-            const listed = await send("GET", MCP_TOKENS_ROUTE)
-            if (listed.status !== 200) return false
-            const tokenList = (listed.json?.["tokens"] as ReadonlyArray<{ id: string }>) ?? []
-            if (c.revokeToken && tokenList[0] !== undefined) {
-              const rev = await send("DELETE", `${MCP_TOKENS_ROUTE}/${tokenList[0].id}`, {
-                origin: ORIGIN,
-                [DEVICE_PERSON_HEADER]: ALICE_ID
-              })
-              if (rev.status !== 200 && rev.status !== 204 && rev.status !== 404) return false
-              currentActor = Option.some({ subject: { kind: "person", id: BOB_ID }, role: "member", login: "bob" })
-              const bobRev = await send("DELETE", `${MCP_TOKENS_ROUTE}/${tokenList[0].id}`, {
-                origin: ORIGIN,
-                [DEVICE_PERSON_HEADER]: BOB_ID
-              })
-              if (bobRev.status !== 404) return false
-            }
-            return true
-          }),
+        (c) => Effect.promise(() => lifecycle(c)),
         { seed, executions: Math.min(executions, 80) }
       )
     )
     const failure = Fuzz.formatReport(report)
     if (failure !== undefined) throw new Error(failure)
     expect(report._tag).toBe("Passed")
+  })
+
+  // Seed 2's counterexample. The oracle required `authenticate` to fail, but it answers `Rejected` (`McpAuthResult!!`,
+  // as worker/mcp/Authz.test.ts pins), and the store fake modelled a replay revoke OAuth.ts no longer issues: it now
+  // revokes the one grant whose id is the code digest's UUIDv5.
+  it("an expired or replay-revoked token authenticates to a Rejected result, not a failure", async () => {
+    const expired = { role: "guest", isPublic: false, signedIn: true, decision: "approve", wrongVerifier: false, replayCode: false, expireCode: false, expireToken: true, revokeToken: false, scopeInput: "mcp:write", repoScope: "acme/widgets", tokenContentType: "json", badOrigin: false } as const
+    expect(await lifecycle(expired)).toBe(true)
+    expect(await lifecycle({ ...expired, expireToken: false, replayCode: true })).toBe(true)
+    expect(await lifecycle({ ...expired, expireToken: false })).toBe(true)
   })
 })

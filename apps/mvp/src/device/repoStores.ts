@@ -46,6 +46,7 @@ export const REPOSITORY_MEMORY = [
   "repo-runs-shown",
   "run-pages",
   "cloud-runs",
+  "workbench-plan",
 ] as const
 
 /**
@@ -60,7 +61,7 @@ export const UNSCOPED_LOCAL: Readonly<Record<string, string>> = Object.fromEntri
     "personal-model-add", "personal-model-form", "personal-model-link", "personal-model-test", "plugin-shown",
     "plugin-views", "presence-participants", "presence-room", "sandbox-limit-saves", "share-dialog", "share-list",
     "status-local", "terminal-panel", "terminal-tabs", "timeline-notice", "transcript-items", "transcript-panel",
-    "views-opened", "views-showing", "effective-pins", "coedit-texts",
+    "views-opened", "views-showing", "effective-pins", "coedit-texts", "workbench-attach", "workbench-waitlist",
   ].map((id) => [id, "the person's own conversations, runs, flows, settings or UI"] as const),
   ["profile-entries", "public GitHub profile metadata and listings keyed by owner"],
   ...["branch-current", "branch-publication", "branch-publish", "branch-pull-title"]

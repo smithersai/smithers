@@ -8,7 +8,18 @@
 //
 // It exits 0 when every step passes and 1 otherwise, and prints one line per step.
 import { spawnSync } from "node:child_process"
-import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs"
+import {
+  appendFileSync,
+  closeSync,
+  lstatSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  readSync,
+  realpathSync,
+  statSync,
+} from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 // The real checkout: Lake runs only in a project directory that resolves under it, symlinks followed.
@@ -120,6 +131,23 @@ if (process.argv.includes("--dry-run")) {
   process.exit(0)
 }
 
+// Each step writes straight to its own log file, never through a pipe buffer: the apps/mvp suite prints more than
+// 64 MiB of OTLP and TanStack logs, and spawnSync kills a child whose output outgrows `maxBuffer` (ENOBUFS).
+const logs = mkdtempSync(join(tmpdir(), "medium-check-"))
+
+/** The last `lines` lines of a log, read from its final 256 KiB. */
+const tail = (file: string, lines: number) => {
+  const size = statSync(file).size
+  const buffer = Buffer.alloc(Math.min(size, 256 * 1024))
+  const fd = openSync(file, "r")
+  try {
+    readSync(fd, buffer, 0, buffer.length, size - buffer.length)
+  } finally {
+    closeSync(fd)
+  }
+  return buffer.toString("utf8").split("\n").slice(-lines).join("\n")
+}
+
 let failed = 0
 for (const step of steps) {
   if (step.refuse !== undefined) {
@@ -131,13 +159,25 @@ for (const step of steps) {
     console.log(`skip  ${step.name}  ${step.skip}`)
     continue
   }
+  const log = join(logs, `${step.name.replaceAll(/[^\w.-]+/g, "-")}.log`)
+  const fd = openSync(log, "w")
   const started = performance.now()
-  const result = spawnSync(step.cmd, step.args, { cwd: step.cwd, encoding: "utf8", env: { ...process.env, ...step.env } })
+  const result = (() => {
+    try {
+      return spawnSync(step.cmd, step.args, { cwd: step.cwd, env: { ...process.env, ...step.env }, stdio: ["ignore", fd, fd] })
+    } finally {
+      closeSync(fd)
+    }
+  })()
+  // ENOENT or a signal leaves no exit status; the log says why.
+  if (result.error !== undefined) appendFileSync(log, `\nspawn error: ${result.error.message}\n`)
+  if (result.signal !== null) appendFileSync(log, `\nkilled by ${result.signal}\n`)
   const ok = result.status === 0
   console.log(`${ok ? "pass" : "FAIL"}  ${step.name}  ${((performance.now() - started) / 1000).toFixed(1)}s`)
   if (!ok) {
     failed += 1
-    console.log(`${result.stdout}${result.stderr}`.split("\n").slice(-40).join("\n"))
+    console.log(tail(log, 40))
+    console.log(`full output: ${log}`)
   }
 }
 console.log(failed === 0 ? "medium-check passed" : `medium-check failed: ${failed} step(s)`)

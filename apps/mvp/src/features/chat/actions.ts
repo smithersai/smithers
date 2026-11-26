@@ -499,15 +499,19 @@ export const copyToClipboard = (messageId?: string): Effect.Effect<CopyAnswer["o
     )
   })
 
+const waiting = (status: string) => status === "queued" || status === "unsent"
+
 /**
- * The question Edit takes back: `questionId`, or, without one, the latest of this device's questions in the
- * conversation this tab shows that Postgres doesn't have yet, queued in the outbox or unsent.
+ * The question Edit takes back: `questionId` in the conversation this tab shows, whatever its status, or, without one,
+ * the latest of this device's questions there that Postgres doesn't have yet, queued in the outbox or unsent.
  */
 const editable = (questionId?: string) =>
-  Effect.map(conversationNow, (rows) => {
-    const waiting = rows.filter(({ status }) => status === "queued" || status === "unsent")
-    return Option.fromNullishOr(questionId === undefined ? waiting.at(-1) : waiting.find(({ id }) => id === questionId))
-  })
+  Effect.map(conversationNow, (rows) =>
+    Option.fromNullishOr(
+      questionId === undefined
+        ? rows.filter(({ status }) => waiting(status)).at(-1)
+        : rows.find(({ id, role }) => id === questionId && role === "user"),
+    ))
 
 /**
  * The tab's side of `chat/edit` (src/features/chat/tab.ts): takes a question that Smithers doesn't have yet back into
@@ -526,6 +530,8 @@ export const takeBack = (questionId?: string): Effect.Effect<EditAnswer["outcome
     const found = yield* editable(questionId)
     if (Option.isNone(found)) return "not_found"
     const question = found.value
+    // Postgres has it: the shape delivered its row before the outbox heard its send answered.
+    if (!waiting(question.status)) return "sent"
     if (question.status === "unsent") {
       yield* editUnsent(question.id)
       return "edited"

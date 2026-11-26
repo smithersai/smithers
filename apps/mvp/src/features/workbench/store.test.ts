@@ -1,4 +1,5 @@
 import { Effect, Layer } from "effect"
+import { RepoStore } from "../repo/store"
 import { HttpClientError } from "effect/http"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { describe, expect, test } from "vitest"
@@ -357,5 +358,68 @@ describe("workbench store boundary and failure cases", () => {
     const atB = wb.actions.restoreConversation("evmts/voltaire", {}, "maintainer", "conv-b")
     expect(atB.layout.pane).toBe("attach")
     expect(atB.draft).toBe("Draft B")
+  })
+
+  // Will's wipe rule (repoStores.ts): a refusal on a repository wipes every store of its rows, the plan row included.
+  test("a refusal on the repository the plan row holds returns it to idle; another repository's refusal keeps it", async () => {
+    const wipes = new Map<string, (id: string) => Effect.Effect<void, unknown>>()
+    const repos = Layer.succeed(RepoStore, {
+      registerCache: (families: ReadonlyArray<string>, wipe: (id: string) => Effect.Effect<void, unknown>) =>
+        Effect.sync(() => families.forEach((family) => wipes.set(family, wipe))),
+    } as unknown as RepoStore["Service"])
+    const body = {
+      hubSeq: 1,
+      state: {
+        tree: {
+          revision: 1,
+          nodes: {
+            root: {
+              id: "root",
+              parent: null,
+              title: "Private plan",
+              milestone: "M0",
+              status: "pending",
+              sources: [],
+              assumptions: [],
+              dodFast: "fast-check",
+              artifactIds: [],
+              order: 0,
+            },
+          },
+        },
+      },
+    }
+    const layer = Workbench.live({ origin: "https://smithers.sh" }).pipe(
+      Layer.provideMerge(WorkbenchStore.layer.pipe(Layer.provide(repos))),
+      Layer.provide(
+        httpLayer(() => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })),
+      ),
+    )
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const workbench = yield* Workbench
+          const store = yield* WorkbenchStore
+          const wipe = wipes.get("workbench-plan")
+          expect(wipe).toBeDefined()
+          yield* Effect.promise(() => workbench.actions.loadPlan("Acme", "Private"))
+          expect(store.plan.tanstack.get(PLAN_ROW_ID)?.nodes).toHaveLength(1)
+
+          yield* wipe!("github/acme/other")
+          expect(store.plan.tanstack.get(PLAN_ROW_ID)?.status).toBe("ready")
+
+          yield* wipe!("github/acme/private")
+          expect(store.plan.tanstack.get(PLAN_ROW_ID)).toMatchObject({
+            id: PLAN_ROW_ID,
+            repoSlug: "",
+            status: "idle",
+            nodes: [],
+            totalFrames: 1,
+            error: null,
+          })
+        }).pipe(Effect.provide(layer)),
+      ),
+    )
   })
 })

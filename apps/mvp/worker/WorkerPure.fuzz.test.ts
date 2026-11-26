@@ -533,7 +533,8 @@ describe("apps/mvp worker pure & Effect-layer fuzz invariants", () => {
         arb,
         ({ keySuffix, plaintext, repoId, name }) =>
           Effect.gen(function*() {
-            const secretKey = `0123456789abcdef0123456789abcdef${keySuffix}`
+            // SECRETS_KEY reaches the Worker as UTF-8 text, so it never holds an unpaired surrogate.
+            const secretKey = `0123456789abcdef0123456789abcdef${keySuffix.toWellFormed()}`
             const keys = yield* SecretKeys.make(Redacted.make(secretKey))
             const ctx = { id: repoId, name, version: keys.version }
             const wellFormed = plaintext.toWellFormed()
@@ -560,6 +561,15 @@ describe("apps/mvp worker pure & Effect-layer fuzz invariants", () => {
 
     const shortExit = await Effect.runPromiseExit(SecretKeys.make(Redacted.make("too-short")))
     expect(Exit.isFailure(shortExit)).toBe(true)
+  })
+
+  it("SecretKeys.make derives keys from a non-ASCII SECRETS_KEY that round-trip a seal", async () => {
+    const ctx = { id: "github/acme/app", name: "OPENAI_KEY", version: SecretKeys.KEY_VERSION }
+    const opened = await Effect.runPromise(Effect.gen(function*() {
+      const keys = yield* SecretKeys.make(Redacted.make("0123456789abcdef0123456789abcdef\u00e9\u{1F511}"))
+      return yield* keys.cipher.open(yield* keys.cipher.seal(Redacted.make("sk-test"), ctx), ctx)
+    }))
+    expect(Redacted.value(opened)).toBe("sk-test")
   })
 
   it("TreeScope, ItemShape, Placement, Overflow & PersonalModels uphold BFS distance, SQL parameterization, and protocol mapping invariants", async () => {

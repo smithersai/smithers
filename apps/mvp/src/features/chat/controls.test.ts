@@ -367,6 +367,35 @@ describe("Edit on a queued question", () => {
     await until(() => expect(tab.shown()[0]).toBe("user done on its way"))
   })
 
+  // medium-check on 14c0a18f: the shape delivered Postgres's copy before Edit read the rows, and Edit said not_found.
+  test("a question Postgres already holds while its send is in flight is sent, not missing", async () => {
+    const { api, device } = await openApi()
+    const stored = Promise.withResolvers<void>()
+    const returnResponse = Promise.withResolvers<void>()
+    const tab = await openOn(api, device, false, {
+      transport: (fetch) => async (input, init) => {
+        const request = new Request(input, init)
+        const response = await fetch(request)
+        if (request.method === "POST" && new URL(request.url).pathname === QUESTIONS_ROUTE && response.status === 202) {
+          stored.resolve()
+          await returnResponse.promise
+        }
+        return response
+      },
+    })
+    try {
+      const asked = await tab.actions.ask("already stored")
+      if (!asked.asked) throw new Error(asked.reason)
+      await stored.promise
+      await until(() => expect(tab.shown()).toContain("user done already stored"))
+      tab.actions.setDraft("typing")
+      expect(await tab.run(takeBack(asked.questionId))).toBe("sent")
+      expect(tab.composer()).toMatchObject({ draft: "typing" })
+    } finally {
+      returnResponse.resolve()
+    }
+  })
+
   test("a question the device can't delete from its outbox stays queued: taking it back fails, and the draft stays", async () => {
     const { api, device } = await openOffline()
     // The outbox's storage refuses deletes, as a browser's IndexedDB can (test.faults-by-injection).
