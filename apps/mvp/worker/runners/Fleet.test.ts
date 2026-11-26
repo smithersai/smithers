@@ -17,10 +17,10 @@ import { type AlertProviders, startAlertProviders } from "../test/alertProviders
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as RunContentTest from "../test/runContent.ts"
-import * as RunnersApi from "./Api.ts"
-import * as Fleet from "./Fleet.ts"
+import * as RunnersApi from "./Api.vibe"
+import * as Fleet from "./Fleet.vibe"
 import * as Jobs from "./Jobs.vibe"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 
 const runtime = testFile("fleet")
 const REPO = "github/acme/widgets"

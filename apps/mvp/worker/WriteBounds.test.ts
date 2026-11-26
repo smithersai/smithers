@@ -4,7 +4,7 @@ import { beforeAll, expect, test } from "vitest"
 import { testFile } from "./test/harness.ts"
 import * as WorkLinks from "./github/WorkLinks.ts"
 import * as Stack from "./stack/Stack.vibe"
-import * as Runners from "./runners/Store.ts"
+import * as Runners from "./runners/Store.vibe"
 
 const runtime = testFile("write_bounds")
 const sql = (query: string) => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe(query)))

@@ -8,7 +8,7 @@ import * as Todo from "../flows/Todo.ts"
 import * as TodoBaseClosed from "../flows/TodoBaseClosed.ts"
 import * as TodoDrop from "../flows/TodoDrop.ts"
 import * as TodoSession from "../flows/TodoSession.ts"
-import * as Fleet from "../runners/Fleet.ts"
+import * as Fleet from "../runners/Fleet.vibe"
 import * as Stack from "./Stack.vibe"
 
 const startOrConflict = effect (started: void!(StartConflict | StartUnavailable)) => {

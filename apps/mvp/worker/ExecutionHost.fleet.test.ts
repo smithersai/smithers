@@ -7,7 +7,7 @@ import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Flows from "./Flows.ts"
 import * as FleetAlert from "./flows/FleetAlert.ts"
 import * as Admin from "./runners/AdminFlows.vibe"
-import * as Fleet from "./runners/Fleet.ts"
+import * as Fleet from "./runners/Fleet.vibe"
 import { runFlow } from "./test/flowHost.ts"
 import { testFile } from "./test/harness.ts"
 

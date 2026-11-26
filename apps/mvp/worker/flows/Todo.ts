@@ -27,7 +27,7 @@ import * as TodoCli from "./TodoCli.ts"
 import { AgentCliFailed, ImplementCli, Route, RouteUnavailable, Routed } from "./TodoCli.ts"
 import * as TodoSession from "./TodoSession.ts"
 import type * as Jobs from "../runners/Jobs.vibe"
-import * as Fleet from "../runners/Fleet.ts"
+import * as Fleet from "../runners/Fleet.vibe"
 import { awaitPullClosed, readPullClosed } from "./TodoWait.ts"
 import { machineOf } from "./TodoMachine.ts"
 

@@ -2,7 +2,7 @@ import { AgentRunner } from "@smthrs/agent"
 import { Cause, Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
-import * as Fleet from "./Fleet.ts"
+import * as Fleet from "./Fleet.vibe"
 import * as Overflow from "./Overflow.vibe"
 
 // The host's job store on Postgres (decision 0136, docs/features/agent-runners.md#the-job-store): `@smthrs/agent`'s

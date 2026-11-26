@@ -8,7 +8,7 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as FeedLocks from "../FeedLocks.vibe"
 import * as Flows from "../Flows.ts"
 import { testFile } from "../test/harness.ts"
-import * as Fleet from "../runners/Fleet.ts"
+import * as Fleet from "../runners/Fleet.vibe"
 import * as FleetAlert from "./FleetAlert.ts"
 
 const runtime = testFile("fleet_alert_edges")

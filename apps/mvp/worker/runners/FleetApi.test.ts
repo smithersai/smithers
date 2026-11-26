@@ -11,7 +11,7 @@ import { repositoryOf } from "../github/Config.ts"
 import { app } from "../github/test/harness.ts"
 import { accountIdOf, appKey, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { testFile } from "../test/harness.ts"
-import * as FleetApi from "./FleetApi.ts"
+import * as FleetApi from "./FleetApi.vibe"
 import { fleetHarness } from "./test/fleet.ts"
 
 const runtime = testFile("fleet_shapes")

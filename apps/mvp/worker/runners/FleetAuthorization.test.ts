@@ -8,7 +8,7 @@ import { maintainer } from "../feeds/test/harness.ts"
 import { repositoryOf } from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import { testFile } from "../test/harness.ts"
-import * as FleetApi from "./FleetApi.ts"
+import * as FleetApi from "./FleetApi.vibe"
 import { fleetHarness } from "./test/fleet.ts"
 
 // Electric keeps a shape's first snapshot immutable. These initially empty shapes must not share the audience

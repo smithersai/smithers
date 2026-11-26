@@ -6,7 +6,7 @@ import type * as Actor from "../../Actor.ts"
 import { localRoles } from "../../feeds/test/harness.ts"
 import type * as RepoRoles from "../../github/RepoRoles.ts"
 import { signedIn, signedOut, type testFile } from "../../test/harness.ts"
-import * as FleetApi from "../FleetApi.ts"
+import * as FleetApi from "../FleetApi.vibe"
 
 export const fleetHarness = async (runtime: ReturnType<typeof testFile>, options: {
   readonly actor?: Actor.Actor

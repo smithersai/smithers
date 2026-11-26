@@ -31,10 +31,10 @@ import { branchRoles, signedIn, signedOut, testFile } from "../test/harness.ts"
 import * as Admin from "./Admin.vibe"
 import type * as Fence from "./Fence.vibe"
 import * as AdminFlows from "./AdminFlows.vibe"
-import * as RunnersApi from "./Api.ts"
+import * as RunnersApi from "./Api.vibe"
 import * as Jobs from "./Jobs.vibe"
 import * as RunContent from "./RunContent.ts"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 
 const runtime = testFile("runners")
 const REPO = "github/acme/widgets"
@@ -182,14 +182,24 @@ describe("the job store and the runner routes", () => {
       const queue = NotificationQueue.layer.pipe(Layer.provideMerge(Journal.SqlJournal.layer({ capacity: 1024, overflow: "reject", sourceEventCache: 1 }).pipe(
         Layer.provideMerge(Layer.provideMerge(FlowsDatabase.DurableWriter.layer(), writer)),
       )))
-      await Effect.runPromise(Effect.scoped(Effect.flatMap(NotificationQueue.NotificationQueue, (notifications) => notifications.admit("todo:delivery",
-        Notification.humanSteer({ runId: "todo:delivery", id: "steer-one", actor: "person:member", attribution: { login: "maya", via: "person" }, payload: SteerPayload.encode({ kind: "Message", body: "Inspect" }) }),
-      )).pipe(Effect.provide(queue))))
       const real = TodoSession.steering(writer)
-      expect((await Effect.runPromise(real.pending(task))).map((steer) => steer.id)).toEqual(["steer-one"])
       const steering = fails ? { ...real, delivered: () => Effect.fail("injected steering outage") } : real
       const { call, claim } = await routes(undefined, undefined, steering)
       const job = (await claim(token, { machine: {} })).body.job!
+      const beat = { key: job.key, claim: job.claim }
+      if (!fails) {
+        expect(await call("heartbeat", token, beat))
+          .toEqual({ status: 200, body: { held: true, cancel: false, leaseSeconds: 45 } })
+      }
+      await Effect.runPromise(Effect.scoped(Effect.flatMap(NotificationQueue.NotificationQueue, (notifications) => notifications.admit("todo:delivery",
+        Notification.humanSteer({ runId: "todo:delivery", id: "steer-one", actor: "person:member", attribution: { login: "maya", via: "person" }, payload: SteerPayload.encode({ kind: "Message", body: "Inspect" }) }),
+      )).pipe(Effect.provide(queue))))
+      expect((await Effect.runPromise(real.pending(task))).map((steer) => steer.id)).toEqual(["steer-one"])
+      if (!fails) {
+        expect(await call("heartbeat", token, beat)).toMatchObject({
+          status: 200, body: { held: true, cancel: false, steers: [{ id: "steer-one" }] },
+        })
+      }
       expect((await call("settle", token, { key: job.key, claim: job.claim, outcome: done(), delivered: ["steer-one"] })).body).toEqual({ recorded: true })
       expect((await Effect.runPromise(real.pending(task))).map((steer) => steer.id)).toEqual(fails ? ["steer-one"] : [])
       expect(await Effect.runPromise(store.status(job.key))).toMatchObject({ _tag: "Ended", outcome: { _tag: "Done" } })
@@ -639,6 +649,25 @@ describe("the repository's runners and agents", () => {
     expect(await query(Store.codingAgent(REPO))).toEqual(Option.none())
     expect(await query(Store.removeRunner({ repoId: REPO, name: "nyc-01" }, by()))).toBe("removed")
     expect(await query(Store.removeRunner({ repoId: REPO, name: "nyc-01" }, by()))).toBe("missing")
+  })
+
+  test("legacy agent fences compare with generation zero and unconfirmed coding agents refuse lookup", async () => {
+    const fenced = (execution: string): Store.Fenced => ({
+      fence: { execution, generation: 0, expiresAt: Date.now() + 60_000, authority: { _tag: "Local" } },
+      kind: "agents",
+      op: "put",
+    })
+    expect(await query(Store.setAgent({ repoId: REPO, agent, coding: true }, {
+      ...by(), fenced: fenced("first-legacy-write"),
+    }))).toBe("set")
+    expect(await query(Store.setAgent({ repoId: REPO, agent: { ...agent, name: "replacement" }, coding: true }, {
+      ...by(), fenced: fenced("stale-legacy-write"),
+    }))).toBe("superseded")
+    expect(await query(Store.codingAgent(REPO))).toEqual(Option.some(agent))
+    await sql`UPDATE agents SET reconfirm_at = clock_timestamp() WHERE repo_id = ${REPO} AND coding`
+    expect(await query(Effect.result(Store.codingAgent(REPO)))).toMatchObject({
+      _tag: "Failure", failure: { _tag: "@smthrs/mvp/runners/CodingAgentUnconfirmed" },
+    })
   })
 
   test("todo/Agent reads the repository's coding agent, or Smithers' own", async () => {
@@ -1706,6 +1735,8 @@ describe("the repository's runners and agents", () => {
     await query(MigrationReauthorization.clearAuthorization)
     expect(await call("heartbeat", token, { key: job.key, claim: job.claim })).toEqual({ status: 403, body: { code: "not_authorized" } })
     await Effect.runPromise(store.cancel(job.key))
+    expect(await call("heartbeat", token, { key: job.key, claim: "invalid-claim" }))
+      .toEqual({ status: 403, body: { code: "not_authorized" } })
     // Another claim id of the same job is no one's: refused, nothing more.
     expect(await call("heartbeat", token, { key: job.key, claim: crypto.randomUUID() }))
       .toEqual({ status: 403, body: { code: "not_authorized" } })
@@ -1736,6 +1767,12 @@ describe("the repository's runners and agents", () => {
       // No Stop yet: nobody, as before.
       expect(await call("heartbeat", token, { key: job.key, claim: job.claim })).toEqual({ status: 401, body: { code: "authentication" } })
       await Effect.runPromise(store.cancel(job.key))
+      expect(await call("heartbeat", undefined, { key: job.key, claim: job.claim }))
+        .toEqual({ status: 401, body: { code: "authentication" } })
+      expect(await call("heartbeat", token, { key: job.key }))
+        .toEqual({ status: 401, body: { code: "authentication" } })
+      expect(await call("heartbeat", token, { key: job.key, claim: "invalid-claim" }))
+        .toEqual({ status: 401, body: { code: "authentication" } })
       // Another claim id, or another route, hears nothing.
       expect(await call("heartbeat", token, { key: job.key, claim: crypto.randomUUID() }))
         .toEqual({ status: 401, body: { code: "authentication" } })
@@ -1892,6 +1929,34 @@ describe("the repository's runners and agents", () => {
     await Effect.runPromise(Effect.sleep(300))
     await sql`DELETE FROM github_repositories`
     expect(await waiting).toEqual({ status: 403, body: { code: "not_authorized" } })
+  })
+
+  test("a claim cannot renew a held job after its machine update revokes the runner", async () => {
+    const token = await register("nyc-revoked")
+    await Effect.runPromise((await jobs()).start(taskOf(), "todo:maintenance#g1"))
+    const { claim } = await routes()
+    const job = (await claim(token)).body.job!
+    const lease = () => sql`SELECT claim::text, lease_until::text FROM agent_jobs WHERE key = ${job.key}`
+    const before = await lease()
+
+    // Revoke within the machine update's transaction so the next transaction sees the revocation without a timing race.
+    await sql`CREATE FUNCTION revoke_on_machine_update() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        NEW.repo_authorized_at := NULL;
+        RETURN NEW;
+      END $$`
+    await sql`CREATE TRIGGER revoke_on_machine_update BEFORE UPDATE OF version ON runners
+      FOR EACH ROW WHEN (NEW.version = '9.9.9') EXECUTE FUNCTION revoke_on_machine_update()`
+    try {
+      expect(await claim(token, { free: 0, machine: { version: "9.9.9" } }))
+        .toEqual({ status: 403, body: { code: "not_authorized" } })
+      expect(await lease()).toEqual(before)
+      expect(await sql`SELECT repo_authorized_at FROM runners WHERE name = 'nyc-revoked'`)
+        .toEqual([{ repo_authorized_at: null }])
+    } finally {
+      await sql`DROP TRIGGER revoke_on_machine_update ON runners`
+      await sql`DROP FUNCTION revoke_on_machine_update()`
+    }
   })
 
   // Astra's review of 5fc33348: a claim with `running: []` handed back a held job by its runner id alone, though a new

@@ -9,7 +9,7 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import type * as Actor from "../Actor.ts"
 import { signedIn, signedOut, testFile } from "../test/harness.ts"
 import * as Audit from "./Audit.vibe"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 
 const runtime = testFile("runner_audit")
 

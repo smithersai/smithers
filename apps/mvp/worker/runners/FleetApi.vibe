@@ -1,5 +1,4 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
-import { Effect, Metric, Option } from "effect"
 import { HttpServerRequest } from "effect/http"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
@@ -55,53 +54,52 @@ const refusal = (refused: RepoRoles.RoleRefused) =>
     : new ShapeProxy.Refused({ status: 403 })
 
 /** Reads Electric's connection and returns the two shapes, reading roles through `roles`. */
-export const make = <R>(roles: RepoRoles.RepoRoles<R>) =>
-  Effect.gen(function* () {
-    const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+export const make = effect <R>(roles: RepoRoles.RepoRoles<R>) => {
+  const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
 
-    /** Who asks, and their role on the named repository: refused unless signed in and the repository is one. */
-    const asker = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      const actor = yield* ShapeAccess.actor
-      if (Option.isNone(actor)) return yield* new ShapeProxy.Refused({ status: 401 })
-      const repository = repositoryOf(request.url)
-      if (repository === undefined) return yield* new ShapeProxy.Refused({ status: 403 })
-      const resolved = yield* roles.resolve(actor.value, repository).pipe(Effect.mapError(refusal))
-      return { actor: actor.value, role: resolved.role, repoId: repository.id }
-    })
+  /** Who asks, and their role on the named repository: refused unless signed in and the repository is one. */
+  const asker = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const actor = try ShapeAccess.actor
+    if (Option.isNone(actor)) throw new ShapeProxy.Refused({ status: 401 })
+    const repository = repositoryOf(request.url)
+    if (repository === undefined) throw new ShapeProxy.Refused({ status: 403 })
+    const resolved = try roles.resolve(actor.value, repository).pipe(mapError(refusal))
+    return { actor: actor.value, role: resolved.role, repoId: repository.id }
+  }
 
-    const runs = ShapeProxy.make({
-      ...connection,
-      shape: Effect.gen(function* () {
-        const { actor, role, repoId } = yield* asker
-        if (!canAsk({ ...actor, role })) return yield* new ShapeProxy.Refused({ status: 403 })
-        const maintains = mayMaintain(actor, role)
-        yield* Effect.annotateCurrentSpan({ "fleet.audience": maintains ? "maintainers" : "members" })
-        return {
-          table: "agent_runs",
-          where: "repo_id = $1",
-          params: { "1": repoId },
-          columns: [...(maintains ? AGENT_RUN_MAINTAINER_COLUMNS : AGENT_RUN_COLUMNS)],
-        }
-      }),
-      name: "fleet.shape.runs",
-      metric: runShapes,
-    })
-
-    const machines = ShapeProxy.make({
-      ...connection,
-      shape: Effect.gen(function* () {
-        const { actor, role, repoId } = yield* asker
-        if (!mayMaintain(actor, role)) return yield* new ShapeProxy.Refused({ status: 403 })
-        return { table: "runners", where: "repo_id = $1", params: { "1": repoId }, columns: [...MACHINE_COLUMNS] }
-      }),
-      name: "fleet.shape.machines",
-      metric: machineShapes,
-    })
-
-    const fetch = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      return yield* (request.url.split("?")[0] === AGENT_RUNS_SHAPE_ROUTE ? runs : machines)
-    })
-    return { fetch }
+  const runs = ShapeProxy.make({
+    ...connection,
+    shape: effect {
+      const { actor, role, repoId } = try asker
+      if (!(try sync(() => canAsk({ ...actor, role })))) throw new ShapeProxy.Refused({ status: 403 })
+      const maintains = try sync(() => mayMaintain(actor, role))
+      try annotateCurrentSpan({ "fleet.audience": maintains ? "maintainers" : "members" })
+      return {
+        table: "agent_runs",
+        where: "repo_id = $1",
+        params: { "1": repoId },
+        columns: [...(maintains ? AGENT_RUN_MAINTAINER_COLUMNS : AGENT_RUN_COLUMNS)],
+      }
+    },
+    name: "fleet.shape.runs",
+    metric: runShapes,
   })
+
+  const machines = ShapeProxy.make({
+    ...connection,
+    shape: effect {
+      const { actor, role, repoId } = try asker
+      if (!(try sync(() => mayMaintain(actor, role)))) throw new ShapeProxy.Refused({ status: 403 })
+      return { table: "runners", where: "repo_id = $1", params: { "1": repoId }, columns: [...MACHINE_COLUMNS] }
+    },
+    name: "fleet.shape.machines",
+    metric: machineShapes,
+  })
+
+  const fetch = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    return try (request.url.split("?")[0] === AGENT_RUNS_SHAPE_ROUTE ? runs : machines)
+  }
+  return { fetch }
+}

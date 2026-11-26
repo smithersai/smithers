@@ -1,9 +1,9 @@
-import { Effect, Tracer } from "effect"
+import { Cause, Effect, Exit, Tracer } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
 import { testFile } from "../test/harness.ts"
 import * as Fence from "./Fence.vibe"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 
 const runtime = testFile("runner_authority_deadline")
 const query = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(effect)
@@ -103,4 +103,18 @@ test("replays the first outcome and only exposes the receipt to its actor", asyn
   expect(await query(Fence.recorded(execution))).toBe("set")
   expect(await query(Fence.receiptOf(execution, actor))).toEqual({ kind: "runners", name: "runner", op: "put", outcome: "set" })
   expect(await query(Fence.receiptOf(execution, crypto.randomUUID()))).toBeUndefined()
+})
+
+test("a late commit without a fence is a defect and ordinary failures pass through", async () => {
+  const by: Store.By = { actorId: "admin", invocationKey: "unfenced-late-commit" }
+  const ordinary = new Error("database unavailable")
+  const late = await query(Effect.exit(Store.refusedWhenLate(
+    "github/acme/authority", "runner", by, Effect.fail(new Fence.LateCommit()),
+  )))
+  expect(Exit.isFailure(late) && Cause.hasDies(late.cause)).toBe(true)
+  if (Exit.isFailure(late)) expect(Cause.squash(late.cause)).toEqual(new Error("a write without a fence can't be late"))
+  expect(await query(Effect.result(Store.refusedWhenLate(
+    "github/acme/authority", "runner", by, Effect.fail(ordinary),
+  )))).toMatchObject({ _tag: "Failure", failure: ordinary })
+  expect(await sql("SELECT execution FROM admin_receipts")).toEqual([])
 })

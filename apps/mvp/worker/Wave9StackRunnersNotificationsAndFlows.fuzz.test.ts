@@ -12,7 +12,7 @@ import * as PersonalStore from "./personal/Store.vibe"
 import * as PersonalUsage from "./personal/Usage.vibe"
 import * as Fence from "./runners/Fence.vibe"
 import * as Overflow from "./runners/Overflow.vibe"
-import * as RunnerStore from "./runners/Store.ts"
+import * as RunnerStore from "./runners/Store.vibe"
 import * as Stack from "./stack/Stack.vibe"
 import * as H from "./test/harness.ts"
 

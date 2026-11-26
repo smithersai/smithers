@@ -23,10 +23,10 @@ import * as RunContentTest from "../test/runContent.ts"
 import { branchRoles, signedIn, signedOut, testFile } from "../test/harness.ts"
 import * as Admin from "./Admin.vibe"
 import * as AdminFlows from "./AdminFlows.vibe"
-import * as RunnersApi from "./Api.ts"
+import * as RunnersApi from "./Api.vibe"
 import * as Jobs from "./Jobs.vibe"
 import * as Overflow from "./Overflow.vibe"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 
 const runtime = testFile("overflow")
 const REPO = "github/acme/widgets"

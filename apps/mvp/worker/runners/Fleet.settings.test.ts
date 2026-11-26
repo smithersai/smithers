@@ -1,6 +1,6 @@
 import { ConfigProvider, Effect } from "effect"
 import { expect, test } from "vitest"
-import * as Fleet from "./Fleet.ts"
+import * as Fleet from "./Fleet.vibe"
 
 const read = (values: Record<string, string>) => Effect.runPromise(Fleet.settings.pipe(
   Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(values)),

@@ -14,10 +14,10 @@ import { app } from "../github/test/harness.ts"
 import { appKey, scriptedGitHub as makeScriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as RunContentTest from "../test/runContent.ts"
 import { testFile } from "../test/harness.ts"
-import * as RunnersApi from "./Api.ts"
+import * as RunnersApi from "./Api.vibe"
 import * as GitCredential from "./GitCredential.vibe"
 import * as Jobs from "./Jobs.vibe"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 
 const githubs: Array<ReturnType<typeof makeScriptedGitHub>> = []
 const scriptedGitHub: typeof makeScriptedGitHub = (...args) => {
