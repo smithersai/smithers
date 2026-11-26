@@ -1,4 +1,3 @@
-import { Effect } from "effect"
 import { SqlClient } from "effect/sql"
 
 // The order every writer of a person's feed takes its locks in (docs/features/notifications.md#locks). A notice's
@@ -22,12 +21,11 @@ export const keysOf = (pairs: Iterable<Pair>): ReadonlyArray<string> => [...new 
  * Takes the locks of `pairs` for the rest of the caller's transaction, in the one order. Answers the keys it holds:
  * a writer touches only rows of a pair among them.
  */
-export const lock = (sql: SqlClient.SqlClient, pairs: Iterable<Pair>) =>
-  Effect.gen(function* () {
-    const keys = keysOf(pairs)
-    for (const key of keys) yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`
-    return new Set(keys)
-  })
+export const lock = (sql: SqlClient.SqlClient, pairs: Iterable<Pair>) => effect {
+  const keys = keysOf(pairs)
+  for (const key of keys) try sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`
+  return new Set(keys)
+}
 
 /** Whether `held` (from `lock`) covers `pair`. */
 export const holds = (held: ReadonlySet<string>, pair: Pair) => held.has(keyOf(pair))

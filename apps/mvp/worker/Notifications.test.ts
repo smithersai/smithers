@@ -13,7 +13,7 @@ import type { Report } from "../src/features/status/schema.ts"
 import type { Actor } from "./Actor.ts"
 import { REPOSITORY } from "./github/test/fixtures.ts"
 import { delivery, githubHarness } from "./github/test/harness.ts"
-import * as FeedLocks from "./FeedLocks.ts"
+import * as FeedLocks from "./FeedLocks.vibe"
 import * as Notifications from "./Notifications.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { eventually, harness, recorded, testFile } from "./test/harness.ts"
@@ -976,7 +976,7 @@ describe("a run on a repository's branch quotes its question only to its launche
   })
 })
 
-describe("a repository event takes its watchers' feed locks before it writes any of their rows (worker/FeedLocks.ts)", () => {
+describe("a repository event takes its watchers' feed locks before it writes any of their rows (worker/FeedLocks.vibe)", () => {
   test("while another transaction holds one watcher's lock, no watcher's row changes; once it ends, both do", async () => {
     await sql(`TRUNCATE people, sessions CASCADE`)
     const people = [crypto.randomUUID(), crypto.randomUUID()].sort()

@@ -6,7 +6,7 @@
 // Electric's gateway records its failed calls into the object with it (infra/ElectricRelay.ts), and a FlowExecution
 // alarm that throws is recorded with it (`recorded`): on smithers.sh on 2026-11-02 those that threw "this Durable Object
 // instance is no longer active" (13:32:41Z, 14:12:03Z) left only an uncategorized exception.
-import { Cause, Clock, Effect, Exit, Metric } from "effect"
+import { Effect, Metric } from "effect"
 
 /** What a failure said, by category: Cloudflare's own failures by name, never the message text. */
 export type Category =
@@ -119,32 +119,30 @@ export const failures = Metric.counter("durable_object_handler_failures", {
  * Success and interruption record nothing.
  */
 export const recorded = (object: string, handler: string) =>
-<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-  Effect.gen(function* () {
-    const startedAt = yield* Clock.currentTimeMillis
-    return yield* effect.pipe(
-      // Uninterruptible and run on every exit, an interruption from outside included: a handler interrupted while its
-      // cleanup died is recorded too. Interruption alone records nothing.
-      Effect.onExit((exit) =>
-        Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause) ? Effect.void : Effect.gen(function* () {
-          const durationMs = (yield* Clock.currentTimeMillis) - startedAt
-          const failure = describe(Cause.squash(exit.cause))
-          yield* Metric.update(
-            Metric.withAttributes(failures, {
-              object,
-              handler,
-              errorClass: failure.errorTag,
-              category: failure.category,
-              retryable: String(failure.retryable),
-              overloaded: String(failure.overloaded),
-              remote: String(failure.remote),
-            }),
-            1,
-          )
-          yield* Effect.logWithLevel(failure.retryable ? "Warn" : "Error")("durable_object.handler.failed").pipe(
-            Effect.annotateLogs({ object, handler, ...failure, durationMs }),
-          )
-        }).pipe(Effect.catchCause(() => Effect.void))
-      ),
-    )
+<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => effect {
+  const startedAt = try Clock.currentTimeMillis
+  // Uninterruptible and run on every exit, an interruption from outside included: a handler interrupted while its
+  // cleanup died is recorded too. Interruption alone records nothing.
+  return try onExit(effect, (exit) => {
+    if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) return Effect.void
+    return catchCause(effect {
+      const durationMs = (try Clock.currentTimeMillis) - startedAt
+      const failure = describe(Cause.squash(exit.cause))
+      try Metric.update(
+        Metric.withAttributes(failures, {
+          object,
+          handler,
+          errorClass: failure.errorTag,
+          category: failure.category,
+          retryable: String(failure.retryable),
+          overloaded: String(failure.overloaded),
+          remote: String(failure.remote),
+        }),
+        1,
+      )
+      try annotateLogs(logWithLevel(failure.retryable ? "Warn" : "Error")("durable_object.handler.failed"), {
+        object, handler, ...failure, durationMs,
+      })
+    }, () => Effect.void)
   })
+}

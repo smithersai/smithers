@@ -11,7 +11,7 @@ import * as TestDatabase from "../db/TestDatabase.ts"
 import * as AboutStore from "./about/Store.ts"
 import { APP_ID, appKey } from "./github/test/scriptedGitHub.ts"
 import * as RepoAbout from "./RepoAbout.ts"
-import * as RepoMetrics from "./RepoMetrics.ts"
+import * as RepoMetrics from "./RepoMetrics.vibe"
 import { testFile } from "./test/harness.ts"
 import { type ScriptedGitHub, scriptedGitHub, spoonKnife } from "./test/githubRest.ts"
 

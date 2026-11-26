@@ -5,7 +5,7 @@ import { Clock, Config, Duration, Effect, Layer, Metric, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import { CAPACITY_REASONS, FAILURES } from "../../src/features/repo/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
-import * as RepoMetrics from "../RepoMetrics.ts"
+import * as RepoMetrics from "../RepoMetrics.vibe"
 import * as Repos from "../Repos.ts"
 import type { RepoUpstream } from "../RepoUpstream.vibe"
 

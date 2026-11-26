@@ -60,6 +60,7 @@ export default defineConfig({
         // Remote flows (docs/features/remote-flows.md). worker/Executions.ts, the Alchemy Durable Object declaration,
         // runs only under Alchemy's bundle, so the workerd test proves it through ExecutionHost.ts instead.
         "worker/ExecutionHost.ts",
+        "worker/DurableObjectFailure.vibe",
         "worker/index.ts",
         // Injected development-host fault boundaries used by old and new browser builds.
         "worker/DevFaults.ts",
@@ -104,7 +105,7 @@ export default defineConfig({
         // Repositories: RepoApi, cloning into Code Storage and its spend (docs/features/repo.md).
         "worker/RepoApi.ts",
         "worker/RepoConfig.vibe",
-        "worker/RepoMetrics.ts",
+        "worker/RepoMetrics.vibe",
         "worker/RepoReads.ts",
         "worker/Repos.ts",
         "worker/RepoUpstream.vibe",
@@ -161,6 +162,8 @@ export default defineConfig({
         "worker/Asks.ts",
         "db/migrations/0117_wait_address.ts",
         // Notifications: the feed's fold, routes and shape, and the run index's scope (docs/features/notifications.md).
+        "worker/FeedLocks.vibe",
+        "worker/NotificationPolicy.vibe",
         "worker/Notifications.ts",
         "db/migrations/0020_notifications.ts",
         // The git loop: GitHub's webhook, the writes route, the issues' shapes and the GitHub flows

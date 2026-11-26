@@ -34,7 +34,7 @@ import { FlowStarter } from "./Flows.ts"
 import { Clone } from "./flows/RepoClone.ts"
 import * as AboutStore from "./about/Store.ts"
 import * as RepoAbout from "./RepoAbout.ts"
-import * as RepoMetrics from "./RepoMetrics.ts"
+import * as RepoMetrics from "./RepoMetrics.vibe"
 import * as RepoReads from "./RepoReads.ts"
 import * as Repos from "./Repos.ts"
 

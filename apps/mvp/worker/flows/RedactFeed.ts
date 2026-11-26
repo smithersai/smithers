@@ -4,7 +4,7 @@ import { Cause, Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { CONFIRM_ROUTE } from "../../ops/feed-barrier/Route.ts"
 import { codeOf } from "../ErrorCode.ts"
-import * as FeedLocks from "../FeedLocks.ts"
+import * as FeedLocks from "../FeedLocks.vibe"
 import * as Flows from "../Flows.ts"
 
 // `ops/RedactFeed` (docs/features/notifications.md#rows-written-before): one pass over the feed, after a barrier the
@@ -16,7 +16,7 @@ import * as Flows from "../Flows.ts"
 //
 // A round is one batch, its own step and transaction: up to `BATCH` rows in the primary key's order from the last key,
 // read without locks; then everyone those rows belong to locked as every writer of a feed locks them
-// (worker/FeedLocks.ts); then, in statements of their own that see what committed before the locks, the rows rewritten
+// (worker/FeedLocks.vibe); then, in statements of their own that see what committed before the locks, the rows rewritten
 // or deleted. The round's payload is the cursor, so a pass the engine resumes goes on where it stopped. Phases:
 // - `fleet`: a fleet alert says only its kind and its repository (worker/flows/FleetAlert.ts `bellTitleOf`).
 // - `repo_events`: `main` and release rows name only the repository (worker/Notifications.ts `repoEventOf`).

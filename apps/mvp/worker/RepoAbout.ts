@@ -13,7 +13,7 @@ import * as ReadToken from "./github/ReadToken.ts"
 import { allowed as allowedRepositories } from "./github/RepoRoles.ts"
 import * as Tokens from "./github/Tokens.ts"
 import * as Curated from "./home/Curated.ts"
-import * as RepoMetrics from "./RepoMetrics.ts"
+import * as RepoMetrics from "./RepoMetrics.vibe"
 
 // What GitHub says of a repository (docs/features/repo.md#about): the answer the repository page, its home before a
 // clone, the Docs tab and the code root all start from. Visitors open it most, so it must not hang on GitHub's

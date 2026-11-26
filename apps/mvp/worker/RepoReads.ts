@@ -12,7 +12,7 @@ import {
 } from "../src/features/repo/flows.ts"
 import { type Refs, RefsListing, TreeListing } from "../src/features/repo/schema.ts"
 import { codeOf } from "./ErrorCode.ts"
-import * as RepoMetrics from "./RepoMetrics.ts"
+import * as RepoMetrics from "./RepoMetrics.vibe"
 import * as Repos from "./Repos.ts"
 
 // Reading a cloned repository (decision 0006 §1, docs/features/repo.md#reads): one implementation for RepoApi's `GET`

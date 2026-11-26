@@ -17,7 +17,7 @@ import { aboutRoute, blobRoute, cloneExecutionId, rawRoute, refsRoute, treeRoute
 import * as RepoFlows from "../src/features/repo/flows.ts"
 import * as Actor from "./Actor.ts"
 import { FlowStarter, StartConflict, StartUnavailable } from "./Flows.ts"
-import * as RepoMetrics from "./RepoMetrics.ts"
+import * as RepoMetrics from "./RepoMetrics.vibe"
 import * as Repos from "./Repos.ts"
 import { fixture, scripted, shaOf } from "./test/codeStorage.ts"
 import { runFlow } from "./test/flowHost.ts"

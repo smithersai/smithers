@@ -5,7 +5,7 @@ import { TestClock } from "effect/testing"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import * as FeedLocks from "../FeedLocks.ts"
+import * as FeedLocks from "../FeedLocks.vibe"
 import * as Flows from "../Flows.ts"
 import { testFile } from "../test/harness.ts"
 import * as Fleet from "../runners/Fleet.ts"
@@ -161,7 +161,7 @@ test("a bell title with a repository's longest name is cut to a title's 200 char
   expect(title.endsWith("…")).toBe(true)
 })
 
-test("the bell takes its recipients' feed locks before it writes any of their rows (worker/FeedLocks.ts)", async () => {
+test("the bell takes its recipients' feed locks before it writes any of their rows (worker/FeedLocks.vibe)", async () => {
   const query = (text: string, ...params: ReadonlyArray<unknown>) =>
     runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.orDie(sql.unsafe<Record<string, unknown>>(text, params))))
   const WIDGETS = "github/acme/widgets"

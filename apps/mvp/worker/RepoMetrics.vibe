@@ -1,4 +1,4 @@
-import { Effect, Metric } from "effect"
+import { Metric } from "effect"
 import type { Spend } from "./Repos.ts"
 
 // The repository feature's server metrics, listed with their log lines in docs/observability.md#repositories. Labels
@@ -93,13 +93,12 @@ export const spendAlerts = Metric.counter("repo_spend_alerts", {
  * `repo.spend.alert` error line and a count on `repo_spend_alerts`. Delivering the alert to Will is the token-spend
  * alert's channel (docs/todo.md), which reads this line.
  */
-export const recordSpend = (spend: Spend) =>
-  Effect.gen(function* () {
-    yield* Metric.update(storedBytes, spend.storedBytes)
-    yield* Metric.update(spendEstimate, Math.round(spend.estimateUsd * 100) / 100)
-    if (spend.alert === null) return
-    yield* Metric.update(Metric.withAttributes(spendAlerts, { pct: String(spend.alert) }), 1)
-    yield* Effect.logError("repo.spend.alert").pipe(
-      Effect.annotateLogs({ pct: spend.alert, estimateUsd: Math.round(spend.estimateUsd * 100) / 100 }),
-    )
+export const recordSpend = (spend: Spend) => effect {
+  try Metric.update(storedBytes, spend.storedBytes)
+  try Metric.update(spendEstimate, Math.round(spend.estimateUsd * 100) / 100)
+  if (spend.alert === null) return
+  try Metric.update(Metric.withAttributes(spendAlerts, { pct: String(spend.alert) }), 1)
+  try annotateLogs(logError("repo.spend.alert"), {
+    pct: spend.alert, estimateUsd: Math.round(spend.estimateUsd * 100) / 100,
   })
+}

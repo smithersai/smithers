@@ -7,7 +7,7 @@ import { Deferred, Effect, Exit, Fiber, Layer, Logger, Option, Schema } from "ef
 import { TestClock } from "effect/testing"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
-import * as Policy from "./NotificationPolicy.ts"
+import * as Policy from "./NotificationPolicy.vibe"
 import * as Notifications from "./Notifications.ts"
 import { testFile } from "./test/harness.ts"
 import ExamplePolicy, { layer as examplePolicyRule } from "../../../.smithers/flows/notification-policy/flow.ts"
@@ -120,6 +120,12 @@ test("a hung service falls back at 10 seconds; cancelling the caller remains can
     const cancelledExit = yield* Fiber.await(cancelled)
     expect(Exit.isFailure(cancelledExit)).toBe(true)
   }).pipe(Effect.provide(TestClock.layer()), Effect.scoped))
+})
+
+test("a request that cannot be serialized keeps the default audience", async () => {
+  const invalid = { ...request, toJSON: () => { throw new Error("unserializable request") } }
+  expect(await Effect.runPromise(Policy.select(invalid).pipe(Effect.provide(flowLayer))))
+    .toEqual({ source: "default", reason: "policy-failed", recipients: ["ann", "ben"] })
 })
 
 test("policy selection never adds an outsider or a muted watcher", async () => {

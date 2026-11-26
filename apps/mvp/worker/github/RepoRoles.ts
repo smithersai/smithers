@@ -14,7 +14,7 @@ import { requestRay } from "../RequestRay.ts"
 import * as Visibility from "./Visibility.ts"
 import * as ReadToken from "./ReadToken.ts"
 import { DEFAULT_API_URL } from "./Config.ts"
-import * as FeedLocks from "../FeedLocks.ts"
+import * as FeedLocks from "../FeedLocks.vibe"
 import { FRESH_SECONDS } from "./RoleAge.ts"
 export { FRESH_SECONDS } from "./RoleAge.ts"
 import * as SessionStore from "../SessionStore.ts"
@@ -928,7 +928,7 @@ export const remember = (repoId: string, personId: string, role: Role | null, as
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
-      // The person's feed lock on the repository first, as every writer of their feed takes it (worker/FeedLocks.ts).
+      // The person's feed lock on the repository first, as every writer of their feed takes it (worker/FeedLocks.vibe).
       yield* FeedLocks.lock(sql, [{ repoId, personId }])
       const [before] = yield* sql<{ readonly role: string | null; readonly checkedAt: string }>`
         SELECT role, checked_at::text AS "checkedAt" FROM github_repo_roles WHERE repo_id = ${repoId} AND person_id = ${personId}`

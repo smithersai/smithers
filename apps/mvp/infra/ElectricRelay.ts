@@ -13,7 +13,7 @@
 // (docs/infrastructure.md#electric). Such a call is answered as an overloaded one.
 import { Cause, Clock, Effect, Exit, Metric } from "effect"
 import { HttpServerResponse } from "effect/http"
-import { categoryOf, describe, flag } from "../worker/DurableObjectFailure.ts"
+import { categoryOf, describe, flag } from "../worker/DurableObjectFailure.vibe"
 import { correlationOf, RETRY_AFTER_SECONDS, unavailable } from "./ElectricAwake.ts"
 
 /** How long a device waits after an overloaded answer, in seconds (infra/ElectricAwake.ts). */
@@ -29,7 +29,7 @@ export const isOverloaded = (error: unknown): boolean => flag(error, "overloaded
  */
 export const isTransient = (error: unknown): boolean => flag(error, "retryable") && !isOverloaded(error)
 
-/** A failed call's message category (worker/DurableObjectFailure.ts), never its text. */
+/** A failed call's message category (worker/DurableObjectFailure.vibe), never its text. */
 export { categoryOf }
 
 /**

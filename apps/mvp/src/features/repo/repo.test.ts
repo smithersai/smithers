@@ -26,7 +26,7 @@ import { aliasChecks, aboutLoadMs, blobLoadMs, clones, copies, refsLoadMs, roleA
 import { NotCopied } from "./repo"
 import { aboutOf, generatedLinksFor, headerOf, previewReadmeOf, previewTreeOf } from "./view"
 import * as Repos from "../../../worker/Repos.ts"
-import * as RepoMetrics from "../../../worker/RepoMetrics.ts"
+import * as RepoMetrics from "../../../worker/RepoMetrics.vibe"
 
 // The repository state machine on a tab, driven as React drives it, with no React: through the `Repo` layer's plain
 // actions, reading its live queries. The tab reaches RepoApi's real handler (worker/RepoApi.ts) over the compose

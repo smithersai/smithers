@@ -16,9 +16,9 @@ import { branchAccess, branchAccessAs, BranchRoles, canView, isMember, policyOf,
 import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "./Body.vibe"
 import { codeOf } from "./ErrorCode.ts"
-import * as FeedLocks from "./FeedLocks.ts"
+import * as FeedLocks from "./FeedLocks.vibe"
 import * as SessionStore from "./SessionStore.ts"
-import * as NotificationPolicy from "./NotificationPolicy.ts"
+import * as NotificationPolicy from "./NotificationPolicy.vibe"
 import * as ShapeAccess from "./ShapeAccess.ts"
 import { FRESH_SECONDS } from "./github/RoleAge.ts"
 import { TTL_MS } from "./github/Visibility.ts"
@@ -204,7 +204,7 @@ const pairsOf = (runIds: ReadonlyArray<string>) =>
   })
 
 /**
- * Takes, for the rest of the caller's transaction, the feed lock (worker/FeedLocks.ts) of everyone folding `runIds`
+ * Takes, for the rest of the caller's transaction, the feed lock (worker/FeedLocks.vibe) of everyone folding `runIds`
  * may touch, sorted and all at once, before any notification row: what a transaction that folds several runs takes
  * first, then passes to each `foldRun`. A role read that denies one of them takes the same lock before it deletes
  * their rows, so neither waits on the other in a cycle. Answers the keys it holds.
@@ -486,7 +486,7 @@ export const recordRepoEvent = (event: RepoEvent, localPeople: ReadonlyArray<Loc
     })
     const selected = new Set(selection.recipients)
     // The decision grants nothing. Lock only its eligible recipients, then re-read watches, sessions and recorded
-    // repository denials after the policy and locks, before touching any notification row (worker/FeedLocks.ts).
+    // repository denials after the policy and locks, before touching any notification row (worker/FeedLocks.vibe).
     const held = yield* FeedLocks.lock(
       sql,
       defaults.filter((principal) => selected.has(principal)).map((principal) => ({ repoId: event.repoId, personId: principal })),

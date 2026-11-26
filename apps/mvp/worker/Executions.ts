@@ -21,7 +21,7 @@ import * as Cron from "./ci/Cron.ts"
 import * as RepoFlow from "./ci/RepoFlow.ts"
 import * as DomainsConfig from "./domains/Config.ts"
 import { DomainProvider } from "./domains/Provider.ts"
-import { recorded } from "./DurableObjectFailure.ts"
+import { recorded } from "./DurableObjectFailure.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Flows from "./Flows.ts"
@@ -583,7 +583,7 @@ const object = <E, R>(
           repositoryRun: () => host.repositoryRun.pipe(Effect.map(Option.getOrNull), Effect.provide(logs)),
           cancel: () => host.cancel().pipe(Effect.provide(logs)),
           // A failure still throws, so Cloudflare retries the alarm, and is recorded by its flags and category first
-          // (worker/DurableObjectFailure.ts): an instance Cloudflare replaced mid-alarm fails its I/O.
+          // (worker/DurableObjectFailure.vibe): an instance Cloudflare replaced mid-alarm fails its I/O.
           advance: () => host.alarm().pipe(Effect.asVoid, recorded("FlowExecution", "advance"), Effect.provide(logs)),
           alarm: () => host.alarm().pipe(Effect.asVoid, recorded("FlowExecution", "alarm"), Effect.provide(logs))
         }

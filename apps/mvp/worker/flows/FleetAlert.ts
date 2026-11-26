@@ -4,7 +4,7 @@ import { Node } from "@smthrs/plan"
 import { Duration, Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
-import * as FeedLocks from "../FeedLocks.ts"
+import * as FeedLocks from "../FeedLocks.vibe"
 import * as Flows from "../Flows.ts"
 import * as Fleet from "../runners/Fleet.ts"
 import { AUDIENCE } from "../runners/FleetAudience.ts"
@@ -197,7 +197,7 @@ export const bell = (alert: Fleet.Alert, home: string) =>
         VALUES (${alert.alertId}, ${alert.kind}, ${alert.repoId}, ${alert.subject}, ${title}, ${href})
         ON CONFLICT (id) DO NOTHING`
       // Who may hear it, read without locking anything; then their feed locks, sorted, before any notification row
-      // (worker/FeedLocks.ts); then the rows, for those locked who may still hear it, in a statement of its own.
+      // (worker/FeedLocks.vibe); then the rows, for those locked who may still hear it, in a statement of its own.
       const audience = () => sql<{ readonly recipient: string }>`
         SELECT DISTINCT recipient
         FROM (

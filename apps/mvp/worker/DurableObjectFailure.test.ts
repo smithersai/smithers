@@ -1,9 +1,9 @@
 // A Durable Object failure is described by a known class, Cloudflare's flags and a message category, never its text,
-// and describing any thrown value never throws (worker/DurableObjectFailure.ts).
+// and describing any thrown value never throws (worker/DurableObjectFailure.vibe).
 import { Cause, Effect, Fiber, Logger, Metric } from "effect"
 import { TestClock } from "effect/testing"
 import { describe as group, expect, test } from "vitest"
-import { categoryOf, classOf, describe, failures, KNOWN_CLASSES, recorded } from "./DurableObjectFailure.ts"
+import { categoryOf, classOf, describe, failures, KNOWN_CLASSES, recorded } from "./DurableObjectFailure.vibe"
 
 /** What workerd rejects I/O with in an instance Cloudflare has replaced (smithers.sh, 2026-11-02 13:32:41Z). */
 export const inactive = () =>
@@ -189,6 +189,36 @@ group("recorded", () => {
       level: "ERROR",
       annotations: { handler: "cleanup", errorTag: "Error", durationMs: 3_000 },
     }])
+    expect(counted(attributes)).toBe(before + 1)
+  })
+
+  test("a failing logger leaves the original handler cause and its metric intact", async () => {
+    const defect = new Error("handler")
+    const attributes = {
+      object: "FlowExecution",
+      handler: "faulty-logger",
+      errorClass: "Error",
+      category: "other",
+      retryable: "false",
+      overloaded: "false",
+      remote: "false",
+    }
+    const before = counted(attributes)
+    let attempted = 0
+    const loggers = new Set([Logger.make(() => {
+      attempted++
+      throw new Error("logger")
+    })])
+
+    const exit = await Effect.runPromiseExit(
+      recorded("FlowExecution", "faulty-logger")(Effect.die(defect)).pipe(
+        Effect.provideService(Logger.CurrentLoggers, loggers),
+      ),
+    )
+
+    expect(exit._tag).toBe("Failure")
+    if (exit._tag === "Failure") expect(Cause.squash(exit.cause)).toBe(defect)
+    expect(attempted).toBe(1)
     expect(counted(attributes)).toBe(before + 1)
   })
 
