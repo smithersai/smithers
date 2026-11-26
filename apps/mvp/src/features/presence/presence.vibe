@@ -1,8 +1,7 @@
-import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
-import { at, join, leave } from "./actions"
+import { at, join as joinRoom, leave } from "./actions.vibe"
 import type { Where } from "./schema"
-import { type PresenceConfig, PresenceStore } from "./store"
+import { type PresenceConfig, PresenceStore } from "./store.vibe"
 
 // Presence as a frontend sees it (docs/features/branch-workspace.md#presence): live queries to read and plain functions
 // to act, with no Effect in sight.
@@ -30,19 +29,19 @@ export class Presence extends Context.Service<
   { readonly queries: PresenceQueries; readonly actions: PresenceActions }
 >()("@smthrs/mvp/presence/Presence") {
   /** Binds frontend actions to the injected Effect services. */
-  static readonly make = Effect.gen(function* () {
-    const store = yield* PresenceStore
+  static readonly make = effect {
+    const store = try PresenceStore
     // A route cancels these with its signal.
-    const { runPromise: run } = runners(yield* Effect.context<PresenceStore>(), "presence")
+    const { runPromise: run } = runners(try Effect.context<PresenceStore>(), "presence")
     return Presence.of({
       queries: { participants: store.participantsState.tanstack, room: store.roomState.tanstack },
       actions: {
-        join: (branchId, signal) => run(join(branchId), { signal }),
+        join: (branchId, signal) => run(joinRoom(branchId), { signal }),
         at: (where, signal) => run(at(where), { signal }),
         leave: (signal) => run(leave, { signal }),
       },
     })
-  })
+  }
 
   /** Binds the store's queries and actions for frontends, with the services this layer was built with. */
   static readonly layer = (config: PresenceConfig) =>

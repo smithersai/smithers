@@ -1,11 +1,11 @@
-import { PinClient } from "./api"
+import { PinClient } from "./api.vibe"
 import { createServer } from "node:http"
 import { FlowRuntime } from "@smthrs/flow"
 import { Effect, Layer, Logger } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { expect, test } from "vitest"
 import { PinRefused, PinUnavailable } from "./flows"
-import { stamp, writePin } from "./steps"
+import { stamp, writePin } from "./steps.vibe"
 
 test("the durable request preserves targets, classifies final refusals and retries only transient failures", async () => {
   let status = 503

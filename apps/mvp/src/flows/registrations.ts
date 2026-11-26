@@ -1,4 +1,4 @@
-import * as PinSteps from "../features/pins/steps"
+import * as PinSteps from "../features/pins/steps.vibe"
 import { FlowRegistry } from "./registry"
 import * as Timeline from "../features/timeline/steps.vibe"
 import { Action } from "@smthrs/flow"

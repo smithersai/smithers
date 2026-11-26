@@ -4,7 +4,7 @@ import { Context, Effect, Schema } from "effect"
 import { expect, test } from "vitest"
 import { ChatPin, ChatUnpin } from "./flows"
 import { Pin, Pending } from "./schema"
-import { pinnedQuery } from "./store"
+import { pinnedQuery } from "./store.vibe"
 import { Message } from "../chat/schema"
 
 test("pin and unpin are agent-callable flows; pin defaults to the previous answer", () => {

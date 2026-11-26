@@ -1,0 +1,39 @@
+import { FlowRuntime, Interpreter } from "@smthrs/flow"
+import { PinClient } from "./api.vibe"
+import { requesterOf } from "../../flows/requests"
+import { ChatPin, ChatUnpin, Pinned, PinRefused, PinUnavailable, PinStamp, PinWrite, UnpinWrite } from "./flows"
+
+export const pins = Metric.counter("smithers_message_pins", { incremental: true })
+export const stamp = (within: Duration.Input = "15 seconds") => (p: typeof PinStamp.payloadSchema.Type) => timeoutOrElse(effect {
+  if (p.at !== undefined) return { ...p, at: p.at }
+  const { executionId } = try FlowRuntime.FlowInstance
+  const requester = try sync(() => requesterOf(executionId))
+  const response = try (try PinClient).post({ ...p, ...(requester === executionId ? {} : { answerId: requester }) }, true).pipe(mapError(() => new PinUnavailable()))
+  if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 425 && response.status !== 429) throw new PinRefused({ status: response.status })
+  if (response.status !== 200) throw new PinUnavailable()
+  return try response.json.pipe(flatMap(Schema.decodeUnknownEffect(PinStamp.successSchema)), mapError(() => new PinUnavailable()))
+}, { duration: within, orElse: effect () => { throw new PinUnavailable() } })
+
+/** A request, under one deadline; the flow engine owns retry and resumption. */
+export const writePin = (unpin: boolean, within: Duration.Input = "15 seconds") => (p: { readonly conversationId?: string | undefined; readonly messageId?: string | undefined; readonly at: number; readonly awaitAdmission?: boolean | undefined; readonly questionAnswerId?: string | undefined }) =>
+  withSpan(timeoutOrElse(effect {
+    const { executionId } = try FlowRuntime.FlowInstance
+    const requester = try sync(() => requesterOf(executionId))
+    const response = (try PinClient).post({
+      ...p, ...(requester === executionId ? {} : { answerId: requester }), ...(unpin ? { messageId: null } : {}),
+    }, false) catch effect (error) => {
+      try annotateLogs(logWarning("chat.pin"), { outcome: "unavailable", errorCode: /^run credential [a-z_0-9]+$/.test(error.reason.description ?? "") ? error.reason.description : error.reason._tag, feature: "pins" })
+      throw new PinUnavailable()
+    }
+    const outcome = response.status === 200 ? "saved" : "refused"
+    try Metric.update(Metric.withAttributes(pins, { outcome }), 1)
+    try annotateLogs(logInfo("chat.pin"), { outcome, status: response.status, feature: "pins" })
+    if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 425 && response.status !== 429) throw new PinRefused({ status: response.status })
+    if (response.status !== 200) throw new PinUnavailable()
+    return try response.json.pipe(flatMap(Schema.decodeUnknownEffect(Pinned)), mapError(() => new PinUnavailable()))
+  }, { duration: within, orElse: effect () => { throw new PinUnavailable() } }), "chat.pin.post")
+
+export const registrationAt = (origin: string) => Layer.mergeAll(
+  Interpreter.layerWithImplementations(ChatPin, Layer.merge(PinStamp.toLayer(stamp()), PinWrite.toLayer(writePin(false)))),
+  Interpreter.layerWithImplementations(ChatUnpin, Layer.merge(PinStamp.toLayer(stamp()), UnpinWrite.toLayer(writePin(true)))),
+).pipe(Layer.provide(PinClient.layer(origin)))

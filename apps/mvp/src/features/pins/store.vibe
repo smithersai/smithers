@@ -2,7 +2,6 @@ import { PinPendingStore } from "../../device/registry"
 import { postgresTime } from "../chat/view"
 import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
-import { Effect, Stream } from "effect"
 import type { Message } from "../chat/schema"
 import type { Source } from "../repo/gate"
 import { PINS_SHAPE_ROUTE } from "./contract"
@@ -39,37 +38,37 @@ export const pendingQuery = (pending: Source<Pending>, shown: Source<Pending>) =
   .select(({ row }) => row))
 
 /** One personal shape per tab, stored on the device with an explicit schema version. */
-export const makePins = <M extends string | number>(origin: string, homeMessages: Collection.Collection<Message, M>) => Effect.gen(function* () {
-  const pins = yield* ElectricCollection.make<Pin>({
+export const makePins = effect <M extends string | number>(origin: string, homeMessages: Collection.Collection<Message, M>) => {
+  const pins = try ElectricCollection.make<Pin>({
     id: "message-pins", schema: Pin, getKey: r => r.conversationId, syncMode: "eager", persist: { schemaVersion: 1 },
-    shape: { url: `${origin}${PINS_SHAPE_ROUTE}`, columnMapper: ElectricCollection.snakeCamelMapper() },
+    shape: { url: `${origin}${PINS_SHAPE_ROUTE}`, columnMapper: try sync(() => ElectricCollection.snakeCamelMapper()) },
   })
-  const pending = yield* Collection.persisted(PinPendingStore)
-  const effective = yield* Collection.local<Pin, string>({ id: "effective-pins", schema: Pin, getKey: r => r.conversationId })
-  const project = Effect.gen(function* () {
-    const rows = yield* pins.toArray
-    const acts = yield* pending.toArray
-    const homeId = (yield* homeMessages.toArray)[0]?.conversationId
+  const pending = try Collection.persisted(PinPendingStore)
+  const effective = try Collection.local<Pin, string>({ id: "effective-pins", schema: Pin, getKey: r => r.conversationId })
+  const project = orDie(effect {
+    const rows = try pins.toArray
+    const acts = try pending.toArray
+    const homeId = (try homeMessages.toArray)[0]?.conversationId
     const actual = (held: Pending) => held.home ? held.serverConversationId ?? homeId ?? "home" : held.conversationId
     for (const held of acts) {
       const synced = rows.find(r => r.conversationId === actual(held))
-      if (synced !== undefined && (postgresTime(synced.changedAt) ?? 0) >= held.at) yield* pending.delete(held.conversationId)
+      if (synced !== undefined && ((try sync(() => postgresTime(synced.changedAt))) ?? 0) >= held.at) try pending.delete(held.conversationId)
     }
     const next = new Map(rows.map(r => [r.conversationId, r]))
-    for (const held of yield* pending.toArray) if (!held.failed) next.set(actual(held), { ...held, conversationId: actual(held) })
-    const old = yield* effective.toArray
-    for (const before of old) if (!next.has(before.conversationId)) yield* effective.delete(before.conversationId)
+    for (const held of try pending.toArray) if (!held.failed) next.set(actual(held), { ...held, conversationId: actual(held) })
+    const old = try effective.toArray
+    for (const before of old) if (!next.has(before.conversationId)) try effective.delete(before.conversationId)
     for (const row of next.values()) {
       const before = old.find(r => r.conversationId === row.conversationId)
-      if (before === undefined) yield* effective.insert(row)
-      else if (before.messageId !== row.messageId || before.changedAt !== row.changedAt) yield* effective.update(row.conversationId, draft => { Object.assign(draft, row) })
+      if (before === undefined) try effective.insert(row)
+      else if (before.messageId !== row.messageId || before.changedAt !== row.changedAt) try effective.update(row.conversationId, draft => { Object.assign(draft, row) })
     }
-  }).pipe(Effect.orDie)
-  yield* Stream.merge(
+  })
+  fork.scoped (Stream.merge(
     Stream.map(pins.changes({ initial: true }), () => undefined),
     Stream.merge(Stream.map(pending.changes({ initial: true }), () => undefined), Stream.map(homeMessages.changes({ initial: true }), () => undefined)),
-  ).pipe(Stream.runForEach(() => project), Effect.forkScoped)
-  const collapsed = yield* Collection.local({ id: "pin-collapsed", schema: Collapsed, getKey: r => r.id })
-  const collapseState = yield* LiveQuery.make(q => q.from({ row: collapsed.tanstack }))
+  ) |> Stream.runForEach(%, () => project))
+  const collapsed = try Collection.local({ id: "pin-collapsed", schema: Collapsed, getKey: r => r.id })
+  const collapseState = try LiveQuery.make(q => q.from({ row: collapsed.tanstack }))
   return { pins, effective, pending, collapsed, collapseState }
-})
+}

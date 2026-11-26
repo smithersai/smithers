@@ -1,6 +1,5 @@
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
 import type { PresenceSocket } from "@smthrs/sync"
-import { Context, Effect, FiberHandle, Layer, Ref, type Scope } from "effect"
 import { Participant, ROOM, Room, type Where } from "./schema"
 
 // Presence on this tab (decision 0013 §4, docs/features/branch-workspace.md#presence): everyone in the room of the
@@ -40,13 +39,13 @@ export class PresenceStore extends Context.Service<
   static readonly layer = (config: PresenceConfig) =>
     Layer.effect(
       PresenceStore,
-      Effect.gen(function* () {
-        const participants = yield* Collection.local<Participant, string>({
+      effect {
+        const participants = try Collection.local<Participant, string>({
           id: "presence-participants",
           schema: Participant,
           getKey: (row) => row.id,
         })
-        const room = yield* Collection.local<Room, string>({
+        const room = try Collection.local<Room, string>({
           id: "presence-room",
           schema: Room,
           getKey: (row) => row.id,
@@ -55,14 +54,14 @@ export class PresenceStore extends Context.Service<
         return PresenceStore.of({
           origin: config.origin,
           participants,
-          participantsState: yield* participantsQuery(participants),
+          participantsState: try participantsQuery(participants),
           room,
-          roomState: yield* roomQuery(room),
-          attached: yield* FiberHandle.make<void, never>(),
-          connection: yield* Ref.make<PresenceSocket.Connection | undefined>(undefined),
-          where: yield* Ref.make<Where | null>(null),
-          scope: yield* Effect.scope,
+          roomState: try roomQuery(room),
+          attached: try FiberHandle.make<void, never>(),
+          connection: try Ref.make<PresenceSocket.Connection | undefined>(undefined),
+          where: try Ref.make<Where | null>(null),
+          scope: try Effect.scope,
         })
-      }),
+      },
     )
 }

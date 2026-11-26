@@ -1,5 +1,5 @@
 import { Button, MessageResponse } from "@smthrs/ui"
-import type { PinMessage } from "./store"
+import type { PinMessage } from "./store.vibe"
 import { PinControl } from "./PinControl"
 import "./pins.css"
 

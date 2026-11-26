@@ -1,4 +1,4 @@
-import { makePins, pendingQuery, pinnedQuery } from "../pins/store"
+import { makePins, pendingQuery, pinnedQuery } from "../pins/store.vibe"
 import { observeLoad } from "./load"
 import { makeLane, followPhases, followSummaries, type Lane } from "../timeline/store.vibe"
 import { TimelineNotice } from "../timeline/notice.vibe"
