@@ -1,5 +1,5 @@
 import { AgentAction, AgentRunner, ExternalAgent } from "@smthrs/agent"
-import { digestSync, Uuid, WebCrypto } from "@smthrs/crypto"
+import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Action, ExternalJob, Flow, Interpreter, RetryPolicy, Sleep } from "@smthrs/flow"
 import { GitHub } from "@smthrs/integrations"
 import { Node, type Planned } from "@smthrs/plan"
@@ -20,7 +20,7 @@ import { fetchPull, projectPull } from "../github/Pulls.ts"
 import type { GitHubTokens } from "../github/Tokens.ts"
 import * as Stack from "../stack/Stack.vibe"
 import { ChecksRun } from "./Checks.vibe"
-import { Implement } from "./TodoAgent.ts"
+import { Implement } from "./TodoAgent.vibe"
 import { NoSeat } from "../ModelSeats.ts"
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import * as TodoCli from "./TodoCli.vibe"
@@ -29,6 +29,7 @@ import * as TodoSession from "./TodoSession.ts"
 import type * as Jobs from "../runners/Jobs.vibe"
 import * as Fleet from "../runners/Fleet.vibe"
 import { awaitPullClosed, readPullClosed } from "./TodoWait.ts"
+import { branchKey, pullKey } from "./TodoKeys.ts"
 import { machineOf } from "./TodoMachine.vibe"
 
 // The `todo` run (decision 0016, the factory simplified): one durable run per attempt, on Cloudflare, started by the
@@ -444,12 +445,12 @@ export const admission = (
   start: (flow: Flow.Any, options: { readonly executionId: string; readonly payload: unknown }) => Effect.Effect<void, unknown>,
 ): Services<never, never>["start"] => (flow, options) => {
   const record = (outcome: "started" | "not_started", errorCode?: string) =>
-    Effect.gen(function* () {
-      yield* Metric.update(Metric.withAttributes(admissions, { flow: flow._tag, outcome }), 1)
-      yield* Effect.logWithLevel(outcome === "started" ? "Info" : "Warn")("todo.start").pipe(
+    effect {
+      try Metric.update(Metric.withAttributes(admissions, { flow: flow._tag, outcome }), 1)
+      try Effect.logWithLevel(outcome === "started" ? "Info" : "Warn")("todo.start").pipe(
         Effect.annotateLogs({ flow: flow._tag, executionId: options.executionId, outcome, ...(errorCode === undefined ? {} : { errorCode }) }),
       )
-    })
+    }
   return start(flow, options).pipe(
     Effect.tap(() => record("started")),
     Effect.catchCause((cause) => {
@@ -470,14 +471,14 @@ export const branchPrefixOf = (number: number): string => `smithers/t${number}-`
  * reserves the name it ends (`GitHub.Once.branchName`), and `todo/Publish` makes the branch with it and finds it again
  * by it, so both steps name one branch, and no other attempt's.
  */
-export const branchKeyOf = (attemptId: string): string => digestSync(`smithers/todo-branch/v1\n${attemptId}`)
+export const branchKeyOf = branchKey
 
 /**
  * The key of attempt `attemptId`'s pull request: 64 hex of SHA-256 over a version line and the attempt's id.
  * `todo/Publish` opens the pull request with its marker, and `todo/Drop` finds by it a pull request the dropped
  * attempt opened but never recorded (worker/flows/TodoDrop.ts).
  */
-export const pullKeyOf = (attemptId: string): string => digestSync(`smithers/todo-pull/v1\n${attemptId}`)
+export const pullKeyOf = pullKey
 
 /**
  * A TODO's title as a branch name's label, at most 40 characters: accents come off their letters (NFKD, then the
@@ -545,24 +546,24 @@ export const steps = <E, R>(services: Services<E, R>) => {
       },
     })
 
-  const assertBase = (request: TodoRequest, baseRef: string) => Effect.gen(function* () {
-    if (yield* Stack.closedBase(request.repoId, baseRef)) return yield* new TodoFailed({ failure: "base_closed" })
-  })
+  const assertBase = (request: TodoRequest, baseRef: string) => effect {
+    if (try Stack.closedBase(request.repoId, baseRef)) throw new TodoFailed({ failure: "base_closed" })
+  }
 
   /** Reports to the writer; a stale report (a dropped TODO, another attempt) ends the run. */
   // Postgres failing fails the step for its retry policy (`step`'s `failureIn`).
   // A stale attempt first starts again what its publish started: a run that stopped between its publish committing and
   // the next TODO's start being admitted, then saw its TODO dropped, would otherwise leave the next one Working forever.
   const report = (request: TodoRequest, event: Stack.RunEvent) =>
-    Effect.gen(function* () {
-      const reported = yield* Stack.report(attemptOf(request), event, { runs: true })
-      if (reported.outcome === "base_closed") return yield* new TodoFailed({ failure: "base_closed" })
+    effect {
+      const reported = try Stack.report(attemptOf(request), event, { runs: true })
+      if (reported.outcome === "base_closed") throw new TodoFailed({ failure: "base_closed" })
       if (reported.outcome === "stale") {
-        yield* Effect.forEach(yield* Stack.publishedStarts(attemptOf(request)), startTodo, { discard: true })
-        return yield* new TodoFailed({ failure: "ended" })
+        try Effect.forEach(try Stack.publishedStarts(attemptOf(request)), startTodo, { discard: true })
+        throw new TodoFailed({ failure: "ended" })
       }
-      yield* Effect.forEach(reported.starts, startTodo, { discard: true })
-    })
+      try Effect.forEach(reported.starts, startTodo, { discard: true })
+    }
 
   /** A failure of step `step` as the run reads it: its own, GitHub's refusal as `refused`, anything else retried. */
   const failureIn = (step: Step, refused: StepFailure) => (error: unknown): TodoFailed | TodoUnavailable => {
@@ -622,49 +623,49 @@ export const steps = <E, R>(services: Services<E, R>) => {
     )
 
   const begin = ({ request }: typeof Begin.payloadSchema.Type) =>
-    step("begin", request, Effect.gen(function* () {
-      const found = yield* Stack.attemptTodo(attemptOf(request))
-      if (Option.isNone(found)) return yield* new TodoFailed({ failure: "ended" })
+    step("begin", request, effect {
+      const found = try Stack.attemptTodo(attemptOf(request))
+      if (Option.isNone(found)) throw new TodoFailed({ failure: "ended" })
       const todo = found.value
       if (todo.attempt !== request.ordinal || (todo.state !== "working" && todo.state !== "in_review")) {
-        return yield* new TodoFailed({ failure: "ended" })
+        throw new TodoFailed({ failure: "ended" })
       }
       const repository = repositoryOfRequest(request)
       // Begin writes nothing to GitHub, but takes the token Publish will: an App that can't publish fails here, before
       // the agent spends a turn.
-      const token = yield* tokenFor("begin", request, "publish")
+      const token = try tokenFor("begin", request, "publish")
       // The branch's name, reserved: the TODO's number and title, then its key, from the attempt. `todo/Publish` makes
       // the branch under this name; until then it exists nowhere (ruling GH-11).
-      const branch = GitHub.Once.branchName(branchPrefixOf(todo.number), slugOf(todo.title), branchKeyOf(request.attemptId))
-      const made = yield* Effect.gen(function* () {
-        const client = yield* GitHub.GitHubClient.GitHubClient
-        const facts = yield* client.request(
+      const branch = try Effect.sync(() => GitHub.Once.branchName(branchPrefixOf(todo.number), slugOf(todo.title), branchKeyOf(request.attemptId)))
+      const made = try effect {
+        const client = try GitHub.GitHubClient.GitHubClient
+        const facts = try client.request(
           "GET",
-          `/repos/${GitHub.Repository.repositoryPath(repository.owner, repository.name)}`,
+          `/repos/${try Effect.sync(() => GitHub.Repository.repositoryPath(repository.owner, repository.name))}`,
           undefined,
           { schema: Schema.Struct({ default_branch: Schema.String }) },
         )
         const defaultBranch = facts.default_branch
         // Its base: the one a run of this step recorded already, else the nearest TODO in review before it, by its
         // branch's head on GitHub (stacked), else the default branch.
-        const below = todo.baseRef !== null ? Option.none() : yield* Stack.belowOf(attemptOf(request))
+        const below = todo.baseRef !== null ? Option.none() : try Stack.belowOf(attemptOf(request))
         const belowHead = Option.isSome(below)
-          ? yield* GitHub.Refs.getBranch(repository.owner, repository.name, below.value.branch)
+          ? try GitHub.Refs.getBranch(repository.owner, repository.name, below.value.branch)
           : Option.none()
-        if (Option.isSome(below) && Option.isNone(belowHead)) return yield* new TodoFailed({ failure: "base_closed" })
+        if (Option.isSome(below) && Option.isNone(belowHead)) throw new TodoFailed({ failure: "base_closed" })
         const baseRef = todo.baseRef ?? (Option.isSome(belowHead) ? belowHead.value.name : defaultBranch)
-        yield* assertBase(request, baseRef)
+        try assertBase(request, baseRef)
         // The base's head: a TODO's branch gone is a closed base, never a fall back to the default branch.
-        const head = yield* GitHub.Refs.getBranch(repository.owner, repository.name, baseRef)
+        const head = try GitHub.Refs.getBranch(repository.owner, repository.name, baseRef)
         if (Option.isNone(head)) {
-          return yield* new TodoFailed({ failure: baseRef === defaultBranch ? "publish_refused" : "base_closed" })
+          throw new TodoFailed({ failure: baseRef === defaultBranch ? "publish_refused" : "base_closed" })
         }
         // A run of this step that reported its branch already keeps the base it reported, even after its base moved.
         const baseSha = todo.branch === branch && todo.baseSha !== null ? todo.baseSha : head.value.sha
         return { branch, baseSha, baseRef, defaultBranch }
-      }).pipe(withToken(token, services.apiBaseUrl))
-      yield* report(request, { kind: "branch", branch: made.branch, baseSha: made.baseSha, baseRef: made.baseRef })
-      yield* report(request, { kind: "step", step: "implement" })
+      }.pipe(withToken(token, services.apiBaseUrl))
+      try report(request, { kind: "branch", branch: made.branch, baseSha: made.baseSha, baseRef: made.baseRef })
+      try report(request, { kind: "step", step: "implement" })
       return {
         ...made,
         title: todo.title,
@@ -674,19 +675,19 @@ export const steps = <E, R>(services: Services<E, R>) => {
         ownerId: todo.createdBy,
         ownerLogin: todo.createdLogin,
       } satisfies Begun
-    }))
+    })
 
   const collect = ({ request, begun }: typeof Collect.payloadSchema.Type) =>
-    step("collect", request, Effect.gen(function* () {
-      yield* assertBase(request, baseOf(begun))
-      const machine = machineOf({
+    step("collect", request, effect {
+      try assertBase(request, baseOf(begun))
+      const machine = try Effect.sync(() => machineOf({
         attemptId: request.attemptId,
         repoId: request.repoId,
         checkout: begun.baseSha,
         ownerId: begun.ownerId,
-      })
+      }))
       // The working copy's change against the base, read as Publish reads a branch's (worker/branch/Change.ts).
-      return yield* Change.collect({
+      return try Change.collect({
         branch: machine.branch,
         ownerId: machine.ownerId,
         base: begun.baseSha,
@@ -701,7 +702,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
             : new TodoUnavailable({ step: "collect" })
         ),
       )
-    }))
+    })
 
   /** Waiting for a runner, reported once; a TODO that left Working ends the run as any stale report does. */
   const wait = ({ request }: typeof Wait.payloadSchema.Type) =>
@@ -716,7 +717,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
    * limits, at paths relative to the checkout outside its version control.
    */
   const received = ({ request, result }: typeof Received.payloadSchema.Type) =>
-    Effect.gen(function* () {
+    effect {
       const { additions, deletions } = result.changes
       const paths = [...additions.map((file) => file.path), ...deletions]
       const bytes = additions.reduce((sum, file) => sum + base64Bytes(file.contents), 0)
@@ -725,83 +726,83 @@ export const steps = <E, R>(services: Services<E, R>) => {
         : paths.length > MAX_FILES || bytes > MAX_CHANGE_BYTES || !paths.every(isCheckoutPath)
         ? "implement" as const
         : undefined
-      yield* Effect.logInfo("todo.received").pipe(
+      try Effect.logInfo("todo.received").pipe(
         Effect.annotateLogs({ attemptId: request.attemptId, files: paths.length, generation: result.generation, outcome: outcome ?? "ok" }),
       )
-      if (outcome !== undefined) return yield* new TodoFailed({ failure: outcome })
+      if (outcome !== undefined) throw new TodoFailed({ failure: outcome })
       return { additions, deletions } satisfies Collected
-    }).pipe(Effect.withSpan("todo.received", { attributes: { "smithers.todo.attempt": request.attemptId } }))
+    }.pipe(Effect.withSpan("todo.received", { attributes: { "smithers.todo.attempt": request.attemptId } }))
 
   const publish = ({ request, begun, collected }: typeof Publish.payloadSchema.Type) =>
-    step("publish", request, Effect.gen(function* () {
-      yield* assertBase(request, baseOf(begun))
-      yield* report(request, { kind: "step", step: "publish" })
+    step("publish", request, effect {
+      try assertBase(request, baseOf(begun))
+      try report(request, { kind: "step", step: "publish" })
       const repository = repositoryOfRequest(request)
-      const token = yield* tokenFor("publish", request, "publish")
+      const token = try tokenFor("publish", request, "publish")
       const message = commitMessageOf(request.number, begun.title, begun.ownerLogin)
-      const closes = begun.issueNumber === null || (yield* Stack.openAboveFromIssue(attemptOf(request))) === 0
-      const published = yield* Effect.gen(function* () {
+      const closes = begun.issueNumber === null || (try Stack.openAboveFromIssue(attemptOf(request))) === 0
+      const published = try effect {
         // The branch, made once at the base under the name `todo/Begin` reserved, and found again only by the
         // attempt's key, even after its base moved. One the key finds under another name isn't the reserved one.
         // A run begun before Publish made branches has its branch from Begin already (BEGIN_VERSION).
-        const reserved = GitHub.Once.branchName(branchPrefixOf(request.number), slugOf(begun.title), branchKeyOf(request.attemptId))
+        const reserved = try Effect.sync(() => GitHub.Once.branchName(branchPrefixOf(request.number), slugOf(begun.title), branchKeyOf(request.attemptId)))
         if (begun.branch === reserved) {
-          const made = yield* Action.once(
+          const made = try Action.once(
             "branch",
-            GitHub.Once.branch(repository.owner, repository.name, {
+            try Effect.sync(() => GitHub.Once.branch(repository.owner, repository.name, {
               prefix: branchPrefixOf(request.number),
               label: slugOf(begun.title),
               at: Effect.succeed(begun.baseSha),
-            }),
-            { key: branchKeyOf(request.attemptId) },
+            })),
+            { key: try Effect.sync(() => branchKeyOf(request.attemptId)) },
           )
-          if (made.name !== begun.branch) return yield* new TodoFailed({ failure: "publish_refused" })
+          if (made.name !== begun.branch) throw new TodoFailed({ failure: "publish_refused" })
         }
         // The commit, appended once at the base and found again only by this step's trailer. A head someone else
         // moved is refused (409, stale), never adopted because its parent and message look like ours.
-        const headSha = yield* Action.once(
+        const headSha = try Action.once(
           "commit",
-          GitHub.Once.commitOnBranch(repository.owner, repository.name, {
+          try Effect.sync(() => GitHub.Once.commitOnBranch(repository.owner, repository.name, {
             branch: begun.branch,
             expectedHeadOid: begun.baseSha,
             headline: message.headline,
             body: message.body,
             additions: collected.additions,
             deletions: collected.deletions,
-          }),
+          })),
         )
         // A close arriving during commit must not advance to the next external write.
-        yield* assertBase(request, baseOf(begun))
+        try assertBase(request, baseOf(begun))
         // The pull request, found among the branch's by the attempt's marker (`pullKeyOf`), or opened once. Stacked on
         // another TODO's branch, it opens as a draft, so nobody merges it into that branch by mistake.
-        const write = GitHub.Once.pull(repository.owner, repository.name, {
+        const write = try Effect.sync(() => GitHub.Once.pull(repository.owner, repository.name, {
           head: begun.branch,
           base: baseOf(begun),
           title: `T${request.number}: ${begun.title}`.slice(0, 256),
           body: pullBodyOf(begun, closes),
           draft: baseOf(begun) !== begun.defaultBranch,
-        })
+        }))
         // A run that opened its pull request before the attempt keyed it (2026-11-12) marked it with this dispatch's key.
-        const dispatchKey = yield* Action.effectKey("pull")
-        const pull = yield* Action.once("pull", Action.keyed({
+        const dispatchKey = try Action.effectKey("pull")
+        const pull = try Action.once("pull", try Effect.sync(() => Action.keyed({
           find: (key) => write.find(key).pipe(
             Effect.flatMap((found) => Option.isSome(found) ? Effect.succeed(found) : write.find(dispatchKey)),
           ),
           perform: write.perform,
-        }), { key: pullKeyOf(request.attemptId) }).pipe(Effect.mapError(failureIn("publish", "pr_refused")))
+        })), { key: try Effect.sync(() => pullKeyOf(request.attemptId)) }).pipe(Effect.mapError(failureIn("publish", "pr_refused")))
         // Read it back into the projection, so every device sees it before the webhook rings.
-        yield* projectPull(repository, pull.number, yield* fetchPull(repository, pull.number))
+        try projectPull(repository, pull.number, try fetchPull(repository, pull.number))
         return { headSha, prNumber: pull.number } satisfies Published
-      }).pipe(withToken(token, services.apiBaseUrl))
-      yield* report(request, {
+      }.pipe(withToken(token, services.apiBaseUrl))
+      try report(request, {
         kind: "published",
         headSha: published.headSha,
         prNumber: published.prNumber,
         draft: baseOf(begun) !== begun.defaultBranch,
       })
-      yield* startChecks(request, begun, published.prNumber, published.headSha, begun.baseSha)
+      try startChecks(request, begun, published.prNumber, published.headSha, begun.baseSha)
       return published
-    }))
+    })
 
   /**
    * The TODO below merged: its merge commit `mergeSha` merged into this TODO's branch (never a rebase), the new head
@@ -816,71 +817,71 @@ export const steps = <E, R>(services: Services<E, R>) => {
     pull: GitHub.Pulls.PullRequest,
     below: Stack.BaseTodo & { readonly mergeSha: string },
   ) =>
-    Effect.gen(function* () {
+    effect {
       const repository = repositoryOfRequest(request)
-      const token = yield* tokenFor("await", request, "publish")
-      const merged = yield* GitHub.Commits.mergeInto(repository.owner, repository.name, {
+      const token = try tokenFor("await", request, "publish")
+      const merged = try GitHub.Commits.mergeInto(repository.owner, repository.name, {
         base: begun.branch,
         head: below.mergeSha,
         commitMessage: `Merge T${below.number} from ${begun.defaultBranch} into T${request.number}`,
       }).pipe(Effect.result, withToken(token, services.apiBaseUrl))
       if (merged._tag === "Failure") {
-        if (classify(merged.failure).kind !== "refused") return yield* Effect.fail(merged.failure)
-        yield* GitHub.Pulls.closePull(repository.owner, repository.name, pull.number).pipe(withToken(token, services.apiBaseUrl))
-        return yield* new TodoFailed({ failure: "pr_refused" })
+        if (classify(merged.failure).kind !== "refused") throw merged.failure
+        try GitHub.Pulls.closePull(repository.owner, repository.name, pull.number).pipe(withToken(token, services.apiBaseUrl))
+        throw new TodoFailed({ failure: "pr_refused" })
       }
       // Up to date: the head this step read already holds the merge, as after an answer that was lost.
       const headSha = merged.success.kind === "merged" ? merged.success.sha : pull.head.sha
-      yield* report(request, { kind: "published", headSha, prNumber: pull.number, draft: pull.draft })
-      yield* startChecks(request, begun, pull.number, headSha, below.mergeSha)
-      yield* GitHub.Pulls.setBase(repository.owner, repository.name, pull.number, begun.defaultBranch).pipe(
+      try report(request, { kind: "published", headSha, prNumber: pull.number, draft: pull.draft })
+      try startChecks(request, begun, pull.number, headSha, below.mergeSha)
+      try GitHub.Pulls.setBase(repository.owner, repository.name, pull.number, begun.defaultBranch).pipe(
         withToken(token, services.apiBaseUrl),
       )
-      yield* ready(request, pull, headSha)
-      yield* Effect.logInfo("todo.restack").pipe(
+      try ready(request, pull, headSha)
+      try Effect.logInfo("todo.restack").pipe(
         Effect.annotateLogs({ attemptId: request.attemptId, todoId: request.todoId, below: below.number, prNumber: pull.number }),
       )
-    })
+    }
 
   /**
    * A stacked pull request now into the default branch, at head `headSha`: out of draft unless a person took it out
    * already, and the writer told. The next await's read projects it.
    */
   const ready = (request: TodoRequest, pull: GitHub.Pulls.PullRequest, headSha: string) =>
-    Effect.gen(function* () {
+    effect {
       if (pull.draft) {
         const repository = repositoryOfRequest(request)
-        const token = yield* tokenFor("await", request, "publish")
-        yield* GitHub.Pulls.markReady(repository.owner, repository.name, pull.node_id).pipe(withToken(token, services.apiBaseUrl))
+        const token = try tokenFor("await", request, "publish")
+        try GitHub.Pulls.markReady(repository.owner, repository.name, pull.node_id).pipe(withToken(token, services.apiBaseUrl))
       }
-      yield* report(request, { kind: "published", headSha, prNumber: pull.number, draft: false })
-    })
+      try report(request, { kind: "published", headSha, prNumber: pull.number, draft: false })
+    }
 
   /** Whether the TODO below won't merge: dropped, closed on GitHub, or failed, so nothing will merge or restack it. */
   const belowClosed = (below: Option.Option<Stack.BaseTodo>) =>
     Option.isSome(below) && (below.value.state === "dropped" || below.value.state === "failed")
 
   const await_ = ({ request, begun, published }: typeof Await.payloadSchema.Type, baseSignaled = false) =>
-    Effect.gen(function* () {
+    effect {
       const repository = repositoryOfRequest(request)
-      const found = yield* Stack.attemptTodo(attemptOf(request))
+      const found = try Stack.attemptTodo(attemptOf(request))
       const dropped = Option.match(found, {
         onNone: () => true,
         onSome: (todo) => todo.attempt !== request.ordinal || todo.state === "dropped",
       })
-      const token = yield* tokenFor("await", request, dropped ? "publish" : "pulls")
-      const read = yield* Effect.gen(function* () {
+      const token = try tokenFor("await", request, dropped ? "publish" : "pulls")
+      const read = try effect {
         // Dropped in Smithers while its pull request is open: the run closes what it opened, as the App.
         if (dropped) {
-          yield* GitHub.Pulls.closePull(repository.owner, repository.name, published.prNumber)
+          try GitHub.Pulls.closePull(repository.owner, repository.name, published.prNumber)
           return { state: "ended", mergeSha: null } satisfies Awaited
         }
-        const fetched = yield* fetchPull(repository, published.prNumber)
-        yield* projectPull(repository, published.prNumber, fetched)
+        const fetched = try fetchPull(repository, published.prNumber)
+        try projectPull(repository, published.prNumber, fetched)
         if (fetched.kind === "gone") return { state: "closed", mergeSha: null } satisfies Awaited
         if (fetched.pull.merged) return { state: "merged", mergeSha: fetched.pull.merge_commit_sha } satisfies Awaited
         return fetched.pull
-      }).pipe(withToken(token, services.apiBaseUrl))
+      }.pipe(withToken(token, services.apiBaseUrl))
       if (!("node_id" in read)) return read
       // A run from before stacking carries no `begun`: its pull request is into the default branch.
       const stacked = begun !== undefined && baseOf(begun) !== begun.defaultBranch
@@ -888,11 +889,11 @@ export const steps = <E, R>(services: Services<E, R>) => {
         // Stacked on another TODO's branch. That TODO closed unmerged, or failed: this branch holds a change that
         // won't merge, so close this pull request too, and fail `base_closed`, whichever came first: a close whose
         // answer was lost still ends here, never as closed on GitHub.
-        let below = yield* Stack.baseTodoOf(request.repoId, read.base.ref)
+        let below = try Stack.baseTodoOf(request.repoId, read.base.ref)
         // The hourly fallback must also recover a missed base webhook, without waiting for its TODO run to settle.
         if (Option.isSome(below) && below.value.state === "in_review" && below.value.prNumber !== null) {
-          const base = yield* fetchPull(repository, below.value.prNumber).pipe(withToken(token, services.apiBaseUrl))
-          yield* projectPull(repository, below.value.prNumber, base)
+          const base = try fetchPull(repository, below.value.prNumber).pipe(withToken(token, services.apiBaseUrl))
+          try projectPull(repository, below.value.prNumber, base)
           below = Option.some({
             ...below.value,
             state: base.kind === "gone" ? "dropped" : base.pull.merged ? "merged"
@@ -902,25 +903,25 @@ export const steps = <E, R>(services: Services<E, R>) => {
         }
         if (belowClosed(below)) {
           if (read.state === "open") {
-            const closing = yield* tokenFor("await", request, "publish")
-            yield* GitHub.Pulls.closePull(repository.owner, repository.name, read.number).pipe(
+            const closing = try tokenFor("await", request, "publish")
+            try GitHub.Pulls.closePull(repository.owner, repository.name, read.number).pipe(
               withToken(closing, services.apiBaseUrl),
             )
           }
-          return yield* new TodoFailed({ failure: "base_closed" })
+          throw new TodoFailed({ failure: "base_closed" })
         }
         if (read.state === "closed") return { state: "closed", mergeSha: null } satisfies Awaited
         // That TODO merged: take its merge in and move onto the default branch.
         if (Option.isSome(below) && below.value.state === "merged" && below.value.mergeSha !== null) {
-          yield* restack(request, begun, read, { ...below.value, mergeSha: below.value.mergeSha })
+          try restack(request, begun, read, { ...below.value, mergeSha: below.value.mergeSha })
         }
-        return yield* new StillOpen()
+        throw new StillOpen()
       }
       if (read.state === "closed") return { state: "closed", mergeSha: null } satisfies Awaited
       // Moved onto the default branch, but stopped before it was marked ready: finish that.
-      if (stacked && read.draft) yield* ready(request, read, read.head.sha)
-      return yield* new StillOpen()
-    }).pipe(
+      if (stacked && read.draft) try ready(request, read, read.head.sha)
+      throw new StillOpen()
+    }.pipe(
       Effect.provideService(HttpClient.HttpClient, services.http),
       Effect.provide(services.database),
       Effect.mapError((error) => (error instanceof StillOpen ? error : failureIn("await", "pr_refused")(error))),
@@ -928,38 +929,38 @@ export const steps = <E, R>(services: Services<E, R>) => {
     )
 
   const settle = ({ request, awaited }: typeof Settle.payloadSchema.Type) =>
-    Effect.gen(function* () {
+    effect {
       if (awaited.state === "ended") return { state: "ended" } satisfies Ran
       const state = awaited.state === "merged" ? "merged" : "dropped"
-      const reported = yield* Stack.report(attemptOf(request), {
+      const reported = try Stack.report(attemptOf(request), {
         kind: "finished",
         state,
         ...(awaited.state === "closed" ? { note: "closed_on_github" as const } : {}),
         ...(awaited.mergeSha === null ? {} : { mergeSha: awaited.mergeSha }),
       }, { runs: true })
-      yield* Effect.forEach(reported.starts, startTodo, { discard: true })
-      yield* Effect.logInfo("todo.settle").pipe(
+      try Effect.forEach(reported.starts, startTodo, { discard: true })
+      try Effect.logInfo("todo.settle").pipe(
         Effect.annotateLogs({ attemptId: request.attemptId, todoId: request.todoId, state, outcome: reported.outcome }),
       )
       return { state: reported.outcome === "stale" ? "ended" : state } satisfies Ran
-    }).pipe(
+    }.pipe(
       Effect.provide(services.database),
       Effect.mapError(() => new TodoUnavailable({ step: "settle" })),
       Effect.withSpan("todo.settle", { attributes: { "smithers.todo.attempt": request.attemptId } }),
     )
 
   const fail = ({ request, error }: typeof Fail.payloadSchema.Type) =>
-    Effect.gen(function* () {
+    effect {
       const failure = failureOf(error)
-      const { harnessCode, modelCode, budgetScope, causeCode } = agentFailureCodes(error)
-      yield* Effect.logWarning("todo.fail").pipe(
+      const { harnessCode, modelCode, budgetScope, causeCode } = try Effect.sync(() => agentFailureCodes(error))
+      try Effect.logWarning("todo.fail").pipe(
         Effect.annotateLogs({ attemptId: request.attemptId, todoId: request.todoId, failure, errorCode: codeOf(error), harnessCode, modelCode, budgetScope, causeCode }),
       )
       if (failure === "ended") return { state: "ended" } satisfies Ran
-      const reported = yield* Stack.report(attemptOf(request), { kind: "finished", state: "failed", failure }, {
+      const reported = try Stack.report(attemptOf(request), { kind: "finished", state: "failed", failure }, {
         runs: true,
       })
-      yield* Effect.forEach(reported.starts, startTodo, { discard: true })
+      try Effect.forEach(reported.starts, startTodo, { discard: true })
       // Run failed or lost: the committer and the repository's Maintainers hear it once (docs/features/fleet.md#alerts).
       if (reported.outcome !== "stale" && services.fleet !== undefined) {
         const alert: Fleet.Alert = {
@@ -968,13 +969,13 @@ export const steps = <E, R>(services: Services<E, R>) => {
           repoId: request.repoId,
           subject: request.attemptId,
         }
-        yield* Fleet.raiseAll(request.attemptId, [alert], services.fleet.raise, () => Effect.void)
+        try Fleet.raiseAll(request.attemptId, [alert], services.fleet.raise, () => Effect.void)
       }
       if (reported.outcome !== "stale" && (error instanceof NoSeat || modelCode === "no_route")) {
-        return yield* new NoSeat()
+        throw new NoSeat()
       }
       return { state: reported.outcome === "stale" ? "ended" : "failed" } satisfies Ran
-    }).pipe(
+    }.pipe(
       Effect.provide(services.database),
       Effect.mapError((error) => error instanceof NoSeat ? error : new TodoUnavailable({ step: "settle" })),
       Effect.withSpan("todo.fail", { attributes: { "smithers.todo.attempt": request.attemptId } }),
@@ -985,19 +986,21 @@ export const steps = <E, R>(services: Services<E, R>) => {
    * (`pullKeyOf`). Until the attempt's run has ended its Publish may still be opening one, so the step retries.
    */
   const unreported = (request: TodoRequest, branch: string) =>
-    Effect.gen(function* () {
-      const ended = services.runEnded === undefined ? false : yield* services.runEnded(todoExecutionId(request.attemptId))
-      if (!ended) return yield* new TodoUnavailable({ step: "await" })
+    effect {
+      const ended = services.runEnded === undefined ? false : try services.runEnded(todoExecutionId(request.attemptId))
+      if (!ended) throw new TodoUnavailable({ step: "await" })
       const repository = repositoryOfRequest(request)
-      const token = yield* tokenFor("await", request, "pulls")
-      const found = yield* GitHub.Once.pull(repository.owner, repository.name, {
+      const token = try tokenFor("await", request, "pulls")
+      const write = try Effect.sync(() => GitHub.Once.pull(repository.owner, repository.name, {
         head: branch,
         base: "",
         title: "",
         body: "",
-      }).find(pullKeyOf(request.attemptId)).pipe(withToken(token, services.apiBaseUrl))
+      }))
+      const key = try Effect.sync(() => pullKeyOf(request.attemptId))
+      const found = try write.find(key).pipe(withToken(token, services.apiBaseUrl))
       return Option.map(found, (pull) => ({ headSha: pull.head.sha, prNumber: pull.number }) satisfies Published)
-    }).pipe(
+    }.pipe(
       Effect.provideService(HttpClient.HttpClient, services.http),
       Effect.mapError(failureIn("await", "pr_refused")),
     )
@@ -1012,21 +1015,21 @@ export const steps = <E, R>(services: Services<E, R>) => {
       Effect.catchTag("@smthrs/mvp/todo/StillOpen", () => Effect.succeed({ state: "closed", mergeSha: null } as Awaited)),
     )
     return await_(payload).pipe(Effect.catchTag("@smthrs/mvp/todo/StillOpen", () =>
-      Effect.gen(function* () {
+      effect {
         const base = payload.begun?.baseRef
         const below = base !== undefined && base !== payload.begun?.defaultBranch
-          ? yield* Stack.baseTodoOf(payload.request.repoId, base).pipe(
+          ? try Stack.baseTodoOf(payload.request.repoId, base).pipe(
             Effect.provide(services.database), Effect.mapError(() => new TodoUnavailable({ step: "await" })),
           )
           : Option.none()
         if (Option.isSome(below)) {
-          if (below.value.prNumber !== null) yield* readPullClosed(below.value.prNumber)
+          if (below.value.prNumber !== null) try readPullClosed(below.value.prNumber)
           const signaled = below.value.state === "in_review" && below.value.prNumber !== null
-          if (signaled) yield* awaitPullClosed(below.value.prNumber!)
-          return yield* await_(payload, signaled).pipe(Effect.catchTag("@smthrs/mvp/todo/StillOpen", own))
+          if (signaled) try awaitPullClosed(below.value.prNumber!)
+          return try await_(payload, signaled).pipe(Effect.catchTag("@smthrs/mvp/todo/StillOpen", own))
         }
-        return yield* own()
-      })))
+        return try own()
+      }))
   }
 
   return { begin, collect, wait, received, publish, await: await_, awaitMerge, unreported, settle, fail }

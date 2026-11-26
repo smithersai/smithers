@@ -16,10 +16,10 @@ import { judgeSeat, judging, REPOSITORY, reset, services as githubServices, sign
 import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { testFile } from "../test/harness.ts"
 import * as Checks from "./Checks.vibe"
-import * as Todo from "./Todo.ts"
-import * as TodoBaseClosed from "./TodoBaseClosed.ts"
+import * as Todo from "./Todo.vibe"
+import * as TodoBaseClosed from "./TodoBaseClosed.vibe"
 import * as TodoDrop from "./TodoDrop.vibe"
-import * as TodoAgent from "./TodoAgent.ts"
+import * as TodoAgent from "./TodoAgent.vibe"
 import * as TodoSession from "./TodoSession.ts"
 
 const runtime = testFile("todo_host")

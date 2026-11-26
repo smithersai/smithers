@@ -1,18 +1,19 @@
 // The `todo` run's agent's parts (worker/flows/TodoAgent.ts) without the engine: its task text, its one seat, and the
 // sandbox tools bound to the attempt's machine. The machine and the run's identity are test services on the seams the
 // tools read (`Machines`, `FlowRuntime.FlowInstance`); worker/flows/Todo.test.ts runs the same tools in a real run.
-import { SeatResolver } from "@smthrs/agent"
+import { AgentAction, SeatResolver } from "@smthrs/agent"
 import { FlowRuntime } from "@smthrs/flow"
 import { Cell } from "@smthrs/harness"
 import { Model } from "@smthrs/model"
 import type { SandboxTools } from "@smthrs/sandbox"
-import { Duration, Effect, Option, Stream } from "effect"
-import { describe, expect, test } from "vitest"
+import { Cause, Duration, Effect, Layer, Option, Stream } from "effect"
+import { SqlClient } from "effect/sql"
+import { describe, expect, test, vi } from "vitest"
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { noCommands } from "../test/commands.ts"
 import type { Seat } from "../ModelSeats.ts"
-import * as TodoAgent from "./TodoAgent.ts"
+import * as TodoAgent from "./TodoAgent.vibe"
 import * as TodoMachine from "./TodoMachine.vibe"
 
 const ATTEMPT = "6f0e2b9c-1d4a-4c3b-9e8f-7a6b5c4d3e2f"
@@ -77,6 +78,27 @@ const call = <E>(
     executionId === null ? ran : ran.pipe(Effect.provideService(FlowRuntime.FlowInstance, run(executionId))),
   )
 }
+
+test("a host construction defect escapes as the original defect", async () => {
+  const defect = new TypeError("invalid host composition")
+  const makeHost = vi.spyOn(AgentAction, "makeHost").mockImplementationOnce(() => {
+    throw defect
+  })
+  const { service } = machine(() => Effect.die("building the host does not call a tool"))
+  const database = Layer.effect(SqlClient.SqlClient, Effect.die("building the host does not open Postgres"))
+  try {
+    const result = await Effect.runPromise(Layer.build(TodoAgent.host(database, COMMAND_LIMIT_SECONDS)).pipe(
+      Effect.provideService(Machines, service),
+      Effect.scoped,
+      Effect.exit,
+    ))
+    expect(makeHost).toHaveBeenCalledOnce()
+    expect(result._tag).toBe("Failure")
+    if (result._tag === "Failure") expect(result.cause.reasons).toEqual([Cause.makeDieReason(defect)])
+  } finally {
+    makeHost.mockRestore()
+  }
+})
 
 describe("the agent's task", () => {
   test("names the TODO and its prompt, and lists what done means when the TODO says", () => {

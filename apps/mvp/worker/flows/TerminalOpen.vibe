@@ -160,10 +160,10 @@ export const TerminalOpen = Flow.make("terminal/Open", {
  * instead, as the person's next open would.
  */
 export const record = (terminalId: string, outcome: Outcome) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
+  effect {
+    const sql = try SqlClient.SqlClient
     const rows = outcome.status === "open"
-      ? yield* sql`
+      ? try sql`
         UPDATE terminal_sessions SET
           status = CASE WHEN coalesce(admitted_at, created_at) > now() - make_interval(secs => ${OPEN_DEADLINE_SECONDS}) THEN 'open' ELSE 'failed' END,
           generation = ${outcome.generation},
@@ -173,12 +173,12 @@ export const record = (terminalId: string, outcome: Outcome) =>
           updated_at = now()
         WHERE id = ${terminalId} AND status = 'opening'
         RETURNING id`
-      : yield* sql`
+      : try sql`
         UPDATE terminal_sessions SET status = 'failed', failure = ${outcome.failure}, waiting = false, updated_at = now(),
           ended_at = now()
         WHERE id = ${terminalId} AND status = 'opening' RETURNING id`
     return { recorded: rows.length > 0 }
-  })
+  }
 
 /**
  * Records on terminal `terminalId`'s row, while it is `opening`, whether it waits for a machine: `waiting`, or, once one
@@ -196,12 +196,12 @@ export const markAdmission = (terminalId: string, waiting: boolean) =>
 /** The steps over the host's `Sandboxes` and `database`, each recording what it did; none records a byte of the shell. */
 export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
   const admit = ({ terminalId, ownerId, branch }: typeof Admit.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const slot = { branchId: branch.branchId, personId: Budget.personOf(ownerId), kind: Budget.kindOf(branch) }
-      const admission = yield* Budget.observedAdmit(slot, database)
-      yield* markAdmission(terminalId, admission._tag === "Waiting").pipe(Effect.provide(database))
+    effect {
+      const slot = try Effect.sync(() => ({ branchId: branch.branchId, personId: Budget.personOf(ownerId), kind: Budget.kindOf(branch) }))
+      const admission = try Budget.observedAdmit(slot, database)
+      try markAdmission(terminalId, admission._tag === "Waiting").pipe(Effect.provide(database))
       return admission
-    }).pipe(
+    }.pipe(
       Effect.mapError(() => new AdmitUnavailable()),
       Effect.flatMap((admission) =>
         admission._tag === "Waiting" ? Effect.fail(new NoSandboxFree()) : Effect.succeed({ awake: admission.awake })

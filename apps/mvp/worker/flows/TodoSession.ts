@@ -11,7 +11,7 @@ import type { Steering } from "../runners/Api.vibe"
 import * as Stack from "../stack/Stack.vibe"
 import * as Jobs from "../runners/Jobs.vibe"
 import * as Store from "../runners/Store.vibe"
-import { promptOf } from "./TodoAgent.ts"
+import { promptOf } from "./TodoAgent.vibe"
 
 // The `todo` run's implement step when the repository codes with an external agent (decision 0136,
 // docs/features/agent-runners.md#a-todo-on-an-external-agent). `todo/Agent` reads the repository's coding agent once

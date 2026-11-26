@@ -6,7 +6,7 @@ import { Evaluator } from "@smthrs/model"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { SandboxCommand as CommandJob, SandboxTools } from "@smthrs/sandbox"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Effect, Layer, Option, Schema, identity } from "effect"
 import type { SqlClient } from "effect/sql"
 import { CHECKS_DIRECTORY } from "../../src/features/pulls/contract.ts"
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
@@ -215,15 +215,15 @@ export const machineBindings = <E, R>(
         effects: undefined,
       },
       handler: (input: object, call) =>
-        Effect.gen(function* () {
-          const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
-          if (Option.isNone(instance)) return yield* new ToolFailed({ reason: "no_run" })
-          const machine = yield* resolve(instance.value.executionId).pipe(
+        effect {
+          const instance = try Effect.serviceOption(FlowRuntime.FlowInstance)
+          if (Option.isNone(instance)) throw new ToolFailed({ reason: "no_run" })
+          const machine = try resolve(instance.value.executionId).pipe(
             Effect.mapError(() => new ToolFailed({ reason: "unavailable" })),
           )
-          if (Option.isNone(machine)) return yield* new ToolFailed({ reason: "no_machine" })
+          if (Option.isNone(machine)) throw new ToolFailed({ reason: "no_machine" })
           // SHA-1 over a few bytes failing is the platform's defect, not the call's.
-          const callId = yield* Effect.orDie(callIdOf(call.identity))
+          const callId = try Effect.orDie(callIdOf(call.identity))
           const tool = { ...input, tool: entry.tool } as SandboxTools.Call
           // A command runs as the call's own `sandbox/Command` job, so it holds no step of this run while it runs.
           const ran = tool.tool === "run"
@@ -235,8 +235,8 @@ export const machineBindings = <E, R>(
               SandboxCommand.stepWait(tool, stepWaitSeconds),
             )
             : Effect.map(machines.tool(machine.value.branch, machine.value.ownerId, callId, tool), (done) => done.result)
-          return (yield* ran.pipe(Effect.mapError(failedAs))) as never
-        }),
+          return (try ran.pipe(Effect.mapError(failedAs))) as never
+        },
       // The agent sees why a tool failed as its kind only.
       publicError: (error) => error.reason,
     })
@@ -267,23 +267,26 @@ export const host = <E, R>(
 ) =>
   Layer.effect(
     AgentAction.Host,
-    Effect.gen(function* () {
-      const machines = yield* Machines
+    effect {
+      const machines = try Machines
       // The database's own requirements, captured here, so a tool call needs nothing of the agent's context.
-      const context = yield* Effect.context<R>()
-      return AgentAction.makeHost({
-        registry: Registry.makeNoop(),
-        flows: [
-          FlowBinding.source(
-            "machine",
-            bindings(machines, Layer.provide(database, Layer.succeedContext(context)), commandSeconds, stepWaitSeconds),
-          ),
-        ],
-        limits: LIMITS,
-        capabilityEnvelope: [],
-        maxFrames: MAX_FRAMES,
-      })
-    }),
+      const context = try Effect.context<R>()
+      return try Effect.try({
+        try: () => AgentAction.makeHost({
+          registry: Registry.makeNoop(),
+          flows: [
+            FlowBinding.source(
+              "machine",
+              bindings(machines, Layer.provide(database, Layer.succeedContext(context)), commandSeconds, stepWaitSeconds),
+            ),
+          ],
+          limits: LIMITS,
+          capabilityEnvelope: [],
+          maxFrames: MAX_FRAMES,
+        }),
+        catch: identity,
+      }).pipe(Effect.orDie)
+    },
   )
 
 /** One seat, `agent`, answered by `seat` (the model endpoint's role in process); any other seat is unresolved. */

@@ -6,7 +6,7 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import { base64Bytes } from "../../src/features/runners/contract.ts"
 import { REPOSITORY } from "../github/test/fixtures.ts"
 import { testFile } from "../test/harness.ts"
-import * as Todo from "./Todo.ts"
+import * as Todo from "./Todo.vibe"
 
 const runtime = testFile("todo_received")
 const database = () => runtime.runPromise(Effect.map(Effect.service(TestDatabase.Scratch), (each) => each.database))

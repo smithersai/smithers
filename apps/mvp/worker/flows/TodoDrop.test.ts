@@ -13,7 +13,7 @@ import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as Stack from "../stack/Stack.vibe"
 import { build, runFlow } from "../test/flowHost.ts"
 import { eventually, testFile } from "../test/harness.ts"
-import * as Todo from "./Todo.ts"
+import * as Todo from "./Todo.vibe"
 import * as TodoDrop from "./TodoDrop.vibe"
 
 const runtime = testFile("todo_drop")

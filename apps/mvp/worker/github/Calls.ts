@@ -24,7 +24,9 @@ export const MAX_WAIT_MILLIS = 60_000
 
 const numberOf = (value: unknown): number | undefined => (typeof value === "number" ? value : undefined)
 
-/** Reads a failure from `@smthrs/integrations`: its classification and status, never its message. */
+/** Reads a failure from `@smthrs/integrations`: its classification and status, never its message.
+ * @throws {never}
+ */
 export const classify = (error: unknown): Classified => {
   if (!Core.IntegrationError.isIntegrationError(error)) return { kind: "retry" }
   const details: Readonly<Record<string, unknown>> = { ...error.details }

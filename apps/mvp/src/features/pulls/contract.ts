@@ -197,6 +197,7 @@ export const checkFlowOf = (name: string): string => `checks/${name}`
 export const statusContextOf = (name: string): string => `smithers/${name}`
 
 /** The `todo` run's execution id: one per attempt (decision 0016 §Decision 4). */
+/** @throws {never} */
 export const todoExecutionId = (attemptId: string): string => `todo:${attemptId}`
 
 /** A person's merge's execution id: one per write (`pr/Merge`). */

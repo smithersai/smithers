@@ -3,7 +3,7 @@ import { Node } from "@smthrs/plan"
 import { Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Stack from "../stack/Stack.vibe"
-import * as Todo from "./Todo.ts"
+import * as Todo from "./Todo.vibe"
 
 // Cancelling `todo` prevents its Await step from closing its PR. The stop adapter starts this independent durable
 // flow after cancellation, with one stable execution id per attempt. It closes the PR Postgres recorded for that same

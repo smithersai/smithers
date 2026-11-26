@@ -13,7 +13,7 @@ import { CheckoutFailed, type SandboxBranch, Sandboxes, SandboxUnavailable } fro
 import { resetBranches, terminal, terminalRows, tracked } from "../test/branch.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
-import * as TerminalOpen from "./TerminalOpen.ts"
+import * as TerminalOpen from "./TerminalOpen.vibe"
 
 const runtime = testFile("terminal_open")
 beforeEach(() => resetBranches(runtime))

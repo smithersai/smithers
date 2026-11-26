@@ -14,7 +14,7 @@ import { REPOSITORY, services as githubServices } from "../github/test/fixtures.
 import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as Stack from "../stack/Stack.vibe"
 import { testFile } from "../test/harness.ts"
-import * as Todo from "./Todo.ts"
+import * as Todo from "./Todo.vibe"
 
 const runtime = testFile("todo_recovery")
 beforeEach(() => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>

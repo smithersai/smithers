@@ -12,7 +12,7 @@ import * as AgentSandbox from "../../AgentSandbox.ts"
 import { COMMAND_LIMIT_SECONDS } from "../../../src/features/sandbox/contract.ts"
 import { Machines } from "../../branch/Machines.ts"
 import { noCommands } from "../commands.ts"
-import * as TodoAgent from "../../flows/TodoAgent.ts"
+import * as TodoAgent from "../../flows/TodoAgent.vibe"
 import * as TodoMachine from "../../flows/TodoMachine.vibe"
 
 const ATTEMPT = "6f0e2b9c-1d4a-4c3b-9e8f-7a6b5c4d3e2f"

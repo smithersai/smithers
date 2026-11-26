@@ -47,9 +47,9 @@ import { machines } from "../test/todoMachines.ts"
 import { eventually, testFile } from "../test/harness.ts"
 import { ChecksRun } from "./Checks.vibe"
 import * as SandboxCommand from "./SandboxCommand.vibe"
-import * as Todo from "./Todo.ts"
-import * as TodoBaseClosed from "./TodoBaseClosed.ts"
-import * as TodoAgent from "./TodoAgent.ts"
+import * as Todo from "./Todo.vibe"
+import * as TodoBaseClosed from "./TodoBaseClosed.vibe"
+import * as TodoAgent from "./TodoAgent.vibe"
 import * as TodoMachine from "./TodoMachine.vibe"
 
 const runtime = testFile("todo_run")

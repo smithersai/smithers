@@ -995,7 +995,7 @@ test("the shipped list covers the access areas and spares tests, generated files
     const path of [
       "apps/mvp/worker/SignIn.test.ts",
       "apps/mvp/worker/github/Api.test.ts",
-      "apps/mvp/worker/flows/Todo.ts",
+      "apps/mvp/worker/flows/Todo.vibe",
       "apps/mvp/db/migrations/0088_work_links.ts",
       "apps/mvp/src/device/schemas.lock.json",
       "apps/mvp/src/device/fixtures/a.json",
