@@ -8,7 +8,7 @@ import { retry, wentOffline } from "../chat/actions"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
 import { Branch } from "./branch"
-import { open as openBranch } from "./actions"
+import { open as openBranch } from "./actions.vibe"
 import { BranchStore } from "./store"
 
 const disposals: Array<() => Promise<void>> = []

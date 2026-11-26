@@ -9,7 +9,7 @@ import { branchHarness, gitHost, resetBranches, shaOf } from "../../../worker/te
 import { testFile } from "../../../worker/test/harness.ts"
 import builtin from "../../../plugins/branches/src/create"
 import { CREATION } from "../../plugins/builtinFlows"
-import { BranchClient } from "./api"
+import { BranchClient } from "./api.vibe"
 import { CreationStart } from "./creationFlows"
 import { registration, run } from "./creationSteps"
 import { TrackFailure } from "./flows"

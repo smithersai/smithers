@@ -12,7 +12,7 @@ import { Cause, Effect, Exit, Layer, Logger, Metric, Schema, Tracer } from "effe
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { CONVERSATION_NAMESPACE } from "../branch/contract"
-import { BranchClient } from "../branch/api"
+import { BranchClient } from "../branch/api.vibe"
 import { BranchTrackRefused, BranchTrackUnavailable, TrackFailure } from "../branch/flows"
 import * as Creation from "../branch/creationSteps"
 import { CREATION } from "../../plugins/builtinFlows"

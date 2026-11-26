@@ -46,7 +46,7 @@ import { TEXTS_ROUTE, textRoute, textRoomRoute } from "./contract"
 import { sends } from "./metrics"
 import { CoeditStore, decodeCursor, encodeCursor, savedMarkOf, savedNameOf } from "./store.vibe"
 import { answerOf, fileOf, openAnswerOf, promptOf, saveLabelOf } from "./view"
-import { TextWrites } from "./writes"
+import { TextWrites } from "./writes.vibe"
 
 const closers: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -341,6 +341,14 @@ describe("the shared prompt", () => {
     await shareWith(opened, branchId, "view")
     const viewer = await benTab("read")
     await viewer.branch.actions.open("octo", "hello", "feature/one")
+    await until(() => {
+      const ownerPrompt = owner.prompt()
+      const viewerPrompt = viewer.prompt()
+      expect(ownerPrompt).toBeDefined()
+      expect(viewerPrompt?.id).toBe(ownerPrompt!.id)
+      expect(Effect.runSync(Ref.get(owner.live(ownerPrompt!.id).roster)).self).toBeDefined()
+      expect(Effect.runSync(Ref.get(viewer.live(viewerPrompt!.id).roster)).self).toBeDefined()
+    })
     owner.type("read me", { anchor: 7, head: 7 })
     await until(() => expect(viewer.prompt()?.text).toBe("read me"))
     await until(() => expect(viewer.prompt()?.collaborators).toEqual([expect.objectContaining({ name: "member" })]))

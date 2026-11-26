@@ -8,7 +8,7 @@ import { ConversationsStore } from "../conversations/store"
 import { Presence, type PresenceView } from "../presence/presence"
 import { Sharing, type SharingView } from "../sharing/sharing"
 import { SharingStore } from "../sharing/store"
-import { leave, open, writable } from "./actions"
+import { leave, open, writable } from "./actions.vibe"
 import { Publishing, type PublishingView } from "./publishing"
 import { BranchRoute, BranchStore } from "./store"
 

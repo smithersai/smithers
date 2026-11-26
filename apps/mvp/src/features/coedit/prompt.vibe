@@ -3,7 +3,7 @@ import { SharedPrompt } from "../chat/sharedPrompt"
 import type { ChatStore } from "../chat/store"
 import { followPrompt, shownConversation, type ShownPrompt, type } from "./actions.vibe"
 import type { CoeditStore } from "./store.vibe"
-import type { TextWrites } from "./writes"
+import type { TextWrites } from "./writes.vibe"
 
 // The composer's draft on a branch its owner shared (docs/features/coedit.md#the-prompt): the branch's prompt, a text
 // everyone with `Can edit` types together. Chat's draft actions hand each change here (`SharedPrompt`), and everyone
@@ -13,21 +13,21 @@ import type { TextWrites } from "./writes"
 /** `SharedPrompt` over co-editing, following the conversation chat shows for as long as the store lives. */
 export const layer = Layer.effect(
   SharedPrompt,
-  Effect.gen(function* () {
+  effect {
     // The shown prompt, once it is open, and what the person typed in the conversation shown before it was.
-    const current = yield* Ref.make<ShownPrompt | undefined>(undefined)
-    const pending = yield* Ref.make("")
-    yield* followPrompt(current, pending)
-    const context = yield* Effect.context<CoeditStore | ChatStore | TextWrites>()
+    const current = try Ref.make<ShownPrompt | undefined>(undefined)
+    const pending = try Ref.make("")
+    try followPrompt(current, pending)
+    const context = try Effect.context<CoeditStore | ChatStore | TextWrites>()
     return SharedPrompt.of({
       set: (draft, { base, selection }) =>
-        Effect.gen(function* () {
-          const shown = yield* Ref.get(current)
+        effect {
+          const shown = try Ref.get(current)
           // Chat hands a change here only while the conversation shown is shared. Until its prompt opens, the draft
           // waits for it.
-          if (shown === undefined || shown.conversation !== (yield* shownConversation)) return yield* Ref.set(pending, draft)
-          yield* type(shown.textId, draft, { base, selection })
-        }).pipe(Effect.provideContext(context)),
+          if (shown === undefined || shown.conversation !== (try shownConversation)) return try Ref.set(pending, draft)
+          try type(shown.textId, draft, { base, selection })
+        }.pipe(Effect.provideContext(context)),
     })
-  }),
+  },
 )

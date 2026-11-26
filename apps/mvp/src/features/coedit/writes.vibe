@@ -33,17 +33,17 @@ export class TextWrites extends Context.Service<TextWrites, { readonly sending: 
    * outbox.
    */
   static readonly layer = Layer.effectContext(
-    Effect.gen(function* () {
-      const sending = yield* Collection.local<SendingRow, string>({ id: SENDING, schema: Sending, getKey: (row) => row.id })
-      const context = yield* Effect.context<TextsClient>()
+    effect {
+      const sending = try Collection.local<SendingRow, string>({ id: SENDING, schema: Sending, getKey: (row) => row.id })
+      const context = try Effect.context<TextsClient>()
       const mutation: Outbox.Mutation<never> = (params) => send(params).pipe(Effect.provideContext(context))
-      const writes = yield* OutboxWrites.adding({
+      const writes = try OutboxWrites.adding({
         collections: { [SENDING]: sending },
         mutations: { [TEXT_UPDATE]: mutation },
         orderingKeys: { [TEXT_UPDATE]: (rows) => (rows as ReadonlyArray<SendingRow>).map((row) => `text:${row.textId}`) },
       })
       return Context.make(TextWrites, TextWrites.of({ sending })).pipe(Context.add(OutboxWrites, writes))
-    }),
+    },
   )
 }
 
@@ -56,10 +56,10 @@ export class TextWrites extends Context.Service<TextWrites, { readonly sending: 
  */
 const send = ({ rows }: { readonly rows: ReadonlyArray<unknown> }) => {
   const row = rows[0] as SendingRow
-  return Effect.gen(function* () {
-    const startedAt = yield* Clock.currentTimeMillis
-    const answer = yield* Effect.result(
-      (yield* TextsClient).write(row.textId, {
+  return effect {
+    const startedAt = try Clock.currentTimeMillis
+    const answer = try Effect.result(
+      (try TextsClient).write(row.textId, {
         scope: row.scope,
         id: row.id,
         update: row.data,
@@ -74,20 +74,20 @@ const send = ({ rows }: { readonly rows: ReadonlyArray<unknown> }) => {
       : status !== undefined && REFUSED.has(status)
       ? "refused"
       : "retry"
-    yield* Metric.update(Metric.withAttributes(sends, { outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ outcome })
-    yield* Effect.logWithLevel(outcome === "stored" || outcome === "existing" ? "Info" : "Warn")("coedit.send").pipe(
+    try Metric.update(Metric.withAttributes(sends, { outcome }), 1)
+    try Effect.annotateCurrentSpan({ outcome })
+    try Effect.logWithLevel(outcome === "stored" || outcome === "existing" ? "Info" : "Warn")("coedit.send").pipe(
       Effect.annotateLogs({
         outcome,
         bytes: row.data.length,
         ...(status === undefined ? {} : { status }),
-        durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+        durationMs: (try Clock.currentTimeMillis) - startedAt,
       }),
     )
-    if (outcome === "held") return yield* held()
-    if (outcome === "refused") return yield* new Outbox.Refused({ status: status! })
-    if (outcome === "retry") return yield* new Outbox.Retry(status === undefined ? {} : { status })
-  }).pipe(
+    if (outcome === "held") return try held()
+    if (outcome === "refused") throw new Outbox.Refused({ status: status! })
+    if (outcome === "retry") throw new Outbox.Retry(status === undefined ? {} : { status })
+  }.pipe(
     Effect.annotateLogs({ feature: "coedit", textId: row.textId }),
     Effect.withSpan("coedit.send", { attributes: { textId: row.textId } }),
   )

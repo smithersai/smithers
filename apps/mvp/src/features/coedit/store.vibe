@@ -9,7 +9,7 @@ import { scopeOf, scopeParams, TEXT_NAMESPACE, textName, type TextOf, textRoomRo
 import { opens } from "./metrics"
 import { savedMarkOf, savedOf } from "./saved"
 import { type Collaborator, type Selection, Shared, TextUpdate } from "./schema"
-import { TextWrites } from "./writes"
+import { TextWrites } from "./writes.vibe"
 
 // The texts this tab has open (decision 0013 §4, docs/features/coedit.md#the-browser). Each is one `SharedText`
 // replica, fed by the text's Electric shape (what ChatApi stored) and by the outbox's rows (what this device typed and

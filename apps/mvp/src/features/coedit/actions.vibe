@@ -16,7 +16,7 @@ import { saves } from "./metrics"
 import { randomId } from "./platform"
 import type { Selection, Sending, Shared } from "./schema"
 import { CoeditStore, encodeCursor, type Live } from "./store.vibe"
-import { TEXT_UPDATE, TextWrites } from "./writes"
+import { TEXT_UPDATE, TextWrites } from "./writes.vibe"
 
 // What a person does with a text they edit together with others (decision 0013 §4, docs/features/coedit.md): type in
 // it, move their caret, open a file of a branch's working copy and save it. Each edit changes this tab's replica at

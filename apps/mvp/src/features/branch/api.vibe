@@ -45,29 +45,31 @@ export class BranchClient extends Context.Service<
   static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
     Layer.effect(
       BranchClient,
-      Effect.gen(function* () {
-        const client = yield* HttpClient.HttpClient
+      effect {
+        const client = try HttpClient.HttpClient
         return BranchClient.of({
           track: Effect.fn("branch.track.post")(function* (branch) {
-            const response = yield* client.execute(
-              HttpClientRequest.post(`${options.origin}${BRANCHES_ROUTE}${branch.create === true ? "" : "?optional=true"}`).pipe(HttpClientRequest.bodyJsonUnsafe(branch)),
-            ).pipe(Effect.mapError(() => new TrackRefused({})))
-            yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-            const state = response.headers["x-branch-state"]
-            if (response.status === 204 && (state === "forbidden" || state === "not_found")) {
-              return yield* new TrackRefused({ status: state === "forbidden" ? 403 : 404, code: state })
+            return yield* effect {
+              const response = try client.execute(
+                HttpClientRequest.post(`${options.origin}${BRANCHES_ROUTE}${branch.create === true ? "" : "?optional=true"}`).pipe(HttpClientRequest.bodyJsonUnsafe(branch)),
+              ).pipe(Effect.mapError(() => new TrackRefused({})))
+              try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+              const state = response.headers["x-branch-state"]
+              if (response.status === 204 && (state === "forbidden" || state === "not_found")) {
+                throw new TrackRefused({ status: state === "forbidden" ? 403 : 404, code: state })
+              }
+              if (response.status !== 200 && response.status !== 201) {
+                const body = decodeRefused(try Effect.orElseSucceed(response.text, () => ""))
+                throw new TrackRefused({
+                  status: response.status,
+                  ...Option.match(body, { onNone: () => ({}), onSome: ({ code }) => ({ code }) }),
+                })
+              }
+              return try response.json.pipe(
+                Effect.flatMap(decodeTracked),
+                Effect.mapError(() => new TrackRefused({ status: response.status })),
+              )
             }
-            if (response.status !== 200 && response.status !== 201) {
-              const body = decodeRefused(yield* Effect.orElseSucceed(response.text, () => ""))
-              return yield* new TrackRefused({
-                status: response.status,
-                ...Option.match(body, { onNone: () => ({}), onSome: ({ code }) => ({ code }) }),
-              })
-            }
-            return yield* response.json.pipe(
-              Effect.flatMap(decodeTracked),
-              Effect.mapError(() => new TrackRefused({ status: response.status })),
-            )
           }, (effect) =>
             // Interrupting the request aborts its fetch, so a stalled body stops too.
             Effect.timeoutOrElse(effect, {
@@ -75,7 +77,7 @@ export class BranchClient extends Context.Service<
               orElse: () => Effect.fail(new TrackRefused({})),
             })),
         })
-      }),
+      },
     )
 }
 
@@ -97,28 +99,30 @@ export class BranchWrites extends Context.Service<
   static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
     Layer.effect(
       BranchWrites,
-      Effect.gen(function* () {
-        const client = yield* HttpClient.HttpClient
+      effect {
+        const client = try HttpClient.HttpClient
         return BranchWrites.of({
           send: Effect.fn("branch.write.post")(function* (owner, name, write) {
-            const response = yield* client.execute(
-              HttpClientRequest.post(`${options.origin}${writesRoute(owner, name)}`).pipe(HttpClientRequest.bodyJsonUnsafe(write)),
-            ).pipe(Effect.mapError(() => new TrackRefused({})))
-            yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, op: write.op })
-            if (response.status === 200 || response.status === 202) return
-            // A body that can't be read, or isn't a refusal, names no code.
-            const code = Option.getOrUndefined(Option.flatMap(yield* Effect.option(response.text), decodeWriteRefusal))?.code
-            return yield* new TrackRefused({
-              status: response.status,
-              ...(code === "not_configured" ? { code } : {}),
-            })
+            return yield* effect {
+              const response = try client.execute(
+                HttpClientRequest.post(`${options.origin}${(try Effect.sync(() => writesRoute(owner, name)))}`).pipe(HttpClientRequest.bodyJsonUnsafe(write)),
+              ).pipe(Effect.mapError(() => new TrackRefused({})))
+              try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, op: write.op })
+              if (response.status === 200 || response.status === 202) return
+              // A body that can't be read, or isn't a refusal, names no code.
+              const code = Option.getOrUndefined(Option.flatMap(try Effect.option(response.text), decodeWriteRefusal))?.code
+              throw new TrackRefused({
+                status: response.status,
+                ...(code === "not_configured" ? { code } : {}),
+              })
+            }
           }, (effect) =>
             Effect.timeoutOrElse(effect, {
               duration: options.within ?? TRACK_WITHIN,
               orElse: () => Effect.fail(new TrackRefused({})),
             })),
         })
-      }),
+      },
     )
 }
 

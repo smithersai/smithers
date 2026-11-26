@@ -6,7 +6,7 @@ import type { StatusStore } from "../status/store"
 import { type Edit, followAnswers, hideFiles, save, select, showFile, type } from "./actions.vibe"
 import type { Selection } from "./schema"
 import { CoeditStore } from "./store.vibe"
-import type { TextWrites } from "./writes"
+import type { TextWrites } from "./writes.vibe"
 
 // Co-editing as a frontend sees it (docs/features/coedit.md#the-browser): a live query of the texts this tab has open,
 // and plain functions to act, with no Effect in sight. Typing and moving the caret finish before they return, so an

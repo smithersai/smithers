@@ -32,13 +32,13 @@ class Superseded extends Data.TaggedError("BranchOpenSuperseded") {}
  * branch, or leaving, stops it.
  */
 const followShares = (branchId: string) =>
-  Effect.gen(function* () {
-    const shares = yield* (yield* SharingStore).shares(branchId)
-    yield* Effect.ignore(shares.preload)
-    yield* shares.changes({ initial: true }).pipe(
+  effect {
+    const shares = try (try SharingStore).shares(branchId)
+    try Effect.ignore(shares.preload)
+    try shares.changes({ initial: true }).pipe(
       Stream.runForEach(() => Effect.flatMap(shares.toArray, (rows) => share(rows.length > 0))),
     )
-  })
+  }
 
 /** Why a branch couldn't be shown, from `branch/track`'s failure. */
 const statusOf = (reason: string | undefined): Current["status"] =>
@@ -77,9 +77,9 @@ const whenAborted = (signal: AbortSignal) =>
  * on `branch/track` without interrupting its run in the tab's scope or changing the newer navigation's page.
  */
 export const open = (owner: string, repo: string, ref: string, signal?: AbortSignal) =>
-  Effect.gen(function* () {
-    const { conversations, generation } = yield* BranchStore
-    const request = yield* Ref.updateAndGet(generation, (value) => value + 1)
+  effect {
+    const { conversations, generation } = try BranchStore
+    const request = try Ref.updateAndGet(generation, (value) => value + 1)
     const stillCurrent = Ref.get(generation).pipe(Effect.flatMap((value) =>
       value === request && signal?.aborted !== true ? Effect.void : Effect.fail(new Superseded())))
     const route = `${owner.toLowerCase()}/${repo.toLowerCase()}/${ref}`
@@ -87,16 +87,16 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
     // Another page of the branch this tab shows, such as the next file in its tree: the workspace stays as it is, its
     // conversation and its shares' follower included, and nothing unmounts while ChatApi would answer what it already
     // did. Leaving the branch, or a reload, tracks it again.
-    const shown = yield* (yield* BranchStore).current.get(CURRENT)
+    const shown = try (try BranchStore).current.get(CURRENT)
     if (Option.isSome(shown) && shown.value.status === "ready" && shown.value.branchId !== null &&
       `${shown.value.owner.toLowerCase()}/${shown.value.repo.toLowerCase()}/${shown.value.name}` === route) {
-      yield* Metric.update(Metric.withAttributes(opens, { outcome: "kept" }), 1)
-      yield* Effect.logInfo("branch.open").pipe(Effect.annotateLogs({ outcome: "kept" }))
+      try Metric.update(Metric.withAttributes(opens, { outcome: "kept" }), 1)
+      try Effect.logInfo("branch.open").pipe(Effect.annotateLogs({ outcome: "kept" }))
       return shown.value.branchId
     }
-    yield* FiberHandle.clear((yield* BranchStore).follower)
-    if (!isRepository(owner, repo) || !isBranchName(ref)) {
-      yield* setCurrent({ owner, repo, name: ref, status: "missing", ...empty })
+    try FiberHandle.clear((try BranchStore).follower)
+    if (!(try Effect.sync(() => isRepository(owner, repo) && isBranchName(ref)))) {
+      try setCurrent({ owner, repo, name: ref, status: "missing", ...empty })
       return undefined
     }
     /**
@@ -104,70 +104,70 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
      * conversation the device kept for it.
      */
     const refused = (status: Current["status"]) =>
-      Effect.gen(function* () {
+      effect {
         if (status !== "failed") {
-          yield* Effect.ignore(conversations.restored)
-          yield* stillCurrent
-          if (Option.isSome(yield* conversations.get(route))) {
-            const removed = yield* conversations.delete(route).pipe(Effect.orDie)
-            yield* Effect.ignore(removed.persisted)
+          try Effect.ignore(conversations.restored)
+          try stillCurrent
+          if (Option.isSome(try conversations.get(route))) {
+            const removed = try conversations.delete(route).pipe(Effect.orDie)
+            try Effect.ignore(removed.persisted)
           }
         }
-        yield* stillCurrent
-        yield* setCurrent({ owner, repo, name: ref, status, ...empty })
-        yield* Metric.update(Metric.withAttributes(opens, { outcome: status }), 1)
+        try stillCurrent
+        try setCurrent({ owner, repo, name: ref, status, ...empty })
+        try Metric.update(Metric.withAttributes(opens, { outcome: status }), 1)
         return undefined
-      })
-    yield* setCurrent({ owner, repo, name: ref, status: "tracking", ...empty })
-    yield* Effect.logInfo("branch.open").pipe(Effect.annotateLogs({ outcome: "tracking" }))
+      }
+    try setCurrent({ owner, repo, name: ref, status: "tracking", ...empty })
+    try Effect.logInfo("branch.open").pipe(Effect.annotateLogs({ outcome: "tracking" }))
     // Cancellation releases both waits; `stillCurrent` settles it as superseded.
     const released = signal === undefined
       ? connectionIs("offline")
       : Effect.raceFirst(connectionIs("offline"), whenAborted(signal))
     // A file's loader can start before sign-in's first answer. Keep the route
     // usable offline, but never interpret loading as permission to track.
-    yield* Effect.raceFirst(identityReady, released)
-    yield* stillCurrent
-    if (yield* signedOut) return yield* refused("sign_in")
+    try Effect.raceFirst(identityReady, released)
+    try stillCurrent
+    if (try signedOut) return try refused("sign_in")
     // The run goes on in the tab's scope whether the page went offline or its navigation was cancelled.
-    const tracking = yield* Effect.forkIn(
+    const tracking = try Effect.forkIn(
       Effect.result(
-        (yield* FlowDispatch).dispatch(
+        (try FlowDispatch).dispatch(
           "branch/track",
           // When this open happened, later than anything the device saw for the branch: its step tried again never undoes
           // an archive made since (docs/features/conversations.md#archive).
-          { repo: `${owner}/${repo}`, branch: ref, openedAt: yield* openAt(owner, repo, ref) },
+          { repo: `${owner}/${repo}`, branch: ref, openedAt: try openAt(owner, repo, ref) },
           { door: "view" },
         ),
       ),
-      (yield* BranchStore).scope,
+      (try BranchStore).scope,
     )
-    const answered = yield* Effect.raceFirst(
+    const answered = try Effect.raceFirst(
       Effect.map(Fiber.join(tracking), Option.some),
       Effect.as(released, Option.none()),
     )
     // A superseded or cancelled navigation must not change the current page.
-    yield* stillCurrent
+    try stillCurrent
     if (Option.isNone(answered)) {
-      yield* Effect.ignore(conversations.restored)
-      yield* stillCurrent
-      const saved = yield* conversations.get(route)
+      try Effect.ignore(conversations.restored)
+      try stillCurrent
+      const saved = try conversations.get(route)
       const conversationId = Option.isSome(saved) ? saved.value.conversationId : null
       if (conversationId !== null) {
-        yield* (yield* ChatStore).open(conversationId)
-        yield* stillCurrent
-        yield* show(conversationId)
-        yield* stillCurrent
+        try (try ChatStore).open(conversationId)
+        try stillCurrent
+        try show(conversationId)
+        try stillCurrent
       }
-      yield* setCurrent({ owner, repo, name: ref, status: "offline", ...empty, conversationId })
-      yield* Metric.update(Metric.withAttributes(opens, { outcome: "offline" }), 1)
-      yield* Effect.logInfo("branch.open").pipe(Effect.annotateLogs({ outcome: "offline" }))
+      try setCurrent({ owner, repo, name: ref, status: "offline", ...empty, conversationId })
+      try Metric.update(Metric.withAttributes(opens, { outcome: "offline" }), 1)
+      try Effect.logInfo("branch.open").pipe(Effect.annotateLogs({ outcome: "offline" }))
       // Opening another branch, or leaving for home, stops the wait; so does another navigation, or leaving for any
       // other page, which abort `signal`.
-      const { follower } = yield* BranchStore
-      const { reopen } = yield* BranchRoute
-      const reopened = yield* Ref.make(false)
-      yield* FiberHandle.run(
+      const { follower } = try BranchStore
+      const { reopen } = try BranchRoute
+      const reopened = try Ref.make(false)
+      try FiberHandle.run(
         follower,
         Effect.andThen(
           signal === undefined ? connectionIs("up") : Effect.raceFirst(connectionIs("up"), whenAborted(signal)),
@@ -185,22 +185,22 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
     const dispatched = answered.value
     if (dispatched._tag === "Success" && dispatched.success._tag === "Done") {
       const tracked = dispatched.success.value
-      yield* Effect.ignore(conversations.restored)
-      yield* stillCurrent
-      const saved = yield* conversations.get(route)
-      const write = yield* (Option.isSome(saved)
+      try Effect.ignore(conversations.restored)
+      try stillCurrent
+      const saved = try conversations.get(route)
+      const write = try (Option.isSome(saved)
         ? conversations.update(route, (row) => { row.conversationId = tracked.conversationId })
         : conversations.insert({ id: route, conversationId: tracked.conversationId })).pipe(Effect.orDie)
-      yield* Effect.ignore(write.persisted)
-      yield* (yield* ChatStore).open(tracked.conversationId)
-      yield* stillCurrent
-      yield* show(tracked.conversationId, tracked.shared)
-      yield* stillCurrent
+      try Effect.ignore(write.persisted)
+      try (try ChatStore).open(tracked.conversationId)
+      try stillCurrent
+      try show(tracked.conversationId, tracked.shared)
+      try stillCurrent
       if (tracked.access === "owner") {
-        const { follower } = yield* BranchStore
-        yield* FiberHandle.run(follower, followShares(tracked.branchId))
+        const { follower } = try BranchStore
+        try FiberHandle.run(follower, followShares(tracked.branchId))
       }
-      yield* setCurrent({
+      try setCurrent({
         owner,
         repo,
         name: tracked.name,
@@ -210,14 +210,14 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
         mode: tracked.mode,
         access: tracked.access,
       })
-      yield* Metric.update(Metric.withAttributes(opens, { outcome: "ready" }), 1)
+      try Metric.update(Metric.withAttributes(opens, { outcome: "ready" }), 1)
       return tracked.branchId
     }
     const error = dispatched._tag === "Success" && dispatched.success._tag === "Failed"
       ? dispatched.success.error
       : undefined
-    return yield* refused(statusOf(error?._tag === "@smthrs/mvp/branch/BranchTrackRefused" ? error.reason : undefined))
-  }).pipe(
+    return try refused(statusOf(error?._tag === "@smthrs/mvp/branch/BranchTrackRefused" ? error.reason : undefined))
+  }.pipe(
     // expected: a newer navigation took the page over
     Effect.catchTag("BranchOpenSuperseded", () => signal?.aborted === true
       ? Metric.update(Metric.withAttributes(reopens, { outcome: "abandoned" }), 1).pipe(Effect.as(undefined))
@@ -240,10 +240,10 @@ export const writable = Effect.map(
     row.value.mode === "open",
 )
 
-export const leave = Effect.gen(function* () {
-  yield* Ref.update((yield* BranchStore).generation, (value) => value + 1)
-  yield* FiberHandle.clear((yield* BranchStore).follower)
-  yield* setCurrent({
+export const leave = effect {
+  try Ref.update((try BranchStore).generation, (value) => value + 1)
+  try FiberHandle.clear((try BranchStore).follower)
+  try setCurrent({
     owner: "",
     repo: "",
     name: "",
@@ -253,5 +253,5 @@ export const leave = Effect.gen(function* () {
     mode: null,
     access: null,
   })
-  yield* show(null)
-})
+  try show(null)
+}

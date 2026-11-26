@@ -8,7 +8,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net"
 import { afterEach, describe, expect, onTestFailed, test } from "vitest"
 import { CREATION } from "../../plugins/builtinFlows"
-import { BranchClient, TrackRefused } from "./api"
+import { BranchClient, TrackRefused } from "./api.vibe"
 import { type CreationSelection } from "./creation"
 import { CreationRequest, CreationStart, type RealmRequest, type State } from "./creationFlows"
 import { call, evaluate, registration, run, select } from "./creationSteps"
