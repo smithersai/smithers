@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest"
 import * as DeviceIdentity from "../src/device/identity.ts"
 import * as IssueContract from "../src/features/issues/contract.ts"
 import * as TodoView from "../src/features/todos/view.ts"
-import * as McpAuth from "./mcp/Auth.ts"
+import * as McpAuth from "./mcp/Auth.vibe"
 import { MCP_BLOCKED_ACTS } from "../src/features/mcp/contract.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "120"))

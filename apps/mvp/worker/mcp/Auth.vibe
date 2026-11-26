@@ -182,11 +182,11 @@ export interface McpAuthDeps<E = unknown, R = never, R2 = never> {
 export const makeMcpAuthService = <E, R, R2>(
   deps: McpAuthDeps<E, R, R2>,
 ): Effect.Effect<McpAuthService["Service"], never, R | R2> =>
-  Effect.gen(function* () {
-    const context = yield* Effect.context<R | R2>()
+  effect {
+    const context = try Effect.context<R | R2>()
     const resolvedSessions =
       deps.sessions ??
-      Option.getOrElse(yield* Effect.serviceOption(Sessions), () =>
+      Option.getOrElse(try Effect.serviceOption(Sessions), () =>
         Sessions.of({ resolve: Effect.succeedNone }),
       )
 
@@ -206,23 +206,23 @@ export const makeMcpAuthService = <E, R, R2>(
       request: HttpServerRequest.HttpServerRequest,
       targetRepoId?: string,
     ): Effect.Effect<McpAuthResult> =>
-      Effect.gen(function* () {
+      effect {
         const parsed = parseMcpBearer(request)
         if (parsed._tag === "Absent") {
-          yield* recordCheck("auth", "anonymous")
+          try recordCheck("auth", "anonymous")
           return { _tag: "Anonymous" } satisfies McpAuthResult
         }
         if (parsed._tag === "Malformed") {
-          yield* recordCheck("auth", "invalid_token", { reason: "malformed" })
+          try recordCheck("auth", "invalid_token", { reason: "malformed" })
           return { _tag: "Rejected", status: 401, code: "invalid_token" } satisfies McpAuthResult
         }
 
-        const tokenSha256 = digestSync(parsed.token)
+        const tokenSha256 = try Effect.try(() => digestSync(parsed.token)).pipe(Effect.orDie)
 
-        const lookup = yield* withDb(
-          Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient
-            const rows = yield* sql<TokenLookupRow>`
+        const lookup = try withDb(
+          effect {
+            const sql = try SqlClient.SqlClient
+            const rows = try sql<TokenLookupRow>`
               SELECT
                 t.id::text AS id,
                 t.token_sha256 AS "tokenSha256",
@@ -237,26 +237,27 @@ export const makeMcpAuthService = <E, R, R2>(
               INNER JOIN people p ON p.id = t.person_id
               WHERE t.token_sha256 = ${tokenSha256}`
             return Option.fromNullishOr(rows[0])
-          }),
+          },
         ).pipe(Effect.result)
 
         if (lookup._tag === "Failure") {
-          yield* recordCheck("auth", "unavailable", { errorCode: codeOf(lookup.failure) })
+          try recordCheck("auth", "unavailable", { errorCode: try sync(() => codeOf(lookup.failure)) })
           return { _tag: "Rejected", status: 503, code: "unavailable" } satisfies McpAuthResult
         }
 
-        if (Option.isNone(lookup.success) || !timingSafeEqualString(lookup.success.value.tokenSha256, tokenSha256)) {
-          yield* recordCheck("auth", "invalid_token", { reason: "not_found" })
+        const result = lookup.success
+        if (Option.isNone(result) || !(try sync(() => timingSafeEqualString(result.value.tokenSha256, tokenSha256)))) {
+          try recordCheck("auth", "invalid_token", { reason: "not_found" })
           return { _tag: "Rejected", status: 401, code: "invalid_token" } satisfies McpAuthResult
         }
 
-        const row = lookup.success.value
+        const row = result.value
         if (row.revoked) {
-          yield* recordCheck("auth", "token_revoked")
+          try recordCheck("auth", "token_revoked")
           return { _tag: "Rejected", status: 401, code: "token_revoked" } satisfies McpAuthResult
         }
         if (row.expired) {
-          yield* recordCheck("auth", "token_expired")
+          try recordCheck("auth", "token_expired")
           return { _tag: "Rejected", status: 401, code: "token_expired" } satisfies McpAuthResult
         }
 
@@ -266,23 +267,23 @@ export const makeMcpAuthService = <E, R, R2>(
           normalizedScope !== null &&
           normalizedScope !== targetRepoId.toLowerCase()
         ) {
-          yield* recordCheck("auth", "repo_scope_mismatch")
+          try recordCheck("auth", "repo_scope_mismatch")
           return { _tag: "Rejected", status: 403, code: "repo_scope_mismatch" } satisfies McpAuthResult
         }
 
         const scopes = MCP_SCOPES.filter((scope) => row.scopes.includes(scope))
 
         // Throttled (>= 60s), non-fatal `last_used_at` update so busy agents do not amplify write traffic.
-        yield* withDb(
-          Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient
-            yield* sql`
+        try withDb(
+          effect {
+            const sql = try SqlClient.SqlClient
+            try sql`
               UPDATE mcp_tokens
               SET last_used_at = clock_timestamp()
               WHERE id = ${row.id}::uuid
                 AND revoked_at IS NULL
                 AND (last_used_at IS NULL OR last_used_at < clock_timestamp() - interval '60 seconds')`
-          }),
+          },
         ).pipe(Effect.catchCause(() => Effect.void))
 
         const principal: McpPrincipal = {
@@ -295,12 +296,12 @@ export const makeMcpAuthService = <E, R, R2>(
           actor: agentActor(row.id, row.personId, row.login, null),
         }
 
-        yield* recordCheck("auth", "authenticated", { scopeCount: scopes.length })
+        try recordCheck("auth", "authenticated", { scopeCount: scopes.length })
         return { _tag: "Authenticated", principal } satisfies McpAuthResult
-      }).pipe(
+      }.pipe(
         Effect.catchCause((cause) =>
           Effect.as(
-            recordCheck("auth", "unavailable", { errorCode: codeOf(Cause.squash(cause)) }),
+            effect { try recordCheck("auth", "unavailable", { errorCode: try sync(() => codeOf(Cause.squash(cause))) }) },
             { _tag: "Rejected", status: 503, code: "unavailable" } as McpAuthResult,
           ),
         ),
@@ -314,10 +315,10 @@ export const makeMcpAuthService = <E, R, R2>(
      */
     const readFreshDeploymentRole = (personId: string): Effect.Effect<Role | null, RepoRoles.RoleRefused> =>
       withDb(
-        Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient
-          const windowMs = yield* SessionStore.RoleFreshMs
-          const rows = yield* sql<{
+        effect {
+          const sql = try SqlClient.SqlClient
+          const windowMs = try SessionStore.RoleFreshMs
+          const rows = try sql<{
             readonly role: Role | null
             readonly verifiedAt: string | null
             readonly nowMs: string
@@ -330,11 +331,11 @@ export const makeMcpAuthService = <E, R, R2>(
             WHERE p.id = ${personId}::uuid`
           const row = rows[0]
           if (row === undefined || row.verifiedAt === null) return null
-          if (!SessionStore.roleFresh(Number(row.verifiedAt), Number(row.nowMs), windowMs)) {
-            return yield* Effect.fail(new RepoRoles.RoleRefused({ code: "unavailable", stage: "database" }))
+          if (!(try sync(() => SessionStore.roleFresh(Number(row.verifiedAt), Number(row.nowMs), windowMs)))) {
+            throw new RepoRoles.RoleRefused({ code: "unavailable", stage: "database" })
           }
           return row.role
-        }),
+        },
       ).pipe(
         Effect.mapError((error) =>
           error instanceof RepoRoles.RoleRefused
@@ -355,17 +356,17 @@ export const makeMcpAuthService = <E, R, R2>(
         return Effect.fail(new RepoRoles.RoleRefused({ code: "not_configured", stage: "configuration" }))
       }
       const roles = deps.roles
-      return Effect.gen(function* () {
+      return effect {
         const subject =
           actor.act?.kind === "agent" &&
           actor.session === undefined &&
           repository.id === roles.repository.id &&
-          roles.workBasis?.(repository, true) !== "local"
-            ? { ...actor, role: yield* readFreshDeploymentRole(actor.subject.id) }
+          (try sync(() => roles.workBasis?.(repository, true))) !== "local"
+            ? { ...actor, role: try readFreshDeploymentRole(actor.subject.id) }
             : actor
-        const resolved = yield* roles.resolve(subject, repository).pipe(Effect.provide(context))
+        const resolved = try roles.resolve(subject, repository).pipe(Effect.provide(context))
         return resolved.role
-      })
+      }
     }
 
     /** Resolves live repository visibility. Unknown visibility fails closed (`false`). */
@@ -405,22 +406,22 @@ export const makeMcpAuthService = <E, R, R2>(
       owner: string,
       name: string,
     ): Effect.Effect<McpRepoAccess, McpToolError> =>
-      Effect.gen(function* () {
-        if (!isRepository(owner, name)) {
-          return yield* new McpToolError({
+      effect {
+        if (!(try sync(() => isRepository(owner, name)))) {
+          throw new McpToolError({
             code: "invalid_params",
             message: "Expected a GitHub repository in owner/name form.",
           })
         }
 
-        const canonicalId = repoId(owner, name)
-        const repository = repositoryOf(`${owner}/${name}`)
+        const canonicalId = try sync(() => repoId(owner, name))
+        const repository = try sync(() => repositoryOf(`${owner}/${name}`))
 
         // Enforce repo pinning BEFORE any GitHub or DB lookup so scoped tokens cannot probe other repos.
         if (Option.isSome(principal)) {
           const pinned = principal.value.repoScope
           if (pinned !== null && pinned.toLowerCase() !== canonicalId) {
-            return yield* new McpToolError({
+            throw new McpToolError({
               code: "forbidden",
               message: "This MCP token is scoped to a different repository.",
             })
@@ -428,7 +429,7 @@ export const makeMcpAuthService = <E, R, R2>(
         }
 
         if (Option.isNone(principal)) {
-          const isPublic = yield* checkIsPublic(repository)
+          const isPublic = try checkIsPublic(repository)
           return {
             owner,
             name,
@@ -440,14 +441,14 @@ export const makeMcpAuthService = <E, R, R2>(
 
         // Always strip any role carried in on the actor; authority comes exclusively from live resolution.
         const freshActor = agentActor(principal.value.tokenId, principal.value.personId, principal.value.login, null)
-        const roleResult = yield* resolveRoleFor(freshActor, repository).pipe(Effect.result)
+        const roleResult = try resolveRoleFor(freshActor, repository).pipe(Effect.result)
 
         if (roleResult._tag === "Success") {
           const liveRole = roleResult.success
           const isPublic =
             liveRole !== null
-              ? yield* checkIsPublic(repository).pipe(Effect.orElseSucceed(() => false))
-              : yield* checkIsPublic(repository)
+              ? try checkIsPublic(repository).pipe(Effect.orElseSucceed(() => false))
+              : try checkIsPublic(repository)
           return {
             owner,
             name,
@@ -459,7 +460,7 @@ export const makeMcpAuthService = <E, R, R2>(
 
         const refused = roleResult.failure
         if (RepoRoles.CANT_ACT.has(refused.code)) {
-          const isPublic = yield* checkIsPublic(repository)
+          const isPublic = try checkIsPublic(repository)
           return {
             owner,
             name,
@@ -469,8 +470,8 @@ export const makeMcpAuthService = <E, R, R2>(
           } satisfies McpRepoAccess
         }
 
-        return yield* mapRoleRefusalToToolError(refused)
-      }).pipe(
+        return try mapRoleRefusalToToolError(refused)
+      }.pipe(
         Effect.tap((access) => recordCheck("repo", access.role ?? (access.isPublic ? "public" : "private_none"))),
         Effect.tapError((error) => recordCheck("repo", error.code)),
         Effect.withSpan("mcp.repo_access"),
@@ -490,9 +491,9 @@ export const makeMcpAuthService = <E, R, R2>(
       name: string,
       minimum: Role,
     ): Effect.Effect<{ readonly principal: McpPrincipal; readonly access: McpRepoAccess }, McpToolError> =>
-      Effect.gen(function* () {
+      effect {
         if (Option.isNone(principal)) {
-          return yield* new McpToolError({
+          throw new McpToolError({
             code: "authentication",
             message: "Authentication is required for write operations.",
           })
@@ -500,22 +501,22 @@ export const makeMcpAuthService = <E, R, R2>(
 
         const current = principal.value
         if (current.actor.act?.kind !== "agent" || current.actor.act.id !== `mcp:${current.tokenId}`) {
-          return yield* new McpToolError({
+          throw new McpToolError({
             code: "forbidden",
             message: "MCP writes require a valid agent act.",
           })
         }
 
         if (!current.scopes.includes("mcp:write")) {
-          return yield* new McpToolError({
+          throw new McpToolError({
             code: "forbidden",
             message: "This MCP token is read-only and lacks mcp:write scope.",
           })
         }
 
-        const access = yield* resolveRepoAccess(principal, owner, name)
-        if (rankOf(access.role) < rankOf(minimum)) {
-          return yield* new McpToolError({
+        const access = try resolveRepoAccess(principal, owner, name)
+        if (try sync(() => rankOf(access.role) < rankOf(minimum))) {
+          throw new McpToolError({
             code: "forbidden",
             message: `Requires the ${minimum} role or above on ${owner}/${name}.`,
           })
@@ -526,13 +527,13 @@ export const makeMcpAuthService = <E, R, R2>(
           actor: agentActor(current.tokenId, current.personId, current.login, access.role),
         }
         return { principal: hydrated, access }
-      }).pipe(
+      }.pipe(
         Effect.tap(() => recordCheck("write", "allowed")),
         Effect.tapError((error) => recordCheck("write", error.code)),
         Effect.withSpan("mcp.write_access"),
       )
 
-    const oauth = yield* makeOAuthHandlers({
+    const oauth = try makeOAuthHandlers({
       database: deps.database,
       sessions: resolvedSessions,
       resolveRole: resolveRoleFor,
@@ -546,7 +547,7 @@ export const makeMcpAuthService = <E, R, R2>(
       revokeToken: oauth.revokeToken,
       handleOAuthOrTokenRoute: oauth.handleOAuthOrTokenRoute,
     })
-  })
+  }
 
 /** Effect Layer providing {@link McpAuthService} over `deps`. */
 export const layer = <E, R, R2>(

@@ -10,12 +10,14 @@ import { Scratch } from "../../db/TestDatabase.ts"
 import * as Repos from "../Repos.ts"
 import * as RepoReads from "../RepoReads.ts"
 import { repositoryOf } from "../github/Config.ts"
+import { encodeCursor } from "../github/IssueList.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
+import * as GitHubStore from "../github/Store.ts"
 import { scripted } from "../test/codeStorage.ts"
 import { testFile } from "../test/harness.ts"
-import { makeMcpAuthService } from "./Auth.ts"
+import { makeMcpAuthService } from "./Auth.vibe"
 import { McpAuthService, type McpPrincipal } from "./Contract.vibe"
-import { makeLiveDeps } from "./LiveDeps.ts"
+import { makeLiveDeps } from "./LiveDeps.vibe"
 import { makeLiveToolDeps, makeMcpToolRegistry, MAX_FILE_PREVIEW_BYTES } from "./Tools.ts"
 
 const runtime = testFile("mcp_repository_reads")
@@ -182,4 +184,140 @@ test.each([100, 101])("issue_get reports whether the first comment page covers a
   expect(issue.comments).toHaveLength(100)
   expect(issue.comments[99].untrusted.body).toBe("99")
   expect(issue.commentsTruncated).toBe(count > 100)
+})
+
+test("durable MCP writes strip duplicate attribution and reject conflicting write IDs", async () => {
+  const { database } = await harness((_url, res) => { res.writeHead(404).end() })
+  const sql = await runtime.runPromise(Effect.service(SqlClient.SqlClient))
+  const personId = crypto.randomUUID()
+  const otherPerson = crypto.randomUUID()
+  await runtime.runPromise(sql`INSERT INTO people (id, github_id, github_login)
+    VALUES (${personId}::uuid, 202, 'author'), (${otherPerson}::uuid, 203, 'other')`)
+  const started: string[] = []
+  const deps = await Effect.runPromise(makeLiveDeps({
+    database,
+    reads: Option.none(),
+    repoCache: ImmutableCache.layerMemory(),
+    starter: { start: (_flow, request) => Effect.sync(() => { started.push(request.executionId) }) },
+  }))
+  const writeId = crypto.randomUUID()
+  const args = { owner: repo.owner, name: repo.name, personId, login: "author", agentLabel: "author (agent)", writeId, title: "Issue" }
+  const footer = "Smithers for @author (agent)"
+  const create = (body: string) => Effect.runPromise(deps.createIssue({ ...args, body }))
+  await expect(create("Details\n\n" + footer)).resolves.toEqual({ writeId, status: "pending" })
+  await expect(create("Details")).resolves.toEqual({ writeId, status: "pending" })
+  expect(await runtime.runPromise(GitHubStore.settleWrite(writeId, {
+    status: "done", itemNumber: 1, githubId: 100,
+  }))).toBe(true)
+  await expect(create("Details")).resolves.toEqual({ writeId, status: "done" })
+  expect(started).toHaveLength(2)
+  for (const params of [{ ...args, body: "different" }, { ...args, personId: otherPerson, body: "Details" }]) {
+    await expect(Effect.runPromise(Effect.flip(deps.createIssue(params)))).resolves.toMatchObject({ code: "conflict" })
+  }
+
+  const commentId = crypto.randomUUID()
+  await expect(Effect.runPromise(deps.commentIssue({ ...args, writeId: commentId, number: 1, body: footer })))
+    .resolves.toEqual({ writeId: commentId, status: "pending" })
+  const payloads = await runtime.runPromise(sql<{ readonly body: string }>`
+    SELECT payload->>'body' AS body FROM github_writes WHERE id IN (${writeId}::uuid, ${commentId}::uuid)
+    ORDER BY body`)
+  expect(payloads.map(({ body }) => body)).toEqual(["", "Details"])
+})
+
+test("synced MCP issue reads and work links stay on the local projection", async () => {
+  const { deps } = await harness((_url, res) => { res.writeHead(500).end() })
+  const sql = await runtime.runPromise(Effect.service(SqlClient.SqlClient))
+  const itemId = repoScope + "#81"
+  await runtime.runPromise(sql`
+    INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state, triage,
+      created_at, updated_at, source_updated_at, fetched_at)
+    VALUES (${itemId}, ${repoScope}, 81, 'issue', 1981, 'Local issue', 'Body', 'open', 'accepted',
+      now(), now(), now(), now())`)
+  await runtime.runPromise(sql`
+    INSERT INTO github_sync (repo_id, stream) VALUES (${repoScope}, 'issues')
+    ON CONFLICT DO NOTHING`)
+  await expect(Effect.runPromise(deps.getIssue(repo.owner, repo.name, 81))).resolves.toMatchObject({
+    number: 81, body: "Body", labels: ["smithers:accepted"], comments: [],
+  })
+  await expect(Effect.runPromise(deps.listIssues(repo.owner, repo.name, { state: "open", q: "", limit: 2 })))
+    .resolves.toMatchObject({ issues: [expect.objectContaining({ number: 81, title: "Local issue" })], nextCursor: null })
+  await expect(Effect.runPromise(deps.listIssues(repo.owner, repo.name, { state: "closed", q: "", limit: 2 })))
+    .resolves.toEqual({ issues: [], nextCursor: null })
+  const cursor = encodeCursor({ updatedAt: "2000-01-01T00:00:00Z", number: 81 })
+  await expect(Effect.runPromise(deps.listIssues(repo.owner, repo.name, { state: "open", q: "", limit: 2, cursor })))
+    .resolves.toEqual({ issues: [], nextCursor: null })
+  await expect(Effect.runPromise(Effect.flip(deps.getIssue(repo.owner, repo.name, 82))))
+    .resolves.toMatchObject({ code: "not_found" })
+  const link = {
+    ...repo, number: 81, source: "mcp:author/test", kind: "pr", ref: "1981", status: "open",
+    url: "https://github.com/acme/project/pull/1981", summary: "Linked patch",
+  } as const
+  await expect(Effect.runPromise(deps.postWorkLink(link))).resolves.toEqual({ recorded: true })
+  await runtime.runPromise(sql`UPDATE work_links SET updated_at = now() + interval '1 day'
+    WHERE repo_id = ${repoScope} AND number = 81`)
+  const { url: _url, summary: _summary, ...older } = link
+  await expect(Effect.runPromise(deps.postWorkLink(older))).resolves.toEqual({ recorded: false })
+})
+
+test("local pull details include stored reviews and checks for the pull head", async () => {
+  const { deps } = await harness((_url, res) => { res.writeHead(500).end() })
+  const sql = await runtime.runPromise(Effect.service(SqlClient.SqlClient))
+  const itemId = repoScope + "#91"
+  await runtime.runPromise(sql`
+    INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state,
+      created_at, updated_at, source_updated_at, fetched_at)
+    VALUES (${itemId}, ${repoScope}, 91, 'pull', 2091, 'Local pull', 'Changes', 'open',
+      now(), now(), now(), now())`)
+  await runtime.runPromise(sql`
+    INSERT INTO pulls (item_id, repo_id, number, head_ref, head_sha, base_ref, base_sha, source_updated_at, fetched_at)
+    VALUES (${itemId}, ${repoScope}, 91, 'feature', ${sha}, 'main', ${"b".repeat(40)}, now(), now())`)
+  await runtime.runPromise(sql`
+    INSERT INTO reviews (id, repo_id, item_id, github_id, author_login, state, body, fetched_at)
+    VALUES (${itemId + "/review"}, ${repoScope}, ${itemId}, 2111, 'reviewer', 'APPROVED', 'Looks good', now())`)
+  await runtime.runPromise(sql`
+    INSERT INTO runs (id, flow, status, launched_by, repo_id, sha)
+    VALUES (${crypto.randomUUID()}::uuid, 'verify', 'failed', 'author', ${repoScope}, ${sha}),
+      (${crypto.randomUUID()}::uuid, 'test', 'working', 'author', ${repoScope}, ${sha})`)
+  await expect(Effect.runPromise(deps.listPulls(repo.owner, repo.name, "all"))).resolves.toMatchObject([
+    { number: 91, title: "Local pull", head: "feature", base: "main" },
+  ])
+  await expect(Effect.runPromise(deps.getPull(repo.owner, repo.name, 91))).resolves.toMatchObject({
+    number: 91, body: "Changes", reviews: [{ author: "reviewer", state: "APPROVED", body: "Looks good" }],
+    checks: expect.arrayContaining([
+      { name: "verify", status: "failed", conclusion: "failure" },
+      { name: "test", status: "working", conclusion: null },
+    ]),
+  })
+})
+
+test("MCP todo ordering and issue labels use their stored projections", async () => {
+  const { deps } = await harness((_url, res) => { res.writeHead(500).end() })
+  const sql = await runtime.runPromise(Effect.service(SqlClient.SqlClient))
+  const itemId = repoScope + "#99"
+  await runtime.runPromise(sql`
+    INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state, triage, commitment,
+      created_at, updated_at, source_updated_at, fetched_at)
+    VALUES (${itemId}, ${repoScope}, 99, 'issue', 2199, 'Labeled issue', '', 'open', 'not_accepted', 'later',
+      now(), now(), now(), now())`)
+  await runtime.runPromise(sql`
+    INSERT INTO comments (id, repo_id, item_id, github_id, author_login, body,
+      created_at, updated_at, source_updated_at, fetched_at)
+    VALUES (${itemId + "/comment"}, ${repoScope}, ${itemId}, 2199, 'reader', 'Follow-up', now(), now(), now(), now())`)
+  await expect(Effect.runPromise(deps.getIssue(repo.owner, repo.name, 99))).resolves.toMatchObject({
+    labels: ["smithers:not-accepted", "smithers:later"], comments: [{ body: "Follow-up", author: "reader" }],
+  })
+
+  await runtime.runPromise(sql`UPDATE items SET triage = 'proposed' WHERE id = ${itemId}`)
+  await expect(Effect.runPromise(deps.getIssue(repo.owner, repo.name, 99))).resolves.toMatchObject({
+    labels: ["smithers:later"],
+  })
+
+  await runtime.runPromise(sql`INSERT INTO stacks (repo_id) VALUES (${repoScope}) ON CONFLICT DO NOTHING`)
+  await runtime.runPromise(sql`
+    INSERT INTO todos (id, repo_id, number, title, state, position, created_by, created_login, settled_at)
+    VALUES (${crypto.randomUUID()}::uuid, ${repoScope}, 98, 'Active', 'queued', 1, 'author', 'author', NULL),
+      (${crypto.randomUUID()}::uuid, ${repoScope}, 99, 'Settled', 'merged', NULL, 'author', 'author', now())`)
+  await expect(Effect.runPromise(deps.listTodos(repo.owner, repo.name))).resolves.toMatchObject([
+    { title: "Active", position: 1, lane: null }, { title: "Settled", position: 99, lane: null },
+  ])
 })

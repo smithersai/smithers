@@ -35,11 +35,11 @@ export const apply = (tree: PlanTree, delivery: ShardClient.Delivery): PlanTree 
   )
 }
 
-export const make = Effect.fnUntraced(function*(
+export const make = effect (
   storage: ObjectDatabase.Storage,
   shard: ShardProtocol.ShardId,
   credentials: Principal.Credentials
-) {
+) => {
   // `(headSeq, tree, receipts)` is what SQLite has committed. This shard owns `storage` exclusively (never nested
   // inside an enclosing transaction), so staging in `beforeCommit` and publishing synchronously once
   // `storage.transactionSync` returns keeps in-memory state strictly equal to SQLite with no cross-request lock
@@ -66,7 +66,7 @@ export const make = Effect.fnUntraced(function*(
       }
     }
   }
-  const { shard: journal } = yield* DoSqliteShard.make(trackedStorage, {
+  const { shard: journal } = try DoSqliteShard.make(trackedStorage, {
     shard,
     beforeCommit: (entry) => {
       const nextTree = apply(tree, { _tag: "Entries", entries: [entry], through: { shard, epoch: entry.epoch, seq: entry.seq } })
@@ -74,11 +74,11 @@ export const make = Effect.fnUntraced(function*(
       staged.push({ tree: nextTree, causes, seq: entry.seq })
     }
   })
-  const reader = yield* ShardClient.make({
+  const reader = try ShardClient.make({
     shard,
     node: "authority",
     transport: journal,
-    store: ShardClient.memoryStore(),
+    store: try sync(() => ShardClient.memoryStore()),
     apply: (delivery) => Effect.sync(() => {
       tree = apply(tree, delivery)
       headSeq = delivery._tag === "Reset" ? delivery.snapshot.position.seq : delivery.through.seq
@@ -92,7 +92,7 @@ export const make = Effect.fnUntraced(function*(
     })
   })
   // Rebuild the reducer from the durable snapshot and tail before admitting requests.
-  const head = yield* reader.pull
+  const head = try reader.pull
   const payload = {
     type: "object",
     properties: { command: { type: "object", properties: {}, additionalProperties: true } },
@@ -124,7 +124,7 @@ export const make = Effect.fnUntraced(function*(
     }
   })
   const stream = Schema.decodeUnknownSync(ShardProtocol.StreamId)(shard)
-  const engine = yield* Core.make({
+  const engine = try Core.make({
     credentials,
     initialJournalSeq: head.seq,
     causeCapabilities: [readCapability(shard)],
@@ -132,10 +132,10 @@ export const make = Effect.fnUntraced(function*(
     initialReceipts: receipts.map((receipt) => ({ receipt })),
     flows: [flow(update), flow(review)],
     projections: [{ name: read, title: "Plan tree", collection: "plan", capabilities: [readCapability(shard)] }],
-    persist: (requested) => Effect.gen(function*() {
+    persist: (requested) => effect {
       const event = Schema.decodeUnknownSync(PlanEvent)(requested.output)
-      const current = yield* journal.head
-      const commit = yield* journal.submit({
+      const current = try journal.head
+      const commit = try journal.submit({
         version: 2,
         shard,
         epoch: current.epoch,
@@ -145,8 +145,8 @@ export const make = Effect.fnUntraced(function*(
           payload: { event, cause: requested.cause }
         }
       }).pipe(Effect.orDie)
-      if (commit._tag !== "Accepted") return yield* Effect.die(new Error("Plan journal refused its own commit"))
-    })
+      if (commit._tag !== "Accepted") return try Effect.die(new Error("Plan journal refused its own commit"))
+    }
   })
   return {
     shard,
@@ -159,6 +159,6 @@ export const make = Effect.fnUntraced(function*(
     state: Effect.sync(() => ({ tree, hash: canonicalHash(tree) })),
     compact: Effect.suspend(() => journal.compact(headSeq, { tree, receipts: [...receipts] }))
   }
-})
+}
 
 export type LivePlanTree = Effect.Success<ReturnType<typeof make>>

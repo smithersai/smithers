@@ -1,8 +1,11 @@
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { CauseReceipt, CliAdapter, GuiAdapter, McpAdapter, Principal, SdkAdapter } from "@smthrs/app-core"
 import { canonicalHash, emptyPlanTree, PlanTree } from "@smthrs/app-state"
 import { JournalCollection } from "@smthrs/effect-tanstack-db"
+import { DoSqliteShard } from "@smthrs/platform-cloudflare"
 import { ShardClient, ShardProtocol } from "@smthrs/sync"
-import { Effect, Option, Queue, Redacted, Schema, Stream } from "effect"
+import * as Output from "alchemy/Output"
+import { ConfigProvider, Context, Effect, Layer, Option, Queue, Redacted, Schema, Stream } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Reactivity from "effect/reactivity/Reactivity"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -11,11 +14,13 @@ import { join } from "node:path"
 import { expect, test } from "vitest"
 import { openStorage } from "../../../../packages/smithers/flows/platform-cloudflare/test/SqliteObjectFixture.ts"
 import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../../src/features/auth/contract.ts"
-import type { Actor } from "../Actor.ts"
+import { type Actor, Sessions } from "../Actor.ts"
+import { MAX_PLAN_MCP_BYTES } from "../Body.vibe"
 import { repositoryOf } from "../github/Config.ts"
+import * as RepoRoles from "../github/RepoRoles.ts"
 import { signedIn } from "../test/harness.ts"
-import * as Plan from "./PlanTreeShard.ts"
-import * as Routes from "./PlanTreeRoutes.ts"
+import * as Plan from "./PlanTreeShard.vibe"
+import * as Routes from "./PlanTreeRoutes.vibe"
 
 const shard = Schema.decodeUnknownSync(ShardProtocol.ShardId)("repo:example/project")
 const other = Schema.decodeUnknownSync(ShardProtocol.ShardId)("repo:example/other")
@@ -221,6 +226,10 @@ test("four clients and TanStack DB converge through a SQLite restart without a r
       expect(yield* Effect.flip(gui.actions.dispatch(Plan.review, done))).toMatchObject({ reason: "person_only" })
       expect(yield* Effect.flip(sdk.call(Plan.review, done))).toMatchObject({ reason: "person_only" })
       expect(yield* Effect.flip(sdk.call(Plan.update, done))).toMatchObject({ code: "wrong_operation" })
+      expect(yield* Effect.flip(sdk.call(Plan.update, { command: {} }))).toMatchObject({ code: "invalid_command" })
+      expect(yield* Effect.flip(sdk.call(Plan.update, {
+        command: { _tag: "MovePlanNode", id: "absent", newParent: null, order: 0, expectedRevision: null },
+      }))).toMatchObject({ code: "invalid_command" })
       yield* gui.hostStrip.press(Plan.review, done)
       const first = yield* hub.state
       expect(first.tree.nodes["mcp"]?.status).toBe("done")
@@ -347,6 +356,149 @@ test("the repository route derives shard grants from the session and the reposit
       expect(yield* call("member")).toMatchObject({ result: { isError: true } })
       expect(yield* call("maintainer")).toMatchObject({ result: { structuredContent: expect.any(Object) } })
     })))
+  } finally {
+    db.hibernate()
+  }
+})
+
+test("plan routes reject malformed requests and acknowledge MCP notifications", async () => {
+  const db = openStorage(":memory:")
+  try {
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const plan = yield* Plan.make(db.storage, shard, auth())
+      const fetch = yield* Routes.makeShardHandler(db.storage, shard)
+      const request = (path: string, init?: RequestInit) =>
+        Effect.provideService(
+          HttpServerRequest.HttpServerRequest,
+          HttpServerRequest.fromWeb(new Request("https://smithers.example" + path, init)),
+        )
+      const headers = { authorization: "Bearer reader" }
+      const body = JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })
+      expect(Routes.handles("/api/repos/example/project/plan/mcp")).toBe(true)
+      expect(Routes.handles("/api/repos/example/project/plan/other")).toBe(false)
+      expect((yield* Routes.handle(plan).pipe(request("/api/plan/snapshot"))).status).toBe(401)
+      expect((yield* Routes.handle(plan).pipe(request("/api/plan/other", { headers }))).status).toBe(404)
+      expect((yield* Routes.handle(plan).pipe(request("/api/plan/snapshot", { headers }))).status).toBe(400)
+      expect((yield* Routes.handle(plan).pipe(request("/api/plan/mcp", { headers, method: "POST", body }))).status).toBe(202)
+      expect((yield* fetch.pipe(request("/api/plan/snapshot", { headers }))).status).toBe(403)
+      expect(Plan.apply(emptyPlanTree, {
+        _tag: "Reset",
+        snapshot: { position: { shard, epoch: 0, seq: 0 }, state: null },
+      })).toEqual(emptyPlanTree)
+    }).pipe(Effect.provide(Reactivity.layer))))
+  } finally {
+    db.hibernate()
+  }
+})
+
+test("repository plan dispatch rejects before forwarding and maps upstream failure", async () => {
+  const repo = repositoryOf("example/project")
+  const person = { subject: { kind: "person", id: "person" }, role: "admin" } as const
+  const role = { repository: repo, resolve: () => Effect.succeed({ role: "maintainer" as const, held: Option.none() }) }
+  const deniedRole = { ...role, resolve: () => Effect.fail(new RepoRoles.RoleRefused({ code: "unavailable", stage: "database" })) }
+  const ordinaryPath = "/api/repos/example/project/plan/mcp"
+  const route = (path: string, { actor = person as Actor, roles = role as RepoRoles.RepoRoles, body, anonymous = false }: {
+    actor?: Actor
+    roles?: RepoRoles.RepoRoles
+    body?: string | Uint8Array<ArrayBuffer>
+    anonymous?: boolean
+  } = {}) => Routes.dispatch(() => Effect.fail("shard down"), roles, { admins: new Set() }).pipe(
+    Effect.provideService(Sessions, Sessions.of({ resolve: Effect.succeed(anonymous ? Option.none() : Option.some(actor)) })),
+    Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request(
+      "https://smithers.example" + path, body === undefined ? {} : { method: "POST", body },
+    ))),
+  )
+  const status = async (program: ReturnType<typeof route>) => (await Effect.runPromise(program)).status
+  expect(await status(route("/api/invalid"))).toBe(404)
+  expect(await status(route(ordinaryPath, { anonymous: true }))).toBe(401)
+  expect(await status(route("/api/repos/smithersai/smithers-ops/plan/mcp"))).toBe(404)
+  expect(await status(route(ordinaryPath, { roles: deniedRole }))).toBe(403)
+  expect(await status(route(ordinaryPath, { actor: { ...person, act: { kind: "agent", id: "run", ceiling: [] } } }))).toBe(403)
+  expect(await status(route(ordinaryPath, { body: "a".repeat(MAX_PLAN_MCP_BYTES + 1) }))).toBe(413)
+  expect(await status(route(ordinaryPath, { body: Uint8Array.of(0xff) }))).toBe(400)
+  expect(await status(route(ordinaryPath))).toBe(503)
+})
+
+test("the live Plan Tree object initializes its fetch handler with the named SQLite shard", async () => {
+  const db = openStorage(":memory:")
+  let registered: unknown
+  const worker = {
+    bind: () => () => Effect.void,
+    export: (name: string, value: unknown) => Effect.sync(() => {
+      expect(name).toBe("PlanTreeObject")
+      registered = value
+    }),
+    durableObjectNamespaces: Output.asOutput({}),
+  } as unknown as Cloudflare.Worker
+  const workerContext = Cloudflare.Worker.Self as unknown as Context.Key<Cloudflare.Worker, Cloudflare.Worker>
+  try {
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      yield* Layer.build(Routes.live).pipe(
+        Effect.provideService(workerContext, worker),
+        Effect.provideService(Cloudflare.WorkerEnvironment, { PlanTreeObject: { getByName: () => undefined } }),
+        Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({ ALCHEMY_PHASE: "runtime" })),
+      )
+      expect(registered).toMatchObject({ kind: "durableObject" })
+      const { constructor } = registered as {
+        constructor: Effect.Effect<
+          Effect.Effect<{ fetch: ReturnType<typeof Routes.handle> }, never, import("effect/Scope").Scope>,
+          never, Cloudflare.DurableObjectState
+        >
+      }
+      const state = {
+        raw: { storage: db.storage, id: { name: shard } },
+      } as unknown as Cloudflare.DurableObjectState["Service"]
+      const initialize = yield* constructor.pipe(Effect.provideService(Cloudflare.DurableObjectState, state))
+      const { fetch } = yield* initialize
+      const response = yield* fetch.pipe(Effect.provideService(
+        HttpServerRequest.HttpServerRequest,
+        HttpServerRequest.fromWeb(new Request("https://plan.internal/api/plan/snapshot")),
+      ))
+      expect(response.status).toBe(403)
+    })))
+  } finally {
+    db.hibernate()
+  }
+})
+
+test("a resync without a snapshot restores an empty plan and a conflicting journal receipt cannot publish state", async () => {
+  const db = openStorage(":memory:")
+  try {
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const { shard: journal } = yield* DoSqliteShard.make(db.storage, {
+        shard,
+        decide: () => ({ _tag: "Refused", reason: "fixture reservation" }),
+      })
+      const head = yield* journal.advanceEpoch
+      const stream = Schema.decodeUnknownSync(ShardProtocol.StreamId)(shard)
+      const reserved = yield* journal.submit({
+        version: 2, shard, epoch: head.epoch, command: { key: ["plan", "run-1"], stream, payload: null },
+      })
+      expect(reserved._tag).toBe("Refused")
+      const hub = yield* Plan.make(db.storage, shard, auth())
+      const sdk = yield* SdkAdapter.make({ engine: hub.engine, evidence: { kind: "sdk", runCredential: Redacted.make("sdk") } })
+      expect((yield* hub.state).tree).toEqual(emptyPlanTree)
+      const failed = yield* Effect.exit(sdk.call(Plan.update, command("must-not-publish")))
+      expect(failed).toMatchObject({ _tag: "Failure" })
+      expect((yield* hub.state).tree).toEqual(emptyPlanTree)
+    }).pipe(Effect.provide(Reactivity.layer))))
+  } finally {
+    db.hibernate()
+  }
+})
+
+test("a repeated artifact attachment cannot append an empty journal event", async () => {
+  const db = openStorage(":memory:")
+  try {
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const hub = yield* Plan.make(db.storage, shard, auth())
+      const sdk = yield* SdkAdapter.make({ engine: hub.engine, evidence: { kind: "sdk", runCredential: Redacted.make("sdk") } })
+      yield* sdk.call(Plan.update, command("artifact-target"))
+      const attach = { command: { _tag: "AttachArtifact", nodeId: "artifact-target", artifactId: "artifact", expectedRevision: null } }
+      yield* sdk.call(Plan.update, attach)
+      expect(yield* Effect.flip(sdk.call(Plan.update, attach))).toMatchObject({ code: "invalid_event_count" })
+      expect((yield* hub.state).tree.nodes["artifact-target"]?.artifactIds).toEqual(["artifact"])
+    }).pipe(Effect.provide(Reactivity.layer))))
   } finally {
     db.hibernate()
   }

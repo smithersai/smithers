@@ -14,7 +14,7 @@ import {
   MCP_TOKENS_ROUTE
 } from "../src/features/mcp/contract.ts"
 import { type Actor, type Role, Sessions } from "./Actor.ts"
-import { makeMcpAuthService } from "./mcp/Auth.ts"
+import { makeMcpAuthService } from "./mcp/Auth.vibe"
 import * as OAuth from "./mcp/OAuth.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "250" : "100"))

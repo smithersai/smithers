@@ -32,7 +32,7 @@ import {
   violations
 } from "../src/features/todos/stack.ts"
 import { type Actor, memberOrAbove, rankOf, type Role } from "./Actor.ts"
-import { isBlockedMcpAct, isValidMcpTokenFormat, makeMcpAuthService, parseMcpBearer } from "./mcp/Auth.ts"
+import { isBlockedMcpAct, isValidMcpTokenFormat, makeMcpAuthService, parseMcpBearer } from "./mcp/Auth.vibe"
 import { McpAuthService, type McpPrincipal, type McpToolContext, type McpToolError } from "./mcp/Contract.vibe"
 import { isBlockedName, makeMcpToolRegistry, type McpToolDeps, TOOL_SPECS } from "./mcp/Tools.ts"
 import { mayChange, mayConfigure, mayRead, mayRetryAny, viaOf } from "./stack/Access.vibe"

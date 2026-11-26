@@ -24,7 +24,7 @@ import {
   makeMcpAuthService,
   timingSafeEqual,
   timingSafeEqualString,
-} from "./Auth.ts"
+} from "./Auth.vibe"
 import { McpAuthService, type McpPrincipal } from "./Contract.vibe"
 import { generateMcpToken } from "./OAuth.ts"
 import { makeLiveToolDeps, makeMcpToolRegistry } from "./Tools.ts"
@@ -60,6 +60,7 @@ interface SessionReceipt {
 const makeAuthzHarness = (options: {
   readonly failDb?: boolean
   readonly failTouch?: boolean
+  readonly failRoleReceipt?: boolean
   readonly useRepoRolesObject?: boolean
 } = {}) => {
   let nowMs = Date.UTC(2026, 10, 22, 12, 0, 0)
@@ -145,6 +146,8 @@ const makeAuthzHarness = (options: {
 
       if (q.includes("FROM people p WHERE p.id =")) {
         const personId = values[values.length - 1] as string
+        if (options.failRoleReceipt) throw new Error("Role receipt lookup failed")
+        if (!people.has(personId)) return [] as ReadonlyArray<A>
         const receipt = sessionReceipts.get(personId)
         if (receipt === undefined) return [{ role: null, verifiedAt: null, nowMs: String(nowMs) }] as unknown as ReadonlyArray<A>
         return [
@@ -557,4 +560,54 @@ describe("Live per-repo authorization matrix & Tools.ts integration", () => {
     expect(privateRead._tag).toBe("Failure")
     if (privateRead._tag === "Failure") expect(privateRead.failure.code).toBe("forbidden")
   })
+})
+
+test("a database defect rejects authentication and a visibility outage fails closed", async () => {
+  const request = HttpServerRequest.fromWeb(new Request("https://smithers.test/api/mcp", {
+    headers: { authorization: "Bearer " + generateMcpToken() },
+  }))
+  const broken = Layer.effect(SqlClient.SqlClient, Effect.die(new Error("database defect")))
+  const auth = await Effect.runPromise(makeMcpAuthService({ database: broken }))
+  await expect(Effect.runPromise(auth.authenticate(request))).resolves.toEqual({
+    _tag: "Rejected", status: 503, code: "unavailable",
+  })
+
+  const offline = Layer.effect(SqlClient.SqlClient, Effect.fail(new Error("database offline")))
+  const visibility = await Effect.runPromise(makeMcpAuthService({ database: offline }))
+  await expect(Effect.runPromise(Effect.flip(visibility.resolveRepoAccess(Option.none(), "acme", "project"))))
+    .resolves.toMatchObject({ code: "unavailable" })
+})
+
+test("an expired deployment role receipt cannot authorize an MCP principal", async () => {
+  const h = makeAuthzHarness({ useRepoRolesObject: true })
+  const principal = await h.principalOf(h.mint({ personId: CAROL_ID }).raw)
+  h.advanceMs(86_400_000)
+  await expect(Effect.runPromise(Effect.flip(h.service.resolveRepoAccess(principal, "smithersai", "smithers"))))
+    .resolves.toMatchObject({ code: "unavailable" })
+})
+
+test.each([
+  ["rate_limited", "rate_limited"], ["app_not_installed", "app_not_installed"], ["not_found", "not_found"],
+  ["not_configured", "unavailable"], ["github_unavailable", "unavailable"], ["unavailable", "unavailable"],
+] as const)("maps visibility refusal %s to %s", async (code, expected) => {
+  const database = Layer.effect(SqlClient.SqlClient, Effect.die("unexpected database access"))
+  const auth = await Effect.runPromise(makeMcpAuthService({
+    database,
+    isRepoPublic: () => Effect.fail(new RepoRoles.RoleRefused({ code, stage: "permission" })),
+  }))
+  await expect(Effect.runPromise(Effect.flip(auth.resolveRepoAccess(Option.none(), "acme", "project"))))
+    .resolves.toMatchObject({ code: expected })
+})
+
+test("deployment role lookup distinguishes a disappeared person from a database failure", async () => {
+  const removed = makeAuthzHarness({ useRepoRolesObject: true })
+  const removedPrincipal = await removed.principalOf(removed.mint({ personId: CAROL_ID }).raw)
+  removed.people.delete(CAROL_ID)
+  await expect(Effect.runPromise(removed.service.resolveRepoAccess(removedPrincipal, "smithersai", "smithers")))
+    .resolves.toMatchObject({ role: null })
+
+  const broken = makeAuthzHarness({ useRepoRolesObject: true, failRoleReceipt: true })
+  const brokenPrincipal = await broken.principalOf(broken.mint({ personId: CAROL_ID }).raw)
+  await expect(Effect.runPromise(Effect.flip(broken.service.resolveRepoAccess(brokenPrincipal, "smithersai", "smithers"))))
+    .resolves.toMatchObject({ code: "unavailable" })
 })

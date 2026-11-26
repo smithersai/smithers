@@ -26,7 +26,7 @@ import * as RepoRoles from "../github/RepoRoles.ts"
 import { repositoryOf } from "../github/Config.ts"
 import { verifiedRedirect } from "../../src/features/mcp/view.ts"
 import { type Actor, type Role, Sessions } from "../Actor.ts"
-import { makeMcpAuthService } from "./Auth.ts"
+import { makeMcpAuthService } from "./Auth.vibe"
 import {
   isValidRedirectUri,
   pkceS256,
