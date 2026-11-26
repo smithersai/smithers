@@ -3,7 +3,7 @@ import { Collection } from "@smthrs/effect-tanstack-db"
 import { Effect, Option } from "effect"
 import { expect, test } from "vitest"
 import { PULL_RECEIPT_HEADER } from "./contract"
-import { refreshingSource } from "./refresh"
+import { refreshingSource } from "./refresh.vibe"
 import { PullsView, VIEW } from "./schema"
 
 // Faulty sources probe corrupt/misdirected/late server receipts. The happy path uses ChatApi and Electric in PullsApi.test.
@@ -29,4 +29,21 @@ test("a bad or late per-PR receipt cannot change the routed absence state", () =
     yield* refreshingSource(source, view, "repo").request("http://app.test/api/shapes/reviews", {})
     expect(Option.getOrThrow(yield* view.get(VIEW)).pullAbsent).toBe(false)
   }
+}))))
+
+test("a receipt for the routed pull request records its absence, and another repository's request asks no refresh", () => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+  const view = yield* Collection.local({ id: "pull-receipt-accepted", schema: PullsView, getKey: (row) => row.id,
+    initialData: [{ id: VIEW, owner: "acme", name: "widgets", repoId: "repo", number: 42, tab: "conversation" as const,
+      merging: false, mergeWriteId: null, mergeRefused: null, reviewing: false, reviewNotice: null, installed: true, pullStatus: "allowed" as const }],
+  })
+  const urls: Array<string> = []
+  const source: ShapeSource.Source = { request: (url) => Effect.sync(() => {
+    urls.push(url)
+    return new Response(null, { status: 200, headers: { [PULL_RECEIPT_HEADER]: JSON.stringify({ number: 42, checkedAt: 100, missing: true }) } })
+  }) }
+  yield* refreshingSource(source, view, "elsewhere").request("http://app.test/api/shapes/reviews", {})
+  expect(Option.getOrThrow(yield* view.get(VIEW))).not.toHaveProperty("pullAbsent")
+  yield* refreshingSource(source, view, "repo").request("http://app.test/api/shapes/reviews", {})
+  expect(urls).toEqual(["http://app.test/api/shapes/reviews", "http://app.test/api/shapes/reviews?refresh=42"])
+  expect(Option.getOrThrow(yield* view.get(VIEW))).toMatchObject({ pullAbsent: true, pullCheckedAt: 100 })
 }))))

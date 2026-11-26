@@ -145,7 +145,7 @@ import {
   TRIAGE_SETTINGS_TABLE,
   WRITES_TABLE
 } from "../features/issues/contract"
-import type { PullsClient } from "../features/pulls/api"
+import type { PullsClient } from "../features/pulls/api.vibe"
 import type { RepoClient } from "../features/repo/api"
 import { PULL_COMMITS_TABLE, PULLS_TABLE, REVIEWS_TABLE } from "../features/pulls/contract"
 import { todoExecutionId } from "../features/pulls/contract"

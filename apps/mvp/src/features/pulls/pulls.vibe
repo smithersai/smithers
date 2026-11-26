@@ -1,9 +1,8 @@
-import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
 import { IssuesStore } from "../issues/store"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { closeFiles, loadFiles, merge, open, retry, review, warm } from "./actions"
-import { PullsClient } from "./api"
+import { closeFiles, loadFiles, merge, open, retry, review, warm } from "./actions.vibe"
+import { PullsClient } from "./api.vibe"
 import type { PullTab } from "./contract"
 import { PullsStore, type RepoPulls } from "./store"
 
@@ -48,9 +47,9 @@ export class Pulls extends Context.Service<Pulls, { readonly queries: PullsQueri
   /** Binds the store's queries and the actions for frontends, run with the services this layer was built with. */
   static readonly layer = Layer.effect(
     Pulls,
-    Effect.gen(function* () {
-      const store = yield* PullsStore
-      const { runSync: run, runPromise: promise } = runners(yield* Effect.context<PullsStore | PullsClient | IssuesStore | FlowDispatch>(), "pulls")
+    effect {
+      const store = try PullsStore
+      const { runSync: run, runPromise: promise } = runners(try context<PullsStore | PullsClient | IssuesStore | FlowDispatch>(), "pulls")
       return Pulls.of({
         queries: {
           view: store.viewState.tanstack,
@@ -72,7 +71,7 @@ export class Pulls extends Context.Service<Pulls, { readonly queries: PullsQueri
           review: (headSha, number) => run(review(headSha, number)),
         },
       })
-    }),
+    },
   )
 }
 

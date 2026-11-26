@@ -7,7 +7,7 @@ import { repoId } from "../repo/contract"
 import { TestChatApi, TEST_REPOSITORY, openTestApp } from "../../test/chatApi"
 import type { Session } from "../auth/schema"
 import { SESSION } from "../auth/store"
-import { Pulls } from "../pulls/pulls"
+import { Pulls } from "../pulls/pulls.vibe"
 import { repositoryAccess, syncStatusAfter, wipeStatusOf } from "./source"
 import { IssuesStore } from "./store"
 

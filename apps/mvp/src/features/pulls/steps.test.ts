@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net"
 import { Effect, Metric } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, expect, test } from "vitest"
-import { PullsClient, PullsRequestFailed } from "./api"
+import { PullsClient, PullsRequestFailed } from "./api.vibe"
 import { failureOf, requestReview, reviews } from "./steps"
 
 // Review on request from the device's side (docs/features/pulls.md#review-on-request): `pull/review/request` through the

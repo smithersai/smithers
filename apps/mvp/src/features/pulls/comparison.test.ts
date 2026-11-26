@@ -5,8 +5,8 @@ import { openTab, openTestApi, TestChatApi, TEST_REPOSITORY } from "../../test/c
 import { PublishStore } from "../branch/publishStore.vibe"
 import { role } from "../repo/actions"
 import { RepoStore } from "../repo/store"
-import { PullsClient, PullsRequestFailed } from "./api"
-import { readComparison } from "./comparison"
+import { PullsClient, PullsRequestFailed } from "./api.vibe"
+import { readComparison } from "./comparison.vibe"
 import { comparisonKey } from "./contract"
 import { type Compared, FilesRow } from "./schema"
 
@@ -74,4 +74,73 @@ test("Branch Compare retries after a refused pending comparison and a new access
   expect(repos.isRefused(repoId)).toBe(false)
   await read(() => Effect.succeed(result("fresh.txt")))
   await vi.waitFor(() => expect(store.comparisons.tanstack.get(key)).toMatchObject({ status: "ready", files: [{ filename: "fresh.txt" }] }))
+})
+
+test("without a repository store, a comparison is read once, kept, and read again only after it failed", () => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+  const scope = yield* Effect.scope
+  const rows = yield* Collection.local({ id: "comparison-unfenced", schema: FilesRow, getKey: row => row.id })
+  const answers: Array<Effect.Effect<Compared, PullsRequestFailed>> = [Effect.fail(new PullsRequestFailed({})), Effect.succeed(result("kept.txt"))]
+  const asked: Array<string> = []
+  const told: Array<[string, string]> = []
+  const client = PullsClient.of({
+    merge: () => Effect.fail(new PullsRequestFailed({})),
+    review: () => Effect.fail(new PullsRequestFailed({})),
+    compare: (owner, name, from, to) => Effect.suspend(() => {
+      asked.push(`${owner}/${name}@${from}...${to}`)
+      return answers.shift() ?? Effect.fail(new PullsRequestFailed({ status: 500 }))
+    }),
+  })
+  const key = comparisonKey("github/acme/widgets", base, head)
+  const read = (from: string) => readComparison(rows, scope, "Acme", "Widgets", from, head, (repository, id) => { told.push([repository, id]) })
+    .pipe(Effect.provideService(PullsClient, client))
+  const settled = (status: string) => Effect.promise(() => vi.waitFor(() => expect(rows.tanstack.get(key)?.status).toBe(status)))
+  yield* read("main")
+  expect(asked).toEqual([])
+  yield* read(base)
+  yield* settled("failed")
+  yield* read(base)
+  yield* settled("ready")
+  yield* read(base)
+  expect(asked).toEqual([`Acme/Widgets@${base}...${head}`, `Acme/Widgets@${base}...${head}`])
+  expect(told).toEqual([["github/acme/widgets", key], ["github/acme/widgets", key], ["github/acme/widgets", key]])
+  expect(rows.tanstack.get(key)).toMatchObject({ repoId: "github/acme/widgets", status: "ready", files: [{ filename: "kept.txt" }] })
+}))))
+
+test("an answer for a comparison row another read replaced writes nothing back", () => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+  const scope = yield* Effect.scope
+  const rows = yield* Collection.local({ id: "comparison-replaced", schema: FilesRow, getKey: row => row.id })
+  const first = yield* Deferred.make<Compared, PullsRequestFailed>()
+  const answers: Array<Effect.Effect<Compared, PullsRequestFailed>> = [Deferred.await(first), Effect.succeed(result("second.txt"))]
+  const client = PullsClient.of({
+    merge: () => Effect.fail(new PullsRequestFailed({})),
+    review: () => Effect.fail(new PullsRequestFailed({})),
+    compare: () => Effect.suspend(() => answers.shift() ?? Effect.fail(new PullsRequestFailed({ status: 500 }))),
+  })
+  const key = comparisonKey("github/acme/widgets", base, head)
+  const read = readComparison(rows, scope, "acme", "widgets", base, head).pipe(Effect.provideService(PullsClient, client))
+  yield* read
+  yield* rows.delete(key)
+  yield* read
+  yield* Effect.promise(() => vi.waitFor(() => expect(rows.tanstack.get(key)?.status).toBe("ready")))
+  yield* Deferred.succeed(first, result("first.txt"))
+  yield* Effect.promise(() => new Promise<void>(resolve => setImmediate(resolve)))
+  expect(rows.tanstack.get(key)).toMatchObject({ status: "ready", files: [{ filename: "second.txt" }] })
+}))))
+
+test("a repository already refused reads no comparison", async () => {
+  const api = openTestApi(); closing.push(api)
+  const runtime = openTab(await api.runPromise(Effect.service(TestChatApi))); closing.push(runtime)
+  const repos = await runtime.runPromise(Effect.service(RepoStore))
+  await runtime.runPromise(repos.refusalsKnown)
+  await runtime.runPromise(repos.refuse("github/private/repo"))
+  const rows = await runtime.runPromise(Collection.local({ id: "comparison-refused", schema: FilesRow, getKey: row => row.id }).pipe(Effect.provideService(Scope.Scope, repos.scope)))
+  const asked: Array<string> = []
+  const told: Array<string> = []
+  const real = await runtime.runPromise(Effect.service(PullsClient))
+  const client = { ...real, compare: (owner: string) => Effect.sync(() => { asked.push(owner) }).pipe(Effect.as(result("refused.txt"))) }
+  await runtime.runPromise(readComparison(rows, repos.scope, "private", "repo", base, head, (_, id) => { told.push(id) })
+    .pipe(Effect.provideService(PullsClient, client)))
+  expect(asked).toEqual([])
+  expect(told).toEqual([])
+  expect(rows.tanstack.has(comparisonKey("github/private/repo", base, head))).toBe(false)
 })

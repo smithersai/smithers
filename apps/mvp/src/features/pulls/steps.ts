@@ -1,6 +1,6 @@
 import { Interpreter } from "@smthrs/flow"
 import { type Duration, Effect, Layer, Metric } from "effect"
-import { PullsClient, type PullsRequestFailed } from "./api"
+import { PullsClient, type PullsRequestFailed } from "./api.vibe"
 import { REVIEW_REFUSALS, type ReviewRefusal } from "./contract"
 import { PullReview, type ReviewFailure, ReviewRefused, type ReviewRequest, ReviewRequestStep, ReviewUnsent } from "./flows"
 

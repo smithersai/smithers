@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net"
 import { Effect } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, expect, test } from "vitest"
-import { type MergeRequest, PullsClient } from "./api"
+import { type MergeRequest, PullsClient } from "./api.vibe"
 
 // The real pull requests client from the browser's side, against a local HTTP server that plays a gateway: real sockets,
 // so a stalled body, a body cut short and nothing listening are what a browser would meet. ChatApi's own answers are

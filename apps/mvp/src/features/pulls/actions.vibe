@@ -1,11 +1,12 @@
 import { Effect, Metric, Stream } from "effect"
+import { WebCrypto } from "effect/crypto/WebCrypto"
 import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import { open as openIssues, reconnectShapes as reconnectIssueShapes } from "../issues/actions.vibe"
 import { recordShapeRetry } from "../issues/shapeSync"
 import { repoId } from "../repo/contract"
-import { PullsClient } from "./api"
-import { readComparison } from "./comparison"
+import { PullsClient } from "./api.vibe"
+import { readComparison } from "./comparison.vibe"
 import { DEFAULT_MERGE_METHOD, type PullTab, SHA } from "./contract"
 import { VIEW } from "./schema"
 import { PullsStore } from "./store"
@@ -24,26 +25,30 @@ export const mergePresses = Metric.counter("smithers_web_pull_merges", {
 
 /** What a pull request route calls on a link's hover or focus: starts `owner/name`'s sync without showing a page. */
 export const warm = (owner: string, name: string, number?: number) =>
-  Effect.flatMap(PullsStore, (store) => Effect.asVoid(store.forRepo(repoId(owner, name), number)))
+  effect {
+    const store = try PullsStore
+    try Effect.asVoid(store.forRepo(repoId(owner, name), number))
+  }
 
 /** A person's Try again on an unavailable pull; both its own and the repository's issue shapes may need reconnecting. */
-export const retry = Effect.gen(function* () {
-  const store = yield* PullsStore
-  yield* Effect.all([reconnectIssueShapes, store.routed().reconnect], { discard: true })
-  yield* recordShapeRetry("pull")
-})
+export const retry = effect {
+  const store = try PullsStore
+  const routed = try sync(() => store.routed())
+  try all([reconnectIssueShapes, routed.reconnect], { discard: true })
+  try recordShapeRetry("pull")
+}
 
 /**
  * What the route calls on a navigation: shows `owner/name`'s pull requests, or, with `number`, that one at `tab`; and
  * opens that repository's pull requests and issues, their own shapes (decision 0079 slice 1b), once.
  */
 export const open = (owner: string, name: string, number?: number, tab: PullTab = "conversation") =>
-  Effect.gen(function* () {
-    const store = yield* PullsStore
-    yield* store.forRepo(repoId(owner, name), number)
-    const previous = (yield* store.view.toArray)[0]!
+  effect {
+    const store = try PullsStore
+    try store.forRepo(repoId(owner, name), number)
+    const previous = (try store.view.toArray)[0]!
     const alreadyFollowing = previous.owner === owner && previous.name === name && previous.number === number && previous.tab === "files"
-    yield* store.view.update(VIEW, (row) => {
+    try store.view.update(VIEW, (row) => {
       const same = row.number === (number ?? null) && row.owner === owner && row.name === name
       row.owner = owner
       row.name = name
@@ -61,13 +66,14 @@ export const open = (owner: string, name: string, number?: number, tab: PullTab 
       }
     })
     // Sync status is shared with issues and must follow this route's repository too.
-    yield* openIssues(owner, name, number)
-    yield* store.route(repoId(owner, name), number)
+    try openIssues(owner, name, number)
+    try store.route(repoId(owner, name), number)
     // A detail refresh or another merge may move either SHA after the first comparison.
     // Follow the pair while this route shows Files; each immutable pair is still read only once.
     if (number !== undefined && tab === "files" && !alreadyFollowing) {
       const route = store.view.changes({ initial: true }).pipe(Stream.mapEffect(() => store.view.toArray))
-      yield* Stream.zipLatest(route, store.routed().pull.rows).pipe(
+      const routed = try sync(() => store.routed())
+      fork.in(store.scope) Stream.zipLatest(route, routed.pull.rows).pipe(
         Stream.takeWhile(([views]) => {
           const view = views[0]!
           return view.owner === owner && view.name === name && view.number === number && view.tab === "files"
@@ -77,20 +83,25 @@ export const open = (owner: string, name: string, number?: number, tab: PullTab 
         Stream.map((row) => ({ baseSha: row.baseSha, headSha: row.headSha })),
         Stream.changesWith((before, after) => before.baseSha === after.baseSha && before.headSha === after.headSha),
         Stream.runForEach((row) => loadFiles(owner, name, row.baseSha, row.headSha)),
-        Effect.forkIn(store.scope),
       )
     }
-  }).pipe(Effect.orDie)
+  }.pipe(Effect.orDie)
 
 /** A Files route left. Bound to that page so a late exit cannot close the next pull's Files tab. */
 export const closeFiles = (owner: string, name: string, number: number) =>
-  Effect.flatMap(PullsStore, (store) => store.view.update(VIEW, (row) => {
-    if (row.owner === owner && row.name === name && row.number === number && row.tab === "files") row.tab = "conversation"
-  })).pipe(Effect.orDie)
+  effect {
+    const store = try PullsStore
+    return try store.view.update(VIEW, (row) => {
+      if (row.owner === owner && row.name === name && row.number === number && row.tab === "files") row.tab = "conversation"
+    })
+  }.pipe(Effect.orDie)
 
 /** Reads the files `base` and `head` differ by into this tab, once: a comparison of two SHAs never changes. */
 export const loadFiles = (owner: string, name: string, base: string, head: string) =>
-  Effect.flatMap(PullsStore, (store) => readComparison(store.files, store.scope, owner, name, base, head, store.compared))
+  effect {
+    const store = try PullsStore
+    try readComparison(store.files, store.scope, owner, name, base, head, store.compared)
+  }
 
 /**
  * Merge on the routed pull request, bound to the head and base this device shows: a new write id, sent at once in the
@@ -99,46 +110,51 @@ export const loadFiles = (owner: string, name: string, base: string, head: strin
  * another pull request, whose own merge may be on its way, changes nothing there.
  */
 export const merge = (headSha: string, baseSha: string, number: number) =>
-  Effect.gen(function* () {
-    const store = yield* PullsStore
+  effect {
+    const store = try PullsStore
     // The view's one row is there from the store's start (store.ts `initialData`).
-    const view = (yield* store.view.toArray)[0]!
+    const view = (try store.view.toArray)[0]!
     if (view.merging) return false
-    const writeId = crypto.randomUUID()
-    yield* store.view.update(VIEW, (row) => {
+    const writeId = try sync(() => WebCrypto.defaultValue().randomUUID())
+    try store.view.update(VIEW, (row) => {
       row.merging = true
       row.mergeWriteId = writeId
       row.mergeRefused = null
     })
-    yield* (yield* PullsClient).merge(view.owner, view.name, {
-      writeId,
-      number,
-      headSha,
-      baseSha,
-      method: DEFAULT_MERGE_METHOD,
-    }).pipe(
-      Effect.tap(() => Metric.update(Metric.withAttributes(mergePresses, { outcome: "sent" }), 1)),
-      Effect.catch((error) => {
-        const refused = error.status === 403 ? "forbidden" : error.status === 401 ? "sign_in" : "unavailable"
-        return Metric.update(Metric.withAttributes(mergePresses, { outcome: String(error.status ?? "unreachable") }), 1).pipe(
-          Effect.andThen(Effect.logWarning("pulls.merge").pipe(Effect.annotateLogs({
+    const client = try PullsClient
+    const sent = effect {
+      try client.merge(view.owner, view.name, {
+        writeId,
+        number,
+        headSha,
+        baseSha,
+        method: DEFAULT_MERGE_METHOD,
+      })
+      try Metric.update(Metric.withAttributes(mergePresses, { outcome: "sent" }), 1)
+    }
+    fork.in(store.scope) ensuring(
+      effect {
+        sent catch effect (error) => {
+          const refused = error.status === 403 ? "forbidden" : error.status === 401 ? "sign_in" : "unavailable"
+          try Metric.update(Metric.withAttributes(mergePresses, { outcome: String(error.status ?? "unreachable") }), 1)
+          const errorCode = try sync(() => codeOf(error))
+          try Effect.logWarning("pulls.merge").pipe(Effect.annotateLogs({
             feature: "pulls",
             outcome: refused,
-            errorCode: codeOf(error),
+            errorCode,
             ...(error.status === undefined ? {} : { status: error.status }),
-          }))),
-          Effect.andThen(store.view.update(VIEW, (row) => {
+          }))
+          try store.view.update(VIEW, (row) => {
             if (row.mergeWriteId === writeId) row.mergeRefused = refused
-          })),
-        )
-      }),
-      Effect.ensuring(Effect.ignore(store.view.update(VIEW, (row) => {
+          })
+        }
+      },
+      Effect.ignore(store.view.update(VIEW, (row) => {
         if (row.mergeWriteId === writeId) row.merging = false
-      }))),
-      Effect.forkIn(store.scope),
+      })),
     )
     return true
-  }).pipe(Effect.orDie)
+  }.pipe(Effect.orDie)
 
 /**
  * Review on the routed pull request (decision 0129): `pull/review`, the person's own press, door `button`, bound to the
@@ -146,22 +162,19 @@ export const merge = (headSha: string, baseSha: string, number: number) =>
  * route shows another pull request.
  */
 export const review = (headSha: string, number: number) =>
-  Effect.gen(function* () {
-    const store = yield* PullsStore
-    const view = (yield* store.view.toArray)[0]!
+  effect {
+    const store = try PullsStore
+    const view = (try store.view.toArray)[0]!
     if (view.reviewing) return false
-    const flows = yield* FlowDispatch
-    yield* store.view.update(VIEW, (row) => {
+    const flows = try FlowDispatch
+    try store.view.update(VIEW, (row) => {
       row.reviewing = true
       row.reviewNotice = null
     })
-    yield* flows.dispatch("pull/review", { repo: `${view.owner}/${view.name}`, number, headSha }, { door: "button" }).pipe(
-      Effect.exit,
-      Effect.flatMap((exit) =>
-        store.view.update(VIEW, (row) => reviewAnswered(row, { owner: view.owner, name: view.name, number }, exit))
-      ),
-      Effect.orDie,
-      Effect.forkIn(store.scope),
-    )
+    const answer = effect {
+      const answered = try exit(flows.dispatch("pull/review", { repo: `${view.owner}/${view.name}`, number, headSha }, { door: "button" }))
+      try store.view.update(VIEW, (row) => reviewAnswered(row, { owner: view.owner, name: view.name, number }, answered))
+    }
+    fork.in(store.scope) Effect.orDie(answer)
     return true
-  }).pipe(Effect.orDie)
+  }.pipe(Effect.orDie)

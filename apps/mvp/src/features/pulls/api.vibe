@@ -49,48 +49,57 @@ export class PullsClient extends Context.Service<
   static readonly layer = (options: { readonly origin: string; readonly within: Duration.Input }) =>
     Layer.effect(
       PullsClient,
-      Effect.map(HttpClient.HttpClient, (client) => {
+      effect {
+        const client = try HttpClient.HttpClient
         const send = <A>(request: HttpClientRequest.HttpClientRequest, decode: (body: unknown) => Effect.Effect<A, unknown>, ok: ReadonlyArray<number>) =>
-          Effect.gen(function* () {
-            const response = yield* client.execute(request).pipe(Effect.mapError(() => new PullsRequestFailed({})))
+          effect {
+            const response = try client.execute(request).pipe(Effect.mapError(() => new PullsRequestFailed({})))
             if (!ok.includes(response.status)) {
-              const refusal = yield* response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option)
-              return yield* new PullsRequestFailed({
+              const refusal = try response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option)
+              throw new PullsRequestFailed({
                 status: response.status,
                 ...(refusal._tag === "Some" ? { code: refusal.value.code } : {}),
               })
             }
-            return yield* response.json.pipe(
+            return try response.json.pipe(
               Effect.flatMap(decode),
               Effect.mapError(() => new PullsRequestFailed({ status: response.status })),
             )
-          }).pipe(Effect.timeoutOrElse({ duration: options.within, orElse: () => Effect.fail(new PullsRequestFailed({})) }))
+          }.pipe(Effect.timeoutOrElse({ duration: options.within, orElse: () => Effect.fail(new PullsRequestFailed({})) }))
         return PullsClient.of({
           merge: (owner, name, merge) =>
-            send(
-              HttpClientRequest.post(`${options.origin}${writesRoute(owner, name)}`).pipe(
-                HttpClientRequest.bodyJsonUnsafe({ ...merge, op: "pr/merge" }),
-              ),
-              decodeTaken,
-              [200, 202],
-            ).pipe(Effect.withSpan("pulls.merge.post")),
+            effect {
+              const route = try sync(() => writesRoute(owner, name))
+              return try send(
+                HttpClientRequest.post(`${options.origin}${route}`).pipe(
+                  HttpClientRequest.bodyJsonUnsafe({ ...merge, op: "pr/merge" }),
+                ),
+                decodeTaken,
+                [200, 202],
+              ).pipe(Effect.withSpan("pulls.merge.post"))
+            },
           compare: (owner, name, base, head) =>
-            Effect.flatMap(Effect.serviceOption(FetchHttpClient.RequestInit), (init) =>
-              send(HttpClientRequest.get(`${options.origin}${compareRoute(owner, name, base, head)}`), decodeCompared, [200]).pipe(
+            effect {
+              const init = try Effect.serviceOption(FetchHttpClient.RequestInit)
+              const route = try sync(() => compareRoute(owner, name, base, head))
+              return try send(HttpClientRequest.get(`${options.origin}${route}`), decodeCompared, [200]).pipe(
                 // Bypass comparisons cached by older releases, even after access or the signed-in account changes.
                 Effect.provideService(FetchHttpClient.RequestInit, { ...Option.getOrElse(init, () => ({})), cache: "no-store" }),
-              )).pipe(Effect.withSpan("pulls.compare.get")),
-          review: ({ repo, number, headSha }) => {
-            const [owner = "", name = ""] = repo.split("/")
-            return send(
-              HttpClientRequest.post(`${options.origin}${reviewRoute(owner, name, number)}`).pipe(
-                HttpClientRequest.bodyJsonUnsafe(headSha === undefined ? {} : { headSha }),
-              ),
-              decodeReviewTaken,
-              [202],
-            ).pipe(Effect.withSpan("pulls.review.post"))
-          },
+              )
+            }.pipe(Effect.withSpan("pulls.compare.get")),
+          review: ({ repo, number, headSha }) =>
+            effect {
+              const [owner = "", name = ""] = repo.split("/")
+              const route = try sync(() => reviewRoute(owner, name, number))
+              return try send(
+                HttpClientRequest.post(`${options.origin}${route}`).pipe(
+                  HttpClientRequest.bodyJsonUnsafe(headSha === undefined ? {} : { headSha }),
+                ),
+                decodeReviewTaken,
+                [202],
+              ).pipe(Effect.withSpan("pulls.review.post"))
+            },
         })
-      }),
+      },
     )
 }

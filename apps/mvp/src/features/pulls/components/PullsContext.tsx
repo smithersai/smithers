@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { PullsLayer } from "../pulls"
+import type { PullsLayer } from "../pulls.vibe"
 
 // What React components get: the pull requests layer's live queries to render and plain actions to call
 // (features/pulls/pulls.ts).

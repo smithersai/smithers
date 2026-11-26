@@ -1,7 +1,8 @@
 import type { Collection } from "@smthrs/effect-tanstack-db"
 import { Effect, Option, type Scope } from "effect"
+import { WebCrypto } from "effect/crypto/WebCrypto"
 import { codeOf } from "../../errorCode"
-import { PullsClient } from "./api"
+import { PullsClient } from "./api.vibe"
 import { RepoStore } from "../repo/store"
 import { comparisonKey, SHA } from "./contract"
 import type { FilesRow } from "./schema"
@@ -24,27 +25,28 @@ export const readComparison = (
   /** Told each comparison it reads, with its repository: what a refusal of that repository drops. */
   read?: (repository: string, id: string) => void,
 ) =>
-  Effect.gen(function* () {
+  effect {
     if (!SHA.test(base) || !SHA.test(head)) return
     const repoId = `github/${owner}/${name}`.toLowerCase()
-    const id = comparisonKey(repoId, base, head)
-    const repos = yield* Effect.serviceOption(RepoStore)
-    if (Option.isSome(repos) && repos.value.isRefused(repoId)) return
-    const fence = Option.isSome(repos) ? repos.value.fenceOf(repoId) : 0
-    const requestId = crypto.randomUUID()
+    const id = try sync(() => comparisonKey(repoId, base, head))
+    const repos = try Effect.serviceOption(RepoStore)
+    if (Option.isSome(repos) && (try sync(() => repos.value.isRefused(repoId)))) return
+    const fence = Option.isSome(repos) ? try sync(() => repos.value.fenceOf(repoId)) : 0
+    const requestId = try sync(() => WebCrypto.defaultValue().randomUUID())
     read?.(repoId, id)
     // Independent repository keys, and independent request identities after a wipe or retry.
-    const held = yield* rows.get(id)
+    const held = try rows.get(id)
     if (Option.isSome(held) && held.value.status !== "failed" && held.value.repoId === repoId) return
-    if (Option.isSome(held)) yield* rows.delete(id)
-    yield* rows.insert({ id, repoId, requestId, status: "loading", files: [], truncated: false, commits: [], commitsTruncated: false })
+    if (Option.isSome(held)) try rows.delete(id)
+    try rows.insert({ id, repoId, requestId, status: "loading", files: [], truncated: false, commits: [], commitsTruncated: false })
     const current = (write: Effect.Effect<unknown>) => {
       const owned = Effect.flatMap(rows.get(id), (held) =>
         Option.isSome(held) && held.value.repoId === repoId && held.value.requestId === requestId
           ? Effect.asVoid(write) : Effect.void).pipe(Effect.orDie)
       return Option.isSome(repos) ? repos.value.fenced(repoId, fence, owned) : owned
     }
-    yield* (yield* PullsClient).compare(owner, name, base, head).pipe(
+    const client = try PullsClient
+    fork.in(scope) client.compare(owner, name, base, head).pipe(
       Effect.matchEffect({
         // A refusal that dropped the row meanwhile wins: the answer writes nothing back.
         onSuccess: (compared) => current(rows.update(id, (row) => {
@@ -55,17 +57,16 @@ export const readComparison = (
             row.commitsTruncated = compared.commitsTruncated
           }).pipe(Effect.orDie)),
         // The comparison couldn't be read: the Files tab shows it failed, logged by its code and ChatApi's status.
-        onFailure: (failure) =>
-          Effect.andThen(
-            Effect.logWarning("pulls.files.load").pipe(Effect.annotateLogs({
-              feature: "pulls",
-              outcome: "failed",
-              errorCode: codeOf(failure),
-              ...(failure.status === undefined ? {} : { status: failure.status }),
-            })),
-            current(rows.update(id, (row) => void (row.status = "failed")).pipe(Effect.orDie)),
-          ),
+        onFailure: effect (failure) => {
+          const errorCode = try sync(() => codeOf(failure))
+          try Effect.logWarning("pulls.files.load").pipe(Effect.annotateLogs({
+            feature: "pulls",
+            outcome: "failed",
+            errorCode,
+            ...(failure.status === undefined ? {} : { status: failure.status }),
+          }))
+          try current(rows.update(id, (row) => void (row.status = "failed")).pipe(Effect.orDie))
+        },
       }),
-      Effect.forkIn(scope),
     )
-  }).pipe(Effect.orDie)
+  }.pipe(Effect.orDie)
