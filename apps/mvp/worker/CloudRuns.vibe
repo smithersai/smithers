@@ -124,14 +124,14 @@ export const read = <E, R, EE, ER>(
     readonly roles: RepoRoles.RepoRoles<R>
   },
 ) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const todoRows = yield* sql<TodoRow>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const todoRows = try sql<TodoRow>`
       SELECT a.id::text AS id, a.ordinal, a.status, a.branch, a.repo_id, r.by_login,
         (extract(epoch FROM a.created_at) * 1000)::bigint AS created_ms
       FROM todo_attempts a JOIN todo_requests r ON r.todo_id = a.todo_id AND r.revision = a.revision
       ORDER BY a.created_at DESC, a.id DESC LIMIT ${limit}`
-    const repoRows = yield* sql<RepoRow>`
+    const repoRows = try sql<RepoRow>`
       SELECT execution, repo_id, flow, ref, event, launched_by,
         (extract(epoch FROM created_at) * 1000)::bigint AS created_ms
       FROM runs WHERE execution IS NOT NULL ORDER BY created_at DESC, id DESC LIMIT ${limit}`
@@ -143,7 +143,7 @@ export const read = <E, R, EE, ER>(
     const readable = new Map<string, boolean>()
     let partial = repoIds.length > MAX_REPOSITORIES
     for (const repoId of repoIds.slice(0, MAX_REPOSITORIES)) {
-      const resolved = yield* options.roles.resolve(actor, repositoryOf(repoOf(repoId))).pipe(Effect.result)
+      const resolved = try options.roles.resolve(actor, repositoryOf(repoOf(repoId))).pipe(Effect.result)
       if (resolved._tag === "Failure") {
         const status = RepoRoles.REFUSALS[resolved.failure.code]
         if (status === 503 || resolved.failure.code === "rate_limited") partial = true
@@ -180,16 +180,16 @@ export const read = <E, R, EE, ER>(
         })
       ),
     ]
-    const reads = yield* EngineStore.RunInspection.RunInspection
+    const reads = try EngineStore.RunInspection.RunInspection
     const known = indexed.length === 0
       ? []
-      : (yield* reads.list({ runIds: indexed.map((row) => row.runId), roots: false, limit: indexed.length })).runs
+      : (try reads.list({ runIds: indexed.map((row) => row.runId), roots: false, limit: indexed.length })).runs
     const states = new Map(known.map((summary) => [summary.runId, summary]))
     // A TODO's engine can complete after settling its TODO failed (docs/features/runs.md#the-run-page): its row reads
     // the work's result, failed, as its page's header does.
     const failedTodos = new Set(todos.filter((row) => row.status === "failed").map((row) => `todo:${row.id}`))
     const system = actor.role === "admin"
-      ? (yield* reads.list({ flows: SYSTEM_FLOW_TAGS, limit })).runs.map((summary): CloudRun => ({
+      ? (try reads.list({ flows: SYSTEM_FLOW_TAGS, limit })).runs.map((summary): CloudRun => ({
         runId: summary.runId,
         flow: summary.flowName,
         kind: "system",
@@ -214,16 +214,16 @@ export const read = <E, R, EE, ER>(
       .sort((left, right) => right.createdAtMs - left.createdAtMs)
       .slice(0, limit)
     return { runs, partial, counts: { todo: todos.length, repo: repos.length, system: system.length } }
-  }).pipe(
+  }.pipe(
     Effect.provide(options.database),
     Effect.provide(Layer.provide(options.inspection, options.engine)),
   )
 
 /** `GET /api/cloud-runs?limit=<n>`: the runs on Cloudflare the asker may read, newest first. */
 export const route = <E, R, EE, ER>(options: Parameters<typeof read<E, R, EE, ER>>[2]) =>
-  Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest
-    const startedAt = yield* Clock.currentTimeMillis
+  effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const startedAt = try Clock.currentTimeMillis
     const fields: Record<string, string | number> = {}
     const refused = (status: number, code: string) => {
       fields.outcome = code
@@ -232,25 +232,25 @@ export const route = <E, R, EE, ER>(options: Parameters<typeof read<E, R, EE, ER
         headers: status === 503 ? { ...noStore, "retry-after": String(ShapeAccess.RETRY_AFTER_SECONDS) } : noStore,
       })
     }
-    const response = yield* Effect.gen(function* () {
+    const response = try effect {
       if (request.method !== "GET") {
         fields.outcome = "method"
         return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
       }
-      const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+      const actor = try (try Sessions).resolve.pipe(Effect.option)
       if (Option.isNone(actor)) return refused(503, "unavailable")
       if (Option.isNone(actor.value)) return refused(401, "authentication")
       const text = new URL(request.url, "http://localhost").searchParams.get("limit")
       const limit = text === null ? Option.some(CLOUD_RUNS_LIMIT) : decodeLimit(text)
       if (Option.isNone(limit)) return refused(400, "invalid")
-      const listed = yield* read(actor.value.value, limit.value, options)
+      const listed = try read(actor.value.value, limit.value, options)
       fields.outcome = listed.partial ? "partial" : "read"
       fields.runs = listed.runs.length
       fields.todo = listed.counts.todo
       fields.repo = listed.counts.repo
       fields.system = listed.counts.system
       return HttpServerResponse.jsonUnsafe({ runs: listed.runs }, { headers: noStore })
-    }).pipe(
+    }.pipe(
       Effect.catchCause((cause) =>
         Effect.sync(() => {
           fields.errorCode = codeOf(Cause.squash(cause))
@@ -260,11 +260,11 @@ export const route = <E, R, EE, ER>(options: Parameters<typeof read<E, R, EE, ER
     )
     const outcome = String(fields.outcome)
     fields.status = response.status
-    fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
-    yield* Metric.update(Metric.withAttributes(lists, { outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
-    yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+    fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+    try Metric.update(Metric.withAttributes(lists, { outcome }), 1)
+    try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+    try Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
       "runs.cloud.list",
     ).pipe(Effect.annotateLogs({ ...fields, outcome }))
     return response
-  }).pipe(Effect.withSpan("runs.cloud.list", { kind: "server" }))
+  }.pipe(Effect.withSpan("runs.cloud.list", { kind: "server" }))

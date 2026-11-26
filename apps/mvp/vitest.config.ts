@@ -93,6 +93,7 @@ export default defineConfig({
         "db/migrations/0057_model_usage_outcome.ts",
         "db/migrations/0058_hosted_model.ts",
         "db/migrations/0055_branch_ref_namespace.ts",
+        "worker/ChatMetrics.vibe",
         // Sign-in (docs/features/sign-in.md).
         "worker/GitHubAuth.ts",
         "worker/SessionKeys.vibe",
@@ -216,15 +217,15 @@ export default defineConfig({
         "worker/RemoteRuns.vibe",
         "worker/RunAuthority.ts",
         // The runs on Cloudflare a person may read, for the Runs page (docs/features/runs.md#runs-on-cloudflare).
-        "worker/CloudRuns.ts",
+        "worker/CloudRuns.vibe",
         "db/migrations/0036_todo_run.ts",
         // A repository's runs (docs/features/actions.md).
         "worker/RepoRuns.ts",
         "db/migrations/0053_repo_runs.ts",
         // The branch workspace: branches, their conversations and terminals (docs/features/branch-workspace.md).
-        // worker/BranchSandboxes.ts and worker/BranchRooms.ts, the Cloudflare Durable Objects, run only under Alchemy's
-        // bundle; e2e/branch-workspace.spec.ts and e2e/branch-sharing.spec.ts drive them, and
-        // @smthrs/platform-cloudflare's workerd and @smthrs/sync's presence tests test their parts.
+        "worker/BranchRooms.vibe",
+        // The sandbox object's native container and terminal socket paths run under Alchemy's Workerd bundle.
+        // e2e/branch-workspace.spec.ts drives them, alongside the @smthrs/platform-cloudflare workerd tests.
         "worker/branch/*.{ts,vibe}",
         "db/migrations/0014_branch_workspace.ts",
         "db/migrations/0023_branch_sharing.ts",

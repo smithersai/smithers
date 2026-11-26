@@ -1,9 +1,15 @@
-import { Cause, Clock, Deferred, Effect, type Scope } from "effect"
+import { upgrade } from "@alchemy.run/cloudflare"
+import { Cause, Clock, Context, Deferred, Effect, type Scope } from "effect"
 import { codeOf } from "../ErrorCode.ts"
 import { actAt, type Admission, LEASE_MS, nextRenewal } from "../SocketAccess.ts"
 
 // Durable Object instance-owned socket lease coordination (BranchRooms, BranchSandboxes, RunContent).
 // Stateless Workers must never import this module; worker/durable/boundary.test.ts enforces that rule.
+
+/** Upgrades a room socket using the Durable Object's hibernating socket host. */
+export const RoomUpgrade = Context.Reference("@smthrs/mvp/RoomUpgrade", {
+  defaultValue: () => upgrade(),
+})
 
 /**
  * One renewal at a time per host: a caller that finds one running waits for it instead of starting its own, so a burst

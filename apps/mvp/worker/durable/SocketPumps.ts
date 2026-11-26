@@ -1,4 +1,5 @@
 import { type Cause, Deferred, Effect, type Fiber, Queue, type Scope } from "effect"
+import { HttpBody, HttpServerResponse } from "effect/http"
 import { coalesced } from "../SocketAccess.ts"
 
 // Durable Object instance-owned socket pump coordination (BranchSandboxes): the object's one fiber that runs what a
@@ -45,3 +46,23 @@ export const attachRegistered = <A, E, R>(
     Deferred.doneUnsafe(registered, Effect.void)
     return fiber
   }))
+
+/** The terminal keeps its server socket active while its pump is attached. */
+export const openTerminalSocket = Effect.sync(() => {
+  const pair = new WebSocketPair()
+  const [client, server] = [pair[0], pair[1]] as const
+  server.accept()
+  return [client, server] as const
+})
+
+/** Send the client socket in the Cloudflare upgrade response. */
+export const terminalSocketResponse = (client: WebSocket) =>
+  Effect.sync(() =>
+    HttpServerResponse.setBody(
+      HttpServerResponse.empty({ status: 101 }),
+      HttpBody.raw(new Response(null, { status: 101, webSocket: client })),
+    )
+  )
+
+/** A one-use ticket for attaching a terminal socket. */
+export const newTerminalTicket = Effect.sync(() => crypto.randomUUID())

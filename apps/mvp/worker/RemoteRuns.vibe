@@ -26,7 +26,7 @@ import {
 } from "../src/features/runs/contract.ts"
 import { type Actor, canAsk, Sessions } from "./Actor.vibe"
 import { readBounded } from "./Body.vibe"
-import * as CloudRuns from "./CloudRuns.ts"
+import * as CloudRuns from "./CloudRuns.vibe"
 import * as TodoSession from "./flows/TodoSession.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import * as ShapeAccess from "./ShapeAccess.vibe"

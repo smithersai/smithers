@@ -76,10 +76,10 @@ export const identityOf = (member: Member, leaseUntil: number) => ({
 
 /** What a room runs on: every socket it holds, its storage and alarm, and the checks of who it admitted. */
 export interface Ports<S, R, RS, RC> {
-  readonly sockets: Effect.Effect<ReadonlyArray<S>, never, R>
+  readonly sockets: ReadonlyArray<S>!!R
   readonly storage: SocketAccess.Storage<RS>
-  readonly check: (admission: SocketAccess.Admission) => Effect.Effect<SocketAccess.Checked, never, RC>
-  readonly within: <A>(renewal: Effect.Effect<A, never, R | RS | RC>) => Effect.Effect<A, unknown, R | RS>
+  readonly check: (admission: SocketAccess.Admission) => SocketAccess.Checked!!RC
+  readonly within: <A>(renewal: A!!(R | RS | RC)) => A!unknown!(R | RS)
 }
 
 /**
@@ -117,76 +117,76 @@ export const room = <S extends PresenceRoom.RoomSocket<R>, R, RS, RC>(ports: Por
   }
 
   /** Every joined member with a lease; a member from before leases is closed `1012` first. */
-  const members = Effect.gen(function*() {
+  const members = effect {
     const found: Array<Leased<S>> = []
     const legacy: Array<S> = []
-    for (const socket of yield* ports.sockets) {
+    for (const socket of try ports.sockets) {
       const kept = keptOf(socket)
       if (kept === undefined) continue
       if (kept.admission === undefined || kept.leaseUntil === undefined) legacy.push(socket)
       else found.push({ socket, kept, admission: kept.admission, leaseUntil: kept.leaseUntil })
     }
-    yield* end(legacy.map((socket) => [socket, "legacy"] as const))
-    yield* SocketAccess.countLegacy("room", legacy.length)
+    try end(legacy.map((socket) => [socket, "legacy"] as const))
+    try SocketAccess.countLegacy("room", legacy.length)
     return found
-  })
+  }
 
   /** Takes every one of `ending` out of the room before any closes; each close then tells only who is left. */
-  const end = (ending: ReadonlyArray<readonly [S, SocketAccess.Closing]>) =>
-    Effect.gen(function*() {
-      for (const [socket] of ending) {
-        const kept = keptOf(socket)
-        if (kept !== undefined) keep(socket, { ...kept, leaseUntil: 0 })
-      }
-      for (const [socket, closing] of ending) yield* PresenceRoom.close(host, socket, SocketAccess.CLOSES[closing].code)
-    })
+  const end = effect (ending: ReadonlyArray<readonly [S, SocketAccess.Closing]>) => {
+    for (const [socket] of ending) {
+      const kept = keptOf(socket)
+      if (kept !== undefined) keep(socket, { ...kept, leaseUntil: 0 })
+    }
+    for (const [socket, closing] of ending) try PresenceRoom.close(host, socket, SocketAccess.CLOSES[closing].code)
+  }
 
   /** Renews `due`'s leases; the rest leave the room. Answers those renewed. */
-  const renew = (due: ReadonlyArray<Leased<S>>) =>
-    Effect.gen(function*() {
-      if (due.length === 0) return new Set<S>()
-      const verdicts = yield* SocketAccess.renew(
-        "room",
-        due.map((member) => member.admission),
-        ports.check,
-        ports.within
-      )
-      const now = yield* Clock.currentTimeMillis
-      const renewed = new Set<S>()
-      const ending: Array<readonly [S, SocketAccess.Closing]> = []
-      due.forEach((member, index) => {
-        const { verdict, until, admission } = verdicts[index]!
-        // A member who left, or was ended, while the check ran stays out.
-        const current = keptOf(member.socket)
-        if (current === undefined || (current.leaseUntil ?? 0) === 0) return
-        if (verdict !== "keep") return void ending.push([member.socket, verdict])
-        // The window its check measured, from when that check started (decision 0151 rule 9).
-        keep(member.socket, {
-          ...current,
-          admission,
-          leaseUntil: until ?? SocketAccess.leaseFrom(member.admission, now)
-        })
-        renewed.add(member.socket)
+  const renew = effect (due: ReadonlyArray<Leased<S>>) => {
+    if (due.length === 0) return new Set<S>()
+    const verdicts = try SocketAccess.renew(
+      "room",
+      due.map((member) => member.admission),
+      ports.check,
+      ports.within
+    )
+    const now = try Clock.currentTimeMillis
+    const renewed = new Set<S>()
+    const ending: Array<readonly [S, SocketAccess.Closing]> = []
+    due.forEach((member, index) => {
+      const { verdict, until, admission } = verdicts[index]!
+      // A member who left, or was ended, while the check ran stays out.
+      const current = keptOf(member.socket)
+      if (current === undefined || (current.leaseUntil ?? 0) === 0) return
+      if (verdict !== "keep") return void ending.push([member.socket, verdict])
+      // The window its check measured, from when that check started (decision 0151 rule 9).
+      keep(member.socket, {
+        ...current,
+        admission,
+        leaseUntil: until ?? SocketAccess.leaseFrom(member.admission, now)
       })
-      yield* end(ending)
-      return renewed
+      renewed.add(member.socket)
     })
+    try end(ending)
+    return renewed
+  }
 
   /** Arms the alarm for the next renewal while anyone is in the room; never later than one already set. */
-  const arm = Effect.gen(function*() {
-    const now = yield* Clock.currentTimeMillis
-    yield* SocketAccess.armAt(ports.storage, SocketAccess.nextRenewal(yield* members, now))
-  })
+  const arm = effect {
+    const now = try Clock.currentTimeMillis
+    const joined = try members
+    const next = try sync(() => SocketAccess.nextRenewal(joined, now))
+    try SocketAccess.armAt(ports.storage, next)
+  }
 
   /** One renewal at a time: a message or alarm that finds one running waits for it. */
   const flight = SocketHost.singleFlight()
 
   /** Renews every lease due now (`SocketAccess.due`), one renewal at a time; a failure is logged. */
   const renewDue = flight(
-    Effect.gen(function*() {
-      const now = yield* Clock.currentTimeMillis
-      yield* renew((yield* members).filter((member) => SocketAccess.due(member.admission, member.leaseUntil, now)))
-    }).pipe(
+    effect {
+      const now = try Clock.currentTimeMillis
+      try renew((try members).filter((member) => SocketAccess.due(member.admission, member.leaseUntil, now)))
+    }.pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("room.renew").pipe(Effect.annotateLogs({ errorCode: codeOf(cause) }))
       )
@@ -203,17 +203,16 @@ export const room = <S extends PresenceRoom.RoomSocket<R>, R, RS, RC>(ports: Por
    * A member's message: handled under a live lease. One that lapsed waits for the room's renewal (one at a time, so a
    * burst of messages costs one) and is dropped unless its lease holds after it.
    */
-  const receive = (socket: S, message: string | ArrayBuffer) =>
-    Effect.gen(function*() {
-      // The socket's own attachment decides: the object hands each event its own wrapper of the socket.
-      const live = Effect.map(Clock.currentTimeMillis, (now) => leasedAt(socket, now))
-      if (!(yield* live)) {
-        if (keptOf(socket)?.admission === undefined) return
-        yield* renewDue
-        if (!(yield* live)) return
-      }
-      yield* PresenceRoom.receive(host, socket, message)
-    })
+  const receive = effect (socket: S, message: string | ArrayBuffer) => {
+    // The socket's own attachment decides: the object hands each event its own wrapper of the socket.
+    const live = Effect.map(Clock.currentTimeMillis, (now) => leasedAt(socket, now))
+    if (!(try live)) {
+      if (keptOf(socket)?.admission === undefined) return
+      try renewDue
+      if (!(try live)) return
+    }
+    try PresenceRoom.receive(host, socket, message)
+  }
 
   /** Whether `principal` already holds `SocketAccess.MAX_SOCKETS_PER_PERSON` sockets in the room. */
   const crowded = (principal: string) =>
@@ -227,7 +226,7 @@ export const room = <S extends PresenceRoom.RoomSocket<R>, R, RS, RC>(ports: Por
 
 /** The object's methods, as ChatApi calls them. */
 export interface RoomObjectShape {
-  readonly enforce: (policy: Policy) => Effect.Effect<void, never, RuntimeContext>
+  readonly enforce: (policy: Policy) => void!!RuntimeContext
 }
 
 /** The `RoomObject` Durable Object namespace: a branch's room is `getByName(branchId)`. */
@@ -235,16 +234,16 @@ export class RoomObject extends Cloudflare.DurableObject<RoomObject, RoomObjectS
 
 /** The object's implementation: the room of one branch. */
 export const live = <E, R>(
-  connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
+  connection: Cloudflare.Hyperdrive.Connection!E!R,
   options: SocketChecks.Options = {}
 ) =>
   RoomObject.make(
-    Effect.gen(function*() {
-      const state = yield* Cloudflare.DurableObjectState
-      const checks = yield* SocketChecks.checker(connection, options)
-      return Effect.gen(function*() {
+    effect {
+      const state = try Cloudflare.DurableObjectState
+      const checks = try SocketChecks.checker(connection, options)
+      return effect {
         // The socket handlers run outside a request, with this incarnation's runtime.
-        const runtime = yield* RuntimeContext
+        const runtime = try RuntimeContext
         const rooms = room({
           sockets: state.getWebSockets().pipe(Effect.provideService(RuntimeContext, runtime)),
           storage: state.storage,
@@ -253,14 +252,14 @@ export const live = <E, R>(
         })
         const host = rooms.host
         // Before this incarnation handles anything: a member from before leases is closed, and the alarm armed.
-        yield* rooms.restore
+        try rooms.restore
 
         /** A socket ChatApi admitted: joined to the room as the member its headers name. */
-        const join = Effect.gen(function*() {
-          const request = yield* HttpServerRequest.HttpServerRequest
+        const joinRoom = effect {
+          const request = try HttpServerRequest.HttpServerRequest
           const principal = request.headers[PRINCIPAL_HEADER] ?? ""
           const name = request.headers[NAME_HEADER] ?? ""
-          const admission = SocketAccess.admissionOf(request)
+          const admission = try sync(() => SocketAccess.admissionOf(request))
           const kept = decodeKept(JSON.stringify({
             role: request.headers[ROLE_HEADER] === "" ? null : request.headers[ROLE_HEADER],
             access: request.headers[ACCESS_HEADER],
@@ -270,12 +269,14 @@ export const live = <E, R>(
             return HttpServerResponse.empty({ status: 400 })
           }
           // A session that ended on the way here gets nothing; nor does a person over the cap.
-          if (SocketAccess.ended(admission, yield* Clock.currentTimeMillis)) {
+          const now = try Clock.currentTimeMillis
+          if (try sync(() => SocketAccess.ended(admission, now))) {
             return HttpServerResponse.empty({ status: 401 })
           }
-          if (yield* rooms.crowded(principal)) return HttpServerResponse.empty({ status: 429 })
-          const [response, socket] = yield* Cloudflare.upgrade()
-          yield* PresenceRoom.join(
+          if (try rooms.crowded(principal)) return HttpServerResponse.empty({ status: 429 })
+          const [response, socket] = try (try SocketHost.RoomUpgrade)
+          const leaseUntil = try sync(() => SocketAccess.leaseFrom(admission, admission.admittedAt))
+          try PresenceRoom.join(
             host,
             socket,
             identityOf({
@@ -284,28 +285,28 @@ export const live = <E, R>(
               role: kept.value.role,
               access: kept.value.access,
               admission
-            }, SocketAccess.leaseFrom(admission, admission.admittedAt))
+            }, leaseUntil)
           )
-          yield* rooms.arm
+          try rooms.arm
           return response
-        })
+        }
 
         /**
          * Holds everyone in the room to the branch's permission list as it now stands: a member who lost the branch
          * leaves for good, and one whose access changed reconnects to get the new one.
          */
         const enforce = (policy: Policy) =>
-          Effect.gen(function*() {
+          effect {
             // Everyone who lost the branch or whose access changed leaves before any roster goes out.
             const ending: Array<readonly [Cloudflare.WebSocket, SocketAccess.Closing]> = []
-            for (const member of yield* rooms.members) {
+            for (const member of try rooms.members) {
               const now = underPolicy(policy, member.admission.principal, member.kept.role)
               if (!canView(now)) ending.push([member.socket, "revoked"])
               else if (now !== member.kept.access) ending.push([member.socket, "changed"])
             }
-            yield* rooms.end(ending)
-            yield* Effect.logInfo("room.enforce").pipe(Effect.annotateLogs({ closed: ending.length }))
-          }).pipe(
+            try rooms.end(ending)
+            try Effect.logInfo("room.enforce").pipe(Effect.annotateLogs({ closed: ending.length }))
+          }.pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("room.enforce").pipe(Effect.annotateLogs({ errorCode: codeOf(cause) }))
             ),
@@ -314,46 +315,48 @@ export const live = <E, R>(
 
         return {
           enforce,
-          fetch: join,
+          fetch: joinRoom,
           alarm: () => rooms.alarm,
           webSocketMessage: (socket: Cloudflare.WebSocket, message: string | ArrayBuffer) =>
             rooms.receive(socket, message),
           webSocketClose: (socket: Cloudflare.WebSocket) => PresenceRoom.leave(host, socket),
           webSocketError: (socket: Cloudflare.WebSocket) => PresenceRoom.leave(host, socket)
         }
-      })
-    })
+      }
+    }
   )
 
 /** The namespace as ChatApi holds it once it has bound it (`yield* RoomObject`). */
 type Objects = Cloudflare.DurableObject<RoomObjectShape>
 
 /** ChatApi's `Rooms` over the bound namespace, for the request that calls it. */
-export const roomsOver = (objects: Objects) =>
-  Effect.gen(function*() {
-    const runtime = yield* RuntimeContext
-    return Rooms.of({
-      join: (branchId: string, member: Member) =>
-        Effect.gen(function*() {
-          const request = yield* HttpServerRequest.HttpServerRequest
-          // Only these headers say who joins; any `x-smithers-*` the browser sent is dropped first.
-          const forwarded = SocketAccess.forward(request, member.admission, {
-            [PRINCIPAL_HEADER]: member.principal,
-            [NAME_HEADER]: member.name,
-            [ROLE_HEADER]: member.role ?? "",
-            [ACCESS_HEADER]: member.access
-          })
-          return yield* objects.getByName(branchId).fetch(forwarded).pipe(
-            Effect.provideService(RuntimeContext, runtime)
-          )
-        }).pipe(Effect.orElseSucceed(() => HttpServerResponse.empty({ status: 503 }))),
-      enforce: (branchId, policy) =>
-        objects.getByName(branchId).enforce(policy).pipe(
-          Effect.provideService(RuntimeContext, runtime),
-          Effect.mapError(() => new RoomUnavailable())
+export const roomsOver = effect (objects: Objects) => {
+  const runtime = try RuntimeContext
+  return Rooms.of({
+    join: (branchId: string, member: Member) =>
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        // Only these headers say who joins; any `x-smithers-*` the browser sent is dropped first.
+        const forwarded = try sync(() => SocketAccess.forward(request, member.admission, {
+          [PRINCIPAL_HEADER]: member.principal,
+          [NAME_HEADER]: member.name,
+          [ROLE_HEADER]: member.role ?? "",
+          [ACCESS_HEADER]: member.access
+        }))
+        const object = try sync(() => objects.getByName(branchId))
+        return try object.fetch(forwarded).pipe(
+          Effect.provideService(RuntimeContext, runtime)
         )
-    })
+      }.pipe(Effect.orElseSucceed(() => HttpServerResponse.empty({ status: 503 }))),
+    enforce: effect (branchId, policy) => {
+      const object = try sync(() => objects.getByName(branchId))
+      return try object.enforce(policy).pipe(
+        Effect.provideService(RuntimeContext, runtime),
+        Effect.mapError(() => new RoomUnavailable())
+      )
+    }
   })
+}
 
 /** `Rooms` as a layer, for the runtime that calls it. */
 export const roomsLayer = (objects: Objects) => Layer.effect(Rooms, roomsOver(objects))

@@ -5,8 +5,8 @@ import { expect, test } from "vitest"
 // Durable Object instance coordinators (worker/durable/**, worker/runners/TranscriptHost.vibe) may hold per-object
 // Effect Deferred/Semaphore waits. Only Durable Object entrypoints and tests may import them; stateless Workers must not.
 const DURABLE_OWNERS = new Set([
-  "BranchRooms.ts",
-  "BranchSandboxes.ts",
+  "BranchRooms.vibe",
+  "BranchSandboxes.vibe",
   "RunContent.ts",
   "runners/TranscriptHost.vibe",
 ])

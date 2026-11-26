@@ -10,7 +10,7 @@ import { FLOW_DRAFTS_SHAPE_ROUTE, FLOWS_SHAPE_ROUTE } from "../src/features/flow
 import { RUNS_SHAPE_ROUTE } from "../src/features/status/contract.ts"
 import { VIEWS_SHAPE_ROUTE } from "../src/features/views/contract.ts"
 import * as Conversations from "./branch/Conversations.vibe"
-import * as ChatMetrics from "./ChatMetrics.ts"
+import * as ChatMetrics from "./ChatMetrics.vibe"
 import { type Actor, Sessions, SessionsUnavailable } from "./Actor.vibe"
 import { answers, eventually, harness, testFile } from "./test/harness.ts"
 

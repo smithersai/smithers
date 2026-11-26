@@ -1,5 +1,3 @@
-import { Metric } from "effect"
-
 // ChatApi's metrics, listed with their log lines in docs/observability.md#chatapi-worker.
 
 /** `POST /api/questions` requests, by HTTP `status`. */
