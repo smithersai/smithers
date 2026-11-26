@@ -894,7 +894,16 @@ describe("call keys and derived names against the Lean specification", () => {
         base,
         Effect.gen(function*() {
           const catalog = yield* SubChains.make({ entries: [], maxDepth: 64 })
-          yield* catalog.lookup(SubChains.agentName)!.handler({ goal: "g" }, { chain: scope, link, ordinal })
+          // A running chain hands every slot its tree: the root's seam and a budget this case never exhausts.
+          yield* catalog.lookup(SubChains.agentName)!.handler({ goal: "g" }, {
+            chain: scope,
+            link,
+            ordinal,
+            [childRun]: {
+              authorize: Authorize.make({ authorize: () => Effect.void }),
+              fuel: { max: Number.MAX_SAFE_INTEGER, spent: 0 }
+            }
+          })
           return yield* (yield* Journal.Journal).read
         })
       )

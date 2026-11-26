@@ -848,6 +848,9 @@ const dirLinksOf = (path: string, own: ReadonlyArray<string>, io: Reads.Io): num
   }
 }
 
+/** Symbolic links one path may pass through in the specification (`maximumLinks`, Linux's `MAXSYMLINKS`). */
+const maximumLinks = 40
+
 /** A chain of `length` links to a file, then the same chain closed into a cycle. */
 const chain = (length: number): { readonly open: Tree; readonly closed: Tree } => {
   const links = Object.fromEntries(
@@ -990,13 +993,32 @@ describe("measuring a file system", () => {
   )
   const realSteps = A.array(step(realName, anyText), { maxLength: 10 })
   let scratch = ""
-  /** Whether the host's file system counts a directory's links as POSIX file systems do: 2 and one a directory in it. */
+  /**
+   * Whether the host's file system counts a directory's links as POSIX file systems do: 2 and one a directory in it.
+   * A file in it adds none; APFS counts it as well.
+   */
   let countsLinks = false
+  /** The most symbolic links one path on this host may pass through: 40 on Linux, 31 on Darwin. */
+  let hostLinks = 0
   beforeAll(() => {
     if (!oracleReady) return
     scratch = NodeFs.realpathSync(NodeFs.mkdtempSync(join(tmpdir(), "lean-diff-")))
     NodeFs.mkdirSync(join(scratch, "probe", "inner"), { recursive: true })
+    NodeFs.writeFileSync(join(scratch, "probe", "file"), "")
     countsLinks = NodeFs.lstatSync(join(scratch, "probe")).nlink === 3
+    const follows = (length: number): boolean => {
+      const base = join(scratch, `links${length}`)
+      onDisk(base, chain(length).open)
+      return Reads.measure(`${base}/s0/`) !== "!ELOOP"
+    }
+    let low = 1
+    let high = 128
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2)
+      if (follows(middle)) low = middle
+      else high = middle - 1
+    }
+    hostLinks = low
   })
   afterAll(() => {
     if (scratch !== "") NodeFs.rmSync(scratch, { recursive: true, force: true })
@@ -1064,14 +1086,18 @@ describe("measuring a file system", () => {
   )
 
   check("agrees with the kernel of this host on chains and cycles of links", async () => {
+    expect(hostLinks).toBeGreaterThan(0)
     for (const length of [1, 39, 40, 41, 45]) {
       const { closed, open } = chain(length)
+      // The specification follows 40 links; a host with another limit is held to it only where the two agree.
+      const sameLimit = (length <= maximumLinks) === (length <= hostLinks)
       for (
         const [tree, local] of [[open, "/s0/"], [open, "/s0/x"], [open, "/s0"], [closed, "/s0/x"], [
           closed,
           "/s0/"
         ]] as const
       ) {
+        if (tree === open && !sameLimit) continue
         const base = join(scratch, `c${made += 1}`)
         const fs = onDisk(base, tree)
         expect(await oracle.ask({ op: "measure", fs, path: `${base}${local}` }), `${length} ${local}`).toBe(
