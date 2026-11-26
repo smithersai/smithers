@@ -9,7 +9,7 @@ import type { Services } from "./Apply.vibe"
 import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.vibe"
 import * as Metrics from "./Metrics.vibe"
-import { pullCurrent, readPull, reviewStream } from "./Pulls.ts"
+import { pullCurrent, readPull, reviewStream } from "./Pulls.vibe"
 import * as Store from "./Store.ts"
 
 // `github/Reconcile { repo }` (decision 0012 §3, docs/features/issues.md#reconcile): walks GitHub's change-time listing

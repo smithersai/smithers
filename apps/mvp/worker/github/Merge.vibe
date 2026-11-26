@@ -18,7 +18,7 @@ import type { Services } from "./Apply.vibe"
 import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.vibe"
 import * as Metrics from "./Metrics.vibe"
-import { fetchPull, liveBaseHeadOf, moveBase, projectPull } from "./Pulls.ts"
+import { fetchPull, liveBaseHeadOf, moveBase, projectPull } from "./Pulls.vibe"
 import * as Store from "./Store.ts"
 
 // `pr/Merge { writeId }` (decision 0012 decision 6, docs/features/pulls.md#merge): a person's merge, and only a

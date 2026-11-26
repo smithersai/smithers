@@ -30,13 +30,19 @@ type IssueComment = GitHub.Issues.IssueComment
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
-/** The write id a body's hidden marker names, when it is one of ours (a UUID); else null. */
+/**
+ * The write id a body's hidden marker names, when it is one of ours (a UUID); else null.
+ * @throws {never}
+ */
 export const markedWrite = (body: string | null): string | null => {
   const id = GitHub.Issues.writeIdOf(body)
   return id !== undefined && UUID.test(id) ? id : null
 }
 
-/** A body as the projection keeps it: GitHub's text without our hidden marker. */
+/**
+ * A body as the projection keeps it: GitHub's text without our hidden marker.
+ * @throws {never}
+ */
 export const shownBody = (body: string | null): string => GitHub.Issues.withoutWriteMarker(body ?? "")
 
 /**

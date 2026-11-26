@@ -9,7 +9,7 @@ import type { AboutStore, KeptAnswer, KeptRefusal, Via } from "./about/Store.vib
 import { codeOf } from "./ErrorCode.ts"
 import { appSlug, GITHUB_WEB } from "./GitHubAuth.ts"
 import * as GitHubConfig from "./github/Config.vibe"
-import * as ReadToken from "./github/ReadToken.ts"
+import * as ReadToken from "./github/ReadToken.vibe"
 import { allowed as allowedRepositories } from "./github/RepoRoles.ts"
 import * as Tokens from "./github/Tokens.ts"
 import * as Curated from "./home/Curated.ts"

@@ -70,7 +70,10 @@ export const REVIEW_COLUMNS = [
 /** The `runs` columns a pull request's Checks read: the run, its flow, its state and its commit. Never who launched it. */
 export const CHECK_COLUMNS = ["id", "repo_id", "sha", "flow", "status", "created_at", "updated_at"] as const
 
-/** A review's row id: `<repo_id>/review/<GitHub's id>`. */
+/**
+ * A review's row id: `<repo_id>/review/<GitHub's id>`.
+ * @throws {never}
+ */
 export const reviewId = (repoId: string, githubId: number): string => `${repoId}/review/${githubId}`
 
 /** How a pull request merges. Squash is the default (decision 0012 decision 6). */

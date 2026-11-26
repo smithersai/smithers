@@ -5,7 +5,7 @@ import { GitRemote } from "@smthrs/effect-code-storage"
 import { ConfigProvider, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http"
 import { describe, expect, test } from "vitest"
-import * as ReadToken from "./github/ReadToken.ts"
+import * as ReadToken from "./github/ReadToken.vibe"
 import { DEFAULT_RATE_LIMIT_WAIT_MS, RepoUpstream, UpstreamUnavailable } from "./RepoUpstream.vibe"
 
 // GitHub answers the ref advertisement 200. Any other answer is not GitHub's: a box whose egress reaches only the

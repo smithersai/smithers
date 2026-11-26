@@ -3,9 +3,12 @@
 import { beforeEach, describe, expect, test } from "vitest"
 import { testFile } from "../test/harness.ts"
 import { Effect } from "effect"
-import { project } from "./Project.ts"
+import { HttpClient } from "effect/http"
+import { withToken } from "./Calls.ts"
+import { project, readIssue } from "./Project.vibe"
 import * as Store from "./Store.ts"
-import { admit, comments, REPOSITORY, reset, items, writeRow } from "./test/fixtures.ts"
+import { admit, comments, REPOSITORY, reset, items, services, writeRow } from "./test/fixtures.ts"
+import { scriptedGitHub } from "./test/scriptedGitHub.ts"
 
 const runtime = testFile("github_project")
 
@@ -53,6 +56,26 @@ describe("project", () => {
     })
     expect((await comments(runtime)).map((row) => row.deleted)).toEqual([false, true])
   })
+})
+
+test("reading an issue projects its conversation, and a 410 tombstones it with its comments", async () => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  const opened = github.open("Read back", "Issue body")
+  github.comment(opened.number, "Still here")
+  const { services: built } = await services(runtime, github)
+  const read = () => runtime.runPromise(Effect.gen(function* () {
+    const token = yield* built.tokens.forInstallation(REPOSITORY, "read")
+    return yield* readIssue(REPOSITORY, opened.number).pipe(withToken(token, built.apiBaseUrl))
+  }).pipe(Effect.provideService(HttpClient.HttpClient, built.http)))
+
+  expect(await read()).toEqual({ outcome: "applied", changed: 2 })
+  expect(await items(runtime)).toMatchObject([{ title: "Read back", deleted: false }])
+  expect(await comments(runtime)).toMatchObject([{ body: "Still here", deleted: false }])
+
+  github.faults.push({ match: (method, path) => method === "GET" && path.endsWith("/issues/" + opened.number), status: 410 })
+  expect(await read()).toEqual({ outcome: "tombstoned", changed: 1 })
+  expect(await items(runtime)).toMatchObject([{ title: "Read back", deleted: true }])
+  expect(await comments(runtime)).toMatchObject([{ body: "Still here", deleted: true }])
 })
 
 describe("settleWrite", () => {

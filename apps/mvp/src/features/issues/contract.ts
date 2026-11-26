@@ -166,6 +166,7 @@ export const RELATIONS_STREAM = "relations"
 /**
  * A row's id: `<repoId>#<number>` for an issue, `<repoId>/comment/<GitHub's comment id>` for a comment. Derived, so the
  * device names a row from its route and the server upserts it from either a webhook or a listing.
+ * @throws {never}
  */
 export const itemId = (repoId: string, number: number): string => `${repoId}#${number}`
 export const commentId = (repoId: string, githubId: number): string => `${repoId}/comment/${githubId}`
@@ -303,10 +304,16 @@ export const relationsExecutionId = (repoId: string, nowMs: number): string =>
 export const reconcileExecutionId = (repoId: string, nowMs: number): string =>
   `github-reconcile:${repoId}:${Math.floor(nowMs / SYNC_STALE_MS)}`
 
-/** When the 5-minute bucket of a read at `nowMs` began: the same for every read in it, so their starts are one intent. */
+/**
+ * When the 5-minute bucket of a read at `nowMs` began: the same for every read in it, so their starts are one intent.
+ * @throws {never}
+ */
 export const reconcileBucketStart = (nowMs: number): number => Math.floor(nowMs / SYNC_STALE_MS) * SYNC_STALE_MS
 
-/** A webhook delivery's run: one per `X-GitHub-Delivery`. */
+/**
+ * A webhook delivery's run: one per `X-GitHub-Delivery`.
+ * @throws {never}
+ */
 export const applyExecutionId = (deliveryId: string): string => `github-apply:${deliveryId}`
 
 /** A write's run: one per write id. */

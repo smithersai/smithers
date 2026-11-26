@@ -13,7 +13,7 @@ import { bearerOf } from "../RunCredentials.ts"
 import type { Services } from "./Apply.vibe"
 import { withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.vibe"
-import { fetchIssue, project } from "./Project.ts"
+import { fetchIssue, project } from "./Project.vibe"
 import { attribution, contentProblem, escapeMarkdown, fitsGitHub, titleProblem } from "../../src/features/issues/publicContent.mjs"
 
 // Machine writes (docs/features/machine-tokens.md): an agent, with a machine token and no person, opens or updates an

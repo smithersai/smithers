@@ -4,7 +4,7 @@
 import { ConfigProvider, Deferred, Effect, Fiber, Logger, Metric, Option, Redacted } from "effect"
 import { describe, expect, test } from "vitest"
 import * as Metrics from "./Metrics.vibe"
-import * as ReadToken from "./ReadToken.ts"
+import * as ReadToken from "./ReadToken.vibe"
 import { APP_ID, appKey, INSTALLATION_ID, SCRIPTED_API, scriptedApp, scriptedGitHub } from "./test/scriptedGitHub.ts"
 
 const value = (token: Option.Option<Redacted.Redacted<string>>) => Option.getOrUndefined(Option.map(token, Redacted.value))

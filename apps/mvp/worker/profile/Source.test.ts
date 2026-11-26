@@ -1,7 +1,7 @@
 import { Clock, ConfigProvider, Duration, Effect, Option, Redacted } from "effect"
 import { FetchHttpClient, type HttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
-import * as ReadToken from "../github/ReadToken.ts"
+import * as ReadToken from "../github/ReadToken.vibe"
 import * as Source from "./Source.vibe"
 import { type Kept, type KeptAnswer, type ProfileStore, StoreUnavailable } from "./Store.vibe"
 

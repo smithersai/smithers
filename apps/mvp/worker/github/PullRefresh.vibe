@@ -1,0 +1,66 @@
+import { SqlClient } from "effect/sql"
+import { applyExecutionId, itemId, reconcileBucketStart } from "../../src/features/issues/contract.ts"
+import { FlowStarter } from "../Flows.ts"
+import { codeOf } from "../ErrorCode.ts"
+import { Apply } from "./Apply.vibe"
+import type { Repository } from "./Config.vibe"
+
+export const refreshes = Metric.counter("smithers_pull_refresh_starts", { incremental: true })
+export const receipts = Metric.counter("smithers_pull_absence_receipts", { incremental: true })
+
+/** A detail read recovers its subject through the existing durable reader, once per five-minute bucket. */
+export const make = effect <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, configured: boolean, within: Duration.Input) => {
+  const admitted = try Ref.make<ReadonlyMap<string, number>>(new Map())
+
+  const start = (repository: Repository, number: number) => withSpan(effect {
+    const now = try Clock.currentTimeMillis
+    const key = itemId(repository.id, number)
+    if (configured) {
+      const bucket = reconcileBucketStart(now)
+      if ((try Ref.get(admitted)).get(key) !== bucket) {
+        const deliveryId = `pull-refresh:${key}:${bucket}`
+        const starter = try FlowStarter
+        const started = try result(timeoutOption(starter.start(Apply, {
+          executionId: applyExecutionId(deliveryId),
+          payload: { deliveryId, repo: `${repository.owner}/${repository.name}`, number, event: "pull_request" },
+        }), within))
+        const outcome = started._tag === "Failure" ? "not_started" : Option.isNone(started.success) ? "timed_out" : "started"
+        if (outcome === "started") try Ref.update(admitted, (rows) => new Map(rows).set(key, bucket))
+        try Metric.update(Metric.withAttributes(refreshes, { outcome }), 1)
+        try annotateLogs(logInfo("pull.refresh.start"), {
+          repoId: repository.id,
+          number,
+          outcome,
+          ...(started._tag === "Failure" ? { errorCode: codeOf(started.failure) } : {}),
+        })
+      }
+    }
+  }, "pull.refresh.start")
+
+  const receipt = (repository: Repository, number: number) => withSpan(effect {
+    const now = try Clock.currentTimeMillis
+    const key = itemId(repository.id, number)
+    const missing = try catchCause(Effect.provide(effect {
+      const sql = try SqlClient.SqlClient
+      const rows = try sql`
+        SELECT item_id FROM github_projection_fences f
+        WHERE f.item_id = ${key} AND f.gone_at IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM items i WHERE i.id = f.item_id AND i.deleted_at IS NULL AND i.fetched_at > f.gone_at)`
+      return rows.length > 0
+    }, database), effect (cause) => {
+      try annotateLogs(logWarning("pull.refresh.receipt"), {
+        repoId: repository.id,
+        number,
+        outcome: "unavailable",
+        errorCode: codeOf(Cause.squash(cause)),
+      })
+      return false
+    })
+    try Metric.update(Metric.withAttributes(receipts, { outcome: missing ? "missing" : "unproven" }), 1)
+    try annotateCurrentSpan({ repoId: repository.id, number, missing })
+    try annotateLogs(logInfo("pull.refresh.receipt"), { repoId: repository.id, number, missing })
+    return JSON.stringify({ number, checkedAt: now, missing })
+  }, "pull.refresh.receipt")
+
+  return { start, receipt }
+}

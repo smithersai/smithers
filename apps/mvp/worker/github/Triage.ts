@@ -32,7 +32,7 @@ import type { Services as GitHubServices } from "./Apply.vibe"
 import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.vibe"
 import * as Metrics from "./Metrics.vibe"
-import { fetchIssue, project } from "./Project.ts"
+import { fetchIssue, project } from "./Project.vibe"
 import * as Store from "./Store.ts"
 import * as TriageStore from "./TriageStore.ts"
 

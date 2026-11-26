@@ -1,5 +1,4 @@
 import { GitHub } from "@smthrs/integrations"
-import { Clock, Config, Effect, Metric, Option, Redacted, Ref } from "effect"
 import type { HttpClient } from "effect/http"
 import { codeOf } from "../ErrorCode.ts"
 import * as GitHubConfig from "./Config.vibe"
@@ -26,58 +25,54 @@ import * as Metrics from "./Metrics.vibe"
 // minted now leaves that read anonymous (outcome `anonymous`, with GitHub's code); the next read mints again.
 
 /** The token one read goes out with, or none: anonymous. */
-export type ReadToken = Effect.Effect<Option.Option<Redacted.Redacted<string>>>
+export type ReadToken = Option.Option<Redacted.Redacted<string>>!!
 
 /** How long before its expiry a held installation token is replaced. */
 export const REFRESH_BEFORE_MS = 5 * 60 * 1000
 
 /** Always `token`: a configured token, or none. */
-export const fixed = (token: Option.Option<Redacted.Redacted<string>>): ReadToken => Effect.succeed(token)
+export const fixed = (token: Option.Option<Redacted.Redacted<string>>): ReadToken => succeed(token)
 
 /**
  * The App's installation token for `repository`, minted with `metadata: read` and narrowed to that repository, held in
  * this isolate until `REFRESH_BEFORE_MS` before it expires. Only the token is shared: a read that finds none fresh
  * mints in its own request, never waiting on another's.
  */
-export const fromApp = (app: GitHub.AppAuth.AppAuth, repository: { readonly owner: string; readonly name: string }) =>
-  Effect.gen(function* () {
-    const held = yield* Ref.make(Option.none<GitHub.AppAuth.InstallationToken>())
-    const counted = (outcome: "minted" | "anonymous") =>
-      Metric.update(Metric.withAttributes(Metrics.tokenMints, { kind: "read", outcome }), 1)
-    const mint = Effect.gen(function* () {
-      const startedAt = yield* Clock.currentTimeMillis
-      const installation = yield* app.installation(repository.owner, repository.name)
-      const minted = yield* app.installationToken({
-        installationId: installation.id,
-        repositories: [repository.name],
-        permissions: { metadata: "read" },
-      })
-      yield* Ref.set(held, Option.some(minted))
-      yield* counted("minted")
-      yield* Effect.logInfo("github.read_token").pipe(
-        Effect.annotateLogs({ outcome: "minted", durationMs: (yield* Clock.currentTimeMillis) - startedAt }),
-      )
-      return Option.some(minted.token)
-    }).pipe(
-      Effect.catch((error) =>
-        Effect.as(
-          Effect.andThen(
-            counted("anonymous"),
-            Effect.logWarning("github.read_token").pipe(Effect.annotateLogs({ outcome: "anonymous", errorCode: codeOf(error) })),
-          ),
-          Option.none<Redacted.Redacted<string>>(),
-        )
-      ),
-      Effect.withSpan("github.read_token"),
-    )
-    const token: ReadToken = Effect.gen(function* () {
-      const current = yield* Ref.get(held)
-      const now = yield* Clock.currentTimeMillis
-      if (Option.isSome(current) && current.value.expiresAt - now > REFRESH_BEFORE_MS) return Option.some(current.value.token)
-      return yield* mint
+export const fromApp = effect (app: GitHub.AppAuth.AppAuth, repository: { readonly owner: string; readonly name: string }) => {
+  const held = try Ref.make(Option.none<GitHub.AppAuth.InstallationToken>())
+  const counted = (outcome: "minted" | "anonymous") =>
+    Metric.update(Metric.withAttributes(Metrics.tokenMints, { kind: "read", outcome }), 1)
+  const mint = effect {
+    const startedAt = try Clock.currentTimeMillis
+    const installation = try app.installation(repository.owner, repository.name)
+    const minted = try app.installationToken({
+      installationId: installation.id,
+      repositories: [repository.name],
+      permissions: { metadata: "read" },
     })
-    return token
-  })
+    try Ref.set(held, Option.some(minted))
+    try counted("minted")
+    try annotateLogs(logInfo("github.read_token"), {
+      outcome: "minted",
+      durationMs: (try Clock.currentTimeMillis) - startedAt,
+    })
+    return Option.some(minted.token)
+  }
+  const mintWithFallback = withSpan(effect {
+    return mint catch effect (error) => {
+      try counted("anonymous")
+      try annotateLogs(logWarning("github.read_token"), { outcome: "anonymous", errorCode: codeOf(error) })
+      return Option.none<Redacted.Redacted<string>>()
+    }
+  }, "github.read_token")
+  const token: ReadToken = effect {
+    const current = try Ref.get(held)
+    const now = try Clock.currentTimeMillis
+    if (Option.isSome(current) && current.value.expiresAt - now > REFRESH_BEFORE_MS) return Option.some(current.value.token)
+    return try mintWithFallback
+  }
+  return token
+}
 
 /** What the deployment's read token comes from: `GITHUB_TOKEN`, else the GitHub App, else neither (anonymous). */
 export interface Settings {
@@ -90,30 +85,33 @@ export interface Settings {
  * (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_REPOSITORY`, `GITHUB_API_URL`). A host reads them while it
  * builds; `fromSettings` reads no configuration.
  */
-export const settings = Effect.gen(function* () {
+export const settings = effect {
   const token = Option.filter(
-    yield* Config.option(Config.Redacted("GITHUB_TOKEN")),
+    try Config.option(Config.Redacted("GITHUB_TOKEN")),
     (value) => Redacted.value(value).trim() !== "",
   )
   if (Option.isSome(token)) return { token, app: Option.none() }
   // An App configuration that doesn't read (a malformed `GITHUB_API_URL`) fails where the git loop reads it; here it
   // leaves reads anonymous.
-  const app = yield* GitHubConfig.configured.pipe(Effect.orElseSucceed(() => Option.none<GitHubConfig.GitHubApp>()))
+  const app = GitHubConfig.configured catch () => Option.none<GitHubConfig.GitHubApp>()
   return { token, app }
-}) satisfies Effect.Effect<Settings, Config.ConfigError>
+} satisfies Settings!Config.ConfigError
 
 /**
  * The deployment's read token from `settings`: the configured token, else the App's over the `HttpClient` in context,
  * else none. A key that doesn't import is none too; `github.config` logs it where the git loop starts.
  */
-export const fromSettings = (settings: Settings) => Effect.gen(function* () {
+export const fromSettings = (effect (settings: Settings) => {
   if (Option.isSome(settings.token)) return fixed(settings.token)
   if (Option.isNone(settings.app)) return fixed(Option.none())
   const { appId, privateKey, apiBaseUrl, repository } = settings.app.value
-  const app = yield* GitHub.AppAuth.make({ appId, privateKey, apiBaseUrl }).pipe(Effect.option)
+  const app = try option(GitHub.AppAuth.make({ appId, privateKey, apiBaseUrl }))
   if (Option.isNone(app)) return fixed(Option.none())
-  return yield* fromApp(app.value, repository)
-}) satisfies Effect.Effect<ReadToken, never, HttpClient.HttpClient>
+  return try fromApp(app.value, repository)
+}) satisfies (settings: Settings) => ReadToken!!HttpClient.HttpClient
 
 /** The deployment's read token from its configuration (`settings`, then `fromSettings`). */
-export const fromConfig = Effect.flatMap(settings, fromSettings) satisfies Effect.Effect<ReadToken, Config.ConfigError, HttpClient.HttpClient>
+export const fromConfig = effect {
+  const configured = try settings
+  return try fromSettings(configured)
+} satisfies ReadToken!Config.ConfigError!HttpClient.HttpClient

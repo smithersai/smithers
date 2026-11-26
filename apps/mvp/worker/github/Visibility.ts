@@ -4,7 +4,7 @@ import { HttpClient } from "effect/http"
 import { classify, isRateLimited, statusOf } from "./Calls.ts"
 import type { Repository } from "./Config.vibe"
 import * as Metrics from "./Metrics.vibe"
-import type { ReadToken } from "./ReadToken.ts"
+import type { ReadToken } from "./ReadToken.vibe"
 
 /** Only bounded diagnostics leave the metadata transport; no headers or provider text are logged. */
 export const remainingBucket = (raw: string | undefined): string => {

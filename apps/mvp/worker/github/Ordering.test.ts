@@ -3,7 +3,7 @@ import { HttpClient } from "effect/http"
 import { beforeEach, expect, test } from "vitest"
 import { testFile } from "../test/harness.ts"
 import { withToken } from "./Calls.ts"
-import { fetchPull, projectPull, replaceCommits, upsertPull, upsertReview } from "./Pulls.ts"
+import { fetchPull, projectPull, readPull, replaceCommits, upsertPull, upsertReview } from "./Pulls.vibe"
 import { REPOSITORY, reset, services, sql } from "./test/fixtures.ts"
 import { BOT_LOGIN, scriptedGitHub } from "./test/scriptedGitHub.ts"
 
@@ -128,6 +128,27 @@ test("a stale gone observation cannot clear a pending review cursor; a current d
   await runtime.runPromise(projectPull(REPOSITORY, fetched.pull.number, { kind: "gone", fetchedAt: fetched.fetchedAt + 3000 }))
   expect(await sql(runtime, "SELECT cursor FROM github_sync")).toEqual([{ cursor: null }])
   expect(await sql(runtime, "SELECT item_id FROM pulls")).toEqual([])
+})
+
+test("a GitHub base-ref failure leaves the pull unprojected until the head can be read", async () => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  github.push("feature", { "A.md": "A" })
+  const pull = github.openPull("feature")
+  const movedHead = github.push("main", { "B.md": "B" })
+  const { services: built } = await services(runtime, github)
+  const read = () => runtime.runPromise(Effect.gen(function* () {
+    const token = yield* built.tokens.forInstallation(REPOSITORY, "pulls")
+    return yield* readPull(REPOSITORY, pull.number).pipe(withToken(token, built.apiBaseUrl), Effect.result)
+  }).pipe(Effect.provideService(HttpClient.HttpClient, built.http)))
+
+  github.faults.push({ match: (method, path) => method === "GET" && path.endsWith("/git/ref/heads/main"), status: 502 })
+  expect(await read()).toMatchObject({ _tag: "Failure", failure: { details: { status: 502 } } })
+  expect(await sql(runtime, "SELECT item_id FROM pulls")).toEqual([])
+  expect(await sql(runtime, "SELECT id FROM items")).toEqual([])
+  expect(await sql(runtime, "SELECT cursor FROM github_sync")).toEqual([])
+
+  expect(await read()).toMatchObject({ _tag: "Success", success: { outcome: "applied" } })
+  expect(await sql(runtime, "SELECT base_sha FROM pulls")).toEqual([{ base_sha: movedHead }])
 })
 
 test("a malformed review fails the read without advancing its projection or cursor", async () => {

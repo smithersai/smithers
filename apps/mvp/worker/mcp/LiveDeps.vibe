@@ -11,7 +11,7 @@ import { TreeListing as RepoTreeListing } from "../../src/features/repo/schema.t
 import type { DocsSource } from "../docs/Source.vibe"
 import type { FlowStarter } from "../Flows.ts"
 import * as IssueList from "../github/IssueList.vibe"
-import type * as ReadToken from "../github/ReadToken.ts"
+import type * as ReadToken from "../github/ReadToken.vibe"
 import * as Store from "../github/Store.ts"
 import * as WorkLinks from "../github/WorkLinks.ts"
 import { Write } from "../github/Write.ts"
