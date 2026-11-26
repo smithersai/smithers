@@ -6,7 +6,7 @@ import { aboutOf, isReady, put, ready, shownRepository } from "../repo/actions.v
 import { RepoClient } from "../repo/api"
 import { isRepository, repoId } from "../repo/contract"
 import { RepoStore } from "../repo/store.vibe"
-import { IssuesStore } from "../issues/store"
+import { IssuesStore } from "../issues/store.vibe"
 import { TodosStore } from "../todos/store.vibe"
 import { HomeClient } from "./api.vibe"
 import { codeHref, HOME_FILE, NEW_BRANCH } from "./contract"

@@ -5,7 +5,7 @@ import type { DispatchFailed } from "./flows/dispatch.vibe"
 import { repoOf } from "./features/attention/progress"
 import { admissionNamespace, admitCommand, hasEngineAdmission, hasOutboxAdmission, startOperation } from "./features/commands/admission.vibe"
 import type { FlowName } from "./flows/registry.vibe"
-import { IssuesStore } from "./features/issues/store"
+import { IssuesStore } from "./features/issues/store.vibe"
 import { TodosStore } from "./features/todos/store.vibe"
 import { admissionReceipt, beginAttempt, executionOf, finishAdmission, identifyAdmission, recordAdmission, settledEngineInputs, WriteIntents, type WriteIntent } from "./writeAdmission"
 

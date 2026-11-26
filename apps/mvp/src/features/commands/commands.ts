@@ -8,7 +8,7 @@ import { choose, choosePalette, closePalette, dismiss, highlight, highlightPalet
 import type { PaletteEntry } from "./palette"
 import { CommandsStore } from "./store.vibe"
 import type { Plugins } from "../../plugins/plugins"
-import type { IssuesStore } from "../issues/store"
+import type { IssuesStore } from "../issues/store.vibe"
 import type { TodosStore } from "../todos/store.vibe"
 import type { RunSteers } from "../runs/steers.vibe"
 import type { BranchStore } from "../branch/store.vibe"

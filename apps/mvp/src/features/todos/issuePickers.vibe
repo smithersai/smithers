@@ -1,5 +1,5 @@
 import { codeOf } from "../../errorCode"
-import { IssuesStore } from "../issues/store"
+import { IssuesStore } from "../issues/store.vibe"
 
 /**
  * Opens each routed or drafted repository's issue choices through the issue store's scoped, cached subscriptions.

@@ -1,5 +1,4 @@
 import { type ElectricCollection } from "@smthrs/effect-electric"
-import { Clock, Effect, Metric, Ref, Stream } from "effect"
 
 type Event = ElectricCollection.SyncEvent
 type Phase = "starting" | "sent" | "ready" | "failed" | "stopped"
@@ -30,33 +29,31 @@ export const shapeRetries = Metric.counter("smithers_item_shape_retries", {
   incremental: true,
 })
 
-export const recordShapeRetry = (item: "issue" | "pull") => Effect.gen(function* () {
-  yield* Metric.update(Metric.withAttributes(shapeRetries, { item }), 1)
-  yield* Effect.logInfo("item.shape.retry").pipe(Effect.annotateLogs({ item }))
-}).pipe(Effect.withSpan("item.shape.retry", { attributes: { item } }))
+export const recordShapeRetry = (item: "issue" | "pull") =>
+  withSpan(effect {
+    try Metric.update(Metric.withAttributes(shapeRetries, { item }), 1)
+    try annotateLogs(logInfo("item.shape.retry"), { item })
+  }, "item.shape.retry", { attributes: { item } })
 
 /** A page stuck on Loading can be matched to its shape's first request and last observed outcome. */
-export const observeShape = (events: Stream.Stream<Event>, name: string, transitions: typeof shapeTransitions) =>
-  Effect.gen(function* () {
-    const startedAt = yield* Clock.currentTimeMillis
-    const snapshot = yield* Ref.make<Snapshot>({ phase: "starting" })
-    yield* events.pipe(Stream.runForEach((event) => Effect.gen(function* () {
-      const next = snapshotAfter(yield* Ref.get(snapshot), event)
-      if (next === undefined) return
-      yield* Ref.set(snapshot, next)
-      const fields = {
-        phase: next.phase,
-        durationMs: (yield* Clock.currentTimeMillis) - startedAt,
-        ...(next.status === undefined ? {} : { status: next.status }),
-      }
-      yield* Effect.gen(function* () {
-        yield* Metric.update(Metric.withAttributes(transitions, { phase: next.phase }), 1)
-        yield* Effect.annotateCurrentSpan(fields)
-        yield* Effect.logWithLevel(next.phase === "failed" || next.phase === "stopped" ? "Warn" : "Info")(
-          name,
-        ).pipe(Effect.annotateLogs(fields))
-      }).pipe(Effect.withSpan(name))
-    })))
+export const observeShape = (events: Stream.Stream<Event>, name: string, transitions: typeof shapeTransitions) => effect {
+  const startedAt = try Clock.currentTimeMillis
+  const snapshot = try Ref.make<Snapshot>({ phase: "starting" })
+  try Stream.runForEach(events, (event) => effect {
+    const next = snapshotAfter(try Ref.get(snapshot), event)
+    if (next === undefined) return
+    try Ref.set(snapshot, next)
+    const fields = {
+      phase: next.phase,
+      durationMs: (try Clock.currentTimeMillis) - startedAt,
+      ...(next.status === undefined ? {} : { status: next.status }),
+    }
+    try withSpan(effect {
+      try Metric.update(Metric.withAttributes(transitions, { phase: next.phase }), 1)
+      try annotateCurrentSpan(fields)
+      try annotateLogs(logWithLevel(next.phase === "failed" || next.phase === "stopped" ? "Warn" : "Info")(name), fields)
+    }, name)
   })
+}
 
 export const observeIssueShape = (events: Stream.Stream<Event>) => observeShape(events, "issues.shape.sync", shapeTransitions)

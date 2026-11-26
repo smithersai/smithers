@@ -4,7 +4,7 @@ import { expect, test } from "vitest"
 import { runFlow } from "../worker/test/flowHost"
 import { RunCredentials } from "../src/flows/credentials.vibe"
 import { IssueCommitment, IssueTriage, IssueWriteRefused, TriageEnable, TriageRunAgain } from "../src/features/issues/flows.vibe"
-import { registration as issueRegistration, TabIssues } from "../src/features/issues/steps"
+import { registration as issueRegistration, TabIssues } from "../src/features/issues/steps.vibe"
 import { TodoDrop, TodoRetry, TodoStepRefused } from "../src/features/todos/flows"
 import { registration as todoRegistration, TabTodos } from "../src/features/todos/steps.vibe"
 

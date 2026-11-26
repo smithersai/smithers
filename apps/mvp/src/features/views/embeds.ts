@@ -1,6 +1,6 @@
 import { Effect, Layer, Option, Queue, Stream } from "effect"
 import { ChatStore } from "../chat/store"
-import { IssuesStore, repoIdOf } from "../issues/store"
+import { IssuesStore, repoIdOf } from "../issues/store.vibe"
 import { embed } from "../repo/embed"
 import { issuesOf, repoOf } from "./rows"
 import { ViewsStore } from "./store"

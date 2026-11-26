@@ -1,15 +1,16 @@
 import { ShapeSource } from "@smthrs/effect-electric"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Fiber, Layer, Option, Stream } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import * as GitHubStore from "../../../worker/github/Store.vibe"
 import { role as readRole } from "../repo/actions.vibe"
 import { repoId } from "../repo/contract"
 import { TestChatApi, TEST_REPOSITORY, openTestApp } from "../../test/chatApi"
 import type { Session } from "../auth/schema"
-import { SESSION } from "../auth/store"
+import { AuthStore, SESSION } from "../auth/store"
+import { RepoStore } from "../repo/store"
 import { Pulls } from "../pulls/pulls.vibe"
-import { repositoryAccess, syncStatusAfter, wipeStatusOf } from "./source"
-import { IssuesStore } from "./store"
+import { repositoryAccess, revokingSource, syncStatusAfter, wipeStatusOf } from "./source.vibe"
+import { IssuesStore } from "./store.vibe"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => { for (const runtime of runtimes.splice(0)) await runtime.dispose() })
@@ -31,6 +32,28 @@ test("authority is device state: the named repository's role row, the session's 
   expect(repositoryAccess(session("signed_out"), [{ id: "own", own: true, role: "admin", readable: true }], "own")).toBe("sign_in")
   expect(repositoryAccess(session("signed_out"), [{ id: "own", own: true, role: null }], "own")).toBe("sign_in")
   expect(repositoryAccess(session("signed_out"), [{ id: "own", own: true, role: null, readable: true }], "own")).toBe("allowed")
+})
+
+// A 401 says nothing of the repository: the shape stops, the tab checks its session, and the session decides.
+test("a shape's 401 through the revoking source asks the tab to check its session", async () => {
+  const runtime = openTestApp()
+  runtimes.push(runtime)
+  const answers = [200, 503, 401]
+  const asked = await runtime.runPromise(Effect.gen(function* () {
+    const auth = yield* AuthStore
+    const repos = yield* RepoStore
+    const base: ShapeSource.Source = {
+      request: () => Effect.sync(() => new Response(null, { status: answers.shift()! })),
+    }
+    const source = revokingSource(base, auth, repos, repoId("acme", "widgets"))
+    const check = yield* Effect.forkChild(Stream.runHead(auth.checksAsked), { startImmediately: true })
+    yield* Effect.yieldNow
+    const statuses: Array<number> = []
+    for (let sent = 0; sent < 3; sent++) statuses.push((yield* source.request("https://chatapi.test/shape", {})).status)
+    return { statuses, check: yield* Fiber.join(check) }
+  }))
+  expect(asked.statuses).toEqual([200, 503, 401])
+  expect(Option.isSome(asked.check)).toBe(true)
 })
 
 test("a Member of the deployment's own repository reads another only as its own answer says (decision 0079)", () => {
@@ -123,6 +146,11 @@ test("only a server that answered and couldn't verify hides private rows; a fail
   // A role read that failed gives no authority to paint under once a server couldn't verify; on a network failure it does.
   const failed = { id: "own", own: false, role: null, failure: "unavailable" } as const
   expect(repositoryAccess(reached, [failed], "own")).toBe("unverified")
+  // A refusal the server gave decides, whatever the session: sign in for an unauthenticated one, else forbidden.
+  for (const who of [down, reached, session("signed_in", "admin")]) {
+    expect(repositoryAccess(who, [{ ...own, refused: "authentication" }], "own")).toBe("sign_in")
+    expect(repositoryAccess(who, [{ ...own, refused: "forbidden" }], "own")).toBe("forbidden")
+  }
   expect(repositoryAccess(down, [failed], "own")).toBe("unavailable")
   // A role holder reading offline keeps what the device has (Astra's P2): the network says nothing of them.
   expect(repositoryAccess(down, [{ id: "own", own: false, role: "member", readable: true }], "own")).toBe("unknown")

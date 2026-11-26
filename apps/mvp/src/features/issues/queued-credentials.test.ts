@@ -10,7 +10,7 @@ import { confirmedSession, sql } from "../../../worker/github/test/fixtures"
 import { outboxUpgrade } from "../../device/registry"
 import { OutboxWrites } from "../../outbox"
 import { IssuesClient } from "./api.vibe"
-import { ISSUE_WRITE, IssueWrites } from "./writes"
+import { ISSUE_WRITE, IssueWrites } from "./writes.vibe"
 
 const server = testFile("queued_run_authority")
 const alice = { subject: { kind: "person" as const, id: crypto.randomUUID() }, role: "member" as const, session: crypto.randomUUID() }

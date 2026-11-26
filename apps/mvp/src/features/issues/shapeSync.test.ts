@@ -2,7 +2,7 @@ import { ElectricCollection } from "@smthrs/effect-electric"
 import { Effect, Logger, Metric, Stream } from "effect"
 import { expect, test } from "vitest"
 import { BROWSER_TELEMETRY, EXPORTED_SPANS } from "../../telemetry"
-import { observeIssueShape, shapeTransitions } from "./shapeSync"
+import { observeIssueShape, shapeTransitions } from "./shapeSync.vibe"
 
 test("the issue shape records its first request, refusal and recovery without leaking the failure cause", async () => {
   const secret = "private issue body sentinel"

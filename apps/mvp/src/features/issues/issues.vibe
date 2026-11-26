@@ -23,7 +23,7 @@ import {
   triage,
 } from "./actions.vibe"
 import type { TriageDecision } from "./contract"
-import { IssuesStore, type RepoIssues } from "./store"
+import { IssuesStore, type RepoIssues } from "./store.vibe"
 
 // Issues as a frontend sees it: live queries to read and plain functions to act, with no Effect in sight. React renders
 // the queries with `useLiveQuery`, and the issue routes' loaders call `open`.

@@ -5,7 +5,7 @@ import { HOME_DRAFT, type Unsent, Unsent as UnsentRow } from "../features/chat/s
 import { keepParked as keepParkedQuestion } from "../features/chat/store"
 import { restoreTakenBack } from "../features/chat/writes"
 import { type Requested, Requested as RequestedRow } from "../features/issues/schema"
-import { keepParked as keepParkedWrite } from "../features/issues/writes"
+import { keepParked as keepParkedWrite } from "../features/issues/writes.vibe"
 import { nodeDevice } from "../test/chatApi"
 import { plain } from "../test/deviceFixture"
 import { ChatDraftsStore } from "./registry"

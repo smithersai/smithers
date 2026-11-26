@@ -1,7 +1,7 @@
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Deferred, Effect, Fiber, Logger, Metric } from "effect"
 import { expect, test, vi } from "vitest"
-import { IssuesStore } from "./features/issues/store"
+import { IssuesStore } from "./features/issues/store.vibe"
 import { initialSnapshots, observeInitialApplied } from "./shapeApplied"
 import { openTestApp } from "./test/chatApi"
 

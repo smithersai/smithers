@@ -1,7 +1,7 @@
 import type { Collection } from "@smthrs/effect-tanstack-db"
 import { codeOf } from "../../errorCode"
 import { answerAskingTab } from "../../flows/askingTab"
-import { IssuesStore } from "../issues/store"
+import { IssuesStore } from "../issues/store.vibe"
 import { draftFromIssue, todosChannel } from "./contract"
 import { type Draft, TodosCall } from "./schema"
 import { TodosStore } from "./store.vibe"

@@ -28,8 +28,8 @@ import {
   triageControlOf,
   triageSwitchOf,
 } from "./view"
-import { syncStatusOf } from "./store"
-import { keep } from "./writes"
+import { syncStatusOf } from "./store.vibe"
+import { keep } from "./writes.vibe"
 
 const synced: ListRow = {
   id: "github/octo/hello#3",

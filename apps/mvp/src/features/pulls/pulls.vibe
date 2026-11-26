@@ -1,5 +1,5 @@
 import { runners } from "../../boundary.vibe"
-import { IssuesStore } from "../issues/store"
+import { IssuesStore } from "../issues/store.vibe"
 import type { FlowDispatch } from "../../flows/dispatch.vibe"
 import { closeFiles, loadFiles, merge, open, retry, review, warm } from "./actions.vibe"
 import { PullsClient } from "./api.vibe"

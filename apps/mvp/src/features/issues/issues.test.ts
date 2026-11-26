@@ -65,11 +65,11 @@ import {
   writesRoute,
 } from "./contract"
 import { Issues } from "./issues.vibe"
-import { IssueWrites } from "./writes"
+import { IssueWrites } from "./writes.vibe"
 import { AuthClient, AuthUnreachable } from "../auth/api"
 import { detailsUnlisted, evictions, pendingActions, sends } from "./metrics"
-import { shapeRetries, shapeTransitions } from "./shapeSync"
-import { IssuesStore, type RepoIssues } from "./store"
+import { shapeRetries, shapeTransitions } from "./shapeSync.vibe"
+import { IssuesStore, type RepoIssues } from "./store.vibe"
 import {
   commentOf,
   type CommentRow,
@@ -815,6 +815,50 @@ describe("loading", () => {
     await list.actions.open(OWNER, NAME, 4)
     await until(() => expect(host.stored(detail)).toBe(0))
     expect(list.issues.queries.item.toArray).toEqual([])
+  }, WITHIN)
+
+  // A device whose store can't open keeps rows in memory and has no collections to list: a refusal still evicts the
+  // refused repository's issues, reports nothing unlisted, and leaves another repository's open issue alone.
+  test("a refusal on a device with no store evicts only that repository's issues; a direct issue keeps its search", async () => {
+    const refusing = { now: false }
+    const device = nodeDevice()
+    const host = { ...device, persistence: { ...device.persistence, open: () => Promise.reject(new Error("no storage")) } }
+    const source = Layer.succeed(ShapeSource.ShapeSource, {
+      request: (url, init) => Effect.suspend(() => refusing.now
+        ? Effect.succeed(new Response(null, { status: 403 }))
+        : ShapeSource.fetchSource.request(url, init)),
+    })
+    const { api } = await open()
+    const tab = await another(api, { host, replace: source })
+    await tab.runtime.runPromise(readRepositoryRole(OWNER, NAME))
+    const decided = () => tab.runtime.runPromise(tab.store.authority(REPO_ID).pipe(
+      Stream.filter((status) => status !== "unknown"),
+      Stream.runHead,
+    ))
+    expect(await decided()).toEqual(Option.some("allowed"))
+    // A direct issue read before the summaries apply: their answer doesn't forget its search.
+    tab.store.searches.issue = true
+    tab.store.searches.repoId = REPO_ID
+    await server(api).seed(4, "Read directly")
+    const repo = await tab.runtime.runPromise(tab.store.forRepo(REPO_ID))
+    const latest = tab.store.searches.latest
+    await tab.runtime.runPromise(repo.itemsApplied)
+    await tab.runtime.runPromise(Effect.yieldNow)
+    expect(tab.store.searches.latest).toBe(latest)
+    await tab.actions.open(OWNER, NAME, 4)
+    await until(() => expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 4 }))
+    // Another repository's issue, open on this tab.
+    const elsewhere = repoId("someone", "else")
+    const other = await tab.runtime.runPromise(tab.store.forRepo(elsewhere, 1))
+    const unlisted = tab.count(detailsUnlisted, {})
+    refusing.now = true
+    await server(api).seed(5, "Wakes the shapes")
+    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden" }), 20_000)
+    await until(() => expect(tab.issues.queries.item.toArray).toEqual([]))
+    expect(await decided()).toEqual(Option.some("forbidden"))
+    expect(tab.count(detailsUnlisted, {})).toBe(unlisted)
+    expect(tab.store.opened(elsewhere)?.id).toBe(elsewhere)
+    expect(other.id).toBe(elsewhere)
   }, WITHIN)
 
   // The ruling: a cached row may paint while the first session check is pending, the cold path. Once a check failed, the

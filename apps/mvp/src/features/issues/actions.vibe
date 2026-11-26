@@ -1,7 +1,7 @@
 import { clearWriteComposer } from "../../admissionSource.vibe"
 import { acknowledgeNavigation, admissionReceipt, beginAdmission, identifyAdmission, executionOf, finishAdmission, finishRetainedAdmission, whileAdmitting, forgetAdmission, WriteIntents } from "../../writeAdmission"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { keep } from "./writes"
+import { keep } from "./writes.vibe"
 import type { Commitment } from "./lifecycle"
 import { AuthStore } from "../auth/store"
 import { FlowDispatch } from "../../flows/dispatch.vibe"
@@ -17,9 +17,9 @@ import {
   type TriageDecision,
 } from "./contract"
 import { admissions, pendingActions, reads, submissionFailures } from "./metrics"
-import { recordShapeRetry } from "./shapeSync"
+import { recordShapeRetry } from "./shapeSync.vibe"
 import { type Draft, type QueuedWrite, SEARCHED, VIEW } from "./schema"
-import { IssuesStore } from "./store"
+import { IssuesStore } from "./store.vibe"
 
 // Issue writes resolve after the device retains their intent and admits them to its durable outbox. Public flows
 // join the same write in the background; the outbox owns delivery after this tab closes.

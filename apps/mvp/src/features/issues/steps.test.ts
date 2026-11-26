@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest"
 import * as RunCredentials from "../../flows/credentials.vibe"
 import { IssueWriteRefused } from "./flows.vibe"
 import { writes } from "./metrics"
-import { queueWrite, TabIssues } from "./steps"
+import { queueWrite, TabIssues } from "./steps.vibe"
 
 // An issue write's step when no tab answers on the engine's issues channel (Node's own `BroadcastChannel`): the tab that
 // asked is gone. The step runs here as its engine runs it, in the run its execution id names; the retry policy, which

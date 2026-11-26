@@ -7,7 +7,7 @@ import { OutboxWrites } from "../../outbox"
 import { SESSION_ROUTE } from "../auth/contract"
 import { IssuesClient } from "./api.vibe"
 import { Requested, type Sending } from "./schema"
-import { ISSUE_WRITE, IssueWrites, keep, keepParked } from "./writes"
+import { ISSUE_WRITE, IssueWrites, keep, keepParked } from "./writes.vibe"
 
 const row: Sending = { id: "w", repo: "octo/hello", repoId: "github/octo/hello", op: "issue/create", title: "t", body: "", number: 0, queuedAt: 1, v: 3 }
 

@@ -3,7 +3,7 @@ import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tansta
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Clock, Context, Duration, Effect, Layer, Metric, Option, Ref, Scope, Semaphore, Stream } from "effect"
 import { WebCrypto } from "effect/crypto/WebCrypto"
-import { evictOnRefusal, repositoryAccessChanges, revokingSource, wipeAuthority } from "../issues/source"
+import { evictOnRefusal, repositoryAccessChanges, revokingSource, wipeAuthority } from "../issues/source.vibe"
 import { RemoteReadFailed, RemoteRunsClient, RepoRunsFailed } from "./api.vibe"
 import { isRemoteRun, JOURNAL_PAGE, REMOTE_RUN_SHAPE_ROUTE, RUN_LIST_LIMIT, settled } from "./contract"
 import { ACTIONS_SHAPE_ROUTE } from "../actions/contract"

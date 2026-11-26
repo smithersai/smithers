@@ -27,7 +27,7 @@ import { TabRequests } from "../flows/requests.vibe"
 import { TabClipboard } from "../features/repo/copy"
 import { TabSession } from "../features/auth/steps"
 import { TabChat } from "../features/chat/steps"
-import { TabIssues } from "../features/issues/steps"
+import { TabIssues } from "../features/issues/steps.vibe"
 import { TabRuns } from "../features/runs/steps.vibe"
 import { TabTodos } from "../features/todos/steps.vibe"
 
