@@ -7,7 +7,7 @@ import { describe, expect, test } from "vitest"
 import { ASK_RETRY, TodoStepRefused } from "./flows"
 import { drafts, queued } from "./metrics"
 import type { TodosCall } from "./schema"
-import { keepDraft, queueChange, TabTodos } from "./steps"
+import { keepDraft, queueChange, TabTodos } from "./steps.vibe"
 
 // The TODO steps where no real tab answers: the step runs here as its engine runs it, in the run its execution id
 // names; the retry policy is the engine's. Every step a tab answers runs on a real engine in todos.test.ts.

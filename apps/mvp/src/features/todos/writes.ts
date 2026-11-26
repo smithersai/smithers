@@ -1,7 +1,7 @@
 import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { Clock, Context, Effect, Layer, Metric, Option } from "effect"
 import { held, OutboxWrites } from "../../outbox"
-import { type ChangeRequest, StackClient } from "./api"
+import { type ChangeRequest, StackClient } from "./api.vibe"
 import { type NotSentReason, notSentOf } from "./contract"
 import { sends } from "./metrics"
 import { type Requested, Requested as RequestedRow, type Sending, Sending as SendingRow } from "./schema"

@@ -1,10 +1,10 @@
 import { Context, Effect, Layer, Stream } from "effect"
 import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { attach, configureStack, retryChange, retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setAfter, setAttachmentIssue, setIssue, setPrompt, setTitle, warm } from "./actions"
-import type { StackClient } from "./api"
+import { attach, configureStack, retryChange, retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setAfter, setAttachmentIssue, setIssue, setPrompt, setTitle, warm } from "./actions.vibe"
+import type { StackClient } from "./api.vibe"
 import type { StackBase } from "./contract"
-import { syncIssueChoices } from "./issuePickers"
+import { syncIssueChoices } from "./issuePickers.vibe"
 import { type RepoStack, TodosStore } from "./store"
 
 // TODOs as a frontend sees it: live queries to read and plain functions to act, with no Effect in sight. React renders

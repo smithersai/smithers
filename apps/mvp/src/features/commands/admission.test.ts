@@ -238,7 +238,7 @@ test("an input-storage refusal keeps the slash source and never queues delivery"
 for (const text of ["/comment octo/hello 7 Retry the slash source", "/todo.drop octo/hello 7"]) test(`page Retry cleans the retained slash source: ${text.split(" ")[0]}`, async () => {
   const t = await open(true)
   const { retryWrite } = await import("../issues/actions.vibe")
-  const { retryChange } = await import("../todos/actions")
+  const { retryChange } = await import("../todos/actions.vibe")
   await t.commands.actions.type(text)
   await t.commands.actions.submit(text)
   const intents = await t.tab.runPromise(Effect.service(WriteIntents))

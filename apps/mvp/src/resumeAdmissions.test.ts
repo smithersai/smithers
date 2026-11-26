@@ -42,7 +42,7 @@ for (const source of ["comment", "todo"] as const) test(`live and retried ${sour
   let failures = 0
   const failedReceipt = Effect.sync(() => { failures++; }).pipe(Effect.andThen(Effect.fail(new Collection.TransactionFailed({ cause: "quota" }))))
   const { comment, retryWrite } = await import("./features/issues/actions.vibe")
-  const { commit, retryChange } = await import("./features/todos/actions")
+  const { commit, retryChange } = await import("./features/todos/actions.vibe")
   const issueDrafts = { ...tab.store.drafts, delete: (id: string | ReadonlyArray<string>) => tab.store.drafts.delete(id).pipe(Effect.map(write => ({ ...write, persisted: failedReceipt }))) }
   const todoDrafts = { ...tab.todos.drafts, delete: (id: string | ReadonlyArray<string>) => tab.todos.drafts.delete(id).pipe(Effect.map(write => ({ ...write, persisted: failedReceipt }))) }
   if (source === "comment") {
@@ -68,9 +68,46 @@ for (const source of ["comment", "todo"] as const) test(`live and retried ${sour
   expect(tab.intents.pending()).toEqual([expect.objectContaining({ commandId: intent!.commandId, writeId: intent!.writeId, admitted: true, cleaned: false })])
 })
 
+test("a refused TODO press keeps the same recovery row when its device confirms persistence", async () => {
+  const tab = await opening(true)
+  const { drop } = await import("./features/todos/actions.vibe")
+  const { VIEW } = await import("./features/todos/schema")
+  const refusing = { ...tab.intents, retain: () => false }
+  const release = Deferred.makeUnsafe<void>()
+  const real = tab.todos.requested
+  const requested = {
+    ...real,
+    insert: (row: Parameters<typeof real.insert>[0]) => real.insert(row).pipe(
+      Effect.map((write) => ({ ...write, persisted: Effect.andThen(Deferred.await(release), write.persisted) })),
+    ),
+  }
+  const failures = () => Option.getOrThrow(tab.app.runSync(tab.todos.view.get(VIEW))).admissionFailures
+  try {
+    await tab.app.runPromise(drop(owner, name, 1).pipe(
+      Effect.provideService(WriteIntents, refusing),
+      Effect.provideService(TodosStore, { ...tab.todos, requested }),
+    ))
+    expect(failures()).toEqual([expect.objectContaining({
+      id: expect.any(String), repo: TEST_REPOSITORY, op: "drop", number: 1, status: "not_sent", reason: null,
+    })])
+    const [held] = failures()!
+    const id = held!.id
+    expect(tab.intents.admitting.has(id)).toBe(true)
+    expect(tab.todos.sending.tanstack.toArray).toEqual([])
+
+    await Effect.runPromise(Deferred.succeed(release, undefined))
+    await until(() => expect(failures()).toEqual([]))
+    expect(tab.todos.requested.tanstack.get(id)).toMatchObject({ ...held, $hasPendingWrites: false })
+    expect(tab.intents.pending()).toEqual([])
+    expect(tab.todos.sending.tanstack.toArray).toEqual([])
+  } finally {
+    await Effect.runPromise(Deferred.succeed(release, undefined))
+  }
+})
+
 test("repeated refused TODO presses reuse ephemeral recovery and Discard needs no stored row", async () => {
   const tab = await opening(true)
-  const { drop, retry, discard } = await import("./features/todos/actions")
+  const { drop, retry, discard } = await import("./features/todos/actions.vibe")
   const { VIEW } = await import("./features/todos/schema")
   const requested = { ...tab.todos.requested, insert: () => Effect.fail(new Collection.MutationRefused({ operation: "insert", cause: "quota" })) }
   const refusing = { ...tab.intents, retain: () => false }
@@ -160,7 +197,7 @@ test("input-storage refusal keeps source drafts and never admits a write", async
   await tab.issues.actions.open(owner, name)
   tab.issues.actions.setNewTitle(owner, name, "Keep this issue draft")
   const { create, open } = await import("./features/issues/actions.vibe")
-  const { commit, drop } = await import("./features/todos/actions")
+  const { commit, drop } = await import("./features/todos/actions.vibe")
   const refusing = { ...tab.intents, retain: () => false }
   expect(await tab.app.runPromise(create(owner, name).pipe(Effect.provideService(WriteIntents, refusing)))).toBe(false)
   expect(tab.store.drafts.tanstack.get(newDraftKey(repoId))?.title).toBe("Keep this issue draft")
@@ -206,7 +243,7 @@ for (const state of ["matching", "new_text", "other_conversation", "no_stored_dr
 test("Discard draft cancels its retained commit after refusal and fences a running admission", async () => {
   const tab = await opening()
   const { beginAdmission, finishAdmission } = await import("./writeAdmission")
-  const { discardDraft } = await import("./features/todos/actions")
+  const { discardDraft } = await import("./features/todos/actions.vibe")
   const id = crypto.randomUUID()
   await tab.app.runPromise(tab.todos.drafts.insert({ id, repo: TEST_REPOSITORY, repoId, title: "Retained TODO", prompt: "Prompt", acceptance: [], answerId: null, createdAt: 1 }))
   const row = Option.getOrThrow(tab.app.runSync(beginAdmission("todo/commit", { repo: TEST_REPOSITORY, title: "Retained TODO", prompt: "Prompt" }, undefined, id)))
@@ -224,7 +261,7 @@ for (const source of ["comment", "issue", "todo"] as const) {
   test(`an admission receipt cannot delete newer typing in its ${source} source draft`, async () => {
     const tab = await opening()
     const { comment, create } = await import("./features/issues/actions.vibe")
-    const { commit } = await import("./features/todos/actions")
+    const { commit } = await import("./features/todos/actions.vibe")
     const key = source === "comment" ? commentDraftKey(repoId, 45) : source === "issue" ? newDraftKey(repoId) : crypto.randomUUID()
     const gate = await Effect.runPromise(Deferred.make<void>())
     let queued = false
@@ -252,7 +289,7 @@ for (const source of ["issue", "todo", "legacy"] as const) test(`Retry fences Di
   const tab = await opening()
   const { beginAdmission, finishAdmission, identifyAdmission } = await import("./writeAdmission")
   const { retryWrite, discard, comment } = await import("./features/issues/actions.vibe")
-  const { retryChange, discard: discardTodo } = await import("./features/todos/actions")
+  const { retryChange, discard: discardTodo } = await import("./features/todos/actions.vibe")
   const todo = source === "todo"
   const flow = todo ? "todo/commit" : "issue/comment"
   const key = todo ? crypto.randomUUID() : commentDraftKey(repoId, 45)
@@ -293,7 +330,7 @@ for (const source of ["issue", "todo", "legacy"] as const) test(`Retry fences Di
 
 test("a refused TODO Drop or Retry remains visibly Not sent and retries the same identity", async () => {
   const tab = await opening()
-  const { drop, retry, retryChange, discard } = await import("./features/todos/actions")
+  const { drop, retry, retryChange, discard } = await import("./features/todos/actions.vibe")
   const { VIEW } = await import("./features/todos/schema")
   const real = tab.todos.requested
   const requested = { ...real, insert: (row: Parameters<typeof real.insert>[0]) => real.insert(row).pipe(Effect.map(write => ({ ...write, persisted: Effect.fail(new Collection.TransactionFailed({ cause: "quota" })) }))) }

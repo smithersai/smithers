@@ -4,9 +4,9 @@ import { Effect, Logger, Metric, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, expect, test } from "vitest"
 import { BROWSER_TELEMETRY, EXPORTED_SPANS } from "../../telemetry"
-import { type ChangeRequest, readTodoStatus, StackClient } from "./api"
+import { type ChangeRequest, readTodoStatus, StackClient } from "./api.vibe"
 import { statusReads } from "./metrics"
-import { inspectStatus } from "./steps"
+import { inspectStatus } from "./steps.vibe"
 
 // The real stack client from the browser's side, against a local HTTP server that plays a gateway: real sockets, so a
 // stalled body, a body cut short and nothing listening are what a browser would meet. Every answer ChatApi itself gives

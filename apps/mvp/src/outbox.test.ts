@@ -6,7 +6,7 @@ import { TextsClient } from "./features/coedit/api.vibe"
 import { TEXT_UPDATE, TextWrites } from "./features/coedit/writes.vibe"
 import { IssuesClient } from "./features/issues/api.vibe"
 import { ISSUE_WRITE, IssueWrites } from "./features/issues/writes"
-import { StackClient } from "./features/todos/api"
+import { StackClient } from "./features/todos/api.vibe"
 import { StackWrites, TODO_OP } from "./features/todos/writes"
 import { OutboxWrites } from "./outbox"
 

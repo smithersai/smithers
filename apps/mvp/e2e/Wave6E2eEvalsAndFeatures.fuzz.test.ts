@@ -8,7 +8,7 @@ import { HttpClient, HttpClientError, type HttpClientRequest, HttpClientResponse
 import { expect, test } from "vitest"
 import { CONFIRM_401_HEADER, SESSION_CHECK_HEADER } from "../src/features/auth/contract.ts"
 import { appPath } from "../src/features/navigation/paths.ts"
-import * as TodosApi from "../src/features/todos/api.ts"
+import * as TodosApi from "../src/features/todos/api.vibe"
 import { stackRoute, TODO_STATUS_NOT_FOUND, todoStatusRoute } from "../src/features/todos/contract.ts"
 import type { Sending } from "../src/features/todos/schema.ts"
 import * as TodosWrites from "../src/features/todos/writes.ts"

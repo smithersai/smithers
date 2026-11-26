@@ -158,7 +158,7 @@ import { ALERT_CHANNELS_TABLE, ALERT_DELIVERIES_TABLE, SANDBOX_LIMITS_TABLE, SPE
 import { RUNS_TABLE } from "../features/status/contract"
 import { TERMINALS_TABLE } from "../features/terminal/contract"
 import type { ThemeMode } from "../features/theme/contract"
-import type { StackClient } from "../features/todos/api"
+import type { StackClient } from "../features/todos/api.vibe"
 import { TODO_REQUESTS_TABLE, TODOS_TABLE } from "../features/todos/contract"
 import * as RepoRoles from "../../worker/github/RepoRoles.vibe"
 import { BranchRoles } from "../../worker/branch/Access.vibe"

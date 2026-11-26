@@ -1,0 +1,20 @@
+import { codeOf } from "../../errorCode"
+import { IssuesStore } from "../issues/store"
+
+/**
+ * Opens each routed or drafted repository's issue choices through the issue store's scoped, cached subscriptions.
+ * Startup failures are recorded without ending the follower or hiding another repository's choices. Shape failures
+ * after startup remain observable through the issue store's sync state and telemetry.
+ */
+export const syncIssueChoices = effect (repoIds: ReadonlyArray<string>) => {
+  const issues = try IssuesStore
+  for concurrent (const id of new Set(repoIds.filter((id) => id !== ""))) {
+    try catchCause(asVoid(issues.forRepo(id)), effect (cause) => {
+      if (Cause.hasInterruptsOnly(cause)) return try failCause(cause)
+      const errorCode = try sync(() => codeOf(Cause.squash(cause)))
+      try annotateLogs(logWarning("todos.issue.load"), {
+        feature: "todos", outcome: "failed", errorCode,
+      })
+    })
+  }
+}
