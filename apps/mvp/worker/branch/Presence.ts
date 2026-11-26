@@ -4,7 +4,7 @@ import type { SqlClient } from "effect/sql"
 import { Sessions } from "../Actor.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as SocketAccess from "../SocketAccess.ts"
-import { branchAccess, canView } from "./Access.ts"
+import { branchAccess, canView } from "./Access.vibe"
 import { Rooms } from "./Rooms.ts"
 import { isUpgrade, sameOrigin } from "./Upgrade.ts"
 

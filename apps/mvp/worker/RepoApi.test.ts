@@ -26,7 +26,7 @@ import { accountIdOf, APP_ID, appKey, scriptedGitHub as scriptedApp } from "./gi
 import { app } from "./github/test/harness.ts"
 import { repositoryOf } from "./github/Config.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
-import { branchAccess, BranchRoles } from "./branch/Access.ts"
+import { branchAccess, BranchRoles } from "./branch/Access.vibe"
 import { scriptedGitHub, spoonKnife } from "./test/githubRest.ts"
 import { notificationRow, repoHarness, repositoryRow, resetRepos, usageRow } from "./test/repos.ts"
 

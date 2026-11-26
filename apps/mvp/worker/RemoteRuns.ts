@@ -27,7 +27,7 @@ import {
 import { type Actor, canAsk, Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.vibe"
 import * as CloudRuns from "./CloudRuns.ts"
-import * as TodoSession from "./flows/TodoSession.ts"
+import * as TodoSession from "./flows/TodoSession.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import * as ShapeAccess from "./ShapeAccess.vibe"
 import * as RepoRuns from "./RepoRuns.ts"

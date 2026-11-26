@@ -1,7 +1,7 @@
 import { withRequestRay } from "./RequestRay.vibe"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import * as Visibility from "./github/Visibility.ts"
-import { BranchRoles, installedOn, readsCopy } from "./branch/Access.ts"
+import { BranchRoles, installedOn, readsCopy } from "./branch/Access.vibe"
 import * as MirrorRefresh from "./MirrorRefresh.vibe"
 import * as RefReads from "./branch/RefReads.ts"
 import { ImmutableCache } from "@smthrs/artifacts"

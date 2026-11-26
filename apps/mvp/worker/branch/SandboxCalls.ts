@@ -18,7 +18,7 @@ import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import { SandboxCall } from "../flows/SandboxCall.vibe"
 import { ToolCall } from "../flows/SandboxCommand.vibe"
-import { branchAccess, canEdit } from "./Access.ts"
+import { branchAccess, canEdit } from "./Access.vibe"
 
 // The sandbox tools' routes (decision 0005 §5, docs/features/sandbox-tools.md#the-routes):
 //

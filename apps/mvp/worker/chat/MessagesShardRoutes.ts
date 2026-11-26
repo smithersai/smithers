@@ -3,7 +3,7 @@ import { Effect, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { type Actor, refusesPersonOnly, Sessions } from "../Actor.ts"
 import { MAX_MESSAGES_SHARD_BYTES, readBounded } from "../Body.vibe"
-import { askingOf, type BranchAccess, canView } from "../branch/Access.ts"
+import { askingOf, type BranchAccess, canView } from "../branch/Access.vibe"
 import * as MessagesShard from "./MessagesShard.ts"
 
 // The messages shard over HTTP (decision 0170, slice 3). The Worker authenticates the session, decides read and write

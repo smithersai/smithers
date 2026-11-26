@@ -12,7 +12,7 @@ import { branchHarness, gitHost } from "../test/branch.ts"
 import { fixture, scripted } from "../test/codeStorage.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
-import { BranchRoles } from "./Access.ts"
+import { BranchRoles } from "./Access.vibe"
 import { selections, select } from "./Creation.ts"
 import { CreateRefused } from "./Forge.ts"
 

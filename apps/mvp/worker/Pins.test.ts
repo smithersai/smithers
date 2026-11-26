@@ -3,7 +3,7 @@ import { HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
 import { Sessions } from "./Actor.ts"
-import { BranchRoles } from "./branch/Access.ts"
+import { BranchRoles } from "./branch/Access.vibe"
 import * as Pins from "./Pins.vibe"
 import { answers, harness, testFile } from "./test/harness.ts"
 

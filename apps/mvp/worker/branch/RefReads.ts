@@ -2,7 +2,7 @@ import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { REPOSITORY_GRANTEE } from "../../src/features/branch/contract.ts"
 import type { Actor } from "../Actor.ts"
-import { accessOf, canView, type Grants, installedOn, roleOn } from "./Access.ts"
+import { accessOf, canView, type Grants, installedOn, roleOn } from "./Access.vibe"
 
 /**
  * Ephemeral names this viewer can discover, under the same policy as sharing and presence, with their role on the

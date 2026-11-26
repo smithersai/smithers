@@ -12,7 +12,7 @@ const root = fileURLToPath(new URL("../../../../", import.meta.url))
 /** The seam's files: every file under a directory, or the file itself. */
 const SEAM = [
   "apps/mvp/worker/runners",
-  "apps/mvp/worker/flows/TodoSession.ts",
+  "apps/mvp/worker/flows/TodoSession.vibe",
   "apps/mvp/src/features/runners",
   "apps/mvp/docs/features/agent-runners.md",
   "apps/mvp/db/migrations/0078_agent_runners.ts",

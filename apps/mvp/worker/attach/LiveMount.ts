@@ -20,7 +20,7 @@ import { isRepository, repoId } from "../../src/features/repo/contract.ts"
 import { type Actor, Sessions } from "../Actor.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as SessionStore from "../SessionStore.ts"
-import { askingOf, branchAccess, canView } from "../branch/Access.ts"
+import { askingOf, branchAccess, canView } from "../branch/Access.vibe"
 import {
   ATTACH_LIMITS,
   bearerHash,

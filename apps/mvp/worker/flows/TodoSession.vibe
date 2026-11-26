@@ -1,17 +1,18 @@
 import { AgentRunner, ExternalAgent } from "@smthrs/agent"
-import { digestSync } from "@smthrs/crypto"
 import { Action, RetryPolicy } from "@smthrs/flow"
 import { Database, Journal } from "@smthrs/flows"
 import { Notifications } from "@smthrs/harness"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Effect, Layer, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import { RUNNER_STEER_BOUNDARY } from "../../src/features/runs/contract.ts"
 import type { Steering } from "../runners/Api.vibe"
 import * as Stack from "../stack/Stack.vibe"
 import * as Jobs from "../runners/Jobs.vibe"
 import * as Store from "../runners/Store.vibe"
 import { promptOf } from "./TodoAgent.vibe"
+import { boundaryOf } from "./TodoSessionIdentity.ts"
+
+export { boundaryOf } from "./TodoSessionIdentity.ts"
 
 // The `todo` run's implement step when the repository codes with an external agent (decision 0136,
 // docs/features/agent-runners.md#a-todo-on-an-external-agent). `todo/Agent` reads the repository's coding agent once
@@ -79,17 +80,14 @@ export const Agent = Action.make("todo/Agent", {
 /** `todo/Agent`'s implementation over `database`: the repository's coding agent, logged by name only. */
 export const agentStep = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
 (payload: typeof Agent.payloadSchema.Type) =>
-  Store.codingAgent(payload.repoId).pipe(
-    Effect.provide(database),
-    Effect.mapError(() => new CodingUnavailable()),
-    Effect.map((agent): Coding => ({ agent: Option.getOrNull(agent) })),
-    Effect.tap((coding) =>
-      Effect.logInfo("todo.agent").pipe(
-        Effect.annotateLogs({ attemptId: payload.attemptId, agent: coding.agent?.name ?? "smithers" }),
-      )
-    ),
-    Effect.withSpan("todo.agent", { attributes: { "smithers.todo.attempt": payload.attemptId } }),
-  )
+  withSpan(effect {
+    const agent = Effect.provide(Store.codingAgent(payload.repoId), database) catch effect () => {
+      throw new CodingUnavailable()
+    }
+    const coding: Coding = { agent: Option.getOrNull(agent) }
+    try annotateLogs(logInfo("todo.agent"), { attemptId: payload.attemptId, agent: coding.agent?.name ?? "smithers" })
+    return coding
+  }, "todo.agent", { attributes: { "smithers.todo.attempt": payload.attemptId } })
 
 /**
  * `todo/Agent` and `agent/Session` over `database`: the step waits on the job store in the app's Postgres, whose probe
@@ -116,22 +114,14 @@ export const runOf = (task: AgentRunner.Task): string | undefined =>
  * runs is a stale report, which changes nothing.
  */
 export const claimed = (attemptId: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [attempt] = yield* sql<Stack.RunAttempt>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [attempt] = try sql<Stack.RunAttempt>`
       SELECT id::text AS "attemptId", todo_id::text AS "todoId", repo_id AS "repoId", ordinal
       FROM todo_attempts WHERE id::text = ${attemptId}`
     if (attempt === undefined) return
-    yield* Stack.report(attempt, { kind: "waiting", waiting: null }, { runs: false })
-  })
-
-/**
- * The boundary a runner's confirmation of `ids` drains under, for job `key` (docs/features/runs.md#steering): the same
- * ids confirmed again replay the same drain, and the run page reads a promotion under `RUNNER_STEER_BOUNDARY` as
- * Delivered.
- */
-export const boundaryOf = (key: string, ids: ReadonlyArray<string>): string =>
-  `${RUNNER_STEER_BOUNDARY}${key}:${digestSync([...ids].sort().join("\n")).slice(0, 32)}`
+    try Stack.report(attempt, { kind: "waiting", waiting: null }, { runs: false })
+  }
 
 /**
  * The messages Members sent a TODO's external agent, kept where Smithers' own agent's are: the run's durable
@@ -149,26 +139,30 @@ export const steering = <E, R>(writer: Layer.Layer<SqlClient.SqlClient, E, R>): 
     )),
   )
   return {
-    pending: (task) => {
+    pending: effect (task) => {
       const runId = runOf(task)
-      if (runId === undefined) return Effect.succeed([])
-      return Effect.flatMap(NotificationQueue.NotificationQueue, (notifications) => notifications.pending(runId)).pipe(
-        Effect.map((pending) =>
-          pending.filter((notification) => notification._tag === "human-steer").map((notification) => ({
+      if (runId === undefined) return []
+      return try scoped(effect {
+        provide queue {
+          const notifications = try NotificationQueue.NotificationQueue
+          const pending = try notifications.pending(runId)
+          return pending.filter((notification) => notification._tag === "human-steer").map((notification) => ({
             id: notification.id,
             text: Notifications.text(notification),
           }))
-        ),
-        Effect.provide(queue),
-        Effect.scoped,
-      )
+        }
+      })
     },
-    delivered: (task, key, ids) => {
+    delivered: effect (task, key, ids) => {
       const runId = runOf(task)
-      if (runId === undefined) return Effect.void
-      return Effect.flatMap(NotificationQueue.NotificationQueue, (notifications) =>
-        notifications.drain({ runId, targetLineageId: runId, boundary: boundaryOf(key, ids), wouldIdle: false, ids })
-      ).pipe(Effect.asVoid, Effect.provide(queue), Effect.scoped)
+      if (runId === undefined) return
+      try scoped(effect {
+        provide queue {
+          const notifications = try NotificationQueue.NotificationQueue
+          const boundary = try sync(() => boundaryOf(key, ids))
+          try notifications.drain({ runId, targetLineageId: runId, boundary, wouldIdle: false, ids })
+        }
+      })
     },
   }
 }
@@ -180,12 +174,12 @@ export const steering = <E, R>(writer: Layer.Layer<SqlClient.SqlClient, E, R>): 
  * were open; none when the agent had ended or its job wasn't queued yet.
  */
 export const stop = (attemptId: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [job] = yield* sql<{ readonly origin: string }>`
+  withSpan(effect {
+    const sql = try SqlClient.SqlClient
+    const [job] = try sql<{ readonly origin: string }>`
       SELECT origin FROM agent_jobs WHERE task->'context'->>'attemptId' = ${attemptId}
       ORDER BY created_at DESC LIMIT 1`
-    const open = job === undefined ? 0 : yield* Jobs.stop(job.origin)
-    yield* Effect.logInfo("todo.stop").pipe(Effect.annotateLogs({ attemptId, generations: open }))
+    const open = job === undefined ? 0 : (try Jobs.stop(job.origin))
+    try annotateLogs(logInfo("todo.stop"), { attemptId, generations: open })
     return open
-  }).pipe(Effect.withSpan("todo.stop", { attributes: { "smithers.todo.attempt": attemptId } }))
+  }, "todo.stop", { attributes: { "smithers.todo.attempt": attemptId } })

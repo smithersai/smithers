@@ -20,7 +20,7 @@ import * as Todo from "./Todo.vibe"
 import * as TodoBaseClosed from "./TodoBaseClosed.vibe"
 import * as TodoDrop from "./TodoDrop.vibe"
 import * as TodoAgent from "./TodoAgent.vibe"
-import * as TodoSession from "./TodoSession.ts"
+import * as TodoSession from "./TodoSession.vibe"
 
 const runtime = testFile("todo_host")
 beforeEach(async () => {

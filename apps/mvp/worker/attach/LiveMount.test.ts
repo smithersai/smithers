@@ -15,7 +15,7 @@ import {
 } from "../../src/features/mcp/contract.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { Sessions } from "../Actor.ts"
-import { BranchRoles } from "../branch/Access.ts"
+import { BranchRoles } from "../branch/Access.vibe"
 import * as Conversations from "../branch/Conversations.vibe"
 import { repositoryOf } from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"

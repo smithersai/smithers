@@ -4,7 +4,7 @@
 import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterAll, beforeAll, beforeEach, expect, test } from "vitest"
-import * as TodoSession from "../../worker/flows/TodoSession.ts"
+import * as TodoSession from "../../worker/flows/TodoSession.vibe"
 import { testFile } from "../../worker/test/harness.ts"
 import * as Jobs from "../../worker/runners/Jobs.vibe"
 import * as Overflow from "../../worker/runners/Overflow.vibe"

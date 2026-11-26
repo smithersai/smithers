@@ -7,7 +7,7 @@ import { ACCEPTS_HEADER, ACCEPTS_CREDENTIAL_STALE } from "../src/features/auth/c
 import * as Api from "./github/Api.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { repositoryOf } from "./github/Config.ts"
-import { BranchRoles } from "./branch/Access.ts"
+import { BranchRoles } from "./branch/Access.vibe"
 import { FlowStarter, StartUnavailable } from "./Flows.ts"
 import * as Rotation from "./SessionSigningKeys.vibe"
 import * as SignIn from "./SignIn.ts"

@@ -5,7 +5,7 @@ import type { SqlClient } from "effect/sql"
 import { PUBLICATION_COLUMNS, PUBLICATIONS_TABLE } from "../../src/features/branch/contract.ts"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import * as ShapeAccess from "../ShapeAccess.vibe"
-import { branchAccess, canView } from "./Access.ts"
+import { branchAccess, canView } from "./Access.vibe"
 
 // `GET /api/shapes/branch-publications?branch=<id>` (docs/features/branch-publish.md#the-branch-page): a branch's
 // publication on GitHub, its pull request and how its last Update branch ended, for anyone who may view the branch, so

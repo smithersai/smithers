@@ -1,6 +1,6 @@
 import { afterBody } from "../../WriteAdmission.ts"
 import * as GitHubCreation from "../../branch/GitHubCreation.ts"
-import { BranchRoles } from "../../branch/Access.ts"
+import { BranchRoles } from "../../branch/Access.vibe"
 // The git loop's routes (worker/github/Api.ts) for the tests, on a test file's own schema of the compose Postgres and
 // Electric (`pnpm db:up`), as ChatApi serves them: who is asking from a `Sessions` layer, remote flows from a
 // `FlowStarter` that records each start in an in-memory Durable Object storage (the same intent again is a no-op,

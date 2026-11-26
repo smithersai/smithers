@@ -65,10 +65,7 @@ export const accessOf = (actor: Option.Option<Actor>, grants: Grants): Access | 
   return lower(rank[person] >= rank[link] ? person : link, ceiling)
 }
 
-/**
- * Whether `access` opens the live branch: its conversation, terminals and room.
- * @throws {never}
- */
+/** Whether `access` opens the live branch: its conversation, terminals and room. */
 export const canView = (access: Access | "none"): access is Access => access !== "none"
 
 /** Whether `access` writes to the live branch: asks in its conversation and types in its terminals. */
@@ -105,30 +102,31 @@ export class BranchRoles extends Context.Service<
     readonly grantBasis?: (repoId: string, installed: boolean) => RepoRoles.WorkBasis
     /** Its actual permission freshness window. */
     readonly grantFreshSeconds?: number
-    readonly roleOn: (actor: Actor, repoId: string) => Effect.Effect<Role | null, RepoRoles.RoleRefused>
+    readonly roleOn: (actor: Actor, repoId: string) => (Role | null)!RepoRoles.RoleRefused
     /**
      * The role on a repository Smithers recorded no App installation on, asking no one (`RepoRoles.uninstalledRole`).
      * Absent, the session's.
      */
     readonly uninstalled?: (actor: Actor, repoId: string) => Role | null
     /** Deployment session authority on its own repository; elsewhere a confirmed public copy without the App. */
-    readonly workUninstalled?: (actor: Actor, repoId: string) => Effect.Effect<Role | null, RepoRoles.RoleRefused>
+    readonly workUninstalled?: (actor: Actor, repoId: string) => (Role | null)!RepoRoles.RoleRefused
     /**
      * The role GitHub gives `actor` on `repoId` (`RepoRoles.resolve`), with no fallback: none where the deployment can't
      * act on it (`RepoRoles.CANT_ACT`), and the row it came from (`held`), which the write that grants a machine access
      * to the repository checks again in its own transaction (`RepoRoles.holds`, decision 0148). Absent, nobody holds one.
      */
-    readonly repoRoleOn?: (actor: Actor, repoId: string) => Effect.Effect<RepoRoles.Resolved, RepoRoles.RoleRefused>
+    readonly repoRoleOn?: (actor: Actor, repoId: string) => RepoRoles.Resolved!RepoRoles.RoleRefused
     /** Whether GitHub shows `repoId` to everyone (`RepoRoles.publicCopy`). Absent, every copy reads as public. */
-    readonly publicCopy?: (repoId: string) => Effect.Effect<boolean, RepoRoles.RoleRefused>
+    readonly publicCopy?: (repoId: string) => boolean!RepoRoles.RoleRefused
   }
 >()("@smthrs/mvp/branch/BranchRoles") {
   /** `BranchRoles` over `roles`, with what its database needs taken from where the layer is built. */
   static readonly layer = <R>(roles: RepoRoles.RepoRoles<R>): Layer.Layer<BranchRoles, never, R> =>
     Layer.effect(
       BranchRoles,
-      Effect.map(Effect.context<R>(), (context) =>
-        BranchRoles.of({
+      effect {
+        const context = try Effect.context<R>()
+        return BranchRoles.of({
           grantBasis: (repoId, installed) => roles.workBasis?.(repositoryOf(repoId.replace(/^github\//, "")), installed)
             ?? (installed ? repoId === roles.repository.id ? "deployment" : "repository" : "public"),
           grantFreshSeconds: roles.freshSeconds ?? RepoRoles.FRESH_SECONDS,
@@ -139,15 +137,18 @@ export class BranchRoles extends Context.Service<
             Effect.provideContext(context),
           ),
           repoRoleOn: (actor, repoId) =>
-            roles.resolve(actor, repositoryOf(repoId.replace(/^github\//, ""))).pipe(
-              Effect.catch((refused) => RepoRoles.CANT_ACT.has(refused.code) ? Effect.succeed(NO_ROLE) : Effect.fail(refused)),
-              Effect.provideContext(context),
-            ),
+            effect {
+              return roles.resolve(actor, repositoryOf(repoId.replace(/^github\//, ""))) catch effect (refused) => {
+                if (RepoRoles.CANT_ACT.has(refused.code)) return NO_ROLE
+                throw refused
+              }
+            }.pipe(Effect.provideContext(context)),
           publicCopy: (repoId) =>
             roles.publicCopy === undefined
               ? Effect.succeed(true)
               : roles.publicCopy(repositoryOf(repoId.replace(/^github\//, ""))).pipe(Effect.provideContext(context)),
-        })),
+        })
+      },
     )
 }
 
@@ -158,14 +159,14 @@ export class BranchRoles extends Context.Service<
  * `installed` (`installedOn`) is asked only for a copy GitHub doesn't show everyone. GitHub or Postgres not answering
  * is the refusal, never a guess.
  */
-export const readsCopy = <E, R>(actor: Option.Option<Actor>, repoId: string, installed: Effect.Effect<boolean, E, R>) =>
-  Effect.gen(function* () {
-    const roles = yield* BranchRoles
-    if (roles.publicCopy === undefined || (yield* roles.publicCopy(repoId))) return "public" as const
+export const readsCopy = <E, R>(actor: Option.Option<Actor>, repoId: string, installed: boolean!E!R) =>
+  effect {
+    const roles = try BranchRoles
+    if (roles.publicCopy === undefined || (try roles.publicCopy(repoId))) return "public" as const
     if (Option.isNone(actor)) return "none" as const
-    const role = yield* roleOn(actor.value, repoId, yield* installed)
+    const role = try roleOn(actor.value, repoId, try installed)
     return role === null ? "none" as const : "private" as const
-  })
+  }
 
 /**
  * The role `actor` works with on repository `repoId` (`installed`: whether Smithers recorded the App's installation on
@@ -175,13 +176,13 @@ export const roleOn = (
   actor: Actor,
   repoId: string,
   installed: boolean,
-): Effect.Effect<Role | null, RepoRoles.RoleRefused, BranchRoles> =>
-  Effect.gen(function* () {
-    const roles = yield* BranchRoles
-    if (installed) return yield* roles.roleOn(actor, repoId)
-    if (roles.workUninstalled !== undefined) return yield* roles.workUninstalled(actor, repoId)
+): (Role | null)!RepoRoles.RoleRefused!BranchRoles =>
+  effect {
+    const roles = try BranchRoles
+    if (installed) return try roles.roleOn(actor, repoId)
+    if (roles.workUninstalled !== undefined) return try roles.workUninstalled(actor, repoId)
     return roles.uninstalled === undefined ? actor.role : roles.uninstalled(actor, repoId)
-  })
+  }
 
 /**
  * The role `actor` holds on repository `repoId` for granting a machine access to it (decision 0148), and the row it came
@@ -189,34 +190,35 @@ export const roleOn = (
  * (`BranchRoles.repoRoleOn`), never the deployment's session role standing in for it.
  */
 export const repoRoleOn = (actor: Actor, repoId: string) =>
-  Effect.gen(function* () {
-    if (!(yield* installedOn(repoId))) return NO_ROLE
-    const roles = yield* BranchRoles
-    return roles.repoRoleOn === undefined ? NO_ROLE : yield* roles.repoRoleOn(actor, repoId)
-  })
+  effect {
+    if (!(try installedOn(repoId))) return NO_ROLE
+    const roles = try BranchRoles
+    if (roles.repoRoleOn === undefined) return NO_ROLE
+    return try roles.repoRoleOn(actor, repoId)
+  }
 
 /** No role, from no row. */
 const NO_ROLE: RepoRoles.Resolved = { role: null, held: Option.none() }
 
 /** Whether Smithers recorded the App's installation on repository `repoId`. */
 export const installedOn = (repoId: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const rows = yield* sql`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const rows = try sql`
       SELECT 1 FROM github_repositories WHERE repo_id = ${repoId} AND installation_id IS NOT NULL`
     return rows.length > 0
-  })
+  }
 
 /**
  * Whether `actor` is a Member or above on repository `repoId` (`repo:branch-create`, decision 0007): who may track a
  * branch there, and own one, by the role they work with there (`roleOn`).
  */
 export const isMemberOn = (actor: Option.Option<Actor>, repoId: string) =>
-  Effect.gen(function* () {
+  effect {
     if (Option.isNone(actor)) return false
-    const role = yield* roleOn(actor.value, repoId, yield* installedOn(repoId))
+    const role = try roleOn(actor.value, repoId, try installedOn(repoId))
     return isMember(Option.some({ ...actor.value, role }))
-  })
+  }
 
 /** A living branch as an access check reads it. */
 export interface BranchAccess {
@@ -255,9 +257,9 @@ const personOf = (actor: Option.Option<Actor>) => (Option.isSome(actor) ? actor.
 
 /** Living branch `id`'s row as a check reads it, with `person`'s own share; `undefined` when there is no such branch. */
 const readBranch = (person: string, id: string, by: "branch" | "conversation") =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const rows = yield* sql`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const rows = try sql`
       SELECT b.id AS "branchId", c.id AS "conversationId", b.repo_id AS "repoId", b.name, b.mode,
         b.created_by AS "createdBy",
         (SELECT access FROM branch_shares s WHERE s.branch_id = b.id AND s.grantee = ${person}
@@ -268,8 +270,9 @@ const readBranch = (person: string, id: string, by: "branch" | "conversation") =
           AS installed
       FROM branches b JOIN conversations c ON c.branch_id = b.id
       WHERE ${by === "branch" ? sql`b.id = ${id}` : sql`c.id = ${id}`} AND b.deleted_at IS NULL`
-    return rows[0] === undefined ? undefined : yield* decodeRow(rows[0]).pipe(Effect.orDie)
-  })
+    if (rows[0] === undefined) return undefined
+    return try orDie(decodeRow(rows[0]))
+  }
 
 /** What `actor`, with the role they carry, may do on branch `row`. */
 const decided = (actor: Option.Option<Actor>, row: typeof Row.Type): BranchAccess => {
@@ -289,34 +292,37 @@ const decided = (actor: Option.Option<Actor>, row: typeof Row.Type): BranchAcces
  * a repository the App is installed on the person's role there, kept 5 minutes (decision 0079).
  */
 export const branchAccess = (actor: Option.Option<Actor>, id: string, by: "branch" | "conversation" = "branch") =>
-  Effect.gen(function* () {
-    const row = yield* readBranch(personOf(actor), id, by)
+  effect {
+    const row = try readBranch(personOf(actor), id, by)
     if (row === undefined) return undefined
     if (Option.isNone(actor)) return decided(actor, row)
-    const role = yield* roleOn(actor.value, row.repoId, row.installed)
+    const role = try roleOn(actor.value, row.repoId, row.installed)
     return decided(Option.some({ ...actor.value, role }), row)
-  })
+  }
 
 /**
  * `branchAccess` with the role `actor` carries, asking no one: for a feed's recipients, whom notifications check as
  * Members inside their own transaction (worker/Notifications.ts).
  */
 export const branchAccessAs = (actor: Option.Option<Actor>, id: string, by: "branch" | "conversation" = "branch") =>
-  Effect.map(readBranch(personOf(actor), id, by), (row) => (row === undefined ? undefined : decided(actor, row)))
+  effect {
+    const row = try readBranch(personOf(actor), id, by)
+    return row === undefined ? undefined : decided(actor, row)
+  }
 
 /** Branch `branchId`'s whole permission list, as `underPolicy` applies it. */
 export const policyOf = (branchId: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [branch] = yield* sql<{ readonly createdBy: string | null }>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [branch] = try sql<{ readonly createdBy: string | null }>`
       SELECT created_by AS "createdBy" FROM branches WHERE id = ${branchId}`
-    const rows = yield* sql<{ readonly grantee: string; readonly access: ShareAccess }>`
+    const rows = try sql<{ readonly grantee: string; readonly access: ShareAccess }>`
       SELECT grantee, access FROM branch_shares WHERE branch_id = ${branchId}`
     return {
       createdBy: branch?.createdBy ?? null,
       grants: Object.fromEntries(rows.map((row) => [row.grantee, row.access])),
     } satisfies Policy
-  })
+  }
 
 /** Whether `actor` is a Member or above: who may track a branch, and own one (`repo:branch-create`, decision 0007). */
 export const isMember = (actor: Option.Option<Actor>): actor is Option.Some<Actor> =>
@@ -338,12 +344,12 @@ export const askingOf = (found: BranchAccess): Asking =>
  * `forbidden` once its branch is deleted, `undefined` when there is no such message.
  */
 export const askingOnAnswer = (actor: Actor, answerId: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly conversationId: string }>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [row] = try sql<{ readonly conversationId: string }>`
       SELECT conversation_id AS "conversationId" FROM messages WHERE id = ${answerId}`
     if (row === undefined) return undefined
     // A deleted branch's conversation is nobody's to ask in.
-    const found = yield* branchAccess(Option.some(actor), row.conversationId, "conversation")
+    const found = try branchAccess(Option.some(actor), row.conversationId, "conversation")
     return found === undefined ? "forbidden" : askingOf(found)
-  })
+  }

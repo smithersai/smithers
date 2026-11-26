@@ -7,7 +7,7 @@ import { Effect, Logger, Metric } from "effect"
 import { HttpEffect, HttpServerRequest } from "effect/http"
 import { Miniflare } from "miniflare"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
-import * as Artifacts from "./Artifacts.ts"
+import * as Artifacts from "./Artifacts.vibe"
 
 let worker: Miniflare
 let bucket: Artifacts.Bucket

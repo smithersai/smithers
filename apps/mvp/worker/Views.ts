@@ -31,7 +31,7 @@ import {
 } from "../src/features/views/schema.ts"
 import { checkUrl } from "../src/features/web/url.ts"
 import { Sessions } from "./Actor.ts"
-import { askingOf, branchAccess, canView } from "./branch/Access.ts"
+import { askingOf, branchAccess, canView } from "./branch/Access.vibe"
 import * as Conversations from "./branch/Conversations.vibe"
 import { readBounded } from "./Body.vibe"
 import { DocsSource } from "./docs/Source.vibe"

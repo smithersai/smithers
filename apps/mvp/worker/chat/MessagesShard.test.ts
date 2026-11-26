@@ -13,7 +13,7 @@ import { openStorage } from "../../../../packages/smithers/flows/platform-cloudf
 import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../../src/features/auth/contract.ts"
 import { type Actor, personOnlyRefusals } from "../Actor.ts"
 import { MAX_MESSAGES_SHARD_BYTES } from "../Body.vibe"
-import type { BranchAccess } from "../branch/Access.ts"
+import type { BranchAccess } from "../branch/Access.vibe"
 import * as RunCredentials from "../RunCredentials.ts"
 import { credentialsFor, signedIn, signedOut } from "../test/harness.ts"
 import * as Messages from "./MessagesShard.ts"

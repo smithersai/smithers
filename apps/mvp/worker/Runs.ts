@@ -13,7 +13,7 @@ import {
   RunAnswer as RunAnswerSchema,
 } from "../src/features/status/schema.ts"
 import { type Actor, boundTo, refusesPersonOnly, Sessions } from "./Actor.ts"
-import { askingOnAnswer, BranchRoles } from "./branch/Access.ts"
+import { askingOnAnswer, BranchRoles } from "./branch/Access.vibe"
 import { readBounded } from "./Body.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import { TaskAnswers } from "./Flows.ts"

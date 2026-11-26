@@ -5,7 +5,7 @@ import { MARK_SUMMARY_LENGTH, MOST_COVERED, PHASES_FLOW, SEGMENT_SPANS, SUMMARIZ
 import { revisionOf, segmentRevision } from "../src/features/timeline/identity.ts"
 import { checkPlan, exchangeUnits, phaseUnits, type PhaseRow, sealSpans } from "../src/features/timeline/marks.ts"
 import { Sessions } from "./Actor.ts"
-import { branchAccess, canView } from "./branch/Access.ts"
+import { branchAccess, canView } from "./branch/Access.vibe"
 import { readBounded } from "./Body.vibe"
 
 // The timeline's summaries, once per message for everyone (docs/features/timeline.md#cost). A tab that wants a model

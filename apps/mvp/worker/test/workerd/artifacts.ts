@@ -6,7 +6,7 @@ import { HttpEffect, HttpServerRequest } from "effect/http"
 import { Sessions } from "../../Actor.ts"
 import { repositoryOf } from "../../github/Config.ts"
 import * as ArtifactRoutes from "../../ops/ArtifactRoutes.vibe"
-import * as Artifacts from "../../branch/Artifacts.ts"
+import * as Artifacts from "../../branch/Artifacts.vibe"
 
 interface Env {
   readonly ARTIFACTS: Artifacts.Bucket

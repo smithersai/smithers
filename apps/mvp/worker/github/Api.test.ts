@@ -2,7 +2,7 @@
 // file's schema of the compose Postgres and Electric (`pnpm db:up`), with remote flows recorded or run on the Node host
 // against the scripted GitHub (worker/github/test/harness.ts). Unhappy paths give the routes a faulty service; nothing
 // intercepts a request.
-import { BranchRoles } from "../branch/Access.ts"
+import { BranchRoles } from "../branch/Access.vibe"
 import { ConfigProvider, Duration, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import { createServer } from "node:http"

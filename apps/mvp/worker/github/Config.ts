@@ -36,7 +36,10 @@ const httpUrl = Schema.String.check(
   Schema.makeFilter((value: string) => URL.canParse(value) && /^https?:$/.test(new URL(value).protocol)),
 )
 
-/** `owner/name` as a `Repository`; `repositoryName` has checked its shape. */
+/**
+ * `owner/name` as a `Repository`; `repositoryName` has checked its shape.
+ * @throws {never}
+ */
 export const repositoryOf = (full: string): Repository => {
   const [owner, name] = full.split("/") as [string, string]
   return { owner, name, id: repoId(owner, name) }

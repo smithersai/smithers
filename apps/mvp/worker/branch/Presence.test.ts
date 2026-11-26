@@ -9,7 +9,7 @@ import { roomRoute } from "../../src/features/branch/contract.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import { branchHarness, type BranchHarness, resetBranches, shared, tracked } from "../test/branch.ts"
 import { recorded, testFile } from "../test/harness.ts"
-import { BranchRoles } from "./Access.ts"
+import { BranchRoles } from "./Access.vibe"
 import * as Presence from "./Presence.ts"
 
 const runtime = testFile("presence")

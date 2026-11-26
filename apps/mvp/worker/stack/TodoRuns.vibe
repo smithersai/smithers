@@ -7,7 +7,7 @@ import type { FlowStarter, StartConflict, StartUnavailable } from "../Flows.ts"
 import * as Todo from "../flows/Todo.vibe"
 import * as TodoBaseClosed from "../flows/TodoBaseClosed.vibe"
 import * as TodoDrop from "../flows/TodoDrop.vibe"
-import * as TodoSession from "../flows/TodoSession.ts"
+import * as TodoSession from "../flows/TodoSession.vibe"
 import * as Fleet from "../runners/Fleet.vibe"
 import * as Stack from "./Stack.vibe"
 

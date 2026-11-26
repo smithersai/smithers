@@ -29,7 +29,7 @@ import { CONNECTION_KINDS, PROTOCOLS } from "../../src/features/personal-model/c
 import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import * as Todo from "../flows/Todo.vibe"
 import * as TodoAgent from "../flows/TodoAgent.vibe"
-import * as TodoSession from "../flows/TodoSession.ts"
+import * as TodoSession from "../flows/TodoSession.vibe"
 import * as RemoteRuns from "../RemoteRuns.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import { repositoryOf } from "../github/Config.ts"

@@ -35,9 +35,9 @@ export class ArtifactStore extends Context.Service<
   ArtifactStore,
   {
     /** Stores exactly `bytes` bytes of `body` at `key`, replacing what was there. */
-    readonly put: (key: string, body: ReadableStream<Uint8Array> | null, bytes: number) => Effect.Effect<void, StoreFailed>
+    readonly put: (key: string, body: ReadableStream<Uint8Array> | null, bytes: number) => void!StoreFailed
     /** The artifact at `key`, none when absent. */
-    readonly get: (key: string) => Effect.Effect<Option.Option<Stored>, StoreFailed>
+    readonly get: (key: string) => Option.Option<Stored>!StoreFailed
   }
 >()("@smthrs/mvp/branch/ArtifactStore") {}
 
@@ -53,15 +53,16 @@ export interface Bucket {
  */
 export const r2 = (bucket: Bucket, exactly: (bytes: number) => TransformStream<Uint8Array, Uint8Array>) =>
   ArtifactStore.of({
-    put: (key, body, bytes) =>
-      Effect.tryPromise({
+    put: effect (key, body, bytes) => {
+      try tryPromise({
         try: () => bucket.put(key, body === null ? null : body.pipeThrough(exactly(bytes))),
         catch: () => new StoreFailed(),
-      }).pipe(Effect.asVoid),
-    get: (key) =>
-      Effect.tryPromise({ try: () => bucket.get(key), catch: () => new StoreFailed() }).pipe(
-        Effect.map((object) => object === null ? Option.none() : Option.some({ body: object.body, bytes: object.size })),
-      ),
+      })
+    },
+    get: effect (key) => {
+      const object = try tryPromise({ try: () => bucket.get(key), catch: () => new StoreFailed() })
+      return object === null ? Option.none() : Option.some({ body: object.body, bytes: object.size })
+    },
   })
 
 /** `r2` as a layer. */
@@ -100,46 +101,40 @@ const lengthOf = (header: string | undefined): number | undefined =>
 export const answer = (
   request: HttpServerRequest.HttpServerRequest,
   scope: string | undefined,
-): Effect.Effect<HttpServerResponse.HttpServerResponse, never, ArtifactStore> =>
-  Effect.gen(function* () {
+): HttpServerResponse.HttpServerResponse!never!ArtifactStore =>
+  withSpan(effect {
     const method = request.method === "GET" || request.method === "PUT" ? request.method : "other"
     let bytes = 0
-    const done = (outcome: Outcome, response?: HttpServerResponse.HttpServerResponse) =>
-      Effect.as(
-        Effect.andThen(
-          Metric.update(Metric.withAttributes(requests, { method, outcome }), 1),
-          Effect.logInfo("sandbox.artifact").pipe(Effect.annotateLogs({ method, outcome, bytes })),
-        ),
-        response ?? HttpServerResponse.empty({ status: OUTCOMES[outcome] }),
-      )
-    if (method === "other") return yield* done("method")
-    if (scope === undefined) return yield* done("no_scope")
+    const done = effect (outcome: Outcome, response?: HttpServerResponse.HttpServerResponse) => {
+      try Metric.update(Metric.withAttributes(requests, { method, outcome }), 1)
+      try annotateLogs(logInfo("sandbox.artifact"), { method, outcome, bytes })
+      return response ?? HttpServerResponse.empty({ status: OUTCOMES[outcome] })
+    }
+    if (method === "other") return try done("method")
+    if (scope === undefined) return try done("no_scope")
     const name = new URL(request.url, `http://${ARTIFACTS_HOST}`).pathname.slice(1)
-    if (!NAME.test(name)) return yield* done("bad_name")
-    const store = yield* ArtifactStore
+    if (!NAME.test(name)) return try done("bad_name")
+    const store = try ArtifactStore
     const key = keyOf(scope, name)
     if (method === "PUT") {
       const length = lengthOf(request.headers["content-length"])
-      if (length === undefined) return yield* done("length_required")
+      if (length === undefined) return try done("length_required")
       bytes = length
-      if (length > MAX_BYTES) return yield* done("too_large")
-      const web = yield* HttpServerRequest.toWeb(request).pipe(Effect.orDie)
-      return yield* store.put(key, web.body, length).pipe(
-        Effect.andThen(done("stored")),
-        Effect.catchTag("@smthrs/mvp/branch/ArtifactStoreFailed", () => done("store_failed")),
-      )
+      if (length > MAX_BYTES) return try done("too_large")
+      const web = try orDie(HttpServerRequest.toWeb(request))
+      return try Effect.catchTag(effect {
+        try store.put(key, web.body, length)
+        return try done("stored")
+      }, "@smthrs/mvp/branch/ArtifactStoreFailed", () => done("store_failed"))
     }
-    return yield* store.get(key).pipe(
-      Effect.flatMap(Option.match({
-        onNone: () => done("absent"),
-        onSome: (stored) => {
-          bytes = stored.bytes
-          return done("read", HttpServerResponse.raw(stored.body, {
-            contentType: "application/octet-stream",
-            contentLength: stored.bytes,
-          }))
-        },
-      })),
-      Effect.catchTag("@smthrs/mvp/branch/ArtifactStoreFailed", () => done("store_failed")),
-    )
-  }).pipe(Effect.withSpan("sandbox.artifact"))
+    return try Effect.catchTag(effect {
+      const object = try store.get(key)
+      if (Option.isNone(object)) return try done("absent")
+      const stored = object.value
+      bytes = stored.bytes
+      return try done("read", HttpServerResponse.raw(stored.body, {
+        contentType: "application/octet-stream",
+        contentLength: stored.bytes,
+      }))
+    }, "@smthrs/mvp/branch/ArtifactStoreFailed", () => done("store_failed"))
+  }, "sandbox.artifact")

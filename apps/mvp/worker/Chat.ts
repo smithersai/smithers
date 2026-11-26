@@ -38,7 +38,7 @@ import {
 } from "../src/features/flows-ui/contract.ts"
 import { BROWSER_TELEMETRY, TELEMETRY_LIMITS } from "../src/telemetry.ts"
 import { type Actor, refusesPersonOnly, Sessions } from "./Actor.ts"
-import { askingOf, branchAccess, canView } from "./branch/Access.ts"
+import { askingOf, branchAccess, canView } from "./branch/Access.vibe"
 import * as ConversationPeople from "./branch/ConversationPeople.vibe"
 import * as Conversations from "./branch/Conversations.vibe"
 import { readBounded } from "./Body.vibe"

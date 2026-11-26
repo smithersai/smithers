@@ -1,7 +1,7 @@
 import { digestSync } from "@smthrs/crypto"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Sessions } from "../Actor.ts"
-import * as Artifacts from "../branch/Artifacts.ts"
+import * as Artifacts from "../branch/Artifacts.vibe"
 import { repositoryOf } from "../github/Config.ts"
 import type { RepoRoles } from "../github/RepoRoles.ts"
 import type { Admitted } from "../RepoRuns.ts"

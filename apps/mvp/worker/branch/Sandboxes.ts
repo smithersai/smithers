@@ -3,7 +3,7 @@ import { Context, type Effect, Schema } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Admission } from "../SocketAccess.ts"
 import type { Role } from "../Actor.ts"
-import type { Policy } from "./Access.ts"
+import type { Policy } from "./Access.vibe"
 
 // A branch's machine as the flows and routes reach it (decision 0013 §2-§3, decision 0005 §2): one sandbox per branch,
 // which the host provides. On Cloudflare it is the branch's `SandboxObject` Durable Object and its container

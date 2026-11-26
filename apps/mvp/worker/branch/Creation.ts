@@ -10,7 +10,7 @@ import { readSource } from "../../src/features/flows-ui/checks.ts"
 import { isRepository, repoId } from "../../src/features/repo/contract.ts"
 import { BRANCH_FLOWS } from "../../src/plugins/builtinFlows.ts"
 import { Sessions } from "../Actor.ts"
-import { isMemberOn } from "./Access.ts"
+import { isMemberOn } from "./Access.vibe"
 import { homeRepositoryNames } from "./Conversations.vibe"
 import { defaultBranch } from "./Forge.ts"
 

@@ -3,7 +3,7 @@ import type { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Access } from "../../src/features/branch/contract.ts"
 import type { Role } from "../Actor.ts"
 import type { Admission } from "../SocketAccess.ts"
-import type { Policy } from "./Access.ts"
+import type { Policy } from "./Access.vibe"
 
 // A branch's room as the routes reach it (decision 0013 §4, docs/features/branch-workspace.md#presence): who is on the
 // branch and where, live, through one hibernating room per branch that stores nothing. On Cloudflare it is the

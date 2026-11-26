@@ -31,9 +31,10 @@ import {
   isMemberOn,
   policyOf,
   readsCopy,
+  repoRoleOn,
   roleOn,
   underPolicy,
-} from "./Access.ts"
+} from "./Access.vibe"
 
 const runtime = testFile("access")
 beforeEach(async () => {
@@ -325,6 +326,29 @@ describe("roles per repository (decision 0079)", () => {
     const roles = BranchRoles.layer(rolesThatRead(repositoryOf("acme/home"), "guest"))
     const never = Effect.die("never asked: the copy is public")
     expect(await run(readsCopy(Option.none(), WIDGETS, never), roles)).toBe("public")
+  })
+
+  test("the resolver's fallback grant basis distinguishes deployment, installed and public repositories", async () => {
+    const deployment = repositoryOf("acme/home")
+    const roles = BranchRoles.layer(rolesThatRead(deployment, "guest"))
+    const branchRoles = await Effect.runPromise(Effect.provide(BranchRoles, roles))
+    expect(branchRoles.grantBasis?.(deployment.id, true)).toBe("deployment")
+    expect(branchRoles.grantBasis?.(WIDGETS, true)).toBe("repository")
+    expect(branchRoles.grantBasis?.(WIDGETS, false)).toBe("public")
+    expect(branchRoles.uninstalled?.(Option.getOrThrow(maya("member")), WIDGETS)).toBe("member")
+  })
+
+  test("an installed repository's grant lookup propagates outages and returns no role when the App cannot act", async () => {
+    await installed()
+    const unavailable = new RepoRoles.RoleRefused({ code: "github_unavailable" })
+    const missing = new RepoRoles.RoleRefused({ code: "app_not_installed" })
+    const roles = (refusal: RepoRoles.RoleRefused) => BranchRoles.layer({
+      repository: repositoryOf("acme/home"),
+      resolve: () => Effect.fail(refusal),
+    })
+    const lookup = repoRoleOn(Option.getOrThrow(maya("admin")), WIDGETS)
+    expect(await run(Effect.exit(lookup), roles(unavailable))).toEqual(Exit.fail(unavailable))
+    expect(await run(lookup, roles(missing))).toEqual({ role: null, held: Option.none() })
   })
 
   test("branchAccessAs decides with the role the actor carries, asking no one", async () => {
