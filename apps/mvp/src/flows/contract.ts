@@ -26,6 +26,7 @@ export const CREDENTIAL_TTL_MS = 15 * 60 * 1000
 export const credentialRoute = (run: string): string => `${RUNS_ROUTE}/${encodeURIComponent(run)}/credential`
 
 /** The engine's channel to the tab that started a run: which door it came through (src/flows/credentials.ts). */
+/** @throws {never} */
 export const doorChannel = (name: string): string => `${name}/door`
 
 /**

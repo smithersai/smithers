@@ -1,5 +1,5 @@
 import { routeTemplate } from "../apiRoutes"
-import { Context, Effect, Exit, Layer, Logger, Tracer } from "effect"
+import { Context, Exit, Layer, Logger, Tracer } from "effect"
 
 // What went wrong in this tab lately (docs/features/bugs.md#what-a-report-carries), from the tab's own observability:
 // beside the OTLP exporter that relays the tab's records to ChatApi (src/boot.ts), a logger and a tracer keep the
@@ -111,7 +111,7 @@ export class TabErrors extends Context.Service<
     /** Keeps one record; past the ring's size, the oldest goes. */
     readonly record: (record: ErrorRecord) => void
     /** The kept records, newest first. */
-    readonly recent: Effect.Effect<ReadonlyArray<ErrorRecord>>
+    readonly recent: ReadonlyArray<ErrorRecord>!!
   }
 >()("@smthrs/mvp/flows/TabErrors") {
   /** One tab's ring of its latest `kept` records, in memory: a reload forgets it. */
@@ -123,7 +123,7 @@ export class TabErrors extends Context.Service<
           records.unshift(record)
           if (records.length > kept) records.length = kept
         },
-        recent: Effect.sync(() => [...records]),
+        recent: sync(() => [...records]),
       })
     })
 
@@ -134,8 +134,8 @@ export class TabErrors extends Context.Service<
    */
   static readonly observing = (records: ReadonlySet<string>, kept: number = ERRORS_KEPT) =>
     Layer.mergeAll(
-      Layer.unwrap(Effect.gen(function* () {
-        const errors = yield* TabErrors
+      Layer.unwrap(effect {
+        const errors = try TabErrors
         return Logger.layer([
           Logger.make((options) => {
             const formatted = Logger.formatStructured.log(options)
@@ -149,15 +149,16 @@ export class TabErrors extends Context.Service<
             if (record !== undefined) errors.record(record)
           }),
         ], { mergeWithExisting: true })
-      })),
-      Layer.effect(Tracer.Tracer)(
-        Effect.gen(function* () {
-          const errors = yield* TabErrors
-          const tracer = yield* Effect.tracer
+      }),
+      Layer.effect(
+        Tracer.Tracer,
+        effect {
+          const errors = try TabErrors
+          const underlying = try tracer
           return Tracer.make({
-            ...tracer,
+            ...underlying,
             span(options) {
-              const span = tracer.span(options)
+              const span = underlying.span(options)
               const end = span.end.bind(span)
               span.end = (endTime, exit) => {
                 end(endTime, exit)
@@ -174,7 +175,7 @@ export class TabErrors extends Context.Service<
               return span
             },
           })
-        }),
+        },
       ),
     ).pipe(Layer.provideMerge(TabErrors.ring(kept)))
 }

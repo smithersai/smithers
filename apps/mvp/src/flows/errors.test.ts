@@ -89,6 +89,15 @@ describe("an ended span", () => {
     expect(JSON.stringify(record)).not.toMatch(/private|keys\.env/)
   })
 
+  test("an unrecognized HTTP method keeps only the generic API name", () => {
+    const record = fromSpan(span({
+      "http.request.method": "CONNECT",
+      "url.path": "/api/private-route?token=private-query",
+      "http.response.status_code": 500,
+    }))
+    expect(record).toMatchObject({ name: "HTTP /api/:id", code: "500" })
+  })
+
   test("one with no answer is network; one answered under 400, another kind or path is none", () => {
     expect(fromSpan(span({ "url.path": "/api/runs" }, { failed: true }))).toMatchObject({ code: "network" })
     expect(fromSpan(span({ "url.path": "/api/runs" }))).toBeUndefined()

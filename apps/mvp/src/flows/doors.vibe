@@ -1,6 +1,8 @@
-import { Effect, Layer, Schema } from "effect"
+import type { TabChannel } from "@smthrs/platform-browser"
+import { Layer, Schema } from "effect"
 import { answerAskingTab } from "./askingTab"
 import { doorChannel } from "./contract"
+import type { TabRequests } from "./requests"
 
 // The tab's side of run credentials (decision 0017 slice 0, src/flows/credentials.ts): before a root run of a person's
 // flow sends its first request, the engine asks which door it came through, and only the tab that dispatched it answers
@@ -23,11 +25,11 @@ export const DoorAnswer = Schema.Struct({ signedOut: Schema.optional(Schema.Bool
  * tab's sign-in says it (`signedOut`, src/features/auth/store.ts, which src/boot.ts passes where `AuthStore` is); an app
  * without sign-in says nothing of it.
  */
-export const tabDoors = (host: { readonly name: string; readonly signedOut?: Effect.Effect<boolean> }) =>
+export const tabDoors = (host: { readonly name: string; readonly signedOut?: boolean!! }): Layer.Layer<never, never, TabChannel.TabChannel | TabRequests> =>
   Layer.effectDiscard(
     answerAskingTab({
       channel: doorChannel(host.name),
       input: DoorCall,
-      answer: () => Effect.map(host.signedOut ?? Effect.succeed(false), (out) => ({ signedOut: out })),
+      answer: effect () => ({ signedOut: try (host.signedOut ?? succeed(false)) }),
     }),
   )
