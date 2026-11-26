@@ -1,7 +1,10 @@
+import { Channels } from "@smthrs/notifications"
+import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   DEFAULT_CANARY_CHECKS,
   formatCanaryAlert,
+  notifyCanaryFailure,
   runCanary,
   type CanaryFetch,
 } from "./run"
@@ -112,5 +115,73 @@ describe("ops/canary/run", () => {
         results: [{ id: "x", path: "/x", ok: false, status: 502, durationMs: 5 }],
       }),
     ).toBe("Canary FAILED on https://smithers.sh (build abc123): 1 failed [x=502(failed)].")
+  })
+  it("skips healthy or unconfigured alerts and delivers failures through @smthrs/notifications", async () => {
+    const sent: Array<{ readonly dest: unknown; readonly msg: unknown }> = []
+    const okChannels = Layer.succeed(Channels.Channels, {
+      send: (dest, msg) => Effect.sync(() => {
+        sent.push({ dest, msg })
+        return { providerId: "tg-1" }
+      }),
+    })
+    const failingChannels = Layer.succeed(Channels.Channels, {
+      send: () => Effect.fail(new Channels.DeliveryFailed({ channel: "telegram", code: "unreachable", reason: "down" })),
+    })
+    const refusedChannels = Layer.succeed(Channels.Channels, {
+      send: () => Effect.fail(new Channels.DeliveryRefused({ channel: "telegram", code: "rejected", reason: "bad_chat" })),
+    })
+
+    const healthy: Parameters<typeof notifyCanaryFailure>[0] = {
+      origin: "https://smithers.sh",
+      build: "abc123",
+      ok: true,
+      passed: 1,
+      failed: 0,
+      results: [{ id: "root", path: "/", ok: true, status: 200, durationMs: 5 }],
+    }
+    const broken: Parameters<typeof notifyCanaryFailure>[0] = {
+      origin: "https://smithers.sh",
+      build: "abc123",
+      ok: false,
+      passed: 0,
+      failed: 1,
+      results: [{ id: "root", path: "/", ok: false, status: 500, durationMs: 5, reason: "unexpected_status" }],
+    }
+    const brokenUnknownBuild: Parameters<typeof notifyCanaryFailure>[0] = {
+      ...broken,
+      build: null,
+    }
+
+    expect(await Effect.runPromise(notifyCanaryFailure(healthy, "12345").pipe(Effect.provide(okChannels)))).toEqual({
+      delivered: false,
+      skippedReason: "healthy",
+    })
+    expect(await Effect.runPromise(notifyCanaryFailure(broken, "   ").pipe(Effect.provide(okChannels)))).toEqual({
+      delivered: false,
+      skippedReason: "unconfigured",
+    })
+    expect(await Effect.runPromise(notifyCanaryFailure(broken, " 12345 ").pipe(Effect.provide(okChannels)))).toEqual({
+      delivered: true,
+    })
+    expect(await Effect.runPromise(notifyCanaryFailure(brokenUnknownBuild, "12345").pipe(Effect.provide(okChannels)))).toEqual({
+      delivered: true,
+    })
+    expect(sent[0]).toEqual({
+      dest: { _tag: "telegram", chatId: "12345" },
+      msg: {
+        id: "canary-abc123-1",
+        subject: "Canary failed on https://smithers.sh",
+        text: "Canary FAILED on https://smithers.sh (build abc123): 1 failed [root=500(unexpected_status)].",
+      },
+    })
+    expect(sent[1]?.msg).toMatchObject({ id: "canary-unknown-1" })
+    expect(await Effect.runPromise(notifyCanaryFailure(broken, "12345").pipe(Effect.provide(failingChannels)))).toEqual({
+      delivered: false,
+      errorTag: "@smthrs/notifications/DeliveryFailed",
+    })
+    expect(await Effect.runPromise(notifyCanaryFailure(broken, "12345").pipe(Effect.provide(refusedChannels)))).toEqual({
+      delivered: false,
+      errorTag: "@smthrs/notifications/DeliveryRefused",
+    })
   })
 })

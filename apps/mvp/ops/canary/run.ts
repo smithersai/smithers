@@ -1,3 +1,6 @@
+import { Channels } from "@smthrs/notifications"
+import { Effect } from "effect"
+
 // Continuous production canary checks for smithers.sh (M3 release gate).
 // Verifies SPA deep links return HTTP 200 with zero redirects (catching Cloudflare /index.html 308 loops),
 // checks /version.json build identity, verifies all 7 example forks load, and proves unauthenticated
@@ -200,4 +203,49 @@ export function formatCanaryAlert(summary: CanarySummary): string {
     .map((item) => `${item.id}=${item.status ?? "err"}(${item.reason ?? "failed"})`)
     .join(", ")
   return `Canary FAILED on ${summary.origin} (build ${buildLabel}): ${summary.failed} failed [${failedItems}].`
+}
+
+export interface CanaryAlertResult {
+  readonly delivered: boolean
+  readonly skippedReason?: "healthy" | "unconfigured"
+  readonly errorTag?: string
+}
+
+/**
+ * Deliver a canary failure alert through @smthrs/notifications Telegram channel.
+ * Skips silently when the canary is healthy or when no chatId is configured.
+ * Never logs or returns secret credentials.
+ */
+export function notifyCanaryFailure(
+  summary: CanarySummary,
+  chatId: string | undefined,
+): Effect.Effect<CanaryAlertResult, never, Channels.Channels> {
+  if (summary.ok) {
+    return Effect.succeed({ delivered: false, skippedReason: "healthy" })
+  }
+  const target = chatId?.trim()
+  if (!target) {
+    return Effect.succeed({ delivered: false, skippedReason: "unconfigured" })
+  }
+  const message = formatCanaryAlert(summary)
+  return Effect.flatMap(Channels.Channels, (channels) =>
+    channels
+      .send(
+        { _tag: "telegram", chatId: target },
+        {
+          id: `canary-${summary.build ?? "unknown"}-${summary.failed}`,
+          subject: `Canary failed on ${summary.origin}`,
+          text: message,
+        },
+      )
+      .pipe(
+        Effect.as<CanaryAlertResult>({ delivered: true }),
+        Effect.catch((error) =>
+          Effect.succeed<CanaryAlertResult>({
+            delivered: false,
+            errorTag: error._tag,
+          }),
+        ),
+      ),
+  )
 }
