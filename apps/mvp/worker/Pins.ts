@@ -8,7 +8,7 @@ import { boundTo, Sessions } from "./Actor.ts"
 import { branchAccess, canView } from "./branch/Access.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { answerConversation } from "./branch/SandboxCalls.ts"
-import { readBounded } from "./Body.ts"
+import { readBounded } from "./Body.vibe"
 import * as ShapeAccess from "./ShapeAccess.ts"
 
 const Id = Schema.String.check(Schema.isUUID())

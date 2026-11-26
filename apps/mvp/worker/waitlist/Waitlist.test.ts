@@ -4,11 +4,11 @@ import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { WAITLIST_JOIN_ROUTE, WAITLIST_MAX_BODY_BYTES } from "../../src/features/waitlist/contract.ts"
+import { WAITLIST_JOIN_ROUTE, WAITLIST_MAX_BODY_BYTES, WAITLIST_MAX_NOTE_LENGTH, WAITLIST_MAX_URL_LENGTH } from "../../src/features/waitlist/contract.ts"
 import { Sessions, SessionsUnavailable, type Actor } from "../Actor.ts"
 import * as BodyLimits from "../BodyLimits.ts"
-import { routeOf } from "../Throttle.ts"
-import { join, normalizeWaitlistUrl } from "./Waitlist.ts"
+import { routeOf } from "../Throttle.vibe"
+import { handles, join, normalizeWaitlistUrl } from "./Waitlist.vibe"
 
 const sessionOf = (actor: Actor | undefined) =>
   Layer.succeed(
@@ -30,9 +30,19 @@ describe("waitlist/join", () => {
     expect(normalizeWaitlistUrl("https://user:pass@github.com/org/repo")).toBeUndefined()
     expect(normalizeWaitlistUrl("https://github.com/")).toBeUndefined()
     expect(normalizeWaitlistUrl("https://localhost/org/repo")).toBeUndefined()
+    expect(normalizeWaitlistUrl("https://example.com/Group/Sub.git")).toBe("https://example.com/group/sub")
+    expect(normalizeWaitlistUrl("https://example.com/.git")).toBeUndefined()
+    expect(normalizeWaitlistUrl("https://github.com/-org/repo")).toBeUndefined()
+    expect(normalizeWaitlistUrl("https://github.com/org/-repo")).toBeUndefined()
+    expect(normalizeWaitlistUrl("https://:pass@github.com/org/repo")).toBeUndefined()
+    for (const raw of [undefined, "", "x".repeat(WAITLIST_MAX_URL_LENGTH + 1), "https://github.com/org/\u0001repo", "invalid URL"]) {
+      expect(normalizeWaitlistUrl(raw)).toBeUndefined()
+    }
   })
 
   test("has dedicated rate limit and 4 KiB admission body limit", async () => {
+    expect(handles(WAITLIST_JOIN_ROUTE)).toBe(true)
+    expect(handles("/api/other")).toBe(false)
     expect(routeOf(WAITLIST_JOIN_ROUTE)).toBe("waitlist")
     const cap = await Effect.runPromise(BodyLimits.forRequest(WAITLIST_JOIN_ROUTE))
     expect(cap).toBe(WAITLIST_MAX_BODY_BYTES)
@@ -49,7 +59,7 @@ describe("waitlist/join", () => {
 
           const callJoin = async (opts: {
             readonly method?: string
-            readonly body?: string
+            readonly body?: BodyInit
             readonly actor?: Actor
             readonly headers?: Record<string, string>
             readonly sessionsLayer?: Layer.Layer<Sessions>
@@ -114,10 +124,23 @@ describe("waitlist/join", () => {
           )
           const wrongMethod = yield* Effect.promise(() => callJoin({ method: "GET" }))
           const big = yield* Effect.promise(() => callJoin({ body: "x".repeat(5000) }))
-          const bad = yield* Effect.promise(() => callJoin({ body: JSON.stringify({ repoUrl: "javascript:alert(1)" }) }))
+          const invalid = yield* Effect.promise(() => Promise.all([
+            callJoin({ body: new Uint8Array([0xff]) }),
+            callJoin({ body: "{" }),
+            callJoin({ body: '"repo"' }),
+            callJoin({ body: "null" }),
+            callJoin({ body: "[]" }),
+            callJoin({ body: JSON.stringify({ repoUrl: "javascript:alert(1)" }) }),
+            ...[2, "x".repeat(WAITLIST_MAX_NOTE_LENGTH + 1), "one\u0001two"].map((workflowNote) =>
+              callJoin({ body: JSON.stringify({ repoUrl: "https://github.com/acme/widget", workflowNote }) }),
+            ),
+          ]))
+          const refusedDevice = yield* Effect.promise(() =>
+            callJoin({ headers: { "x-smithers-device-person": "refused" } }),
+          )
           const rows = yield* sql<{ readonly requester: string; readonly workflow_note: string }>`
             SELECT requester, workflow_note FROM waitlist_entries ORDER BY position ASC`
-          return { first, second, denied, refusedCred, anon, unavailable, wrongMethod, big, bad, rows }
+          return { first, second, denied, refusedCred, anon, unavailable, wrongMethod, big, invalid, refusedDevice, rows }
         }).pipe(Effect.provide(dbLayer)),
       ),
     )
@@ -139,7 +162,18 @@ describe("waitlist/join", () => {
     expect(result.unavailable.json).toEqual({ error: "unavailable" })
     expect(result.wrongMethod.status).toBe(405)
     expect(result.big.status).toBe(413)
-    expect(result.bad.status).toBe(400)
+    expect(result.refusedDevice).toEqual({ status: 401, json: { error: "authentication" } })
+    expect(result.invalid.map(({ status, json }) => [status, json.error])).toEqual([
+      [400, "invalid_body"],
+      [400, "invalid_json"],
+      [400, "invalid_payload"],
+      [400, "invalid_payload"],
+      [400, "invalid_payload"],
+      [400, "invalid_repo_url"],
+      [400, "invalid_repo_url"],
+      [400, "invalid_repo_url"],
+      [400, "invalid_repo_url"],
+    ])
     expect(result.rows).toEqual([
       { requester: "person:usr_1", workflow_note: ".smithers/workflows/ci.vibe" },
       { requester: "anonymous", workflow_note: "" },

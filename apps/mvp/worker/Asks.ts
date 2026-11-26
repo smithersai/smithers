@@ -3,7 +3,7 @@ import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { MAX_OPTION_LENGTH, MAX_OPTIONS, MAX_PROMPT_LENGTH, MAX_RUN_BODY_BYTES } from "../src/features/status/contract.ts"
-import { readBounded } from "./Body.ts"
+import { readBounded } from "./Body.vibe"
 import { Directory } from "./branch/People.ts"
 import { codeOf } from "./ErrorCode.ts"
 import { FlowStarter } from "./Flows.ts"

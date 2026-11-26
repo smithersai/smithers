@@ -17,7 +17,7 @@ import {
 } from "../../src/features/domains/contract.ts"
 import { repoId } from "../../src/features/repo/contract.ts"
 import { type Actor, refusesPersonOnly, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
+import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"

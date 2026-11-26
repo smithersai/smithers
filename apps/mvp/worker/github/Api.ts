@@ -86,7 +86,7 @@ import {
 import { branchAccess, branchAccessAs, canEdit } from "../branch/Access.ts"
 import { Publish, publishBlocked, Resync, Update } from "../branch/Publish.ts"
 import { type Actor, canAsk, refusesPersonOnly, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
+import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as PersonalStore from "../personal/Store.ts"
 import * as Cron from "../ci/Cron.ts"

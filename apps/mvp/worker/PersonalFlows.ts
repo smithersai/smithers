@@ -21,7 +21,7 @@ import {
 } from "../src/features/flows-ui/schema.ts"
 import { placementOf, SOURCE_PATH } from "../src/features/flows-ui/source.ts"
 import { type Actor, refusesPersonOnly, Sessions } from "./Actor.ts"
-import { readBounded } from "./Body.ts"
+import { readBounded } from "./Body.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 

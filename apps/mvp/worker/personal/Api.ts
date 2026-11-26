@@ -29,7 +29,7 @@ import {
   writeExecutionId,
 } from "../../src/features/personal-model/contract.ts"
 import { refusesPersonOnly, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
+import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import { SecretKeys } from "../secrets/Keys.ts"

@@ -13,7 +13,7 @@ import {
 } from "../../src/features/branch/contract.ts"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import { type Actor, refusesPersonOnly, type Role, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
+import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as Repos from "../Repos.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"

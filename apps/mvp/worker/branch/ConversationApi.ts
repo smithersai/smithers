@@ -10,7 +10,7 @@ import {
   MY_CONVERSATIONS_SHAPE_ROUTE,
 } from "../../src/features/conversations/contract.ts"
 import { boundTo, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
+import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
 import { branchAccess, canView } from "./Access.ts"

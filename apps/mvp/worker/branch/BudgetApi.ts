@@ -10,7 +10,7 @@ import {
 } from "../../src/features/spend/contract.ts"
 import { SandboxLimitsRequest } from "../../src/features/spend/schema.ts"
 import { refusesPersonOnly, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
+import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
 import * as Budget from "./Budget.ts"

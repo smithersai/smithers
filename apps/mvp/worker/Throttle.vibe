@@ -1,4 +1,3 @@
-import { Effect, Metric, Option } from "effect"
 import { type HttpServerRequest, HttpServerResponse } from "effect/http"
 import { GitHub } from "@smthrs/integrations"
 import { TELEMETRY_ROUTE } from "../src/features/chat/contract.ts"
@@ -28,7 +27,7 @@ const RETRY_AFTER_SECONDS = 60
 
 /** One route's limiter: Cloudflare's `RateLimit.limit` in production. */
 export interface Limiter {
-  readonly limit: (options: { readonly key: string }) => Effect.Effect<{ readonly success: boolean }, unknown>
+  readonly limit: (options: { readonly key: string }) => ({ readonly success: boolean })!unknown
 }
 
 const SHAPES = "/api/shapes/"
@@ -104,15 +103,14 @@ export const networkOf = (headers: Readonly<Record<string, string | undefined>>)
  * the address or the network.
  */
 export const make = (limiters: Readonly<Record<Route, Limiter>>) =>
-(request: HttpServerRequest.HttpServerRequest): Effect.Effect<Option.Option<HttpServerResponse.HttpServerResponse>> =>
-  Effect.gen(function* () {
+  effect (request: HttpServerRequest.HttpServerRequest): Option.Option<HttpServerResponse.HttpServerResponse>!! => {
     const route = routeOf(request.url)
     if (route === undefined) return Option.none()
-    const decided = yield* limiters[route].limit({ key: networkOf(request.headers) }).pipe(Effect.result)
+    const decided = try result(limiters[route].limit({ key: networkOf(request.headers) }))
     const outcome = decided._tag === "Failure" ? "error" : decided.success.success ? "admitted" : "limited"
-    yield* Metric.update(Metric.withAttributes(decisions, { route, outcome }), 1)
+    try Metric.update(Metric.withAttributes(decisions, { route, outcome }), 1)
     if (outcome === "error") {
-      yield* Effect.logWarning("chat.throttle").pipe(Effect.annotateLogs({ route, outcome }))
+      try (logWarning("chat.throttle") |> annotateLogs(%, { route, outcome }))
       if (route === "waitlist") {
         return Option.some(
           HttpServerResponse.jsonUnsafe({ code: "unavailable" }, {
@@ -129,4 +127,4 @@ export const make = (limiters: Readonly<Record<Route, Limiter>>) =>
         headers: { "cache-control": "no-store", "retry-after": String(RETRY_AFTER_SECONDS) },
       }),
     )
-  })
+  }

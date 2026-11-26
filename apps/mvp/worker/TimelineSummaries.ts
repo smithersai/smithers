@@ -8,7 +8,7 @@ import { revisionOf, segmentRevision } from "../src/features/timeline/identity.t
 import { checkPlan, exchangeUnits, phaseUnits, type PhaseRow, sealSpans } from "../src/features/timeline/marks.ts"
 import { Sessions } from "./Actor.ts"
 import { branchAccess, canView } from "./branch/Access.ts"
-import { readBounded } from "./Body.ts"
+import { readBounded } from "./Body.vibe"
 
 // The timeline's summaries, once per message for everyone (docs/features/timeline.md#cost). A tab that wants a model
 // summary of a finished answer claims it first; only the claim that inserts the row calls the model, and its summary is

@@ -31,7 +31,7 @@ import {
   TODOS_TABLE,
 } from "../../src/features/todos/contract.ts"
 import { type Actor, refusesPersonOnly, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
+import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { repositoryOf as repositoryNamed } from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"

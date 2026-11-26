@@ -5,7 +5,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { MAX_HOSTED_MODEL_BODY_BYTES } from "../src/features/auth/contract.ts"
 import { type Actor, CurrentActor, Sessions } from "./Actor.ts"
-import { readBounded } from "./Body.ts"
+import { readBounded } from "./Body.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import { NoInvocationKey, NotAllowed } from "./SetModel.ts"
 

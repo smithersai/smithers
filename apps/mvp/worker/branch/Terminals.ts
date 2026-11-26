@@ -13,7 +13,7 @@ import {
 } from "../../src/features/terminal/contract.ts"
 import type { Actor } from "../Actor.ts"
 import { refusesPersonOnly, canAsk, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
+import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import { TerminalOpen } from "../flows/TerminalOpen.ts"

@@ -6,7 +6,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { MAX_PREVIEW_BODY_BYTES, MAX_URL_LENGTH, WEB_MODES } from "../src/features/web/contract.ts"
 import { checkUrl, LOCAL_HOSTS } from "../src/features/web/url.ts"
 import { Sessions } from "./Actor.ts"
-import { readBounded } from "./Body.ts"
+import { readBounded } from "./Body.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import { localHttpConfig, policyFor } from "./Views.ts"
 

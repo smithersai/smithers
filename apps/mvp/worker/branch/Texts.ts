@@ -17,7 +17,7 @@ import {
 } from "../../src/features/coedit/contract.ts"
 import type { Access } from "../../src/features/branch/contract.ts"
 import { type Actor, type Role, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
+import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
 import { askingOf, branchAccess, canEdit, canView, installedOn, isMember, roleOn, type Policy } from "./Access.ts"

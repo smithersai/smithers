@@ -1,8 +1,8 @@
-// worker/Body.ts: every bound `readBounded` holds, on real web requests.
+// worker/Body.vibe: every bound `readBounded` holds, on real web requests.
 import { Effect } from "effect"
 import { HttpServerRequest } from "effect/http"
 import { describe, expect, test } from "vitest"
-import { readBounded } from "./Body.ts"
+import { readBounded } from "./Body.vibe"
 
 const read = (init: RequestInit & { duplex?: "half" }, maxBytes = 8) => {
   let bytes = -1

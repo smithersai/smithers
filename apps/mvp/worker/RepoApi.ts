@@ -28,7 +28,7 @@ import {
   textOf,
 } from "../src/features/repo/contract.ts"
 import { type Actor, canClone, Sessions } from "./Actor.ts"
-import { readBounded } from "./Body.ts"
+import { readBounded } from "./Body.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import { FlowStarter } from "./Flows.ts"
 import { Clone } from "./flows/RepoClone.ts"

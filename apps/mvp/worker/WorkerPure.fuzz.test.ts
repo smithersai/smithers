@@ -23,7 +23,7 @@ import * as SecretKeys from "./secrets/Keys.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 import * as SocketAccess from "./SocketAccess.ts"
 import * as StackAccess from "./stack/Access.ts"
-import * as Throttle from "./Throttle.ts"
+import * as Throttle from "./Throttle.vibe"
 import * as WriteAuthority from "./WriteAuthority.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "1000" : "300"))

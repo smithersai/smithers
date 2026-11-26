@@ -297,7 +297,7 @@ test("the Worker artifact handler returns the same 404 before storage for anonym
   const { HttpEffect } = await import("effect/http")
   const { Sessions } = await import("../Actor.ts")
   const { repositoryOf } = await import("../github/Config.ts")
-  const routes = await import("./ArtifactRoutes.ts")
+  const routes = await import("./ArtifactRoutes.vibe")
   const repository = repositoryOf("smithersai/Smithers-Ops")
   const run = "ci:fixture"
   const bytes = "private artifact"
@@ -330,4 +330,56 @@ test("the Worker artifact handler returns the same 404 before storage for anonym
   const permitted = await fetch(will)
   expect(permitted.status).toBe(200)
   expect(await permitted.text()).toBe(bytes)
+})
+
+test("the Worker artifact handler verifies membership, the run association, and storage", async () => {
+  const { Effect, Option } = await import("effect")
+  const { HttpEffect } = await import("effect/http")
+  const { Sessions } = await import("../Actor.ts")
+  const { repositoryOf } = await import("../github/Config.ts")
+  const routes = await import("./ArtifactRoutes.vibe")
+  const repository = repositoryOf("acme/widgets")
+  const path = "/api/repos/acme/widgets/artifacts/run-1/report.txt"
+  const checkedRepositories: Array<string> = []
+  let reads = 0
+  const handler = HttpEffect.toWebHandler(routes.read(
+    {
+      repository,
+      resolve: (_actor, target) => Effect.sync(() => {
+        checkedRepositories.push(target.id)
+        return { role: target.id === repository.id ? "member" : null, held: Option.none() }
+      }),
+    },
+    policy,
+    (execution) => Effect.succeed({
+      execution: execution === "wrong-run" ? "run-1" : execution,
+      repoId: execution === "wrong-repo" ? "github/other/repo" : repository.id,
+    }),
+    () => Effect.sync(() => {
+      reads++
+      return Option.none()
+    }),
+  ).pipe(Effect.provideService(Sessions, Sessions.of({ resolve: Effect.succeed(Option.some(member)) }))))
+
+  expect(routes.handles(path)).toBe(true)
+  expect(routes.handles("/api/repos/acme/widgets")).toBe(false)
+  const refusals = [
+    ["/api/repos/acme/widgets", "GET"],
+    [path, "POST"],
+    [path.replace("acme", "bad_owner"), "GET"],
+    [path.replace("report.txt", "-invalid"), "GET"],
+    [path.replace("run-1", "%ZZ"), "GET"],
+    [path.replace("run-1", "invalid%20id"), "GET"],
+    [path.replace("widgets", "other"), "GET"],
+    [path.replace("run-1", "wrong-repo"), "GET"],
+    [path.replace("run-1", "wrong-run"), "GET"],
+    [path, "GET"],
+  ] as const
+  for (const [url, method] of refusals) {
+    const response = await handler(new Request("https://smithers.test" + url, { method }))
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual(NOT_FOUND.body)
+  }
+  expect(checkedRepositories).toEqual(["github/acme/other", ...Array(3).fill(repository.id)])
+  expect(reads).toBe(1)
 })

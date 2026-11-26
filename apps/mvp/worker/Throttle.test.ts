@@ -1,4 +1,4 @@
-// The edge throttle on ChatApi's open routes (worker/Throttle.ts, docs/features/chat.md#throttling): which routes it
+// The edge throttle on ChatApi's open routes (worker/Throttle.vibe, docs/features/chat.md#throttling): which routes it
 // covers, the network a request counts against, and what a refusal or a broken limiter does. The limiter is the one
 // seam: Cloudflare's Rate Limiting binding in production, a counting one here.
 import { Effect, Logger, Metric, Option, References } from "effect"
@@ -11,7 +11,7 @@ import {
   ATTACH_TOKENS_ROUTE,
 } from "../src/features/mcp/contract.ts"
 import { WAITLIST_JOIN_ROUTE } from "../src/features/waitlist/contract.ts"
-import * as Throttle from "./Throttle.ts"
+import * as Throttle from "./Throttle.vibe"
 
 /** A limiter that admits `allowed` requests per key, recording each key it was asked about. */
 const counting = (allowed: number) => {

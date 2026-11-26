@@ -7,8 +7,8 @@ import { withRequestRay } from "./RequestRay.ts"
 // ChatApi's program (worker/ChatApi.ts): everything ChatApi serves and hosts. worker/ChatApi.ts loads this module when
 // the Worker first builds its program, not when Cloudflare starts the Worker, so its modules are evaluated then and
 // count against the first request's CPU instead of the Worker's startup limit (docs/infrastructure.md#limits).
-import * as ArtifactRoutes from "./ops/ArtifactRoutes.ts"
-import * as Waitlist from "./waitlist/Waitlist.ts"
+import * as ArtifactRoutes from "./ops/ArtifactRoutes.vibe"
+import * as Waitlist from "./waitlist/Waitlist.vibe"
 import * as PlanTreeRoutes from "./plan/PlanTreeRoutes.ts"
 import * as SshKeyAccess from "./SshKeyAccess.ts"
 import * as Artifacts from "./branch/Artifacts.ts"
@@ -102,7 +102,7 @@ import * as StackApi from "./stack/Api.ts"
 import * as IssueRead from "./stack/IssueRead.ts"
 import * as Stack from "./stack/Stack.ts"
 import * as TodoRuns from "./stack/TodoRuns.ts"
-import * as Throttle from "./Throttle.ts"
+import * as Throttle from "./Throttle.vibe"
 import * as ViewRealm from "./ViewRealm.ts"
 
 /**
@@ -428,7 +428,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const artifactBucket = machines.includes(JobMachines.GATE) ? yield* Cloudflare.R2.ReadWriteBucket(CiArtifacts) : undefined
     const artifactStorage = artifactBucket?.raw as unknown as Effect.Effect<Artifacts.Bucket, never, RuntimeContext> | undefined
     const artifactPolicy = { admins: deploymentAdmins }
-    // The edge throttle on the open routes (worker/Throttle.ts): requests per network per minute, counted per Cloudflare
+    // The edge throttle on the open routes (worker/Throttle.vibe): requests per network per minute, counted per Cloudflare
     // location. Neither number comes from a load test: a busy tab sends about 70 shape requests and 150 telemetry
     // exports a minute, so each lets about 20 busy tabs share a network (docs/features/chat.md#throttling).
     const shapeLimit = yield* Cloudflare.RateLimit("SHAPE_LIMIT", {

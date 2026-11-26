@@ -11,7 +11,7 @@ import {
   MCP_TOKENS_ROUTE,
 } from "../../src/features/mcp/contract.ts"
 import { isRepository, repoId } from "../../src/features/repo/contract.ts"
-import { readBounded } from "../Body.ts"
+import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { McpAuthService, type McpPrincipal } from "./Contract.ts"
 import * as Metrics from "./Metrics.ts"

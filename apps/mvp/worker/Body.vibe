@@ -1,4 +1,3 @@
-import { Data, Effect, Stream } from "effect"
 import type { HttpServerRequest } from "effect/http"
 
 // Route-specific UTF-8 and byte limits (docs/features/chat.md#contract). WriteAdmission first buffers raw write
@@ -7,7 +6,9 @@ import type { HttpServerRequest } from "effect/http"
 export const MAX_PLAN_MCP_BYTES = 65_536
 
 /** Why a body couldn't be read: larger than the route's limit (`too_large`), malformed UTF-8 (`utf8`), or cut off. */
-export class BodyRefused extends Data.TaggedError("BodyRefused")<{ readonly reason: "too_large" | "utf8" | "body" }> {}
+export error BodyRefused {
+  reason: "too_large" | "utf8" | "body"
+}
 
 /**
  * Reads at most `maxBytes` as UTF-8, refusing a declared or streamed body that is larger before buffering it, malformed
@@ -17,9 +18,9 @@ export const readBounded = (
   request: HttpServerRequest.HttpServerRequest,
   maxBytes: number,
   onBytes: (bytes: number) => void = () => {},
-): Effect.Effect<string, BodyRefused> => {
-  if (Number(request.headers["content-length"]) > maxBytes) return Effect.fail(new BodyRefused({ reason: "too_large" }))
-  return Effect.suspend(() => {
+): string!BodyRefused => {
+  if (Number(request.headers["content-length"]) > maxBytes) return fail(new BodyRefused({ reason: "too_large" }))
+  return effect {
     const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false })
     const decode = (chunk?: Uint8Array) =>
       Effect.try({
@@ -28,15 +29,14 @@ export const readBounded = (
       })
     let bytes = 0
     let text = ""
-    return request.stream.pipe(
-      Stream.mapError(() => new BodyRefused({ reason: "body" })),
-      Stream.runForEach((chunk) => {
+    return try ensuring(effect {
+      const stream = Stream.mapError(request.stream, () => new BodyRefused({ reason: "body" }))
+      try Stream.runForEach(stream, effect (chunk) => {
         bytes += chunk.byteLength
-        if (bytes > maxBytes) return Effect.fail(new BodyRefused({ reason: "too_large" }))
-        return Effect.map(decode(chunk), (piece) => void (text += piece))
-      }),
-      Effect.flatMap(() => Effect.map(decode(), (rest) => text + rest)),
-      Effect.ensuring(Effect.sync(() => onBytes(bytes))),
-    )
-  })
+        if (bytes > maxBytes) throw new BodyRefused({ reason: "too_large" })
+        text += try decode(chunk)
+      })
+      return text + (try decode())
+    }, sync(() => onBytes(bytes)))
+  }
 }

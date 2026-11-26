@@ -13,7 +13,7 @@ import {
 } from "../../src/features/sandbox/contract.ts"
 import type { Actor } from "../Actor.ts"
 import { boundTo, canAsk, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
+import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import { SandboxCall } from "../flows/SandboxCall.ts"

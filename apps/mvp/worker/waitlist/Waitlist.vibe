@@ -1,4 +1,3 @@
-import { Effect, Metric, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import {
@@ -9,7 +8,7 @@ import {
   type WaitlistJoinResponse,
 } from "../../src/features/waitlist/contract.ts"
 import { Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
+import { readBounded } from "../Body.vibe"
 
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/
 const GITHUB_SEGMENT = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/
@@ -66,49 +65,43 @@ function normalizeNote(raw: unknown): string | undefined {
 const json = (status: number, body: unknown) =>
   HttpServerResponse.jsonUnsafe(body, { status, headers: NO_STORE })
 
-export const join = Effect.gen(function* () {
-  const request = yield* HttpServerRequest.HttpServerRequest
+const joinRequest = effect {
+  const request = try HttpServerRequest.HttpServerRequest
   if (request.method !== "POST") {
     return HttpServerResponse.empty({ status: 405, headers: { ...NO_STORE, allow: "POST" } })
   }
 
-  const sessions = yield* Sessions
-  const actorOpt = yield* sessions.resolve
+  const sessions = try Sessions
+  const actorOpt = try sessions.resolve
   if (Option.isNone(actorOpt)) {
     const hasAuth = request.headers.authorization !== undefined || request.headers["x-smithers-device-person"] !== undefined
     if (hasAuth) {
-      yield* Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "authentication" }), 1)
+      try Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "authentication" }), 1)
       return json(401, { error: "authentication" })
     }
   }
   if (Option.isSome(actorOpt) && actorOpt.value.act !== undefined) {
-    yield* Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "person_only" }), 1)
+    try Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "person_only" }), 1)
     return json(403, { error: "person_only" })
   }
   const signedIn = Option.isSome(actorOpt)
   const requester = signedIn ? `person:${actorOpt.value.subject.id}` : "anonymous"
 
-  const rawBody = yield* readBounded(request, WAITLIST_MAX_BODY_BYTES).pipe(
-    Effect.match({
-      onFailure: (err) => ({ ok: false as const, reason: err.reason }),
-      onSuccess: (text) => ({ ok: true as const, text }),
-    }),
-  )
-  if (!rawBody.ok) {
-    const status = rawBody.reason === "too_large" ? 413 : 400
-    yield* Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "rejected" }), 1)
-    return json(status, { error: rawBody.reason === "too_large" ? "too_large" : "invalid_body" })
+  const rawBody = try result(readBounded(request, WAITLIST_MAX_BODY_BYTES))
+  if (rawBody._tag === "Failure") {
+    const tooLarge = rawBody.failure.reason === "too_large"
+    try Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "rejected" }), 1)
+    return json(tooLarge ? 413 : 400, { error: tooLarge ? "too_large" : "invalid_body" })
   }
 
-  let payload: unknown
-  try {
-    payload = JSON.parse(rawBody.text)
-  } catch {
-    yield* Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "invalid_json" }), 1)
+  const parsed = try result(Effect.try((): unknown => JSON.parse(rawBody.success)))
+  if (parsed._tag === "Failure") {
+    try Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "invalid_json" }), 1)
     return json(400, { error: "invalid_json" })
   }
+  const payload = parsed.success
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
-    yield* Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "invalid_payload" }), 1)
+    try Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "invalid_payload" }), 1)
     return json(400, { error: "invalid_payload" })
   }
 
@@ -116,13 +109,13 @@ export const join = Effect.gen(function* () {
   const repoUrl = normalizeWaitlistUrl(record["repoUrl"])
   const workflowNote = normalizeNote(record["workflowNote"])
   if (repoUrl === undefined || workflowNote === undefined) {
-    yield* Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "invalid_url" }), 1)
+    try Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "invalid_url" }), 1)
     return json(400, { error: "invalid_repo_url" })
   }
 
   const storedNote = signedIn ? workflowNote : ""
-  const sql = yield* SqlClient.SqlClient
-  const rows = yield* sql<{ readonly position: string | number; readonly normalized_url: string }>`
+  const sql = try SqlClient.SqlClient
+  const rows = try sql<{ readonly position: string | number; readonly normalized_url: string }>`
     INSERT INTO waitlist_entries (normalized_url, requester, workflow_note)
     VALUES (${repoUrl}, ${requester}, ${storedNote})
     ON CONFLICT (normalized_url, requester)
@@ -139,14 +132,13 @@ export const join = Effect.gen(function* () {
     repoUrl: row.normalized_url,
     position: Number(row.position),
   }
-  yield* Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "submitted" }), 1)
+  try Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "submitted" }), 1)
   return json(200, response)
-}).pipe(
-  Effect.catch(() =>
-    Effect.gen(function* () {
-      yield* Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "unavailable" }), 1)
-      return json(503, { error: "unavailable" })
-    }),
-  ),
-  Effect.withSpan("waitlist.join"),
-)
+}
+
+export const join = withSpan(effect {
+  return joinRequest catch effect () => {
+    try Metric.update(Metric.withAttributes(waitlistJoins, { outcome: "unavailable" }), 1)
+    return json(503, { error: "unavailable" })
+  }
+}, "waitlist.join")

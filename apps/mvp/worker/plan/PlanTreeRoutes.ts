@@ -10,7 +10,7 @@ import { repositoryOf } from "../github/Config.ts"
 import type { RepoRoles } from "../github/RepoRoles.ts"
 import * as ArtifactVisibility from "../ops/ArtifactVisibility.ts"
 import { holdsDeploymentAuthority } from "../DeploymentPolicy.vibe"
-import { MAX_PLAN_MCP_BYTES, readBounded } from "../Body.ts"
+import { MAX_PLAN_MCP_BYTES, readBounded } from "../Body.vibe"
 import * as PlanTreeShard from "./PlanTreeShard.ts"
 
 const respond = (body: unknown) => HttpServerResponse.jsonUnsafe(body)

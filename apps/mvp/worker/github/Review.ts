@@ -13,7 +13,7 @@ import {
 } from "../../src/features/pulls/contract.ts"
 import { isRepository, REPOS_ROUTE } from "../../src/features/repo/contract.ts"
 import { refusesPersonOnly, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
+import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { FlowStarter } from "../Flows.ts"
 import { checkRunIdOf, ReviewRun } from "../flows/Checks.ts"

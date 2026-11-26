@@ -18,7 +18,7 @@ import {
 import { type BugReport as Report, ReportRequest } from "../../src/features/bugs/schema.ts"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import { type Actor, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
+import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import { BugReport } from "../flows/BugReport.ts"

@@ -95,7 +95,7 @@ export default defineConfig({
         "worker/SignIn.ts",
         "db/migrations/0005_sign_in.ts",
         // Remote flow starts and request admission (docs/features/remote-flows.md).
-        "worker/Body.ts",
+        "worker/Body.vibe",
         "worker/Flows.ts",
         "db/migrations/0006_answer_parts.ts",
         // ChatApi stops answering: the browser's agent answers (docs/features/agent.md).
@@ -122,7 +122,9 @@ export default defineConfig({
         "worker/Messages.ts",
         "db/migrations/0011_question_askers.ts",
         // The edge throttle on the open routes (docs/features/chat.md#throttling).
-        "worker/Throttle.ts",
+        "worker/Throttle.vibe",
+        "worker/waitlist/Waitlist.vibe",
+        "worker/ops/ArtifactRoutes.vibe",
         // The conversation's views and web pages (docs/features/web-pages.md).
         "worker/Views.ts",
         "worker/WebPreview.ts",

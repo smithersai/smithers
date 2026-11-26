@@ -3,7 +3,7 @@ import { Arbitrary, Effect, Logger, Option, Result, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { describe, expect, it } from "vitest"
 import { checkUrl, siteOf } from "../src/features/web/url.ts"
-import * as Body from "./Body.ts"
+import * as Body from "./Body.vibe"
 import * as BodyLimits from "./BodyLimits.ts"
 import * as WriteAdmission from "./WriteAdmission.ts"
 
