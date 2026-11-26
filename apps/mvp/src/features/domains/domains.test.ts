@@ -19,7 +19,7 @@ import {
 } from "../../test/chatApi"
 import { EngineFaults } from "../../test/faults"
 import { read as readTelemetry } from "../../test/otlp"
-import { Domains } from "./domains"
+import { Domains } from "./domains.vibe"
 import { DomainsStore } from "./store"
 import { DOMAINS_SHAPE_ROUTE } from "./contract"
 import { AuthStore, SESSION } from "../auth/store"

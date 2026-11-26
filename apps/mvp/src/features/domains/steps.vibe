@@ -1,6 +1,6 @@
 import { Interpreter } from "@smthrs/flow"
 import { Effect, Layer, Metric } from "effect"
-import { DomainsClient, type DomainNotTaken } from "./api"
+import { DomainsClient, type DomainNotTaken } from "./api.vibe"
 import { type Refusal, REFUSALS } from "./contract"
 import {
   AddRequestStep,
@@ -39,13 +39,13 @@ export const failureOf = (refused: DomainNotTaken): DomainFailure =>
  * never the hostname, which only the repository's Maintainers see.
  */
 const request = (op: "add" | "remove", payload: DomainRequest) =>
-  Effect.gen(function* () {
-    const client = yield* DomainsClient
-    const answer = yield* Effect.result(op === "add" ? client.add(payload) : client.remove(payload))
+  effect {
+    const client = try DomainsClient
+    const answer = try Effect.result(op === "add" ? client.add(payload) : client.remove(payload))
     const failure = answer._tag === "Failure" ? failureOf(answer.failure) : undefined
     const outcome = failure === undefined ? "sent" : failure._tag === "@smthrs/mvp/domains/DomainRefused" ? "refused" : "unsent"
-    yield* Metric.update(Metric.withAttributes(requests, { op, outcome }), 1)
-    yield* Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("domain.request").pipe(
+    try Metric.update(Metric.withAttributes(requests, { op, outcome }), 1)
+    try Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("domain.request").pipe(
       Effect.annotateLogs({
         op,
         outcome,
@@ -55,8 +55,8 @@ const request = (op: "add" | "remove", payload: DomainRequest) =>
       }),
     )
     if (answer._tag === "Success") return answer.success
-    return yield* Effect.fail(failure!)
-  })
+    throw failure!
+  }
 
 /** `domain/add/request`: one `POST /api/repos/<owner>/<name>/domains`. */
 export const requestAdd = (payload: DomainRequest) => request("add", payload)

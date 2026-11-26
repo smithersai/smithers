@@ -14,7 +14,7 @@ import { CommandsProvider } from "./features/commands/components/CommandsContext
 import { DocsProvider } from "./features/docs/components/DocsContext"
 import type { DocsView } from "./features/docs/docs"
 import { DomainsProvider } from "./features/domains/components/DomainsContext"
-import type { DomainsView } from "./features/domains/domains"
+import type { DomainsView } from "./features/domains/domains.vibe"
 import { FilesProvider } from "./features/files/components/FilesContext"
 import type { FilesView } from "./features/files/files"
 import { FirstRunProvider } from "./features/first-run/components/FirstRunContext"

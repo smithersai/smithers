@@ -6,11 +6,11 @@ import { Cause, Effect, Exit, Layer, Metric } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { mayManageDomains } from "../auth/contract"
-import { DomainNotTaken, DomainsClient } from "./api"
+import { DomainNotTaken, DomainsClient } from "./api.vibe"
 import { REFUSALS } from "./contract"
 import { problemText, refusalText } from "./copy"
 import { DomainRefused, DomainUnsent } from "./flows"
-import { failureOf, requestAdd, requestRemove, requests } from "./steps"
+import { failureOf, requestAdd, requestRemove, requests } from "./steps.vibe"
 
 /** The client over a `fetch` that answers with `respond`, recording each request it was handed. */
 const client = (respond: (request: Request) => Promise<Response>, within?: `${number} millis`) => {
@@ -50,6 +50,16 @@ describe("DomainsClient", () => {
       },
       { method: "DELETE", url: "http://chat.test/api/repos/smithersai/vibelang/domains/vibelang.sh", body: "" },
     ])
+  })
+
+  test("malformed route segments fail during request construction", async () => {
+    const { run, seen } = client(() => json({ hostname: "vibelang.sh" }))
+    const exit = await run((c) => Effect.sync(() => {
+      expect(() => c.add({ ...vibelang, owner: "\ud800" })).toThrow(URIError)
+      expect(() => c.remove({ ...vibelang, hostname: "\ud800" })).toThrow(URIError)
+    }))
+    expect(exit).toEqual(Exit.succeed(undefined))
+    expect(seen).toEqual([])
   })
 
   test("a refusal carries its status and the route's code, or its status alone without one", async () => {

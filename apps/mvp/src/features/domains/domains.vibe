@@ -2,7 +2,7 @@ import { Context, Data, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
 import type { Clipboard } from "../../clipboard.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { add, copy, open, refresh, remove } from "./actions"
+import { add, copy, open, refresh, remove } from "./actions.vibe"
 import { type DomainsConfig, DomainsStore } from "./store"
 
 // Custom domains as a frontend sees them (docs/features/domains.md): live queries to read and plain functions to act,
@@ -42,9 +42,9 @@ export class Domains extends Context.Service<
   static readonly layer = (config: DomainsConfig) =>
     Layer.effect(
       Domains,
-      Effect.gen(function* () {
-        const store = yield* DomainsStore
-        const context = yield* Effect.context<DomainsStore | FlowDispatch | Clipboard>()
+      effect {
+        const store = try DomainsStore
+        const context = try Effect.context<DomainsStore | FlowDispatch | Clipboard>()
         const { runSync: run, runPromise: promise } = runners(context, "domains")
         return Domains.of({
           queries: { page: store.pageState.tanstack, domains: store.listState.tanstack, saves: store.savesState.tanstack },
@@ -53,10 +53,12 @@ export class Domains extends Context.Service<
             add: (hostname) => run(add(hostname)),
             refresh: (hostname) => run(refresh(hostname)),
             remove: (hostname) => run(remove(hostname)),
-            copy: (text) => promise(Effect.flatMap(copy(text), (copied) => (copied ? Effect.void : Effect.fail(new NotCopied())))),
+            copy: (text) => promise(effect {
+              if (!(try copy(text))) throw new NotCopied()
+            }),
           },
         })
-      }),
+      },
     ).pipe(Layer.provideMerge(DomainsStore.layer(config)))
 }
 
