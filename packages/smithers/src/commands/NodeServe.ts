@@ -369,6 +369,8 @@ export const startNode = async (options: NodeOptions) => {
     if (address === null || typeof address === "string") throw new Error("Node failed to bind TCP")
     return {
       origin: `http://127.0.0.1:${address.port}`,
+      /** The node's one engine. In-process CLI, SDK and GUI adapters open their doors on it beside stdio MCP. */
+      engine,
       sync: () => Effect.runPromise(sync),
       serveStdio,
       close: () => new Promise<void>((resolve, reject) => server.close((error) => {
