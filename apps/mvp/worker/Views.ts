@@ -37,7 +37,7 @@ import { readBounded } from "./Body.vibe"
 import { DocsSource } from "./docs/Source.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import * as Messages from "./Messages.ts"
-import * as ShapeAccess from "./ShapeAccess.ts"
+import * as ShapeAccess from "./ShapeAccess.vibe"
 import * as ViewRealm from "./ViewRealm.ts"
 
 // The conversation's views in ChatApi (docs/features/web-pages.md#the-views-table, decision 0004 §8): `POST /api/views`

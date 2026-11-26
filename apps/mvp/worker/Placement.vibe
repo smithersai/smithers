@@ -1,5 +1,3 @@
-import { Config, Option, Schema } from "effect"
-
 // Where the remote flow executions' Durable Objects live (docs/infrastructure.md#placement). Every engine statement is
 // a round trip from an execution's object to Postgres, and the engine's writes hold its schema's one writer lock across
 // theirs, so the round trip sets how many writes the whole deployment makes a second. Cloudflare creates an object near
@@ -7,8 +5,7 @@ import { Config, Option, Schema } from "effect"
 // near San Jose took 80 ms a round trip to Neon in us-east-1, and one hinted `enam` 4 ms.
 
 /** Cloudflare's Durable Object location hints. */
-export const LocationHint = Schema.Literals(["wnam", "enam", "sam", "weur", "eeur", "apac", "oc", "afr", "me"])
-export type LocationHint = typeof LocationHint.Type
+export schema LocationHint = "wnam" | "enam" | "sam" | "weur" | "eeur" | "apac" | "oc" | "afr" | "me"
 
 /**
  * `FLOW_EXECUTION_LOCATION`: the location hint a new execution's Durable Object is created with, such as `enam` for a

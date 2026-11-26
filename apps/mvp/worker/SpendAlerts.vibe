@@ -1,7 +1,7 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
 import { SPEND_ALERT_COLUMNS, SPEND_ALERTS_TABLE } from "../src/features/spend/contract.ts"
-import * as ShapeAccess from "./ShapeAccess.ts"
+import * as ShapeAccess from "./ShapeAccess.vibe"
 
 // Spend alerts in ChatApi (docs/features/spend-alerts.md): Electric's `spend_alerts` shape, which only an Admin's
 // devices sync. `ops/SpendAlert` (worker/flows/SpendAlert.ts) writes the rows; nothing else does.

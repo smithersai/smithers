@@ -12,7 +12,7 @@ import {
 import { boundTo, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
-import * as ShapeAccess from "../ShapeAccess.ts"
+import * as ShapeAccess from "../ShapeAccess.vibe"
 import { branchAccess, canView } from "./Access.ts"
 import * as People from "./ConversationPeople.ts"
 import { answerConversation } from "./SandboxCalls.ts"

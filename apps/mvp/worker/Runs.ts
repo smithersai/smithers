@@ -21,7 +21,7 @@ import { ASK_TASK } from "./flows/Ask.ts"
 import { withAnswerConversation } from "./Messages.ts"
 import * as Notifications from "./Notifications.ts"
 import * as RunCredentials from "./RunCredentials.ts"
-import * as ShapeAccess from "./ShapeAccess.ts"
+import * as ShapeAccess from "./ShapeAccess.vibe"
 
 // Agent status in ChatApi (decision 0015, docs/features/agent-status.md#the-routes): the `runs` rows a run's own steps
 // report its status to, the answer a person gives its open question, and Electric's `runs` shape.

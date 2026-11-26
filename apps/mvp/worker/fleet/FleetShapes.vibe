@@ -19,7 +19,7 @@ import {
   PROVIDER_ACCOUNT_COLUMNS,
 } from "../../src/features/fleet/globalContract.ts"
 import * as DeploymentPolicy from "../DeploymentPolicy.vibe"
-import * as ShapeAccess from "../ShapeAccess.ts"
+import * as ShapeAccess from "../ShapeAccess.vibe"
 
 export const nodeShapes = Metric.counter("smithers_fleet_node_shape_requests", { incremental: true })
 export const sessionShapes = Metric.counter("smithers_fleet_session_shape_requests", { incremental: true })

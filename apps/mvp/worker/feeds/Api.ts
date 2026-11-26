@@ -29,7 +29,7 @@ import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { repositoryOf } from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
-import * as ShapeAccess from "../ShapeAccess.ts"
+import * as ShapeAccess from "../ShapeAccess.vibe"
 
 // Repository feeds' routes (decision 0128, docs/features/feeds.md):
 //

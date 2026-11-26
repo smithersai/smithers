@@ -23,7 +23,7 @@ import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import { BugReport } from "../flows/BugReport.ts"
 import { bearerOf } from "../RunCredentials.ts"
-import * as ShapeAccess from "../ShapeAccess.ts"
+import * as ShapeAccess from "../ShapeAccess.vibe"
 
 // Bug reports' routes (docs/features/bugs.md).
 //

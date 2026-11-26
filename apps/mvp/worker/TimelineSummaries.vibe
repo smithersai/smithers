@@ -1,6 +1,4 @@
 import { MAX_SUMMARY_BODY_BYTES } from "../src/features/timeline/contract.ts"
-import { Clock, Config, Effect, Metric, Option, Schema } from "effect"
-import type { Layer } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { MARK_SUMMARY_LENGTH, MOST_COVERED, PHASES_FLOW, SEGMENT_SPANS, SUMMARIZE_FLOW, SUMMARY_DAILY_CAP, SUMMARY_REASONS, TIMELINE_SUMMARIES_ROUTE, TITLE_LENGTH } from "../src/features/timeline/contract.ts"
@@ -67,47 +65,48 @@ export const dailyCap = (unset: number = SUMMARY_DAILY_CAP) =>
 /** Each request's outcome: `claimed`, `resumed`, `taken`, `capped`, `recorded`, `unclaimed`, or a refusal's code. */
 export const claims = Metric.counter("smithers_timeline_summary_claims", { incremental: true })
 
-export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, unsetCap?: number) => Effect.gen(function* () {
-  const cap = yield* dailyCap(unsetCap)
-  const write = Effect.gen(function* () {
-    const started = yield* Clock.currentTimeMillis
+export const make = effect <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, unsetCap?: number) => {
+  const cap = try dailyCap(unsetCap)
+  const write = withSpan(effect {
+    const started = try Clock.currentTimeMillis
     let reason: string | undefined
-    const { response, outcome } = yield* Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
+    const { response, outcome } = try catchCause(effect {
+      const request = try HttpServerRequest.HttpServerRequest
       if (request.method !== "POST") return { response: HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } }), outcome: "method" }
-      const actor = yield* (yield* Sessions).resolve
+      const sessions = try Sessions
+      const actor = try sessions.resolve
       if (Option.isNone(actor)) return answer(401, { code: "signed_out" })
       // A person's summaries: their own session, or the summary flow acting for them; never an agent or another run.
       const act = actor.value.act
       const flow = act?.kind === "flow" ? act.chain?.at(-1) : undefined
       if (act !== undefined && flow !== SUMMARIZE_FLOW && flow !== PHASES_FLOW) return answer(403, { code: "person_only" })
-      const body = yield* readBounded(request, MAX_SUMMARY_BODY_BYTES).pipe(Effect.option)
-      const parsed = Option.isNone(body) ? Option.none() : yield* decode(body.value).pipe(Effect.option)
+      const body = try option(readBounded(request, MAX_SUMMARY_BODY_BYTES))
+      const parsed = Option.isNone(body) ? Option.none() : try option(decode(body.value))
       if (Option.isNone(parsed)) return answer(400, { code: "invalid_request" })
       const p = parsed.value
       if (p.op === "claim") reason = p.reason
       const person = actor.value.subject.id
-      return yield* Effect.gen(function* () {
-        const sql = yield* SqlClient.SqlClient
+      provide database {
+        const sql = try SqlClient.SqlClient
         const messageId = p.messageId.toLowerCase()
         /** The conversation's items at `level`, in order, as the server holds them. */
         const unitsOf = (conversationId: string, level: 1 | 2) => sql<PhaseRow & { readonly arc: string | null }>`
           SELECT id, role, status, '' AS text, question_id AS "questionId", phase, arc
           FROM messages WHERE conversation_id = ${conversationId} AND role IN ('user', 'assistant') ORDER BY position`.pipe(
-          Effect.map(rows => level === 1 ? exchangeUnits(rows) : phaseUnits(rows)),
+          map(rows => level === 1 ? exchangeUnits(rows) : phaseUnits(rows)),
         )
-        const [message] = yield* sql<{ readonly conversationId: string; readonly finished: boolean; readonly position: string }>`
+        const [message] = try sql<{ readonly conversationId: string; readonly finished: boolean; readonly position: string }>`
           SELECT conversation_id AS "conversationId", role IN ('user', 'assistant') AND status = 'done' AS finished, position
           FROM messages WHERE id = ${messageId}`
         // Only someone who may view the conversation summarizes its messages; anyone else learns nothing of them.
         const access = message === undefined
           ? undefined
-          : yield* branchAccess(actor, message.conversationId, "conversation")
-        if (message === undefined || access === undefined || !canView(access.access)) return answer(404, { code: "not_found" })
+          : try branchAccess(actor, message.conversationId, "conversation")
+        if (message === undefined || access === undefined || !(try sync(() => canView(access.access)))) return answer(404, { code: "not_found" })
         if (p.op === "record") {
-          return yield* sql.withTransaction(Effect.gen(function* () {
+          return try sql.withTransaction(effect {
             // Lock both the claim and its content: concurrent records and edits must agree on one revision.
-            const [claim] = yield* sql<{ readonly id: string; readonly role: string; readonly text: string; readonly recorded: boolean }>`
+            const [claim] = try sql<{ readonly id: string; readonly role: string; readonly text: string; readonly recorded: boolean }>`
               SELECT m.id, m.role, m.text, c.recorded_at IS NOT NULL AS recorded
               FROM timeline_summaries c JOIN messages m ON m.id = c.message_id
               WHERE c.message_id = ${messageId} AND c.revision = ${p.revision}
@@ -116,77 +115,79 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, uns
             if (claim === undefined) return answer(409, { code: "unclaimed" })
             // A retained receipt acknowledges the old record without replacing its text or a newer summary.
             if (claim.recorded) return answer(200, { recorded: true }, "recorded")
-            if (p.revision !== revisionOf(claim)) return answer(409, { code: "stale" })
-            yield* sql`UPDATE messages SET summary = ${p.summary}, summary_revision = ${p.revision} WHERE id = ${messageId}`
-            yield* sql`
+            if (p.revision !== (try sync(() => revisionOf(claim)))) return answer(409, { code: "stale" })
+            try sql`UPDATE messages SET summary = ${p.summary}, summary_revision = ${p.revision} WHERE id = ${messageId}`
+            try sql`
               UPDATE timeline_summaries SET recorded_at = now()
               WHERE message_id = ${messageId} AND revision = ${p.revision}`
             return answer(200, { recorded: true }, "recorded")
-          }))
+          })
         }
         if (p.op === "release") {
-          yield* sql`
+          try sql`
             UPDATE timeline_summaries SET released_at = now()
             WHERE message_id = ${messageId} AND revision = ${p.revision} AND person_id = ${person} AND owner = ${p.owner} AND recorded_at IS NULL`
           return answer(200, { released: true }, "released")
         }
         if (p.op === "release_spans") {
-          yield* sql`
+          try sql`
             UPDATE timeline_phase_claims SET released_at = now()
             WHERE anchor_id = ${messageId} AND level = ${p.level} AND revision = ${p.revision} AND person_id = ${person} AND owner = ${p.owner} AND recorded_at IS NULL`
           return answer(200, { released: true }, "released")
         }
         if (p.op === "record_spans") {
           const column = sql(p.level === 1 ? "phase" : "arc")
-          if (p.revision !== segmentRevision(messageId, p.level, p.read)) return answer(400, { code: "invalid_request" })
-          return yield* sql.withTransaction(Effect.gen(function* () {
-            yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${`timeline:${message.conversationId}:${p.level}`}, 0))`
-            const [claim] = yield* sql<{ readonly recorded: boolean }>`
+          if (p.revision !== (try sync(() => segmentRevision(messageId, p.level, p.read)))) return answer(400, { code: "invalid_request" })
+          return try sql.withTransaction(effect {
+            try sql`SELECT pg_advisory_xact_lock(hashtextextended(${`timeline:${message.conversationId}:${p.level}`}, 0))`
+            const [claim] = try sql<{ readonly recorded: boolean }>`
               SELECT recorded_at IS NOT NULL AS recorded FROM timeline_phase_claims
               WHERE anchor_id = ${messageId} AND level = ${p.level} AND revision = ${p.revision} AND person_id = ${person} AND owner = ${p.owner} AND released_at IS NULL
               FOR UPDATE`
             if (claim === undefined) return answer(409, { code: "unclaimed" })
             // A replay of what was recorded: it stands.
             if (claim.recorded) return answer(200, { recorded: true }, "recorded")
-            const ids = checkPlan(yield* unitsOf(message.conversationId, p.level), messageId, p.read)
+            const units = try unitsOf(message.conversationId, p.level)
+            const ids = try sync(() => checkPlan(units, messageId, p.read))
             if (typeof ids === "string") return answer(409, { code: ids })
-            const marks = sealSpans(p.spans.map(span => ({ ...span, id: span.id.toLowerCase() })), ids)
+            const marks = try sync(() => sealSpans(p.spans.map(span => ({ ...span, id: span.id.toLowerCase() })), ids))
             if (marks === undefined) return answer(400, { code: "invalid_request" })
             // Everything from the anchor on is open: `checkPlan` says so under the lock.
-            yield* sql`
+            try sql`
               UPDATE messages SET ${column} = NULL
               WHERE conversation_id = ${message.conversationId} AND position >= ${message.position} AND ${column} IS NOT NULL`
-            for (const { id, mark } of marks) yield* sql`UPDATE messages SET ${column} = ${mark} WHERE id = ${id}`
-            yield* sql`
+            for (const { id, mark } of marks) try sql`UPDATE messages SET ${column} = ${mark} WHERE id = ${id}`
+            try sql`
               UPDATE timeline_phase_claims SET recorded_at = now()
               WHERE anchor_id = ${messageId} AND level = ${p.level} AND revision = ${p.revision}`
             return answer(200, { recorded: true }, "recorded")
-          }))
+          })
         }
         if (!message.finished) return answer(409, { code: "unfinished" })
         if (p.op === "claim_spans") {
-          if (p.revision !== segmentRevision(messageId, p.level, p.read)) return answer(400, { code: "invalid_request" })
+          if (p.revision !== (try sync(() => segmentRevision(messageId, p.level, p.read)))) return answer(400, { code: "invalid_request" })
           // No call is spent on a plan the record would refuse.
-          const ids = checkPlan(yield* unitsOf(message.conversationId, p.level), messageId, p.read)
+          const units = try unitsOf(message.conversationId, p.level)
+          const ids = try sync(() => checkPlan(units, messageId, p.read))
           if (typeof ids === "string") return answer(409, { code: ids })
         }
-        return yield* sql.withTransaction(Effect.gen(function* () {
-          yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${`timeline:cap:${person}`}, 0))`
+        return try sql.withTransaction(effect {
+          try sql`SELECT pg_advisory_xact_lock(hashtextextended(${`timeline:cap:${person}`}, 0))`
           // The run that holds it, back after a crash: it resumes what it claimed, and it costs nothing more.
           const [held] = p.op === "claim_spans"
-            ? yield* sql`
+            ? try sql`
                 SELECT 1 AS held FROM timeline_phase_claims
                 WHERE anchor_id = ${messageId} AND level = ${p.level} AND revision = ${p.revision} AND person_id = ${person} AND owner = ${p.owner} AND released_at IS NULL`
-            : yield* sql`
+            : try sql`
                 SELECT 1 AS held FROM timeline_summaries
                 WHERE message_id = ${messageId} AND revision = ${p.revision} AND person_id = ${person} AND owner = ${p.owner} AND released_at IS NULL`
           if (held !== undefined) return answer(200, { claimed: true }, "resumed")
           // Every attempt counts, released or not: an outage must not re-claim the same messages for ever.
-          const [spent] = yield* sql<{ readonly n: number }>`
+          const [spent] = try sql<{ readonly n: number }>`
             SELECT count(*)::int AS n FROM timeline_attempts WHERE person_id = ${person} AND claimed_at > now() - interval '1 day'`
           if (spent!.n >= cap) return answer(429, { code: "capped" })
           const [claimed] = p.op === "claim_spans"
-            ? yield* sql`
+            ? try sql`
                 INSERT INTO timeline_phase_claims (anchor_id, level, revision, person_id, owner)
                 VALUES (${messageId}, ${p.level}, ${p.revision}, ${person}, ${p.owner})
                 ON CONFLICT (anchor_id, level, revision) DO UPDATE
@@ -194,7 +195,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, uns
                   WHERE timeline_phase_claims.recorded_at IS NULL
                     AND (timeline_phase_claims.released_at IS NOT NULL OR timeline_phase_claims.claimed_at < now() - interval '10 minutes')
                 RETURNING anchor_id`
-            : yield* sql`
+            : try sql`
                 INSERT INTO timeline_summaries (message_id, revision, person_id, reason, owner)
                 VALUES (${messageId}, ${p.revision}, ${person}, ${p.reason}, ${p.owner})
                 ON CONFLICT (message_id, revision) DO UPDATE
@@ -204,20 +205,20 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, uns
                 RETURNING message_id`
           if (claimed === undefined) return answer(200, { claimed: false }, "taken")
           const kind = p.op === "claim_spans" ? "spans" : "summary"
-          yield* sql`
+          try sql`
             INSERT INTO timeline_attempts (person_id, kind, message_id, revision, owner)
             VALUES (${person}, ${kind}, ${messageId}, ${p.revision}, ${p.owner})`
           return answer(200, { claimed: true }, "claimed")
-        }))
-      }).pipe(Effect.provide(database))
-    }).pipe(Effect.catchCause(() => Effect.succeed(answer(503, { code: "unavailable" }))))
-    yield* Metric.update(Metric.withAttributes(claims, { outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ status: response.status, outcome })
-    yield* Effect.logInfo("timeline.summary.claim").pipe(Effect.annotateLogs({
-      status: response.status, outcome, durationMs: (yield* Clock.currentTimeMillis) - started,
+        })
+      }
+    }, () => succeed(answer(503, { code: "unavailable" })))
+    try Metric.update(Metric.withAttributes(claims, { outcome }), 1)
+    try annotateCurrentSpan({ status: response.status, outcome })
+    try annotateLogs(logInfo("timeline.summary.claim"), {
+      status: response.status, outcome, durationMs: (try Clock.currentTimeMillis) - started,
       ...(reason === undefined ? {} : { reason }),
-    }))
+    })
     return response
-  }).pipe(Effect.withSpan("timeline.summary.claim", { kind: "server" }))
+  }, "timeline.summary.claim", { kind: "server" })
   return { route: TIMELINE_SUMMARIES_ROUTE, write }
-})
+}

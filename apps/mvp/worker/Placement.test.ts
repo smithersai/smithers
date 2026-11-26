@@ -1,6 +1,6 @@
 import { ConfigProvider, Effect, Option } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Placement from "./Placement.ts"
+import * as Placement from "./Placement.vibe"
 
 /** A namespace that answers each name with the options it was reached with. */
 const recording: Placement.Namespace<{ readonly name: string; readonly options: unknown }> = {

@@ -27,7 +27,7 @@ import { repositoryOf } from "./github/Config.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import * as Notifications from "./Notifications.ts"
 import * as RepoAbout from "./RepoAbout.ts"
-import * as TimelineSummaries from "./TimelineSummaries.ts"
+import * as TimelineSummaries from "./TimelineSummaries.vibe"
 
 const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")
 const execs = Math.max(20, Math.min(Math.ceil(baseExecs / 3), 50))

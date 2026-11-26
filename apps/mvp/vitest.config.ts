@@ -60,6 +60,7 @@ export default defineConfig({
         // Remote flows (docs/features/remote-flows.md). worker/Executions.ts, the Alchemy Durable Object declaration,
         // runs only under Alchemy's bundle, so the workerd test proves it through ExecutionHost.ts instead.
         "worker/ExecutionHost.ts",
+        "worker/Placement.vibe",
         "worker/DurableObjectFailure.vibe",
         "worker/index.ts",
         // Injected development-host fault boundaries used by old and new browser builds.
@@ -72,7 +73,7 @@ export default defineConfig({
         "worker/Pins.vibe",
         "db/migrations/0054_message_pins.ts",
         // The timeline's summaries, once per message (docs/features/timeline.md#cost).
-        "worker/TimelineSummaries.ts",
+        "worker/TimelineSummaries.vibe",
         "db/migrations/0066_timeline_summaries.ts",
         "db/migrations/0075_timeline_phases.ts",
         "worker/Actor.ts",
@@ -112,6 +113,7 @@ export default defineConfig({
         "db/migrations/0133_byoa_cutover.ts",
         // Repositories: RepoApi, cloning into Code Storage and its spend (docs/features/repo.md).
         "worker/RepoApi.ts",
+        "worker/MirrorRefresh.vibe",
         "worker/RepoConfig.vibe",
         "worker/RepoMetrics.vibe",
         "worker/RepoReads.ts",
@@ -246,7 +248,7 @@ export default defineConfig({
         // An overloaded Electric object answered 503, and the gateway's record of each request (docs/infrastructure.md#electric).
         "infra/ElectricRelay.ts",
         // A shape request the server can't decide is refused, never narrowed (docs/features/chat.md).
-        "worker/ShapeAccess.ts",
+        "worker/ShapeAccess.vibe",
         // The agent evals' cases, checks, judge and report (docs/features/agent-evals.md). evals/session.ts and
         // evals/agent.eval.ts are the program, which `pnpm eval` runs against the real model.
         "evals/cases.ts",

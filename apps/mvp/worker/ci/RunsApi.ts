@@ -15,7 +15,7 @@ import { type GitHubApp, type Repository, repositoryOf } from "../github/Config.
 import * as RepoRoles from "../github/RepoRoles.ts"
 import * as Tokens from "../github/Tokens.ts"
 import * as RepoRuns from "../RepoRuns.ts"
-import * as ShapeAccess from "../ShapeAccess.ts"
+import * as ShapeAccess from "../ShapeAccess.vibe"
 import { stillAdmitted } from "../RunAuthority.ts"
 import { mayRead } from "../stack/Access.ts"
 import * as Realm from "./Realm.ts"

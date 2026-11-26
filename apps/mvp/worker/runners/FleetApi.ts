@@ -14,7 +14,7 @@ import { canAsk } from "../Actor.ts"
 import { mayMaintain } from "../feeds/Api.ts"
 import { repositoryOf as repositoryNamed } from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
-import * as ShapeAccess from "../ShapeAccess.ts"
+import * as ShapeAccess from "../ShapeAccess.vibe"
 
 // The fleet's shapes (decision 0143, docs/features/fleet.md#the-shapes): one Electric shape per repository for its
 // runs, and one for its machines, so fifty runs are fifty rows of one shape, never fifty inspectors.

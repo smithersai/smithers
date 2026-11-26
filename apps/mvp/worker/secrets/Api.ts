@@ -18,7 +18,7 @@ import { type Actor, canAsk, refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
-import * as ShapeAccess from "../ShapeAccess.ts"
+import * as ShapeAccess from "../ShapeAccess.vibe"
 import { SecretKeys } from "./Keys.ts"
 import * as SecretFlows from "./SecretFlows.ts"
 

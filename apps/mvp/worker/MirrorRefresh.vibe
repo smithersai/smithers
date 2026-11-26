@@ -1,13 +1,12 @@
-import { Clock, Effect, Option, Schema } from "effect"
 import { isRepository, repoId } from "../src/features/repo/contract.ts"
 import { FlowStarter } from "./Flows.ts"
 import { Refresh } from "./flows/RepoRefresh.ts"
 
-const Push = Schema.Struct({
-  repository: Schema.Struct({ full_name: Schema.String }),
-  installation: Schema.Struct({ id: Schema.Number }),
-  ref: Schema.String,
-})
+schema Push {
+  readonly repository: { readonly full_name: string }
+  readonly installation: { readonly id: number }
+  readonly ref: string
+}
 const decodePush = Schema.decodeUnknownOption(Push)
 
 /** Called only after signature verification. Deletions also refresh the mirror's refs. */
@@ -22,10 +21,12 @@ export const pushRepository = (event: string, payload: unknown) => {
 }
 
 /** One durable execution per delivery, or per minute for read/explicit refresh requests. No detached work. */
-export const request = (owner: string, name: string, delivery?: string) => Effect.gen(function* () {
-  const key = delivery === undefined ? `read:${Math.floor((yield* Clock.currentTimeMillis) / 60_000)}` : `push:${delivery}`
-  yield* (yield* FlowStarter).start(Refresh, {
-    executionId: `repo-refresh:${repoId(owner, name)}:${key}`,
+export const request = effect (owner: string, name: string, delivery?: string) => {
+  const key = delivery === undefined ? `read:${Math.floor((try Clock.currentTimeMillis) / 60_000)}` : `push:${delivery}`
+  const starter = try FlowStarter
+  const repositoryId = try sync(() => repoId(owner, name))
+  try starter.start(Refresh, {
+    executionId: `repo-refresh:${repositoryId}:${key}`,
     payload: { owner: owner.toLowerCase(), name: name.toLowerCase() },
   })
-})
+}
