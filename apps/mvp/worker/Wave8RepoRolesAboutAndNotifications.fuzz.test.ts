@@ -941,32 +941,31 @@ describe("Wave8: worker/about/Store.ts, about/GitHubRead.ts & worker/RepoAbout.t
 
 describe("Wave8: worker/Notifications.ts & worker/github/RepoRoles.ts deep", () => {
   it("fuzzes Notifications.make watch, ack, shape, foldRun, and recordRepoEvent", async () => {
-    const modeArb = Arbitrary.schema(
-      Schema.Literals([
-        "watch_405",
-        "watch_401",
-        "watch_too_large",
-        "watch_bad_json",
-        "watch_branch_404",
-        "watch_branch_ok",
-        "watch_repo_ok",
-        "ack_405",
-        "ack_401",
-        "ack_bad_json",
-        "ack_404",
-        "ack_ok",
-        "ack_existing",
-        "shape_signed_out",
-        "shape_member_reused_and_unresolved",
-        "shape_guest_mine_only",
-        "fold_missing_run",
-        "fold_run_needs_you_with_watchers",
-        "fold_run_done",
-        "record_repo_event",
-      ]),
-    )
+    const modes = [
+      "watch_405",
+      "watch_401",
+      "watch_too_large",
+      "watch_bad_json",
+      "watch_branch_404",
+      "watch_branch_ok",
+      "watch_repo_ok",
+      "ack_405",
+      "ack_401",
+      "ack_bad_json",
+      "ack_404",
+      "ack_ok",
+      "ack_existing",
+      "shape_signed_out",
+      "shape_member_reused_and_unresolved",
+      "shape_guest_mine_only",
+      "fold_missing_run",
+      "fold_run_needs_you_with_watchers",
+      "fold_run_done",
+      "record_repo_event",
+    ] as const
+    const modeArb = Arbitrary.schema(Schema.Literals(modes))
 
-    await holds(modeArb, Math.max(execs * 2, 48), (mode) =>
+    const exercise = (mode: (typeof modes)[number]) =>
       Effect.gen(function* () {
         const db = makeSqlLayer((q) => {
           if (q.includes("FROM branches") && q.includes("conversations")) {
@@ -977,8 +976,9 @@ describe("Wave8: worker/Notifications.ts & worker/github/RepoRoles.ts deep", () 
             if (mode === "ack_ok") return [{ txid: "71" }]
             return []
           }
-          if (q.includes("SELECT version, read_at IS NOT NULL")) {
-            return mode === "ack_existing" ? [{ version: 1, read: true, archived: false }] : []
+          // The existence check `applyAck` asks when its UPDATE changed nothing.
+          if (q.includes("SELECT 1 FROM notifications WHERE recipient")) {
+            return mode === "ack_existing" ? [{ "?column?": 1 }] : []
           }
           if (q.includes("FROM (SELECT repo_id AS \"repoId\" FROM notifications")) {
             return [
@@ -1124,8 +1124,12 @@ describe("Wave8: worker/Notifications.ts & worker/github/RepoRoles.ts deep", () 
             mode === "ack_405" ? 405 : mode === "ack_401" ? 401 : mode === "ack_bad_json" ? 400 : mode === "ack_404" ? 404 : 200,
           )
         }
-      }),
-    )
+      })
+
+    await holds(modeArb, Math.max(execs * 2, 48), exercise)
+    // Every mode once as well: a seed that never samples a mode leaves its mock unchecked. Seed 1 found `ack_existing`
+    // answering a query `applyAck` never sends, so the ack of an already-read notification came back 404, not 200.
+    for (const mode of modes) await Effect.runPromise(exercise(mode))
   }, 60_000)
 
   it("fuzzes RepoRoles makeWith, resolve, workRole, workUninstalled, publicCopy, claimRead, remember, holds", async () => {
