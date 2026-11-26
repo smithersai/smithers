@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
 import * as Agents from "./Agents.ts"
-import * as Codex from "./Codex.ts"
+import * as Codex from "./Codex.vibe"
 
 const home = mkdtempSync(join(tmpdir(), "smthrs-agents-"))
 afterAll(() => rmSync(home, { recursive: true, force: true }))

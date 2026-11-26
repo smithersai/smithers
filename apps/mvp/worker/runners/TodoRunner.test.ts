@@ -13,7 +13,7 @@ import { Notification, NotificationEvent, NotificationQueue, SteerPayload } from
 import { FlowRuntime, type Flow } from "@smthrs/flow"
 import { Scrub } from "@smthrs/secrets"
 import { ConfigProvider, Context, Effect, Exit, Layer, Option, Redacted, Scope, Stream } from "effect"
-import * as ModelFlows from "../personal/ModelFlows.ts"
+import * as ModelFlows from "../personal/ModelFlows.vibe"
 import { SqlClient } from "effect/sql"
 import { FetchHttpClient, HttpEffect, HttpServerResponse } from "effect/http"
 import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process"

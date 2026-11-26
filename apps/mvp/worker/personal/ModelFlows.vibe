@@ -6,8 +6,8 @@ import type { SqlClient } from "effect/sql"
 import { CONNECTION_KINDS, PROTOCOLS } from "../../src/features/personal-model/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { SecretKeys } from "../secrets/Keys.vibe"
-import * as Codex from "./Codex.ts"
-import * as Store from "./Store.ts"
+import * as Codex from "./Codex.vibe"
+import * as Store from "./Store.vibe"
 
 // `model/Put` and `model/Delete` (decisions 0096, 0107 and 0132, docs/features/personal-model.md#saving): a person saves
 // or removes their own connections. The route admits the write and seals each credential typed before it starts the flow, so the payload, and with it the journal, holds only ciphertext. Each flow is one durable step that writes the row and records the change once,
@@ -195,13 +195,11 @@ const recorded = <A extends { readonly change: string }, E, R>(
   )
 
 /** A database failure as the step's retried failure, recorded by its code. */
-const unavailable = (error: unknown) =>
-  Effect.andThen(
-    Effect.logWarning("personal_model.write").pipe(
-      Effect.annotateLogs({ outcome: "unavailable", errorCode: codeOf(error) }),
-    ),
-    Effect.fail(new StoreUnavailable()),
-  )
+const unavailable = effect (error: unknown) => {
+  const errorCode = try Effect.orDie(Effect.try(() => codeOf(error)))
+  try Effect.logWarning("personal_model.write").pipe(Effect.annotateLogs({ outcome: "unavailable", errorCode }))
+  throw new StoreUnavailable()
+}
 
 /** The invocation key of the running step; a step without one is a defect. */
 const invocationKey = Effect.flatMap(
@@ -212,10 +210,10 @@ const invocationKey = Effect.flatMap(
 /** The steps over `database`, each writing and recording once under its invocation key; none sees a key. */
 export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
   const store = (write: typeof Store_.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const key = yield* invocationKey
+    (effect {
+      const key = try invocationKey
       if (write.authority === undefined) return { change: "stale" as const }
-      const change = yield* Store.put({
+      const change = try Store.put({
         authority: write.authority,
         personId: write.personId,
         connections: write.connections,
@@ -226,10 +224,10 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
     }).pipe((effect) => recorded("put", effect))
 
   const erase = (write: typeof Erase.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const key = yield* invocationKey
+    (effect {
+      const key = try invocationKey
       if (write.authority === undefined) return { change: "stale" as const }
-      const change = yield* Store.remove({ authority: write.authority, personId: write.personId, invocationKey: key }).pipe(
+      const change = try Store.remove({ authority: write.authority, personId: write.personId, invocationKey: key }).pipe(
         Effect.provide(database),
         Effect.catch(unavailable),
       )
@@ -241,35 +239,35 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
 
 /** The link's polling step, opening and sealing under `SecretKeys`. */
 export const pollStep = (write: typeof Poll.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const keys = yield* SecretKeys
-      if (Option.isNone(keys)) return yield* new LinkRefused({ status: null })
+    effect {
+      const keys = try SecretKeys
+      if (Option.isNone(keys)) throw new LinkRefused({ status: null })
       const { cipher, version } = keys.value
-      const opened = yield* cipher.open(
+      const opened = try cipher.open(
         { ciphertext: write.ciphertext, nonce: write.nonce },
         { id: `person:${write.personId}`, name: "model-link", version: write.keyVersion },
       ).pipe(Effect.mapError(() => new LinkRefused({ status: null })))
-      const device = yield* decodeDevice(Redacted.value(opened)).pipe(Effect.mapError(() => new LinkRefused({ status: null })))
-      const now = yield* Clock.currentTimeMillis
-      const credential = yield* Codex.poll(device.deviceAuthId, device.userCode, now).pipe(
+      const device = try decodeDevice(Redacted.value(opened)).pipe(Effect.mapError(() => new LinkRefused({ status: null })))
+      const now = try Clock.currentTimeMillis
+      const credential = try Codex.poll(device.deviceAuthId, device.userCode, now).pipe(
         Effect.mapError((failure) =>
           failure.reason === "refused" ? new LinkRefused({ status: failure.status }) : new LinkPending()
         ),
       )
-      const sealed = yield* cipher.seal(
+      const sealed = try cipher.seal(
         Redacted.make(JSON.stringify(credential)),
         { id: `person:${write.personId}`, name: "model", version },
       ).pipe(Effect.orDie)
       return { ...sealed, keyVersion: version, keyLast4: credential.accountId.slice(-4).padStart(4, "*") }
-    })
+    }
 
 /** The link's storing step over `database`, recording once under its invocation key. */
 export const keepStep = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   (write: typeof Keep.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const key = yield* invocationKey
+    (effect {
+      const key = try invocationKey
       if (write.authority === undefined) return { change: "stale" as const }
-      const change = yield* Store.link({
+      const change = try Store.link({
         authority: write.authority,
         personId: write.personId,
         id: write.id,
@@ -287,11 +285,11 @@ export type Credentials = Layer.Layer<SecretKeys | Codex.CodexAuth>
  * `Credentials` from configuration, read now: run it where a program builds, as a step can't read Config
  * (tests/worker-config.test.ts).
  */
-export const captureCredentials: Effect.Effect<Credentials, Config.ConfigError> = Effect.gen(function* () {
-  const keys = yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layerConfig))
-  const codex = yield* Codex.config
+export const captureCredentials: Effect.Effect<Credentials, Config.ConfigError> = effect {
+  const keys = try Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layerConfig))
+  const codex = try Codex.config
   return Layer.merge(Layer.succeed(SecretKeys, keys), Layer.succeed(Codex.CodexAuth, codex))
-})
+}
 
 /** Registers `model/Put`, `model/Delete` and `model/CodexLink` with their steps over `database`, under `credentials`. */
 export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, credentials: Credentials) => {

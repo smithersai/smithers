@@ -2,7 +2,7 @@ import { Cause, Deferred, Effect, Exit, Fiber } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
-import * as Codex from "./Codex.ts"
+import * as Codex from "./Codex.vibe"
 
 const credential: Codex.Credential = {
   accessToken: "access-before",

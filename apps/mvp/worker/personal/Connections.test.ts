@@ -18,6 +18,7 @@ import {
   JEV_ROUTE,
   LINK_SECONDS,
   MAX_JEV_BODY_BYTES,
+  MAX_PUT_BODY_BYTES,
   PERSONAL_MODEL_ROUTE,
   PERSONAL_MODEL_TEST_ROUTE,
 } from "../../src/features/personal-model/contract.ts"
@@ -25,11 +26,11 @@ import * as Flows from "../Flows.ts"
 import { SecretKeys } from "../secrets/Keys.vibe"
 import { harness, PERSONAL_KEYS, testFile } from "../test/harness.ts"
 import * as Agents from "./Agents.ts"
-import * as PersonalApi from "./Api.ts"
-import * as Codex from "./Codex.ts"
-import * as ModelFlows from "./ModelFlows.ts"
+import * as PersonalApi from "./Api.vibe"
+import * as Codex from "./Codex.vibe"
+import * as ModelFlows from "./ModelFlows.vibe"
 import { PersonalModels, sealContext } from "./Models.vibe"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 import * as Subscriptions from "./Subscriptions.vibe"
 import * as PersonalUsage from "./Usage.vibe"
 import {
@@ -799,6 +800,30 @@ describe("POST /api/me/model/codex", () => {
     expect(JSON.stringify(unkeyed)).toContain("NoInvocationKey")
   })
 
+  test("legacy write steps without authority fail closed before changing the person's connections", async () => {
+    await seed(runtime, member.subject.id)
+    const before = await rows(runtime)
+    const auditBefore = await events(runtime)
+    const database = (await scratch()).database
+    const { store, erase } = ModelFlows.steps(database)
+    const payload = { personId: member.subject.id }
+    const attempts: ReadonlyArray<Effect.Effect<{ readonly change: string }, ModelFlows.StoreUnavailable>> = [
+      store({ ...payload, connections: [] }),
+      erase(payload),
+      ModelFlows.keepStep(database)({
+        ...payload,
+        id: crypto.randomUUID(),
+        sealed: { ciphertext: "unused", nonce: "unused", keyVersion: 1, keyLast4: "1234" },
+      }),
+    ]
+    for (const [index, attempt] of attempts.entries()) {
+      expect(await Effect.runPromise(attempt.pipe(Effect.provideService(Action.CurrentInvocationKey, `legacy-${index}`))))
+        .toEqual({ change: "stale" })
+    }
+    expect(await rows(runtime)).toEqual(before)
+    expect(await events(runtime)).toEqual(auditBefore)
+  })
+
   test("OpenAI refusing the code is 502 link_refused, by its status; nothing starts", async () => {
     const refusing = async (fetch: typeof globalThis.fetch) => {
       const h = await open({ actor: member, provider: fetch })
@@ -1269,6 +1294,20 @@ describe("POST /api/me/model/jev", () => {
     const get = await h.fetch(JEV_ROUTE, { method: "GET" })
     expect([get.status, get.headers.get("allow")]).toEqual([405, "POST"])
     expect(await json(await (await open()).fetch(JEV_ROUTE, post()))).toEqual([401, { code: "authentication" }])
+  })
+
+  test("the routes enforce their own body limits when served directly", async () => {
+    await jev()
+    const gateway = scriptedGateway(() => ({ status: 200, body: answers }))
+    const h = await open({ actor: member, provider: gateway.fetch, admitBody: false })
+    expect(await json(await h.fetch(JEV_ROUTE, { method: "POST", body: new Uint8Array([0xff]) })))
+      .toEqual([400, { code: "invalid" }])
+    expect(await json(await h.fetch(PERSONAL_MODEL_ROUTE, {
+      method: "PUT",
+      body: "x".repeat(MAX_PUT_BODY_BYTES + 1),
+    }))).toEqual([413, { code: "too_large" }])
+    expect(gateway.seen).toEqual([])
+    expect(await usage(runtime)).toEqual([])
   })
 
   test("a sealed key that doesn't open is 409 refused: the judge says so, and the seat doesn't answer", async () => {

@@ -1,5 +1,5 @@
 import type { CodingAgent } from "../../src/features/personal-model/contract.ts"
-import type { Credential } from "./Codex.ts"
+import type { Credential } from "./Codex.vibe"
 
 // What running a vendor's own agent in a branch's box takes (decision 0132): the official Claude Code or Codex, unmodified,
 // baked into the image (infra/sandbox/Dockerfile). The box holds a placeholder where the credential goes; the box's

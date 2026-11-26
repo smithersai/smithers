@@ -3,9 +3,9 @@ import { SqlClient } from "effect/sql"
 import { codingChoice, type CodingAgent } from "../../src/features/personal-model/contract.ts"
 import type { Keys } from "../secrets/Keys.vibe"
 import * as Agents from "./Agents.ts"
-import * as Codex from "./Codex.ts"
+import * as Codex from "./Codex.vibe"
 import { sealContext } from "./Models.vibe"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 
 // A person's subscription as a `todo` run uses it (decision 0132, docs/features/personal-model.md#subscriptions): which
 // agent their list puts first for coding, its credential opened for one request, and a Codex token kept fresh. Nothing

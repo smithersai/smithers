@@ -3,7 +3,7 @@ import { AgentRunner } from "@smthrs/agent"
 import { Effect, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { MODEL_KINDS, type Protocol } from "../../src/features/personal-model/contract.ts"
-import * as PersonalStore from "../personal/Store.ts"
+import * as PersonalStore from "../personal/Store.vibe"
 import * as Store from "./Store.ts"
 
 // Overflow on Cloudflare (decision 0144, docs/features/agent-runners.md#overflow). A repository Admin turns it on with

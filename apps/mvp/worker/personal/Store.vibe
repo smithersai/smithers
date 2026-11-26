@@ -82,21 +82,22 @@ export const linkGeneration = (personId: string) => Effect.flatMap(SqlClient.Sql
  * never holds both.
  */
 export const put = (write: Put): Effect.Effect<Change, unknown, SqlClient.SqlClient> =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    return yield* sql.withTransaction(Effect.gen(function* () {
-      yield* WriteAuthority.bound
-      yield* holdConnections(write.personId)
-      if (yield* repeated(write.invocationKey)) return "repeat" as const
-      if (write.authority !== undefined && !(yield* WriteAuthority.admitted(write.authority))) return "stale" as const
-      const before = yield* sql<{
+  effect {
+    const sql = try SqlClient.SqlClient
+    return try sql.withTransaction(effect {
+      try WriteAuthority.bound
+      try holdConnections(write.personId)
+      if (try repeated(write.invocationKey)) return "repeat" as const
+      if (write.authority !== undefined && !(try WriteAuthority.admitted(write.authority))) return "stale" as const
+      const before = try sql<{
         readonly id: string
         readonly kind: string
         readonly protocol: string | null
         readonly baseUrl: string | null
       }>`
         SELECT id, kind, protocol, base_url AS "baseUrl" FROM personal_models WHERE person_id = ${write.personId} FOR UPDATE`
-      if (write.known !== undefined && !knowsSaved(write.known, before)) return "stale" as const
+      const { known } = write
+      if (known !== undefined && !(try Effect.orDie(Effect.try(() => knowsSaved(known, before))))) return "stale" as const
       const kept = write.connections.filter((connection) => connection.sealed === undefined)
       if (!kept.every((connection) =>
         before.some((row) =>
@@ -106,24 +107,24 @@ export const put = (write: Put): Effect.Effect<Change, unknown, SqlClient.SqlCli
       )) {
         return "stale" as const
       }
-      yield* sql`
+      try sql`
         DELETE FROM personal_models WHERE person_id = ${write.personId}
           AND NOT (id IN ${sql.in(write.connections.map((connection) => connection.id))})`
-      yield* sql`UPDATE personal_models SET active = false WHERE person_id = ${write.personId}`
+      try sql`UPDATE personal_models SET active = false WHERE person_id = ${write.personId}`
       for (const [position, connection] of write.connections.entries()) {
         const { id, kind, active, protocol, baseUrl } = connection
         const fast = connection.models.fast ?? null
         const implement = connection.models.implement ?? null
         const hard = connection.models.hard ?? null
         if (connection.sealed === undefined) {
-          yield* sql`
+          try sql`
             UPDATE personal_models SET position = ${position}, active = ${active}, fast_model = ${fast},
               implement_model = ${implement}, hard_model = ${hard}, updated_at = now()
             WHERE person_id = ${write.personId} AND id = ${id}`
           continue
         }
         const { ciphertext, nonce, keyVersion, keyLast4 } = connection.sealed
-        yield* sql`
+        try sql`
           INSERT INTO personal_models (person_id, id, kind, position, active, protocol, base_url, fast_model,
             implement_model, hard_model, ciphertext, nonce, key_version, key_last4, failure_status, failed_at, updated_at)
           VALUES (${write.personId}, ${id}, ${kind}, ${position}, ${active}, ${protocol}, ${baseUrl}, ${fast},
@@ -136,13 +137,13 @@ export const put = (write: Put): Effect.Effect<Change, unknown, SqlClient.SqlCli
             updated_at = now()`
       }
       const change = before.length === 0 ? "set" as const : "replace" as const
-      yield* sql`
+      try sql`
         INSERT INTO personal_model_events (person_id, action, invocation_key)
         VALUES (${write.personId}, ${change}, ${write.invocationKey})`
-      yield* WriteAuthority.requireAtCommit(write.authority ?? undefined)
+      try WriteAuthority.requireAtCommit(write.authority ?? undefined)
       return change
-    })).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale" as const)))
-  })
+    }).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale" as const)))
+  }
 
 /** A Codex subscription a device link finished: added at the end of the person's list, or replacing the one they have. */
 export interface Linked {
@@ -161,35 +162,35 @@ export interface Linked {
  * (`stale`); the per-person transaction lock serializes the generation check with deletes of even an empty list.
  */
 export const link = (write: Linked): Effect.Effect<"set" | "replace" | "repeat" | "stale", unknown, SqlClient.SqlClient> =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    return yield* sql.withTransaction(Effect.gen(function* () {
-      yield* WriteAuthority.bound
-      yield* holdConnections(write.personId)
-      if (yield* repeated(write.invocationKey)) return "repeat" as const
-      if (write.authority !== undefined && !(yield* WriteAuthority.admitted(write.authority))) return "stale" as const
-      if (write.generation === undefined || (yield* linkGeneration(write.personId)) !== write.generation) return "stale" as const
-      const before = yield* sql<{ readonly kind: string }>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    return try sql.withTransaction(effect {
+      try WriteAuthority.bound
+      try holdConnections(write.personId)
+      if (try repeated(write.invocationKey)) return "repeat" as const
+      if (write.authority !== undefined && !(try WriteAuthority.admitted(write.authority))) return "stale" as const
+      if (write.generation === undefined || (try linkGeneration(write.personId)) !== write.generation) return "stale" as const
+      const before = try sql<{ readonly kind: string }>`
         SELECT kind FROM personal_models WHERE person_id = ${write.personId} FOR UPDATE`
       const { ciphertext, nonce, keyVersion, keyLast4 } = write.sealed
-      const replaced = yield* sql`
+      const replaced = try sql`
         UPDATE personal_models SET ciphertext = ${ciphertext}, nonce = ${nonce}, key_version = ${keyVersion},
           key_last4 = ${keyLast4}, failure_status = NULL, failed_at = NULL, updated_at = now()
         WHERE person_id = ${write.personId} AND kind = 'codex_subscription' RETURNING id`
       if (replaced.length === 0) {
-        yield* sql`
+        try sql`
           INSERT INTO personal_models (person_id, id, kind, position, active, ciphertext, nonce, key_version, key_last4)
           VALUES (${write.personId}, ${write.id}, 'codex_subscription', ${before.length}, true, ${ciphertext}, ${nonce},
             ${keyVersion}, ${keyLast4})`
       }
       const change = before.length === 0 ? "set" as const : "replace" as const
-      yield* sql`
+      try sql`
         INSERT INTO personal_model_events (person_id, action, invocation_key)
         VALUES (${write.personId}, ${change}, ${write.invocationKey})`
-      yield* WriteAuthority.requireAtCommit(write.authority ?? undefined)
+      try WriteAuthority.requireAtCommit(write.authority ?? undefined)
       return replaced.length === 0 ? "set" as const : "replace" as const
-    })).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale" as const)))
-  })
+    }).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale" as const)))
+  }
 
 /** Holds `personId`'s Codex rows, or just `connectionId`, for the transaction, so a token refreshes once at a time. */
 export const holdCodex = (personId: string, connectionId?: string): Effect.Effect<void, unknown, SqlClient.SqlClient> =>
@@ -223,21 +224,21 @@ export const remove = (write: {
   readonly authority?: WriteAuthority.Session | null
   readonly invocationKey: string
 }): Effect.Effect<"deleted" | "missing" | "repeat" | "stale", unknown, SqlClient.SqlClient> =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    return yield* sql.withTransaction(Effect.gen(function* () {
-      yield* WriteAuthority.bound
-      yield* holdConnections(write.personId)
-      if (yield* repeated(write.invocationKey)) return "repeat" as const
-      if (write.authority !== undefined && !(yield* WriteAuthority.admitted(write.authority))) return "stale" as const
-      const deleted = yield* sql`DELETE FROM personal_models WHERE person_id = ${write.personId} RETURNING person_id`
-      yield* sql`
+  effect {
+    const sql = try SqlClient.SqlClient
+    return try sql.withTransaction(effect {
+      try WriteAuthority.bound
+      try holdConnections(write.personId)
+      if (try repeated(write.invocationKey)) return "repeat" as const
+      if (write.authority !== undefined && !(try WriteAuthority.admitted(write.authority))) return "stale" as const
+      const deleted = try sql`DELETE FROM personal_models WHERE person_id = ${write.personId} RETURNING person_id`
+      try sql`
         INSERT INTO personal_model_events (person_id, action, invocation_key)
         VALUES (${write.personId}, 'delete', ${write.invocationKey})`
-      yield* WriteAuthority.requireAtCommit(write.authority ?? undefined)
+      try WriteAuthority.requireAtCommit(write.authority ?? undefined)
       return deleted.length > 0 ? "deleted" as const : "missing" as const
-    })).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale" as const)))
-  })
+    }).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale" as const)))
+  }
 
 /** Whether a person saved a model of their own: a flow that runs on it, such as triage's judge, can answer them. */
 export const hasModel = (personId: string): Effect.Effect<boolean, unknown, SqlClient.SqlClient> =>

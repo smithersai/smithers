@@ -89,7 +89,7 @@ import type { CuratedFile } from "../../worker/home/Curated.ts"
 import * as RemoteRuns from "../../worker/RemoteRuns.ts"
 import * as RepoApi from "../../worker/RepoApi.ts"
 import * as RunCredentials from "../../worker/RunCredentials.ts"
-import * as PersonalApi from "../../worker/personal/Api.ts"
+import * as PersonalApi from "../../worker/personal/Api.vibe"
 import * as BugsApi from "../../worker/bugs/Api.vibe"
 import * as FeedsApi from "../../worker/feeds/Api.ts"
 import * as FleetShapes from "../../worker/fleet/FleetShapes.vibe"
@@ -97,7 +97,7 @@ import * as FleetApi from "../../worker/runners/FleetApi.ts"
 import { FEED_DOCUMENTS_TABLE } from "../features/feeds/contract"
 import { digestSync } from "@smthrs/crypto"
 import { BUG_REPORTS_TABLE } from "../features/bugs/contract"
-import * as ModelFlows from "../../worker/personal/ModelFlows.ts"
+import * as ModelFlows from "../../worker/personal/ModelFlows.vibe"
 import { PersonalModels } from "../../worker/personal/Models.vibe"
 import {
   ANTHROPIC_ORIGIN,
@@ -794,7 +794,7 @@ export class TestChatApi extends Context.Service<
             }),
         })
 
-        // A person's own model (worker/personal/Api.ts), on under TEST_SECRETS_KEY: `model/Put` and `model/Delete` run for
+        // A person's own model (worker/personal/Api.vibe), on under TEST_SECRETS_KEY: `model/Put` and `model/Delete` run for
         // real on a Node host's engine of their own, built on first use, so a write's row is in Postgres when its request
         // answers, and Electric brings it to the device. The model endpoint opens a person's saved model per request
         // through the same `PersonalModels`; its provider is the scripted one at the network (`options.provider`).

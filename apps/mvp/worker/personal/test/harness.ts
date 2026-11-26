@@ -19,10 +19,10 @@ import { SecretKeys } from "../../secrets/Keys.vibe"
 import * as SandboxEgress from "../../secrets/SandboxEgress.vibe"
 import * as FlowHost from "../../test/flowHost.ts"
 import { signedIn, type testFile } from "../../test/harness.ts"
-import * as PersonalApi from "../Api.ts"
-import * as ModelFlows from "../ModelFlows.ts"
+import * as PersonalApi from "../Api.vibe"
+import * as ModelFlows from "../ModelFlows.vibe"
 import { PersonalModels, sealContext } from "../Models.vibe"
-import * as Store from "../Store.ts"
+import * as Store from "../Store.vibe"
 import type * as Subscriptions from "../Subscriptions.vibe"
 import { OPENAI_ORIGIN } from "./provider.ts"
 
@@ -118,6 +118,8 @@ export interface Options {
   readonly provider?: typeof globalThis.fetch
   /** How long a test's call may take. */
   readonly testWithin?: Duration.Input
+  /** Serve the route directly to exercise its own body limits. */
+  readonly admitBody?: boolean
   /** Configuration the routes read: `MOONSHOT_BASE_URL`, `CODEX_AUTH_ORIGIN` and the like. */
   readonly config?: Record<string, string>
 }
@@ -171,8 +173,9 @@ export const personalHarness = async (
   const api = await runtime.runPromise(
     observed(PersonalApi.make(database, options.testWithin === undefined ? {} : { testWithin: options.testWithin })),
   )
+  const route = options.admitBody === false ? api.fetch : afterBody(api.fetch)
   const served = observed(
-    afterBody(api.fetch).pipe(
+    route.pipe(
       Effect.provideService(Flows.FlowStarter, options.starter ?? starter),
       Effect.provide(personal),
       Effect.provide(keys),

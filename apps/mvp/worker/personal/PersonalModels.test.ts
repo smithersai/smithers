@@ -29,10 +29,10 @@ import * as ModelTiers from "../ModelTiers.vibe"
 import * as SpendAlert from "../flows/SpendAlert.ts"
 import { SecretKeys } from "../secrets/Keys.vibe"
 import { eventually, harness, PERSONAL_KEYS, recorded, testFile } from "../test/harness.ts"
-import * as PersonalApi from "./Api.ts"
-import * as ModelFlows from "./ModelFlows.ts"
+import * as PersonalApi from "./Api.vibe"
+import * as ModelFlows from "./ModelFlows.vibe"
 import { PersonalModels, PersonalModelsUnavailable, PersonalModelUnusable } from "./Models.vibe"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 import * as PersonalUsage from "./Usage.vibe"
 import {
   admin,
@@ -1216,6 +1216,19 @@ describe("a refusal of a person's key is final", () => {
     await runtime.runPromise(Effect.provide(PersonalUsage.begin(current), database))
     await runtime.runPromise(PersonalUsage.end(current, { outcome: "failed", usage: {}, errorCode: "authentication", httpStatus: 401 }, database))
     expect(await rows(runtime)).toEqual([expect.objectContaining({ failureStatus: 401 })])
+  })
+
+  test("a successful connection check clears its refusal without changing another connection", async () => {
+    const personId = "person-member"
+    const connectionId = await seed(runtime, personId)
+    const otherId = await seed(runtime, "person-rival")
+    await runtime.runPromise(Store.markConnection(personId, connectionId, 401))
+    await runtime.runPromise(Store.markConnection("person-rival", otherId, 403))
+    await runtime.runPromise(Store.markConnection(personId, connectionId, undefined))
+    expect(await rows(runtime)).toEqual([
+      expect.objectContaining({ id: connectionId, failureStatus: null, failedAt: null }),
+      expect.objectContaining({ id: otherId, failureStatus: 403, failedAt: expect.any(Date) }),
+    ])
   })
 
   test("a call settled already isn't counted again", async () => {

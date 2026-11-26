@@ -1,13 +1,11 @@
 import * as WriteAuthority from "../WriteAuthority.ts"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Classifier, Evaluator, ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
-import { Binding } from "@smthrs/secrets"
 import { Cause, Clock, Duration, Effect, Exit, Layer, Metric, Option, Redacted, Schema, Stream } from "effect"
 import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
-  checkSave,
   CODEX_LINK_ROUTE,
   type CodexLinkStart,
   JEV_ROUTE,
@@ -34,12 +32,13 @@ import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import { SecretKeys } from "../secrets/Keys.vibe"
 import * as ShapeAccess from "../ShapeAccess.vibe"
-import * as Codex from "./Codex.ts"
-import * as ModelFlows from "./ModelFlows.ts"
+import { checkConnectionSave, randomUuid } from "./ApiBoundary.ts"
+import * as Codex from "./Codex.vibe"
+import * as ModelFlows from "./ModelFlows.vibe"
 import { type Opened, PersonalModels, PersonalModelUnusable, sealContext } from "./Models.vibe"
 import { connectionDefaults } from "./Defaults.vibe"
 import * as Subscriptions from "./Subscriptions.vibe"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 import * as PersonalUsage from "./Usage.vibe"
 
 // A person's own connections' routes (decisions 0096, 0107 and 0132, docs/features/personal-model.md). Credentials are
@@ -130,18 +129,18 @@ const sampleOf = (text: string) => text.replace(/\s+/g, " ").trim().slice(0, 80)
 export const make = <E, R>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
   options: { readonly testWithin?: Duration.Input } = {},
-) => Effect.gen(function* () {
-  const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+) => effect {
+  const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
   // What the database layer needs, captured here, so a test's ledger write needs nothing of the request.
-  const context = yield* Effect.context<R>()
-  const defaults = yield* connectionDefaults
-  const codexAuth = yield* Codex.config
+  const context = try Effect.context<R>()
+  const defaults = try connectionDefaults
+  const codexAuth = try Codex.config
 
   /** `GET /api/shapes/personal-model`: the person's own row; sessions unreadable, 503. */
   const shape = ShapeProxy.make({
     ...connection,
-    shape: Effect.gen(function* () {
-      const actor = yield* ShapeAccess.actor
+    shape: effect {
+      const actor = try ShapeAccess.actor
       const person = Option.isSome(actor) ? actor.value.subject.id : NOBODY
       return {
         table: PERSONAL_MODELS_TABLE,
@@ -149,53 +148,53 @@ export const make = <E, R>(
         params: { "1": person },
         columns: PERSONAL_MODEL_SHAPE_COLUMNS,
       }
-    }),
+    },
     name: "personal_model.shape",
     metric: shapes,
   })
 
   /** Check Access on one connection: a tiny real call, a Jev judgment or a token refresh, by its kind. */
   const testOne = (personId: string, connection: Store.Saved, latency: Effect.Effect<number>) =>
-    Effect.gen(function* () {
-      const personal = yield* PersonalModels
+    effect {
+      const personal = try PersonalModels
       if (connection.protocol !== null) {
-        const opened = yield* personal.openConnection(personId, connection.id).pipe(Effect.result)
+        const opened = try personal.openConnection(personId, connection.id).pipe(Effect.result)
         if (opened._tag === "Failure") {
           const failure = opened.failure
           // Postgres couldn't say: the route answers 503.
-          if (!(failure instanceof PersonalModelUnusable)) return yield* failure
-          return { ok: false, latencyMs: yield* latency, code: "unusable", status: null, host: failure.host } satisfies TestResult
+          if (!(failure instanceof PersonalModelUnusable)) throw failure
+          return { ok: false, latencyMs: try latency, code: "unusable", status: null, host: failure.host } satisfies TestResult
         }
-        return yield* testCall(personId, Option.getOrThrow(opened.success), latency)
+        return try testCall(personId, Option.getOrThrow(opened.success), latency)
       }
-      const keys = yield* SecretKeys
+      const keys = try SecretKeys
       const unusable = Effect.map(latency, (latencyMs): TestResult =>
         ({ ok: false, latencyMs, code: "unusable", status: null, host: "" }))
-      if (Option.isNone(keys)) return yield* unusable
+      if (Option.isNone(keys)) return try unusable
       if (connection.kind === "jev") {
-        const key = yield* keys.value.cipher.open(connection, sealContext(personId, connection.keyVersion)).pipe(Effect.option)
-        if (Option.isNone(key)) return yield* unusable
-        const answered = yield* judged(personId, connection, key.value, "test", JEV_CHECK)
-        const latencyMs = yield* latency
+        const key = try keys.value.cipher.open(connection, sealContext(personId, connection.keyVersion)).pipe(Effect.option)
+        if (Option.isNone(key)) return try unusable
+        const answered = try judged(personId, connection, key.value, "test", JEV_CHECK)
+        const latencyMs = try latency
         if (Exit.isSuccess(answered)) return { ok: true, latencyMs, sample: "" } satisfies TestResult
         const failure = Cause.squash(answered.cause) as Evaluator.EvaluatorError
         return { ok: false, latencyMs, code: failure.code, status: jevStatus(failure) ?? null, host: JEV_HOST } satisfies TestResult
       }
       if (connection.kind === "codex_subscription") {
-        const refreshed = yield* Subscriptions.fresh(personId, keys.value, true, connection.id).pipe(
+        const refreshed = try Subscriptions.fresh(personId, keys.value, true, connection.id).pipe(
           Effect.provideService(Codex.CodexAuth, codexAuth),
           Effect.provide(database),
           Effect.provideContext(context),
           Effect.result,
         )
-        const latencyMs = yield* latency
+        const latencyMs = try latency
         if (refreshed._tag === "Success") return { ok: true, latencyMs, sample: "" } satisfies TestResult
         const status = refreshed.failure instanceof Codex.CodexAuthFailed ? refreshed.failure.status : null
         return { ok: false, latencyMs, code: "refused", status, host: "auth.openai.com" } satisfies TestResult
       }
       // Only Claude Code may use a Claude subscription: its first run says whether the token works (decision 0132).
-      return { ok: false, latencyMs: yield* latency, code: "unchecked", status: null, host: "" } satisfies TestResult
-    })
+      return { ok: false, latencyMs: try latency, code: "unchecked", status: null, host: "" } satisfies TestResult
+    }
 
   /**
    * Check Access (Amp's name for it): `connectionId`'s, or every active connection's that can be checked here, each
@@ -203,33 +202,33 @@ export const make = <E, R>(
    * have nothing to check.
    */
   const test = (personId: string, connectionId: string | undefined) =>
-    Effect.gen(function* () {
-      const startedAt = yield* Clock.currentTimeMillis
+    effect {
+      const startedAt = try Clock.currentTimeMillis
       const latency = Effect.map(Clock.currentTimeMillis, (now) => now - startedAt)
-      const saved = yield* Store.saved(personId).pipe(Effect.provide(database), Effect.provideContext(context))
+      const saved = try Store.saved(personId).pipe(Effect.provide(database), Effect.provideContext(context))
       const targets = connectionId === undefined
         ? saved.filter((connection) => connection.active && connection.kind !== "claude_subscription")
         : saved.filter((connection) => connection.id === connectionId)
       let first: TestResult | undefined
       for (const connection of targets) {
-        const result = yield* testOne(personId, connection, latency)
+        const result = try testOne(personId, connection, latency)
         if (!result.ok) return Option.some(result)
         first ??= result
       }
       return Option.fromNullishOr(first)
-    })
+    }
 
   /** The person's active Jev connection opened for one call, or none. */
   const openJev = (personId: string) =>
-    Effect.gen(function* () {
-      const saved = yield* Store.saved(personId).pipe(Effect.provide(database), Effect.provideContext(context))
-      const connection = jevOf(saved) as Store.Saved | undefined
+    effect {
+      const saved = try Store.saved(personId).pipe(Effect.provide(database), Effect.provideContext(context))
+      const connection = (try Effect.orDie(Effect.try(() => jevOf(saved)))) as Store.Saved | undefined
       if (connection === undefined) return Option.none()
-      const opened = yield* SecretKeys
+      const opened = try SecretKeys
       if (Option.isNone(opened)) return Option.none()
-      const key = yield* opened.value.cipher.open(connection, sealContext(personId, connection.keyVersion)).pipe(Effect.option)
+      const key = try opened.value.cipher.open(connection, sealContext(personId, connection.keyVersion)).pipe(Effect.option)
       return Option.some({ connection, key })
-    })
+    }
 
   /** One Jev judgment with `key`, kept in the person's ledger as `role`. */
   const judged = (
@@ -239,8 +238,8 @@ export const make = <E, R>(
     role: string,
     asked: Evaluator.Request,
   ) =>
-    Effect.gen(function* () {
-      const invocationId = crypto.randomUUID()
+    effect {
+      const invocationId = randomUuid()
       const call: PersonalUsage.Call = {
         invocationId,
         requestId: invocationId,
@@ -253,20 +252,20 @@ export const make = <E, R>(
         protocol: null,
         tier: undefined,
       }
-      yield* PersonalUsage.begin(call).pipe(Effect.provide(database), Effect.provideContext(context))
-      const answered = yield* Effect.flatMap(Effect.service(Evaluator.Evaluator), (judge) => judge.evaluate(asked)).pipe(
+      try PersonalUsage.begin(call).pipe(Effect.provide(database), Effect.provideContext(context))
+      const answered = try Effect.flatMap(Effect.service(Evaluator.Evaluator), (judge) => judge.evaluate(asked)).pipe(
         Effect.provide(Evaluator.layerVercelGateway({ apiKey: key }).pipe(Layer.provide(FetchHttpClient.layer))),
         Effect.exit,
       )
       const failure = Exit.isFailure(answered) ? Cause.squash(answered.cause) as Evaluator.EvaluatorError : undefined
       const usage = Exit.isSuccess(answered) ? answered.value.usage : failure?.usage
-      yield* PersonalUsage.end(call, {
+      try PersonalUsage.end(call, {
         outcome: failure === undefined ? "success" : "failed",
         usage: { inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens },
         ...(failure === undefined ? {} : { errorCode: failure.code, httpStatus: jevStatus(failure) }),
       }, database).pipe(Effect.provideContext(context))
       return answered
-    })
+    }
 
   /** `POST /api/me/model/jev`: one judgment on the person's own Jev; `404 none` sends their judge back to the seat. */
   const evaluate = (
@@ -275,8 +274,8 @@ export const make = <E, R>(
     refuse: (status: number, code: Refusal) => HttpServerResponse.HttpServerResponse,
     fields: Fields,
   ) =>
-    Effect.gen(function* () {
-      const opened = yield* openJev(personId)
+    effect {
+      const opened = try openJev(personId)
       if (Option.isNone(opened)) return refuse(404, "none")
       // A key that no longer opens is a refusal Jev's flows name, never a silent fallback (decision 0096).
       if (Option.isNone(opened.value.key)) {
@@ -284,11 +283,11 @@ export const make = <E, R>(
         return HttpServerResponse.jsonUnsafe({ code: "refused" }, { status: 409, headers: noStore })
       }
       const key = opened.value.key.value
-      const body = yield* readBounded(request, MAX_JEV_BODY_BYTES).pipe(Effect.option)
+      const body = try readBounded(request, MAX_JEV_BODY_BYTES).pipe(Effect.option)
       if (Option.isNone(body)) return refuse(400, "invalid")
-      const asked = yield* decodeJudgment(body.value).pipe(Effect.option)
+      const asked = try decodeJudgment(body.value).pipe(Effect.option)
       if (Option.isNone(asked)) return refuse(400, "invalid")
-      const answered = yield* judged(
+      const answered = try judged(
         personId,
         opened.value.connection,
         key,
@@ -304,13 +303,13 @@ export const make = <E, R>(
       fields.outcome = "judged"
       const { answers, confidence, latencyMs } = answered.value
       return HttpServerResponse.jsonUnsafe({ answers, confidence, latencyMs }, { status: 200, headers: noStore })
-    })
+    }
 
   /** One tiny real call with `opened`, settled in the person's ledger: how it went. */
   const testCall = (personId: string, opened: Opened, latency: Effect.Effect<number>) =>
-    Effect.gen(function* () {
+    effect {
       const { model, modelId, host, protocol, connectionId, credentialNonce } = opened
-      const invocationId = crypto.randomUUID()
+      const invocationId = randomUuid()
       const call: PersonalUsage.Call = {
         invocationId,
         requestId: invocationId,
@@ -323,17 +322,17 @@ export const make = <E, R>(
         protocol,
         tier: undefined,
       }
-      yield* PersonalUsage.begin(call).pipe(Effect.provide(database), Effect.provideContext(context))
+      try PersonalUsage.begin(call).pipe(Effect.provide(database), Effect.provideContext(context))
       let usage: ModelEvent.Usage = {}
       let text = ""
-      const request = ModelRequest.ModelRequest.make({
+      const request = try Effect.orDie(Effect.try(() => ModelRequest.ModelRequest.make({
         modelId,
         system: [],
         messages: [ModelRequest.Message.user(TEST_PROMPT)],
         tools: [],
         params: ModelRequest.GenerationParams.make({ maxTokens: TEST_MAX_TOKENS }),
-      })
-      const exit = yield* model.stream(request).pipe(
+      })))
+      const exit = try model.stream(request).pipe(
         Stream.runForEach((event) =>
           Effect.sync(() => {
             usage = ModelEvent.settledMessage([{ type: "usage", ...usage }, event]).usage
@@ -350,25 +349,25 @@ export const make = <E, R>(
         ),
         Effect.exit,
       )
-      const failure = Exit.isFailure(exit) ? ModelProxy.failureOf(exit.cause) : undefined
-      yield* PersonalUsage.end(call, {
+      const failure = Exit.isFailure(exit) ? (try Effect.orDie(Effect.try(() => ModelProxy.failureOf(exit.cause)))) : undefined
+      try PersonalUsage.end(call, {
         outcome: failure === undefined ? "success" : "failed",
         usage,
         ...(failure ?? {}),
       }, database).pipe(Effect.provideContext(context))
-      const latencyMs = yield* latency
+      const latencyMs = try latency
       return failure === undefined
         ? { ok: true, latencyMs, sample: sampleOf(text) } satisfies TestResult
         : { ok: false, latencyMs, code: failure.errorCode, status: failure.httpStatus ?? null, host } satisfies TestResult
-    })
+    }
 
   /** `PUT`, `DELETE /api/me/model` and `POST /api/me/model/test`. */
-  const route = Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest
-    const sessions = yield* Sessions
-    const starter = yield* Flows.FlowStarter
-    const keys = yield* SecretKeys
-    const startedAt = yield* Clock.currentTimeMillis
+  const route = (effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const sessions = try Sessions
+    const starter = try Flows.FlowStarter
+    const keys = try SecretKeys
+    const startedAt = try Clock.currentTimeMillis
     const path = request.url.split("?")[0]!
     const op = path === PERSONAL_MODEL_TEST_ROUTE
       ? "test"
@@ -384,20 +383,21 @@ export const make = <E, R>(
       fields.code = code
       return HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
     }
-    const response = yield* Effect.gen(function* () {
+    const response = try (effect {
       const posted = op === "test" || op === "link" || op === "jev"
       if (posted ? request.method !== "POST" : request.method !== "PUT" && request.method !== "DELETE") {
         return HttpServerResponse.empty({ status: 405, headers: { allow: posted ? "POST" : "PUT, DELETE" } })
       }
-      const actor = yield* sessions.resolve
+      const actor = try sessions.resolve
       if (Option.isNone(actor)) return refuse(401, "authentication")
       const personId = actor.value.subject.id
-      const executionId = writeExecutionId(op === "delete" ? "delete" : "put", crypto.randomUUID())
+      const executionId = try Effect.orDie(Effect.try(() => writeExecutionId(op === "delete" ? "delete" : "put", randomUuid())))
       // Anyone signed in removes their own model, a person who lost their role included.
       if (op === "delete") {
-        const started = yield* starter.start(ModelFlows.Delete, { executionId, payload: { personId, authority: WriteAuthority.sessionOf(actor.value) ?? null } }).pipe(
-          Effect.result,
-        )
+        const authority = try Effect.orDie(Effect.try(() => WriteAuthority.sessionOf(actor.value)))
+        const started = try starter.start(ModelFlows.Delete, {
+          executionId, payload: { personId, authority: authority ?? null },
+        }).pipe(Effect.result)
         if (started._tag === "Failure") return refuse(503, "unavailable")
         fields.outcome = "deleting"
         return HttpServerResponse.jsonUnsafe({}, { status: 202, headers: noStore })
@@ -406,7 +406,7 @@ export const make = <E, R>(
       // AUTH-8). Where they may ask, ChatApi decides by their role on each conversation's repository.
       if (op === "test") {
         const connection = new URL(request.url, "http://smithers").searchParams.get("connection") ?? undefined
-        const result = yield* test(personId, connection)
+        const result = try test(personId, connection)
         if (Option.isNone(result)) return refuse(404, "none")
         fields.outcome = result.value.ok ? "ok" : "failed"
         if (!result.value.ok) {
@@ -415,13 +415,13 @@ export const make = <E, R>(
         }
         return HttpServerResponse.jsonUnsafe(result.value, { status: 200, headers: noStore })
       }
-      if (op === "jev") return yield* evaluate(personId, request, refuse, fields)
+      if (op === "jev") return try evaluate(personId, request, refuse, fields)
       // The key would pass through whoever acts for the person: only the person saves one (decision 0017).
-      if (yield* refusesPersonOnly(actor.value, "model")) return refuse(403, "forbidden")
+      if (try refusesPersonOnly(actor.value, "model")) return refuse(403, "forbidden")
       if (Option.isNone(keys)) return refuse(503, "off")
       if (op === "link") {
-        const generation = yield* Store.linkGeneration(personId).pipe(Effect.provide(database))
-        const device = yield* Codex.requestCode.pipe(Effect.provideService(Codex.CodexAuth, codexAuth), Effect.result)
+        const generation = try Store.linkGeneration(personId).pipe(Effect.provide(database))
+        const device = try Codex.requestCode.pipe(Effect.provideService(Codex.CodexAuth, codexAuth), Effect.result)
         if (device._tag === "Failure") {
           fields.outcome = "refused"
           if (device.failure.status !== null) fields.providerStatus = device.failure.status
@@ -429,13 +429,15 @@ export const make = <E, R>(
         }
         const { deviceAuthId, userCode, verificationUrl } = device.success
         const { cipher, version } = keys.value
-        const sealed = yield* cipher.seal(
+        const sealed = try cipher.seal(
           Redacted.make(JSON.stringify({ deviceAuthId, userCode })),
           { id: `person:${personId}`, name: "model-link", version },
         )
-        const started = yield* starter.start(ModelFlows.CodexLink, {
-          executionId: writeExecutionId("link", crypto.randomUUID()),
-          payload: { authority: WriteAuthority.sessionOf(actor.value) ?? null, personId, id: crypto.randomUUID(), generation, ...sealed, keyVersion: version },
+        const linkExecutionId = try Effect.orDie(Effect.try(() => writeExecutionId("link", randomUuid())))
+        const authority = try Effect.orDie(Effect.try(() => WriteAuthority.sessionOf(actor.value)))
+        const started = try starter.start(ModelFlows.CodexLink, {
+          executionId: linkExecutionId,
+          payload: { authority: authority ?? null, personId, id: randomUuid(), generation, ...sealed, keyVersion: version },
         }).pipe(Effect.result)
         if (started._tag === "Failure") return refuse(503, "unavailable")
         fields.outcome = "linking"
@@ -444,29 +446,29 @@ export const make = <E, R>(
           { status: 202, headers: noStore },
         )
       }
-      const body = yield* readBounded(request, MAX_PUT_BODY_BYTES).pipe(Effect.result)
+      const body = try readBounded(request, MAX_PUT_BODY_BYTES).pipe(Effect.result)
       if (body._tag === "Failure") {
         return body.failure.reason === "too_large" ? refuse(413, "too_large") : refuse(400, "invalid")
       }
       // A decoding failure would quote its input, the key: it is dropped whole.
-      const decoded = yield* decodePut(body.success).pipe(Effect.option)
+      const decoded = try decodePut(body.success).pipe(Effect.option)
       if (Option.isNone(decoded)) return refuse(400, "invalid")
       if (decoded.value.connections.some(({ id }) => id !== undefined && id !== "" && !UUID.test(id))) {
         return refuse(400, "invalid")
       }
       // A key kept without its value must be the one saved at the same base URL: read what the person saved.
-      const saved = yield* Store.saved(personId).pipe(Effect.provide(database), Effect.provideContext(context))
+      const saved = try Store.saved(personId).pipe(Effect.provide(database), Effect.provideContext(context))
       // A list edited from other connections than the saved ones would remove one this device never saw (`model/Store`
       // checks again under its lock).
       const { known } = decoded.value
-      if (known !== undefined && !knowsSaved(known, saved)) return refuse(409, "stale")
+      if (known !== undefined && !(try Effect.orDie(Effect.try(() => knowsSaved(known, saved))))) return refuse(409, "stale")
       // The browser sees each key's last characters again: they must be a small part of it (`too_short`).
-      const checked = checkSave(decoded.value, saved, Binding.valueProblem, defaults)
+      const checked = try Effect.orDie(Effect.try(() => checkConnectionSave(decoded.value, saved, defaults)))
       if (typeof checked === "string") return refuse(400, checked)
       const { cipher, version } = keys.value
-      const writes = yield* Effect.forEach(checked.connections, ({ key, ...connection }) => {
+      const writes = try Effect.forEach(checked.connections, ({ key, ...connection }) => {
         // The id is chosen here, so a new connection's row is the same on every replay of the flow's step.
-        const write = { ...connection, id: connection.id ?? crypto.randomUUID() }
+        const write = { ...connection, id: connection.id ?? randomUuid() }
         return key === undefined
           ? Effect.succeed(write)
           : Effect.map(
@@ -474,9 +476,10 @@ export const make = <E, R>(
             (sealed) => ({ ...write, sealed: { ...sealed, keyVersion: version, keyLast4: keyTail(key) } }),
           )
       })
-      const started = yield* starter.start(ModelFlows.Put, {
+      const authority = try Effect.orDie(Effect.try(() => WriteAuthority.sessionOf(actor.value)))
+      const started = try starter.start(ModelFlows.Put, {
         executionId,
-        payload: { authority: WriteAuthority.sessionOf(actor.value) ?? null, personId, connections: writes, known },
+        payload: { authority: authority ?? null, personId, connections: writes, known },
       }).pipe(Effect.result)
       if (started._tag === "Failure") return refuse(503, "unavailable")
       fields.outcome = "putting"
@@ -492,20 +495,20 @@ export const make = <E, R>(
       ),
     )
     fields.status = response.status
-    fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+    fields.durationMs = (try Clock.currentTimeMillis) - startedAt
     const outcome = String(fields.outcome ?? fields.code ?? "refused")
-    yield* Metric.update(Metric.withAttributes(requests, { op, outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
-    yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+    try Metric.update(Metric.withAttributes(requests, { op, outcome }), 1)
+    try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+    try Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
       "personal_model.request",
     ).pipe(Effect.annotateLogs({ ...fields, outcome }))
     return response
   }).pipe(Effect.withSpan("personal_model.request", { kind: "server" }))
 
-  const fetch = Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest
-    return request.url.split("?")[0] === PERSONAL_MODEL_SHAPE_ROUTE ? yield* shape : yield* route
-  })
+  const fetch = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    return request.url.split("?")[0] === PERSONAL_MODEL_SHAPE_ROUTE ? try shape : try route
+  }
 
   return { fetch }
-})
+}

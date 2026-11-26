@@ -1,6 +1,6 @@
 // Generated scenarios against the real routes and stores on this file's schema of the compose Postgres: GitHub's
 // callback (worker/SignIn.ts), a branch's conversation (worker/branch/Conversations.ts), the git loop's sync and
-// installation rows (worker/github/Store.ts), a person's saved connections (worker/personal/Store.ts), protected
+// installation rows (worker/github/Store.ts), a person's saved connections (worker/personal/Store.vibe), protected
 // write authority (worker/ProtectedAuthority.ts) and the read token (worker/github/ReadToken.ts). Each property
 // computes what must happen from the scenario alone, then reads the answer and the rows back.
 import { Fuzz } from "@smthrs/fuzz"
@@ -16,7 +16,7 @@ import * as Conversations from "./branch/Conversations.ts"
 import * as ReadToken from "./github/ReadToken.ts"
 import * as GitHubStore from "./github/Store.ts"
 import { appKey, scriptedApp, scriptedGitHub } from "./github/test/scriptedGitHub.ts"
-import * as PersonalStore from "./personal/Store.ts"
+import * as PersonalStore from "./personal/Store.vibe"
 import { testFile } from "./test/harness.ts"
 import { cookie, setCookies, signInHarness } from "./test/signIn.ts"
 

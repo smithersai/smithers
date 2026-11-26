@@ -2,7 +2,7 @@ import { Cause, Effect, type Layer, Metric, Option } from "effect"
 import type { SqlClient } from "effect/sql"
 import { KEY_REFUSALS } from "../../src/features/personal-model/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 
 // What the calls a person's own model answers spend (decision 0096, docs/features/personal-model.md#usage): one ledger
 // row per call, settled when it ends, and the person's row marked when their key was refused or ran out, cleared when
