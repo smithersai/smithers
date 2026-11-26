@@ -193,6 +193,7 @@ export const resolveRepoPath = (input: {
     const root = input.realpath(input.checkout).replace(/\/+$/, "")
     const resolved = input.realpath(`${root}/${input.path.slice(2)}`)
     return resolved.startsWith(`${root}/`) ? Result.succeed(resolved) : escape("resolves outside the checkout")
+    // expected: realpath throws on missing or unreadable targets, returned as a typed path_escape Result
   } catch {
     return escape("does not resolve")
   }
