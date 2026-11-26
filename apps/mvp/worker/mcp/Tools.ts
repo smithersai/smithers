@@ -16,8 +16,8 @@ import {
   type McpToolDescriptor,
   McpToolError,
   McpToolRegistry,
-} from "./Contract.ts"
-import { toolCalls } from "./Metrics.ts"
+} from "./Contract.vibe"
+import { toolCalls } from "./Metrics.vibe"
 
 // The MCP tool catalog (Bring Your Own Agent): what a person's local agent may read and write on one repository.
 // Every handler resolves the repository, checks the live role through `McpAuthService`, validates its arguments with

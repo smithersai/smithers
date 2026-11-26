@@ -1,4 +1,3 @@
-import { Cause, Clock, Effect, Metric, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import {
   MCP_MAX_REQUEST_BYTES,
@@ -13,9 +12,9 @@ import {
 import { isRepository, repoId } from "../../src/features/repo/contract.ts"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
-import { McpAuthService, type McpPrincipal } from "./Contract.ts"
-import * as Metrics from "./Metrics.ts"
-import * as Protocol from "./Protocol.ts"
+import { McpAuthService, type McpPrincipal } from "./Contract.vibe"
+import * as Metrics from "./Metrics.vibe"
+import * as Protocol from "./Protocol.vibe"
 
 // MCP's HTTP routes (Bring Your Own Agent).
 //
@@ -50,7 +49,7 @@ const repoSegments = (pathname: string): { readonly owner: string; readonly name
     return undefined
   }
   const [, , , owner, name] = parts
-  return owner === undefined || name === undefined || owner === "" || name === "" ? undefined : { owner, name }
+  return owner === "" || name === "" ? undefined : { owner, name }
 }
 
 const isTokenRoute = (pathname: string) => {
@@ -86,11 +85,11 @@ const originOf = (request: HttpServerRequest.HttpServerRequest): string => {
 
 /** MCP's routes, reading `McpAuthService` and `McpToolRegistry` from context. */
 export const make = () => {
-  const fetch = Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest
-    const auth = yield* McpAuthService
-    const startedAt = yield* Clock.currentTimeMillis
-    const pathname = request.url.split("?")[0] ?? ""
+  const fetch = withSpan(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const auth = try McpAuthService
+    const startedAt = try Clock.currentTimeMillis
+    const pathname = request.url.split("?")[0]!
     const origin = originOf(request)
     const repoPath = repoSegments(pathname)
     const route = pathname === MCP_ROUTE ? "mcp" : repoPath !== undefined ? "repo_mcp" : "oauth"
@@ -100,9 +99,9 @@ export const make = () => {
       return HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
     }
 
-    const response = yield* Effect.gen(function* () {
+    const response = try Effect.catchCause(effect {
       if (route === "oauth") {
-        const answered = yield* auth.handleOAuthOrTokenRoute(request, origin)
+        const answered = try auth.handleOAuthOrTokenRoute(request, origin)
         return Option.isSome(answered) ? answered.value : refuse(404, "not_found")
       }
       if (request.method !== "POST") {
@@ -113,17 +112,16 @@ export const make = () => {
       if (repoPath !== undefined) {
         const owner = decode(repoPath.owner)
         const name = decode(repoPath.name)
-        if (owner === undefined || name === undefined || !isRepository(owner, name)) return refuse(404, "not_found")
+        if (owner === undefined || name === undefined || !(try sync(() => isRepository(owner, name)))) return refuse(404, "not_found")
         defaultRepo = { owner, name }
       }
-      const body = yield* readBounded(request, MCP_MAX_REQUEST_BYTES).pipe(Effect.result)
+      const body = try Effect.result(readBounded(request, MCP_MAX_REQUEST_BYTES))
       if (body._tag === "Failure") {
         return body.failure.reason === "too_large" ? refuse(413, "too_large") : refuse(400, "invalid")
       }
-      const authenticated = yield* auth.authenticate(
-        request,
-        defaultRepo === undefined ? undefined : repoId(defaultRepo.owner, defaultRepo.name),
-      )
+      const targetRepo = defaultRepo
+      const targetRepoId = try sync(() => targetRepo === undefined ? undefined : repoId(targetRepo.owner, targetRepo.name))
+      const authenticated = try auth.authenticate(request, targetRepoId)
       let principal: Option.Option<McpPrincipal> = Option.none()
       switch (authenticated._tag) {
         case "Rejected":
@@ -138,33 +136,30 @@ export const make = () => {
         case "Anonymous":
           break
       }
-      yield* Effect.annotateCurrentSpan({ "mcp.authenticated": Option.isSome(principal) })
-      const answered = yield* Protocol.handleMcpMessage({ body: body.success, principal }, origin, defaultRepo)
+      try annotateCurrentSpan({ "mcp.authenticated": Option.isSome(principal) })
+      const answered = try Protocol.handleMcpMessage({ body: body.success, principal }, origin, defaultRepo)
       if (answered.status === 401) outcome = "authentication"
       else if (answered.status >= 400) outcome = "invalid"
       return answered
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.gen(function* () {
-          yield* Effect.annotateCurrentSpan({ "error.code": codeOf(Cause.squash(cause)) })
-          return refuse(503, "unavailable")
-        })
-      ),
-    )
+    }, effect (cause) => {
+      const code = try sync(() => codeOf(Cause.squash(cause)))
+      try annotateCurrentSpan({ "error.code": code })
+      return refuse(503, "unavailable")
+    })
 
-    yield* Metric.update(Metric.withAttributes(Metrics.requests, { route, outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, route, outcome })
-    yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+    try Metric.update(Metric.withAttributes(Metrics.requests, { route, outcome }), 1)
+    try annotateCurrentSpan({ "http.response.status_code": response.status, route, outcome })
+    try annotateLogs(logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
       "mcp.request",
-    ).pipe(Effect.annotateLogs({
+    ), {
       route,
       outcome,
       method: request.method,
       status: response.status,
-      durationMs: (yield* Clock.currentTimeMillis) - startedAt,
-    }))
+      durationMs: (try Clock.currentTimeMillis) - startedAt,
+    })
     return response
-  }).pipe(Effect.withSpan("mcp.request", { kind: "server" }))
+  }, "mcp.request", { kind: "server" })
 
   return { fetch }
 }

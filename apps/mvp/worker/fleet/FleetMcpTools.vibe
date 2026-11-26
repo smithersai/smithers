@@ -11,7 +11,7 @@ import {
   type McpToolContext,
   type McpToolDescriptor,
   McpToolError,
-} from "../mcp/Contract.ts"
+} from "../mcp/Contract.vibe"
 import * as FleetStore from "./FleetStore.vibe"
 
 export interface FleetToolResult {

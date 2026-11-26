@@ -1,4 +1,3 @@
-import { Effect, Metric, Option } from "effect"
 import { HttpServerResponse } from "effect/http"
 import {
   MCP_BLOCKED_ACTS,
@@ -6,8 +5,8 @@ import {
   MCP_PROTOCOL_VERSIONS,
   type McpProtocolVersion,
 } from "../../src/features/mcp/contract.ts"
-import { type McpPrincipal, type McpToolError, McpToolRegistry } from "./Contract.ts"
-import * as Metrics from "./Metrics.ts"
+import { type McpPrincipal, type McpToolError, McpToolRegistry } from "./Contract.vibe"
+import * as Metrics from "./Metrics.vibe"
 
 // Stateless Streamable HTTP MCP (JSON-RPC 2.0) over `McpToolRegistry`. One POST carries one JSON-RPC message; the answer
 // is one JSON body (no SSE stream, no session id). worker/mcp/Api.ts authenticates before it calls here, so this module
@@ -83,9 +82,9 @@ const rpcError = (id: Id, code: number, message: string, data?: unknown, status 
 
 const accepted = () => HttpServerResponse.empty({ status: 202, headers: noStore })
 
+// Parsed JSON objects have the ordinary object prototype.
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value) &&
-  (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
+  typeof value === "object" && value !== null && !Array.isArray(value)
 
 const isId = (value: unknown): value is Id =>
   value === null || typeof value === "string" || (typeof value === "number" && Number.isFinite(value))
@@ -117,48 +116,47 @@ export const toolErrorResult = (error: McpToolError) => ({
 const countTool = (tool: string, principal: Option.Option<McpPrincipal>, outcome: string) =>
   Metric.update(Metric.withAttributes(Metrics.toolCalls, { tool: toolLabel(tool), role: roleLabel(principal), outcome }), 1)
 
-const callTool = (
+effect function callTool(
   id: Id,
   params: Record<string, unknown>,
   message: McpHttpMessage,
   origin: string,
   defaultRepo: { readonly owner: string; readonly name: string } | undefined,
-) =>
-  Effect.gen(function* () {
-    const name = params.name
-    if (typeof name !== "string" || name === "") {
-      return rpcError(id, JSON_RPC.invalidParams, "params.name must be a non-empty string", { code: "invalid_params" })
-    }
-    const args = params.arguments === undefined ? {} : params.arguments
-    if (!isRecord(args)) {
-      return rpcError(id, JSON_RPC.invalidParams, "params.arguments must be an object", { code: "invalid_params" })
-    }
-    if (isBlockedAct(name)) {
-      yield* countTool(name, message.principal, "person_only")
-      return rpcError(id, JSON_RPC.invalidParams, "This action is person-only and never available to agents", {
-        code: "person_only",
-      })
-    }
-    const registry = yield* McpToolRegistry
-    const called = yield* registry.callTool(name, args, {
-      principal: message.principal,
-      ...(defaultRepo === undefined ? {} : { defaultRepo }),
-      requestId: String(id),
-      origin,
-    }).pipe(Effect.result)
-    if (called._tag === "Success") {
-      yield* countTool(name, message.principal, called.success.isError === true ? "tool_error" : "ok")
-      return result(id, called.success)
-    }
-    const error = called.failure
-    yield* countTool(name, message.principal, error.code)
-    yield* Effect.annotateCurrentSpan({ "mcp.tool.error": error.code })
-    // Unauthenticated: a 401 with the RFC 9728 challenge, so the client starts OAuth instead of showing an error.
-    if (error.code === "authentication" && Option.isNone(message.principal)) {
-      return unauthorized(origin, "authentication", undefined, defaultRepo)
-    }
-    return result(id, toolErrorResult(error))
-  })
+) {
+  const name = params.name
+  if (typeof name !== "string" || name === "") {
+    return rpcError(id, JSON_RPC.invalidParams, "params.name must be a non-empty string", { code: "invalid_params" })
+  }
+  const args = params.arguments === undefined ? {} : params.arguments
+  if (!isRecord(args)) {
+    return rpcError(id, JSON_RPC.invalidParams, "params.arguments must be an object", { code: "invalid_params" })
+  }
+  if (isBlockedAct(name)) {
+    try countTool(name, message.principal, "person_only")
+    return rpcError(id, JSON_RPC.invalidParams, "This action is person-only and never available to agents", {
+      code: "person_only",
+    })
+  }
+  const registry = try McpToolRegistry
+  const called = try Effect.result(registry.callTool(name, args, {
+    principal: message.principal,
+    ...(defaultRepo === undefined ? {} : { defaultRepo }),
+    requestId: String(id),
+    origin,
+  }))
+  if (called._tag === "Success") {
+    try countTool(name, message.principal, called.success.isError === true ? "tool_error" : "ok")
+    return result(id, called.success)
+  }
+  const error = called.failure
+  try countTool(name, message.principal, error.code)
+  try annotateCurrentSpan({ "mcp.tool.error": error.code })
+  // Unauthenticated: a 401 with the RFC 9728 challenge, so the client starts OAuth instead of showing an error.
+  if (error.code === "authentication" && Option.isNone(message.principal)) {
+    return unauthorized(origin, "authentication", undefined, defaultRepo)
+  }
+  return result(id, toolErrorResult(error))
+}
 
 /**
  * Answers one Streamable HTTP MCP POST body: `initialize`, `ping`, `tools/list`, `tools/call`, and notifications (202).
@@ -169,19 +167,18 @@ export const handleMcpMessage = (
   message: McpHttpMessage,
   origin: string,
   defaultRepo?: { readonly owner: string; readonly name: string },
-): Effect.Effect<HttpServerResponse.HttpServerResponse, never, McpToolRegistry> =>
-  Effect.gen(function* () {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(message.body)
-    } catch {
+): HttpServerResponse.HttpServerResponse!never!McpToolRegistry =>
+  effect {
+    const decoded = try Effect.result(Effect.try((): unknown => JSON.parse(message.body)))
+    if (decoded._tag === "Failure") {
       return rpcError(null, JSON_RPC.parseError, "Parse error", undefined, 400)
     }
+    const parsed = decoded.success
     // Batches were removed in 2025-06-18; one message per POST.
     if (!isRecord(parsed) || parsed.jsonrpc !== "2.0") {
       return rpcError(null, JSON_RPC.invalidRequest, "Invalid Request", undefined, 400)
     }
-    const hasId = "id" in parsed && parsed.id !== undefined
+    const hasId = Object.hasOwn(parsed, "id")
     if (hasId && !isId(parsed.id)) return rpcError(null, JSON_RPC.invalidRequest, "Invalid Request", undefined, 400)
     const id: Id = hasId ? parsed.id as Id : null
     // A client's response to a server request: nothing to answer on a stateless server.
@@ -194,7 +191,7 @@ export const handleMcpMessage = (
       return rpcError(id, JSON_RPC.invalidRequest, "Invalid Request", undefined, 400)
     }
     const params: Record<string, unknown> = isRecord(parsed.params) ? parsed.params : {}
-    yield* Effect.annotateCurrentSpan({ "mcp.method": method.length <= 64 ? method : "other" })
+    try annotateCurrentSpan({ "mcp.method": method.length <= 64 ? method : "other" })
     // A notification gets no JSON-RPC answer and runs nothing: `notifications/initialized` and any other.
     if (!hasId) return accepted()
     switch (method) {
@@ -208,13 +205,13 @@ export const handleMcpMessage = (
       case "ping":
         return result(id, {})
       case "tools/list": {
-        const registry = yield* McpToolRegistry
-        const tools = yield* registry.listTools(message.principal, defaultRepo)
+        const registry = try McpToolRegistry
+        const tools = try registry.listTools(message.principal, defaultRepo)
         return result(id, { tools })
       }
       case "tools/call":
-        return yield* callTool(id, params, message, origin, defaultRepo)
+        return try callTool(id, params, message, origin, defaultRepo)
       default:
         return rpcError(id, JSON_RPC.methodNotFound, "Method not found")
     }
-  })
+  }

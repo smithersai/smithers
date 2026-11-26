@@ -16,7 +16,7 @@ import * as Store from "../github/Store.ts"
 import * as WorkLinks from "../github/WorkLinks.ts"
 import { Write } from "../github/Write.ts"
 import type * as RepoReads from "../RepoReads.ts"
-import { McpToolError } from "./Contract.ts"
+import { McpToolError } from "./Contract.vibe"
 import {
   makeLiveToolDeps,
   MAX_FILE_PREVIEW_BYTES,

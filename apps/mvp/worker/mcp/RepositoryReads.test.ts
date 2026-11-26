@@ -14,7 +14,7 @@ import * as RepoRoles from "../github/RepoRoles.ts"
 import { scripted } from "../test/codeStorage.ts"
 import { testFile } from "../test/harness.ts"
 import { makeMcpAuthService } from "./Auth.ts"
-import { McpAuthService, type McpPrincipal } from "./Contract.ts"
+import { McpAuthService, type McpPrincipal } from "./Contract.vibe"
 import { makeLiveDeps } from "./LiveDeps.ts"
 import { makeLiveToolDeps, makeMcpToolRegistry, MAX_FILE_PREVIEW_BYTES } from "./Tools.ts"
 
@@ -106,7 +106,7 @@ test.each(["git/ref/heads/main", "branches", "tags", "issues/1/comments", "pulls
   })
   const read = suffix.includes("comments") ? deps.getIssue(repo.owner, repo.name, 1)
     : suffix.includes("reviews") ? deps.getPull(repo.owner, repo.name, 1) : deps.listRefs(repo.owner, repo.name)
-  const failure = await Effect.runPromise(Effect.flip(read as Effect.Effect<unknown, import("./Contract.ts").McpToolError>))
+  const failure = await Effect.runPromise(Effect.flip(read as Effect.Effect<unknown, import("./Contract.vibe").McpToolError>))
   expect(failure.code).toBe("rate_limited")
 })
 

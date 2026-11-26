@@ -28,8 +28,7 @@ export type McpAuthResult =
       readonly code: "invalid_token" | "token_revoked" | "token_expired" | "repo_scope_mismatch" | "unavailable"
     }
 
-/** Typed failure raised by MCP OAuth or token operations. */
-export class McpAuthError extends Schema.TaggedError<McpAuthError>()("@smthrs/mvp/mcp/McpAuthError", {
+const authErrorFields = {
   code: Schema.Literals([
     "invalid_request",
     "invalid_client",
@@ -46,10 +45,12 @@ export class McpAuthError extends Schema.TaggedError<McpAuthError>()("@smthrs/mv
   ]),
   status: Schema.Number,
   detail: Schema.optional(Schema.String),
-}) {}
+} as const
 
-/** Typed failure raised by MCP tool execution. */
-export class McpToolError extends Schema.TaggedError<McpToolError>()("@smthrs/mvp/mcp/McpToolError", {
+/** Typed failure raised by MCP OAuth or token operations. */
+export class McpAuthError extends Schema.TaggedError<McpAuthError>()("@smthrs/mvp/mcp/McpAuthError", authErrorFields) {}
+
+const toolErrorFields = {
   code: Schema.Literals([
     "invalid_params",
     "authentication",
@@ -62,7 +63,10 @@ export class McpToolError extends Schema.TaggedError<McpToolError>()("@smthrs/mv
     "unavailable",
   ]),
   message: Schema.String,
-}) {}
+} as const
+
+/** Typed failure raised by MCP tool execution. */
+export class McpToolError extends Schema.TaggedError<McpToolError>()("@smthrs/mvp/mcp/McpToolError", toolErrorFields) {}
 
 /** Live repository authorization result for an MCP tool invocation. */
 export interface McpRepoAccess {
@@ -81,29 +85,29 @@ export class McpAuthService extends Context.Service<
     readonly authenticate: (
       request: HttpServerRequest.HttpServerRequest,
       targetRepoId?: string,
-    ) => Effect.Effect<McpAuthResult>
+    ) => McpAuthResult!!
     /** Resolves live per-repo role + visibility for `principal` (or anonymous) on `owner/name` and enforces `repoScope`. */
     readonly resolveRepoAccess: (
       principal: Option.Option<McpPrincipal>,
       owner: string,
       name: string,
-    ) => Effect.Effect<McpRepoAccess, McpToolError>
+    ) => McpRepoAccess!McpToolError
     /** Enforces minimum role + `mcp:write` scope + non-blocked act on a tool invocation. */
     readonly requireWriteAccess: (
       principal: Option.Option<McpPrincipal>,
       owner: string,
       name: string,
       minimum: Role,
-    ) => Effect.Effect<{ readonly principal: McpPrincipal; readonly access: McpRepoAccess }, McpToolError>
+    ) => { readonly principal: McpPrincipal; readonly access: McpRepoAccess }!McpToolError
     /** Lists the signed-in person's MCP tokens (person-only; rejects agent credentials). */
-    readonly listTokens: (personId: string) => Effect.Effect<ReadonlyArray<McpTokenSummary>, McpAuthError>
+    readonly listTokens: (personId: string) => ReadonlyArray<McpTokenSummary>!McpAuthError
     /** Revokes a single MCP token owned by `personId` (person-only). */
-    readonly revokeToken: (personId: string, tokenId: string) => Effect.Effect<boolean, McpAuthError>
+    readonly revokeToken: (personId: string, tokenId: string) => boolean!McpAuthError
     /** Handles RFC 9728, RFC 8414, RFC 7591 DCR, OAuth authorize, token exchange, and `/api/me/mcp-tokens`. */
     readonly handleOAuthOrTokenRoute: (
       request: HttpServerRequest.HttpServerRequest,
       origin: string,
-    ) => Effect.Effect<Option.Option<HttpServerResponse.HttpServerResponse>>
+    ) => Option.Option<HttpServerResponse.HttpServerResponse>!!
   }
 >()("@smthrs/mvp/mcp/McpAuthService") {}
 
@@ -150,11 +154,11 @@ export class McpToolRegistry extends Context.Service<
     readonly listTools: (
       principal: Option.Option<McpPrincipal>,
       defaultRepo?: { readonly owner: string; readonly name: string },
-    ) => Effect.Effect<ReadonlyArray<McpToolDescriptor>>
+    ) => ReadonlyArray<McpToolDescriptor>!!
     readonly callTool: (
       name: string,
       args: Record<string, unknown>,
       ctx: McpToolContext,
-    ) => Effect.Effect<{ readonly content: ReadonlyArray<McpContentBlock>; readonly isError?: boolean }, McpToolError>
+    ) => { readonly content: ReadonlyArray<McpContentBlock>; readonly isError?: boolean }!McpToolError
   }
 >()("@smthrs/mvp/mcp/McpToolRegistry") {}

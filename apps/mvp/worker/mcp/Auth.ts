@@ -21,7 +21,7 @@ import {
   type McpPrincipal,
   type McpRepoAccess,
   McpToolError,
-} from "./Contract.ts"
+} from "./Contract.vibe"
 import { makeOAuthHandlers, timingSafeEqual, timingSafeEqualString } from "./OAuth.ts"
 
 export { timingSafeEqual, timingSafeEqualString }

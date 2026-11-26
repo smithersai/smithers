@@ -19,7 +19,7 @@ import * as FleetStore from "./fleet/FleetStore.vibe"
 import { repositoryOf } from "./github/Config.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { agentActor, makeMcpAuthService, McpAuthServiceLive } from "./mcp/Auth.ts"
-import { McpAuthService, type McpPrincipal, type McpRepoAccess, type McpToolContext, McpToolError } from "./mcp/Contract.ts"
+import { McpAuthService, type McpPrincipal, type McpRepoAccess, type McpToolContext, McpToolError } from "./mcp/Contract.vibe"
 import * as OAuth from "./mcp/OAuth.ts"
 import { makeLiveToolDeps, makeMcpToolRegistry, MAX_FILE_PREVIEW_BYTES } from "./mcp/Tools.ts"
 

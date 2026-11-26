@@ -4,7 +4,7 @@ import { Effect, Exit, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import { MCP_BLOCKED_ACTS, type McpScope } from "../../src/features/mcp/contract.ts"
 import { rankOf, type Role } from "../Actor.ts"
-import { McpAuthService, type McpPrincipal, type McpToolContext, McpToolError } from "./Contract.ts"
+import { McpAuthService, type McpPrincipal, type McpToolContext, McpToolError } from "./Contract.vibe"
 import {
   attributed,
   declaredFlows,

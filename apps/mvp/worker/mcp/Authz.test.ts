@@ -25,7 +25,7 @@ import {
   timingSafeEqual,
   timingSafeEqualString,
 } from "./Auth.ts"
-import { McpAuthService, type McpPrincipal } from "./Contract.ts"
+import { McpAuthService, type McpPrincipal } from "./Contract.vibe"
 import { generateMcpToken } from "./OAuth.ts"
 import { makeLiveToolDeps, makeMcpToolRegistry } from "./Tools.ts"
 

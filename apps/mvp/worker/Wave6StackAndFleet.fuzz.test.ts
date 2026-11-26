@@ -11,7 +11,7 @@ import type { Actor } from "./Actor.ts"
 import * as DeploymentPolicy from "./DeploymentPolicy.vibe"
 import * as FleetMcpTools from "./fleet/FleetMcpTools.vibe"
 import * as FleetStore from "./fleet/FleetStore.vibe"
-import type { McpPrincipal } from "./mcp/Contract.ts"
+import type { McpPrincipal } from "./mcp/Contract.vibe"
 import * as Stack from "./stack/Stack.vibe"
 import { testFile, uuid } from "./test/harness.ts"
 

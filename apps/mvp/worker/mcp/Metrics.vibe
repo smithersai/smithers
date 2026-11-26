@@ -1,5 +1,3 @@
-import { Metric } from "effect"
-
 // MCP counters (docs/observability.md). Attributes carry only routes, methods, tool names, roles, steps, outcomes and
 // codes: never a token, an issue's text, a file's contents or a person's login (OBS-5).
 

@@ -2,7 +2,7 @@
 // handler, over stubbed `McpAuthService` and `McpToolRegistry`. The stubs record what reached them, so a test can prove a
 // refused request never reached a tool.
 import { Effect, Option } from "effect"
-import { HttpEffect, HttpServerResponse } from "effect/http"
+import { HttpClientRequest, HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { describe, expect, test } from "vitest"
 import {
   MCP_BLOCKED_ACTS,
@@ -16,7 +16,7 @@ import {
   MCP_TOKENS_ROUTE,
   repoMcpRoute,
 } from "../../src/features/mcp/contract.ts"
-import * as Api from "./Api.ts"
+import * as Api from "./Api.vibe"
 import {
   McpAuthService,
   type McpAuthResult,
@@ -24,7 +24,7 @@ import {
   McpToolError,
   McpToolRegistry,
   type McpToolContext,
-} from "./Contract.ts"
+} from "./Contract.vibe"
 
 const ORIGIN = "https://smithers.test"
 const TOKEN = "sma_" + "ab".repeat(32)
@@ -50,6 +50,8 @@ type Call = { readonly name: string; readonly args: Record<string, unknown>; rea
 interface Options {
   /** What `authenticate` answers: `Authenticated` with `principal` when a bearer is sent, else `Anonymous`. */
   readonly auth?: (bearer: string | undefined, targetRepoId: string | undefined) => McpAuthResult
+  readonly oauthMissing?: boolean
+  readonly principal?: McpPrincipal
   /** What `callTool` answers. */
   readonly tool?: (call: Call) => Effect.Effect<
     { readonly content: ReadonlyArray<{ readonly type: "text"; readonly text: string }>; readonly isError?: boolean },
@@ -68,7 +70,7 @@ const open = (options: Options = {}) => {
         const header = request.headers["authorization"]
         const bearer = header?.startsWith("Bearer ") ? header.slice(7) : undefined
         if (options.auth !== undefined) return options.auth(bearer, targetRepoId)
-        return bearer === undefined ? { _tag: "Anonymous" } : { _tag: "Authenticated", principal }
+        return bearer === undefined ? { _tag: "Anonymous" } : { _tag: "Authenticated", principal: options.principal ?? principal }
       }),
     resolveRepoAccess: () => Effect.die("unused"),
     requireWriteAccess: () => Effect.die("unused"),
@@ -77,6 +79,7 @@ const open = (options: Options = {}) => {
     handleOAuthOrTokenRoute: (request) =>
       Effect.sync(() => {
         oauth.push(request.url)
+        if (options.oauthMissing) return Option.none()
         return Option.some(HttpServerResponse.jsonUnsafe({ handled: "oauth" }, { status: 200 }))
       }),
   })
@@ -97,9 +100,11 @@ const open = (options: Options = {}) => {
         : options.tool(call)
     },
   })
-  const handler = HttpEffect.toWebHandler(
-    Api.make().fetch.pipe(Effect.provideService(McpAuthService, auth), Effect.provideService(McpToolRegistry, registry)),
+  const fetch = Api.make().fetch.pipe(
+    Effect.provideService(McpAuthService, auth),
+    Effect.provideService(McpToolRegistry, registry),
   )
+  const handler = HttpEffect.toWebHandler(fetch)
   const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
     handler(
       new Request(`${ORIGIN}${path}`, {
@@ -110,7 +115,7 @@ const open = (options: Options = {}) => {
     )
   const rpc = (method: string, params?: Record<string, unknown>, headers?: Record<string, string>, id: number = 1) =>
     post(MCP_ROUTE, { jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) }, headers)
-  return { handler, post, rpc, calls, authenticated, oauth }
+  return { fetch, handler, post, rpc, calls, authenticated, oauth }
 }
 
 const readJson = (response: Response) => response.json() as Promise<any>
@@ -238,7 +243,7 @@ describe("tools", () => {
 
   test("invalid name or arguments answer -32602 and never reach the registry", async () => {
     const { calls, rpc } = open()
-    for (const params of [{}, { name: 3 }, { name: "issue_read", arguments: [1] }, { name: "x", arguments: "y" }]) {
+    for (const params of [{}, { name: "" }, { name: 3 }, { name: "issue_read", arguments: [1] }, { name: "x", arguments: "y" }]) {
       const body = await readJson(await rpc("tools/call", params, bearer))
       expect(body.error.code).toBe(-32602)
     }
@@ -346,6 +351,12 @@ describe("handles", () => {
 
   test("does not take other repository or API routes", () => {
     for (const path of [
+      "x/api/repos/acme/web/mcp",
+      "/other/repos/acme/web/mcp",
+      "/api/other/acme/web/mcp",
+      "/api/repos//web/mcp",
+      "/api/repos/acme//mcp",
+      `${MCP_TOKENS_ROUTE}/`,
       "/api/repos/acme/web/issues",
       "/api/repos/acme/web/stack",
       "/api/repos/acme/web/mcp/extra",
@@ -356,5 +367,91 @@ describe("handles", () => {
       "/.well-known/openid-configuration",
       "/acme/web/mcp",
     ]) expect(Api.handles(path), path).toBe(false)
+  })
+})
+
+describe("MCP edge cases", () => {
+  test("validates JSON-RPC envelope fields and accepts replies and string or null ids", async () => {
+    const { post } = open()
+    for (const body of [
+      "null",
+      "false",
+      '{"jsonrpc":"2.0","id":1e999,"method":"ping"}',
+      { jsonrpc: "2.0", id: 1, method: "" },
+      { jsonrpc: "2.0", id: 1, method: "ping", params: null },
+    ]) {
+      const response = await post(MCP_ROUTE, body)
+      expect(response.status).toBe(400)
+      expect((await readJson(response)).error.code).toBe(-32600)
+    }
+    for (const reply of [{ result: {} }, { error: { code: -32601 } }]) {
+      expect((await post(MCP_ROUTE, { jsonrpc: "2.0", id: 1, ...reply })).status).toBe(202)
+    }
+    for (const id of ["ping-1", null]) {
+      const response = await post(MCP_ROUTE, { jsonrpc: "2.0", id, method: "ping" })
+      expect(await readJson(response)).toEqual({ jsonrpc: "2.0", id, result: {} })
+    }
+    const response = await post(MCP_ROUTE, { jsonrpc: "2.0", id: 1, method: "x".repeat(65) })
+    expect((await readJson(response)).error.code).toBe(-32601)
+  })
+
+  test("passes the pinned repo and an empty arguments object to the registry", async () => {
+    const { calls, post } = open({
+      principal: { ...principal, actor: { ...principal.actor, role: null } },
+      tool: () => Effect.succeed({ content: [], isError: true }),
+    })
+    const response = await post(repoMcpRoute("acme", "web"), {
+      jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "Read Issue" },
+    }, bearer)
+    expect(await readJson(response)).toMatchObject({ result: { isError: true } })
+    expect(calls).toMatchObject([{ args: {}, ctx: { defaultRepo: { owner: "acme", name: "web" } } }])
+  })
+
+  test("returns a tool authentication error to a signed-in caller without an OAuth challenge", async () => {
+    const { rpc } = open({ tool: () => Effect.fail(new McpToolError({ code: "authentication", message: "Sign in" })) })
+    const response = await rpc("tools/call", { name: "issue_read" }, bearer)
+    expect(response.status).toBe(200)
+    expect(response.headers.get("www-authenticate")).toBeNull()
+    expect((await readJson(response)).result.isError).toBe(true)
+  })
+
+  test("rejects malformed repository escapes in either segment before authenticating", async () => {
+    const { authenticated, post } = open()
+    for (const path of ["/api/repos/%ZZ/web/mcp", "/api/repos/acme/%ZZ/mcp"]) {
+      expect((await post(path, {})).status).toBe(404)
+    }
+    expect(authenticated).toEqual([])
+  })
+
+  test("rejects malformed UTF-8 before authenticating", async () => {
+    const { authenticated, handler } = open()
+    const response = await handler(new Request(ORIGIN + MCP_ROUTE, {
+      method: "POST",
+      body: Uint8Array.of(255),
+    }))
+    expect(response.status).toBe(400)
+    expect(await readJson(response)).toEqual({ code: "invalid" })
+    expect(authenticated).toEqual([])
+  })
+
+  test("answers 404 for a route declined by OAuth and 503 for a registry defect", async () => {
+    const { handler, rpc } = open({ oauthMissing: true, tool: () => Effect.die(new Error("registry unavailable")) })
+    const missing = await handler(new Request(ORIGIN + MCP_OAUTH_PROTECTED_RESOURCE_ROUTE))
+    expect(missing.status).toBe(404)
+    const failed = await rpc("tools/call", { name: "issue_read" })
+    expect(failed.status).toBe(503)
+    expect(await readJson(failed)).toEqual({ code: "unavailable" })
+  })
+
+  test("uses the host header for a relative request and falls back for an invalid host", async () => {
+    const { fetch } = open({ auth: () => ({ _tag: "Rejected", status: 401, code: "invalid_token" }) })
+    for (const [host, origin] of [["proxy.test", "http://proxy.test"], ["bad host", "http://localhost"]]) {
+      const request = HttpServerRequest.fromClientRequest(
+        HttpClientRequest.post(MCP_ROUTE, { headers: { host } }),
+      )
+      const response = await Effect.runPromise(Effect.provideService(fetch, HttpServerRequest.HttpServerRequest, request))
+      expect(response.status).toBe(401)
+      expect(response.headers["www-authenticate"]).toContain(origin + MCP_OAUTH_PROTECTED_RESOURCE_ROUTE)
+    }
   })
 })
