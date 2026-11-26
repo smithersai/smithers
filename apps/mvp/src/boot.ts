@@ -93,6 +93,7 @@ import { SecretsClient } from "./features/secrets/api"
 import { Secrets, type SecretsLayer } from "./features/secrets/secrets"
 import { SecretsStore } from "./features/secrets/store"
 import { Spend, type SpendView } from "./features/spend/spend"
+import type { BuiltIn } from "./plugins/builtin"
 import { pluginKeys } from "./plugins/keymap"
 import { Plugins } from "./plugins/plugins"
 import { PluginsUi, type PluginsView } from "./plugins/ui"
@@ -209,6 +210,7 @@ export interface AppOptions extends Omit<ChatConfig, "shapeUrl"> {
   readonly reload: (reason: AppReloadReason) => void
   readonly host: Host
   readonly answerWithin?: Duration.Input
+  readonly plugins?: ReadonlyArray<BuiltIn>
 }
 
 /**
@@ -238,7 +240,7 @@ export const appLayer = <S = never>(
   options: AppOptions,
   services: Layer.Layer<ChatClient | AuthClient | S, never, HttpClient.HttpClient | ClientEngine | BrowserEngine.BrowserEngine>,
 ) => {
-  const { origin, reload, host, fetch: _fetch, answerWithin: _answerWithin, ...chat } = options
+  const { origin, reload, host, fetch: _fetch, answerWithin: _answerWithin, plugins, ...chat } = options
   // Sign-in, and this tab's answers to the `auth/refresh` it starts when a session check fails: both check the session,
   // which may wipe the device. Beside them, which door this tab's runs came through, so only the person's own press
   // runs with their session, and whether sign-in's row says nobody is signed in, so no run asks for a credential the
@@ -347,7 +349,7 @@ export const appLayer = <S = never>(
     // dispatch (decision 0015). The plugin host sits above agent status, whose open waits it serves as `core/waits`, and
     // below the composer's commands, which offer the plugins' slash commands (decision 0017).
     Layer.provideMerge(
-      Plugins.layer().pipe(
+      Plugins.layer(plugins).pipe(
         // The bug reports the viewer may see, which the host serves as `core/bug-reports` (docs/features/bugs.md).
         Layer.provideMerge(BugsStore.layer({ origin })),
         // Every repository's feeds, which the host serves as `core/feeds`, `core/feed` and `core/feed-items`

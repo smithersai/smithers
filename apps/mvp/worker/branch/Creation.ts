@@ -43,6 +43,7 @@ export const select = (
   repository: { readonly owner: string; readonly name: string },
   revision: string,
   operation: BranchOperation = "create",
+  builtins: Partial<typeof BRANCH_FLOWS> = BRANCH_FLOWS,
 ): Effect.Effect<CreationSelection, CreationRefused> => Effect.gen(function* () {
   const read = (path: string) => client!.readFile(repoId(repository.owner, repository.name), { path, ref: revision, maxBytes: 65_536 }).pipe(
     Effect.flatMap(({ bytes }) => Effect.try({ try: () => textOf(bytes), catch: invalid })),
@@ -50,10 +51,9 @@ export const select = (
       error.code === "not_found" ? Effect.succeed(undefined) : Effect.fail(new CreationRefused({ code: "unavailable" }))),
   )
   const configText = client === undefined ? undefined : yield* read(".smithers/branch.json")
-  const builtin = BRANCH_FLOWS[operation]
-  let manifest: unknown = builtin.manifest
-  let source: string = builtin.source
-  let tag: string = builtin.tag
+  let manifest: unknown
+  let source: string
+  let tag: string
   const config = configText === undefined ? undefined : yield* decodeConfig(configText).pipe(Effect.mapError(invalid))
   const flow = config === undefined ? undefined : operation === "create" ? config.flow : config[operation]
   if (config !== undefined && flow !== undefined) {
@@ -65,6 +65,12 @@ export const select = (
     source = flowSource
     const checked = yield* Manifest.decode(manifest).pipe(Effect.mapError(invalid))
     if (checked.id !== config.plugin || !checked.owns?.includes(flow)) return yield* invalid()
+  } else {
+    const builtin = builtins[operation]
+    if (builtin === undefined) return yield* new CreationRefused({ code: "unavailable" })
+    manifest = builtin.manifest
+    source = builtin.source
+    tag = builtin.tag
   }
   const checked = yield* Manifest.decode(manifest).pipe(Effect.mapError(invalid))
   const metadata = readSource(source, tag)
