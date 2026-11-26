@@ -6,7 +6,7 @@ import { TestClock } from "effect/testing"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, onTestFinished, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import * as ExecutionHost from "../ExecutionHost.ts"
+import * as ExecutionHost from "../ExecutionHost.vibe"
 import * as Flows from "../Flows.vibe"
 import * as Keys from "../SessionKeys.vibe"
 import { testFile } from "../test/harness.ts"
@@ -22,7 +22,7 @@ test("authentication seeds maintenance and existing idle alarms own subsequent r
   const program = sourceText(new URL("../ChatApiProgram.ts", import.meta.url))
   expect(program).toContain("signIn.admit(")
   // Re-admitting the root from its own alarm would overwrite the durable sleep with an immediate wake.
-  const host = sourceText(new URL("../Executions.ts", import.meta.url))
+  const host = sourceText(new URL("../Executions.vibe", import.meta.url))
   expect(host).not.toMatch(/ReplacedTokens\.(?:sampler|ensure)|sampleCleanup/)
   expect(ExecutionHost.remoteWithSignIn).toBeDefined()
 })

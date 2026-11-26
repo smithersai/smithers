@@ -24,7 +24,7 @@ import { callExecutionId, COMMAND_LIMIT_SECONDS } from "../../src/features/sandb
 import { Machines } from "../branch/Machines.vibe"
 import { userOf } from "../branch/Users.ts"
 import { SandboxBranch } from "../branch/Sandboxes.vibe"
-import * as ExecutionHost from "../ExecutionHost.ts"
+import * as ExecutionHost from "../ExecutionHost.vibe"
 import * as Box from "../test/box.ts"
 import { resetBranches, tracked } from "../test/branch.ts"
 import { testFile } from "../test/harness.ts"

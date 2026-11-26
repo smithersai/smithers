@@ -10,7 +10,7 @@ import * as Jobs from "../../worker/runners/Jobs.vibe"
 import * as Overflow from "../../worker/runners/Overflow.vibe"
 import * as Store from "../../worker/runners/Store.vibe"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { ENGINE_SCHEMA as ENGINE_HOST_SCHEMA } from "../../worker/ExecutionHost.ts"
+import { ENGINE_SCHEMA as ENGINE_HOST_SCHEMA } from "../../worker/ExecutionHost.vibe"
 import { blockers, cutover, ENGINE_SCHEMA, run, servingOneVersion } from "./cutover.ts"
 
 const runtime = testFile("runner_cutover")

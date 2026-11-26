@@ -9,7 +9,7 @@ import { SqlClient } from "effect/sql"
 import { Miniflare } from "miniflare"
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import * as ExecutionHost from "./ExecutionHost.ts"
+import * as ExecutionHost from "./ExecutionHost.vibe"
 import * as Pause from "./flows/Pause.vibe"
 import { bundle } from "./test/workerd/executionBundle.ts"
 

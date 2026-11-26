@@ -5,7 +5,7 @@ import { Node } from "@smthrs/plan"
 import { Context, Effect, Layer, Schema } from "effect"
 import { expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import * as ExecutionHost from "../../worker/ExecutionHost.ts"
+import * as ExecutionHost from "../../worker/ExecutionHost.vibe"
 import { build } from "../../worker/test/flowHost.ts"
 import { ClientEngine, DispatchFailed } from "./dispatch"
 

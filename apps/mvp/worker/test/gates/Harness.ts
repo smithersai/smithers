@@ -12,7 +12,7 @@ import { SqlClient } from "effect/sql"
 import * as Budget from "../../branch/Budget.vibe"
 import { props } from "../../ChatApi.ts"
 import type { Door } from "../../ChatApiProgram.ts"
-import * as ExecutionHost from "../../ExecutionHost.ts"
+import * as ExecutionHost from "../../ExecutionHost.vibe"
 
 /** What starts a gate: the execution's id, the commit's target, and the jobs `repo/Plan` would have planned. */
 export const Start = Schema.Struct({ executionId: Schema.String, target: CiJob.Target, jobs: CiJob.Jobs })

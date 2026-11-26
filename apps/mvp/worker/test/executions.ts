@@ -8,7 +8,7 @@ import { Cause, Context, Effect, Layer, Predicate, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { codeOf } from "../ErrorCode.ts"
-import * as ExecutionHost from "../ExecutionHost.ts"
+import * as ExecutionHost from "../ExecutionHost.vibe"
 import * as Flows from "../Flows.vibe"
 
 /** A Durable Object's storage in memory: values cross it by structured clone, and it holds one alarm. */

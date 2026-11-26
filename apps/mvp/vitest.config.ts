@@ -8,8 +8,26 @@ import { defineConfig } from "vitest/config"
 // Unit tests in Node: the browser's framework-free chat layer (src/), ChatApi's handlers (worker/) and the database
 // (db/), against the compose Postgres and Electric (`pnpm db:up`). View regressions in tests/ use a DOM environment;
 // Playwright covers real browsers. The coverage gate measures logic: every src/**/*.ts but tests and their hosts.
+const quickjsWasm = "\0mvp-quickjs-wasm"
+
 export default defineConfig({
-  plugins: [vibelang({ project: "tsconfig.json" })],
+  plugins: [
+    vibelang({ project: "tsconfig.json" }),
+    {
+      // Workerd supplies a compiled module for this import. Load the same build when testing its host in Node.
+      name: "mvp-workerd-wasm",
+      enforce: "pre",
+      resolveId(id) {
+        if (id === "#quickjs.wasm") return quickjsWasm
+      },
+      load(id) {
+        if (id !== quickjsWasm) return
+        const url = JSON.stringify(import.meta.resolve("#quickjs.wasm"))
+        return `import { readFile } from "node:fs/promises"
+export default await WebAssembly.compile(await readFile(new URL(${url})))`
+      },
+    },
+  ],
   test: {
     globalSetup: [
       fileURLToPath(new URL("../../packages/repo-targets/test-utils/test-schemas.ts", import.meta.url)),
@@ -57,9 +75,8 @@ export default defineConfig({
         "plugins/*/src/**/*.ts",
         // Production's hostname and the docs site's routes on it (docs/infrastructure.md#domain).
         "infra/Domain.ts",
-        // Remote flows (docs/features/remote-flows.md). worker/Executions.ts, the Alchemy Durable Object declaration,
-        // runs only under Alchemy's bundle, so the workerd test proves it through ExecutionHost.ts instead.
-        "worker/ExecutionHost.ts",
+        "worker/ExecutionHost.vibe",
+        "worker/Executions.vibe",
         "worker/Placement.vibe",
         "worker/DurableObjectFailure.vibe",
         "worker/index.ts",

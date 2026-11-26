@@ -3,7 +3,7 @@ import { TestSchemas } from "@smthrs/database"
 // (`pnpm db:up`), with an in-memory stand-in for the object's storage, the one Cloudflare binding they take. The real
 // object runs them in local workerd in worker/ExecutionHost.workerd.test.ts.
 import * as Pg from "@effect/sql-pg"
-import { Action, Flow, Interpreter, WaitFor } from "@smthrs/flow"
+import { Action, Flow, HumanTask, Interpreter, WaitFor } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { ConfigProvider, Context, Deferred, Duration, Effect, Fiber, Layer, Logger, Metric, Redacted, Schema } from "effect"
@@ -11,7 +11,7 @@ import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 import { describe, expect, onTestFailed, onTestFinished, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import * as ExecutionHost from "./ExecutionHost.ts"
+import * as ExecutionHost from "./ExecutionHost.vibe"
 import * as Flows from "./Flows.vibe"
 import * as TodoRuns from "./stack/TodoRuns.vibe"
 import * as DatabaseLoad from "./flows/DatabaseLoad.vibe"
@@ -1131,4 +1131,45 @@ test("a signal before any execution intent does not create state or schedule wor
     expect(object.alarm()).toBeNull()
     expect(routes.routed).toEqual([])
     expect(yield* sql`SELECT schema_name FROM information_schema.schemata WHERE schema_name = ${name}`).toEqual([])
+  })))
+
+
+test("only a bounded answer to the currently parked task wakes the run", () =>
+  withSchema(({ name, sql, url }) => Effect.gen(function* () {
+    const Approval = Flow.make("probe/Approval", {
+      description: "Wait for a release confirmation.",
+      modelInvocable: false,
+      payload: {},
+      success: Schema.Json,
+      error: HumanTask.HumanTaskFailed,
+      body: Node.capture({ humanTask: HumanTask.tag }, () => HumanTask.action.call({
+        name: "release", kind: "confirm", prompt: "Release now?",
+      })),
+    })
+    const flows = { flows: [Approval], registration: Layer.mergeAll(
+      Interpreter.layer(Approval), HumanTask.layer,
+    ).pipe(Layer.provideMerge(Action.layerImplementations)) }
+    const hostFor = (id: string, storage: ExecutionHost.Storage) => ExecutionHost.make(storage, {
+      hostId: id, database: ExecutionHost.database(url, name), flows, router: recording().router,
+    })
+    const host = hostFor("retired-approval-probe", memory().storage)
+
+    const executionId = crypto.randomUUID()
+    const intent = yield* ExecutionHost.intent(Approval, { executionId, payload: {} })
+    yield* host.start({ ...intent, flow: "retired/Approval" })
+    expect(yield* host.answer("release", true)).toBe(false)
+
+    // The retired intent belongs to another object incarnation.
+    const { storage, alarm } = memory()
+    const active = hostFor("active-approval-probe", storage)
+    yield* active.start(intent)
+    expect(yield* active.answer("release", true)).toBe(false)
+    expect((yield* active.alarm())._tag).toBe("Parked")
+    const parkedAlarm = alarm()
+    expect(yield* active.answer("other", true)).toBe(false)
+    expect(yield* active.answer("release", "x".repeat(1_000_000))).toBe(false)
+    expect(alarm()).toBe(parkedAlarm)
+    expect(yield* active.answer("release", true)).toBe(true)
+    expect((yield* active.alarm())._tag).toBe("Settled")
+    expect(yield* status(sql, name, executionId)).toBe("completed")
   })))

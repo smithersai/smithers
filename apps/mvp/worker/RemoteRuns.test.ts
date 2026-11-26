@@ -28,7 +28,7 @@ import {
 import { transcriptRoute } from "../src/features/transcript/contract.ts"
 import * as Actor from "./Actor.vibe"
 import * as CloudRuns from "./CloudRuns.vibe"
-import * as ExecutionHost from "./ExecutionHost.ts"
+import * as ExecutionHost from "./ExecutionHost.vibe"
 import * as RemoteRuns from "./RemoteRuns.vibe"
 import type * as SocketAccess from "./SocketAccess.vibe"
 import * as RepoRuns from "./RepoRuns.vibe"

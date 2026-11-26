@@ -12,7 +12,7 @@ import { revisionOf, segmentRevision } from "../src/features/timeline/identity.t
 import { phaseRetry, summaryRetry } from "../src/features/timeline/store.ts"
 import { registration, SummaryLedger, SummarySeat } from "../src/features/timeline/steps.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import * as ExecutionHost from "./ExecutionHost.ts"
+import * as ExecutionHost from "./ExecutionHost.vibe"
 import { build, type HostOptions } from "./test/flowHost.ts"
 import { answers, harness, testFile } from "./test/harness.ts"
 

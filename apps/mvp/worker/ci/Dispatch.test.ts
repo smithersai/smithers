@@ -8,7 +8,7 @@ import { REPOSITORY, reset, services as githubServices } from "../github/test/fi
 import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile, uuid } from "../test/harness.ts"
-import * as ExecutionHost from "../ExecutionHost.ts"
+import * as ExecutionHost from "../ExecutionHost.vibe"
 import * as Dispatch from "./Dispatch.vibe"
 import * as Pause from "../flows/Pause.vibe"
 

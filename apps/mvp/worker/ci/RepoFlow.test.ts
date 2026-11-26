@@ -19,7 +19,7 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as RepoRuns from "../RepoRuns.vibe"
 import { build, runFlow } from "../test/flowHost.ts"
 import { testFile, uuid } from "../test/harness.ts"
-import * as ExecutionHost from "../ExecutionHost.ts"
+import * as ExecutionHost from "../ExecutionHost.vibe"
 import * as RepoFlow from "./RepoFlow.vibe"
 
 const runtime = testFile("repo_flow")

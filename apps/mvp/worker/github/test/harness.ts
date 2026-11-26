@@ -39,7 +39,7 @@ import { PULL_COMMITS_TABLE, PULLS_TABLE, REVIEWS_TABLE, RUNS_TABLE } from "../.
 import { WORK_LINKS_TABLE } from "../../../src/features/issues/work.ts"
 import { TODO_LEAVES_TABLE } from "../../../src/features/todos/leaves.ts"
 import * as Actor from "../../Actor.vibe"
-import * as ExecutionHost from "../../ExecutionHost.ts"
+import * as ExecutionHost from "../../ExecutionHost.vibe"
 import { FlowStarter, StartConflict } from "../../Flows.vibe"
 import { build } from "../../test/flowHost.ts"
 import { signedIn as signedInAs, type testFile } from "../../test/harness.ts"

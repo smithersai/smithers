@@ -137,7 +137,7 @@ export const withRepoClone = <ROut, E, R, CE, CR>(flows: Flows<ROut, E, R>, serv
  */
 export const withGitHub = <ROut, E, R, GE, GR, SE, SR>(
   flows: Flows<ROut, E, R>,
-  services: Effect.Effect<Triage.Services<GE, GR>, SE, SR>,
+  services: Triage.Services<GE, GR>!SE!SR,
 ) => ({
   flows: [...flows.flows, ...GitHubHost.flows],
   registration: Layer.merge(flows.registration, Layer.unwrap(Effect.map(services, GitHubHost.registration))),
@@ -154,7 +154,7 @@ export const withGitHub = <ROut, E, R, GE, GR, SE, SR>(
  */
 export const withTodos = <ROut, E, R, SE, SR, DE, DR, ME, MR, IE, IR>(
   flows: Flows<ROut, E, R>,
-  services: Effect.Effect<Todo.Services<DE, DR> & Checks.Services<DE, DR>, SE, SR>,
+  services: (Todo.Services<DE, DR> & Checks.Services<DE, DR>)!SE!SR,
   machines: Layer.Layer<Machines, ME, MR>,
   implement: Layer.Layer<Layer.Success<typeof Implement.layer>, IE, IR>,
   commandSeconds?: number,
@@ -194,7 +194,7 @@ export const withTodos = <ROut, E, R, SE, SR, DE, DR, ME, MR, IE, IR>(
  */
 export const withBranchPublish = <ROut, E, R, GE, GR, SE, SR, ME, MR, FE, FR>(
   flows: Flows<ROut, E, R>,
-  services: Effect.Effect<Apply.Services<GE, GR>, SE, SR>,
+  services: Apply.Services<GE, GR>!SE!SR,
   machines: Layer.Layer<Machines, ME, MR>,
   forge: Layer.Layer<Forge, FE, FR>,
 ) => ({
@@ -261,7 +261,7 @@ export const withCiJobs = <ROut, E, R, ME, MR>(
  */
 export const withRepoFlows = <ROut, E, R, SE, SR, DE, DR, VE, VR>(
   flows: Flows<ROut, E, R>,
-  services: Effect.Effect<RepoFlow.Services<DE, DR>, SE, SR>,
+  services: RepoFlow.Services<DE, DR>!SE!SR,
   variant: Layer.Layer<QuickJSVariant.Variant, VE, VR>,
 ) => ({
   flows: [...flows.flows, RepoFlow.Run, RepoFlow.Jobs],
@@ -277,7 +277,7 @@ export const withRepoFlows = <ROut, E, R, SE, SR, DE, DR, VE, VR>(
  */
 export const withTriggers = <ROut, E, R, SE, SR, DE, DR>(
   flows: Flows<ROut, E, R>,
-  services: Effect.Effect<Dispatch.Services<DE, DR>, SE, SR>,
+  services: Dispatch.Services<DE, DR>!SE!SR,
 ) => ({
   flows: [...flows.flows, Dispatch.Dispatch],
   registration: Layer.mergeAll(flows.registration, Layer.unwrap(Effect.map(services, Dispatch.registration))),
@@ -290,7 +290,7 @@ export const withTriggers = <ROut, E, R, SE, SR, DE, DR>(
  */
 export const withSchedules = <ROut, E, R, SE, SR, DE, DR>(
   flows: Flows<ROut, E, R>,
-  services: Effect.Effect<Cron.Services<DE, DR>, SE, SR>,
+  services: Cron.Services<DE, DR>!SE!SR,
 ) => ({
   flows: [...flows.flows, Cron.Sync, Cron.Tick],
   registration: Layer.mergeAll(flows.registration, Layer.unwrap(Effect.map(services, Cron.registration))),
@@ -331,7 +331,7 @@ export const withFleet = <ROut, E, R, DE, DR, SR>(
   database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
   home: string,
   settings: Fleet.Settings,
-  start: Effect.Effect<(alert: Fleet.Alert) => Effect.Effect<void, unknown>, never, SR>,
+  start: ((alert: Fleet.Alert) => void!unknown)!never!SR,
   channels?: Layer.Layer<Channels.Channels>,
 ) => ({
   flows: [...flows.flows, FleetAlert.FleetAlert, FleetAlert.RunnerHealth],
@@ -464,10 +464,10 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never, RT = never>(
     /** Deployment role window captured before Alchemy serializes the runtime. */
     readonly roleFreshMs?: number
     readonly router: ExecutionObject.Router<RE, RR>
-    readonly afterAlarm?: Effect.Effect<void, never, RA>
+    readonly afterAlarm?: void!never!RA
     readonly settled?: ExecutionObject.Settled<RT>
     readonly driveBudgetMs?: number | undefined
-    readonly canStart?: ((intent: ExecutionObject.Intent) => Effect.Effect<boolean, never, RD>) | undefined
+    readonly canStart?: ((intent: ExecutionObject.Intent) => boolean!never!RD) | undefined
   },
 ) => {
   const { flows } = options.flows
@@ -494,18 +494,18 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never, RT = never>(
     repositoryRun: Effect.map(storage.get<string>(ExecutionObject.intentKey), (raw) =>
       Option.flatMap(Option.fromNullishOr(raw), (text) => Option.flatMap(decodeIntent(text), RepoRuns.repositoryIntent))),
     /** Persist before waking: a delivery racing the park, or repeated after a crash, is not lost. */
-    signal: (deferredName: string) => Effect.scoped(Effect.gen(function* () {
-      const raw = yield* storage.get<string>(ExecutionObject.intentKey)
+    signal: (deferredName: string) => Effect.scoped(effect {
+      const raw = try storage.get<string>(ExecutionObject.intentKey)
       if (raw === undefined) return
-      const intent = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionObject.Intent))(raw)
-      const deferred = DurableDeferred.make(deferredName, { success: Schema.Json })
-      yield* Effect.flatMap(FlowRuntime.FlowRuntime, (engine) => engine.deferredDone(deferred, {
+      const intent = try Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionObject.Intent))(raw)
+      const deferred = try sync(() => DurableDeferred.make(deferredName, { success: Schema.Json }))
+      try Effect.flatMap(FlowRuntime.FlowRuntime, (engine) => engine.deferredDone(deferred, {
         flowName: intent.flow, executionId: intent.executionId, deferredName, exit: Exit.succeed(null),
       })).pipe(Effect.provide(CloudflareRuntime.layer(
         { hostId: options.hostId, executionId: intent.executionId, flow: intent.flow }, registration,
       ).pipe(Layer.provide(options.database))))
-      yield* ExecutionObject.wake(storage)
-    })).pipe(Effect.orDie),
+      try ExecutionObject.wake(storage)
+    }).pipe(Effect.orDie),
 
     /**
      * Records `value` as the answer of human task `task`'s open attempt, when the execution is parked on it, then wakes
@@ -513,37 +513,39 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never, RT = never>(
      * here. No execution, a flow this host doesn't run, a run not parked on that task, or a value the task's boundary
      * refuses takes nothing. The answer is durable before the wake, so a host replaced after it still resumes the run.
      */
-    answer: (task: string, value: typeof Schema.Json.Type) => Effect.scoped(Effect.gen(function* () {
-      const raw = yield* storage.get<string>(ExecutionObject.intentKey)
+    answer: (task: string, value: typeof Schema.Json.Type) => Effect.scoped(effect {
+      const raw = try storage.get<string>(ExecutionObject.intentKey)
       if (raw === undefined) return false
-      const intent = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionObject.Intent))(raw)
+      const intent = try Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionObject.Intent))(raw)
       const flow = flows.find((candidate) => candidate._tag === intent.flow)
       if (flow === undefined) return false
       const { executionId } = intent
-      const taken = yield* Effect.gen(function* () {
-        const waiting = yield* (yield* EngineStore.DurableEngineState.DurableEngineState).waiting(executionId)
+      const taken = try effect {
+        const state = try EngineStore.DurableEngineState.DurableEngineState
+        const waiting = try state.waiting(executionId)
         if (Option.isNone(waiting) || waiting.value.reason !== "approval" || waiting.value.token === null) return false
         const parked = waiting.value.token
         // The token names its wait point, `WaitFor/<task>#<attempt>`: the attempt open now. One that names another task
         // gives no attempt, and the token rebuilt from it is not the one parked.
-        const { deferredName } = yield* DurableDeferred.TokenParsed.parse(parked)
-        const prefix = WaitFor.deferred(`${task}#`).name
+        const { deferredName } = try DurableDeferred.TokenParsed.parse(parked)
+        const prefix = try sync(() => WaitFor.deferred(`${task}#`).name)
         const attempt = deferredName.startsWith(prefix) ? Number(deferredName.slice(prefix.length)) : 0
-        const token = DurableDeferred.tokenFromExecutionId(HumanTask.deferred(task, attempt), { flow, executionId })
+        const token = try sync(() =>
+          DurableDeferred.tokenFromExecutionId(HumanTask.deferred(task, attempt), { flow, executionId }))
         if (token !== parked) return false
-        yield* HumanTask.answer({ token, value })
+        try HumanTask.answer({ token, value })
         return true
-      }).pipe(
+      }.pipe(
         // An answer the task's boundary refuses, or that lost a race with another, is not taken.
         Effect.orElseSucceed(() => false),
         Effect.provide(CloudflareRuntime.layer(
           { hostId: options.hostId, executionId, flow: intent.flow }, registration,
         ).pipe(Layer.provide(options.database))),
       )
-      if (taken) yield* ExecutionObject.wake(storage)
-      yield* Effect.logInfo("flow.answer").pipe(Effect.annotateLogs({ executionId, task, outcome: taken ? "taken" : "not_waiting" }))
+      if (taken) try ExecutionObject.wake(storage)
+      try Effect.logInfo("flow.answer").pipe(Effect.annotateLogs({ executionId, task, outcome: taken ? "taken" : "not_waiting" }))
       return taken
-    })).pipe(Effect.orDie),
+    }).pipe(Effect.orDie),
   }
 }
 
