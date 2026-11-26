@@ -5,12 +5,13 @@ import { NodeHost } from "@smthrs/platform-node"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Pause from "../flows/Pause.ts"
 import { build } from "../test/flowHost.ts"
-import * as TodoRuns from "./TodoRuns.ts"
+import * as TodoRuns from "./TodoRuns.vibe"
 import * as Flows from "../Flows.ts"
 // The stack's routes (worker/stack/Api.ts, decision 0016 §1 and §5) through the real handler on this file's schema of
 // the compose Postgres and Electric (`pnpm db:up`): every refusal of `POST /api/repos/<owner>/<name>/stack`, a commit and
 // a drop end to end, repeated ops, the run host's seam, the shapes' access, and records free of titles and prompts.
 import { Context, Deferred, Effect, Layer, Option } from "effect"
+import { FetchHttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import {
@@ -28,7 +29,7 @@ import * as SessionStore from "../SessionStore.ts"
 import { eventually, testFile, uuid } from "../test/harness.ts"
 import * as Api from "./Api.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
-import * as IssueRead from "./IssueRead.ts"
+import * as IssueRead from "./IssueRead.vibe"
 import { rolesThatRead } from "../github/test/fixtures.ts"
 import { app } from "../github/test/harness.ts"
 import { accountIdOf, appKey, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
@@ -867,15 +868,30 @@ describe("attach", () => {
       expect(github.seen("GET", new RegExp(`/issues/${opened.number}$`)).length).toBe(reads)
     })
 
-    test("GitHub still having the issue keeps it live, and the attach goes through", async () => {
+    test("the default Fetch client reads a live issue with a repository-scoped installation token", async () => {
       const github = scriptedGitHub("octo", "hello")
       const opened = github.open("Still here", "Body")
       await issue(opened.number)
       await sql(`UPDATE items SET fetched_at = now() - interval '6 minutes' WHERE id = 'github/octo/hello#${opened.number}'`)
-      const read = await Effect.runPromise(IssueRead.make(app({ privateKey: await appKey() }), Option.some(github.http)))
-      const h = await stackHarness(runtime, { actor: member, refreshIssue: read })
+      const fetchGitHub: typeof fetch = async (input, init) => {
+        const request = new Request(input, init)
+        const outgoing = HttpClientRequest.fromWeb(request)
+        const response = await Effect.runPromise(github.http.execute(request.body === null
+          ? outgoing
+          : HttpClientRequest.bodyUint8Array(outgoing, new Uint8Array(await request.arrayBuffer()), request.headers.get("content-type") ?? undefined)))
+        return Option.getOrThrow(HttpClientResponse.toWeb(response))
+      }
+      const read = await Effect.runPromise(IssueRead.make(app({ privateKey: await appKey() })))
+      const h = await stackHarness(runtime, {
+        actor: member,
+        refreshIssue: (repository, number) => read(repository, number).pipe(Effect.provideService(FetchHttpClient.Fetch, fetchGitHub)),
+      })
       await post(h, commitBody())
       expect((await post(h, attachBody({ issue: opened.number }))).status).toBe(202)
+      expect(github.minted.map(({ body }) => body)).toEqual([{ repositories: ["hello"], permissions: { issues: "read" } }])
+      expect(github.seen("GET", new RegExp("/issues/" + opened.number + "$"))).toEqual([
+        expect.objectContaining({ token: "installation" }),
+      ])
       expect(await sql(`SELECT issue_number AS issue FROM todos`)).toEqual([{ issue: opened.number }])
     })
   })

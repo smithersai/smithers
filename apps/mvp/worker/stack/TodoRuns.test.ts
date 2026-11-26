@@ -12,7 +12,7 @@ import * as Todo from "../flows/Todo.ts"
 import * as TodoBaseClosed from "../flows/TodoBaseClosed.ts"
 import * as TodoDrop from "../flows/TodoDrop.ts"
 import * as Stack from "./Stack.ts"
-import * as TodoRuns from "./TodoRuns.ts"
+import * as TodoRuns from "./TodoRuns.vibe"
 import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import { testFile } from "../test/harness.ts"
 
@@ -206,8 +206,28 @@ test("a TODO whose run died fails `crashed` and frees its lane, once; a run that
     yield* run(todoExecutionId(starts[0]!.attemptId), false).pipe(Effect.provide(context))
     expect(yield* settled(todoExecutionId(starts[0]!.attemptId))).toEqual([])
     expect(yield* settled(`repo-refresh:${crypto.randomUUID()}`)).toEqual([])
-    const missing = todoExecutionId(crypto.randomUUID())
+    const missingAttempt = crypto.randomUUID()
+    const missing = todoExecutionId(missingAttempt)
+    expect(yield* settled(missing)).toEqual([])
+    expect(yield* TodoRuns.isStopped(engineDatabase)(missingAttempt)).toBe(false)
     yield* run(missing, true).pipe(Effect.provide(context))
     expect(yield* settled(missing)).toEqual([])
-    expect((yield* todos)[1]).toEqual({ number: 2, state: "working", failure: null })
+    const second = starts[0]!
+    expect((yield* todos)[1]).toEqual({ number: second.number, state: "working", failure: null })
+
+    yield* Stack.report(second, { kind: "finished", state: "failed", failure: "implement" }, { runs: true })
+    const thirdCommit = yield* Stack.apply(change(), { runs: true })
+    expect(thirdCommit.kind).toBe("applied")
+    if (thirdCommit.kind !== "applied") return
+    const third = thirdCommit.receipt.starts[0]!
+    const thirdExecution = todoExecutionId(third.attemptId)
+    yield* run(thirdExecution, true).pipe(Effect.provide(context))
+    yield* Stack.apply({ ...change(), op: { kind: "drop", number: third.number } }, { runs: true })
+
+    const raised: Array<Fleet.Alert> = []
+    const before = yield* todos
+    expect(yield* TodoRuns.settleCrashed(thirdExecution, engineDatabase, (alert) => Effect.sync(() => void raised.push(alert))))
+      .toEqual([])
+    expect(raised).toEqual([])
+    expect(yield* todos).toEqual(before)
   }))), 60_000)

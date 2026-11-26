@@ -1,4 +1,4 @@
-// The BYOA MCP gate (worker/mcp/Tools.ts over worker/mcp/Auth.ts), the stack's access rules (worker/stack/Access.ts)
+// The BYOA MCP gate (worker/mcp/Tools.ts over worker/mcp/Auth.ts), the stack's access rules (worker/stack/Access.vibe)
 // and the TODO stack's rules (src/features/todos/stack.ts) against their Lean 4 reference specification
 // (spec/lean/mcp_and_stack), generated: every case is answered by the implementation and by the specification's
 // compiled oracle, and the two answers must be equal.
@@ -35,7 +35,7 @@ import { type Actor, memberOrAbove, rankOf, type Role } from "./Actor.ts"
 import { isBlockedMcpAct, isValidMcpTokenFormat, makeMcpAuthService, parseMcpBearer } from "./mcp/Auth.ts"
 import { McpAuthService, type McpPrincipal, type McpToolContext, type McpToolError } from "./mcp/Contract.ts"
 import { isBlockedName, makeMcpToolRegistry, type McpToolDeps, TOOL_SPECS } from "./mcp/Tools.ts"
-import { mayChange, mayConfigure, mayRead, mayRetryAny, viaOf } from "./stack/Access.ts"
+import { mayChange, mayConfigure, mayRead, mayRetryAny, viaOf } from "./stack/Access.vibe"
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The oracle

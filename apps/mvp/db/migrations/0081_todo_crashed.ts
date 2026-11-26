@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { SqlClient } from "effect/sql"
 
 // `todos.failure` takes `crashed`: the TODO's run ended in a defect, so no step of it reported the TODO's end, and the
-// host that settled the run did (worker/stack/TodoRuns.ts `settleCrashed`). Before, such a TODO stayed Working.
+// host that settled the run did (worker/stack/TodoRuns.vibe `settleCrashed`). Before, such a TODO stayed Working.
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
   yield* sql`ALTER TABLE todos DROP CONSTRAINT todos_failure_check`

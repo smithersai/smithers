@@ -52,7 +52,7 @@ import * as Overflow from "./runners/Overflow.ts"
 import { SecretKeys } from "./secrets/Keys.vibe"
 import * as SessionStore from "./SessionStore.ts"
 import * as SignIn from "./SignIn.ts"
-import * as TodoRuns from "./stack/TodoRuns.ts"
+import * as TodoRuns from "./stack/TodoRuns.vibe"
 
 // The Durable Object that runs remote flows on Cloudflare (docs/features/remote-flows.md): one object per execution,
 // named by its execution id, hosted by ChatApi. Alchemy runs its handlers; they delegate to worker/ExecutionHost.ts,

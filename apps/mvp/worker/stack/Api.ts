@@ -36,7 +36,7 @@ import { codeOf } from "../ErrorCode.ts"
 import { repositoryOf as repositoryNamed } from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import * as ShapeAccess from "../ShapeAccess.vibe"
-import { mayChange, mayConfigure, mayRead, mayRetryAny, viaOf } from "./Access.ts"
+import { mayChange, mayConfigure, mayRead, mayRetryAny, viaOf } from "./Access.vibe"
 import * as Stack from "./Stack.ts"
 import type { TodoStatusRead } from "../../src/features/todos/schema.ts"
 

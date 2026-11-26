@@ -34,7 +34,7 @@ import * as RepoRuns from "./RepoRuns.ts"
 import { stillAdmitted } from "./RunAuthority.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { repositoryOf } from "./github/Config.ts"
-import { mayRead } from "./stack/Access.ts"
+import { mayRead } from "./stack/Access.vibe"
 import * as SocketAccess from "./SocketAccess.ts"
 import { isUpgrade, sameOrigin } from "./branch/Upgrade.ts"
 

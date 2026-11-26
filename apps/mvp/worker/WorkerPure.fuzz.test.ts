@@ -22,7 +22,7 @@ import * as Overflow from "./runners/Overflow.ts"
 import * as SecretKeys from "./secrets/Keys.vibe"
 import * as ShapeAccess from "./ShapeAccess.vibe"
 import * as SocketAccess from "./SocketAccess.ts"
-import * as StackAccess from "./stack/Access.ts"
+import * as StackAccess from "./stack/Access.vibe"
 import * as Throttle from "./Throttle.vibe"
 import * as WriteAuthority from "./WriteAuthority.ts"
 

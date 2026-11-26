@@ -200,7 +200,7 @@ export default defineConfig({
         "worker/domains/*.{ts,vibe}",
         "db/migrations/0046_domains.ts",
         // TODOs and the stack: its one writer, its route and shapes (docs/features/todos.md).
-        "worker/stack/*.ts",
+        "worker/stack/*.{ts,vibe}",
         "db/migrations/0022_todos.ts",
         "db/migrations/0035_todo_report_receipts.ts",
         // A TODO's run, watched from the browser (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare).

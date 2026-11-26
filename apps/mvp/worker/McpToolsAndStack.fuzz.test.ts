@@ -1,5 +1,5 @@
 // Adversarial fuzzing of the BYOA MCP tool catalog (worker/mcp/Tools.ts) over fake deps and a fake McpAuthService, and
-// model-based fuzzing of the TODO stack (src/features/todos/stack.ts, worker/stack/Access.ts, worker/stack/Stack.ts's
+// model-based fuzzing of the TODO stack (src/features/todos/stack.ts, worker/stack/Access.vibe, worker/stack/Stack.ts's
 // payload hash) against a reference model written here. No network, no database.
 import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Effect, Exit, Option, Schema } from "effect"
@@ -25,7 +25,7 @@ import {
   resolveRepoArgs,
   TOOL_SPECS,
 } from "./mcp/Tools.ts"
-import { mayChange, mayConfigure, mayRead, mayRetryAny, viaOf } from "./stack/Access.ts"
+import { mayChange, mayConfigure, mayRead, mayRetryAny, viaOf } from "./stack/Access.vibe"
 import { type Change, payloadHash } from "./stack/Stack.ts"
 
 const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "100"))

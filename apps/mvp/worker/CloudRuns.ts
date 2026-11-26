@@ -16,7 +16,7 @@ import * as Checks from "./flows/Checks.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
 import * as RepoClone from "./flows/RepoClone.ts"
 import * as SpendAlert from "./flows/SpendAlert.ts"
-import { mayRead } from "./stack/Access.ts"
+import { mayRead } from "./stack/Access.vibe"
 
 // The runs on Cloudflare a person may read, for the Runs page beside this device's own (docs/features/runs.md#runs-on-cloudflare,
 // ruling FLOW-13: runs read like GitHub Actions). One read, `GET /api/cloud-runs?limit=<n>`, joins three indexes the app
