@@ -153,7 +153,10 @@ export const feedOf = (
   return { entries: entries.sort((left, right) => left.order - right.order), nextAt }
 }
 
-/** The newest of the person's own runs waiting on them, in the list: where the panel opens. `null` when none waits. */
+/**
+ * The newest of the person's own runs waiting on them, in the list: where the panel opens. `null` when none waits.
+ * @throws {never}
+ */
 export const newestNeed = (entries: ReadonlyArray<Entry>): string | null =>
   entries.reduce<Entry | null>(
     (newest, entry) =>

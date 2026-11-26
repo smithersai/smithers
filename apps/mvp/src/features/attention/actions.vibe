@@ -1,8 +1,8 @@
 import type { Inbox } from "@smthrs/notifications"
-import { Deferred, Effect, Exit, Metric, Option } from "effect"
+import { Deferred, Exit, Metric, Option } from "effect"
 import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch.vibe"
 import { retryAnswer } from "../chat/actions"
-import { focus } from "../status/actions"
+import { focus } from "../status/actions.vibe"
 import { type PanelVia, type Surface } from "./contract"
 import { panel as panelActs } from "./metrics"
 import { newestNeed } from "./entries"
@@ -28,92 +28,86 @@ export const dropped = Metric.counter("smithers_notification_acts_dropped", {
  * can't land, the pending row goes, unless a later act replaced it; a log line `notifications.pending` and a count of
  * `dropped` say so.
  */
-const send = (id: string, request: { readonly subject: string; readonly version: number; readonly act: Inbox.Act }) =>
-  Effect.gen(function* () {
-    const { pending, scope } = yield* AttentionStore
-    const flows = yield* FlowDispatch
-    const drop = (reason: string) =>
-      Effect.gen(function* () {
-        const held = Option.filter(yield* pending.get(id), (row) => row.version === request.version)
-        yield* Effect.forEach(Option.toArray(held), () =>
-          Effect.gen(function* () {
-            yield* pending.delete(id)
-            yield* Metric.update(Metric.withAttributes(dropped, { act: request.act, reason }), 1)
-            yield* Effect.logWarning("notifications.pending").pipe(
-              Effect.annotateLogs({ ...request, outcome: "dropped", reason }),
-            )
-          }))
-      }).pipe(Effect.orDie)
-    yield* flows.dispatch("notification/ack", request, { door: "button" }).pipe(
-      Effect.flatMap((done) => (done._tag === "Done" ? Effect.void : Effect.fail(done.error))),
-      Effect.catch((error) => drop(error._tag)),
-      Effect.forkIn(scope),
-    )
-  })
+effect function send(id: string, request: { readonly subject: string; readonly version: number; readonly act: Inbox.Act }) {
+  const { pending, scope } = try AttentionStore
+  const flows = try FlowDispatch
+  const drop = (reason: string) =>
+    orDie(effect {
+      const held = Option.filter(try pending.get(id), (row) => row.version === request.version)
+      try forEach(Option.toArray(held), () =>
+        effect {
+          try pending.delete(id)
+          try Metric.update(Metric.withAttributes(dropped, { act: request.act, reason }), 1)
+          try (logWarning("notifications.pending") |> annotateLogs(%, { ...request, outcome: "dropped", reason }))
+        })
+    })
+  const acked = flatMap(
+    flows.dispatch("notification/ack", request, { door: "button" }),
+    (done) => done._tag === "Done" ? Effect.void : fail(done.error),
+  )
+  try forkIn(Effect.catch(acked, (error) => drop(error._tag)), scope)
+}
 
 /** Records `act` on entry `subject` at the version this tab shows: at once here, then through ChatApi. */
 const record = (subject: string, act: Inbox.Act) =>
-  Effect.gen(function* () {
-    const { entries, pending } = yield* AttentionStore
-    const entry = yield* entries.get(subject)
+  // A local collection refuses only a row its own schema rejects, which these never are: a bug, not a state.
+  orDie(effect {
+    const { entries, pending } = try AttentionStore
+    const entry = try entries.get(subject)
     if (Option.isNone(entry) || entry.value.local === true) return entry
     const { version } = entry.value
     const id = `${subject}:${act}`
-    const held = yield* pending.get(id)
+    const held = try pending.get(id)
     if (Option.isSome(held) && held.value.version >= version) return entry
-    if (Option.isSome(held)) yield* pending.update(id, (draft) => void (draft.version = version))
-    else yield* pending.insert({ id, subject, act, version })
-    yield* send(id, { subject, version, act })
+    if (Option.isSome(held)) try pending.update(id, (draft) => void (draft.version = version))
+    else try pending.insert({ id, subject, act, version })
+    try send(id, { subject, version, act })
     return entry
-  }).pipe(
-    // A local collection refuses only a row its own schema rejects, which these never are: a bug, not a state.
-    Effect.orDie,
-  )
+  })
 
 /** Hides entry `subject`'s toast: on every device, and it stays in the person's list. */
-export const hide = (subject: string) => Effect.asVoid(record(subject, "hide"))
+export const hide = (subject: string) => asVoid(record(subject, "hide"))
 
 /**
  * Dismisses entry `subject`: it leaves the person's list on every device. A failure this device toasted itself leaves
  * this device's list: the receipt it showed is dismissed, so a later one of the same subject shows again (decision 0124).
  */
 export const dismiss = (subject: string) =>
-  Effect.gen(function* () {
-    const { entries, dismissed } = yield* AttentionStore
-    const entry = yield* entries.get(subject)
-    if (Option.isNone(entry) || entry.value.local !== true) return yield* Effect.asVoid(record(subject, "dismiss"))
+  orDie(effect {
+    const { entries, dismissed } = try AttentionStore
+    const entry = try entries.get(subject)
+    if (Option.isNone(entry) || entry.value.local !== true) return try asVoid(record(subject, "dismiss"))
     if (!entry.value.settled) return
     // A failure the feed shows is newer than any dismissal of its subject: this one moves it on.
     const at = entry.value.atMs
-    if (Option.isNone(yield* dismissed.get(subject))) yield* dismissed.insert({ id: subject, at })
-    else yield* dismissed.update(subject, (row) => void (row.at = at))
-    yield* Effect.logInfo("notifications.dismissed").pipe(Effect.annotateLogs({ feature: "attention", subject, local: true }))
-  }).pipe(Effect.orDie)
+    if (Option.isNone(try dismissed.get(subject))) try dismissed.insert({ id: subject, at })
+    else try dismissed.update(subject, (row) => void (row.at = at))
+    try (logInfo("notifications.dismissed") |> annotateLogs(%, { feature: "attention", subject, local: true }))
+  })
 
 /** Marks entry `subject` read on every device, if it is unread. */
 export const read = (subject: string) =>
-  Effect.gen(function* () {
-    const { entries } = yield* AttentionStore
-    const entry = yield* entries.get(subject)
-    if (Option.isSome(entry) && entry.value.unread) yield* record(subject, "read")
-  })
+  effect {
+    const { entries } = try AttentionStore
+    const entry = try entries.get(subject)
+    if (Option.isSome(entry) && entry.value.unread) try record(subject, "read")
+  }
 
 /** The panel's row now. */
-const panelNow = Effect.gen(function* () {
-  const { panel } = yield* AttentionStore
+const panelNow = effect {
+  const { panel } = try AttentionStore
+  const row = try panel.get(PANEL)
   // The panel's one row is always there.
-  return Option.getOrThrow(yield* panel.get(PANEL))
-})
+  return try sync(() => Option.getOrThrow(row))
+}
 
 /** Changes the panel's row. */
 const setPanel = (change: Partial<Omit<Panel, "id">>) =>
-  Effect.gen(function* () {
-    const { panel } = yield* AttentionStore
-    yield* panel.update(PANEL, (draft) => void Object.assign(draft, change))
-  }).pipe(
-    // The panel's one row is always there, and these changes keep its shape: a refusal is a bug, not a state.
-    Effect.orDie,
-  )
+  // The panel's one row is always there, and these changes keep its shape: a refusal is a bug, not a state.
+  orDie(effect {
+    const { panel } = try AttentionStore
+    try panel.update(PANEL, (draft) => void Object.assign(draft, change))
+  })
 
 /** Records what the person did in the panel: a log line and a count, with the entry's subject and never its words. */
 const recorded = (
@@ -125,54 +119,56 @@ const recorded = (
     readonly reason?: DispatchFailed["reason"]
   },
 ) =>
-  Effect.gen(function* () {
-    yield* Metric.update(Metric.withAttributes(panelActs, {
+  effect {
+    try Metric.update(Metric.withAttributes(panelActs, {
       act,
       ...(fields.via === undefined ? {} : { via: fields.via }),
       ...(fields.outcome === undefined ? {} : { outcome: fields.outcome }),
     }), 1)
     // A retry the engine didn't admit is a failure, by dispatch's reason; every other act is Info.
-    yield* (fields.outcome === "failed" ? Effect.logWarning : Effect.logInfo)("notifications.panel").pipe(
-      Effect.annotateLogs({ feature: "attention", act, ...fields }),
-    )
-  })
+    try ((fields.outcome === "failed" ? logWarning : logInfo)("notifications.panel") |> annotateLogs(%, {
+      feature: "attention",
+      act,
+      ...fields,
+    }))
+  }
 
 /**
  * Opens the notifications panel (`via`), at entry `subject`: that entry expanded, taking focus, and read. Without one,
  * at the newest run waiting on the person, so one more press reaches it; with none, the first entry takes focus.
  */
 export const openPanel = (via: PanelVia, subject: string | null = null) =>
-  Effect.gen(function* () {
-    const { entries } = yield* AttentionStore
-    const at = subject ?? newestNeed(yield* entries.toArray)
-    yield* setPanel(at === null ? { open: true, focus: null } : { open: true, focus: at, expanded: at, answer: 0 })
-    if (at !== null) yield* read(at)
-    yield* recorded("open", at === null ? { via } : { via, subject: at })
-  })
+  effect {
+    const { entries } = try AttentionStore
+    const at = subject ?? newestNeed(try entries.toArray)
+    try setPanel(at === null ? { open: true, focus: null } : { open: true, focus: at, expanded: at, answer: 0 })
+    if (at !== null) try read(at)
+    try recorded("open", at === null ? { via } : { via, subject: at })
+  }
 
 /** Closes the notifications panel. */
 export const closePanel = setPanel({ open: false, focus: null })
 
 /** Opens the panel when it is closed, and closes it when it is open: the bell and Alt+N. */
 export const togglePanel = (via: PanelVia) =>
-  Effect.gen(function* () {
-    if ((yield* panelNow).open) yield* closePanel
-    else yield* openPanel(via)
-  })
+  effect {
+    if ((try panelNow).open) try closePanel
+    else try openPanel(via)
+  }
 
 /** Expands entry `subject` in the panel, or collapses it when it is the one expanded. Expanding it reads it. */
 export const expand = (subject: string) =>
-  Effect.gen(function* () {
-    const now = yield* panelNow
+  effect {
+    const now = try panelNow
     // A field asked to take focus before stays where it is: only A asks again.
     if (now.expanded === subject) {
-      yield* setPanel({ expanded: null, answer: 0 })
+      try setPanel({ expanded: null, answer: 0 })
       return
     }
-    yield* setPanel({ expanded: subject, answer: 0 })
-    yield* read(subject)
-    yield* recorded("expand", { subject })
-  })
+    try setPanel({ expanded: subject, answer: 0 })
+    try read(subject)
+    try recorded("expand", { subject })
+  }
 
 /**
  * Opens entry `subject` from `surface`: records Read, closes the panel, then brings the person to it. The person's own
@@ -180,38 +176,40 @@ export const expand = (subject: string) =>
  * shows. Any other run opens its conversation at its answer (`#<run id>`); `main` and a release open their page.
  */
 export const open = (subject: string, _surface: Surface) =>
-  Effect.gen(function* () {
-    const entry = yield* record(subject, "read")
+  effect {
+    const entry = try record(subject, "read")
     if (Option.isNone(entry)) return
     if (entry.value.kind === "clone" && entry.value.state === "failed") {
-      yield* setPanel({ open: true, expanded: subject, focus: subject, answer: 0 })
+      try setPanel({ open: true, expanded: subject, focus: subject, answer: 0 })
       return
     }
     const { action, runId, href } = entry.value
-    if ((yield* panelNow).open) yield* closePanel
+    if ((try panelNow).open) try closePanel
     // Its run is the answer it asks about: the question's card takes focus where it shows.
     if (action === "answer" && runId !== null) {
-      (yield* AttentionNavigation).navigate(`${href}#${runId}`)
-      yield* focus(runId)
+      const navigation = try AttentionNavigation
+      try sync(() => navigation.navigate(`${href}#${runId}`))
+      try focus(runId)
       return
     }
-    (yield* AttentionNavigation).navigate(runId === null ? href : `${href}#${runId}`)
-  })
+    const navigation = try AttentionNavigation
+    try sync(() => navigation.navigate(runId === null ? href : `${href}#${runId}`))
+  }
 
 /**
  * A on entry `subject`: in the panel, its question's field takes focus there, the entry expanded; on a toast, as its
  * Answer. An entry with no question of the person's to answer does nothing.
  */
 export const answer = (subject: string, surface: Surface | "panel") =>
-  Effect.gen(function* () {
-    const { entries } = yield* AttentionStore
-    const entry = yield* entries.get(subject)
+  effect {
+    const { entries } = try AttentionStore
+    const entry = try entries.get(subject)
     if (Option.isNone(entry) || entry.value.action !== "answer") return
-    if (surface !== "panel") return yield* open(subject, surface)
-    const now = yield* panelNow
-    yield* setPanel({ expanded: subject, answer: now.answer + 1 })
-    yield* read(subject)
-  })
+    if (surface !== "panel") return try open(subject, surface)
+    const now = try panelNow
+    try setPanel({ expanded: subject, answer: now.answer + 1 })
+    try read(subject)
+  }
 
 /**
  * Retry on the person's failed run in the conversation the tab shows: asks its question again, there, and dismisses the
@@ -219,37 +217,35 @@ export const answer = (subject: string, surface: Surface | "panel") =>
  * again, door `button`, whose new attempt raises the entry again. Anything else does nothing.
  */
 export const retry = (subject: string) =>
-  Effect.gen(function* () {
-    const { entries, details, scope } = yield* AttentionStore
-    const entry = yield* entries.get(subject)
+  effect {
+    const { entries, details, scope } = try AttentionStore
+    const entry = try entries.get(subject)
     if (Option.isSome(entry) && entry.value.action === "retry" && entry.value.local === true) {
       // This tab's refused admission: its staged input again, under the same identity (decision 0124).
-      const started = yield* (yield* AttentionStore).retryInput(subject)
-      yield* recorded("retry", started ? { subject, outcome: "started" } : { subject, outcome: "failed" })
+      const started = try (try AttentionStore).retryInput(subject)
+      try recorded("retry", started ? { subject, outcome: "started" } : { subject, outcome: "failed" })
       return
     }
     if (Option.isSome(entry) && entry.value.action === "retry") {
       // The clone's new attempt raises the entry again once RepoApi takes it; the press returns at once.
-      const flows = yield* FlowDispatch
-      yield* Effect.gen(function* () {
-        const admitted = yield* Deferred.make<void, DispatchFailed>()
-        yield* flows.dispatch("repo/clone", { repo: entry.value.href.slice(1) }, { door: "button", admitted }).pipe(
+      const flows = try FlowDispatch
+      try forkIn(effect {
+        const admitted = try Deferred.make<void, DispatchFailed>()
+        const dispatched = flows.dispatch("repo/clone", { repo: entry.value.href.slice(1) }, { door: "button", admitted })
           // Also release the admission waiter if dispatch fails before it can return a start receipt.
-          Effect.onExit((exit) => Exit.isFailure(exit) ? Deferred.failCause(admitted, exit.cause) : Effect.void),
-          Effect.ignore,
-          Effect.forkIn(scope),
-        )
-        const started = yield* Effect.result(Deferred.await(admitted))
-        yield* recorded("retry", started._tag === "Success"
+          |> onExit(%, (exit) => Exit.isFailure(exit) ? Deferred.failCause(admitted, exit.cause) : Effect.void)
+        try forkIn(ignore(dispatched), scope)
+        const started = try result(Deferred.await(admitted))
+        try recorded("retry", started._tag === "Success"
           ? { subject, outcome: "started" }
           : { subject, outcome: "failed", reason: started.failure.reason })
-      }).pipe(Effect.forkIn(scope))
+      }, scope)
       return
     }
-    const detail = yield* details.get(subject)
+    const detail = try details.get(subject)
     const runId = Option.isSome(entry) && Option.isSome(detail) && detail.value.retry ? entry.value.runId : null
     if (runId === null) return
-    yield* retryAnswer(runId)
-    yield* dismiss(subject)
-    yield* recorded("retry", { subject })
-  })
+    try retryAnswer(runId)
+    try dismiss(subject)
+    try recorded("retry", { subject })
+  }

@@ -9,9 +9,9 @@ import { load } from "../features/auth/actions.vibe"
 import { SESSION_ROUTE } from "../features/auth/contract"
 import { RepoRole } from "../features/auth/schema"
 import { AuthStore, SESSION } from "../features/auth/store.vibe"
-import { makeVisibility } from "../features/repo/gate"
+import { makeVisibility } from "../features/repo/gate.vibe"
 import { nodeDevice } from "../test/chatApi"
-import { boundFetch, VISITOR } from "./identity"
+import { boundFetch, VISITOR } from "./identity.vibe"
 
 test.each(["rejected", "stalled"].flatMap(storage => ["deadline", "cancel"].map(wait => ({ storage, wait }))))(
   "$storage credential publication cannot strand another transport's write beyond its $wait", async ({ storage, wait }) => {

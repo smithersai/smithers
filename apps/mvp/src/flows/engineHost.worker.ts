@@ -1,7 +1,7 @@
 import { IndexedDBAdapter } from "@tanstack/offline-transactions"
 import SqliteFactory from "@journeyapps/wa-sqlite/dist/wa-sqlite.mjs"
 import { Effect, Stream } from "effect"
-import { boundFetch, IDENTITY_MESSAGE, type Binding, type Receipt, sessionNow } from "../device/identity"
+import { boundFetch, IDENTITY_MESSAGE, type Binding, type Receipt, sessionNow } from "../device/identity.vibe"
 import { SESSION_ROUTE } from "../features/auth/contract"
 import { OUTBOX_DATABASE } from "./contract"
 import type { Endpoint } from "./tabPort.vibe"

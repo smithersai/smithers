@@ -5,7 +5,7 @@ import { expect, test } from "vitest"
 import type { Actor } from "../../../worker/Actor.vibe"
 import * as WorkerShard from "../../../worker/chat/MessagesShard.ts"
 import * as WorkerRoutes from "../../../worker/chat/MessagesShardRoutes.ts"
-import { boundFetch } from "../../device/identity"
+import { boundFetch } from "../../device/identity.vibe"
 import { ada, bob, OWNER_SECRET, ownerIn, type ShardHost, shardHost } from "../../test/messagesShardHost"
 import { SESSION_ROUTE } from "../auth/contract"
 import * as MessagesShardClient from "./messagesShardClient"
@@ -158,7 +158,7 @@ test("an answer other than 200 fails as refused, with its status and ChatApi's r
     expect(yield* Effect.flip(transport.snapshot(shard))).toEqual(
       new MessagesShardUnavailable({ request: "snapshot", reason: "refused", status: 404 }),
     )
-    // A 401 the page's transport checked against the session says so (src/device/identity.ts `boundFetch`).
+    // A 401 the page's transport checked against the session says so (src/device/identity.vibe `boundFetch`).
     host.fail({ status: 401, sameSession: true })
     expect(yield* Effect.flip(transport.submit(submitOf(nodeOf(ADA, "laptop"), "0", "m1")))).toEqual(
       new MessagesShardUnavailable({ request: "submit", reason: "refused", status: 401, sessionCheck: "same_person" }),

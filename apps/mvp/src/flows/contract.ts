@@ -44,7 +44,7 @@ export const FLOWS_TELEMETRY = {
     "write.identity",
     "smithers_write_admission_stages",
     "smithers_flow_dispatches",
-    // Whose data the device holds, checked before the engine starts (src/device/identity.ts).
+    // Whose data the device holds, checked before the engine starts (src/device/identity.vibe).
     "auth.device_identity",
     "smithers_device_identity_checks",
     // Run credentials on the device (src/flows/credentials.ts).

@@ -1,7 +1,7 @@
 import { Worker } from "node:worker_threads"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
-import { boundFetch } from "./device/identity"
+import { boundFetch } from "./device/identity.vibe"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Effect, Layer, ManagedRuntime } from "effect"
 import { FetchHttpClient } from "effect/http"

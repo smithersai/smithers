@@ -2,7 +2,7 @@
 // browser, ChatApi and the tests share. Nothing here imports a library, so every side can.
 
 /**
- * The person whose device data a request comes from (src/device/identity.ts): a stable person id, `@visitor` for data
+ * The person whose device data a request comes from (src/device/identity.vibe): a stable person id, `@visitor` for data
  * made without a verified session, or {@link NO_DEVICE_DATA} from a page that opened nothing of the device's. ChatApi
  * reads a request whose cookie or credential is another person's as nobody, and refuses a cookie-authenticated write
  * that names no one, as an earlier build's tab sends.
@@ -13,7 +13,7 @@ export const DEVICE_PERSON_HEADER = "x-smithers-device-person"
 export const ACCEPTS_HEADER = "x-smithers-accepts"
 
 /**
- * A write that asks the page's transport (src/device/identity.ts `boundFetch`) to check a `401` against the session
+ * A write that asks the page's transport (src/device/identity.vibe `boundFetch`) to check a `401` against the session
  * before its caller decides. The transport removes it from every request, so it never leaves the page. Only a write the
  * outbox holds, sent in the person's session, opts in: co-edit's updates, issue writes without a run credential, TODO
  * changes, chat questions and steers without a run credential. A write sent with a run credential never does: its `401` is the run's.
@@ -42,7 +42,7 @@ export const ANONYMOUS_DEVICE_PERSON = "@anonymous"
 
 /**
  * The window event the page dispatches once the person signed in adopts, in place, the visitor's data it opened
- * (src/device/identity.ts): what the page syncs and sends goes again now, as theirs.
+ * (src/device/identity.vibe): what the page syncs and sends goes again now, as theirs.
  */
 export const DEVICE_ADOPTED_EVENT = "smithers-device-adopted"
 
@@ -258,6 +258,6 @@ export const AUTH_TELEMETRY = {
     "smithers_web_sign_outs",
     "smithers_web_device_wipes",
   ],
-  // `stage`, `reason` and `via` also carry the engine worker's owner check (src/device/identity.ts, FLOWS_TELEMETRY).
+  // `stage`, `reason` and `via` also carry the engine worker's owner check (src/device/identity.vibe, FLOWS_TELEMETRY).
   fields: ["signedIn", "status", "outcome", "stage", "reason", "via", "executionId", "durationMs", "smithers.auth.outcome", "errorCode", "feature", "enabled"],
 } as const

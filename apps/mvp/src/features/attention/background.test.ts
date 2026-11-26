@@ -26,7 +26,7 @@ import { Issues } from "../issues/issues.vibe"
 import { IssuesStore } from "../issues/store.vibe"
 import { Todos } from "../todos/todos.vibe"
 import { TodosStore } from "../todos/store.vibe"
-import { dismiss, retry } from "./actions"
+import { dismiss, retry } from "./actions.vibe"
 import type { Entry } from "./schema"
 import { AttentionStore } from "./store.vibe"
 

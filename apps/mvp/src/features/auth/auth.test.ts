@@ -11,7 +11,7 @@ import * as Database from "../../../db/Database"
 import { build } from "../../../worker/test/flowHost"
 import { testFile } from "../../../worker/test/harness"
 import { signInHarness } from "../../../worker/test/signIn"
-import { boundFetch, VISITOR } from "../../device/identity"
+import { boundFetch, VISITOR } from "../../device/identity.vibe"
 import { ClientEngine, FlowDispatch } from "../../flows/dispatch.vibe"
 import { type NodeDevice, nodeDevice } from "../../test/chatApi"
 import { Auth, bindSessionConnectivity } from "./auth.vibe"
@@ -593,7 +593,7 @@ test("expiry keeps the confirmed session; another person signing in wipes nothin
   await tab.settled("signed_out")
   await confirmedOn(device, 1)
   // Another GitHub person, even one holding the same login. Whether this device's data may open under them is
-  // decided before the app opens it (src/device/identity.ts); signing in never deletes it.
+  // decided before the app opens it (src/device/identity.vibe); signing in never deletes it.
   h.github.person = { id: 900001, login: "octocat" }
   await b.signIn()
   tab.actions.reload()

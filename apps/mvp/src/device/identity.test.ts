@@ -26,9 +26,9 @@ import {
   sessionNow,
   stale,
   VISITOR,
-} from "./identity"
+} from "./identity.vibe"
 
-// The device's owner check (src/device/identity.ts) on real SQLite: the deployed builds' device stores (7b96f878, and
+// The device's owner check (src/device/identity.vibe) on real SQLite: the deployed builds' device stores (7b96f878, and
 // c6940ac53e5a, which production runs), built by TanStack DB's own persistence from their fixtures, and empty stores. Sessions are ChatApi's answers as values; a
 // broken store is an injected database.
 

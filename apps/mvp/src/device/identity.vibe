@@ -1,5 +1,5 @@
 import type { SharedSqlite } from "@smthrs/platform-browser"
-import { Cause, Data, Effect, Metric, Option, Schema } from "effect"
+import { Cause, Metric, Option, Schema } from "effect"
 import {
   ACCEPTS_HEADER,
   CONFIRM_401_HEADER,
@@ -11,6 +11,7 @@ import {
 } from "../features/auth/contract"
 import { Confirmed, SessionState } from "../features/auth/schema"
 import { codeOf } from "../errorCode"
+import { awaitPublication, credentialAttempt, lockSignal, markSamePerson, requestOf, revision, sessionRequest, withHeaders } from "./identityFetch.ts"
 
 type State = typeof SessionState.Type
 
@@ -27,11 +28,11 @@ export const VISITOR = "@visitor"
 export const IDENTITY_MESSAGE = "smithers/device-identity"
 
 /** The activation was refused, or a request waits for the device to check its owner again. */
-export class DeviceIdentityRefused extends Data.TaggedError("DeviceIdentityRefused")<{
-  readonly reason: string
-  readonly stage?: "credential_lock"
-  readonly wait?: "deadline" | "cancelled"
-}> {}
+export error DeviceIdentityRefused {
+  reason: string
+  stage?: "credential_lock"
+  wait?: "deadline" | "cancelled"
+}
 
 /** A queued write returns to its durable retry policy instead of waiting on another context indefinitely. */
 export const CREDENTIAL_LOCK_WAIT_MS = 2_000
@@ -68,7 +69,11 @@ export interface Receipt {
   readonly sessionTag?: string
 }
 
-const Owner = Schema.Struct({ v: Schema.Literal(1), personId: Schema.String, login: Schema.String })
+schema Owner {
+  readonly v: 1
+  readonly personId: string
+  readonly login: string
+}
 
 /**
  * The owner record: one row beside the collections in the device store, outside every synced or clearable row, so
@@ -88,7 +93,7 @@ type Legacy =
   | { readonly _tag: "unowned" }
 
 const tableExists = (database: SharedSqlite.Service, name: string) =>
-  Effect.map(
+  map(
     database.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", [name]),
     (rows) => rows.length > 0,
   )
@@ -97,29 +102,28 @@ const tableExists = (database: SharedSqlite.Service, name: string) =>
  * Reads what an earlier build left: its confirmed session, kept by TanStack DB as the row's JSON `value`. Builds up to
  * c6940ac5 kept a login only; later ones also kept the stable person id.
  */
-const legacyOf = (database: SharedSqlite.Service) =>
-  Effect.gen(function* () {
-    if (!(yield* tableExists(database, "collection_registry"))) return { _tag: "empty" } as Legacy
-    const [registered] = yield* database.execute(
-      "SELECT table_name AS tableName FROM collection_registry WHERE collection_id = 'auth-confirmed'",
+effect function legacyOf(database: SharedSqlite.Service) {
+  if (!(try tableExists(database, "collection_registry"))) return { _tag: "empty" } as Legacy
+  const [registered] = try database.execute(
+    "SELECT table_name AS tableName FROM collection_registry WHERE collection_id = 'auth-confirmed'",
+  )
+  const table = (registered as { readonly tableName?: string } | undefined)?.tableName
+  // TanStack DB registers a collection before it creates its table: a registration alone holds no row.
+  if (table !== undefined && (try tableExists(database, table))) {
+    const [row] = try database.execute(`SELECT value FROM "${table.replaceAll('"', '""')}" LIMIT 1`)
+    const confirmed = Schema.decodeUnknownOption(Schema.fromJsonString(Confirmed))(
+      (row as { readonly value?: unknown } | undefined)?.value,
     )
-    const table = (registered as { readonly tableName?: string } | undefined)?.tableName
-    // TanStack DB registers a collection before it creates its table: a registration alone holds no row.
-    if (table !== undefined && (yield* tableExists(database, table))) {
-      const [row] = yield* database.execute(`SELECT value FROM "${table.replaceAll('"', '""')}" LIMIT 1`)
-      const confirmed = Schema.decodeUnknownOption(Schema.fromJsonString(Confirmed))(
-        (row as { readonly value?: unknown } | undefined)?.value,
-      )
-      if (Option.isSome(confirmed)) {
-        return { _tag: "confirmed", login: confirmed.value.login, personId: confirmed.value.personId } as Legacy
-      }
+    if (Option.isSome(confirmed)) {
+      return { _tag: "confirmed", login: confirmed.value.login, personId: confirmed.value.personId } as Legacy
     }
-    const others = yield* database.execute(
-      `SELECT collection_id FROM collection_registry WHERE collection_id NOT IN (${SHARED_COLLECTIONS.map(() => "?").join(", ")}) LIMIT 1`,
-      SHARED_COLLECTIONS,
-    )
-    return (others.length > 0 ? { _tag: "unowned" } : { _tag: "empty" }) as Legacy
-  })
+  }
+  const others = try database.execute(
+    `SELECT collection_id FROM collection_registry WHERE collection_id NOT IN (${SHARED_COLLECTIONS.map(() => "?").join(", ")}) LIMIT 1`,
+    SHARED_COLLECTIONS,
+  )
+  return (others.length > 0 ? { _tag: "unowned" } : { _tag: "empty" }) as Legacy
+}
 
 /**
  * Whether an earlier build's confirmed session is `person`'s: by stable id when it kept one, else by login, which
@@ -139,33 +143,33 @@ const confirmedFor = (legacy: Legacy | undefined, person: { readonly personId: s
  */
 export const authorizeDevice = (options: {
   readonly database: SharedSqlite.Service
-  readonly session: Effect.Effect<State, unknown>
+  readonly session: State!unknown
   readonly report: (owner: string | undefined, outcome: Outcome, continuous: boolean, sessionTag?: string) => void
 }) => {
   let stage = "owner"
-  return Effect.gen(function* () {
+  const check = effect {
     const { database } = options
-    yield* database.execute(
+    try database.execute(
       `CREATE TABLE IF NOT EXISTS ${OWNER_TABLE} (singleton INTEGER PRIMARY KEY CHECK (singleton = 1), v INTEGER NOT NULL CHECK (v = 1), person_id TEXT NOT NULL, login TEXT NOT NULL)`,
     )
     // Eligibility for legacy outbox writes survives reload. A new/adopted owner never inherits it merely by
     // becoming the recorded owner; existing records predate this distinction and retain their legacy authority.
-    const columns = yield* database.execute(`PRAGMA table_info(${OWNER_TABLE})`)
+    const columns = try database.execute(`PRAGMA table_info(${OWNER_TABLE})`)
     if (!columns.some((column) => (column as { name: string }).name === "owns_unstamped")) {
-      yield* database.execute(`ALTER TABLE ${OWNER_TABLE} ADD COLUMN owns_unstamped INTEGER NOT NULL DEFAULT 1`)
+      try database.execute(`ALTER TABLE ${OWNER_TABLE} ADD COLUMN owns_unstamped INTEGER NOT NULL DEFAULT 1`)
     }
     if (!columns.some((column) => (column as { name: string }).name === "session_tag")) {
-      yield* database.execute(`ALTER TABLE ${OWNER_TABLE} ADD COLUMN session_tag TEXT`)
+      try database.execute(`ALTER TABLE ${OWNER_TABLE} ADD COLUMN session_tag TEXT`)
     }
-    const [row] = yield* database.execute(
+    const [row] = try database.execute(
       `SELECT v, person_id AS personId, login, owns_unstamped AS ownsUnstamped, session_tag AS sessionTag FROM ${OWNER_TABLE} WHERE singleton = 1`,
     )
-    const recorded = row === undefined ? undefined : (yield* Schema.decodeUnknownEffect(Owner)(row)).personId
+    const recorded = row === undefined ? undefined : (try Schema.decodeUnknownEffect(Owner)(row)).personId
     let sessionTag = tagOf((row as { sessionTag?: unknown } | undefined)?.sessionTag)
     stage = "legacy"
-    const legacy = recorded === undefined ? yield* legacyOf(database) : undefined
+    const legacy = recorded === undefined ? try legacyOf(database) : undefined
     stage = "session"
-    const session = yield* Effect.result(options.session)
+    const session = try result(options.session)
     const claim = (personId: string, login = "", ownsUnstamped = false) => {
       stage = "claim"
       return Effect.as(
@@ -187,7 +191,7 @@ export const authorizeDevice = (options: {
         owner = offline ? recorded : undefined
         outcome = offline ? "offline" : "signed_out"
       } else if (recorded === VISITOR || legacy?._tag === "empty") {
-        owner = recorded ?? (yield* claim(VISITOR))
+        owner = recorded ?? (try claim(VISITOR))
         outcome = "visitor"
       } else {
         // An earlier build's data, whose owner only an online sign-in can tell.
@@ -195,16 +199,16 @@ export const authorizeDevice = (options: {
       }
     } else {
       const person = session.success
-      if (person.personId === undefined) return yield* new DeviceIdentityRefused({ reason: "missing_person" })
+      if (person.personId === undefined) throw new DeviceIdentityRefused({ reason: "missing_person" })
       const matches = recorded !== undefined
         ? recorded === person.personId || recorded === VISITOR
         : legacy?._tag === "empty" || confirmedFor(legacy, { personId: person.personId, login: person.login })
       if (matches) {
         via = recorded === person.personId ? "owner" : recorded === VISITOR ? "visitor" : legacy?._tag === "confirmed" ? "legacy" : "new"
-        owner = via === "owner" ? person.personId : yield* claim(person.personId, person.login, via === "legacy")
+        owner = via === "owner" ? person.personId : try claim(person.personId, person.login, via === "legacy")
         sessionTag = tagOf(person.session) ?? (via === "owner" ? sessionTag : undefined)
         if (sessionTag !== undefined) {
-          yield* database.execute(`UPDATE ${OWNER_TABLE} SET session_tag = ? WHERE singleton = 1 AND person_id = ?`, [sessionTag, owner])
+          try database.execute(`UPDATE ${OWNER_TABLE} SET session_tag = ? WHERE singleton = 1 AND person_id = ?`, [sessionTag, owner])
         }
         outcome = "verified"
       } else {
@@ -212,35 +216,33 @@ export const authorizeDevice = (options: {
       }
     }
     const fields: Record<string, string> = via === undefined ? { outcome } : { outcome, via }
-    yield* Metric.update(Metric.withAttributes(checks, fields), 1)
+    try Metric.update(Metric.withAttributes(checks, fields), 1)
     // A session read that failed names why by its code; one ChatApi answered outside the contract, such as a 5xx, is a
     // failure (Warn) with its status, where no answer at all is this device being offline (Info).
     const failed = session._tag === "Failure" ? session.failure : undefined
     const status = (failed as { readonly status?: unknown } | undefined)?.status
-    yield* Effect.logWithLevel(typeof status === "number" ? "Warn" : "Info")("auth.device_identity").pipe(
-      Effect.annotateLogs(failed === undefined ? fields : {
+    try (logWithLevel(typeof status === "number" ? "Warn" : "Info")("auth.device_identity") |> annotateLogs(%,
+      failed === undefined ? fields : {
         ...fields,
         errorCode: codeOf(failed),
         ...(typeof status === "number" ? { status } : {}),
-      }),
-    )
+      }))
     // Reload never turns a fresh claim or visitor adoption into authority over legacy writes.
     const continuous = owner !== undefined &&
       ((owner === recorded && (row as { ownsUnstamped: number }).ownsUnstamped === 1) || via === "legacy")
-    yield* Effect.sync(() => options.report(owner, outcome, continuous, owner === undefined ? undefined : sessionTag))
-    if (owner === undefined) return yield* new DeviceIdentityRefused({ reason: outcome })
-  }).pipe(
-    Effect.tapCause((cause) => {
+    try sync(() => options.report(owner, outcome, continuous, owner === undefined ? undefined : sessionTag))
+    if (owner === undefined) throw new DeviceIdentityRefused({ reason: outcome })
+  }
+  return tapCause(check, (cause) =>
+    effect {
       const failure = Cause.squash(cause)
       const reason = failure instanceof DeviceIdentityRefused ? failure.reason : "storage"
       // A refusal by outcome was counted above. Anything else leaves the device unopened too, and is counted here
       // by stage, never with the failure's message, which can quote a row.
-      if (reason !== "missing_person" && reason !== "storage") return Effect.void
-      return Metric.update(Metric.withAttributes(checks, { outcome: "unavailable" }), 1).pipe(
-        Effect.andThen(Effect.logWarning("auth.device_identity").pipe(Effect.annotateLogs({ outcome: "unavailable", stage, reason }))),
-      )
-    }),
-  )
+      if (reason !== "missing_person" && reason !== "storage") return
+      try Metric.update(Metric.withAttributes(checks, { outcome: "unavailable" }), 1)
+      try (logWarning("auth.device_identity") |> annotateLogs(%, { outcome: "unavailable", stage, reason }))
+    })
 }
 
 /** The browser's session now, as a leader reads it for a tab about to follow: ChatApi's answer, or why not. */
@@ -399,25 +401,26 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
   // reopen now would stop the sign-out before it marks the wipe (decision 0023).
   let signingOut = 0
   let signedOut = false
+  const clearRecovery = (reopening: Promise<boolean>) => {
+    if (recovering === reopening) recovering = undefined
+  }
   const reopen = async () => {
     const reopening = (recovering ??= reauthorize!())
     // A reopen the page held back leaves this context as it was: later requests go on, and a later answer may reopen it.
     try {
-      if (!(await reopening) && recovering === reopening) recovering = undefined
+      if (!(await reopening)) clearRecovery(reopening)
     } catch (error) {
-      if (recovering === reopening) recovering = undefined
+      clearRecovery(reopening)
       throw error
     }
   }
   return async (input, init) => {
-    const request = new Request(input, init)
-    const url = new URL(request.url)
     // The opt-in is the page's own: it never leaves the page, whatever the request.
-    const headers = new Headers(request.headers)
+    const { request, url, headers } = requestOf(input, init)
     const confirming = headers.has(CONFIRM_401_HEADER)
     headers.delete(CONFIRM_401_HEADER)
     if (url.origin !== origin || !url.pathname.startsWith("/api/")) {
-      return next(confirming ? new Request(request, { headers }) : request)
+      return next(confirming ? withHeaders(request, headers) : request)
     }
     await ready
     // A request made while the visitor's data is being adopted goes once it is, as its new owner's.
@@ -428,7 +431,7 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
       // expected: a cancelled or failed reopen leaves the current binding intact
       const accepted = await reopening.catch(() => false)
       if (accepted) throw new DeviceIdentityRefused({ reason: "reauthorizing" })
-      if (recovering === reopening) recovering = undefined
+      clearRecovery(reopening)
     }
     const bound = principal()
     headers.set(DEVICE_PERSON_HEADER, bound)
@@ -436,13 +439,13 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
     const signOut = url.pathname === SIGN_OUT_ROUTE && request.method === "POST"
     const credentialKey = `outbox:credential:${encodeURIComponent(bound)}`
     const readCredential = async () => {
-      const signal = AbortSignal.any([request.signal, AbortSignal.timeout(CREDENTIAL_LOCK_WAIT_MS)])
+      const signal = lockSignal(request.signal, CREDENTIAL_LOCK_WAIT_MS)
       try {
         return await withCredential(async () => {
           const stored = await credentialStorage.get(credentialKey)
           if (stored === null || Option.isSome(decodeGate(stored))) return stored
           // A damaged fence needs a fresh session check. Repair it under the same lock as publication.
-          const repaired = JSON.stringify({ until: 0, revision: crypto.randomUUID() })
+          const repaired = JSON.stringify({ until: 0, revision: revision() })
           await credentialStorage.set(credentialKey, repaired)
           return repaired
         }, signal)
@@ -462,28 +465,22 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
       const released = new Promise<void>(resolve => { release = resolve })
       let active = true
       let tail = Promise.resolve()
+      const attemptCredential = credentialAttempt({
+        ready,
+        active: () => active,
+        credentialKey,
+        pendingCredentials,
+        credentialStorage,
+        previousGate: (prior) => Option.getOrUndefined(decodeGate(prior)),
+        retire: () => {
+          active = false
+          if (publications.get(credentialKey) === publication) publications.delete(credentialKey)
+          release()
+        },
+      })
       const publication = {
         attempt: () => {
-          const attempt = tail.then(async () => {
-            await ready
-            if (!active) return
-            const pending = pendingCredentials.get(credentialKey)
-            if (pending !== undefined) {
-              const prior = await credentialStorage.get(credentialKey)
-              const previous = Option.getOrUndefined(decodeGate(prior))
-              await credentialStorage.set(credentialKey, JSON.stringify({
-                until: Math.max(previous?.until ?? 0, pending.until), revision: crypto.randomUUID(),
-                personId: previous?.personId ?? pending.personId,
-              }))
-              // Another response may have extended the deadline while storage was awaiting its write.
-              if (pendingCredentials.get(credentialKey) === pending) pendingCredentials.delete(credentialKey)
-            }
-            if (!pendingCredentials.has(credentialKey)) {
-              active = false
-              if (publications.get(credentialKey) === publication) publications.delete(credentialKey)
-              release()
-            }
-          })
+          const attempt = tail.then(attemptCredential)
           // expected: no automatic retry; a later ordinary request retries inside this lock
           tail = attempt.catch(() => undefined)
           return attempt
@@ -521,9 +518,8 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
     const readCurrent = async () => {
       const tag = tagOf(binding.sessionTag?.())
       // The reread shares the caller's cancellation and never carries a tag in a URL or diagnostic record.
-      const response = await next(new Request(`${origin}${SESSION_ROUTE}`, {
-        cache: "no-store", signal: request.signal,
-        headers: { [ACCEPTS_HEADER]: "credential-stale", ...(tag === undefined ? {} : { "x-smithers-session-tag": tag }) },
+      const response = await next(sessionRequest(`${origin}${SESSION_ROUTE}`, request.signal, {
+        [ACCEPTS_HEADER]: "credential-stale", ...(tag === undefined ? {} : { "x-smithers-session-tag": tag }),
       })).catch(() => {
         // expected: transport or abort error on session reread means session is unavailable
         return undefined
@@ -549,7 +545,7 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
     if (attempts.length > 0) {
       const publication = Promise.all(attempts)
       if (writing) {
-        await publication.catch(() => { throw new DeviceIdentityRefused({ reason: "credential_stale" }) })
+        await awaitPublication(publication, () => new DeviceIdentityRefused({ reason: "credential_stale" }))
         if (pendingCredentials.has(credentialKey) || publications.size > 0) throw new DeviceIdentityRefused({ reason: "credential_stale" })
       } else {
         // Session reads and explicit sign-out stay usable while storage is blocked. Their ordinary traffic can
@@ -581,7 +577,7 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
     }
     if (writing && held !== null && bound === NO_DEVICE_DATA && transientPerson !== undefined) headers.set(DEVICE_PERSON_HEADER, transientPerson)
     if (signOut) signingOut++
-    const send = () => next(new Request(request, { headers }))
+    const send = () => next(withHeaders(request, headers))
     const response = await (signOut && binding.signOut !== undefined ? binding.signOut(send) : send()).finally(() => {
       if (signOut) signingOut--
     })
@@ -613,11 +609,7 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
         throw new DeviceIdentityRefused({ reason: "signed_out" })
       }
       // Still the same person: the refusal stands, marked, for the caller to hold the write until they sign in again.
-      if (session.personId === bound) {
-        const marked = new Headers(response.headers)
-        marked.set(SESSION_CHECK_HEADER, "same_person")
-        return new Response(response.body, { status: response.status, statusText: response.statusText, headers: marked })
-      }
+      return markSamePerson(response, SESSION_CHECK_HEADER, bound, session.personId)
     }
     return response
   }

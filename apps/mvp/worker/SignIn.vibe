@@ -1083,7 +1083,7 @@ export const make = <E, R>(
         return HttpServerResponse.empty({ status: 403, headers: noStore })
       }
       // Signing out ends the cookie's session and wipes the device: only a page bound to that person, or one that
-      // opened none of the device's data (`@none`), may do it (src/device/identity.ts).
+      // opened none of the device's data (`@none`), may do it (src/device/identity.vibe).
       const expected = request.headers[DEVICE_PERSON_HEADER]
       if (expected !== NO_DEVICE_DATA && (expected !== undefined || request.headers.cookie !== undefined)) {
         const owner = Option.isNone(setup)

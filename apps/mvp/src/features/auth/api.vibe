@@ -2,7 +2,7 @@ import { Context, type Duration, Effect, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { HOSTED_MODEL_ROUTE, SESSION_ROUTE, type SessionState as State, SIGN_OUT_ROUTE } from "./contract"
 import { HostedModelAnswer, SessionState } from "./schema"
-import { DeviceIdentityRefused } from "../../device/identity"
+import { DeviceIdentityRefused } from "../../device/identity.vibe"
 
 /**
  * ChatApi couldn't answer within the deadline (`code` `timeout`), the request never reached it (`unreachable`), or it

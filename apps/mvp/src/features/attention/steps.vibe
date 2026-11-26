@@ -1,7 +1,7 @@
 import { Interpreter } from "@smthrs/flow"
 import type { Inbox } from "@smthrs/notifications"
-import { Effect, Layer, Metric } from "effect"
-import { AttentionClient, type AttentionRefused } from "./api"
+import { Layer, Metric } from "effect"
+import { AttentionClient, type AttentionRefused } from "./api.vibe"
 import { Ack, AckRequestStep, type ActFailure, ActRefused, ActUnsent, WatchRequestStep, WatchSet } from "./flows"
 import { acks, watches } from "./metrics"
 
@@ -28,35 +28,34 @@ const statusOf = (refused: AttentionRefused) => ({
  * never what the conversation holds.
  */
 export const requestWatch = ({ conversationId }: { readonly conversationId: string | null }) =>
-  Effect.gen(function* () {
-    const answer = yield* Effect.result((yield* AttentionClient).watch(conversationId))
+  effect {
+    const answer = try result((try AttentionClient).watch(conversationId))
     const outcome = answer._tag === "Success" ? "sent" : outcomeOf(failureOf(answer.failure))
-    yield* Metric.update(Metric.withAttributes(watches, { outcome }), 1)
-    yield* Effect.logWithLevel(answer._tag === "Success" ? "Info" : "Warn")("notifications.watch").pipe(
-      Effect.annotateLogs({ outcome, ...(answer._tag === "Failure" ? statusOf(answer.failure) : {}) }),
-    )
-    if (answer._tag === "Failure") return yield* Effect.fail(failureOf(answer.failure))
+    try Metric.update(Metric.withAttributes(watches, { outcome }), 1)
+    try (logWithLevel(answer._tag === "Success" ? "Info" : "Warn")("notifications.watch") |> annotateLogs(%, {
+      outcome,
+      ...(answer._tag === "Failure" ? statusOf(answer.failure) : {}),
+    }))
+    if (answer._tag === "Failure") throw failureOf(answer.failure)
     return { watching: true }
-  })
+  }
 
 /** `notification/ack/request`: one `POST /api/notifications/ack`, logged and counted by act and outcome. */
 export const requestAck = (request: { readonly subject: string; readonly version: number; readonly act: Inbox.Act }) =>
-  Effect.gen(function* () {
-    const answer = yield* Effect.result((yield* AttentionClient).ack(request))
+  effect {
+    const answer = try result((try AttentionClient).ack(request))
     const outcome = answer._tag === "Success" ? "sent" : outcomeOf(failureOf(answer.failure))
-    yield* Metric.update(Metric.withAttributes(acks, { act: request.act, outcome }), 1)
-    yield* Effect.logWithLevel(answer._tag === "Success" ? "Info" : "Warn")("notifications.ack").pipe(
-      Effect.annotateLogs({
-        subject: request.subject,
-        act: request.act,
-        version: request.version,
-        outcome,
-        ...(answer._tag === "Failure" ? statusOf(answer.failure) : {}),
-      }),
-    )
-    if (answer._tag === "Failure") return yield* Effect.fail(failureOf(answer.failure))
+    try Metric.update(Metric.withAttributes(acks, { act: request.act, outcome }), 1)
+    try (logWithLevel(answer._tag === "Success" ? "Info" : "Warn")("notifications.ack") |> annotateLogs(%, {
+      subject: request.subject,
+      act: request.act,
+      version: request.version,
+      outcome,
+      ...(answer._tag === "Failure" ? statusOf(answer.failure) : {}),
+    }))
+    if (answer._tag === "Failure") throw failureOf(answer.failure)
     return { recorded: true }
-  })
+  }
 
 /** Registers `watch/set` and `notification/ack` with their steps, asking through the host's `AttentionClient`. */
 export const registration = Layer.merge(

@@ -1,5 +1,5 @@
 import type { PageWipe } from "../wipe"
-import { boundFetch, reopenDue } from "../device/identity"
+import { boundFetch, reopenDue } from "../device/identity.vibe"
 import { SESSION_ROUTE, SIGN_OUT_ROUTE } from "../features/auth/contract"
 import { CHATAPI_ORIGIN } from "./chatApi"
 

@@ -1,0 +1,74 @@
+import { Context, type Duration, Layer, Option, Schema } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { ACK_ROUTE, ATTENTION_WITHIN, WATCHES_ROUTE } from "./contract"
+import { type AckRequest, Refusal, Written } from "./schema"
+
+// ChatApi's feed routes as a flow step calls them (docs/features/notifications.md#the-routes), through Effect's
+// HttpClient, with one deadline covering the whole exchange.
+
+/**
+ * ChatApi didn't take the write: no whole answer within the deadline, or no network (`status` absent), or a refusal
+ * (`status`, with ChatApi's `code` when its body had one).
+ */
+export error AttentionRefused {
+  reason?: "unreachable" | "timeout"
+  status?: number
+  code?: string
+}
+
+const decodeRefusal = Schema.decodeUnknownEffect(Refusal)
+const decodeWritten = Schema.decodeUnknownEffect(Written)
+
+/** The feed's routes on ChatApi at `origin`. */
+export class AttentionClient extends Context.Service<
+  AttentionClient,
+  {
+    /** `POST /api/watches`: follow the branch and repository of conversation `conversationId`, `null` the home one. */
+    readonly watch: (conversationId: string | null) => void!AttentionRefused
+    /** `POST /api/notifications/ack`: Read, Dismiss or Hide one notification at a version. */
+    readonly ack: (request: AckRequest) => void!AttentionRefused
+  }
+>()("@smthrs/mvp/attention/AttentionClient") {
+  /** The client over the host's `HttpClient`: a `200` took the write; anything else is refused. */
+  static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
+    Layer.effect(
+      AttentionClient,
+      effect {
+        const client = try HttpClient.HttpClient
+        const post = (path: string, body: unknown) =>
+          suspend(() => {
+            let written = false
+            const malformed = logWarning("notifications.malformed") |> annotateLogs(%, { status: 200 })
+            const exchange = effect {
+              const response = try (
+                client.execute(HttpClientRequest.post(`${options.origin}${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)))
+                  |> mapError(%, () => new AttentionRefused({ reason: "unreachable" }))
+              )
+              written = response.status === 200
+              try annotateCurrentSpan({ "http.response.status_code": response.status })
+              if (response.status !== 200) {
+                const refusal = try option(flatMap(response.json, decodeRefusal))
+                const code = match (refusal) {
+                  when { _tag: "Some", let value }: { code: value.code };
+                  default: {};
+                }
+                throw new AttentionRefused({ status: response.status, ...code })
+              }
+              flatMap(response.json, decodeWritten) catch effect () => {
+                try malformed
+              }
+            }
+            // Interrupting the request aborts its fetch, so a stalled body stops too.
+            return timeoutOrElse(exchange, {
+              duration: options.within ?? ATTENTION_WITHIN,
+              orElse: () => written ? malformed : fail(new AttentionRefused({ reason: "timeout" })),
+            })
+          })
+        return AttentionClient.of({
+          watch: (conversationId) =>
+            post(WATCHES_ROUTE, { conversationId }) |> withSpan(%, "notifications.watch", { kind: "client" }),
+          ack: (request) => post(ACK_ROUTE, request) |> withSpan(%, "notifications.ack", { kind: "client" }),
+        })
+      },
+    )
+}

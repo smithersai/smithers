@@ -92,7 +92,7 @@ export interface PageWipe {
   readonly wipe: () => Promise<void>
   /**
    * Tells every page, this one included, to leave and load again without marking a wipe, so the next boot checks
-   * the device's owner again (src/device/identity.ts). Nothing is deleted. Returns false while sign-out owns the guard.
+   * the device's owner again (src/device/identity.vibe). Nothing is deleted. Returns false while sign-out owns the guard.
    */
   readonly reopen: (reason: ReopenReason) => Promise<boolean>
   /** Releases the guard from the whole sign-out action's finalizer, after wipe marking or safe sealing. */

@@ -62,7 +62,7 @@ import {
   SIGN_OUT_ROUTE,
   type SessionState,
 } from "./features/auth/contract.ts"
-import * as Identity from "./device/identity.ts"
+import * as Identity from "./device/identity.vibe"
 import * as Registry from "./device/registry.ts"
 import * as AskingTab from "./flows/askingTab.vibe"
 import { DOORS } from "./flows/contract.ts"

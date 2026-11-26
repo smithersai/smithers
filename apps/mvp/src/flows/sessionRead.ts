@@ -1,6 +1,6 @@
 // The engine worker's first session read, which its bundle starts before anything else loads
 // (src/flows/sessionStart.worker.ts). That read decides whose data the device holds before the engine opens its store
-// (src/device/identity.ts); started as the bundle begins to load, its round trip runs while the worker evaluates every
+// (src/device/identity.vibe); started as the bundle begins to load, its round trip runs while the worker evaluates every
 // flow module instead of after (docs/decisions/0117-cold-start.md).
 
 /** What a `fetch` is called with, as the worker's `HttpClient` calls it. */

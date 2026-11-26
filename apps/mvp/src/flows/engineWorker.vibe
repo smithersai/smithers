@@ -1,7 +1,7 @@
 import { Migrations } from "@smthrs/effect-tanstack-db"
 import { BrowserCache, BrowserRuntime, type SharedSqlite } from "@smthrs/platform-browser"
 import { FetchHttpClient } from "effect/http"
-import { answer, authorizeDevice, IDENTITY_MESSAGE, type Receipt, VISITOR } from "../device/identity"
+import { answer, authorizeDevice, IDENTITY_MESSAGE, type Receipt, VISITOR } from "../device/identity.vibe"
 import { deviceRegistry } from "../device/registry"
 import { getSession } from "../features/auth/api.vibe"
 import { NO_DEVICE_DATA } from "../features/auth/contract"

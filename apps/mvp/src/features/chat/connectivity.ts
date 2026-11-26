@@ -9,7 +9,7 @@ import type { ChatStore } from "./store"
 // its action with the services it was bound with:
 // - `offline`: the pill says Offline at once;
 // - `online`: chat syncs and sends at once instead of waiting out its backoff;
-// - the device adopted in place (`DEVICE_ADOPTED_EVENT`, src/device/identity.ts): the same, so a write queued as nobody's
+// - the device adopted in place (`DEVICE_ADOPTED_EVENT`, src/device/identity.vibe): the same, so a write queued as nobody's
 //   goes again now, as the person's, and a shape waiting out its backoff asks again under them;
 // - `pageshow` from the back/forward cache: the page reloads, because the device store's connections closed when it
 //   was hidden (TanStack DB's browser persistence README);

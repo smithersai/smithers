@@ -5,7 +5,7 @@ import { testFile, recorded } from "../worker/test/harness.ts"
 import { signInHarness } from "../worker/test/signIn.ts"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
-import { dropped } from "./features/attention/actions"
+import { dropped } from "./features/attention/actions.vibe"
 import { BROWSER_TELEMETRY, EXPORTED_SPANS, WITHHELD } from "./telemetry"
 import { captured, ORIGIN, relay, relayed } from "./test/relay"
 

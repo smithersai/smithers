@@ -4,10 +4,10 @@
 import { Cause, Effect, Exit, Layer, Logger, Metric } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
-import { AttentionClient, AttentionRefused } from "./api"
+import { AttentionClient, AttentionRefused } from "./api.vibe"
 import { ActRefused, ActUnsent } from "./flows"
 import { acks, watches } from "./metrics"
-import { requestAck, requestWatch } from "./steps"
+import { requestAck, requestWatch } from "./steps.vibe"
 
 /** The client over a `fetch` that answers with `respond`, recording each request it was handed. */
 const client = (respond: (request: Request) => Promise<Response>, within?: `${number} millis`) => {
