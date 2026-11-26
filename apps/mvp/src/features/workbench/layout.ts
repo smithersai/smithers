@@ -243,3 +243,65 @@ export function reduceWorkbenchLayout(state: WorkbenchLayout, action: WorkbenchA
       }
   }
 }
+
+export type WorkbenchKeyEventLike = {
+  readonly key: string
+  readonly metaKey?: boolean
+  readonly ctrlKey?: boolean
+  readonly altKey?: boolean
+  readonly shiftKey?: boolean
+  readonly repeat?: boolean
+  readonly defaultPrevented?: boolean
+  readonly isComposing?: boolean
+  readonly targetTag?: string
+  readonly targetEditable?: boolean
+}
+
+const EDITABLE_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"])
+const PANE_BY_DIGIT: ReadonlyArray<WorkbenchPaneId> = [
+  "plan",
+  "attach",
+  "workflow",
+  "state-machine",
+  "diff",
+  "waitlist",
+]
+
+/**
+ * Resolve a keyboard chord in the workbench following strict shortcut precedence:
+ * ignores already-handled events, IME composition, modified shortcuts, repeats on pane switches,
+ * and editable inputs.
+ */
+export function workbenchShortcutAction(
+  event: WorkbenchKeyEventLike,
+  layout: WorkbenchLayout,
+  totalFrames: number,
+): WorkbenchAction | null {
+  if (event.defaultPrevented || event.isComposing) return null
+  if (event.metaKey || event.ctrlKey || event.altKey) return null
+  if (event.targetEditable || (event.targetTag !== undefined && EDITABLE_TAGS.has(event.targetTag.toUpperCase()))) {
+    return null
+  }
+  if (event.key === "Escape") {
+    if (event.repeat) return null
+    if (layout.size === "full") return { type: "restore" }
+    if (layout.size === "side") return { type: "close" }
+    return null
+  }
+  if (event.key === "[") {
+    return { type: "stepBack", totalFrames }
+  }
+  if (event.key === "]") {
+    return { type: "stepForward", totalFrames }
+  }
+  if (event.key === "0" && !event.repeat && layout.frame !== "live") {
+    return { type: "returnLive" }
+  }
+  if (!event.repeat && !event.shiftKey && /^[1-6]$/.test(event.key)) {
+    const pane = PANE_BY_DIGIT[Number.parseInt(event.key, 10) - 1]
+    if (pane !== undefined && pane !== layout.pane) {
+      return { type: "openPane", pane }
+    }
+  }
+  return null
+}

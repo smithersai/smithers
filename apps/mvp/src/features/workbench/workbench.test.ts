@@ -6,6 +6,7 @@ import {
   parseWorkbenchSearch,
   reduceWorkbenchLayout,
   serializeWorkbenchSearch,
+  workbenchShortcutAction,
   type WorkbenchPaneId,
 } from "./layout.ts"
 import { renderWorkbenchShell } from "./workbench-render.tsx"
@@ -229,5 +230,26 @@ describe("WorkbenchShell presentation", () => {
     })
     expect(missingWaitlistHtml).toContain("Waitlist unavailable.")
     expect(missingWaitlistHtml).not.toContain("already active")
+  })
+})
+
+describe("workbench keyboard shortcut precedence", () => {
+  test("workbenchShortcutAction respects editable targets, composition, modifiers, and Escape stepping", () => {
+    const base = { ...defaultWorkbenchLayout("maintainer"), size: "full" as const, frame: 2 as const }
+    expect(workbenchShortcutAction({ key: "2", targetTag: "INPUT" }, base, 10)).toBeNull()
+    expect(workbenchShortcutAction({ key: "2", targetTag: "TEXTAREA" }, base, 10)).toBeNull()
+    expect(workbenchShortcutAction({ key: "2", targetEditable: true }, base, 10)).toBeNull()
+    expect(workbenchShortcutAction({ key: "2", isComposing: true }, base, 10)).toBeNull()
+    expect(workbenchShortcutAction({ key: "2", defaultPrevented: true }, base, 10)).toBeNull()
+    expect(workbenchShortcutAction({ key: "2", metaKey: true }, base, 10)).toBeNull()
+    expect(workbenchShortcutAction({ key: "2", repeat: true }, base, 10)).toBeNull()
+
+    expect(workbenchShortcutAction({ key: "2" }, base, 10)).toEqual({ type: "openPane", pane: "attach" })
+    expect(workbenchShortcutAction({ key: "[" }, base, 10)).toEqual({ type: "stepBack", totalFrames: 10 })
+    expect(workbenchShortcutAction({ key: "]" }, base, 10)).toEqual({ type: "stepForward", totalFrames: 10 })
+    expect(workbenchShortcutAction({ key: "0" }, base, 10)).toEqual({ type: "returnLive" })
+    expect(workbenchShortcutAction({ key: "Escape" }, base, 10)).toEqual({ type: "restore" })
+    expect(workbenchShortcutAction({ key: "Escape" }, { ...base, size: "side" }, 10)).toEqual({ type: "close" })
+    expect(workbenchShortcutAction({ key: "Escape" }, { ...base, size: "inline" }, 10)).toBeNull()
   })
 })

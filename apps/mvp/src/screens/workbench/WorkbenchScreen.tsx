@@ -5,10 +5,12 @@ import { exampleForkOf } from "../../features/repo/exampleForks"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { useRepo, useRepoAnswer } from "../../features/repo/components/RepoContext"
 import { ROUTE_PATHS } from "../../routePaths"
+import type { KeyboardEvent } from "react"
 import {
   parseWorkbenchSearch,
   reduceWorkbenchLayout,
   serializeWorkbenchSearch,
+  workbenchShortcutAction,
   type WorkbenchAction,
 } from "../../features/workbench/layout"
 import { attachPromptFor, roleToAudience } from "../../features/workbench/store"
@@ -56,12 +58,36 @@ export function WorkbenchScreen() {
     })
   }
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>, totalFrames: number) => {
+    const target = event.target instanceof HTMLElement ? event.target : null
+    const action = workbenchShortcutAction(
+      {
+        key: event.key,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+        repeat: event.repeat,
+        defaultPrevented: event.defaultPrevented,
+        isComposing: event.nativeEvent.isComposing,
+        ...(target !== null ? { targetTag: target.tagName, targetEditable: target.isContentEditable } : {}),
+      },
+      layout,
+      totalFrames,
+    )
+    if (action !== null) {
+      event.preventDefault()
+      handleDispatch(action)
+    }
+  }
+
   return (
     <main className="workbench-screen" aria-label="Workbench">
       <RepoHeader />
       <PageBody width="wide">
         <div className="workbench-screen-body">
           {workbench === null ? (
+            <div onKeyDown={(event) => handleKeyDown(event, 1)}>
             <WorkbenchShell
               repoSlug={`${owner}/${repo}`}
               layout={layout}
@@ -78,6 +104,7 @@ export function WorkbenchScreen() {
                 branch,
               }}
             />
+            </div>
           ) : (
             <WorkbenchBound
               owner={owner}
@@ -88,6 +115,7 @@ export function WorkbenchScreen() {
               layout={layout}
               fork={fork}
               onDispatch={handleDispatch}
+              onKeyDown={handleKeyDown}
               workbench={workbench}
             />
           )}
@@ -106,6 +134,7 @@ function WorkbenchBound({
   layout,
   fork,
   onDispatch,
+  onKeyDown,
   workbench,
 }: {
   readonly owner: string
@@ -116,6 +145,7 @@ function WorkbenchBound({
   readonly layout: ReturnType<typeof parseWorkbenchSearch>
   readonly fork: ReturnType<typeof exampleForkOf>
   readonly onDispatch: (action: WorkbenchAction) => void
+  readonly onKeyDown: (event: KeyboardEvent<HTMLElement>, totalFrames: number) => void
   readonly workbench: NonNullable<ReturnType<typeof useWorkbenchOptional>>
 }) {
   const { data: plan } = useLiveQuery(workbench.queries.plan)
@@ -125,8 +155,9 @@ function WorkbenchBound({
   const planError =
     plan?.status === "failed" && plan.error !== null ? (PLAN_ERROR_COPY[plan.error] ?? PLAN_ERROR_COPY.unavailable) : null
 
+  const totalFrames = plan?.totalFrames ?? 1
   return (
-    <>
+    <div onKeyDown={(event) => onKeyDown(event, totalFrames)}>
       {planError !== null ? (
         <p className="workbench-screen-status" role="status">
           {planError}
@@ -137,7 +168,7 @@ function WorkbenchBound({
         layout={layout}
         maxRole={maxRole}
         onDispatch={onDispatch}
-        totalFrames={plan?.totalFrames ?? 1}
+        totalFrames={totalFrames}
         {...(fork !== undefined ? { fork } : {})}
         planNodes={plan?.nodes ?? []}
         attach={{
@@ -160,6 +191,6 @@ function WorkbenchBound({
           onSubmit: () => void workbench.actions.submitWaitlist(),
         }}
       />
-    </>
+    </div>
   )
 }

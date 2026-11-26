@@ -3,9 +3,9 @@ id: plan/m1
 title: "M1: Core Node, Plugins & UX"
 parent: "[[INDEX]]"
 milestone: M1
-status: pending
+status: in_progress
 gates_approved: 2026-11-24
-updated: 2026-11-24
+updated: 2026-11-25
 blocked_by:
   - "plan/m0/core-contracts-and-gates"
 children:

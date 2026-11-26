@@ -4,7 +4,7 @@ title: "M0: Dogfood & Foundations"
 parent: "[[INDEX]]"
 milestone: M0
 status: in_progress
-updated: 2026-11-24
+updated: 2026-11-25
 children:
   - "plan/m0/fleet-readiness"
   - "plan/m0/tiered-backpressure-workflows"
@@ -51,7 +51,7 @@ Goal: Establish fleet health, incremental `fast-check`/`medium-check`/`full-chec
 - **DoD (`medium-check`):** `smthrs flow start fast-check --wait` completes in `< 30s` on a single-file edit with cache hits on untouched packages (`rc=0`).
 
 ### `plan/m0/plan-tree-ui`
-- **Status:** `pending` (unblocked: Gate 3 approved 2026-11-24. This tree lives at `.smithers/plan-tree/`)
+- **Status:** `in_progress` (PlanTree shard, UI component, Workbench Effect store, and live `/$owner/$repo/workbench` route landed on `main` in `f771206c`. Live deploy & E2E verification pending)
 - **Scope:** Obsidian-compatible Plan Tree parser (`@smthrs/plan-tree`), live viewer/editor pane in `@smthrs/ui` (Gemini Neon), bidirectional links to artifacts and code-mode trace nodes.
 - **Model Tier:** `neon-ui` (UI/copy) + `opus-30` (parser/schema)
 - **Host:** `mac-mini` / `cloudflare-alchemy`

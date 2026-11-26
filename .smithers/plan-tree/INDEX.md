@@ -3,7 +3,7 @@ id: plan/root
 title: Smithers Cloud Public Release Plan Tree
 milestone: M0-M3
 status: in_progress
-updated: 2026-11-24
+updated: 2026-11-25
 gates_approved: 2026-11-24
 owner: Gemini 4 Neon (Coordinator)
 children:

@@ -3,8 +3,8 @@ id: plan/m2
 title: "M2: Factories, Playgrounds & Upgrades"
 parent: "[[INDEX]]"
 milestone: M2
-status: pending
-updated: 2026-11-24
+status: in_progress
+updated: 2026-11-25
 blocked_by:
   - "plan/m1"
 children:
