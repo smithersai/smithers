@@ -5,6 +5,7 @@ import { type PresenceProtocol, PresenceSocket, SharedText } from "@smthrs/sync"
 import { Context, Effect, Exit, Layer, Metric, Option, Ref, Scope, Semaphore, Stream } from "effect"
 import { Base64 } from "effect/encoding"
 import * as Socket from "effect/socket/Socket"
+import { ConversationOwners } from "../conversations/owners"
 import { scopeOf, scopeParams, TEXT_NAMESPACE, textName, type TextOf, textRoomRoute, TEXTS_SHAPE_ROUTE, type TextScope } from "./contract"
 import { opens } from "./metrics"
 import { savedMarkOf, savedOf } from "./saved"
@@ -15,6 +16,13 @@ import { TextWrites } from "./writes.vibe"
 // replica, fed by the text's Electric shape (what ChatApi stored) and by the outbox's rows (what this device typed and
 // hasn't sent yet), so a reload or a dropped connection loses nothing. While a text is shown, this tab is in its room:
 // it says where its own caret is, and hears everyone else's. A row of `coedit-texts` is what a frontend reads of it.
+//
+// A branch's prompt holds what everyone typed, and a file of its working copy what the branch holds, so the row of
+// either carries it only while the branch's conversation may show (`ConversationOwners.shown`, the gate its messages
+// show through). The row of a text whose conversation is hidden holds no text, selection or caret, from the turn the
+// conversation is hidden: a read ChatApi refused hides the prompt and the open file with the transcript, before the
+// session is read again, and they return when the conversation does. A hidden file's row is `loading`, so no editor
+// is mounted on it: nothing of the file is drawn, and nothing typed into an emptied editor replaces what it holds.
 
 /** Where texts sync from: ChatApi's origin, for the text routes, the shapes and the rooms. */
 export interface CoeditConfig {
@@ -111,6 +119,17 @@ export class CoeditStore extends Context.Service<
     readonly hide: (live: Live) => Effect.Effect<void>
     /** Brings an open text's row up to date: its text, this person's selection and everyone else's carets. */
     readonly refresh: (live: Live) => Effect.Effect<void>
+    /**
+     * Whether `live`'s row may carry its text now: always for a run's answer box, which is the person's own; a
+     * branch's prompt or file only while the branch's conversation may show.
+     */
+    readonly readable: (live: Live) => boolean
+    /**
+     * Calls `listener` with each open prompt whose conversation was hidden (`readable` false), in the turn it is and
+     * after its row was emptied, or may show again (`readable` true), before its row is brought up to date; until the
+     * scope closes.
+     */
+    readonly onReadable: (listener: (live: Live, readable: boolean) => void) => Effect.Effect<void, never, Scope.Scope>
     /** Where background work an action starts runs. */
     readonly scope: Scope.Scope
   }
@@ -125,6 +144,14 @@ const make = effect (config: CoeditConfig) => {
   const { sending } = try TextWrites
   const texts = try Collection.local<Shared, string>({ id: "coedit-texts", schema: Shared, getKey: (row) => row.id })
   const lives = new Map<string, Live>()
+  // The conversations that may show now, as the owners' gate says in the turn it changes.
+  const owners = (try ConversationOwners).shown
+  const shown = new Set<string>()
+  const readable = (live: Live) => live.of.kind === "answer" || shown.has(live.of.conversation)
+  // The files whose content has arrived and whose row does not say `ready`: their conversation is hidden.
+  const veiled = new Set<string>()
+  const listeners = new Set<(live: Live, readable: boolean) => void>()
+  const runFork = Effect.runForkWith(try Effect.context<never>())
   // One open at a time, so two asks for one text open it once.
   const opening = try Semaphore.make(1)
   const roomOrigin = config.origin.replace(/^http/, "ws")
@@ -142,6 +169,14 @@ const make = effect (config: CoeditConfig) => {
       return anchor === undefined || head === undefined ? Option.none<Selection>() : Option.some({ anchor, head })
     }
 
+  /** Makes `live`'s row carry `next`, when it does not. */
+  const write = (live: Live, next: Pick<Shared, "text" | "saved" | "selection" | "collaborators">) => {
+    const row = texts.tanstack.get(live.id)!
+    const same = row.text === next.text && row.saved === next.saved && JSON.stringify(row.selection) === JSON.stringify(next.selection) &&
+      JSON.stringify(row.collaborators) === JSON.stringify(next.collaborators)
+    if (!same) texts.tanstack.update(live.id, (draft) => void Object.assign(draft, next))
+  }
+
   const refresh = (live: Live) =>
     effect {
       const text = try live.replica.text
@@ -154,20 +189,44 @@ const make = effect (config: CoeditConfig) => {
         const at = cursor === undefined ? Option.none<Selection>() : try placeOf(live, cursor)
         if (Option.isSome(at)) collaborators.push({ id: participant.id, name: participant.name, ...at.value })
       }
-      const row = Option.getOrThrow(try texts.get(live.id))
       // Whoever saved, every tab reads it from the newest write's mark; a text changed since, by anyone, isn't saved.
       const marks = try live.replica.marks
       const saved = isSaved((try Effect.sync(() => savedOf(marks))).value, text)
-      const same = row.text === text && row.saved === saved && JSON.stringify(row.selection) === JSON.stringify(selection) &&
-        JSON.stringify(row.collaborators) === JSON.stringify(collaborators)
-      if (same) return
-      try Effect.orDie(texts.update(live.id, (draft) => {
-        draft.text = text
-        draft.saved = saved
-        draft.selection = selection
-        draft.collaborators = collaborators
-      }))
+      // Decided and written in one turn: a conversation hidden while this read the replica gets none of what it read.
+      try Effect.sync(() => {
+        if (!readable(live)) return
+        write(live, { text, saved, selection, collaborators })
+        // A file whose content arrived, or stayed, while its conversation was hidden is ready with the text it now has.
+        if (veiled.delete(live.id)) texts.tanstack.update(live.id, (draft) => void (draft.status = "ready"))
+      })
     }
+
+  // Each change to which conversations may show, in its turn: a hidden conversation's prompt and files are emptied
+  // before anything else runs, and one that may show again is read from its replica.
+  try Effect.acquireRelease(
+    Effect.sync(() => owners.tanstack.subscribeChanges((changes) => {
+      for (const change of changes) {
+        const conversation = String(change.key)
+        const allowed = change.type !== "delete"
+        if (allowed) shown.add(conversation)
+        else shown.delete(conversation)
+        for (const live of lives.values()) {
+          if (live.of.kind === "answer" || live.of.conversation !== conversation) continue
+          if (!allowed) {
+            write(live, { text: "", saved: false, selection: null, collaborators: [] })
+            // A file that was ready is loading again: its editor goes, and comes back with the conversation.
+            if (texts.tanstack.get(live.id)!.status === "ready" && live.of.kind === "file") {
+              veiled.add(live.id)
+              texts.tanstack.update(live.id, (draft) => void (draft.status = "loading"))
+            }
+          }
+          if (live.of.kind === "prompt") for (const listener of listeners) listener(live, allowed)
+          if (allowed) runFork(refresh(live).pipe(Effect.forkIn(scope)))
+        }
+      }
+    }, { includeInitialState: true })),
+    (subscription) => Effect.sync(() => subscription.unsubscribe()),
+  )
 
   /** Applies one stored or queued update; bytes that aren't one are logged and skipped. */
   const apply = (live: Live, data: string) =>
@@ -207,7 +266,6 @@ const make = effect (config: CoeditConfig) => {
         unsent: try Ref.make<ReadonlyArray<Uint8Array>>([]),
         admitting: try Ref.make(0),
       }
-      lives.set(id, live)
       try Effect.orDie(texts.insert({
         id,
         kind: of.kind,
@@ -224,16 +282,18 @@ const make = effect (config: CoeditConfig) => {
         saveFailed: false,
         saved: false,
       }))
+      // Known once its row is: whoever finds it open finds its row.
+      lives.set(id, live)
       // What ChatApi stored, then what this device typed and the outbox still holds. A file's first content comes only
       // from ChatApi, so every device starts it from the same seed.
       try updates.changes({ initial: true }).pipe(
         Stream.runForEach((changes) =>
           effect {
             for (const change of changes) if (change.type === "insert") try apply(live, change.value.data)
+            // A file is ready once its content arrived and its row carries it: with this refresh, or, for a file
+            // whose conversation is hidden, with the one that shows it again.
+            if (of.kind === "file" && changes.some((change) => change.type === "insert")) veiled.add(id)
             try refresh(live)
-            if (of.kind === "file" && changes.some((change) => change.type === "insert")) {
-              try Effect.orDie(texts.update(id, (draft) => void (draft.status = "ready")))
-            }
           }
         ),
         Effect.forkIn(scope),
@@ -307,6 +367,9 @@ const make = effect (config: CoeditConfig) => {
     show,
     hide,
     refresh,
+    readable,
+    onReadable: (listener) =>
+      Effect.acquireRelease(Effect.sync(() => void listeners.add(listener)), () => Effect.sync(() => void listeners.delete(listener))),
     scope,
   })
 }

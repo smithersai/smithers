@@ -16,6 +16,7 @@ import { type Outcome, SandboxCall, settle as settleCall } from "../../../worker
 import { shaOf } from "../../../worker/test/branch.ts"
 import {
   asPerson,
+  type ChatApiOptions,
   CHATAPI_ORIGIN,
   member,
   nodeDevice,
@@ -37,15 +38,18 @@ import { browserSession } from "../../test/browserSession"
 import { Auth } from "../auth/auth.vibe"
 import { AuthStore, SESSION } from "../auth/store.vibe"
 import { Branch } from "../branch/branch.vibe"
+import { show as showConversation } from "../chat/actions"
 import { Chat } from "../chat/chat"
 import { CONNECTION } from "../chat/schema"
 import { ChatStore } from "../chat/store"
+import { readDenials } from "../chat/messagesShardClient"
+import { ConversationOwners } from "../conversations/owners"
 import { Commands } from "../commands/commands.vibe"
 import { postUpdate, TextsClient, UpdateNotTaken } from "./api.vibe"
 import { TEXTS_ROUTE, textRoute, textRoomRoute } from "./contract"
 import { sends } from "./metrics"
 import { CoeditStore, decodeCursor, encodeCursor, savedMarkOf, savedNameOf } from "./store.vibe"
-import { answerOf, fileOf, openAnswerOf, promptOf, saveLabelOf } from "./view"
+import { answerOf, fileOf, markdownInPlace, openAnswerOf, promptOf, saveLabelOf } from "./view"
 import { TextWrites } from "./writes.vibe"
 
 const closers: Array<() => Promise<void>> = []
@@ -116,11 +120,11 @@ const tab = async (
 }
 
 /** A fresh ChatApi where Ben may sign in too, with GitHub's `octo/hello`; the rooms; the member's tab and Ben's. */
-const open = async (options: Pick<TabOptions, "replace"> = {}) => {
+const open = async (options: Pick<TabOptions, "replace" | "shard"> = {}, chatApi: Pick<ChatApiOptions, "messagesShard"> = {}) => {
   const rooms = await roomHost()
   closers.push(rooms.close)
   const as = (id: string, name: string, access: "read" | "write" = "write") => dialing(rooms.origin, { id, name, access })
-  const runtime = openTestApp({ ...options, webSocket: as(member.subject.id, "member") }, { people: { ben } })
+  const runtime = openTestApp({ ...options, webSocket: as(member.subject.id, "member") }, { people: { ben }, ...chatApi })
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   api.branches.github.publish("octo", "hello", {
     defaultBranch: "main",
@@ -147,7 +151,7 @@ const open = async (options: Pick<TabOptions, "replace"> = {}) => {
   const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => Effect.runPromise(api.branches.run(effect))
   const count = (outcome: string) =>
     runtime.runSync(Metric.value(Metric.withAttributes(sends, { outcome }))).count
-  return { api, rooms, owner, benTab, ownTab, faultyTab, run, count }
+  return { api, rooms, as, owner, benTab, ownTab, faultyTab, run, count }
 }
 
 /** Shares branch `branchId` with `grantee` to `access`, as its owner does. */
@@ -157,6 +161,9 @@ const share = (sql: SqlClient.SqlClient, branchId: string, grantee: string, acce
 
 const shareWith = (opened: Awaited<ReturnType<typeof open>>, branchId: string, access: "view" | "edit") =>
   opened.run(Effect.flatMap(SqlClient.SqlClient, (sql) => share(sql, branchId, "person-ben", access)))
+
+/** Runs SQL against `api`'s own database. */
+const opened = (api: TestChatApi["Service"]) => <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => Effect.runPromise(api.branches.run(effect))
 
 type Opened = Awaited<ReturnType<typeof open>>
 type Tab = Awaited<ReturnType<Opened["ownTab"]>>
@@ -426,6 +433,134 @@ describe("the shared prompt", () => {
   }, WITHIN)
 })
 
+/**
+ * A page's transport as main.tsx builds it: `boundFetch`, which reads the session again after a 401, over a `fetch`
+ * that tells each read's 401 as it arrives. While `net.refused`, ChatApi answers every read of a conversation's
+ * messages 401; while `net.stalled`, no session read is ever answered.
+ */
+const refusable = (api: TestChatApi["Service"], principal: string) => {
+  const denials = readDenials()
+  const net = { refused: false, stalled: false }
+  const transport = (fetch: typeof globalThis.fetch): typeof globalThis.fetch =>
+    boundFetch(denials.observing(async (input, init) => {
+      const request = new Request(input, init)
+      const path = new URL(request.url).pathname
+      if (net.refused && path.includes("/messages/")) return new Response(null, { status: 401 })
+      if (net.stalled && path === SESSION_ROUTE) {
+        return new Promise<Response>((_, reject) => request.signal.addEventListener("abort", () => reject(request.signal.reason)))
+      }
+      return fetch(request)
+    }), { origin: api.origin, principal: () => principal, reauthorize: async () => false })
+  const options: TabOptions = { transport, readDenials: denials, shard: { follow: "20 millis", within: "300 millis" }, unreachableAfter: "300 millis" }
+  return { net, options }
+}
+
+describe("a prompt whose conversation ChatApi refuses", () => {
+  test("a read answered 401 empties the shared prompt and the draft that mirrors it in the turn the conversation is hidden, for a viewer and for an editor, though the session read after it never answers; both return with a read answered whole", async () => {
+    const rooms = await roomHost()
+    closers.push(rooms.close)
+    const as = (id: string, name: string, access: "read" | "write" = "write") => dialing(rooms.origin, { id, name, access })
+    const shard: TabOptions = { shard: { follow: "20 millis", within: "2 seconds" } }
+    const runtime = openTestApp({ ...shard, webSocket: as(member.subject.id, "member") }, { people: { ben }, messagesShard: true })
+    const api = await runtime.runPromise(Effect.service(TestChatApi))
+    api.branches.github.publish("octo", "hello", { defaultBranch: "main", branches: { main: shaOf("main"), "feature/one": shaOf("feature/one") } })
+    const owner = await tab(runtime, member.subject.id)
+    // The owner's branch, shared with Ben to view: its prompt is one text. Ben only views; the owner's other device
+    // edits. Each of the two is on a page whose reads ChatApi can come to refuse.
+    const branchId = (await owner.branch.actions.open("octo", "hello", "feature/one"))!
+    await opened(api)(Effect.flatMap(SqlClient.SqlClient, (sql) => share(sql, branchId, "person-ben", "view")))
+    await until(() => expect(showsPrompt(owner)).toBe(true))
+    const conversationId = owner.branch.queries.current.toArray[0]!.conversationId!
+    const [viewerPage, editorPage] = [refusable(asPerson(api, "ben"), "person-ben"), refusable(api, member.subject.id)]
+    const viewerRuntime = openTab(asPerson(api, "ben"), { ...viewerPage.options, webSocket: as("person-ben", "ben", "read") })
+    const editorRuntime = openTab(api, { ...editorPage.options, host: nodeDevice({ agent: api }), webSocket: as(member.subject.id, "member") })
+    const [viewer, editor] = [await tab(viewerRuntime, "ben"), await tab(editorRuntime, member.subject.id)]
+    await viewer.branch.actions.open("octo", "hello", "feature/one")
+    await editor.branch.actions.open("octo", "hello", "feature/one")
+    owner.type("the secret plan", { anchor: 15, head: 15 })
+    // Received: the viewer's composer reads the prompt's row, the editor's reads the draft that mirrors it.
+    await until(() => expect(viewer.prompt()).toMatchObject({ text: "the secret plan", collaborators: [expect.objectContaining({ name: "member" })] }))
+    await until(() => expect([editor.prompt()?.text, editor.draft()]).toEqual(["the secret plan", "the secret plan"]))
+
+    // What each page holds of the prompt as its conversation is hidden. `inTurn`: the stores' own rows, read inside
+    // the owners' change, where these listeners run after the store's. `atTurnEnd`: what the composer reads, the
+    // queries over those rows, read in a microtask of that change: before any timer, and before any answer from the
+    // network could be heard.
+    const pages = [[viewerRuntime, viewer, viewerPage], [editorRuntime, editor, editorPage]] as const
+    const inTurn: Array<ReadonlyArray<unknown>> = []
+    const atTurnEnd: Array<ReadonlyArray<unknown>> = []
+    const shown: Array<() => boolean> = []
+    for (const [pageRuntime, page] of pages) {
+      const owners = await pageRuntime.runPromise(Effect.service(ConversationOwners))
+      const { texts } = await pageRuntime.runPromise(Effect.service(CoeditStore))
+      const { composer } = await pageRuntime.runPromise(Effect.service(ChatStore))
+      await until(() => expect(owners.shown.tanstack.has(conversationId)).toBe(true))
+      shown.push(() => owners.shown.tanstack.has(conversationId))
+      const watching = owners.shown.tanstack.subscribeChanges((changes) => {
+        if (!changes.some((change) => change.type === "delete" && change.key === conversationId)) return
+        const row = texts.tanstack.toArray.find((text) => text.kind === "prompt" && text.key === conversationId)
+        inTurn.push([row?.text, row?.collaborators, row?.selection, composer.tanstack.toArray[0]?.draft])
+        queueMicrotask(() => atTurnEnd.push([page.prompt()?.text, page.prompt()?.collaborators, page.prompt()?.selection, page.draft()]))
+      }, { includeInitialState: true })
+      closers.push(async () => watching.unsubscribe())
+    }
+    // ChatApi answers each page's reads of the conversation 401, and no session read after one ever answers.
+    for (const [, , page] of pages) Object.assign(page.net, { refused: true, stalled: true })
+    await until(() => expect(shown.map((isShown) => isShown())).toEqual([false, false]))
+    // In that turn, before any session read could answer: no text, no caret and no selection in the row either
+    // composer reads, and no text in the draft.
+    expect(inTurn).toEqual([["", [], null, ""], ["", [], null, ""]])
+    expect(atTurnEnd).toEqual([["", [], null, ""], ["", [], null, ""]])
+    // It stays so past the reads' deadline, while the owner goes on typing: what arrives is in no row and no draft.
+    owner.type("the secret plan, revised", { anchor: 24, head: 24 })
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    for (const [, page] of pages) expect([page.prompt()?.text, page.prompt()?.collaborators, page.draft()]).toEqual(["", [], ""])
+    expect(shown.map((isShown) => isShown())).toEqual([false, false])
+    // What the editor types meanwhile is their own: it shows in their draft, and reaches nobody's prompt.
+    editor.type("mine", { anchor: 4, head: 4 })
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect([editor.draft(), editor.prompt()?.text, viewer.draft(), viewer.prompt()?.text]).toEqual(["mine", "", "", ""])
+    expect(owner.draft()).toBe("the secret plan, revised")
+
+    // ChatApi serves the reads again: Retry, answered whole, brings the prompt back to both, with what the editor
+    // typed while it was hidden merged into it.
+    for (const [pageRuntime, , page] of pages) {
+      Object.assign(page.net, { refused: false, stalled: false })
+      await pageRuntime.runPromise(Effect.flatMap(ChatStore, (store) => store.retryNow))
+    }
+    await until(() => expect(shown.map((isShown) => isShown())).toEqual([true, true]))
+    await until(() => expect(owner.draft()).toContain("mine"))
+    const merged = owner.draft()!
+    expect(merged).toContain("the secret plan, revised")
+    await until(() => expect([viewer.prompt()?.text, editor.prompt()?.text, editor.draft()]).toEqual([merged, merged, merged]))
+
+    // The editor leaves the branch: the draft is their own again, in the home conversation. The prompt stays open in
+    // the tab, unshown. ChatApi refuses its conversation again: its row empties, and the home draft is not touched.
+    await editor.branch.actions.leave()
+    editor.type("a note at home", { anchor: 14, head: 14 })
+    expect(editor.draft()).toBe("a note at home")
+    const { texts } = await editorRuntime.runPromise(Effect.service(CoeditStore))
+    const promptRow = () => texts.tanstack.toArray.find((text) => text.kind === "prompt" && text.key === conversationId)
+    expect(promptRow()?.text).toBe(merged)
+    editorPage.net.refused = true
+    await until(() => expect(shown[1]!()).toBe(false))
+    expect([promptRow()?.text, editor.draft()]).toEqual(["", "a note at home"])
+    // The tab comes to show the conversation while it is refused, with no word from ChatApi that they may open its
+    // branch, as a page that opens it from what the device kept does: its prompt is shown, with nothing in it, and
+    // the draft is none of what the others typed.
+    await editorRuntime.runPromise(showConversation(conversationId, true))
+    await until(() => expect(editor.prompt()?.key).toBe(conversationId))
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(editor.prompt()).toMatchObject({ text: "", collaborators: [] })
+    expect(editor.draft()).not.toContain("secret")
+    // Served again: the prompt, and the draft with it.
+    editorPage.net.refused = false
+    await editorRuntime.runPromise(Effect.flatMap(ChatStore, (store) => store.retryNow))
+    await until(() => expect(editor.prompt()?.text).toContain("the secret plan, revised"))
+    await until(() => expect(editor.draft()).toBe(editor.prompt()?.text))
+  }, WITHIN)
+})
+
 describe("a shared file", () => {
   const settle = (started: typeof SandboxCall.payloadSchema.Type, outcome: Outcome) =>
     settleCall(started.callId, outcome, started.saved)
@@ -492,6 +627,7 @@ describe("a shared file", () => {
       generation: 1,
     }))
     await saving
+    // Saved once the write's mark has synced back: the Save itself may be answered a moment before it arrives.
     await until(() => {
       const saved = fileOf(owner.texts(), conversation, "styles.css")!
       expect(saved).toMatchObject({ saving: false, saveFailed: false, saved: true, text: merged })
@@ -573,6 +709,116 @@ describe("a shared file", () => {
       .toHaveLength(1)
   }, WITHIN)
 
+  test("a read answered 401 hides an open file with its conversation in that turn, for a viewer and for an editor, though the session read after it never answers; it returns with a read answered whole", async () => {
+    const opened = await open({ shard: { follow: "20 millis", within: "2 seconds" } }, { messagesShard: true })
+    const { api, owner, as } = opened
+    // The owner's branch, shared with Ben to view, and a file of its working copy the owner opened. Ben only views;
+    // the owner's other device edits. Each of the two is on a page whose reads ChatApi can come to refuse.
+    const branchId = (await owner.branch.actions.open("octo", "hello", "feature/one"))!
+    await shareWith(opened, branchId, "view")
+    const conversationId = owner.branch.queries.current.toArray[0]!.conversationId!
+    const fileId = (await owner.coedit.showFile(branchId, "plan.md"))!
+    const content = "the secret plan\n"
+    await opened.run(settle(await call(opened, "read"), {
+      status: "done",
+      result: { tool: "read", path: "plan.md", content, bytes: content.length, truncated: false },
+      generation: 1,
+    }))
+    const [viewerPage, editorPage] = [refusable(asPerson(api, "ben"), "person-ben"), refusable(api, member.subject.id)]
+    const viewerRuntime = openTab(asPerson(api, "ben"), { ...viewerPage.options, webSocket: as("person-ben", "ben", "read") })
+    const editorRuntime = openTab(api, { ...editorPage.options, host: nodeDevice({ agent: api }), webSocket: as(member.subject.id, "member") })
+    const [viewer, editor] = [await tab(viewerRuntime, "ben"), await tab(editorRuntime, member.subject.id)]
+    const file = (page: Tab) => fileOf(page.texts(), conversationId, "plan.md")
+    const drawn = (page: Tab) => [file(page)?.status, file(page)?.text, file(page)?.collaborators, file(page)?.selection]
+    await viewer.branch.actions.open("octo", "hello", "feature/one")
+    await editor.branch.actions.open("octo", "hello", "feature/one")
+    // The viewer first asks for a file nobody opened, which they may not read: it fails, and stays failed throughout.
+    const unread = (await viewer.coedit.showFile(branchId, "unread.md"))!
+    const failed = () => viewer.texts().find((row) => row.id === unread)
+    await until(() => expect(failed()).toMatchObject({ status: "failed", text: "" }))
+    for (const page of [viewer, editor]) {
+      expect(await page.coedit.showFile(branchId, "plan.md")).toBe(fileId)
+      await until(() => expect(file(page)).toMatchObject({ status: "ready", text: content }))
+    }
+    owner.coedit.select(fileId, { anchor: 3, head: 3 })
+    await until(() => expect(file(viewer)?.collaborators).toEqual([expect.objectContaining({ name: "member" })]))
+
+    // What each page holds of the file as its conversation is hidden. `inTurn`: the store's own row, read inside the
+    // owners' change, where these listeners run after the store's. `atTurnEnd`: what the editor's component reads,
+    // the query over those rows, read in a microtask of that change: before any timer, and before any answer from
+    // the network could be heard.
+    const pages = [[viewerRuntime, viewer, viewerPage], [editorRuntime, editor, editorPage]] as const
+    const inTurn: Array<ReadonlyArray<unknown>> = []
+    const atTurnEnd: Array<ReadonlyArray<unknown>> = []
+    const shown: Array<() => boolean> = []
+    for (const [pageRuntime, page] of pages) {
+      const owners = await pageRuntime.runPromise(Effect.service(ConversationOwners))
+      const { texts } = await pageRuntime.runPromise(Effect.service(CoeditStore))
+      await until(() => expect(owners.shown.tanstack.has(conversationId)).toBe(true))
+      shown.push(() => owners.shown.tanstack.has(conversationId))
+      const watching = owners.shown.tanstack.subscribeChanges((changes) => {
+        if (!changes.some((change) => change.type === "delete" && change.key === conversationId)) return
+        const row = texts.tanstack.get(fileId)
+        inTurn.push([row?.status, row?.text, row?.collaborators, row?.selection])
+        queueMicrotask(() => atTurnEnd.push(drawn(page)))
+      }, { includeInitialState: true })
+      closers.push(async () => watching.unsubscribe())
+    }
+    // ChatApi answers each page's reads of the conversation 401, and no session read after one ever answers.
+    for (const [, , page] of pages) Object.assign(page.net, { refused: true, stalled: true })
+    await until(() => expect(shown.map((isShown) => isShown())).toEqual([false, false]))
+    // In that turn, before any session read could answer: the row is loading, so no editor is mounted on it, and it
+    // holds no text, caret or selection.
+    const hidden = ["loading", "", [], null]
+    expect(inTurn).toEqual([hidden, hidden])
+    expect(atTurnEnd).toEqual([hidden, hidden])
+    expect(markdownInPlace(editor.texts(), conversationId, "blob", "plan.md")).toBeUndefined()
+    // It stays so past the reads' deadline, while the owner goes on typing: what arrives is in no row.
+    const revised = "the secret plan, revised\n"
+    owner.coedit.type(fileId, revised, { base: content, selection: { anchor: 24, head: 24 } })
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    for (const [, page] of pages) expect(drawn(page)).toEqual(hidden)
+    expect(shown.map((isShown) => isShown())).toEqual([false, false])
+    // Nothing is drawn to type in or to save from: an edit and a Save of the hidden file do nothing, here or anywhere.
+    const writes = () => api.branches.starts.filter((start) => (start.payload as { call?: { tool?: string } }).call?.tool === "write").length
+    const updates = await storedUpdates(opened)
+    await editor.coedit.type(fileId, "mine")
+    await editor.coedit.save(fileId)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect([drawn(editor), file(owner)?.text, await storedUpdates(opened), writes()]).toEqual([hidden, revised, updates, 0])
+    expect(failed()).toMatchObject({ status: "failed", text: "" })
+
+    // ChatApi serves the reads again: Retry, answered whole, brings the file back to both, as everyone left it.
+    for (const [pageRuntime, , page] of pages) {
+      Object.assign(page.net, { refused: false, stalled: false })
+      await pageRuntime.runPromise(Effect.flatMap(ChatStore, (store) => store.retryNow))
+    }
+    await until(() => expect(shown.map((isShown) => isShown())).toEqual([true, true]))
+    for (const [, page] of pages) await until(() => expect(file(page)).toMatchObject({ status: "ready", text: revised }))
+    expect(failed()).toMatchObject({ status: "failed", text: "" })
+
+    // A file whose first content arrives while its conversation is hidden stays loading, and is ready, with its
+    // text, once the conversation shows.
+    editorPage.net.refused = true
+    await until(() => expect(shown[1]!()).toBe(false))
+    const lateId = (await owner.coedit.showFile(branchId, "late.md"))!
+    const late = "arrives late\n"
+    await opened.run(settle(await call(opened, "read", 2), {
+      status: "done",
+      result: { tool: "read", path: "late.md", content: late, bytes: late.length, truncated: false },
+      generation: 2,
+    }))
+    await until(() => expect(fileOf(owner.texts(), conversationId, "late.md")).toMatchObject({ status: "ready", text: late }))
+    expect(await editor.coedit.showFile(branchId, "late.md")).toBe(lateId)
+    const { updates: arrived } = (await editorRuntime.runPromise(Effect.service(CoeditStore))).live(lateId)!
+    await until(() => expect(arrived.tanstack.size).toBeGreaterThan(0))
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(fileOf(editor.texts(), conversationId, "late.md")).toMatchObject({ status: "loading", text: "" })
+    editorPage.net.refused = false
+    await editorRuntime.runPromise(Effect.flatMap(ChatStore, (store) => store.retryNow))
+    await until(() => expect(fileOf(editor.texts(), conversationId, "late.md")).toMatchObject({ status: "ready", text: late }))
+  }, WITHIN)
+
   test("someone who may only view sees a file once someone who may edit opened it; a tab that doesn't lead seeds it", async () => {
     const opened = await open()
     const { owner, benTab, api } = opened
@@ -646,6 +892,7 @@ describe("a shared file", () => {
     expect(write.call).toEqual({ tool: "write", path: "notes/new.md", content: "# New\n" })
     await opened.run(settle(write, { status: "done", result: { tool: "write", path: "notes/new.md", bytes: 6, sequence: 1 }, generation: 1 }))
     await saving
+    // Saved once the write's mark has synced back: the Save itself may be answered a moment before it arrives.
     await until(() => expect(fileOf(owner.texts(), conversation, "notes/new.md")).toMatchObject({ saving: false, saveFailed: false, saved: true }))
   }, WITHIN)
 

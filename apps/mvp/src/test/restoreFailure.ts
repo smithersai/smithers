@@ -19,3 +19,28 @@ export const failRestore = (host: NodeDevice, collection: string): NodeDevice =>
     } }
   } },
 })
+
+/** A real device whose `collection` reads its stored rows only once `release` is called. */
+export const holdRestore = (host: NodeDevice, collection: string) => {
+  const held = Promise.withResolvers<void>()
+  const device: NodeDevice = {
+    ...host,
+    persistence: { ...host.persistence, make: (database, coordinator) => {
+      const normal = host.persistence.make(database, coordinator)
+      return { ...normal, resolvePersistenceForCollection: (selection) => {
+        const resolved = normal.resolvePersistenceForCollection?.(selection) ?? normal
+        // Held before the device's store is entered, so no other collection waits behind this one's turn at it.
+        const reads = new Set<string | symbol>(["loadResumeSnapshot", "loadSubset", "runInHydrationScope"])
+        const late = (adapter: object): object => new Proxy(adapter, { get: (target, property) => {
+          const value = Reflect.get(target, property)
+          if (typeof value !== "function") return value
+          return reads.has(property)
+            ? (...args: ReadonlyArray<unknown>) => held.promise.then(() => value.apply(target, args))
+            : value.bind(target)
+        } })
+        return selection.collectionId === collection ? { ...resolved, adapter: late(resolved.adapter) as typeof resolved.adapter } : resolved
+      } }
+    } },
+  }
+  return { device, release: () => held.resolve() }
+}

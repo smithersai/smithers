@@ -3,8 +3,9 @@ import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { share, show } from "../chat/actions"
 import { signedOut } from "../auth/store.vibe"
 import { openAt } from "../conversations/actions"
+import { ConversationOwners } from "../conversations/owners"
 import { ChatStore } from "../chat/store"
-import { isRepository } from "../repo/contract"
+import { isRepository, repoId } from "../repo/contract"
 import { SharingStore } from "../sharing/store.vibe"
 import { isBranchName } from "./contract"
 import { opens, reopens } from "./metrics"
@@ -24,6 +25,7 @@ const setCurrent = (fields: Omit<Current, "id">) =>
     Effect.orDie(current.update(CURRENT, (row) => void Object.assign(row, fields))))
 
 class Superseded extends Data.TaggedError("BranchOpenSuperseded") {}
+class GrantLost extends Data.TaggedError("BranchOpenGrantLost") {}
 
 /**
  * Follows the permission list of the owner's branch `branchId`, shown in this tab, once it has synced: their first share
@@ -84,12 +86,17 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
       value === request && signal?.aborted !== true ? Effect.void : Effect.fail(new Superseded())))
     const route = `${owner.toLowerCase()}/${repo.toLowerCase()}/${ref}`
     const empty = { branchId: null, conversationId: null, mode: null, access: null }
+    const owners = try ConversationOwners
+    const named = { repository: repoId(owner, repo), branch: ref }
+    const denied = (id: string) => owners.refused(id) || owners.routeDenied(named.repository, named.branch)
     // Another page of the branch this tab shows, such as the next file in its tree: the workspace stays as it is, its
     // conversation and its shares' follower included, and nothing unmounts while ChatApi would answer what it already
-    // did. Leaving the branch, or a reload, tracks it again.
+    // did. Leaving the branch, or a reload, tracks it again; so does opening it while its conversation is refused,
+    // as another tab's read was: ChatApi is asked again, and its answer that the person may read shows the page.
     const shown = try (try BranchStore).current.get(CURRENT)
     if (Option.isSome(shown) && shown.value.status === "ready" && shown.value.branchId !== null &&
-      `${shown.value.owner.toLowerCase()}/${shown.value.repo.toLowerCase()}/${shown.value.name}` === route) {
+      `${shown.value.owner.toLowerCase()}/${shown.value.repo.toLowerCase()}/${shown.value.name}` === route &&
+      !(shown.value.conversationId !== null && denied(shown.value.conversationId))) {
       try Metric.update(Metric.withAttributes(opens, { outcome: "kept" }), 1)
       try Effect.logInfo("branch.open").pipe(Effect.annotateLogs({ outcome: "kept" }))
       return shown.value.branchId
@@ -101,14 +108,15 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
     }
     /**
      * Settles the page on why the branch can't be shown: a refusal (not found, sign in, no access) also forgets the
-     * conversation the device kept for it.
+     * conversation the device kept for it. One ChatApi gave has refused the branch already, as it arrived (`heard`).
      */
     const refused = (status: Current["status"]) =>
       effect {
         if (status !== "failed") {
           try Effect.ignore(conversations.restored)
           try stillCurrent
-          if (Option.isSome(try conversations.get(route))) {
+          const saved = try conversations.get(route)
+          if (Option.isSome(saved)) {
             const removed = try conversations.delete(route).pipe(Effect.orDie)
             try Effect.ignore(removed.persisted)
           }
@@ -129,6 +137,25 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
     try Effect.raceFirst(identityReady, released)
     try stillCurrent
     if (try signedOut) return try refused("sign_in")
+    // Taken before the request: a refusal recorded from here on is not one this answer is later than.
+    const fence = try Effect.sync(() => owners.fence())
+    /**
+     * ChatApi's word on the branch is its word on the branch's conversation, recorded as it arrives and whoever is
+     * still waiting for it: the person may have left for another page, and the answer is no less ChatApi's. Refused
+     * (not found, no access), the branch is refused, whatever the device knows of it yet: every conversation the
+     * device names for it is hidden at once, by the route it kept or by the person's synced row, and one it comes to
+     * name later, as rows still restoring on a cold load are read, is hidden as it is named
+     * (src/features/conversations/owners.ts `refuseBranch`). So its runs and waits never show through a row that
+     * arrived after the answer. ChatApi's `401` is a refusal too: it answered that nobody is signed in here.
+     * Answered, the person may read the conversation again, and the branch is refused no longer, unless a refusal
+     * was recorded since the request went (`clear`). No answer, ChatApi said nothing of it.
+     */
+    const heard = (answer: { readonly conversationId: string } | Current["status"]) =>
+      Effect.suspend(() => {
+        if (typeof answer !== "string") return owners.clear(answer.conversationId, fence, named)
+        return answer === "failed" ? Effect.succeed(false)
+          : Effect.promise(() => owners.refuseBranch(named.repository, named.branch)).pipe(Effect.as(false))
+      })
     // The run goes on in the tab's scope whether the page went offline or its navigation was cancelled.
     const tracking = try Effect.forkIn(
       Effect.result(
@@ -139,6 +166,16 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
           { repo: `${owner}/${repo}`, branch: ref, openedAt: try openAt(owner, repo, ref) },
           { door: "view" },
         ),
+      ).pipe(
+        Effect.map((dispatched) => {
+          if (dispatched._tag === "Success" && dispatched.success._tag === "Done") return dispatched.success.value
+          const error = dispatched._tag === "Success" && dispatched.success._tag === "Failed"
+            ? dispatched.success.error
+            : undefined
+          return statusOf(error?._tag === "@smthrs/mvp/branch/BranchTrackRefused" ? error.reason : undefined)
+        }),
+        Effect.flatMap((answer) => heard(answer).pipe(Effect.map((accepted) =>
+          typeof answer === "string" || accepted ? answer : "failed" as const))),
       ),
       (try BranchStore).scope,
     )
@@ -182,41 +219,46 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
       )
       return undefined
     }
-    const dispatched = answered.value
-    if (dispatched._tag === "Success" && dispatched.success._tag === "Done") {
-      const tracked = dispatched.success.value
-      try Effect.ignore(conversations.restored)
-      try stillCurrent
-      const saved = try conversations.get(route)
-      const write = try (Option.isSome(saved)
-        ? conversations.update(route, (row) => { row.conversationId = tracked.conversationId })
-        : conversations.insert({ id: route, conversationId: tracked.conversationId })).pipe(Effect.orDie)
-      try Effect.ignore(write.persisted)
-      try (try ChatStore).open(tracked.conversationId)
-      try stillCurrent
-      try show(tracked.conversationId, tracked.shared)
-      try stillCurrent
-      if (tracked.access === "owner") {
-        const { follower } = try BranchStore
-        try FiberHandle.run(follower, followShares(tracked.branchId))
-      }
-      try setCurrent({
-        owner,
-        repo,
-        name: tracked.name,
-        status: "ready",
-        branchId: tracked.branchId,
-        conversationId: tracked.conversationId,
-        mode: tracked.mode,
-        access: tracked.access,
-      })
-      try Metric.update(Metric.withAttributes(opens, { outcome: "ready" }), 1)
-      return tracked.branchId
+    const tracked = answered.value
+    if (typeof tracked !== "string") {
+      const stillAllowed = stillCurrent.pipe(Effect.andThen(Effect.suspend(() =>
+        denied(tracked.conversationId) ? Effect.fail(new GrantLost()) : Effect.void)))
+      return try (effect {
+        try stillAllowed
+        try Effect.ignore(conversations.restored)
+        try stillAllowed
+        const saved = try conversations.get(route)
+        try stillAllowed
+        const write = try (Option.isSome(saved)
+          ? conversations.update(route, (row) => { row.conversationId = tracked.conversationId })
+          : conversations.insert({ id: route, conversationId: tracked.conversationId })).pipe(Effect.orDie)
+        try stillAllowed
+        try Effect.ignore(write.persisted)
+        try stillAllowed
+        try (try ChatStore).open(tracked.conversationId)
+        try stillAllowed
+        try show(tracked.conversationId, tracked.shared)
+        try stillAllowed
+        if (tracked.access === "owner") {
+          const { follower } = try BranchStore
+          try FiberHandle.run(follower, followShares(tracked.branchId))
+        }
+        try stillAllowed
+        try setCurrent({
+          owner,
+          repo,
+          name: tracked.name,
+          status: "ready",
+          branchId: tracked.branchId,
+          conversationId: tracked.conversationId,
+          mode: tracked.mode,
+          access: tracked.access,
+        })
+        try Metric.update(Metric.withAttributes(opens, { outcome: "ready" }), 1)
+        return tracked.branchId
+      }.pipe(Effect.catchTag("BranchOpenGrantLost", () => refused("failed"))))
     }
-    const error = dispatched._tag === "Success" && dispatched.success._tag === "Failed"
-      ? dispatched.success.error
-      : undefined
-    return try refused(statusOf(error?._tag === "@smthrs/mvp/branch/BranchTrackRefused" ? error.reason : undefined))
+    return try refused(tracked)
   }.pipe(
     // expected: a newer navigation took the page over
     Effect.catchTag("BranchOpenSuperseded", () => signal?.aborted === true
@@ -233,12 +275,33 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
  * changes (not `locked` or `restricted`). Anything missing, such as a branch still tracking, refused or opened offline,
  * is no.
  */
-export const writable = Effect.map(
-  Effect.flatMap(BranchStore, ({ current }) => current.get(CURRENT)),
-  (row) =>
+export const writable = effect {
+  const owners = try ConversationOwners
+  const row = try (try BranchStore).current.get(CURRENT)
+  return try Effect.sync(() =>
     Option.isSome(row) && row.value.status === "ready" && row.value.access !== null && writes(row.value.access) &&
-    row.value.mode === "open",
-)
+    row.value.mode === "open" && row.value.conversationId !== null && !owners.refused(row.value.conversationId) &&
+    !owners.routeDenied(repoId(row.value.owner, row.value.repo), row.value.name))
+}
+
+/** How a page stands once ChatApi refused its branch, or gave no answer for it: Retry asks again. */
+const UNSHOWN: ReadonlySet<Current["status"]> = new Set(["forbidden", "missing", "sign_in", "failed"])
+
+/**
+ * Asks ChatApi of the branch this tab's page is on again, as Retry does: when its conversation is refused, on a page
+ * another tab's refused read hid, and when the page itself stands refused, as after an earlier Retry ChatApi
+ * answered no to, which left the page no conversation to name. The route opens again (`BranchRoute`), and `open`
+ * tracks the branch afresh, so a branch shared again since shows in place. A branch that shows, one still opening
+ * or waiting to be back online, or no branch, is left as it is.
+ */
+export const recheck = effect {
+  const shown = try (try BranchStore).current.get(CURRENT)
+  const owners = try ConversationOwners
+  const hidden = try Effect.sync(() => Option.isSome(shown) && (shown.value.status === "ready"
+    ? shown.value.conversationId !== null && owners.refused(shown.value.conversationId)
+    : UNSHOWN.has(shown.value.status)))
+  if (hidden) try (try BranchRoute).reopen
+}
 
 export const leave = effect {
   try Ref.update((try BranchStore).generation, (value) => value + 1)

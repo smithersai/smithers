@@ -34,7 +34,7 @@ import {
   type AttachState,
   type Target,
 } from "./Attach.vibe"
-import * as MessagesShardBridge from "../chat/MessagesShardBridge.ts"
+import * as MessagesShardSource from "../chat/MessagesShardSource.ts"
 import { defineTool, makeMcpRoute, readBody, targetOf } from "./McpRoute.vibe"
 
 const Uuid = Schema.String.check(Schema.isUUID())
@@ -103,12 +103,13 @@ const conversationRead = defineTool({
 })
 
 /**
- * The answers one request's tools recorded inside its transaction. They reach the conversation's shard only after
- * that transaction commits (`serveMcp`): an answer Postgres rolled back is never one the shard holds.
+ * The questions one request's tools answered inside its transaction, by id. Each answer reaches the conversation's
+ * shard only after that transaction commits (`serveMcp`), read back from Postgres as it committed it: an answer
+ * Postgres rolled back is never one the shard holds.
  */
 service RecordedAnswers {
   static readonly key = "@smthrs/mvp/attach/RecordedAnswers"
-  readonly record: (answer: MessagesShardBridge.Answered) => void
+  readonly record: (questionId: string) => void
 }
 
 const conversationRespond = defineTool({
@@ -147,7 +148,7 @@ const conversationRespond = defineTool({
     // written, and when this is the same answer given again. Only recorded here, inside the transaction that holds
     // the grant's lock and the answer's row: it is sent once that transaction has committed.
     const recorded = try RecordedAnswers
-    recorded.record({ conversationId: grant.conversation, questionId, answerId: prior.id, text })
+    recorded.record(questionId)
     return { answered: true, answerId: prior.id }
   },
 })
@@ -247,11 +248,11 @@ effect function mint(origin: string, input: Parameters<LiveAttach["mintIntent"]>
 effect function serveMcp(origin: string, web: Request, body: Result.Result<string, "too_large" | "body">) {
   const sql = try SqlClient.SqlClient
   const key = try promise(() => bearerHash(web.headers.get("authorization")))
-  const answers: Array<MessagesShardBridge.Answered> = []
+  const answers: Array<string> = []
   const serve = (state?: AttachState) => makeMcpRoute({
     attach: makeAttach({ hostOrigin: origin, permissions, state }),
     hostOrigin: origin, tools, pathPrefix: ATTACH_MCP_ROUTE,
-  })(web, body).pipe(provideService(RecordedAnswers, { record: (answer) => void answers.push(answer) }))
+  })(web, body).pipe(provideService(RecordedAnswers, { record: (questionId) => void answers.push(questionId) }))
   const target = targetOf(new URL(web.url), ATTACH_MCP_ROUTE)
   if (key === undefined || target === undefined) return try serve()
   const [candidate] = try sql<AttachmentRow>`
@@ -267,8 +268,9 @@ effect function serveMcp(origin: string, web: Request, body: Result.Result<strin
   })
   // Committed: the locks are released and the connection is returned before the shard is reached. A transaction
   // that rolled back, or whose commit failed, never gets here, so the shard never holds an answer Postgres does not.
-  // The bridge never fails; an answer it could not send is sent by the same answer given again.
-  try forEach(answers, MessagesShardBridge.answered, { discard: true })
+  // Each answer is read back as Postgres holds it, with its question, its place and its time. The bridge never fails;
+  // an answer it could not send is sent by the same answer given again.
+  try forEach(answers, MessagesShardSource.answered, { discard: true })
   return response
 }
 

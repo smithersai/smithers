@@ -10,7 +10,9 @@ the per-op result codes and the full final world to the output line.
 Each op runs the proven functions of `SmithersState` (`submit`, `bumpEpoch`,
 `applyCommit`, `installSnapshot`, `rebasePending`) and yields a short result code.
 After every op the oracle folds the result code and the canonical JSON of the
-state the op touched into an FNV-1a 32-bit digest. `@smthrs/app-state` computes
+state the op touched into an FNV-1a 32-bit digest. A shard's and a replica's JSON
+carries `places`: where each of its messages reads (`Chat.places`), so the digest
+also holds the reading order to the one `@smthrs/app-state` computes (`placesOf`). `@smthrs/app-state` computes
 the same codes and the same digest; `test/DifferentialFuzz.test.ts` compares them.
 
 Ops:
@@ -73,10 +75,16 @@ def keyParts (j : Json) (k : String) : Except String (Option (List MessagePart))
   | .ok v => do pure (some (← (← v.getArr?).toList.mapM parsePart))
   | .error _ => pure none
 
+def keySource (j : Json) (k : String) : Except String (Option MessageSource) :=
+  match j.getObjVal? k with
+  | .ok v => do pure (some { viewId := ← str v "viewId", event := ← str v "event" })
+  | .error _ => pure none
+
 def parseOrigin (j : Json) : Except String MessageOrigin := do
   pure {
     role := ← keyStr j "role", questionId := ← keyStr j "questionId",
-    position := ← keyNat j "position", createdAt := ← keyStr j "createdAt" }
+    position := ← keyNat j "position", createdAt := ← keyStr j "createdAt",
+    source := ← keySource j "source", data := ← keyStr j "data" }
 
 def parseRun (j : Json) : Except String MessageRun := do
   pure {
@@ -87,7 +95,8 @@ def parseRun (j : Json) : Except String MessageRun := do
 def parseNotes (j : Json) : Except String MessageNotes := do
   pure {
     summary := ← keyStr j "summary", summaryRevision := ← keyStr j "summaryRevision",
-    phase := ← keyStr j "phase", arc := ← keyStr j "arc", updatedAt := ← keyStr j "updatedAt" }
+    phase := ← keyStr j "phase", arc := ← keyStr j "arc", updatedAt := ← keyStr j "updatedAt",
+    noteVersion := ← keyNat j "noteVersion" }
 
 /-- The fields that hold a value. An absent field has no key in the output. -/
 def present (fields : List (String × Option Json)) : List (String × Json) :=
@@ -98,7 +107,9 @@ def partJ (p : MessagePart) : Json :=
 
 def originJ (o : MessageOrigin) : List (String × Json) :=
   present [("role", o.role.map Json.str), ("questionId", o.questionId.map Json.str),
-    ("position", o.position.map toJson), ("createdAt", o.createdAt.map Json.str)]
+    ("position", o.position.map toJson), ("createdAt", o.createdAt.map Json.str),
+    ("source", o.source.map (fun s => Json.mkObj [("viewId", s.viewId), ("event", s.event)])),
+    ("data", o.data.map Json.str)]
 
 def runJ (r : MessageRun) : List (String × Json) :=
   present [("parts", r.parts.map (fun ps => Json.arr (ps.map partJ).toArray)),
@@ -109,7 +120,8 @@ def runJ (r : MessageRun) : List (String × Json) :=
 def notesJ (n : MessageNotes) : List (String × Json) :=
   present [("summary", n.summary.map Json.str),
     ("summaryRevision", n.summaryRevision.map Json.str), ("phase", n.phase.map Json.str),
-    ("arc", n.arc.map Json.str), ("updatedAt", n.updatedAt.map Json.str)]
+    ("arc", n.arc.map Json.str), ("updatedAt", n.updatedAt.map Json.str),
+    ("noteVersion", n.noteVersion.map toJson)]
 
 /-- Required fields, typed so that optional ones can be appended. -/
 def fields (xs : List (String × Json)) : List (String × Json) := xs
@@ -223,9 +235,12 @@ def commitJ (c : Commit) : Json :=
 def receiptKey (origin commandId : String) : String :=
   (Json.arr #[Json.str origin, Json.str commandId]).compress
 
+/-- Where each message reads, in the order the chat holds them (`Chat.places`). -/
+def placesJ (s : AppState) : Json := toJson s.chat.places
+
 def hubJ (s : ShardState) : Json :=
   Json.mkObj [("epoch", toJson s.epoch), ("headSeq", toJson s.headSeq),
-    ("state", appStateJ s.state),
+    ("state", appStateJ s.state), ("places", placesJ s.state),
     ("receipts", Json.mkObj (s.receipts.map (fun r =>
       (receiptKey r.origin r.commandId,
         Json.mkObj [("origin", r.origin), ("commandId", r.commandId),
@@ -235,7 +250,7 @@ def hubJ (s : ShardState) : Json :=
 
 def replicaJ (r : Replica) : Json :=
   Json.mkObj [("epoch", toJson r.epoch), ("cursor", toJson r.cursor),
-    ("confirmed", appStateJ r.confirmed)]
+    ("confirmed", appStateJ r.confirmed), ("places", placesJ r.confirmed)]
 
 structure World where
   hub : ShardState

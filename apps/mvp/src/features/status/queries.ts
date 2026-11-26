@@ -1,6 +1,6 @@
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import type { Effect } from "effect"
-import type { Message } from "../chat/schema"
+import type { Message, ShardRow } from "../chat/schema"
 import type { Source } from "../repo/gate"
 import { QUEUE_ASK_FLOW } from "./contract"
 import type { Local, Run } from "./schema"
@@ -12,10 +12,12 @@ import type { Local, Run } from "./schema"
 /**
  * Each answer's agent state, with its run's latest question: `done` or `failed` once the answer settled; while it
  * streams, `needs_you` while its question is open and unanswered, `waiting` while its turn waits, else `working`.
- * `focus` and `draft` are this tab's, for the open question only.
+ * `focus` and `draft` are this tab's, for the open question only. In the transcript's order: by `position`, and among
+ * answers at one position by the entry of the conversation's shard that posted each (`seq`, chat's schema.ts
+ * `ShardRow`; 0 on a row no shard gave), as chat's own queries order them (src/features/chat/queries.ts).
  */
 export const statusesQuery = (
-  messages: Source<Message>,
+  messages: Source<ShardRow>,
   runs: Collection.Collection<Run>,
   local: Collection.Collection<Local, string>,
 ) =>
@@ -29,6 +31,7 @@ export const statusesQuery = (
         id: message.id,
         flow: run?.flow,
         position: message.position,
+        seq: Query.coalesce(message.shardSeq, 0),
         state: Query.caseWhen(
           Query.eq(message.status, "done"),
           "done",
@@ -47,7 +50,8 @@ export const statusesQuery = (
         draft: Query.caseWhen(Query.eq(mine?.version, run?.version), mine?.draft, ""),
         focus: Query.caseWhen(Query.eq(mine?.version, run?.version), mine?.focus, 0),
       }))
-      .orderBy(({ $selected }) => $selected.position),
+      .orderBy(({ $selected }) => $selected.position)
+      .orderBy(({ $selected }) => $selected.seq),
   )
 
 /** Every answer's status. */
@@ -151,12 +155,16 @@ export const waitRunsQuery = (
 /** The open waits addressed to the viewer. */
 export type Waits = Effect.Success<ReturnType<typeof waitsQuery>>
 
-/** The latest answer's status in one conversation: what the header shows while it shows that conversation. */
+/**
+ * The latest answer's status in one conversation: what the header shows while it shows that conversation. The last
+ * answer of the transcript's order, so of two answers at one position it is the one the transcript reads last.
+ */
 export const latestQuery = (statuses: Statuses) =>
   LiveQuery.make((q) =>
     q
       .from({ status: statuses.tanstack })
       .orderBy(({ status }) => status.position, "desc")
+      .orderBy(({ status }) => status.seq, "desc")
       .limit(1),
   )
 

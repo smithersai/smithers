@@ -12,10 +12,9 @@ import { type Actor, Sessions, SessionsUnavailable } from "./Actor.vibe"
 import * as ConversationPeople from "./branch/ConversationPeople.vibe"
 import * as ChatMetrics from "./ChatMetrics.vibe"
 import { rowsOf } from "../src/features/chat/messagesShard.ts"
-import { shardHost } from "../src/test/messagesShardHost.ts"
+import { ownerIn, shardHost } from "../src/test/messagesShardHost.ts"
 import * as Bridge from "./chat/MessagesShardBridge.ts"
 import * as MessagesShard from "./chat/MessagesShard.ts"
-import { personOwner } from "./chat/MessagesShardRoutes.ts"
 import { shared, tracked } from "./test/branch.ts"
 import { answers, harness, recorded, row, rowCount, testFile, uuid } from "./test/harness.ts"
 
@@ -75,8 +74,17 @@ describe("POST /api/questions", () => {
       const first = yield* Effect.promise(() => h.ask(body))
       expect(first.status).toBe(202)
       const state = () => Effect.map(host.state(branch.conversationId), ({ chat }) => chat.messages)
+      // Each message where and when Postgres committed it: read after the commit, never taken from the request.
+      const stored = yield* Effect.promise(() => Promise.all([row(runtime, ids.id), row(runtime, ids.answerId)]))
+      const times = yield* Effect.promise(() => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly createdAt: string }>`
+          SELECT (created_at AT TIME ZONE 'UTC')::text || '+00' AS "createdAt" FROM messages
+          WHERE id IN ${sql.in([ids.id, ids.answerId])} ORDER BY position`)))
       const sequenced = [
-        { id: ids.id, author: Bridge.questionOwner(ids.id), body: "What is a shard?", status: "posted", hubSeq: 1, role: "user" },
+        {
+          id: ids.id, author: Bridge.questionOwner(ids.id), body: "What is a shard?", status: "posted", hubSeq: 1,
+          role: "user", position: stored[0].position, createdAt: times[0]!.createdAt,
+        },
         {
           id: ids.answerId,
           author: Bridge.answerOwner(ids.answerId),
@@ -85,14 +93,16 @@ describe("POST /api/questions", () => {
           hubSeq: 2,
           role: "assistant",
           questionId: ids.id,
+          position: stored[1].position,
+          createdAt: times[1]!.createdAt,
         },
       ]
+      expect(stored[1].position).toBe(stored[0].position + 1)
       expect(yield* state()).toEqual(sequenced)
-      // The rows read off the shard are the rows Postgres holds.
-      const stored = yield* Effect.promise(() => Promise.all([row(runtime, ids.id), row(runtime, ids.answerId)]))
+      // The rows read off the shard are the rows Postgres holds, in its order.
       expect(rowsOf({ messages: yield* state() }, { conversationId: branch.conversationId }).map((message) =>
-        [message.id, message.role, message.text, message.status === "done" ? "done" : "streaming", message.questionId]))
-        .toEqual(stored.map((message) => [message.id, message.role, message.text, message.status, message.questionId]))
+        [message.id, message.role, message.text, message.status === "done" ? "done" : "streaming", message.questionId, message.position]))
+        .toEqual(stored.map((message) => [message.id, message.role, message.text, message.status, message.questionId, message.position]))
       // The same request again: Postgres finds the question asked, and the shard answers from its receipts.
       const again = yield* Effect.promise(() => h.ask(body))
       expect([again.status, yield* Effect.promise(() => again.json())]).toEqual([200, { txid: null, existing: true }])
@@ -123,7 +133,8 @@ describe("POST /api/questions", () => {
       for (const wire of [pulled, snapshot]) {
         expect(wire).toContain(ids.id)
         expect(wire).not.toContain(member.subject.id)
-        expect(wire).not.toContain(personOwner(member.subject.id))
+        expect(wire).not.toContain(yield* Effect.promise(() => ownerIn(branch.conversationId, member)))
+        expect(wire).not.toMatch(/person:(?!question:)/)
       }
     }))))
 
@@ -135,7 +146,7 @@ describe("POST /api/questions", () => {
       const host = yield* shardHost()
       const post = (actor: Actor, messageId: string, conversationId = branch.conversationId) =>
         Effect.promise(async () => {
-          const owner = personOwner(actor.subject.id)
+          const owner = await ownerIn(conversationId, actor)
           const shard = MessagesShard.shardOf(conversationId)
           const response = await host.fetchAs(actor)(`https://smithers.test/api/conversations/${conversationId}/messages/submit`, {
             method: "POST",
@@ -552,6 +563,19 @@ describe("a question's conversation", () => {
 })
 
 describe("who may ask", () => {
+  test("a run that asks is refused as the person-only act, and the refusal's log line leaves out the run id its launcher chose", async () => {
+    const chosen: Actor = { ...member, act: { kind: "agent", id: "launcher chosen/run text" } }
+    const h = await harness(runtime, answers("Hi"), { actor: chosen })
+    const response = await h.ask({ id: uuid(), answerId: uuid(), conversationId: uuid(), text: "Hi" })
+    expect(response.status).toBe(403)
+    const refusals = h.line("auth.person_only")
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]!.annotations).toMatchObject({ act: "conversation/ask", by: "agent", depth: 1 })
+    expect(refusals[0]!.annotations).not.toHaveProperty("runId")
+    // The id is text its launcher chose: no log line of the request carries it.
+    expect(JSON.stringify(h.logs)).not.toContain("launcher")
+  })
+
   const question = () => ({ id: uuid(), answerId: uuid(), text: "May I?" })
 
   test("a signed-out request is 401 before its body is read, and nothing is written", async () => {

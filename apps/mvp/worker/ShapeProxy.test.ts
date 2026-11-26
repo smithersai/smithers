@@ -5,7 +5,7 @@
 import { Effect, Layer } from "effect"
 import { beforeAll, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import { SHAPE_ROUTE } from "../src/features/chat/contract.ts"
+import { CONVERSATION_ACCESS_GRANTED, CONVERSATION_ACCESS_HEADER, SHAPE_ROUTE } from "../src/features/chat/contract.ts"
 import { FLOW_DRAFTS_SHAPE_ROUTE, FLOWS_SHAPE_ROUTE } from "../src/features/flows-ui/contract.ts"
 import { RUNS_SHAPE_ROUTE } from "../src/features/status/contract.ts"
 import { VIEWS_SHAPE_ROUTE } from "../src/features/views/contract.ts"
@@ -182,6 +182,8 @@ describe("GET /api/shapes/views and /api/shapes/messages", () => {
       Effect.map(Conversations.track("github/octo/shapes", "theirs", "open", "a".repeat(40), "person-other"), (t) =>
         t.branch.conversationId),
     )
+    // What each answer says of access: only a `messages` answer to someone who may view the conversation says so.
+    const said: Array<readonly [string, string | null]> = []
     for (const route of [VIEWS_SHAPE_ROUTE, SHAPE_ROUTE]) {
       for (
         const search of [
@@ -194,11 +196,25 @@ describe("GET /api/shapes/views and /api/shapes/messages", () => {
       ) {
         const response = await h.fetch(`${route}?offset=-1${search}`)
         expect(response.status).toBe(200)
+        said.push([route, response.headers.get(CONVERSATION_ACCESS_HEADER)])
         await response.text()
       }
     }
+    // The branch the person may view and their home conversation are answered as theirs. The shape with no rows,
+    // which someone who may not watch gets with the same `200`, carries no such word: a device reads nothing into it.
+    expect(said.filter(([route]) => route === SHAPE_ROUTE).map(([, access]) => access)).toEqual([
+      CONVERSATION_ACCESS_GRANTED,
+      null,
+      CONVERSATION_ACCESS_GRANTED,
+      null,
+      null,
+    ])
+    expect(said.filter(([route]) => route === VIEWS_SHAPE_ROUTE).map(([, access]) => access)).toEqual([null, null, null, null, null])
     const signedOut = await proxy()
     await (await signedOut.fetch(`${VIEWS_SHAPE_ROUTE}?offset=-1&conversation=${named}`)).text()
+    const refused = await signedOut.fetch(`${SHAPE_ROUTE}?offset=-1`)
+    expect([refused.status, refused.headers.get(CONVERSATION_ACCESS_HEADER)]).toEqual([200, null])
+    await refused.text()
 
     const home = await runtime.runPromise(Conversations.home)
     const none = "00000000-0000-0000-0000-000000000000"
@@ -218,6 +234,7 @@ describe("GET /api/shapes/views and /api/shapes/messages", () => {
       ["messages", "conversation_id = $1", none],
       ["messages", "conversation_id = $1", none],
       ["views", "conversation_id = $1", none],
+      ["messages", "conversation_id = $1", none],
     ])
   })
 })

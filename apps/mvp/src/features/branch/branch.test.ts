@@ -5,7 +5,7 @@
 // are also driven over an injected `fetch` for the answers ChatApi's route never gives a valid request: a body cut
 // short, a stalled answer, 400 and 413 (test.faults-by-injection).
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { Deferred, Effect, Fiber, FiberHandle, Layer, Logger, Metric, Ref } from "effect"
+import { Deferred, Effect, Fiber, FiberHandle, Layer, Logger, Metric, Ref, Stream } from "effect"
 import { ConversationOwners } from "../conversations/owners"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -15,12 +15,20 @@ import { shaOf } from "../../../worker/test/branch.ts"
 import { dispatches } from "../../flows/dispatch.vibe"
 import {
   type ChatApiOptions,
+  DEVICE_PRINCIPAL,
   failingWorker,
   nodeDevice,
+  openTab,
   openTestApp,
   type TabOptions,
   TestChatApi,
 } from "../../test/chatApi"
+import { capStorage, fillStorage } from "../../test/writeFailure"
+import { holdRestore } from "../../test/restoreFailure"
+import { CONVERSATION_ID_HEADER, SHAPE_ROUTE } from "../chat/contract"
+import { accessPath } from "../conversations/contract"
+import { SESSION_ROUTE } from "../auth/contract"
+import * as Marks from "../conversations/marks"
 import { Auth } from "../auth/auth.vibe"
 import { AuthClient } from "../auth/api.vibe"
 import { load as loadSession } from "../auth/actions.vibe"
@@ -33,11 +41,13 @@ import { BranchStore } from "./store.vibe"
 import { openBranchPage } from "./navigation"
 import { Terminal } from "../terminal/terminal.vibe"
 import { TerminalStore } from "../terminal/store.vibe"
+import { StatusStore } from "../status/store"
+import { ChatStore } from "../chat/store"
 import { Coedit } from "../coedit/coedit.vibe"
 import { CoeditStore } from "../coedit/store.vibe"
 import { Presence } from "../presence/presence.vibe"
 import { PresenceStore } from "../presence/store.vibe"
-import { CONVERSATION_NAMESPACE } from "./contract"
+import { BRANCHES_ROUTE, CONVERSATION_NAMESPACE } from "./contract"
 import { BranchTrackRefused, BranchTrackUnavailable } from "./flows"
 import { opens, reopens, tracks } from "./metrics"
 import { requestTrack, stampOpen } from "./steps.vibe"
@@ -277,6 +287,732 @@ describe("opening a branch", () => {
     expect(tab.cache.tanstack.has("octo/hello/feature/one")).toBe(false)
     expect(tab.api.branches.github.seen).toEqual([])
     expect(await tab.rows()).toEqual([HOME])
+    // ChatApi's forbidden is its word on the branch's conversation, recorded as a refusal of it. Signed out, ChatApi
+    // was never asked, and nothing is recorded.
+    const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
+    expect(owners.fence().seq > 0).toBe(status === "forbidden")
+    expect(owners.refused("previous-conversation")).toBe(status === "forbidden")
+  }, WITHIN)
+
+  test("leaving a branch while it opens loses neither ChatApi's refusal of it nor its answer: the conversation the device kept is hidden with its run and its wait, and shows again once the branch is shared", async () => {
+    const tab = await open()
+    const sql = <A, E>(use: (sql: SqlClient.SqlClient) => Effect.Effect<A, E>) =>
+      tab.runtime.runPromise(tab.api.branches.run(Effect.orDie(Effect.flatMap(SqlClient.SqlClient, use))))
+    // A branch the person visited: the device keeps the route to its conversation, and one of its runs waits for them.
+    const branchId = (await tab.actions.open("octo", "hello", "feature/one"))!
+    const conversationId = await conversationOf(branchId)
+    const runId = crypto.randomUUID()
+    await sql((sql) => sql`
+      INSERT INTO runs (id, flow, status, waiting, wait, version, launched_by, conversation_id)
+      VALUES (${runId}, 'agent', 'needs_you', 'input',
+        ${JSON.stringify({ execution: `ask-${runId}`, kind: "question", prompt: "Ship the secret plan?", options: ["Ship", "Hold"] })}::jsonb, 1,
+        'person-member', ${conversationId})`)
+    const status = await tab.runtime.runPromise(Effect.service(StatusStore))
+    const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
+    // What every page lists of the person's runs, and `core/waits`: both show a run only through its conversation.
+    for (const query of [status.waits, status.shownRuns]) query.tanstack.startSyncImmediate()
+    const listed = () => [status.shownRuns.tanstack.toArray.map((run) => run.id), status.waits.tanstack.toArray.map((wait) => wait.runId)]
+    await until(() => expect(listed()).toEqual([[runId], [runId]]))
+    await tab.actions.leave()
+    /**
+     * Opens the branch's page and leaves it at once, its navigation cancelled: `branch/track` is asked before the open
+     * first waits, and ChatApi's answer, which reads Postgres, comes after the page is gone.
+     */
+    const openAndLeave = async () => {
+      const leaving = new AbortController()
+      const opening = tab.actions.open("octo", "hello", "feature/one", leaving.signal)
+      leaving.abort()
+      await tab.actions.leave()
+      expect(await opening).toBeUndefined()
+      expect(tab.current()).toMatchObject(none)
+    }
+
+    // The branch is taken from the person; their repository stays theirs, and so do the rows that name the
+    // conversation. They open its page and leave at once: nothing has answered, and nothing changed.
+    await sql((sql) => sql`UPDATE branches SET created_by = 'someone-else' WHERE id = ${branchId}`)
+    await sql((sql) => sql`DELETE FROM branch_shares WHERE branch_id = ${branchId}`)
+    const before = owners.fence().seq
+    await openAndLeave()
+    expect(owners.fence().seq).toBe(before)
+    expect(listed()).toEqual([[runId], [runId]])
+    // ChatApi's answer arrives for a page nobody is on: forbidden. It is recorded all the same, and the run and its
+    // wait go with the conversation, though the route and the synced rows still name it.
+    await until(() => expect(owners.fence().seq).toBeGreaterThan(before))
+    await until(() => expect(listed()).toEqual([[], []]))
+    expect(tab.cache.tanstack.get("octo/hello/feature/one")?.conversationId).toBe(conversationId)
+    expect(tab.current()).toMatchObject(none)
+    expect(tab.opened("forbidden")).toBe(0)
+
+    // Shared with them again. They open the page and leave at once again: ChatApi's answer, that they may read the
+    // branch, is recorded for the page nobody is on, and the run and its wait return.
+    await sql((sql) => sql`INSERT INTO branch_shares (branch_id, grantee, access) VALUES (${branchId}, 'repository', 'edit')`)
+    await openAndLeave()
+    expect(listed()).toEqual([[], []])
+    await until(() => expect(listed()).toEqual([[runId], [runId]]))
+    expect(tab.current()).toMatchObject(none)
+    expect(tab.opened("ready")).toBe(1)
+  }, WITHIN)
+
+  test("a refusal goes only with ChatApi's word that the person may read: the home shape's answer to a read begun after it, and branch/track's for a branch, whose shape says nothing", async () => {
+    const tab = await open()
+    const sql = <A, E>(use: (sql: SqlClient.SqlClient) => Effect.Effect<A, E>) =>
+      tab.runtime.runPromise(tab.api.branches.run(Effect.orDie(Effect.flatMap(SqlClient.SqlClient, use))))
+    const branchId = (await tab.actions.open("octo", "hello", "feature/one"))!
+    const conversationId = await conversationOf(branchId)
+    const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
+    owners.shown.tanstack.startSyncImmediate()
+    const shown = (id: string) => owners.shown.tanstack.has(id)
+    // The tab reads both conversations' messages from Electric's shapes, the default reader.
+    const chat = await tab.runtime.runPromise(Effect.service(ChatStore))
+    const branchMessages = chat.opened(conversationId)!.messages
+    await tab.runtime.runPromise(Effect.ignore(branchMessages.preload))
+    await until(() => expect(owners.home()).toEqual(expect.any(String)))
+    const home = owners.home()!
+    await until(() => expect([shown(home), shown(conversationId)]).toEqual([true, true]))
+    /** A message in `conversation`, once its shape has answered with it. */
+    const say = async (conversation: string, messages: { readonly tanstack: { readonly has: (id: string) => boolean } }, text: string) => {
+      const id = crypto.randomUUID()
+      await sql((sql) => sql`INSERT INTO messages (id, role, text, status, conversation_id) VALUES (${id}, 'user', ${text}, 'done', ${conversation})`)
+      await until(() => expect(messages.tanstack.has(id)).toBe(true))
+    }
+    // Each shape is up to date, and its next request waits at ChatApi. Both conversations are refused meanwhile.
+    await say(home, chat.messages, "before")
+    await say(conversationId, branchMessages, "before")
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    owners.refuse(home)
+    owners.refuse(conversationId)
+    expect([shown(home), shown(conversationId)]).toEqual([false, false])
+    // The home shape's waiting request is answered: it began before the refusal, which may be later than its
+    // answer, and stands.
+    await say(home, chat.messages, "answered by the read that began before")
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(shown(home)).toBe(false)
+    // The request after it began after the refusal. Answered whole, it is ChatApi's word that the person may read
+    // their home conversation: it shows again.
+    await say(home, chat.messages, "answered by the read that began after")
+    await until(() => expect(shown(home)).toBe(true))
+    // The branch's shape answers as often, and its refusal stands: ChatApi answers that shape for someone who may
+    // not watch the branch too.
+    await say(conversationId, branchMessages, "first")
+    await say(conversationId, branchMessages, "second")
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(shown(conversationId)).toBe(false)
+    // They open the branch again, and ChatApi answers that they may: it shows.
+    await tab.actions.leave()
+    expect(await tab.actions.open("octo", "hello", "feature/one")).toBe(branchId)
+    expect(shown(conversationId)).toBe(true)
+  }, WITHIN)
+
+  test("a device that only lists a branch's conversation, with no route kept for it, still records ChatApi's refusal of the branch when the person leaves as it opens: its run and its wait go", async () => {
+    const tab = await open()
+    const sql = <A, E>(use: (sql: SqlClient.SqlClient) => Effect.Effect<A, E>) =>
+      tab.runtime.runPromise(tab.api.branches.run(Effect.orDie(Effect.flatMap(SqlClient.SqlClient, use))))
+    const branchId = (await tab.actions.open("octo", "hello", "feature/one"))!
+    const conversationId = await conversationOf(branchId)
+    const runId = crypto.randomUUID()
+    await sql((sql) => sql`
+      INSERT INTO runs (id, flow, status, waiting, wait, version, launched_by, conversation_id)
+      VALUES (${runId}, 'agent', 'needs_you', 'input',
+        ${JSON.stringify({ execution: `ask-${runId}`, kind: "question", prompt: "Ship the secret plan?", options: ["Ship", "Hold"] })}::jsonb, 1,
+        'person-member', ${conversationId})`)
+    const status = await tab.runtime.runPromise(Effect.service(StatusStore))
+    const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
+    for (const query of [status.waits, status.shownRuns]) query.tanstack.startSyncImmediate()
+    const listed = () => [status.shownRuns.tanstack.toArray.map((run) => run.id), status.waits.tanstack.toArray.map((wait) => wait.runId)]
+    await until(() => expect(listed()).toEqual([[runId], [runId]]))
+    await tab.actions.leave()
+    // As the person's second device holds it: their synced row names the conversation for the branch, and the device
+    // never saved a route to it. The run and its wait, with its options, show through that row.
+    await until(() => expect(owners.mine.tanstack.get(conversationId)).toMatchObject({ owner: "octo", repo: "hello", branch: "feature/one" }))
+    const removed = await tab.runtime.runPromise(tab.cache.delete("octo/hello/feature/one"))
+    await tab.runtime.runPromise(removed.persisted)
+    expect(tab.cache.tanstack.size).toBe(0)
+    expect(listed()).toEqual([[runId], [runId]])
+    expect(status.waits.tanstack.toArray[0]).toMatchObject({ runId, options: ["Ship", "Hold"] })
+    // The branch is taken from the person. They open its page and leave at once: ChatApi's forbidden arrives for a
+    // page nobody is on, and is recorded for the conversation their row names.
+    await sql((sql) => sql`UPDATE branches SET created_by = 'someone-else' WHERE id = ${branchId}`)
+    await sql((sql) => sql`DELETE FROM branch_shares WHERE branch_id = ${branchId}`)
+    const leaving = new AbortController()
+    const opening = tab.actions.open("Octo", "Hello", "feature/one", leaving.signal)
+    leaving.abort()
+    await tab.actions.leave()
+    expect(await opening).toBeUndefined()
+    await until(() => expect(owners.refused(conversationId)).toBe(true))
+    expect(listed()).toEqual([[], []])
+    expect(tab.cache.tanstack.size).toBe(0)
+    expect(tab.current()).toMatchObject(none)
+  }, WITHIN)
+
+  test("a home shape with no rows is no word that a Guest may read the home conversation: its refusal stands until ChatApi's answer says they may", async () => {
+    const tab = await open({}, { actor: { subject: { kind: "person", id: "person-guest" }, role: "guest" } })
+    const sql = <A, E>(use: (sql: SqlClient.SqlClient) => Effect.Effect<A, E>) =>
+      tab.runtime.runPromise(tab.api.branches.run(Effect.orDie(Effect.flatMap(SqlClient.SqlClient, use))))
+    const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
+    owners.shown.tanstack.startSyncImmediate()
+    const chat = await tab.runtime.runPromise(Effect.service(ChatStore))
+    // Every answer ChatApi gives the home shape from here on.
+    let answers = 0
+    tab.runtime.runFork(chat.messages.sync.pipe(Stream.runForEach((event) => Effect.sync(() => {
+      if (event._tag === "Succeeded") answers++
+    }))))
+    // The session names the deployment's conversation home for a Guest too, who has no share of its branch.
+    await until(() => expect(owners.home()).toEqual(expect.any(String)))
+    const home = owners.home()!
+    await tab.runtime.runPromise(Effect.ignore(chat.messages.preload))
+    // ChatApi answered their home shape with no rows, and that opened nothing.
+    expect(owners.shown.tanstack.has(home)).toBe(false)
+    // They open the home branch's page: forbidden, recorded as a refusal of the conversation the device kept for it.
+    await tab.runtime.runPromise(tab.cache.restored)
+    await tab.runtime.runPromise(tab.cache.insert({ id: "octo/hello/main", conversationId: home }))
+    expect(await tab.actions.open("octo", "hello", "main")).toBeUndefined()
+    expect(tab.current()).toMatchObject({ status: "forbidden" })
+    expect(owners.refused(home)).toBe(true)
+    await tab.actions.leave()
+    // The home shape is asked again, twice, each request begun after the refusal, and ChatApi answers each whole
+    // with no rows: the refusal stands, and nothing of the conversation shows.
+    for (const _ of [1, 2]) {
+      const before = answers
+      await tab.runtime.runPromise(chat.messages.reconnect)
+      await until(() => expect(answers).toBeGreaterThan(before), 60_000)
+    }
+    expect(owners.refused(home)).toBe(true)
+    expect(owners.shown.tanstack.has(home)).toBe(false)
+    // The branch is shared with them by name. The next answer says they may read the conversation: it shows.
+    const [{ branchId }] = await sql((sql) => sql<{ readonly branchId: string }>`SELECT branch_id AS "branchId" FROM conversations WHERE id = ${home}`) as [{ readonly branchId: string }]
+    await sql((sql) => sql`INSERT INTO branch_shares (branch_id, grantee, login, access) VALUES (${branchId}, 'person-guest', 'guest', 'view')`)
+    await tab.runtime.runPromise(chat.messages.reconnect)
+    await until(() => expect(owners.refused(home)).toBe(false), 60_000)
+    await until(() => expect(owners.shown.tanstack.has(home)).toBe(true))
+  }, 180_000)
+
+  test("a branch's page that another tab's refused read hid asks ChatApi again without leaving: opening the same route, or Retry, shows it once the person may read", async () => {
+    const route = { reopened: 0, open: (): unknown => undefined }
+    const tab = await open({ reopenRoute: () => {
+      route.reopened++
+      route.open()
+    } })
+    route.open = () => tab.actions.open("octo", "hello", "feature/one")
+    const branchId = (await tab.actions.open("octo", "hello", "feature/one"))!
+    const conversationId = await conversationOf(branchId)
+    const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
+    owners.shown.tanstack.startSyncImmediate()
+    const shown = () => owners.shown.tanstack.has(conversationId)
+    await until(() => expect(shown()).toBe(true))
+    // Another page of the branch, while it shows: kept as it is, and ChatApi is not asked again.
+    expect(await tab.actions.open("octo", "hello", "feature/one")).toBe(branchId)
+    expect([tab.opened("kept"), tab.dispatched()]).toEqual([1, 1])
+    // Retry on a page that shows asks nothing of the branch either.
+    await tab.runtime.runPromise(retry("button"))
+    expect([route.reopened, tab.dispatched()]).toEqual([0, 1])
+    // A refusal reaches this tab while the page stays open, as another tab's refused read does through the device.
+    owners.refuse(conversationId)
+    expect([shown(), tab.current()?.status]).toEqual([false, "ready"])
+    // The person may read the branch, as after it is shared again. They open the same route: ChatApi is asked afresh,
+    // and its answer shows the conversation, with no leaving first.
+    expect(await tab.actions.open("octo", "hello", "feature/one")).toBe(branchId)
+    expect([tab.opened("kept"), tab.dispatched()]).toEqual([1, 2])
+    expect([shown(), owners.refused(conversationId), tab.current()?.status]).toEqual([true, false, "ready"])
+    // Hidden again, and this time they press Retry: the route opens again, and the branch is tracked afresh.
+    owners.refuse(conversationId)
+    expect(shown()).toBe(false)
+    await tab.runtime.runPromise(retry("button"))
+    expect(route.reopened).toBe(1)
+    await until(() => expect(shown()).toBe(true))
+    expect([tab.opened("kept"), tab.dispatched(), owners.refused(conversationId)]).toEqual([1, 3, false])
+    // Off the branch, Retry opens no route.
+    await tab.actions.leave()
+    await tab.runtime.runPromise(retry("button"))
+    expect(route.reopened).toBe(1)
+  }, WITHIN)
+
+  test("Retry asks ChatApi of the page's branch again each time, though an earlier Retry was answered no and left the page no conversation: shared again, the branch shows in place", async () => {
+    const route = { reopened: 0, open: (): unknown => undefined }
+    const tab = await open({ reopenRoute: () => {
+      route.reopened++
+      route.open()
+    } })
+    route.open = () => tab.actions.open("octo", "hello", "feature/one")
+    const sql = <A, E>(use: (sql: SqlClient.SqlClient) => Effect.Effect<A, E>) =>
+      tab.runtime.runPromise(tab.api.branches.run(Effect.orDie(Effect.flatMap(SqlClient.SqlClient, use))))
+    const branchId = (await tab.actions.open("octo", "hello", "feature/one"))!
+    const conversationId = await conversationOf(branchId)
+    const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
+    owners.shown.tanstack.startSyncImmediate()
+    const shown = () => owners.shown.tanstack.has(conversationId)
+    await until(() => expect(shown()).toBe(true))
+    // The branch is taken from the person, and another tab's refused read hides the page's conversation.
+    await sql((sql) => sql`UPDATE branches SET created_by = 'someone-else' WHERE id = ${branchId}`)
+    await sql((sql) => sql`DELETE FROM branch_shares WHERE branch_id = ${branchId}`)
+    owners.refuse(conversationId)
+    expect([shown(), tab.current()?.status]).toEqual([false, "ready"])
+    // Retry: ChatApi is asked of the branch, and says no. The page says so, and names no conversation any more.
+    await tab.runtime.runPromise(retry("button"))
+    expect(route.reopened).toBe(1)
+    await until(() => expect(tab.current()).toMatchObject({ owner: "octo", repo: "hello", name: "feature/one", status: "forbidden", conversationId: null }))
+    expect(shown()).toBe(false)
+    // Retry again, still refused: asked again, the same answer.
+    await tab.runtime.runPromise(retry("button"))
+    expect(route.reopened).toBe(2)
+    await until(() => expect(tab.opened("forbidden")).toBe(2))
+    expect(tab.current()).toMatchObject({ status: "forbidden", conversationId: null })
+    // Shared with them again. Retry asks once more, with no leaving and no other navigation: the page is ready, and
+    // its conversation shows.
+    await sql((sql) => sql`INSERT INTO branch_shares (branch_id, grantee, access) VALUES (${branchId}, 'repository', 'edit')`)
+    await tab.runtime.runPromise(retry("button"))
+    expect(route.reopened).toBe(3)
+    await until(() => expect(tab.current()).toMatchObject({ status: "ready", branchId, conversationId }))
+    await until(() => expect(shown()).toBe(true))
+    expect(owners.refused(conversationId)).toBe(false)
+    // A page still opening, and no page, are left as they are.
+    await tab.runtime.runPromise(retry("button"))
+    expect(route.reopened).toBe(3)
+    const release = tab.api.branches.github.hold()
+    route.open = () => undefined
+    await tab.actions.leave()
+    const opening = tab.actions.open("octo", "hello", "feature/two")
+    expect(tab.current()).toMatchObject({ status: "tracking" })
+    await tab.runtime.runPromise(retry("button"))
+    expect(route.reopened).toBe(3)
+    release()
+    await opening
+  }, WITHIN)
+
+  test.each(["same load", "offline reload", "quota retry", "quota exhausted"])("a branch denial before history restoration stays hidden on %s", async (scenario) => {
+    const tab = await open()
+    const sql = <A, E>(use: (sql: SqlClient.SqlClient) => Effect.Effect<A, E>) =>
+      tab.runtime.runPromise(tab.api.branches.run(Effect.orDie(Effect.flatMap(SqlClient.SqlClient, use))))
+    // A branch the person visited on this device, one of whose runs waits for them. The device keeps their row of its
+    // conversation and the word that it is open, and no route to it, as their second device does.
+    const reply = Promise.withResolvers<void>()
+    let holdTrack = false
+    let trackSent = false
+    const device = nodeDevice({ agent: { ...tab.api, fetch: async (input, init) => {
+      const request = new Request(input, init)
+      if (holdTrack && request.method === "POST" && new URL(request.url).pathname === BRANCHES_ROUTE) {
+        trackSent = true
+        await reply.promise
+      }
+      return tab.api.fetch(request)
+    } } })
+    const warm = openTab(tab.api, { host: device })
+    runtimes.push(warm)
+    const first = await warm.runPromise(Effect.service(Branch))
+    const branchId = (await first.actions.open("octo", "hello", "feature/one"))!
+    const conversationId = await conversationOf(branchId)
+    const runId = crypto.randomUUID()
+    await sql((sql) => sql`
+      INSERT INTO runs (id, flow, status, waiting, wait, version, launched_by, conversation_id)
+      VALUES (${runId}, 'agent', 'needs_you', 'input',
+        ${JSON.stringify({ execution: `ask-${runId}`, kind: "question", prompt: "Ship the secret plan?", options: ["Ship", "Hold"] })}::jsonb, 1,
+        'person-member', ${conversationId})`)
+    const firstStatus = await warm.runPromise(Effect.service(StatusStore))
+    for (const query of [firstStatus.waits, firstStatus.shownRuns]) query.tanstack.startSyncImmediate()
+    await until(() => expect(firstStatus.waits.tanstack.toArray.map((wait) => wait.runId)).toEqual([runId]))
+    const firstOwners = await warm.runPromise(Effect.service(ConversationOwners))
+    await until(() => expect(firstOwners.mine.tanstack.has(conversationId)).toBe(true))
+    await first.actions.leave()
+    const { conversations: routes } = await warm.runPromise(Effect.service(BranchStore))
+    const removed = await warm.runPromise(routes.delete("octo/hello/feature/one"))
+    await warm.runPromise(removed.persisted)
+    const openKey = Marks.keyOf("open", "person-member", conversationId)
+    expect(device.webStorage.entries.has(openKey)).toBe(true)
+    // The branch is taken from the person. A cold load of the device reads their list late.
+    await sql((sql) => sql`UPDATE branches SET created_by = 'someone-else' WHERE id = ${branchId}`)
+    await sql((sql) => sql`DELETE FROM branch_shares WHERE branch_id = ${branchId}`)
+    runtimes.splice(runtimes.indexOf(warm), 1)
+    await warm.dispose()
+    const route = `github/octo/hello\0feature/one`
+    const routeMark = Marks.routeRefusedKey(DEVICE_PRINCIPAL, route)
+    const routeMarks = () => [...device.webStorage.entries].filter(([key]) => key === routeMark).map(([, token]) => token)
+    const capped = scenario === "quota retry" ? capStorage(device)
+      : scenario === "quota exhausted" ? fillStorage(device) : undefined
+    if (capped !== undefined) capped.quota.full = true
+    const host = capped?.device ?? device
+    const late = holdRestore(host, "my-conversations")
+    const cold = openTab(tab.api, { host: late.device })
+    runtimes.push(cold)
+    const branch = await cold.runPromise(Effect.service(Branch))
+    const owners = await cold.runPromise(Effect.service(ConversationOwners))
+    const status = await cold.runPromise(Effect.service(StatusStore))
+    branch.queries.current.startSyncImmediate()
+    // Everything the cold load ever comes to show of the run: the runs every page lists, and the waits with their
+    // prompt and options.
+    const seen: Array<unknown> = []
+    for (const query of [status.waits, status.shownRuns]) query.tanstack.startSyncImmediate()
+    status.waits.tanstack.subscribeChanges((changes) => void seen.push(...changes.map((change) => change.value)), { includeInitialState: true })
+    status.shownRuns.tanstack.subscribeChanges((changes) => void seen.push(...changes.map((change) => change.value)), { includeInitialState: true })
+    owners.shown.tanstack.startSyncImmediate()
+    owners.shown.tanstack.subscribeChanges((changes) => {
+      for (const change of changes) if (change.key === conversationId) seen.push(change.value)
+    }, { includeInitialState: true })
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(owners.mine.tanstack.has(conversationId)).toBe(false)
+    // Leave once the track request is on its way. The detached answer still denies the route while the
+    // device has no history row naming its conversation.
+    const before = owners.fence().seq
+    const leaving = new AbortController()
+    holdTrack = true
+    const opening = branch.actions.open("octo", "hello", "feature/one", leaving.signal)
+    try {
+      await until(() => expect(trackSent).toBe(true))
+      leaving.abort()
+      await branch.actions.leave()
+      expect(await opening).toBeUndefined()
+    } finally {
+      reply.resolve()
+    }
+    await until(() => expect(owners.fence().seq).toBeGreaterThan(before))
+    await device.webStorage.lock(Marks.lockName(DEVICE_PRINCIPAL), async () => {})
+    expect(owners.mine.tanstack.has(conversationId)).toBe(false)
+    if (capped === undefined) expect(owners.refused(conversationId)).toBe(false)
+    expect(branch.queries.current.toArray[0]).toMatchObject(none)
+    if (scenario !== "same load") {
+      if (scenario === "offline reload") expect(device.webStorage.entries.has(openKey)).toBe(true)
+      if (scenario === "quota retry" || scenario === "quota exhausted") expect(device.webStorage.entries.has(openKey)).toBe(false)
+      if (scenario === "quota exhausted") expect(routeMarks()).toEqual([])
+      else expect(routeMarks()).toEqual([expect.stringMatching(/^[0-9a-f]{16}$/)])
+      runtimes.splice(runtimes.indexOf(cold), 1)
+      await cold.dispose()
+      late.release()
+      const offline = openTab(tab.api, { host, transport: () => async () => { throw new TypeError("offline") } })
+      runtimes.push(offline)
+      const reloaded = await offline.runPromise(Effect.service(ConversationOwners))
+      const reloadedStatus = await offline.runPromise(Effect.service(StatusStore))
+      const restored: Array<unknown> = []
+      for (const query of [reloadedStatus.waits, reloadedStatus.shownRuns]) query.tanstack.startSyncImmediate()
+      reloadedStatus.waits.tanstack.subscribeChanges((changes) => void restored.push(...changes.map((change) => change.value)), { includeInitialState: true })
+      reloadedStatus.shownRuns.tanstack.subscribeChanges((changes) => void restored.push(...changes.map((change) => change.value)), { includeInitialState: true })
+      await until(() => expect(reloaded.mine.tanstack.has(conversationId)).toBe(true))
+      expect(reloaded.refused(conversationId)).toBe(scenario !== "quota exhausted")
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      expect(restored).toEqual([])
+      return
+    }
+    // The list is read. Its row names the conversation for the refused branch: refused as it is named, and the word
+    // that it was open is taken away. Nothing of its run ever showed.
+    late.release()
+    await until(() => expect(owners.mine.tanstack.has(conversationId)).toBe(true))
+    expect(owners.refused(conversationId)).toBe(true)
+    expect(device.webStorage.entries.has(openKey)).toBe(false)
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect(seen).toEqual([])
+    expect([status.shownRuns.tanstack.toArray, status.waits.tanstack.toArray, owners.shown.tanstack.has(conversationId)]).toEqual([[], [], false])
+  }, WITHIN)
+
+  test("the home shape's answer covers only the refusals recorded before its own request went: one recorded as the request goes stands, whenever the collection tells of that request", async () => {
+    // What the test does as the home shape's next request reaches the network: after the request began, and before
+    // anything the collection reports of it is heard.
+    const going: { then?: () => void } = {}
+    const tab = await open({ transport: (fetch) => (input, init) => {
+      const request = new Request(input, init)
+      const url = new URL(request.url)
+      if (url.pathname === SHAPE_ROUTE && !url.searchParams.has("conversation")) {
+        const then = going.then
+        delete going.then
+        then?.()
+      }
+      return fetch(request)
+    } })
+    const sql = <A, E>(use: (sql: SqlClient.SqlClient) => Effect.Effect<A, E>) =>
+      tab.runtime.runPromise(tab.api.branches.run(Effect.orDie(Effect.flatMap(SqlClient.SqlClient, use))))
+    const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
+    owners.shown.tanstack.startSyncImmediate()
+    const chat = await tab.runtime.runPromise(Effect.service(ChatStore))
+    await until(() => expect(owners.home()).toEqual(expect.any(String)))
+    const home = owners.home()!
+    await until(() => expect(owners.shown.tanstack.has(home)).toBe(true))
+    const say = async (text: string) => {
+      const id = crypto.randomUUID()
+      await sql((sql) => sql`INSERT INTO messages (id, role, text, status, conversation_id) VALUES (${id}, 'user', ${text}, 'done', ${home})`)
+      await until(() => expect(chat.messages.tanstack.has(id)).toBe(true))
+    }
+    // The shape is up to date, and its next request waits at ChatApi.
+    await say("before")
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    // The request after that one is refused the conversation as it goes: the refusal is later than its beginning.
+    let refusedAt = 0
+    going.then = () => {
+      owners.refuse(home)
+      refusedAt = owners.fence().seq
+    }
+    await say("answers the waiting request, and the next one goes")
+    await until(() => expect(refusedAt).toBeGreaterThan(0))
+    expect(owners.shown.tanstack.has(home)).toBe(false)
+    // ChatApi answers that request whole, saying the person may read: it began before the refusal, which stands.
+    await say("answered by the request that went as the refusal was recorded")
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect([owners.refused(home), owners.shown.tanstack.has(home)]).toEqual([true, false])
+    // The request after it began after the refusal: its answer is ChatApi's word, and the conversation shows.
+    await say("answered by the request that began after")
+    await until(() => expect(owners.shown.tanstack.has(home)).toBe(true))
+    expect(owners.refused(home)).toBe(false)
+  }, WITHIN)
+
+  test("a successful home response only clears the home named at dispatch and delivery", async () => {
+    const arrived = Promise.withResolvers<string>()
+    const release = Promise.withResolvers<void>()
+    const continued = Promise.withResolvers<void>()
+    let hold = false
+    let delivered = false
+    const device = nodeDevice()
+    let refreshedHome: string | undefined
+    const tab = await open({ host: device, transport: (fetch) => async (input, init) => {
+      const request = new Request(input, init)
+      const path = new URL(request.url).pathname
+      const homeShape = path === SHAPE_ROUTE
+      if (homeShape && delivered) continued.resolve()
+      const captured = hold && homeShape
+      if (captured) hold = false
+      const response = await fetch(request)
+      if (captured) {
+        arrived.resolve(response.headers.get(CONVERSATION_ID_HEADER) ?? "")
+        await release.promise
+        delivered = true
+      }
+      if (path === SESSION_ROUTE && refreshedHome !== undefined) {
+        return Response.json({ ...await response.json(), homeConversationId: refreshedHome }, { status: response.status })
+      }
+      return response
+    } })
+    const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
+    const chat = await tab.runtime.runPromise(Effect.service(ChatStore))
+    owners.shown.tanstack.startSyncImmediate()
+    await until(() => expect(owners.shown.tanstack.has(owners.home() ?? "")).toBe(true))
+    const home = owners.home()!
+    const next = crypto.randomUUID()
+    owners.refuse(next)
+    const say = async () => {
+      const id = crypto.randomUUID()
+      await tab.runtime.runPromise(tab.api.branches.run(Effect.orDie(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`INSERT INTO messages (id, role, text, status, conversation_id) VALUES (${id}, 'user', 'home', 'done', ${home})`))))
+      return id
+    }
+    try {
+      hold = true
+      const message = await say()
+      expect(await arrived.promise).toBe(home)
+      refreshedHome = next
+      await tab.runtime.runPromise(loadSession)
+      expect(owners.home()).toBe(next)
+      release.resolve()
+      await until(() => expect(chat.messages.tanstack.has(message)).toBe(true))
+      await continued.promise
+      await device.webStorage.lock(Marks.lockName(DEVICE_PRINCIPAL), async () => {})
+      expect(owners.refused(next)).toBe(true)
+    } finally {
+      release.resolve()
+    }
+  }, WITHIN)
+
+  test("a track success overtaken by a refusal never saves a route or makes the branch writable", async () => {
+    const tab = await open()
+    const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
+    const preceding = tab.api.branches.github.seen.length
+    const release = tab.api.branches.github.hold()
+    const opening = tab.actions.open("octo", "hello", "feature/one")
+    try {
+      await until(() => expect(tab.api.branches.github.seen.length).toBeGreaterThan(preceding))
+      owners.refuseBranch("github/octo/hello", "feature/one")
+    } finally {
+      release()
+    }
+    expect(await opening).toBeUndefined()
+    expect(tab.cache.tanstack.has("octo/hello/feature/one")).toBe(false)
+    expect(tab.current()).toMatchObject({ status: "failed", conversationId: null })
+    expect(tab.actions.writable()).toBe(false)
+  }, WITHIN)
+
+  test.each(["route", "undelivered durable conversation"] as const)("a %s refusal while the accepted track is persisting its route never publishes ready or becomes writable", async (kind) => {
+    const { api } = await open()
+    const device = nodeDevice({ agent: api })
+    let writing = false
+    const persist = Promise.withResolvers<void>()
+    let table: string | undefined
+    const runtime = openTab(api, { host: {
+      ...device,
+      ...(kind === "route" ? {} : { refusalMarks: Marks.make({
+        storage: device.webStorage, principal: () => DEVICE_PRINCIPAL,
+        changes: () => () => {}, channel: () => undefined, lock: device.webStorage.lock,
+      }) }),
+      persistence: { ...device.persistence, open: async () => {
+        const database = await device.persistence.open()
+        return { ...database, execute: async <T>(sql: string, params?: ReadonlyArray<unknown>): Promise<ReadonlyArray<T>> => {
+          if (table !== undefined && /^\s*(insert|update|delete|replace)\b/i.test(sql) && sql.includes(table)) {
+            writing = true
+            await persist.promise
+          }
+          return database.execute<T>(sql, params)
+        } }
+      } },
+    } })
+    runtimes.push(runtime)
+    const owners = await runtime.runPromise(Effect.service(ConversationOwners))
+    const branch = await runtime.runPromise(Effect.service(Branch))
+    const { conversations } = await runtime.runPromise(Effect.service(BranchStore))
+    branch.queries.current.startSyncImmediate()
+    const current = () => branch.queries.current.toArray[0]
+    const seen: Array<string> = []
+    const subscription = branch.queries.current.subscribeChanges((changes) => {
+      for (const change of changes) seen.push(change.value.status)
+    })
+    await runtime.runPromise(conversations.restored)
+    const database = await device.persistence.open()
+    try {
+      table = (await database.execute<{ readonly table_name: string }>(
+        "select table_name from collection_registry where collection_id = 'branch-conversations'",
+      ))[0]?.table_name
+    } finally {
+      database.close?.()
+    }
+    expect(table).toBeDefined()
+    const opening = branch.actions.open("octo", "hello", "feature/one")
+    try {
+      await until(() => expect(writing).toBe(true))
+      const { id } = (await runtime.runPromise(api.branches.run(Effect.orDie(Effect.flatMap(
+        SqlClient.SqlClient, (sql) => sql<{ readonly id: string }>`SELECT id FROM branches WHERE name = 'feature/one'`,
+      )))))[0]!
+      const conversationId = await conversationOf(id)
+      expect(device.webStorage.entries.has(Marks.keyOf("open", DEVICE_PRINCIPAL, conversationId))).toBe(true)
+      expect(current()?.status).toBe("tracking")
+      expect(branch.actions.writable()).toBe(false)
+      if (kind === "route") owners.refuseBranch("github/octo/hello", "feature/one")
+      else {
+        const sibling = Marks.make({
+          storage: device.webStorage, principal: () => DEVICE_PRINCIPAL,
+          changes: () => () => {}, channel: () => undefined, lock: device.webStorage.lock,
+        })
+        // No open-key deletion, epoch change or broadcast tells the opening tab about this refusal.
+        expect(sibling.add({ conversationId, id: crypto.randomUUID() })).toBe(true)
+      }
+    } finally {
+      persist.resolve()
+    }
+    expect(await opening).toBeUndefined()
+    expect(current()?.status).toBe("failed")
+    expect(branch.actions.writable()).toBe(false)
+    expect(seen).not.toContain("ready")
+    subscription.unsubscribe()
+  }, WITHIN)
+
+  test.each(["conversation", "route"] as const)("a ready branch stops accepting writes after a live %s refusal", async (kind) => {
+    const tab = await open()
+    expect(await tab.actions.open("octo", "hello", "feature/one")).toEqual(expect.any(String))
+    expect(tab.actions.writable()).toBe(true)
+    const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
+    const conversationId = tab.current()!.conversationId!
+    if (kind === "conversation") owners.refuse(conversationId)
+    else {
+      // The route can be denied after another tab evicts its cached conversation mapping.
+      const removed = await tab.runtime.runPromise(tab.cache.delete("octo/hello/feature/one"))
+      await tab.runtime.runPromise(removed.persisted)
+      await tab.runtime.runPromise(tab.api.branches.run(Effect.orDie(Effect.flatMap(
+        SqlClient.SqlClient, (sql) => sql`DELETE FROM conversation_people WHERE conversation_id = ${conversationId}`,
+      ))))
+      await until(() => expect(owners.mine.tanstack.has(conversationId)).toBe(false))
+      await owners.refuseBranch("github/octo/hello", "feature/one")
+      expect(owners.refused(conversationId)).toBe(false)
+    }
+    expect(tab.current()).toMatchObject({ status: "ready", conversationId })
+    expect(tab.actions.writable()).toBe(false)
+  }, WITHIN)
+
+  test("a ready branch stops accepting writes after a live undelivered durable conversation refusal", async () => {
+    const { api } = await open()
+    const device = nodeDevice({ agent: api })
+    const runtime = openTab(api, { host: { ...device, refusalMarks: Marks.make({
+      storage: device.webStorage, principal: () => DEVICE_PRINCIPAL,
+      changes: () => () => {}, channel: () => undefined, lock: device.webStorage.lock,
+    }) } })
+    runtimes.push(runtime)
+    const tab = await runtime.runPromise(Effect.service(Branch))
+    tab.queries.current.startSyncImmediate()
+    expect(await tab.actions.open("octo", "hello", "feature/one")).toEqual(expect.any(String))
+    expect(tab.actions.writable()).toBe(true)
+    const conversationId = tab.queries.current.toArray[0]!.conversationId!
+    expect(device.refusalMarks!.add({ conversationId, id: crypto.randomUUID() })).toBe(true)
+    expect(tab.actions.writable()).toBe(false)
+  }, WITHIN)
+
+  test.each(["retained", "memory-only"])("a share taken away on a %s page leaves the person's list its row, and a device new to them nothing of the conversation: ChatApi is asked, says no, and the run and its wait never show", async (mode) => {
+    const guest: Actor = { subject: { kind: "person", id: "person-guest" }, role: "guest" }
+    const laptop = await open({}, { actor: guest })
+    const sql = <A, E>(use: (sql: SqlClient.SqlClient) => Effect.Effect<A, E>) =>
+      laptop.runtime.runPromise(laptop.api.branches.run(Effect.orDie(Effect.flatMap(SqlClient.SqlClient, use))))
+    // Its owner's branch, shared with the Guest by name.
+    const [branchId, conversationId, runId] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()]
+    await sql((sql) => sql`INSERT INTO branches (id, repo_id, name, mode, created_by) VALUES (${branchId}, 'github/octo/hello', 'feature/one', 'open', 'person-owner')`)
+    await sql((sql) => sql`INSERT INTO conversations (id, repo_id, branch_id) VALUES (${conversationId}, 'github/octo/hello', ${branchId})`)
+    await sql((sql) => sql`INSERT INTO branch_shares (branch_id, grantee, login, access) VALUES (${branchId}, 'person-guest', 'guest', 'view')`)
+    // The Guest opens it on their laptop: it is in their list from then, and one of their runs there waits for them.
+    expect(await laptop.actions.open("octo", "hello", "feature/one")).toBe(branchId)
+    expect(laptop.current()).toMatchObject({ status: "ready", conversationId, access: "view" })
+    await sql((sql) => sql`
+      INSERT INTO runs (id, flow, status, waiting, wait, version, launched_by, conversation_id)
+      VALUES (${runId}, 'agent', 'needs_you', 'input',
+        ${JSON.stringify({ execution: `ask-${runId}`, kind: "question", prompt: "Ship the secret plan?", options: ["Ship", "Hold"] })}::jsonb, 1,
+        'person-guest', ${conversationId})`)
+    const listedOn = (status: StatusStore["Service"]) => {
+      const seen: Array<unknown> = []
+      for (const query of [status.waits, status.shownRuns]) query.tanstack.startSyncImmediate()
+      status.waits.tanstack.subscribeChanges((changes) => void seen.push(...changes.map((change) => change.value)), { includeInitialState: true })
+      status.shownRuns.tanstack.subscribeChanges((changes) => void seen.push(...changes.map((change) => change.value)), { includeInitialState: true })
+      return { seen, now: () => [status.shownRuns.tanstack.toArray.map((run) => run.id), status.waits.tanstack.toArray.map((wait) => wait.runId)] }
+    }
+    const onLaptop = listedOn(await laptop.runtime.runPromise(Effect.service(StatusStore)))
+    await until(() => expect(onLaptop.now()).toEqual([[runId], [runId]]))
+    // Its owner takes the share away. The Guest's row of the conversation stays in their list: it is their history.
+    await sql((sql) => sql`DELETE FROM branch_shares WHERE branch_id = ${branchId}`)
+    expect(await sql((sql) => sql`SELECT person_id FROM conversation_people WHERE conversation_id = ${conversationId}`)).toEqual([{ person_id: "person-guest" }])
+    // A device new to the Guest. ChatApi delivers the row, and the device asks whether they may read its conversation:
+    // no. It is refused: never shown, never said to be open, and its run and wait, with its options, never show.
+    const phone = nodeDevice({ agent: laptop.api })
+    const replies: number[] = []
+    const host = mode === "retained" ? phone : { ...phone, refusalMarks: Marks.make({
+      storage: phone.webStorage, principal: () => undefined, changes: phone.webStorage.changes,
+    }) }
+    const fresh = openTab(laptop.api, { host, transport: (fetch) => async (input, init) => {
+      const request = new Request(input, init)
+      const response = await fetch(request)
+      if (new URL(request.url).pathname === accessPath(conversationId)) replies.push(response.status)
+      return response
+    } })
+    runtimes.push(fresh)
+    const owners = await fresh.runPromise(Effect.service(ConversationOwners))
+    owners.shown.tanstack.startSyncImmediate()
+    const shows: Array<unknown> = []
+    owners.shown.tanstack.subscribeChanges((changes) => {
+      for (const change of changes) if (change.key === conversationId) shows.push(change.type)
+    }, { includeInitialState: true })
+    const onPhone = listedOn(await fresh.runPromise(Effect.service(StatusStore)))
+    await until(() => expect(owners.mine.tanstack.has(conversationId)).toBe(true))
+    await until(() => expect(owners.refused(conversationId)).toBe(true))
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect([shows, onPhone.seen, onPhone.now()]).toEqual([[], [], [[], []]])
+    expect([...phone.webStorage.entries.keys()].filter((key) => key.includes(":open:") && key.includes(conversationId))).toEqual([])
+    expect(replies).toEqual([403])
+    expect(phone.refusalMarks!.read().map((mark) => mark.conversationId)).toEqual(mode === "retained" ? [conversationId] : [])
+    if (mode === "memory-only") {
+      const allowedAccess: number[] = []
+      await sql((sql) => sql`INSERT INTO branch_shares (branch_id, grantee, login, access) VALUES (${branchId}, 'person-guest', 'guest', 'view')`)
+      const freshDevice = nodeDevice({ agent: laptop.api })
+      const restored = openTab(laptop.api, {
+        host: { ...freshDevice, refusalMarks: Marks.make({
+          storage: freshDevice.webStorage, principal: () => undefined, changes: freshDevice.webStorage.changes,
+        }) },
+        transport: (fetch) => async (input, init) => {
+          const request = new Request(input, init)
+          const response = await fetch(request)
+          if (new URL(request.url).pathname === accessPath(conversationId)) allowedAccess.push(response.status)
+          return response
+        },
+      })
+      runtimes.push(restored)
+      const allowedOwners = await restored.runPromise(Effect.service(ConversationOwners))
+      allowedOwners.shown.tanstack.startSyncImmediate()
+      await until(() => expect(allowedOwners.shown.tanstack.has(conversationId)).toBe(true))
+      expect(allowedAccess).toEqual([200])
+    }
   }, WITHIN)
 
   test("signed out, as sign-in's row says, the page says sign in without running branch/track", async () => {
@@ -335,11 +1071,17 @@ describe("opening a branch", () => {
     })))
     await tab.runtime.runPromise(tab.cache.restored)
     await tab.runtime.runPromise(tab.cache.insert({ id: "octo/hello/feature/one", conversationId: "old-conversation" }))
+    const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
+    const before = owners.fence().seq
     expect(await tab.actions.open("octo", "hello", "feature/one")).toBeUndefined()
     expect(tab.current()).toMatchObject({ status: "sign_in", branchId: null, conversationId: null })
     expect(tab.cache.tanstack.has("octo/hello/feature/one")).toBe(false)
     expect(tab.opened("sign_in")).toBe(1)
     expect(await tab.rows()).toEqual([HOME])
+    // ChatApi's 401 is its refusal of the conversation the device kept for the branch: recorded, and later than any
+    // read begun before it.
+    expect(owners.refused("old-conversation")).toBe(true)
+    expect(owners.fence().seq).toBeGreaterThan(before)
   }, WITHIN)
 
   test("offline, the page shows at once without waiting for an answer, and opens the branch again once the browser is back online", async () => {

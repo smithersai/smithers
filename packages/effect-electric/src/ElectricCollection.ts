@@ -245,6 +245,8 @@ export interface Options<A extends object, E, R> {
   readonly persist?: Collection.Persist
   /** The sync policy. Defaults to `SyncPolicy.defaultPolicy`. */
   readonly retry?: Schedule.Schedule<unknown, RequestFailed>
+  /** Receives the original response once the batch passes the wire checks. */
+  readonly onValidatedResponse?: (response: Response) => Effect.Effect<void>
   /**
    * Persists optimistic inserts. It must not succeed until Electric has
    * delivered them (`awaitTxId` or `awaitMatch`); failing rolls them back.
@@ -336,6 +338,10 @@ export function make<A extends Row<unknown>, E = never, R = never>(
       )
     )
     const source = yield* ShapeSource
+    const succeeded = (response: Response) =>
+      publish({ _tag: "Succeeded" }).pipe(
+        Effect.andThen(() => options.onValidatedResponse?.(response) ?? Effect.void)
+      )
 
     // One request: Electric's response, with a 2xx body read in full and checked first. Electric 1.5.28 takes a
     // response's handle and offset from its headers before it parses the body, so a batch it then can't read would be
@@ -376,7 +382,7 @@ export function make<A extends Row<unknown>, E = never, R = never>(
             handle: response.headers.get("electric-handle"),
             offset: response.headers.get("electric-offset")
           }
-          yield* publish({ _tag: "Succeeded" })
+          yield* succeeded(response)
           return response
         }
         // A body that breaks off failed on the network.
@@ -393,7 +399,7 @@ export function make<A extends Row<unknown>, E = never, R = never>(
         })
         if (rows === undefined || headless) return new Unreadable({ status: response.status, bytes: body.byteLength })
         accepted = { handle: response.headers.get("electric-handle"), offset: response.headers.get("electric-offset") }
-        yield* publish({ _tag: "Succeeded" })
+        yield* succeeded(response)
         return new Response(body, response)
       }).pipe(Effect.withSpan("electric.shape.request", {
         kind: "client",

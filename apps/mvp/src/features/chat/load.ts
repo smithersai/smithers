@@ -1,11 +1,11 @@
-import type { ElectricCollection } from "@smthrs/effect-electric"
 import { Effect, Metric, Stream } from "effect"
+import type { SyncEvent } from "./messagesShardRows"
 
 /** Conversation/composer availability after shape failures, through the app's existing telemetry runtime. */
 export const loads = Metric.counter("smithers_web_chat_loads", { incremental: true })
 
 /** Observe the shape's own retry policy; a recovery requires its rows to be applied, not merely an HTTP response. */
-export const observeLoad = <A extends object>(messages: ElectricCollection.ElectricCollection<A>) =>
+export const observeLoad = (messages: { readonly sync: Stream.Stream<SyncEvent>; readonly applied: Stream.Stream<void> }) =>
   Effect.gen(function* () {
     let failed = false
     const record = (outcome: "failed" | "recovered", status: number) => Effect.forEach(

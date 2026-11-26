@@ -199,7 +199,9 @@ export class ViewsStore extends Context.Service<
               Effect.tap((collection) =>
                 Effect.flatMap(
                   // What shows of a branch conversation's views goes through the data gate: only while its repository
-                  // may show.
+                  // may show, and never while ChatApi refuses the person the conversation (owners.ts `refuse`), so a
+                  // view this device kept is hidden with the messages it sat among. `shownIn` and `rowsIn` read
+                  // nothing else.
                   Scope.provide(Effect.gen(function* () {
                     const gated = yield* owners.ofShown(yield* ofConversation(collection, conversationId), "conversationId")
                     const shownViews = gated as unknown as Gated<View>

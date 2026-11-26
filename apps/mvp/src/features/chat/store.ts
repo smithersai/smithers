@@ -2,7 +2,7 @@ import { makePins, pendingQuery, pinnedQuery } from "../pins/store.vibe"
 import { observeLoad } from "./load"
 import { makeLane, followPhases, followSummaries, type Lane } from "../timeline/store.vibe"
 import { TimelineNotice } from "../timeline/notice.vibe"
-import { ElectricCollection, type ShapeSource } from "@smthrs/effect-electric"
+import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Outbox, Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import {
@@ -22,12 +22,16 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect"
+import { HttpClient } from "effect/http"
 import { FlowDispatch } from "../../flows/dispatch.vibe"
+import type { ReadDenials } from "./messagesShardClient"
+import * as MessagesShardRows from "./messagesShardRows"
+import type { SyncedMessages, SyncEvent } from "./messagesShardRows"
 import { ChatWrites } from "./writes"
 import { ViewsStore } from "../views/store"
-import { ConversationOwners } from "../conversations/owners"
+import { ConversationOwners, type Fence } from "../conversations/owners"
 import type { Gated } from "../repo/gate"
-import { PAGE_SIZE, SHAPE_ROUTE } from "./contract"
+import { CONVERSATION_ACCESS_GRANTED, CONVERSATION_ACCESS_HEADER, CONVERSATION_ID_HEADER, PAGE_SIZE, SHAPE_ROUTE } from "./contract"
 import { connectionDrops, firstAnswerText } from "./metrics"
 import {
   composerQuery,
@@ -75,6 +79,25 @@ export interface ChatConfig {
   readonly retry?: Schedule.Schedule<unknown, ShapeSource.RequestFailed>
   /** How many of the most recent messages the conversation shows, and how many more "Load earlier" adds. */
   readonly pageSize?: number
+  /**
+   * Reads each branch conversation's messages from its messages shard on ChatApi's `origin` (decision 0170, slice 5a,
+   * messagesShardRows.ts) in place of Electric's shape: no shape of that conversation's messages is requested. The
+   * shard is asked at once and then every `follow` (default 1 second), each request within `within` (default 10
+   * seconds). Absent: Electric's shape. The home conversation is Electric's shape either way.
+   */
+  readonly shard?: {
+    readonly origin: string
+    readonly follow?: Duration.Input
+    readonly within?: Duration.Input
+    /** Entries per pulled page. Default the shard client's, 256. */
+    readonly limit?: number
+  }
+  /**
+   * The read `401`s the page sees arrive under its transport (messagesShardClient.ts `ReadDenials`, src/main.tsx): a
+   * branch conversation read from its shard is hidden as ChatApi's `401` arrives, whatever the transport's session
+   * check then does. Read only where `shard` is set.
+   */
+  readonly readDenials?: ReadDenials
 }
 
 /**
@@ -92,9 +115,15 @@ export interface ChatHost {
 const HOME_SHAPE = "home"
 
 /** ChatApi's shape on `origin`, as the browser reaches it. */
-export const chatConfig = (origin: string, options: Omit<ChatConfig, "shapeUrl">): ChatConfig => ({
+/** What a host chooses of `ChatConfig`: everything but where ChatApi is, which `chatConfig` fills in. */
+export type ChatOptions = Omit<ChatConfig, "shapeUrl" | "shard"> & {
+  readonly shard?: Omit<NonNullable<ChatConfig["shard"]>, "origin">
+}
+
+export const chatConfig = (origin: string, { shard, ...options }: ChatOptions): ChatConfig => ({
   shapeUrl: `${origin}${SHAPE_ROUTE}`,
   ...options,
+  ...(shard === undefined ? {} : { shard: { origin, ...shard } }),
 })
 
 type Query<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>>
@@ -108,11 +137,12 @@ export interface ConversationState {
   readonly conversationId: string
   readonly pinned: Query<typeof pinnedQuery>
   /**
-   * Its messages as they sync: the stores' own, never shown as they are. What shows reads `shownMessages` and the
-   * queries below, through the data gate: only while the conversation's repository may show
+   * Its messages as they sync, from Electric's shape or, where the store is configured to (`ChatConfig.shard`), from
+   * the conversation's messages shard: the stores' own, never shown as they are. What shows reads `shownMessages` and
+   * the queries below, through the data gate: only while the conversation's repository may show
    * (src/features/conversations/owners.ts).
    */
-  readonly messages: ElectricCollection.ElectricCollection<Message>
+  readonly messages: SyncedMessages
   readonly shownMessages: Gated<Message>
   readonly conversation: Query<typeof conversationQuery>
   readonly latest: Query<typeof latestQuery>
@@ -125,7 +155,8 @@ export interface ConversationState {
 
 /**
  * Chat's state for one tab:
- * - `messages`: the conversation in Postgres, synced by Electric and kept on the device; read-only.
+ * - `messages`: the conversation in Postgres, synced by Electric and kept on the device; read-only. A branch
+ *   conversation's are read from its messages shard instead where `ChatConfig.shard` says so.
  * - `asking`: questions the outbox holds, as the optimistic rows of their writes; in memory, restored by the outbox.
  * - `unsent`: questions the server refused or the outbox couldn't take; kept on the device.
  * - `drafts`: the composer's draft in each conversation whose prompt isn't shared; kept on the device, so a reload finds
@@ -144,7 +175,7 @@ export class ChatStore extends Context.Service<
     readonly timelineNotices: Collection.Collection<TimelineNotice, string>
     readonly timelineNotice: Query<typeof timelineNoticeQuery>
     /** The home conversation's messages as they sync: the store's own. What shows reads `shownMessages`. */
-    readonly messages: ElectricCollection.ElectricCollection<Message>
+    readonly messages: SyncedMessages
     readonly shownMessages: Gated<Message>
     readonly asking: Collection.Collection<Asking, string>
     readonly unsent: Collection.Collection<Unsent, string>
@@ -188,8 +219,13 @@ export class ChatStore extends Context.Service<
     readonly browserOffline: (offline: boolean) => Effect.Effect<void>
     /** Whether the browser says it is online: `isOnline` at boot, then its `online` and `offline` events. */
     readonly browserOnline: SubscriptionRef.SubscriptionRef<boolean>
-    /** Retry: syncs and sends now, and gives failing requests `unreachableAfter` again. */
+    /** Retry: syncs and sends now, and gives failing requests `unreachableAfter` again. Then runs each `onRetry`. */
     readonly retryNow: Effect.Effect<void>
+    /**
+     * Has `then` run after each Retry from now on: what a feature above chat asks again then, as the branch's page
+     * asks ChatApi of a branch whose conversation is refused (src/features/branch/branch.ts).
+     */
+    readonly onRetry: (then: Effect.Effect<void>) => Effect.Effect<void>
     /**
      * Makes this tab lead the outbox at once, as the tab a person is using does (decision 0002 §1), and completes once
      * it leads. The tab that led sends nothing more until it leads again.
@@ -259,6 +295,11 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     getKey: (row) => row.id,
     initialData: [{ id: PLACE, conversationId: null, shared: false }],
   })
+  const owners = yield* ConversationOwners
+  // A request carries its own fence through wire validation. Shape status events can be delivered later
+  // or replayed, and a prefetched response can arrive while a previous batch is still being processed.
+  const homeFences = new WeakMap<Response, { readonly fence: Fence; readonly dispatchedHome: string | undefined }>()
+  const source = yield* ShapeSource.ShapeSource
   const messages = yield* ElectricCollection.make<Message>({
     id: "chat-messages",
     schema: Message,
@@ -272,7 +313,28 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
       parser: { int8: (value: string) => Number(value) },
     },
     ...(config.retry === undefined ? {} : { retry: config.retry }),
-  })
+    // An empty shape without this header says nothing about access. Take a granted answer in the
+    // store's scope so waiting for the device lock does not hold up Electric's response.
+    onValidatedResponse: (response) => Effect.suspend(() => {
+      const dispatch = homeFences.get(response)
+      const authorizedId = response.headers.get(CONVERSATION_ACCESS_HEADER) === CONVERSATION_ACCESS_GRANTED
+        ? response.headers.get(CONVERSATION_ID_HEADER) ?? undefined
+        : undefined
+      return authorizedId !== undefined && authorizedId === dispatch?.dispatchedHome && authorizedId === owners.home()
+        ? Effect.asVoid(Effect.forkIn(owners.clear(authorizedId, dispatch.fence), scope))
+        : Effect.void
+    }),
+  }).pipe(Effect.provideService(ShapeSource.ShapeSource, {
+    cacheNamespace: source.cacheNamespace,
+    request: (url, init) =>
+      Effect.suspend(() => {
+        // Before the request goes: a refusal recorded from here on is not one its answer is later than.
+        const fence = owners.fence()
+        const dispatchedHome = owners.home()
+        return Effect.tap(source.request(url, init), (response) =>
+          Effect.sync(() => { homeFences.set(response, { fence, dispatchedHome }) }))
+      }),
+  }))
   const rawPins = yield* makePins(new URL(config.shapeUrl).origin, messages)
 
   yield* observeLoad(messages).pipe(Effect.forkIn(scope, { startImmediately: true }))
@@ -281,7 +343,6 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
 
   // The conversation's views, synced beside its messages (src/features/views/store.ts).
   const viewsStore = yield* ViewsStore
-  const owners = yield* ConversationOwners
   const shownPendingPins = yield* owners.ofShown(rawPins.pending, "conversationId")
   const pinState = { ...rawPins, pendingState: yield* pendingQuery(rawPins.pending, shownPendingPins) }
   const { views } = viewsStore
@@ -299,22 +360,46 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
 
   const branches = new Map<string, ConversationState>()
   const builders: Array<(opened: ConversationState) => Effect.Effect<void>> = []
+  const retries: Array<Effect.Effect<void>> = []
   const persistence = yield* Persistence.Persistence
+  // Only a store that reads a shard asks ChatApi for one: a store that does not is built without a client.
+  const http = yield* Effect.serviceOption(HttpClient.HttpClient)
   const openBranch = (conversationId: string) =>
     Effect.gen(function* () {
-      const branchMessages = yield* ElectricCollection.make<Message>({
-        id: `chat-messages:${conversationId}`,
-        schema: Message,
-        getKey: (row) => row.id,
-        syncMode: "eager",
-        persist: { schemaVersion: 6 },
-        shape: {
-          url: `${config.shapeUrl}?conversation=${encodeURIComponent(conversationId)}`,
-          columnMapper: ElectricCollection.snakeCamelMapper(),
-          parser: { int8: (value: string) => Number(value) },
-        },
-        ...(config.retry === undefined ? {} : { retry: config.retry }),
-      })
+      const { shard } = config
+      const branchMessages: SyncedMessages = shard !== undefined
+        // From the conversation's messages shard: no shape of its messages is requested, and nothing of them is kept
+        // on the device.
+        ? yield* MessagesShardRows.open({
+          origin: shard.origin,
+          conversationId,
+          follow: shard.follow ?? Duration.seconds(1),
+          within: shard.within ?? Duration.seconds(10),
+          ...(shard.limit === undefined ? {} : { limit: shard.limit }),
+          ...(config.readDenials === undefined ? {} : { denials: config.readDenials }),
+          // A read ChatApi refuses hides the whole conversation, in the turn it is refused and before its rows go:
+          // its views and the questions this device queued in it show through the same gate as its messages
+          // (src/features/conversations/owners.ts `refuse`), and return once the rows ChatApi served again are held,
+          // unless a refusal was recorded after that read began (`clear`).
+          refusals: {
+            fence: owners.fence,
+            refuse: () => owners.refuse(conversationId),
+            clear: (fence) => owners.clear(conversationId, fence),
+          },
+        }).pipe(Effect.provideService(HttpClient.HttpClient, Option.getOrThrow(http)))
+        : yield* ElectricCollection.make<Message>({
+          id: `chat-messages:${conversationId}`,
+          schema: Message,
+          getKey: (row) => row.id,
+          syncMode: "eager",
+          persist: { schemaVersion: 6 },
+          shape: {
+            url: `${config.shapeUrl}?conversation=${encodeURIComponent(conversationId)}`,
+            columnMapper: ElectricCollection.snakeCamelMapper(),
+            parser: { int8: (value: string) => Number(value) },
+          },
+          ...(config.retry === undefined ? {} : { retry: config.retry }),
+        })
       yield* observeLoad(branchMessages).pipe(Effect.forkIn(scope, { startImmediately: true }))
       // Its shape's requests count toward the pill as the home conversation's do.
       yield* reportShape(conversationId, { shape: "pending", stopReason: null })
@@ -366,11 +451,15 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
       // Opened once the device's rows are restored, or, when it has none of this conversation yet (a branch this device
       // never showed), once the shape has synced: switching to a branch never shows the empty state for a frame before
       // the conversation it has arrives.
-      yield* branchMessages.restored.pipe(
+      // Rows read from a shard are whole only once their first sync is committed (`whole`): the first rows to arrive
+      // may be one page of several, so having some is never a reason to open.
+      const arrived = branchMessages.whole ?? branchMessages.restored.pipe(
         Effect.andThen(branchMessages.toArray),
         Effect.flatMap((rows) => (rows.length > 0 ? Effect.void : branchMessages.preload)),
         // expected: restore failures are logged by Collection
         Effect.catch(() => branchMessages.preload),
+      )
+      yield* arrived.pipe(
         Effect.andThen(branchHistory.update(HISTORY, (row) => void (row.opened = true))),
         Effect.ignore,
         Effect.forkIn(scope, { startImmediately: true }),
@@ -379,7 +468,11 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
       branches.set(conversationId, opened)
       yield* Effect.logInfo("chat conversation opened").pipe(Effect.annotateLogs({ conversationId }))
       return opened
-    }).pipe(Scope.provide(scope), Effect.provideService(Persistence.Persistence, persistence), Effect.orDie)
+    }).pipe(
+      Scope.provide(scope),
+      Effect.provideService(Persistence.Persistence, persistence),
+      Effect.orDie,
+    )
   // One at a time, so two callers opening one conversation open it once.
   const opening = yield* Semaphore.make(1)
   const open = (conversationId: string): Effect.Effect<ConversationState> =>
@@ -498,7 +591,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
       return update(() => worst)
     })
 
-  const onSync = (source: string, reached: FiberHandle.FiberHandle<void, never>) => (event: ElectricCollection.SyncEvent) => {
+  const onSync = (source: string, reached: FiberHandle.FiberHandle<void, never>) => (event: SyncEvent) => {
     const shapeOf = () => shapes.get(source)?.shape
     switch (event._tag) {
       case "Sent":
@@ -575,6 +668,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     browserOffline: (offline) =>
       Effect.andThen(SubscriptionRef.set(browserOnline, !offline), update(() => ({ offline }))),
     browserOnline,
+    onRetry: (then) => Effect.sync(() => void retries.push(then)),
     // Suspended, so it reconnects the branch conversations open when Retry is pressed, not those open at boot (none).
     retryNow: Effect.suspend(() =>
       Effect.all(
@@ -596,6 +690,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         const worst = worstShape()
         return update(() => ({ overdue: false, ...worst }))
       })),
+      Effect.andThen(Effect.suspend(() => Effect.forEach(retries, (then) => then, { discard: true }))),
     ),
   })
 

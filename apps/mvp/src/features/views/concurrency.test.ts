@@ -13,6 +13,13 @@ const everyConversation = Layer.succeed(ConversationOwners, ConversationOwners.o
   mine: undefined as never,
   shown: undefined as never,
   ofShown: (rows) => Effect.succeed(rows as never),
+  refuse: () => {},
+  routeDenied: () => false,
+  refuseBranch: () => Promise.resolve(),
+  home: () => undefined,
+  fence: () => ({ seq: 0, principal: undefined, routes: new Map(), epoch: null, memory: 0, standing: { refused: new Map(), open: new Set() } }),
+  clear: () => Effect.succeed(true),
+  refused: () => false,
 }))
 const storeLayer = ViewsStore.layer({ origin: "http://localhost:1" }).pipe(Layer.provide(Layer.merge(Persistence.memory, everyConversation)))
 

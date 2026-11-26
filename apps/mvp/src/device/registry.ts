@@ -2,7 +2,7 @@ import { Pin, Pending as PinPending } from "../features/pins/schema"
 import { Migrations } from "@smthrs/effect-tanstack-db"
 import { Dismissed, Notice, Pending } from "../features/attention/schema"
 import { ConversationRoute } from "../features/branch/schema"
-import { Mine, Pending as ConversationPending } from "../features/conversations/schema"
+import { Mine, Pending as ConversationPending, Refused as ConversationRefused } from "../features/conversations/schema"
 import { Confirmed } from "../features/auth/schema"
 import { Asking, ChatDraft, Message, Unsent } from "../features/chat/schema"
 import { Sending as TextSending, TextUpdate } from "../features/coedit/schema"
@@ -50,6 +50,13 @@ import { AskingV1, AuthConfirmedV1, AuthConfirmedV2, ChatDraftV1, FileTabRowV1, 
 
 /** Verified branch routes, so an offline reload can select the saved conversation without restoring grants. */
 export const BranchConversationsStore = Migrations.local({ id: "branch-conversations", versions: [ConversationRoute], getKey: (row) => row.id })
+
+/**
+ * ChatApi's refusals to let this person read a conversation, one row each: what a reload offline, and every tab, hides
+ * of the conversation until ChatApi answers whole a read that began after the refusal
+ * (src/features/conversations/owners.ts).
+ */
+export const ConversationRefusalsStore = Migrations.local({ id: "conversation-refusals", versions: [ConversationRefused], getKey: (row) => row.id })
 
 /** Questions the server refused or the outbox couldn't take (src/features/chat/store.ts). */
 export const ChatUnsentStore = Migrations.local({
@@ -306,6 +313,7 @@ export const deviceRegistry = Migrations.registry({
   stores: [
     PinPendingStore,
     BranchConversationsStore,
+    ConversationRefusalsStore,
     ChatUnsentStore,
     ChatDraftsStore,
     IssueRequestedStore,

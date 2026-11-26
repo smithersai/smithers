@@ -9,6 +9,9 @@ import { Clock, Data, Effect, type Layer, Metric, Option, Schema, Tracer } from 
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { type SqlClient, SqlError } from "effect/sql"
 import {
+  CONVERSATION_ACCESS_GRANTED,
+  CONVERSATION_ACCESS_HEADER,
+  CONVERSATION_ID_HEADER,
   LOCAL_ELECTRIC_URL,
   MAX_QUESTION_LENGTH,
   MESSAGES_TABLE,
@@ -43,7 +46,7 @@ import * as ConversationPeople from "./branch/ConversationPeople.vibe"
 import * as Conversations from "./branch/Conversations.vibe"
 import { readBounded } from "./Body.vibe"
 import * as ChatMetrics from "./ChatMetrics.vibe"
-import * as MessagesShardBridge from "./chat/MessagesShardBridge.ts"
+import * as MessagesShardSource from "./chat/MessagesShardSource.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as Messages from "./Messages.ts"
 import * as Notifications from "./Notifications.vibe"
@@ -189,9 +192,13 @@ export const make = <E, R>(
     // GET /api/shapes/messages?conversation=<id>: one conversation's `messages` (decision 0013 §1), which the browser
     // pages by `position` a window at a time. The server fixes the table, the columns and the `where`; the browser
     // names only the conversation. Anyone who may not watch the branch gets a shape with no rows; a request the server
-    // can't decide, because sessions or the home conversation can't be read, is 503 (worker/ShapeAccess.ts).
+    // can't decide, because sessions or the home conversation can't be read, is 503 (worker/ShapeAccess.ts). An answer
+    // to someone who may view it says so (`CONVERSATION_ACCESS_HEADER`); the shape with no rows never does, so a
+    // device takes only the first as ChatApi's word that the person may read the conversation.
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
-    const shape = ShapeProxy.make({
+    // The requests whose shape was decided for someone who may view the conversation, until each is answered.
+    const viewing = new WeakMap<object, string>()
+    const served = ShapeProxy.make({
       ...connection,
       shape: Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
@@ -212,6 +219,7 @@ export const make = <E, R>(
             Effect.mapError(() => ShapeAccess.unavailable),
           )
         const watched = found !== undefined && canView(found.access) ? found.conversationId : NO_CONVERSATION
+        if (watched !== NO_CONVERSATION) viewing.set(request, watched)
         return {
           table: MESSAGES_TABLE,
           columns: SYNCED_MESSAGE_COLUMNS,
@@ -221,6 +229,17 @@ export const make = <E, R>(
       }),
       name: "chat.shape",
       metric: ChatMetrics.shapes,
+    })
+    const shape = Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const response = yield* served
+      const authorizedId = viewing.get(request)
+      return authorizedId !== undefined && response.status >= 200 && response.status < 300
+        ? HttpServerResponse.setHeaders(response, {
+          [CONVERSATION_ACCESS_HEADER]: CONVERSATION_ACCESS_GRANTED,
+          [CONVERSATION_ID_HEADER]: authorizedId,
+        })
+        : response
     })
     const telemetry = OtlpRelay.serve({
       // The browser's exporters split their batches under the same limits (src/telemetry.ts).
@@ -237,7 +256,8 @@ export const make = <E, R>(
       const response = yield* Effect.gen(function* () {
         if (request.method !== "POST") return yield* new Refusal({ status: 405, errorCode: "method" })
         const asker = yield* signedIn
-        if (yield* refusesPersonOnly(asker, "conversation/ask")) {
+        // A run's id is text its launcher chose: the refusal is counted and logged without it.
+        if (yield* refusesPersonOnly(asker, "conversation/ask", { runId: false })) {
           return yield* new Refusal({ status: 403, errorCode: "person_only", explanation: "Only the person asks." })
         }
         const body = yield* readBody(request, fields)
@@ -281,14 +301,10 @@ export const make = <E, R>(
           Effect.provide(database),
           Effect.catchCause(() => Effect.logWarning("conversation.asked.failed")),
         )
-        // The same question and pending answer, sequenced into the conversation's shard (decision 0170, slice 4c): on a
-        // retry too, which its keys answer from their receipts. It never fails and never changes this answer.
-        yield* MessagesShardBridge.asked({
-          conversationId,
-          questionId: question.id,
-          answerId: question.answerId,
-          text: question.text,
-        })
+        // The same question and pending answer, sequenced into the conversation's shard (decision 0170, slices 4c and
+        // 5a) as Postgres committed them, with the place and time it gave each: on a retry too, which its keys answer
+        // from their receipts. It never fails and never changes this answer.
+        yield* MessagesShardSource.askedIn(database, question.id)
         if (asked.txid === null) fields.existing = true
         return asked.txid === null
           ? HttpServerResponse.jsonUnsafe({ txid: null, existing: true }, { status: 200, headers: noStore })

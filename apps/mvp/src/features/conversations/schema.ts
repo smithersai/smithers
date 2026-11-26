@@ -25,6 +25,16 @@ export const Mine = Schema.Struct({
 export type Mine = typeof Mine.Type
 
 /**
+ * One refusal: ChatApi refused to let the person read conversation `conversationId`. Kept on the device until a read
+ * that began after this tab knew of it is answered whole: a reload offline, or another tab, still shows nothing of the
+ * conversation (owners.ts). Each refusal has its own `id`, so an answer removes only the refusals it began after, never
+ * one a tab recorded since. The device's store is one person's (src/device/identity.ts), and goes with their sign-out
+ * (src/wipe.ts), so a row is that person's refusal and nobody else's.
+ */
+export const Refused = Schema.Struct({ id: Schema.String, conversationId: Schema.String })
+export type Refused = typeof Refused.Type
+
+/**
  * An archive or a restore this device did that the synced row may not show yet, keyed by its conversation: kept on the
  * device until the row's `changedAt` reaches `at`, so a reload offline still shows it.
  */

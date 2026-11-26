@@ -1,6 +1,20 @@
+import {
+  Chat as ChatState,
+  ChatEvent,
+  MAX_BODY_LENGTH,
+  MAX_DATA_LENGTH,
+  MAX_LABEL_LENGTH,
+  MAX_MARK_LENGTH,
+  MAX_PARTS,
+  MAX_SUMMARY_LENGTH,
+  MessageFailure,
+  MessagePart,
+} from "@smthrs/app-state"
+import type { ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { ShardProtocol } from "@smthrs/sync"
-import { Cause, Data, Effect, Option, Schema } from "effect"
+import { Cause, Data, Effect, Option, Redacted, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import * as Reactivity from "effect/reactivity/Reactivity"
 import { type Actor, refusesPersonOnly, Sessions } from "../Actor.vibe"
 import { MAX_MESSAGES_SHARD_BYTES, readBounded } from "../Body.vibe"
 import { askingOf, type BranchAccess, canView } from "../branch/Access.vibe"
@@ -9,6 +23,24 @@ import * as MessagesShard from "./MessagesShard.ts"
 // The messages shard over HTTP (decision 0170, slice 3). The Worker authenticates the session, decides read and write
 // from the person's access to the conversation's branch, and sends the conversation's own Durable Object a fresh
 // request carrying only its admission. The object serves protocol v2: Submit, Pull and Snapshot.
+//
+// Who writes stays on the server (decision 0013). A shard's authors and keys reach every reader of the conversation on
+// Pull and Snapshot, so a writer is admitted under an owner name that is a keyed digest of who they are in this one
+// conversation (`ownerOf`): the same writer is the same owner there and nowhere else, and no reader can turn the name
+// back into a person or test a guess against it. The key is the Worker's (`OwnerSecret`); a Worker with none admits no
+// submit from a page or a run, and still serves Pull, Snapshot and ChatApi's own writes (`submitAs`).
+//
+// The whole key a command is journaled under is the conversation's own too (`scopedKey`): the device a page names and
+// the command id it counts are replaced, before the object sees them, by keyed digests under this conversation, and
+// the page is answered under the key it sent. Two conversations a person writes in from one device share no text a
+// reader of both can see.
+//
+// Every name the Worker makes is sealed (`sealed`): its digest, then a keyed check of that digest under the
+// conversation and what the name is for. Only the Worker can make one, and only for that conversation, so whether a
+// journaled name is the Worker's is proved on its way out of Pull and Snapshot (`published`), never read off how it is
+// spelled: a name that does not carry this conversation's seal, whatever it looks like, was journaled before these
+// names existed, or by a caller who chose it, and leaves as a digest of itself. The bridge's names are a message's own
+// id, and are themselves.
 
 const respond = (body: unknown) => HttpServerResponse.jsonUnsafe(body, { headers: { "cache-control": "no-store" } })
 const status = (code: number) => HttpServerResponse.empty({ status: code })
@@ -24,9 +56,103 @@ const Admission = Schema.Struct({
 })
 const decodeAdmission = Schema.decodeUnknownOption(Schema.fromJsonString(Admission))
 const decodeSubmitResponse = Schema.decodeUnknownEffect(Schema.fromJsonString(ShardProtocol.SubmitResponse))
+const decodePullResponse = Schema.decodeUnknownEffect(Schema.fromJsonString(ShardProtocol.PullResponse))
+const decodeSnapshotResponse = Schema.decodeUnknownEffect(Schema.fromJsonString(ShardProtocol.SnapshotResponse))
 
 /** The most entries one Pull answers, whatever `limit` asks: its `through` and `done` then name the page it sent. */
 export const MAX_PULL_LIMIT = 256
+
+// The longest submit the object is sent, as JSON in UTF-8, for each command ChatApi's bridge builds
+// (worker/chat/MessagesShardBridge.ts) and for a page's submit as the Worker forwards it (`dispatch`). A bridged
+// command is measured as its JSON with every string the reducer bounds empty and every count at 0, which is ASCII, so
+// its length is its bytes. Each bounded string then adds six bytes for each UTF-16 code unit it may hold: the escape
+// JSON writes a control character or a lone surrogate as (`\u0001`). A unit written as itself is at most three bytes,
+// and a surrogate pair four for its two units. Each count, the epoch included, adds 15 bytes: `Number.MAX_SAFE_INTEGER`,
+// the largest count the reducer and the protocol admit, is 16 digits where 0 is one. Ids are UUIDs, 36 ASCII
+// characters. A status update and an answer's empty post hold ids, a literal and one label at most, and are shorter
+// than every command below.
+const UNIT_BYTES = 6
+const COUNT_BYTES = String(Number.MAX_SAFE_INTEGER).length - 1
+const ID = "00000000-0000-4000-8000-000000000000"
+const SHARD = `conv:${ID}`
+const QUESTION = MessagesShard.questionOwner(ID)
+const ANSWER = MessagesShard.answerOwner(ID)
+const longest = (literals: ReadonlyArray<string>) => literals.reduce((long, literal) => literal.length > long.length ? literal : long)
+
+/** The longest submit of a command `author` sends under `id`: `units` bounded code units and `counts` counts besides its epoch. */
+const bridgedBytes = (author: string, id: string, payload: object, units: number, counts: number) =>
+  JSON.stringify({
+    version: ShardProtocol.protocolVersion,
+    shard: SHARD,
+    epoch: 0,
+    command: { key: [`${author}/${MessagesShard.BRIDGE_DEVICE}`, id], stream: SHARD, payload },
+  }).length + UNIT_BYTES * units + COUNT_BYTES * (counts + 1)
+
+/** The longest a sealed key spells (`scopedKey`): the longest owner kind, then three sealed names. */
+const SEALED_KEY_BYTES = JSON.stringify([`sandbox:${"0".repeat(80)}/${"0".repeat(80)}`, "0".repeat(80)]).length
+
+/**
+ * The longest submit of each command the object is sent, in bytes:
+ * - `question`, a question's post: its body (`MAX_BODY_LENGTH`), its time and its view's id and event (three
+ *   `MAX_LABEL_LENGTH`), its values (`MAX_DATA_LENGTH`) and its position.
+ * - `body`, an answer's body update: its body (`MAX_BODY_LENGTH`, what `bodyWithin` keeps).
+ * - `run`, what an answer's run wrote and how it ended: `MAX_PARTS` steps of two labels and the longest status each,
+ *   its model, its stop reason and its time (three labels), the time again in its key, the longest failure, and its
+ *   two token counts.
+ * - `note`, the timeline's note on a question: its summary (`MAX_SUMMARY_LENGTH`), its revision (a label), its phase
+ *   and its arc (two `MAX_MARK_LENGTH`) and its version, under the longest key a note is sent under.
+ * - `page`, a page's submit: what the Worker reads of it (`MAX_MESSAGES_SHARD_BYTES`), and, at most, a sealed key in
+ *   place of the one it sent.
+ */
+export const COMMAND_BYTES = {
+  question: bridgedBytes(QUESTION, `question:${ID}`, {
+    _tag: "PostMessage",
+    messageId: ID,
+    author: QUESTION,
+    body: "",
+    role: "user",
+    position: 0,
+    createdAt: "",
+    source: { viewId: "", event: "" },
+    data: "",
+  }, MAX_BODY_LENGTH + 3 * MAX_LABEL_LENGTH + MAX_DATA_LENGTH, 1),
+  body: bridgedBytes(ANSWER, `body:${ID}:${MAX_BODY_LENGTH}`, {
+    _tag: "UpdateMessageBody",
+    messageId: ID,
+    author: ANSWER,
+    body: "",
+  }, MAX_BODY_LENGTH, 0),
+  run: bridgedBytes(ANSWER, `failure:${ID}:`, {
+    _tag: "UpdateMessageMetadata",
+    messageId: ID,
+    parts: Array.from({ length: MAX_PARTS }, () => ({ id: "", kind: "step", flow: "", status: longest(MessagePart.fields.status.literals) })),
+    modelId: "",
+    stopReason: "",
+    inputTokens: 0,
+    outputTokens: 0,
+    updatedAt: "",
+    failure: longest(MessageFailure.literals),
+  }, MAX_PARTS * 2 * MAX_LABEL_LENGTH + 4 * MAX_LABEL_LENGTH, 2),
+  note: bridgedBytes(QUESTION, `noted:${ID}:${Number.MAX_SAFE_INTEGER}:again`, {
+    _tag: "UpdateMessageMetadata",
+    messageId: ID,
+    summary: "",
+    summaryRevision: "",
+    phase: "",
+    arc: "",
+    noteVersion: 0,
+  }, MAX_SUMMARY_LENGTH + MAX_LABEL_LENGTH + 2 * MAX_MARK_LENGTH, 1),
+  page: MAX_MESSAGES_SHARD_BYTES + SEALED_KEY_BYTES,
+} as const
+
+/**
+ * The most bytes the object reads of a submit: the longest in `COMMAND_BYTES`, rounded up to a multiple of 64 KiB.
+ * Every command the reducer takes in any of those shapes fits, so a stored answer is never refused for the size of
+ * its encoding and its end is always sent. 320 KiB (327,680 bytes): a question's post is the longest, 295,445 bytes,
+ * then a run's 206,645 (64 steps of 3,124 bytes each), a page's 196,864 and an answer's body 192,422. The Worker's own
+ * cap on a page's submit stays `MAX_MESSAGES_SHARD_BYTES`.
+ */
+export const MAX_SHARD_COMMAND_BYTES = Math.ceil(Math.max(...Object.values(COMMAND_BYTES)) / 65_536) * 65_536
 
 /** The bound object's routes for `messages`. A submit's body is read under its cap before the admission is. */
 export const handle = (messages: MessagesShard.LiveMessages) =>
@@ -34,7 +160,7 @@ export const handle = (messages: MessagesShard.LiveMessages) =>
     const request = yield* HttpServerRequest.HttpServerRequest
     const url = new URL(request.url, "https://messages.internal")
     const submits = request.method === "POST" && url.pathname === "/api/messages/submit"
-    const body = submits ? yield* readBounded(request, MAX_MESSAGES_SHARD_BYTES, undefined, true) : ""
+    const body = submits ? yield* readBounded(request, MAX_SHARD_COMMAND_BYTES, undefined, true) : ""
     const admission = decodeAdmission(request.headers[admissionHeader])
     if (Option.isNone(admission)) return status(403)
     const { author, person, write } = admission.value
@@ -61,27 +187,194 @@ export const handle = (messages: MessagesShard.LiveMessages) =>
     return Effect.succeed(status(400))
   }))
 
+/**
+ * The bound object's handler over its own SQLite: `{ storage }`, never `{ db: storage.sql }` (decision 0170). What the
+ * Alchemy-declared object serves (MessagesShardObject.ts), and what a plain Durable Object serves in local workerd
+ * (worker/test/workerd/messages.ts).
+ */
+export const handlerOf = (storage: ObjectDatabase.Storage, shard: ShardProtocol.ShardId) =>
+  Effect.map(MessagesShard.make(storage, shard).pipe(Effect.provide(Reactivity.layer)), handle)
+
 const conversationPath =
-  /^\/api\/conversations\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\/messages\/(submit|pull|snapshot)$/
+  /^\/api\/conversations\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\/messages\/(submit|pull|snapshot|writer)$/
 
 export const handles = (path: string): boolean => conversationPath.test(path)
 
-/**
- * The owner name of person `id`: their messages' author and their nodes' prefix. Each part of an owner name is
- * percent-encoded, so it never contains the `/` that starts a device or the `:` that separates its parts.
- */
-export const personOwner = (id: string): string => "person:" + encodeURIComponent(id)
+/** The Worker's secret the owner names are keyed with. Never logged, and never sent to an object or a page. */
+export type OwnerSecret = Redacted.Redacted<string>
+
+/** What a reading request is admitted as: it writes nothing, so it names nobody. */
+const READER = "reader"
+
+const encoder = new TextEncoder()
 
 /**
- * The owner name a submitter's messages carry: the person's (`person:<subject>`), or the run acting for them, never
- * the person's. A run's is its act kind, the verified subject it acts for, its chain's root and its own execution id
- * (`<kind>:<subject>:<root>:<run>`), so two people's runs of the same name are two owners, and no run id, slashes
- * included, reaches into another owner's nodes.
+ * The digest an owner name ends with: HMAC-SHA-256 under the Worker's secret, over a label of this use and `parts` as
+ * JSON, in lowercase hexadecimal. JSON keeps the parts apart, so no two lists of parts spell the same text.
  */
-export const ownerOf = (actor: Actor): string =>
-  actor.act === undefined
-    ? personOwner(actor.subject.id)
-    : [actor.act.kind, actor.subject.id, actor.act.root ?? actor.act.id, actor.act.id].map(encodeURIComponent).join(":")
+const digestOf = (secret: OwnerSecret, parts: ReadonlyArray<string>): Effect.Effect<string> =>
+  Effect.promise(async () => {
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(Redacted.value(secret)),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    )
+    const signed = await crypto.subtle.sign("HMAC", key, encoder.encode(JSON.stringify(["smithers.messages.owner.v1", ...parts])))
+    return Array.from(new Uint8Array(signed), (byte) => byte.toString(16).padStart(2, "0")).join("")
+  })
+
+/** How many hexadecimal characters of its keyed check a sealed name ends with: 64 bits. */
+const CHECK_LENGTH = 16
+const SEALED = /^[0-9a-f]{80}$/
+
+/** What a sealed name is for: its check is another under each, so no name passes as one of another use. */
+type Use = "owner" | "device" | "command"
+
+/** The keyed check of `digest` as a name for `use` in `conversation`. */
+const checkOf = (secret: OwnerSecret, conversation: string, use: Use, digest: string): Effect.Effect<string> =>
+  Effect.map(digestOf(secret, ["seal", conversation, use, digest]), (check) => check.slice(0, CHECK_LENGTH))
+
+/**
+ * The name the Worker gives `parts` for `use` in `conversation`: their digest, then its check. Lowercase hexadecimal
+ * and nothing else, so it holds no `/` and no `:`.
+ */
+const sealed = (secret: OwnerSecret, conversation: string, use: Use, parts: ReadonlyArray<string>): Effect.Effect<string> =>
+  Effect.flatMap(digestOf(secret, parts), (digest) =>
+    Effect.map(checkOf(secret, conversation, use, digest), (check) => digest + check))
+
+/**
+ * Whether the Worker made `name` for `use` in `conversation`: it is spelled as a sealed name and its check is the one
+ * this Worker's secret gives its digest there. Nobody without the secret makes a name that passes, and a name sealed
+ * for another conversation, or another use, does not.
+ */
+const isSealed = (secret: OwnerSecret, conversation: string, use: Use, name: string): Effect.Effect<boolean> =>
+  !SEALED.test(name)
+    ? Effect.succeed(false)
+    : Effect.map(checkOf(secret, conversation, use, name.slice(0, -CHECK_LENGTH)), (check) => name.endsWith(check))
+
+/**
+ * The owner name of person `id` in conversation `conversationId`: their messages' author there and their nodes'
+ * prefix. `person:` and a sealed digest, so it reads as a person's (MessagesShard.ts `PERSON_OWNER_PREFIX`), never contains
+ * the `/` that starts a device or a second `:`, and says nothing of who the person is. The same person in another
+ * conversation is another owner.
+ */
+export const personOwner = (secret: OwnerSecret, conversationId: string, id: string): Effect.Effect<string> => {
+  const conversation = conversationId.toLowerCase()
+  return Effect.map(sealed(secret, conversation, "owner", ["person", conversation, id]), (name) => "person:" + name)
+}
+
+/**
+ * The owner name a submitter's messages carry in conversation `conversationId`: the person's (`personOwner`), or the
+ * run acting for them, never the person's. A run's is its act kind and a sealed digest of the verified subject it acts for,
+ * its chain's root and its own execution id, so two people's runs of the same name are two owners, and no run id,
+ * slashes included, reaches into another owner's nodes or onto the wire.
+ */
+export const ownerOf = (secret: OwnerSecret, conversationId: string, actor: Actor): Effect.Effect<string> => {
+  const { act } = actor
+  if (act === undefined) return personOwner(secret, conversationId, actor.subject.id)
+  const conversation = conversationId.toLowerCase()
+  return Effect.map(
+    sealed(secret, conversation, "owner", ["run", conversation, act.kind, actor.subject.id, act.root ?? act.id, act.id]),
+    (name) => `${act.kind}:${name}`,
+  )
+}
+
+const decodeKey = Schema.decodeUnknownSync(ShardProtocol.CommandKey)
+
+/**
+ * The key a command of `owner` is journaled under in conversation `conversationId`, for the key its submitter sent:
+ * the owner, a sealed digest of the device the submitter named and one of its command id, each under this conversation.
+ * The same command sent again is the same key, so the shard still answers it from its receipt; the same device and
+ * the same command id in another conversation are other text. Whatever the submitter sent is digested, a sealed name
+ * included, so nothing a submitter chose is journaled as one of the Worker's. A key whose node is not one of the
+ * owner's is left as it is: the object refuses it (`origin`) and journals nothing.
+ */
+export const scopedKey = (
+  secret: OwnerSecret,
+  conversationId: string,
+  owner: string,
+  key: ShardProtocol.CommandKey,
+): Effect.Effect<ShardProtocol.CommandKey> =>
+  !MessagesShard.ownsOrigin(owner, key[0]) ? Effect.succeed(key) : Effect.gen(function*() {
+    const conversation = conversationId.toLowerCase()
+    const device = yield* sealed(secret, conversation, "device", ["device", conversation, owner, key[0].slice(owner.length + 1)])
+    const node = `${owner}/${device}`
+    return decodeKey([node, yield* sealed(secret, conversation, "command", ["command", conversation, node, key[1]])])
+  })
+
+/** The kinds an owner name `ownerOf` gives starts with. */
+const OWNER_KIND = /^(person|agent|flow|app|sandbox):(.*)$/
+/** An owner name ChatApi's bridge writes under: a message's own id, which every reader already holds. */
+const BRIDGE_OWNER = /^(?:person:question|answer):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/**
+ * What leaves a shard on Pull and Snapshot, for conversation `conversationId`: `author` gives the name an author is
+ * read under, and `key` the key an entry is. A name the bridge made is itself. So is one the Worker sealed for this
+ * conversation (`isSealed`): an owner name `ownerOf` gave, and a key whose owner, device and command id `scopedKey`
+ * gave, all three. Any other was journaled before those existed, or was chosen by whoever submitted it, and may spell
+ * a person, a run or a device, or repeat a name from another conversation, however much it looks like a digest: it
+ * leaves as a keyed digest of itself under this conversation, a person's still a person's
+ * (`MessagesShard.PERSON_OWNER_PREFIX`), so the same old writer is one name in one conversation and unlinkable across
+ * two. A Worker with no secret has made no name and has nothing to key a digest with: it says `redacted` in place of
+ * every name but the bridge's.
+ */
+const published = (secret: OwnerSecret | undefined, conversationId: string) => {
+  const digest = (use: string, parts: ReadonlyArray<string>) =>
+    secret === undefined ? Effect.succeed("redacted") : digestOf(secret, [use, conversationId, ...parts])
+  const made = (use: Use, name: string) => secret === undefined ? Effect.succeed(false) : isSealed(secret, conversationId, use, name)
+  const author = (name: string): Effect.Effect<string> =>
+    BRIDGE_OWNER.test(name) ? Effect.succeed(name) : Effect.flatMap(made("owner", OWNER_KIND.exec(name)?.[2] ?? ""), (ours) =>
+      ours
+        ? Effect.succeed(name)
+        : Effect.map(digest("legacy", [name]), (hex) => `${name.startsWith("person:") ? "person" : "legacy"}:${hex}`))
+  const key = ([node, id]: readonly [string, string]): Effect.Effect<readonly [string, string]> => {
+    const slash = node.indexOf("/")
+    const owner = slash === -1 ? node : node.slice(0, slash)
+    const device = slash === -1 ? "" : node.slice(slash + 1)
+    if (BRIDGE_OWNER.test(owner) && device === MessagesShard.BRIDGE_DEVICE) return Effect.succeed([node, id])
+    return Effect.gen(function*() {
+      const name = yield* author(owner)
+      // The Worker's own key is all three of its names: one of them a submitter chose makes it a key to rewrite.
+      if (name === owner && (yield* made("device", device)) && (yield* made("command", id))) return [node, id] as const
+      return [`${name}/${yield* digest("legacy-device", [node])}`, yield* digest("legacy-command", [node, id])] as const
+    })
+  }
+  return { author, key }
+}
+
+const decodeEvent = Schema.decodeUnknownEffect(ChatEvent)
+const decodeState = Schema.decodeUnknownEffect(Schema.NullOr(Schema.Struct({ chat: ChatState })))
+
+/** A Pull's answer as readers are given it: each entry's key, and the author each posted event names. */
+const publishedPull = (names: ReturnType<typeof published>, text: string) =>
+  Effect.gen(function*() {
+    const answer = yield* decodePullResponse(text)
+    if (answer._tag === "Resync") return answer
+    const entries = yield* Effect.forEach(answer.entries, (entry) =>
+      Effect.gen(function*() {
+        const events = yield* Effect.forEach(entry.events, (journaled) =>
+          Effect.flatMap(decodeEvent(journaled), (event): Effect.Effect<typeof ChatEvent.Type> =>
+            event._tag === "MessagePosted"
+              ? Effect.map(names.author(event.author), (author) => ({ ...event, author }))
+              : Effect.succeed(event)))
+        return { ...entry, key: yield* names.key(entry.key), events }
+      }))
+    return { ...answer, entries }
+  })
+
+/** A Snapshot's answer as readers are given it: the author of each message its state holds. */
+const publishedSnapshot = (names: ReturnType<typeof published>, text: string) =>
+  Effect.gen(function*() {
+    const answer = yield* decodeSnapshotResponse(text)
+    const state = yield* decodeState(answer.state)
+    // Nothing is folded before the first compaction: there is no state to name anyone in.
+    if (state === null) return answer
+    const messages = yield* Effect.forEach(state.chat.messages, (message) =>
+      Effect.map(names.author(message.author), (author) => ({ ...message, author })))
+    return { ...answer, state: { chat: { messages } } }
+  })
 
 /** How the Worker reaches a conversation's object: its binding in production, the object's own handler in a test. */
 export type Forward<E = never, R = never> = (
@@ -150,10 +443,23 @@ export const submitAs = <E, R>(
  * A submit the Worker cannot decode is refused here and never forwarded, so the object reads only a body the Worker
  * read the same way. Which message ids a writer may post under is the object's own rule (MessagesShard.ts
  * `BRIDGE_ID`): the Worker admits nobody under a bridge owner name (`ownerOf`) and asks Postgres nothing.
+ *
+ * `secret` keys the owner names writers are admitted under. Without one there is no name a writer could carry that
+ * says nothing of them, so a submit is refused (`403`) once the asker is known to read the conversation; Pull and
+ * Snapshot are served as ever, and name nobody.
+ *
+ * `writer` (a `GET`) answers the asker's own owner name in the conversation, `{ owner }`: a page writes its messages
+ * under it and cannot build it. It is told to whoever may read the conversation, and to nobody about anyone else.
+ *
+ * `barrier` runs before a Pull or a Snapshot is forwarded, once the asker is known to read the conversation and the
+ * read is one the object serves: what the shard is still owed is sent first (worker/chat/MessagesShardSource.ts `drain`), so a reader is never served a shard
+ * that lacks a note Postgres committed and could be given. It never fails and never refuses the read.
  */
-export const dispatch = <E, R, E2, R2>(
+export const dispatch = <E, R, E2, R2, R3 = never>(
   forward: Forward<E2, R2>,
   access: (actor: Actor, conversationId: string) => Effect.Effect<BranchAccess | undefined, E, R>,
+  secret: OwnerSecret | undefined,
+  barrier?: (conversationId: string) => Effect.Effect<void, never, R3>,
 ) => Effect.gen(function*() {
   const request = yield* HttpServerRequest.HttpServerRequest
   const url = new URL(request.url, "https://messages.internal")
@@ -175,19 +481,49 @@ export const dispatch = <E, R, E2, R2>(
     (actor.act.ceiling !== undefined && actor.act.ceiling.length > 0 &&
       actor.act.ceiling.every((group) => group.includes(capability)))
   if (!canView(found.access) || !permits(MessagesShard.readCapability(shard))) return status(403)
+  const route = match[2] as "submit" | "pull" | "snapshot" | "writer"
+  if (route === "writer") {
+    if (request.method !== "GET") return status(404)
+    // The asker's own name, and only where there is a key to make one with.
+    return secret === undefined ? status(403) : respond({ owner: yield* ownerOf(secret, conversationId, actor) })
+  }
+  const submits = route === "submit"
+  // A read the object would not serve is answered here as the object answers it (`handle`), before Postgres or the
+  // bridge is asked anything for it: another method is no route, a query that does not decode is `400`, and one that
+  // names another shard is `403`.
+  if (!submits) {
+    if (request.method !== "GET") return status(404)
+    const asked = route === "pull"
+      ? Option.map(yield* Effect.option(ShardProtocol.decodePullQuery(url.searchParams)), (query) => query.shard)
+      : yield* Effect.option(Schema.decodeUnknownEffect(ShardProtocol.ShardId)(url.searchParams.get("shard")))
+    if (Option.isNone(asked)) return status(400)
+    if (asked.value !== shard) return status(403)
+  }
+  // Only a submit names its writer, and only by the conversation's own digest of them. A read names nobody.
+  const named = submits ? secret : undefined
+  if (submits && named === undefined) return status(403)
   const write = askingOf(found) === "ask" && permits(MessagesShard.writeCapability(shard))
-  if (body !== undefined && match[2] === "submit" && !MessagesShard.decodes(body)) return status(400)
-  const target = `https://messages.internal/api/messages/${match[2]}${url.search}`
+  const submitted = body !== undefined && submits ? MessagesShard.readSubmit(body) : Option.none()
+  if (body !== undefined && submits && Option.isNone(submitted)) return status(400)
+  const admission = named === undefined ? { author: READER, write: false } : {
+    author: yield* ownerOf(named, conversationId, actor),
+    ...(actor.act === undefined ? {} : { person: yield* personOwner(named, conversationId, actor.subject.id) }),
+    write,
+  }
+  // The key the object journals is the conversation's own: the one the submitter sent is kept here, to answer under.
+  const sent = Option.map(submitted, (submit) => submit.command.key)
+  const scoped = named === undefined || Option.isNone(submitted)
+    ? Option.none()
+    : Option.some(yield* scopedKey(named, conversationId, admission.author, submitted.value.command.key))
+  const forwarded = Option.isSome(submitted) && Option.isSome(scoped)
+    ? JSON.stringify({ ...submitted.value, command: { ...submitted.value.command, key: scoped.value } })
+    : body
+  if (!submits && barrier !== undefined) yield* barrier(conversationId)
+  const target = `https://messages.internal/api/messages/${route}${url.search}`
   const outgoing = HttpServerRequest.fromWeb(new Request(target, {
     method: request.method,
-    ...(body === undefined ? {} : { body }),
-    headers: {
-      [admissionHeader]: JSON.stringify({
-        author: ownerOf(actor),
-        ...(actor.act === undefined ? {} : { person: personOwner(actor.subject.id) }),
-        write,
-      }),
-    },
+    ...(forwarded === undefined ? {} : { body: forwarded }),
+    headers: { [admissionHeader]: JSON.stringify(admission) },
   }))
   const response = yield* forward(shard, outgoing)
   // A run that posted under its person's name: counted and logged as every person-only refusal is, except that its run
@@ -195,7 +531,12 @@ export const dispatch = <E, R, E2, R2>(
   if (response.headers[refusalHeader] === "person_only") {
     yield* refusesPersonOnly(actor, "conversation/ask", { runId: false })
   }
-  return response
+  if (response.status !== 200) return response
+  const text = yield* Effect.promise(() => HttpServerResponse.toWeb(response).text())
+  // A submit's answer names the key the submitter sent, never the one the object journaled.
+  if (Option.isSome(sent)) return respond({ ...(yield* decodeSubmitResponse(text)), key: sent.value })
+  const names = published(secret, conversationId)
+  return respond(route === "snapshot" ? yield* publishedSnapshot(names, text) : yield* publishedPull(names, text))
 }).pipe(
   Effect.orElseSucceed(() => status(503)),
   Effect.withSpan("messages.route"),

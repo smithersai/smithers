@@ -4,6 +4,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
+  accessOf,
   ARCHIVE_ROUTE,
   CONVERSATION_PEOPLE_TABLE,
   MAX_ARCHIVE_BODY_BYTES,
@@ -22,12 +23,23 @@ import { answerConversation } from "./SandboxCalls.vibe"
 // - `POST /api/conversations/archive { conversationId | answerId, archived, at }`: `conversation/archive`'s write path.
 //   Archives the conversation for the signed-in person, or brings it back, if they may open its branch: the one named,
 //   or, for the agent's run, the one its answer is in, which only that run may name. The latest act wins.
+// - `GET /api/conversations/<conversationId>/access`: whether the signed-in person may read the conversation now, by
+//   the check that opens its branch and its messages' shape. It only reads: no row records the asking.
 // - `GET /api/shapes/my-conversations`: Electric's `conversation_people`, only the signed-in person's rows, so every
 //   device of theirs shows the same list. Anyone signed out gets none.
 
 /** `POST /api/conversations/archive` requests, by `outcome`: `archived`, `restored`, `unchanged`, or a refusal. */
 export const archives = Metric.counter("smithers_conversation_archives", {
   description: "POST /api/conversations/archive requests, by outcome",
+  incremental: true,
+})
+
+/**
+ * `GET /api/conversations/<conversationId>/access` requests, by `outcome`: `allowed`, `sign_in`, `forbidden`,
+ * `not_found`, `method` or `unavailable`.
+ */
+export const accessChecks = Metric.counter("smithers_conversation_access_checks", {
+  description: "GET /api/conversations/<conversationId>/access requests, by outcome",
   incremental: true,
 })
 
@@ -56,9 +68,11 @@ const NOBODY = ""
 const MAX_AHEAD_MS = 24 * 60 * 60 * 1000
 
 /** Whether a path is one of these routes. */
-export const handles = (path: string): boolean => path === MY_CONVERSATIONS_SHAPE_ROUTE || path === ARCHIVE_ROUTE
+export const handles = (path: string): boolean =>
+  path === MY_CONVERSATIONS_SHAPE_ROUTE || path === ARCHIVE_ROUTE || accessOf(path) !== undefined
 
 const Uuid = Schema.String.check(Schema.isUUID())
+const isUuid = Schema.is(Uuid)
 const ArchiveRequest = Schema.Struct({
   conversationId: Schema.optional(Uuid),
   answerId: Schema.optional(Uuid),
@@ -73,7 +87,7 @@ const refusal = (status: number, code: string) => HttpServerResponse.jsonUnsafe(
 /**
  * The routes over `database`, which opens a Postgres client for each request's scope. Each archive request is one span
  * `conversation.archive`, one log line with the conversation's id, the outcome, the status and the duration, and one
- * count; never a branch's name or a repository.
+ * count; each access request is the same, as `conversation.access`. Never a branch's name or a repository.
  */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   effect {
@@ -134,10 +148,54 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       return response
     } |> withSpan(%, "conversation.archive", { kind: "server" })
 
+    // The check `branch/track` and the messages' shape make, and nothing else: no row is written, no body is read.
+    const access = (named: string) =>
+      withSpan(effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const startedAt = try Clock.currentTimeMillis
+        const fields: Record<string, string | number> = {}
+        const response = try catchCause(effect {
+          if (request.method !== "GET") {
+            return HttpServerResponse.empty({ status: 405, headers: { allow: "GET", ...noStore } })
+          }
+          const actor = try (try Sessions).resolve
+          if (Option.isNone(actor)) return refusal(401, "sign_in")
+          if (!isUuid(named)) return refusal(404, "not_found")
+          const conversationId = named.toLowerCase()
+          fields.conversationId = conversationId
+          const found = try Effect.provide(branchAccess(actor, conversationId, "conversation"), database)
+          if (found === undefined) return refusal(404, "not_found")
+          if (!canView(found.access)) return refusal(403, "forbidden")
+          return HttpServerResponse.jsonUnsafe({ allowed: true }, { headers: noStore })
+        }, (cause) =>
+          sync(() => {
+            fields.errorCode = codeOf(Cause.squash(cause))
+            return refusal(503, "unavailable")
+          })
+        )
+        fields.status = response.status
+        fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+        const outcome = response.status === 200
+          ? "allowed"
+          : response.status === 401
+          ? "sign_in"
+          : response.status === 405
+          ? "method"
+          : codeFor(response.status)
+        try Metric.update(Metric.withAttributes(accessChecks, { outcome }), 1)
+        try annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+        try (logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+          "conversation.access",
+        ) |> annotateLogs(%, { ...fields, outcome }))
+        return response
+      }, "conversation.access", { kind: "server" })
+
     const fetch = effect {
       const request = try HttpServerRequest.HttpServerRequest
       const path = request.url.split("?")[0]!
-      return try (path === MY_CONVERSATIONS_SHAPE_ROUTE ? shape : archive)
+      if (path === MY_CONVERSATIONS_SHAPE_ROUTE) return try shape
+      const named = try sync(() => accessOf(path))
+      return try (named === undefined ? archive : access(named))
     }
     return { fetch }
   }

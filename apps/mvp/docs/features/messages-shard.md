@@ -4,7 +4,8 @@ Each conversation replicates through a Durable Object SQLite shard (`MessagesSha
 
 ## Admission and wire limits
 
-- Submit routes enforce a 192 KiB cap (`MAX_MESSAGES_SHARD_BYTES`, 196,608 bytes), sized to carry the longest reducer body (32,000 UTF-16 code units at up to 6 bytes per unit in JSON UTF-8) plus envelope fields.
+- The Worker admits a page submit of at most 192 KiB (`MAX_MESSAGES_SHARD_BYTES`, 196,608 bytes), sized to carry the longest reducer body (32,000 UTF-16 code units at up to 6 bytes per unit in JSON UTF-8) plus envelope fields.
+- The Durable Object reads a submit of at most 320 KiB (`MAX_SHARD_COMMAND_BYTES`, 327,680 bytes): the longest command ChatApi's bridge builds from reducer-valid values, rounded up to 64 KiB. `COMMAND_BYTES` derives each shape from the `@smthrs/app-state` limits at 6 bytes per UTF-16 unit: a question post 295,445 bytes, a run's metadata (64 steps) 206,645, a forwarded page submit 196,864, an answer body 192,422. The bridge sheds a run's trailing steps before sending a command over that size (`fitted`), so the terminal status always follows.
 - Both Worker admission (`dispatch`) and the Durable Object (`handle`) preserve leading UTF-8 byte-order marks (`preserveBom = true`), so malformed JSON, invalid UTF-8, or BOM-prefixed submits fail with HTTP 400 before forwarding.
 - Public posts under lowercase-UUID message ids are refused atomically at the sequencer with HTTP 403 `reserved`. Only the post-commit bridge writers (`person:question:<questionId>` and `answer:<answerId>`) may claim those ids.
 - Non-person `role: "user"` posts and `UpdateMessageBody` requests targeting a question are classified as `person_only` before author checks, keeping `auth.person_only` and `smithers_person_only_refusals` complete.

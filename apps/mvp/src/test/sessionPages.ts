@@ -14,6 +14,10 @@ export const sessionPages = (device: ReturnType<typeof nodeDevice>) => {
       getItem: (key) => marks.get(key) ?? null,
       setItem: (key, value) => { marks.set(key, value) },
       removeItem: (key) => { marks.delete(key) },
+      key: (index) => [...marks.keys()][index] ?? null,
+      get length() {
+        return marks.size
+      },
     },
     directory: async () => ({ getDirectoryHandle: async () => ({ removeEntry: async () => {} }) as unknown as FileSystemDirectoryHandle, removeEntry: async () => {} }),
     indexedDB: { deleteDatabase: () => {

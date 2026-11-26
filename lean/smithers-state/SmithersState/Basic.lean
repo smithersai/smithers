@@ -44,12 +44,21 @@ structure MessagePart where
   status : String
   deriving DecidableEq, Repr
 
-/-- What a post sets once. `none` is an absent field: it is left out of the canonical JSON. -/
+/-- The view a question was sent from, and the view's event that sent it. -/
+structure MessageSource where
+  viewId : String
+  event : String
+  deriving DecidableEq, Repr
+
+/-- What a post sets once. `none` is an absent field: it is left out of the canonical JSON.
+`data` is the values a view sent with a question, as JSON text the reducer never reads. -/
 structure MessageOrigin where
   role : Option String := none
   questionId : Option String := none
   position : Option Nat := none
   createdAt : Option String := none
+  source : Option MessageSource := none
+  data : Option String := none
   deriving DecidableEq, Repr
 
 /-- What a run writes while its message streams. Frozen once the status is terminal. -/
@@ -69,6 +78,9 @@ structure MessageNotes where
   phase : Option String := none
   arc : Option String := none
   updatedAt : Option String := none
+  /-- Which write of the notes this is, counted where they are kept. A patch that
+  carries one no newer than the stored one changes nothing. -/
+  noteVersion : Option Nat := none
   deriving DecidableEq, Repr
 
 structure Message where

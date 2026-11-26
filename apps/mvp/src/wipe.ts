@@ -1,6 +1,8 @@
 import type { Outbox } from "@smthrs/effect-tanstack-db"
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import type { Host } from "./boot"
+// With its extension: this module also loads in a worker thread no bundler resolves for (src/test/wipeCrash.worker.ts).
+import { REFUSAL_MARKS_KEY } from "./features/conversations/contract.ts"
 import type { Endpoint } from "./flows/tabPort.vibe"
 import type { AppReloadReason } from "./reloadReason"
 
@@ -66,7 +68,7 @@ export interface WipeHost {
   /** Shows a retry action after the program has stopped and the page has sealed its stores. */
   readonly failed?: () => void
   readonly locks: Pick<LockManager, "request"> | undefined
-  readonly marks: Pick<Storage, "getItem" | "setItem" | "removeItem">
+  readonly marks: Pick<Storage, "getItem" | "setItem" | "removeItem" | "key" | "length">
   readonly directory: () => Promise<Pick<FileSystemDirectoryHandle, "getDirectoryHandle" | "removeEntry">>
   readonly indexedDB: Pick<IDBFactory, "deleteDatabase">
   readonly channel: (name: string) => Pick<BroadcastChannel, "postMessage" | "close" | "onmessage">
@@ -178,6 +180,12 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
     })
     if (engines !== undefined) await removeEntry(engines, targets.engine)
     await deleteDatabase(host.indexedDB, targets.outbox)
+    // The conversations' second record names the person and their conversations, a key to each fact
+    // (src/features/conversations/marks.ts): every key goes with the stores it stands beside, whoever's it is, before
+    // the mark, so a removal that fails is tried again. Listed whole first: removing a key moves the ones after it.
+    const facts = Array.from({ length: host.marks.length }, (_, index) => host.marks.key(index))
+      .filter((key) => key !== null && key.startsWith(`${REFUSAL_MARKS_KEY}:`))
+    for (const key of facts) host.marks.removeItem(key!)
     host.marks.removeItem(WIPE)
   }
 

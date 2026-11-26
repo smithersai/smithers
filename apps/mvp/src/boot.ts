@@ -35,7 +35,7 @@ import { buttonShortcuts } from "./features/keys/keys.vibe"
 import { paletteShortcuts } from "./features/commands/paletteShortcuts.vibe"
 import { tabSession } from "./features/auth/tab.vibe"
 import { tabChat } from "./features/chat/tab"
-import { type ChatConfig, type ChatHost, ChatStore, chatConfig } from "./features/chat/store"
+import { type ChatHost, type ChatOptions, ChatStore, chatConfig } from "./features/chat/store"
 import { CodeIntel, type CodeIntelView } from "./features/code-intel/codeIntel.vibe"
 import { LanguageServers } from "./features/code-intel/session.vibe"
 import { CodeIntelStore } from "./features/code-intel/store.vibe"
@@ -77,6 +77,7 @@ import { tabDoors } from "./flows/doors"
 import { RepoClient, REQUEST_WITHIN } from "./features/repo/api"
 import { tabClipboard } from "./features/repo/tab.vibe"
 import { Repo, type RepoView } from "./features/repo/repo.vibe"
+import type { RefusalMarks } from "./features/conversations/marks"
 import { ConversationOwners } from "./features/conversations/owners"
 import { RepoStore } from "./features/repo/store.vibe"
 import { RunsNavigation } from "./features/runs/actions.vibe"
@@ -159,6 +160,11 @@ export interface Host extends ChatHost {
   readonly editorTabPersistent: boolean
   /** Why the tab id can't survive reload, when it can't: `flows.editor.storage` logs it. */
   readonly editorTabRefusal?: string
+  /**
+   * The refusals' second record, in the browser's Web Storage (src/features/conversations/marks.ts); a host without one
+   * keeps refusals in the device's store only.
+   */
+  readonly refusalMarks?: RefusalMarks
   /** Asks the browser to keep this site's storage: `@smthrs/platform-browser`'s `StoragePersistence`. */
   readonly storage: StoragePersistence.Service
   /** Where the theme paints, mirrors and reads the system's mode (src/features/theme/store.ts). */
@@ -203,7 +209,7 @@ export interface Host extends ChatHost {
  * What the browser's services are built from: ChatApi's `origin`, the page's `fetch` and `reload`, the host, how long
  * ChatApi gets to answer a question (default 15 s), and chat's settings.
  */
-export interface AppOptions extends Omit<ChatConfig, "shapeUrl"> {
+export interface AppOptions extends ChatOptions {
   readonly origin: string
   readonly fetch: typeof globalThis.fetch
   /** Reloads the page for a reason, which the next boot records (src/reloadReason.ts). */
@@ -387,7 +393,7 @@ export const appLayer = <S = never>(
     // Below chat's store, whose conversation shows the views among the messages.
     Layer.provideMerge(ViewsStore.layer({ origin })),
     // Which repository each of the person's conversations is of: what a conversation's rows show through (the data gate).
-    Layer.provideMerge(ConversationOwners.layer({ origin }).pipe(
+    Layer.provideMerge(ConversationOwners.layer({ origin, ...(host.refusalMarks === undefined ? {} : { marks: host.refusalMarks }) }).pipe(
       Layer.provideMerge(Layer.succeed(WebTab, host.web)),
     )),
     // Publish through repository authority before branch conversations and the remaining feature services.

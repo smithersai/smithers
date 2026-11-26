@@ -97,7 +97,9 @@ theorem decide_valid {s : AppState} {c : Command} {evs : List Event}
       · injection h with h; subst h; exact Or.inl rfl
       · split at h
         · cases h
-        · injection h with h; subst h; exact Or.inr ⟨_, rfl, trivial⟩
+        · split at h
+          · injection h with h; subst h; exact Or.inl rfl
+          · injection h with h; subst h; exact Or.inr ⟨_, rfl, trivial⟩
   | updateMessageBody id author body =>
     simp only [decide, decideMessageBody] at h
     split at h

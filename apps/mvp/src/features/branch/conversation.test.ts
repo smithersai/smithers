@@ -151,7 +151,9 @@ describe("a branch's conversation", () => {
     const tab = await openChat()
     const branch = await tab.branch("feature/one")
     const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
-    await until(() => expect(owners.mine.tanstack.has(branch)).toBe(true))
+    // The person's row of it is no word that they may read it: ChatApi is asked, and its yes shows the conversation.
+    owners.shown.tanstack.startSyncImmediate()
+    await until(() => expect(owners.shown.tanstack.has(branch)).toBe(true))
     await tab.chat.actions.show(branch)
     expect(tab.place()).toBe(branch)
 
@@ -449,6 +451,7 @@ describe("delivering to a branch's conversation", () => {
     await first.chat.actions.show(branch)
     await first.askIn(branch, "kept on this device")
     await until(() => expect(device.stored(`chat-messages:${branch}`)).toBe(2))
+    await until(() => expect(device.refusalMarks!.granted(branch)).toBe(true))
     await first.runtime.dispose()
     const offline = await tabOn(openFaultyApp({ ...quick, host: device }, (faults) => faults.down()))
     await offline.chat.actions.show(branch)

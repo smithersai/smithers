@@ -10,7 +10,7 @@ import { ConversationOwners } from "../conversations/owners"
 import { RUNS_SHAPE_ROUTE } from "./contract"
 import { deliveriesQuery, latestQuery, shownRunsQuery, statusesQuery, waitRunsQuery, waitsQuery } from "./queries"
 import { Local, Run } from "./schema"
-import type { Message } from "../chat/schema"
+import type { Message, ShardRow } from "../chat/schema"
 import type { Source } from "../repo/gate"
 import { RepoStore } from "../repo/store.vibe"
 
@@ -104,7 +104,7 @@ export class StatusStore extends Context.Service<
           },
         }).pipe(Effect.provideService(ShapeSource.ShapeSource, signedInShapeSource(yield* ShapeSource.ShapeSource, yield* AuthStore)))
         const local = yield* Collection.local<Local, string>({ id: "status-local", schema: Local, getKey: (row) => row.id })
-        const statuses = yield* statusesQuery(chat.shownMessages as unknown as Source<Message>, runs, local)
+        const statuses = yield* statusesQuery(chat.shownMessages as unknown as Source<ShardRow>, runs, local)
         // A wait shows only through its run's conversation (decision 0110, the data gate): the home conversation's, or one
         // whose repository may show now. A run of a conversation this device has no row of shows no wait. An agent's
         // question has no conversation: its own repository must pass the data gate.
@@ -122,7 +122,8 @@ export class StatusStore extends Context.Service<
         yield* chat.forEachOpened((opened) =>
           Effect.gen(function* () {
             // Through the data gate: a branch's statuses carry its waits' prompts, options and answers (Astra on 0c7b9f01).
-            const branchStatuses = yield* statusesQuery(opened.shownMessages as unknown as Source<Message>, runs, local)
+            // Its rows keep the shard's sequence (`shardSeq`), which orders the header's latest answer as the transcript's.
+            const branchStatuses = yield* statusesQuery(opened.shownMessages as unknown as Source<ShardRow>, runs, local)
             branches.set(opened.conversationId, { statuses: branchStatuses, latest: yield* latestQuery(branchStatuses) })
           }).pipe(
             Scope.provide(scope),

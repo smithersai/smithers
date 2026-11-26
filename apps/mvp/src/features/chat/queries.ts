@@ -4,7 +4,7 @@ import type { Effect } from "effect"
 import { COULDNT_ANSWER, MODEL_QUOTA_SPENT } from "./contract"
 import type { Source } from "../repo/gate"
 import type { View } from "../views/schema"
-import type { Asking, Composer, Connection, History, Message, Place, Unsent } from "./schema"
+import type { Asking, Composer, Connection, History, Message, Place, ShardRow, Unsent } from "./schema"
 
 // What every frontend reads. Each is a live query over this device's collections, built once per ChatStore; it starts
 // on first read. React renders its `tanstack` collection with `useLiveQuery`; a TUI reads its `rows` stream. No query
@@ -12,7 +12,9 @@ import type { Asking, Composer, Connection, History, Message, Place, Unsent } fr
 
 /**
  * The whole conversation on this device: `messages ∪ views ∪ (unsent − messages) ∪ (asking − messages − unsent)`.
- * - Synced rows come first, in Postgres' order (`position`); a failed answer reads the failure copy. A view
+ * - Synced rows come first, in Postgres' order (`position`), and among rows at one position in the order their
+ *   conversation's shard sequenced them (`seq`, schema.ts `ShardRow`; 0 on a row no shard gave), never by row key:
+ *   a message a shard placed itself can share a position with a later one Postgres placed. A failed answer reads the failure copy. A view
  *   (src/features/views, role `view`) shares the messages' positions, so it sits where it was added, with its template
  *   and its id, by which the conversation reads the row itself.
  * - Then this device's own rows, in the order they were asked (`queuedAt`): questions the server refused or the outbox
@@ -24,7 +26,9 @@ import type { Asking, Composer, Connection, History, Message, Place, Unsent } fr
  *   when they were asked (src/features/chat/view.ts `timeOf`).
  */
 export const conversationQuery = (
-  // A branch conversation's synced rows reach it only through the data gate (src/features/conversations/owners.ts).
+  // A branch conversation's synced rows reach it only through the data gate (src/features/conversations/owners.ts),
+  // and so do its views and this device's own questions in it (`unsent`, `asking`): a conversation ChatApi refuses
+  // to let the person read shows none of the four, and `stored` below is never what shows.
   messages: Source<Message>,
   unsent: Source<Unsent>,
   asking: Source<Asking>,
@@ -38,7 +42,7 @@ export const conversationQuery = (
   LiveQuery.make((q) =>
     q
       .unionAll(
-        q.from({ synced: messages.tanstack }).select(({ synced }) => ({
+        q.from({ synced: (messages as Source<ShardRow>).tanstack }).select(({ synced }) => ({
           id: synced.id,
           questionId: Query.coalesce(synced.questionId, ""),
           role: synced.role,
@@ -48,6 +52,7 @@ export const conversationQuery = (
           sendAgain: false,
           local: 0,
           at: synced.position,
+          seq: Query.coalesce(synced.shardSeq, 0),
           createdAt: synced.createdAt,
           // A message's tokens as numbers, 0 while unknown: a nullable column here collapses the union's row type.
           inputTokens: Query.coalesce(synced.inputTokens, 0),
@@ -67,6 +72,7 @@ export const conversationQuery = (
           sendAgain: false,
           local: 0,
           at: view.position,
+          seq: 0,
           createdAt: view.createdAt,
           // What it shows is the view's own row, which the conversation reads by id (src/features/views): an object
           // column here collapses the union's row type.
@@ -94,6 +100,7 @@ export const conversationQuery = (
             sendAgain: Query.eq(refused.reason, "not_admitted"),
             local: 1,
             at: refused.queuedAt,
+            seq: 0,
             createdAt: "",
           })),
         q
@@ -117,11 +124,13 @@ export const conversationQuery = (
             sendAgain: false,
             local: 1,
             at: queued.queuedAt,
+            seq: 0,
             createdAt: "",
           })),
       )
       .orderBy(({ $selected }) => $selected.local)
-      .orderBy(({ $selected }) => $selected.at),
+      .orderBy(({ $selected }) => $selected.at)
+      .orderBy(({ $selected }) => $selected.seq),
   )
 
 /** The conversation's live query. */
@@ -134,6 +143,7 @@ export const latestQuery = (conversation: Conversation, limit: number) =>
       .from({ message: conversation.tanstack })
       .orderBy(({ message }) => message.local, "desc")
       .orderBy(({ message }) => message.at, "desc")
+      .orderBy(({ message }) => message.seq, "desc")
       .limit(limit),
   )
 
@@ -146,7 +156,8 @@ export const shownQuery = (latest: Latest) =>
     q
       .from({ message: latest.tanstack })
       .orderBy(({ message }) => message.local)
-      .orderBy(({ message }) => message.at),
+      .orderBy(({ message }) => message.at)
+      .orderBy(({ message }) => message.seq),
   )
 
 /** Why timeline summaries can't be made now: nothing while they can (src/features/timeline/notice.ts). */
@@ -159,7 +170,8 @@ export const everythingQuery = (conversation: Conversation) =>
     q
       .from({ message: conversation.tanstack })
       .orderBy(({ message }) => message.local)
-      .orderBy(({ message }) => message.at),
+      .orderBy(({ message }) => message.at)
+      .orderBy(({ message }) => message.seq),
   )
 
 /** The questions queued on this device that Postgres doesn't have yet: the pill counts them. */

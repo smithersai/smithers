@@ -7,7 +7,7 @@ test("startup without Web Locks returns a supported failure before reading or op
   const unavailable = () => { touched++; throw new Error("Device stores must stay closed") }
   const page = pageWipe({
     locks: undefined,
-    marks: { getItem: unavailable, setItem: unavailable, removeItem: unavailable },
+    marks: { getItem: unavailable, setItem: unavailable, removeItem: unavailable, key: unavailable, length: 0 },
     directory: unavailable,
     indexedDB: { deleteDatabase: unavailable },
     channel: () => channel,

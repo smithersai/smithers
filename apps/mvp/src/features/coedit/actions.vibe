@@ -1,7 +1,7 @@
 import type { Outbox } from "@smthrs/effect-tanstack-db"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { SharedText } from "@smthrs/sync"
-import { Clock, Effect, Metric, Option, Ref, Stream } from "effect"
+import { Clock, Effect, Metric, Option, Ref, Scope, Stream } from "effect"
 import { Base64 } from "effect/encoding"
 import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch.vibe"
@@ -110,13 +110,14 @@ const place = (live: Live, selection: Selection) =>
 
 /**
  * The person typed: text `textId` becomes `value` in this tab at once, merged with what everyone else typed, and the
- * change goes to them. A text this tab hasn't opened changes nothing.
+ * change goes to them. A text this tab hasn't opened changes nothing, and neither does a file whose conversation is
+ * hidden: its row holds none of it, so no edit of it is one this page showed (store.vibe `readable`).
  */
 export const type = (textId: string, value: string, edit: Edit = {}) =>
   effect {
     const store = try CoeditStore
     const live = store.live(textId)
-    if (live === undefined) return
+    if (live === undefined || (live.of.kind === "file" && !store.readable(live))) return
     const updates = try replace(live, value, edit)
     if (edit.selection !== undefined) try place(live, edit.selection)
     try store.refresh(live)
@@ -243,12 +244,36 @@ const hidePrompts = effect {
  * or the draft the device kept for it, goes into it. Anywhere else no prompt is shown, and the composer's draft is the
  * person's own, which chat keeps on the device. Runs for as long as the store does; `current` is the shown prompt, for
  * the composer's edits.
+ *
+ * The draft is the prompt's text only while the prompt's conversation may show (`CoeditStore.readable`). The turn it
+ * is hidden, as when ChatApi refuses a read of it, the draft is emptied with the prompt's row: what others typed is in
+ * neither. What the person types meanwhile is their own and waits (`pending`); it goes into the prompt, and the draft
+ * is the prompt's text again, once the conversation may show.
  */
 export const followPrompt = (current: Ref.Ref<ShownPrompt | undefined>, pending: Ref.Ref<string>) =>
   effect {
     const chat = try ChatStore
     const store = try CoeditStore
     const adopting = try Ref.make<ReadonlySet<string>>(new Set())
+    /** The draft becomes `live`'s text, with what the person typed before it could: nothing while it is hidden. */
+    const enter = (conversation: string, live: Live) =>
+      effect {
+        if (!store.readable(live)) return
+        try store.refresh(live)
+        try adoptDraft(conversation, live, try Ref.getAndSet(pending, ""), adopting)
+        try mirrorDraft((try rowOf(live)).text)
+      }
+    const context = try Effect.context<ChatStore | CoeditStore | TextWrites>()
+    const runSync = Effect.runSyncWith(context)
+    const runFork = Effect.runForkWith(context)
+    try store.onReadable((live, readable) => {
+      const shown = runSync(Ref.get(current))
+      // Only the prompt of the conversation chat shows now: a place the person has just left is no longer its draft.
+      if (shown?.textId !== live.id || runSync(shownConversation) !== shown.conversation) return
+      // Hidden: emptied in this turn, with the row. Shown again: after the prompt's text is read.
+      if (!readable) runSync(mirrorDraft(""))
+      else runFork(enter(shown.conversation, live).pipe(Effect.forkIn(store.scope)))
+    }).pipe(Effect.provideService(Scope.Scope, store.scope))
     try chat.place.changes({ initial: true }).pipe(
       Stream.flatMap((changes) => Stream.fromIterable(changes)),
       Stream.map((change) => (change.value.shared ? change.value.conversationId : null)),
@@ -262,8 +287,7 @@ export const followPrompt = (current: Ref.Ref<ShownPrompt | undefined>, pending:
           }
           const live = try showOnly({ kind: "prompt", conversation }, (row) => row.kind === "prompt")
           try Ref.set(current, { conversation, textId: live.id })
-          try adoptDraft(conversation, live, try Ref.getAndSet(pending, ""), adopting)
-          try mirrorDraft((try rowOf(live)).text)
+          try enter(conversation, live)
         }
       ),
       Effect.forkIn(store.scope),
@@ -274,6 +298,8 @@ export const followPrompt = (current: Ref.Ref<ShownPrompt | undefined>, pending:
         effect {
           const shown = (try Ref.get(current))?.textId
           if (shown === undefined || !changes.some((change) => change.key === shown)) return
+          // A hidden prompt's row holds nothing, and the draft is then the person's own: it is left as they typed it.
+          if (!store.readable(store.live(shown)!)) return
           try mirrorDraft(Option.getOrThrow(try store.texts.get(shown)).text)
         }
       ),
@@ -345,7 +371,8 @@ export const save = (textId: string) =>
   effect {
     const store = try CoeditStore
     const live = store.live(textId)
-    if (live === undefined || live.of.kind !== "file") return
+    // A file whose conversation is hidden shows no Save, and is not this page's to write.
+    if (live === undefined || live.of.kind !== "file" || !store.readable(live)) return
     const { conversation, path } = live.of
     const startedAt = try Clock.currentTimeMillis
     const content = try live.replica.text

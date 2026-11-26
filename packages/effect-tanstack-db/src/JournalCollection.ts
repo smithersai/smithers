@@ -26,6 +26,13 @@
  * cursor. Closing the scope waits for the source's stream to finish its
  * finalizers.
  *
+ * A reader that must know what the collection has committed, not what the
+ * projection holds, asks the collection: `committed` is the cursor of the last
+ * batch it committed, `initialSync` completes with the first, and `reached`
+ * with the first at or past a cursor. Each speaks of the run of the source's
+ * stream going on, and fails with a {@link JournalStopped} when that run stops
+ * first.
+ *
  * @since 0.4.0
  */
 
@@ -109,6 +116,30 @@ export class JournalStopped extends Data.TaggedError("JournalStopped")<{
 }
 
 /**
+ * A collection fed by a {@link Source}, with what it has committed of it.
+ *
+ * @category models
+ * @since 0.4.0
+ */
+export interface Journal<A extends object, K extends Key> extends Collection<A, K> {
+  /**
+   * The cursor (`Batch.through`) of the last batch the collection committed
+   * in the run going on, or `undefined` before its first.
+   */
+  readonly committed: Effect.Effect<number | undefined>
+  /**
+   * Completes once the collection has committed the run's first batch: the
+   * snapshot of the projection's rows, so the initial sync is whole.
+   */
+  readonly initialSync: Effect.Effect<void, JournalStopped>
+  /**
+   * Completes once the collection has committed a batch whose cursor is at
+   * least `through`: at once when it already has.
+   */
+  readonly reached: (through: number) => Effect.Effect<void, JournalStopped>
+}
+
+/**
  * A collection of the rows `source` projects, checked by `schema`, cleaned up
  * and unsubscribed from `source` when the scope closes. A source whose stream
  * dies before its first batch fails `preload` with `LoadFailed`.
@@ -121,7 +152,7 @@ export const make = <A extends object, K extends Key>(options: {
   readonly schema: RowSchema<A>
   readonly getKey: (row: A) => K
   readonly source: Source<A, K>
-}): Effect.Effect<Collection<A, K>, never, Scope.Scope> =>
+}): Effect.Effect<Journal<A, K>, never, Scope.Scope> =>
   Effect.gen(function*() {
     const context = yield* Effect.context<never>()
     const fork = Effect.runForkWith(context)
@@ -136,7 +167,7 @@ export const make = <A extends object, K extends Key>(options: {
       readonly reject: (stopped: JournalStopped) => void
     }
     const session = () => ({
-      applied: -1,
+      applied: undefined as number | undefined,
       waiting: new Set<Waiter>(),
       submits: new Set<Fiber.Fiber<number, unknown>>(),
       stopped: undefined as JournalStopped | undefined
@@ -144,11 +175,21 @@ export const make = <A extends object, K extends Key>(options: {
     type Session = ReturnType<typeof session>
     let current: Session = session()
 
+    /** Calls back once `run` has committed a batch through `through`, or stopped first; answers how to stop waiting. */
+    const wait = (run: Session, through: number, resume: () => void, reject: (stopped: JournalStopped) => void) => {
+      if (run.applied !== undefined && run.applied >= through) return void resume()
+      if (run.stopped !== undefined) return void reject(run.stopped)
+      const waiter: Waiter = { through, resume, reject }
+      run.waiting.add(waiter)
+      return () => void run.waiting.delete(waiter)
+    }
     const reached = (run: Session, through: number) =>
-      new Promise<void>((resume, reject) => {
-        if (run.applied >= through) return resume()
-        if (run.stopped !== undefined) return reject(run.stopped)
-        run.waiting.add({ through, resume, reject })
+      new Promise<void>((resume, reject) => void wait(run, through, resume, reject))
+    /** `wait` on the run going on when it starts, as an effect: interrupting it stops waiting. */
+    const awaited = (through: number) =>
+      Effect.callback<void, JournalStopped>((resume) => {
+        const cancel = wait(current, through, () => resume(Effect.void), (stopped) => resume(Effect.fail(stopped)))
+        return cancel === undefined ? undefined : Effect.sync(cancel)
       })
     const advance = (run: Session, through: number) => {
       run.applied = through
@@ -179,7 +220,7 @@ export const make = <A extends object, K extends Key>(options: {
       await reached(on, answer.value)
     }
 
-    return yield* makeCollection<A, K>(options.schema, {
+    const collection = yield* makeCollection<A, K>(options.schema, {
       id: options.id,
       getKey: options.getKey,
       sync: {
@@ -220,4 +261,11 @@ export const make = <A extends object, K extends Key>(options: {
       onUpdate: handler as never,
       onDelete: handler as never
     })
+    return {
+      ...collection,
+      committed: Effect.sync(() => current.applied),
+      // Every cursor is at least this one, so the first batch committed reaches it.
+      initialSync: awaited(Number.NEGATIVE_INFINITY),
+      reached: awaited
+    }
   })

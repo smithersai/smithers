@@ -843,20 +843,34 @@ describe.skipIf(!electricUp)("a live batch that isn't whole", () => {
     expect(result).toEqual({ answered: true, stoppedWith: [] })
   })
 
-  test("a JSON body that isn't a batch stops the shape too", async () => {
-    const stop = await run(Effect.gen(function*() {
+  test("only a whole batch is reported as validated, with the original response", async () => {
+    const result = await run(Effect.gen(function*() {
       const { table, write } = yield* scratchTable
-      const notes = yield* notesOf(table).pipe(
-        Effect.provideService(
-          ShapeSource.ShapeSource,
-          firstLive((response) => new Response(`{"rows":[]}`, response)).source
-        )
-      )
+      const invalid = firstLive((response) => new Response(`{"rows":[]}`, response))
+      const received = new Set<Response>()
+      const validated: Array<Response> = []
+      const notes = yield* notesOf(table, {
+        onValidatedResponse: (response) =>
+          Effect.sync(() => {
+            validated.push(response)
+          })
+      }).pipe(Effect.provideService(ShapeSource.ShapeSource, {
+        request: (url, init) =>
+          Effect.tap(invalid.source.request(url, init), (response) =>
+            Effect.sync(() => {
+              received.add(response)
+            }))
+      }))
       yield* notes.preload
+      const before = validated.length
       yield* write({ id: "a", text: "one", n: 1 })
-      return yield* notes.sync.pipe(Stream.filter((event) => event._tag === "Stopped"), Stream.runHead)
+      const stop = yield* notes.sync.pipe(Stream.filter((event) => event._tag === "Stopped"), Stream.runHead)
+      return { stop, before, after: validated.length, original: validated.every((response) => received.has(response)) }
     }))
-    expect(stop).toMatchObject(Option.some({ _tag: "Stopped", error: { cause: { _tag: "Unreadable" } } }))
+    expect(result.stop).toMatchObject(Option.some({ _tag: "Stopped", error: { cause: { _tag: "Unreadable" } } }))
+    expect(result.before).toBeGreaterThan(0)
+    expect(result.after).toBe(result.before)
+    expect(result.original).toBe(true)
   })
 
   // Electric 1.5.28 refuses a 2xx of the shape's log without its headers for good (`MissingHeadersError`).

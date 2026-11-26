@@ -3,7 +3,7 @@
  * projection of a shard: a map of rows with a cursor, as a shard client's
  * `apply` keeps them in SQLite, publishing one batch per local commit.
  */
-import { Cause, Deferred, Effect, Exit, Option, Queue, Scope, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Option, Queue, Scope, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import { JournalCollection } from "../src/index.ts"
 import { id, Note, note } from "./fixtures.ts"
@@ -190,6 +190,120 @@ describe("JournalCollection", () => {
     expect(JSON.stringify(exit)).toContain("LoadFailed")
   })
 
+  describe("what the collection has committed", () => {
+    type Batch = JournalCollection.Batch<Note, string>
+    /** A source whose batches the test sends and ends. Nothing is sent before the test sends it. */
+    const sent = Effect.fnUntraced(function*() {
+      const queue = yield* Queue.make<Batch, Cause.Done>()
+      const collection = yield* JournalCollection.make({
+        id: id("journal-committed"),
+        schema: Note,
+        getKey: (row) => row.id,
+        source: { batches: Stream.fromQueue(queue), submit: () => Effect.succeed(0) }
+      })
+      const send = (through: number, rows: ReadonlyArray<Note>, snapshot = false) =>
+        Queue.offer(queue, { snapshot, through, changes: rows.map((value): Change => ({ type: "insert", value })) })
+      return { queue, collection, send }
+    })
+    const settled = <A, E>(effect: Effect.Effect<A, E>) =>
+      Effect.exit(effect).pipe(
+        Effect.timeoutOption(50),
+        Effect.map(Option.map((exit) => Exit.isSuccess(exit) ? "done" : "stopped"))
+      )
+
+    test("has committed nothing before the first batch, and the initial sync completes with it", async () => {
+      await run(Effect.gen(function*() {
+        const { collection, send } = yield* sent()
+        collection.tanstack.startSyncImmediate()
+        expect(yield* collection.committed).toBeUndefined()
+        // Neither the initial sync nor any cursor, however low, is reached before a batch is committed.
+        expect(yield* settled(collection.initialSync)).toEqual(Option.none())
+        expect(yield* settled(collection.reached(0))).toEqual(Option.none())
+        expect(yield* settled(collection.reached(-5))).toEqual(Option.none())
+        const initial = yield* Effect.forkChild(collection.initialSync)
+        yield* send(7, [note("a", 1), note("b", 2)], true)
+        yield* Fiber.join(initial)
+        // Whole at that moment: the rows the first batch carried are the collection's, with no further wait.
+        expect(texts(yield* collection.toArray)).toEqual(["a:a", "b:b"])
+        expect(yield* collection.committed).toBe(7)
+        expect(collection.tanstack.status).toBe("ready")
+        // An empty first batch completes it as well: a conversation with no rows has synced.
+        const empty = yield* sent()
+        empty.collection.tanstack.startSyncImmediate()
+        yield* empty.send(0, [], true)
+        yield* empty.collection.initialSync
+        expect(yield* empty.collection.committed).toBe(0)
+        expect(yield* empty.collection.toArray).toEqual([])
+      }))
+    })
+
+    test("reaches a cursor only once the batch that carries it is committed, and at once when it already is", async () => {
+      await run(Effect.gen(function*() {
+        const { collection, send } = yield* sent()
+        yield* send(1, [note("a", 1)], true)
+        yield* collection.preload
+        yield* collection.reached(1)
+        yield* collection.reached(0)
+        expect(yield* settled(collection.reached(3))).toEqual(Option.none())
+        const third = yield* Effect.forkChild(collection.reached(3))
+        const fifth = yield* Effect.forkChild(collection.reached(5))
+        yield* send(2, [note("b", 2)])
+        yield* collection.reached(2)
+        expect(third.pollUnsafe()).toBeUndefined()
+        // A batch past the cursor reaches it: the rows it waited for are committed with it.
+        yield* send(4, [note("c", 3)])
+        yield* Fiber.join(third)
+        expect(texts(yield* collection.toArray)).toEqual(["a:a", "b:b", "c:c"])
+        expect(yield* collection.committed).toBe(4)
+        expect(fifth.pollUnsafe()).toBeUndefined()
+        // A batch that changes no row still moves the cursor: an empty sync is a commit too.
+        yield* send(5, [])
+        yield* Fiber.join(fifth)
+        expect(yield* collection.committed).toBe(5)
+      }))
+    })
+
+    test("a wait that is interrupted waits no longer, and one still waiting when the source stops fails", async () => {
+      await run(Effect.gen(function*() {
+        const { collection, send, queue } = yield* sent()
+        yield* send(1, [], true)
+        yield* collection.preload
+        const given = yield* Effect.forkChild(collection.reached(2))
+        yield* Effect.sleep(5)
+        yield* Fiber.interrupt(given)
+        const waiting = yield* Effect.forkChild(Effect.flip(collection.reached(9)))
+        yield* send(2, [])
+        yield* collection.reached(2)
+        yield* Queue.end(queue)
+        const stopped = yield* Fiber.join(waiting)
+        expect(stopped).toBeInstanceOf(JournalCollection.JournalStopped)
+        expect(stopped.reason).toBe("ended")
+        // The run that stopped keeps what it committed, and fails every later wait the same way.
+        expect(yield* collection.committed).toBe(2)
+        yield* collection.reached(2)
+        expect((yield* Effect.flip(collection.reached(3))).reason).toBe("ended")
+      }))
+    })
+
+    test("speaks of the run going on: a collection that starts again has committed nothing until its new first batch", async () => {
+      const local = projection([note("a", 1)])
+      await run(Effect.gen(function*() {
+        const collection = yield* notes(local)
+        yield* collection.preload
+        local.commit([{ type: "insert", value: note("b", 2) }])
+        yield* collection.reached(1)
+        expect(yield* collection.committed).toBe(1)
+        yield* Effect.promise(() => collection.tanstack.cleanup())
+        expect((yield* Effect.flip(collection.reached(2))).reason).toBe("closed")
+        yield* collection.preload
+        yield* collection.initialSync
+        // The new run's first batch is the projection's snapshot, at the projection's cursor.
+        expect(yield* collection.committed).toBe(1)
+        expect(texts(yield* collection.toArray)).toEqual(["a:a", "b:b"])
+      }))
+    })
+  })
+
   test("unsubscribes from the projection and cleans up when its scope closes", async () => {
     const local = projection([note("a", 1)])
     const [during, after, status] = await Effect.runPromise(Effect.gen(function*() {
@@ -220,7 +334,9 @@ describe("JournalCollection", () => {
       if (Exit.isSuccess(exit)) return "settled"
       // TanStack DB and `persisted` wrap the handler's error; find the `JournalStopped` inside.
       let error: unknown = Cause.squash(exit.cause)
-      while (!(error instanceof JournalCollection.JournalStopped) && error instanceof Error && error.cause !== undefined) {
+      while (
+        !(error instanceof JournalCollection.JournalStopped) && error instanceof Error && error.cause !== undefined
+      ) {
         error = error.cause
       }
       return error instanceof JournalCollection.JournalStopped ? error.reason : String(error)
@@ -228,7 +344,13 @@ describe("JournalCollection", () => {
     const journal = (
       batches: Stream.Stream<Batch>,
       submit: JournalCollection.Source<Note, string>["submit"]
-    ) => JournalCollection.make({ id: id("journal-review"), schema: Note, getKey: (row) => row.id, source: { batches, submit } })
+    ) =>
+      JournalCollection.make({
+        id: id("journal-review"),
+        schema: Note,
+        getKey: (row) => row.id,
+        source: { batches, submit }
+      })
 
     test("H1: closing the scope interrupts an in-flight submit and rolls its write back", async () => {
       const result = await Effect.runPromise(Effect.gen(function*() {
@@ -263,7 +385,10 @@ describe("JournalCollection", () => {
         // A batch short of the write's cursor leaves it waiting.
         yield* Queue.offer(source.queue, { snapshot: false, through: 1, changes: [] })
         yield* Queue.failCause(source.queue, Cause.die(new Error("projection unreadable")))
-        return [stoppedReason(yield* Effect.exit(waiting.persisted).pipe(Effect.timeout(2_000))), collection.tanstack.status]
+        return [
+          stoppedReason(yield* Effect.exit(waiting.persisted).pipe(Effect.timeout(2_000))),
+          collection.tanstack.status
+        ]
       })))
       expect(reasons).toEqual(["failed", "error"])
     })
@@ -318,4 +443,3 @@ describe("JournalCollection", () => {
     })
   })
 })
-

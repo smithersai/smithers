@@ -46,6 +46,11 @@ import { join } from "node:path"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as LiveMount from "../../worker/attach/LiveMount.vibe"
+import { branchAccess } from "../../worker/branch/Access.vibe"
+import { MessagesShardBridge } from "../../worker/chat/MessagesShardBridge.ts"
+import * as MessagesShardRoutes from "../../worker/chat/MessagesShardRoutes.ts"
+import * as MessagesShardSource from "../../worker/chat/MessagesShardSource.ts"
+import { OWNER_SECRET, type ShardHost, shardHost } from "./messagesShardHost"
 import { challengeFor } from "../../worker/attach/Attach.vibe"
 import {
   ATTACH_APPROVALS_ROUTE,
@@ -135,6 +140,7 @@ import { MESSAGES_TABLE, QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "../features/ch
 import type { TextsClient } from "../features/coedit/api.vibe"
 import { TEXT_UPDATES_TABLE } from "../features/coedit/contract"
 import { CONVERSATION_PEOPLE_TABLE } from "../features/conversations/contract"
+import * as RefusalMarks from "../features/conversations/marks"
 import { DOMAINS_TABLE } from "../features/domains/contract"
 import { FLOW_DRAFTS_TABLE, FLOWS_TABLE } from "../features/flows-ui/contract"
 import type { IssuesClient } from "../features/issues/api.vibe"
@@ -239,6 +245,12 @@ export interface ChatApiOptions {
   readonly provider?: ProviderReply | ((index: number) => ProviderReply)
   /** What the server holds before the browser app starts, so no request of the app's sees it otherwise. */
   readonly prepare?: (api: TestChatApi["Service"]) => Promise<void>
+  /**
+   * Serves each conversation's messages shard (decision 0170) as ChatApi does: the real route in front of each
+   * conversation's real object handler over SQLite (src/test/messagesShardHost.ts), admitted by the person's real
+   * access to the branch, with ChatApi's own writes bridged into it. Unset: no shard binding, as before the shard.
+   */
+  readonly messagesShard?: boolean
 }
 
 /** The header a test device's requests name their person with (`ChatApiOptions.people`). */
@@ -346,6 +358,8 @@ export class TestChatApi extends Context.Service<
   TestChatApi,
   {
     readonly origin: string
+    /** The conversations' messages shards, where `ChatApiOptions.messagesShard` asks for them. */
+    readonly shards: ShardHost | undefined
     /** The browser's way to ChatApi: each request handed to the handler in this process. */
     readonly fetch: typeof globalThis.fetch
     /** Attaches through LiveMount to the actual conversation where the question was admitted. */
@@ -853,9 +867,17 @@ export class TestChatApi extends Context.Service<
         const roleChecks = SignIn.RoleChecks.of({ start: () => Effect.void })
 
         const attach = LiveMount.make(database)
+        const shards = options.messagesShard === true ? yield* shardHost() : undefined
         const routed = Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
           const path = request.url.split("?")[0]!
           if (LiveMount.handles(path)) return attach.fetch
+          // The messages shard's routes, admitted as ChatApi admits them (worker/ChatApiProgram.ts).
+          if (shards !== undefined && MessagesShardRoutes.handles(path)) {
+            return MessagesShardRoutes.dispatch(shards.forward, (who, conversationId) =>
+              branchAccess(Option.some(who), conversationId, "conversation").pipe(Effect.provide(database)), OWNER_SECRET,
+              (conversationId) => MessagesShardSource.drainIn(database, conversationId).pipe(
+                Effect.provideService(MessagesShardBridge, MessagesShardBridge.make(shards.forward))))
+          }
           if (path === SESSION_ROUTE) {
             const named = request.headers[PERSON_HEADER]
             return signedIn.get(named !== undefined && Object.hasOwn(people, named) ? named : undefined)!.fetch.pipe(
@@ -921,6 +943,10 @@ export class TestChatApi extends Context.Service<
         })
 
         const application = routed.pipe(
+          // ChatApi's own question, answer and note writes also reach the conversation's shard, where one is bound.
+          (served) => shards === undefined
+            ? served
+            : Effect.provideService(served, MessagesShardBridge, MessagesShardBridge.make(shards.forward)),
           // No remote host runs here: every other remote start (a clone) is refused as unavailable.
           Effect.provideService(
             Flows.FlowStarter,
@@ -1083,6 +1109,7 @@ export class TestChatApi extends Context.Service<
 
         const service = TestChatApi.of({
           origin,
+          shards,
           fetch,
           attachFor,
           scriptFlowReply,
@@ -1342,12 +1369,60 @@ export interface NodeDevice extends Host {
   /** Every path this device's tabs navigated to, in order. */
   readonly navigated: ReadonlyArray<string>
   /**
+   * The device's Web Storage, shared by its tabs as a browser's `localStorage` is: a write tells every tab's `storage`
+   * listener. The refusals' second record is kept here (src/features/conversations/marks.ts).
+   */
+  readonly webStorage: WebStorage
+  /**
    * The device as one busy tab of it sees it: that tab's coordinator hands the device store each transaction it
    * committed `busy.ms` late (read at each one), as a tab whose main thread is busy does, and counts those not handed
    * over yet in `busy.inFlight`.
    */
   readonly busyTab: (busy: Busy) => NodeDevice
 }
+
+/** A device's Web Storage in a test: its entries, and the `storage` listeners of its tabs. */
+export interface WebStorage extends Pick<Storage, "getItem" | "setItem" | "removeItem" | "key" | "length" | "clear"> {
+  readonly entries: Map<string, string>
+  readonly changes: (listener: (key: string | null) => void) => () => void
+  /** The device's own lock, which its tabs take turns under: no other test device's, as a browser's is its origin's. */
+  readonly lock: RefusalMarks.Lock
+}
+
+/** An empty Web Storage for one test device. */
+export const webStorage = (): WebStorage => {
+  const entries = new Map<string, string>()
+  const listeners = new Set<(key: string | null) => void>()
+  return {
+    entries,
+    lock: RefusalMarks.inProcess(entries),
+    getItem: (key) => entries.get(key) ?? null,
+    setItem: (key, value) => {
+      // As a browser tells it: a value written again as it was is no change.
+      const changed = entries.get(key) !== value
+      entries.set(key, value)
+      if (changed) for (const listener of listeners) listener(key)
+    },
+    removeItem: (key) => {
+      if (entries.delete(key)) for (const listener of listeners) listener(key)
+    },
+    key: (index) => [...entries.keys()][index] ?? null,
+    get length() {
+      return entries.size
+    },
+    clear: () => {
+      entries.clear()
+      for (const listener of listeners) listener(null)
+    },
+    changes: (listener) => {
+      listeners.add(listener)
+      return () => void listeners.delete(listener)
+    },
+  }
+}
+
+/** Who a test device's data is of, as its refusals' second record names them. */
+export const DEVICE_PRINCIPAL = "person-member"
 
 /** How late a busy tab hands the device store what it committed, and how many it holds now. */
 export interface Busy {
@@ -1516,7 +1591,10 @@ export const nodeDevice = ({ agent, flowModel, summaryModel, file, outboxEntries
   const engineStore = agent?.engineStore()
   const editorTabId = crypto.randomUUID()
   const turn = deviceTurn()
+  const web = webStorage()
   const host: Omit<NodeDevice, "busyTab"> = {
+    webStorage: web,
+    refusalMarks: RefusalMarks.make({ channel: () => undefined, storage: web, principal: () => DEVICE_PRINCIPAL, changes: web.changes, lock: web.lock }),
     editorTabId,
     editorTabPersistent: true,
     // As main.tsx's: one database per device, shared by its tabs through TanStack DB's coordinator, which Node runs on
@@ -1565,6 +1643,7 @@ export const nodeDevice = ({ agent, flowModel, summaryModel, file, outboxEntries
       for (const suffix of ["", "-wal", "-shm", "-journal"]) rmSync(`${path}${suffix}`, { force: true })
       if (engineStore !== undefined) for (const suffix of ["", "-wal", "-shm", "-journal"]) rmSync(`${engineStore.filename}${suffix}`, { force: true })
       entries.clear()
+      web.entries.clear()
     },
     ...overrides,
     stored: (collection) => storedRows(path, collection),

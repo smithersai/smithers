@@ -530,7 +530,7 @@ describe("the shell", () => {
     // The real composition: the app's PageWipe adopts the shell's hold and lets go of it when the page closes.
     const wipe = pageWipe({
       locks: shown.host.locks,
-      marks: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+      marks: { getItem: () => null, setItem: () => {}, removeItem: () => {}, key: () => null, length: 0 },
       directory: () => Promise.reject(new Error("never read")),
       indexedDB: { deleteDatabase: () => { throw new Error("never deleted") } },
       channel: () => ({ postMessage: () => {}, close: () => {}, onmessage: null }),

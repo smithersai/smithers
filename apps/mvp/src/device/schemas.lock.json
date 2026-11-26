@@ -73,6 +73,12 @@
         "1": "c011a7d1a3ae4eb4"
       }
     },
+    "conversation-refusals": {
+      "kind": "local",
+      "versions": {
+        "1": "1b558ae889cb293f"
+      }
+    },
     "curated-homes": {
       "kind": "local",
       "versions": {

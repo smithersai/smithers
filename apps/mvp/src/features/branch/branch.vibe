@@ -3,11 +3,12 @@ import { ChatStore } from "../chat/store"
 import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { Coedit, type CoeditView } from "../coedit/coedit.vibe"
 import { Conversations, type ConversationsView } from "../conversations/conversations"
+import { ConversationOwners } from "../conversations/owners"
 import { ConversationsStore } from "../conversations/store"
 import { Presence, type PresenceView } from "../presence/presence.vibe"
 import { Sharing, type SharingView } from "../sharing/sharing.vibe"
 import { SharingStore } from "../sharing/store.vibe"
-import { leave, open, writable } from "./actions.vibe"
+import { leave, open, recheck, writable } from "./actions.vibe"
 import { Publishing, type PublishingView } from "./publishing.vibe"
 import { BranchRoute, BranchStore } from "./store.vibe"
 
@@ -62,8 +63,10 @@ export class Branch extends Context.Service<
       Branch,
       effect {
         const store = try BranchStore
-        const services = try context<BranchRoute | BranchStore | ChatStore | ConversationsStore | FlowDispatch | SharingStore>()
+        const services = try context<BranchRoute | BranchStore | ChatStore | ConversationOwners | ConversationsStore | FlowDispatch | SharingStore>()
         const { runPromise: run, runSync } = runners(services, "branch")
+        // Retry asks ChatApi of a branch whose conversation is refused again, without leaving its page.
+        try (try ChatStore).onRetry(Effect.provide(recheck, services))
         return Branch.of({
           queries: { current: store.currentState.tanstack },
           actions: {

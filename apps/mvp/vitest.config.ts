@@ -166,6 +166,9 @@ export default await WebAssembly.compile(await readFile(new URL(${url})))`
         "worker/chat/MessagesShardRoutes.ts",
         // ChatApi's own question and answer writes, sequenced into the shard as well (decision 0170, slice 4c).
         "worker/chat/MessagesShardBridge.ts",
+        // What the bridge is told, read from Postgres after the commit (slice 5a).
+        "worker/chat/MessagesShardSource.ts",
+        "db/migrations/0135_message_note_versions.ts",
         "db/migrations/0011_question_askers.ts",
         // The edge throttle on the open routes (docs/features/chat.md#throttling).
         "worker/Throttle.vibe",

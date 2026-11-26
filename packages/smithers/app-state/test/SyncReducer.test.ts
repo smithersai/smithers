@@ -17,13 +17,21 @@ import {
   evolve,
   initialAppState,
   initialReplica,
+  answerOwner,
   initialShardState,
   installSnapshot,
+  isBridged,
   MAX_BODY_LENGTH,
+  MAX_DATA_LENGTH,
   MAX_LABEL_LENGTH,
   MAX_MARK_LENGTH,
   MAX_PARTS,
   MAX_SUMMARY_LENGTH,
+  originOf,
+  MAX_ADMITTED_POSITION,
+  placeOf,
+  placesOf,
+  questionOwner,
   rebasePending,
   referenceMachine,
   sha256Hex,
@@ -665,6 +673,223 @@ describe("chat", () => {
     expect(decodeCommand({ _tag: "UpdateMessageBody", messageId: "a1", author: "run" })._tag).toBe("Failure")
     expect(Schema.decodeUnknownSync(CommandSchema)({ ...write("a1", "x"), status: "complete", smuggled: 1 }))
       .toEqual(write("a1", "x"))
+  })
+
+  it("bounds a post's body as a body update's: its length, and no lone surrogate", () => {
+    const decodeCommand = Schema.decodeUnknownExit(CommandSchema)
+    const pair = "\u{1F600}"
+    for (const body of ["", "x".repeat(MAX_BODY_LENGTH), pair, `a${pair}b`, pair.repeat(MAX_BODY_LENGTH / 2)]) {
+      expect(decodeCommand(post("m1", body))._tag, `${body.length} units`).toBe("Success")
+    }
+    for (const body of ["x".repeat(MAX_BODY_LENGTH + 1), "\uD83D", "\uDE00", "a\uD83Db", "\uDE00\uD83D", `${pair}\uD83D`]) {
+      expect(decodeCommand(post("m1", body))._tag, `${body.length} units`).toBe("Failure")
+    }
+    // A message and a posted event written before the bound keep the body they hold: an old journal still decodes.
+    const old = "\uD83D" + "x".repeat(MAX_BODY_LENGTH)
+    const shard = {
+      ...initialShardState,
+      headSeq: 1,
+      state: { plan: { revision: 0, nodes: {} }, chat: { messages: [{ id: "m1", author: "will", body: old, status: "posted", hubSeq: 1 }] } },
+      log: [{ hubSeq: 1, epoch: 0, origin: "t", commandId: "c", event: { _tag: "MessagePosted", id: "m1", author: "will", body: old } }]
+    }
+    expect(Schema.decodeUnknownSync(ShardState)(JSON.parse(JSON.stringify(shard))).state.chat.messages[0]!.body).toBe(old)
+  })
+
+  it("keeps the view a question was sent from, and its values, as the post said them and never after", () => {
+    const source = { viewId: "0b5a2f52-58a1-4b8f-9d2b-5a2c7d3f4e10", event: "submit" } as const
+    const data = JSON.stringify({ plan: "pro", seats: 3, yearly: true })
+    const question: Post = { _tag: "PostMessage", messageId: "q1", author: "will", body: "Upgrade", role: "user", position: 4, source, data }
+    const shard = build([question])
+    expect(shard.state.chat.messages[0]).toEqual({
+      id: "q1", author: "will", body: "Upgrade", status: "posted", hubSeq: 1, role: "user", position: 4, source, data
+    })
+    expect(shard.log[0]!.event).toEqual({ _tag: "MessagePosted", id: "q1", author: "will", body: "Upgrade", role: "user", position: 4, source, data })
+    // The message holds its own copy: changing the command's source afterwards changes nothing.
+    expect(shard.state.chat.messages[0]!.source).not.toBe(source)
+    expect(reasonOf(shard.state, question)).toBe("accepted:0")
+    // The origin is compared whole: another view, another event, other values, or none of them is a conflict.
+    expect(reasonOf(shard.state, { ...question, source: { ...source, event: "pick" } })).toBe("message_conflict")
+    expect(reasonOf(shard.state, { ...question, source: { ...source, viewId: "other" } })).toBe("message_conflict")
+    expect(reasonOf(shard.state, { ...question, data: "{}" })).toBe("message_conflict")
+    const { source: _, data: __, ...bare } = question
+    expect(reasonOf(shard.state, bare)).toBe("message_conflict")
+    expect(reasonOf(build([bare]).state, question)).toBe("message_conflict")
+    // No later command names them: a metadata patch that carries them is decoded without them.
+    const patched = Schema.decodeUnknownSync(CommandSchema)({ ...meta("q1", { summary: "Upgrade" }), source, data: "{}" })
+    expect(patched).toEqual(meta("q1", { summary: "Upgrade" }))
+    const after = build([question, patched, status("q1", "complete")])
+    expect(after.state.chat.messages[0]).toMatchObject({ source, data, position: 4, summary: "Upgrade", status: "complete" })
+  })
+
+  it("bounds a source and its data at the wire", () => {
+    const decodeCommand = Schema.decodeUnknownExit(CommandSchema)
+    const sourced = (fields: object) => ({ _tag: "PostMessage", messageId: "q1", author: "will", body: "Hi", role: "user", ...fields })
+    expect(MAX_DATA_LENGTH).toBe(16_384)
+    const label = "v".repeat(MAX_LABEL_LENGTH)
+    for (const fields of [
+      { source: { viewId: label, event: label } },
+      { source: { viewId: "v", event: "e" }, data: "x".repeat(MAX_DATA_LENGTH) },
+      { data: "\u{1F600}" },
+      {}
+    ]) expect(decodeCommand(sourced(fields))._tag, JSON.stringify(fields).slice(0, 40)).toBe("Success")
+    for (const fields of [
+      { source: { viewId: `${label}v`, event: "e" } },
+      { source: { viewId: "v", event: `${label}e` } },
+      { source: { viewId: "v" } },
+      { source: { event: "e" } },
+      { source: "view" },
+      { source: { viewId: "\uD83D", event: "e" } },
+      { source: { viewId: "v", event: "\uDE00" } },
+      { data: "x".repeat(MAX_DATA_LENGTH + 1) },
+      { data: "\uD83D" },
+      { data: { plan: "pro" } }
+    ]) expect(decodeCommand(sourced(fields))._tag, JSON.stringify(fields).slice(0, 40)).toBe("Failure")
+    // Whatever else a source carries is not kept.
+    expect(Schema.decodeUnknownSync(CommandSchema)(sourced({ source: { viewId: "v", event: "e", person: "ada" } })))
+      .toEqual(sourced({ source: { viewId: "v", event: "e" } }))
+  })
+
+  /** The ids of a shard's messages in reading order: by place, and among equal places in the order the chat holds. */
+  const reading = (shard: ShardState): ReadonlyArray<string> => {
+    const places = placesOf(shard.state.chat.messages)
+    return shard.state.chat.messages.map((message, index) => ({ id: message.id, place: places[index]!, index }))
+      .sort((left, right) => left.place - right.place || left.index - right.index).map(({ id }) => id)
+  }
+  const QUESTION = questionOwner("q1")
+  const ANSWER = answerOwner("a1")
+  const extend = (body: string): Command => ({ _tag: "UpdateMessageBody", messageId: "a1", author: ANSWER, body })
+
+  it("reads a bridged answer posted before its question after it, and moves nothing when the question arrives", () => {
+    const answered: Post = { _tag: "PostMessage", messageId: "a1", author: ANSWER, body: "", role: "assistant", questionId: "q1", position: 5 }
+    const asked: Post = { _tag: "PostMessage", messageId: "q1", author: QUESTION, body: "Why?", role: "user", position: 4 }
+    const early = build([answered])
+    expect(early.state.chat.messages.map((message) => message.id)).toEqual(["a1"])
+    expect(placesOf(early.state.chat.messages)).toEqual([5])
+    const late = build([answered, extend("Because."), status("a1", "complete"), asked])
+    const [answer, question] = late.state.chat.messages
+    // The answer is exactly what it was before the question arrived, and each reads at the position its post gave.
+    expect(answer).toEqual(build([answered, extend("Because."), status("a1", "complete")]).state.chat.messages[0])
+    expect(question).toMatchObject({ id: "q1", hubSeq: 4, position: 4 })
+    expect(placesOf(late.state.chat.messages)).toEqual([5, 4])
+    expect(reading(late)).toEqual(["q1", "a1"])
+    // The same two posts in the other order hold the same origins.
+    const inOrder = build([asked, answered])
+    expect(inOrder.state.chat.messages.map(originOf)).toEqual([question, answer].map((message) => originOf(message!)))
+  })
+
+  it("places a message only by the bridge's position: anyone else's is ignored, and their post never reads before what was there", () => {
+    const asked: Post = { _tag: "PostMessage", messageId: "q1", author: QUESTION, body: "Why?", role: "user", position: 40 }
+    const answered: Post = { _tag: "PostMessage", messageId: "a1", author: ANSWER, body: "", role: "assistant", questionId: "q1", position: 41 }
+    // A direct writer names the very first place, a time before the exchange and the question it would follow.
+    const backdated: Post = {
+      _tag: "PostMessage", messageId: "d1", author: "person:direct", body: "First!", role: "user", position: 0,
+      createdAt: "2000-01-01T00:00:00Z"
+    }
+    const squatted: Post = {
+      _tag: "PostMessage", messageId: "d2", author: "agent:direct", body: "Mine", role: "assistant", questionId: "q1"
+    }
+    const shard = build([asked, answered, backdated, squatted])
+    expect(shard.state.chat.messages.map(isBridged)).toEqual([true, true, false, false])
+    // The position is stored as the post said it, and is no one's place: both read after the exchange, in the order
+    // the shard sequenced them.
+    expect(shard.state.chat.messages[2]).toMatchObject({ position: 0 })
+    expect(placesOf(shard.state.chat.messages)).toEqual([40, 41, 42, 43])
+    expect(reading(shard)).toEqual(["q1", "a1", "d1", "d2"])
+    // A later exchange Postgres places at the same number still reads after the direct post that was there.
+    const next: Post = { _tag: "PostMessage", messageId: "q2", author: questionOwner("q2"), body: "And?", role: "user", position: 42 }
+    expect(reading(build([asked, answered, backdated, squatted, next]))).toEqual(["q1", "a1", "d1", "q2", "d2"])
+    // Only the bridge's owner name for the message's own id counts: another message's owner name places nothing.
+    const borrowed: Post = { _tag: "PostMessage", messageId: "d3", author: QUESTION, body: "Borrowed", role: "user", position: 0 }
+    expect(placesOf(build([asked, answered, borrowed]).state.chat.messages)).toEqual([40, 41, 42])
+    // In an empty shard a direct post is anchored where the shard sequenced it.
+    expect(placesOf(build([upsert("n", null), backdated]).state.chat.messages)).toEqual([2])
+  })
+
+  it("moves one message only: an answer an earlier bridge posted with no position, to straight after its question, past a row in between", () => {
+    const legacy: Post = { _tag: "PostMessage", messageId: "a1", author: ANSWER, body: "", role: "assistant", questionId: "q1" }
+    const between: Post = { _tag: "PostMessage", messageId: "d1", author: "person:direct", body: "Between", position: 0 }
+    const asked: Post = { _tag: "PostMessage", messageId: "q1", author: QUESTION, body: "Why?", role: "user", position: 40 }
+    const before = build([legacy, between])
+    expect(placesOf(before.state.chat.messages)).toEqual([1, 2])
+    expect(reading(before)).toEqual(["a1", "d1"])
+    // The question arrives with its position: the answer reads one past it, and the row in between stays where it was.
+    const after = build([legacy, between, asked])
+    expect(placesOf(after.state.chat.messages)).toEqual([41, 2, 40])
+    expect(reading(after)).toEqual(["d1", "q1", "a1"])
+    // Nothing moves for a question that is not the bridge's, one with no position, or an answer that is not the bridge's.
+    const unplaced: Post = { _tag: "PostMessage", messageId: "q1", author: QUESTION, body: "Why?", role: "user" }
+    expect(placesOf(build([legacy, between, unplaced]).state.chat.messages)).toEqual([1, 2, 3])
+    const strangers: Post = { ...asked, author: "person:direct" }
+    expect(placesOf(build([legacy, between, strangers]).state.chat.messages)).toEqual([1, 2, 3])
+    const direct: Post = { ...legacy, author: "agent:direct" }
+    expect(placesOf(build([direct, between, asked]).state.chat.messages)).toEqual([1, 2, 40])
+    // A legacy answer that names no question stays at its anchor.
+    const { questionId: _, ...alone } = legacy
+    expect(placesOf(build([alone, asked]).state.chat.messages)).toEqual([1, 40])
+  })
+
+  it("admits a position up to 2 ** 50 and no higher, so every place adds exactly", () => {
+    expect(MAX_ADMITTED_POSITION).toBe(1125899906842624)
+    const direct: Post = { _tag: "PostMessage", messageId: "d1", author: "person:direct", body: "After" }
+    const at = (position: number): Post => ({ _tag: "PostMessage", messageId: "q1", author: QUESTION, body: "Why?", role: "user", position })
+    // The ceiling is a place, and the floor two past it is exact.
+    expect(placeOf({ position: MAX_ADMITTED_POSITION })).toBe(MAX_ADMITTED_POSITION)
+    expect(placesOf(build([at(MAX_ADMITTED_POSITION), direct]).state.chat.messages)).toEqual([MAX_ADMITTED_POSITION, MAX_ADMITTED_POSITION + 2])
+    // One past it, and the largest integer a double holds, are no position: the question is anchored where the shard
+    // sequenced it, reserves nothing, and the next row is one past it, as Lean's `Nat` has it.
+    for (const position of [MAX_ADMITTED_POSITION + 1, Number.MAX_SAFE_INTEGER]) {
+      expect(placeOf({ position })).toBeUndefined()
+      expect(placesOf(build([at(position), direct]).state.chat.messages)).toEqual([1, 2])
+    }
+    expect(placeOf({})).toBeUndefined()
+    // An answer posted with a position past the ceiling is unplaced: it reads straight after its placed question.
+    const answered: Post = {
+      _tag: "PostMessage", messageId: "a1", author: ANSWER, body: "", role: "assistant", questionId: "q1",
+      position: Number.MAX_SAFE_INTEGER
+    }
+    expect(placesOf(build([answered, at(40)]).state.chat.messages)).toEqual([41, 40])
+    // A question past the ceiling gives its unplaced answer nowhere to move to.
+    const { position: _, ...unplaced } = answered
+    expect(placesOf(build([unplaced, at(Number.MAX_SAFE_INTEGER)]).state.chat.messages)).toEqual([1, 2])
+  })
+
+  it("ignores a delayed older note: a patch no newer than the stored version changes nothing", () => {
+    const note = (
+      noteVersion: number | undefined,
+      summary: string,
+      phase?: string
+    ): Extract<Command, { _tag: "UpdateMessageMetadata" }> => ({
+      _tag: "UpdateMessageMetadata",
+      messageId: "m1",
+      summary,
+      ...(phase === undefined ? {} : { phase }),
+      ...(noteVersion === undefined ? {} : { noteVersion })
+    })
+    const newer = build([post("m1", "one"), status("m1", "complete"), note(2, "second", "{\"title\":\"b\"}")])
+    expect(newer.state.chat.messages[0]).toMatchObject({ summary: "second", noteVersion: 2 })
+    // The write before it, arriving after it: accepted with no event, and the newer note stands whole.
+    for (const stale of [note(1, "first", "{\"title\":\"a\"}"), note(2, "second again")]) {
+      const decision = decide(newer.state, stale)
+      expect(decision).toEqual({ _tag: "Accepted", events: [] })
+      const { state, result } = submit(newer, { epoch: 0, origin: "t", commandId: "late-" + stale.summary, command: stale })
+      expect(result._tag).toBe("Accepted")
+      expect(state.state).toEqual(newer.state)
+      expect(state.log).toEqual(newer.log)
+    }
+    // A newer write replaces it, and a patch that names no version is the author's own and still applies.
+    expect(build([post("m1", "one"), note(2, "second"), note(3, "third")]).state.chat.messages[0])
+      .toMatchObject({ summary: "third", noteVersion: 3 })
+    expect(build([post("m1", "one"), note(2, "second"), note(undefined, "plain")]).state.chat.messages[0])
+      .toMatchObject({ summary: "plain", noteVersion: 2 })
+    // A first versioned write lands on notes that had none, version 0 included.
+    expect(build([post("m1", "one"), note(undefined, "plain"), note(0, "zero")]).state.chat.messages[0])
+      .toMatchObject({ summary: "zero", noteVersion: 0 })
+    // A stale patch that would also change a finished message's run is refused as any such patch is.
+    expect(reasonOf(newer.state, { ...note(1, "first"), modelId: "m-large" })).toBe("terminal_metadata")
+    // The version is a count: nothing negative or fractional decodes.
+    for (const value of [-1, 1.5]) {
+      expect(Schema.decodeUnknownExit(CommandSchema)(note(value, "bad"))._tag).toBe("Failure")
+    }
   })
 })
 

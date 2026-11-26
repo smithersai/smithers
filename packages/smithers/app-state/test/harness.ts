@@ -11,6 +11,7 @@ import {
   initialReplica,
   initialShardState,
   installSnapshot,
+  placesOf,
   rebasePending,
   type Replica,
   type ShardState,
@@ -70,6 +71,21 @@ const withReplica = (world: World, index: number, replica: Replica): World => ({
   replicas: world.replicas.map((current, i) => (i === index ? replica : current))
 })
 
+/** A shard as the oracle prints one: with where each of its messages reads (`hubJ` in Main.lean). */
+export const hubView = (hub: ShardState): unknown => ({ ...hub, places: placesOf(hub.state.chat.messages) })
+
+/** A replica as the oracle prints one: with where each of its messages reads (`replicaJ` in Main.lean). */
+export const replicaView = (replica: Replica): unknown => ({
+  ...replica,
+  places: placesOf(replica.confirmed.chat.messages)
+})
+
+/** A world as the oracle prints one (`worldJ` in Main.lean). */
+export const worldView = (world: World): unknown => ({
+  hub: hubView(world.hub),
+  replicas: world.replicas.map(replicaView)
+})
+
 export const runOp = (world: World, op: Op): Ran => {
   switch (op.op) {
     case "submit": {
@@ -86,11 +102,11 @@ export const runOp = (world: World, op: Op): Ran => {
         : result._tag === "Refused"
         ? `R:${result.reason}`
         : `E:${result.current}`
-      return { world: { hub: state, replicas: world.replicas }, code, touched: state }
+      return { world: { hub: state, replicas: world.replicas }, code, touched: hubView(state) }
     }
     case "bumpEpoch": {
       const hub = bumpEpoch(world.hub)
-      return { world: { hub, replicas: world.replicas }, code: `B:${hub.epoch}`, touched: hub }
+      return { world: { hub, replicas: world.replicas }, code: `B:${hub.epoch}`, touched: hubView(hub) }
     }
     case "deliver": {
       let replica = replicaAt(world, op.replica)
@@ -100,7 +116,7 @@ export const runOp = (world: World, op: Op): Ran => {
         replica = applied.replica
         codes += APPLY_CODE[applied.result]
       }
-      return { world: withReplica(world, op.replica, replica), code: `V:${codes}`, touched: replica }
+      return { world: withReplica(world, op.replica, replica), code: `V:${codes}`, touched: replicaView(replica) }
     }
     case "resync": {
       const replica = installSnapshot(
@@ -112,7 +128,7 @@ export const runOp = (world: World, op: Op): Ran => {
       return {
         world: withReplica(world, op.replica, replica),
         code: `S:${replica.epoch}:${replica.cursor}`,
-        touched: replica
+        touched: replicaView(replica)
       }
     }
     case "rebase": {

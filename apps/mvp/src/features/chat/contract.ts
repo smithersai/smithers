@@ -7,6 +7,18 @@ export const QUESTIONS_ROUTE = "/api/questions"
 /** ChatApi's Electric shape proxy for `messages`: `GET`. */
 export const SHAPE_ROUTE = "/api/shapes/messages"
 
+/**
+ * The header ChatApi's `messages` shape proxy answers with, only when the person may read the conversation asked for.
+ * Someone who may not gets a shape with no rows and no such header, so an answer without it says nothing of access.
+ */
+export const CONVERSATION_ACCESS_HEADER = "x-smithers-conversation-access"
+
+/** {@link CONVERSATION_ACCESS_HEADER}'s one value. */
+export const CONVERSATION_ACCESS_GRANTED = "granted"
+
+/** The exact conversation authorized by a granted shape response. */
+export const CONVERSATION_ID_HEADER = "x-smithers-conversation-id"
+
 /** Where the browser posts its OTLP telemetry: `<route>/v1/{logs,traces,metrics}`. */
 export const TELEMETRY_ROUTE = "/api/telemetry"
 

@@ -2,7 +2,7 @@ import { Effect, Layer, Ref } from "effect"
 import { SharedPrompt } from "../chat/sharedPrompt"
 import type { ChatStore } from "../chat/store"
 import { followPrompt, shownConversation, type ShownPrompt, type } from "./actions.vibe"
-import type { CoeditStore } from "./store.vibe"
+import { CoeditStore } from "./store.vibe"
 import type { TextWrites } from "./writes.vibe"
 
 // The composer's draft on a branch its owner shared (docs/features/coedit.md#the-prompt): the branch's prompt, a text
@@ -19,14 +19,16 @@ export const layer = Layer.effect(
     const pending = try Ref.make("")
     try followPrompt(current, pending)
     const context = try Effect.context<CoeditStore | ChatStore | TextWrites>()
+    const store = try CoeditStore
     return SharedPrompt.of({
       set: (draft, { base, selection }) =>
         effect {
           const shown = try Ref.get(current)
           // Chat hands a change here only while the conversation shown is shared. Until its prompt opens, the draft
-          // waits for it.
-          if (shown === undefined || shown.conversation !== (try shownConversation)) return try Ref.set(pending, draft)
-          try type(shown.textId, draft, { base, selection })
+          // waits for it; so does one typed while the conversation is hidden, whose prompt the draft is not.
+          const live = shown === undefined || shown.conversation !== (try shownConversation) ? undefined : store.live(shown.textId)
+          if (live === undefined || !store.readable(live)) return try Ref.set(pending, draft)
+          try type(live.id, draft, { base, selection })
         }.pipe(Effect.provideContext(context)),
     })
   },

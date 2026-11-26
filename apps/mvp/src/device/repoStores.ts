@@ -71,7 +71,7 @@ export const UNSCOPED_LOCAL: Readonly<Record<string, string>> = Object.fromEntri
   ...[
     "docs-current", "home-current", "issue-view", "profile-view", "pull-view", "repo-view", "secrets-view", "todo-view",
     "domains-page", "domain-saves", "domains-list", "secret-forms", "issue-opened", "issue-detail-demand",
-    "todo-access", "repo-clones", "repo-roles", "repo-visible", "repo-session-none", "conversation-owners", "views-home",
+    "todo-access", "repo-clones", "repo-roles", "repo-visible", "repo-session-none", "conversation-owners", "conversation-refused", "views-home",
   ].map((id) => [id, "which page shows, what this tab asked, or authority itself: no repository content"] as const),
   ...[
     "home-no-access", "home-no-items", "home-no-syncs", "home-no-todos", "issue-comments-none", "issue-details-none",

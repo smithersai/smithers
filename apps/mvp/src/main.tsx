@@ -28,6 +28,8 @@ import { awaitEditorWrites, hasFailedEditorWrite, hasPendingEditorWrites } from 
 import "./styles/fonts.css"
 import { markStage } from "./bootStages.vibe"
 import { followingOutbox } from "./outboxFollower"
+import { readDenials as shardReadDenials } from "./features/chat/messagesShardClient"
+import * as RefusalMarks from "./features/conversations/marks"
 import { followRoute, takeShell, verifyingFetch } from "./firstPaint/page"
 
 // The boot's first stage: the bundle has loaded and runs (src/bootStages.ts).
@@ -192,6 +194,10 @@ const wipe = pageWipe(
       getItem: (key) => localStorage.getItem(key),
       setItem: (key, value) => localStorage.setItem(key, value),
       removeItem: (key) => localStorage.removeItem(key),
+      key: (index) => localStorage.key(index),
+      get length() {
+        return localStorage.length
+      },
     },
     directory: () => navigator.storage.getDirectory(),
     indexedDB,
@@ -401,6 +407,26 @@ const outboxStorage = async () => {
 // `SharedSqlite`), one per origin, reached by every tab through the leading tab's worker. The outbox: IndexedDB,
 // sending when the browser says it can, led by one tab through @smthrs/platform-browser's Web Lock service.
 const host: Omit<Host, "editorTabId" | "editorTabPersistent" | "editorTabRefusal"> = {
+  // Read when used: a browser that blocks storage throws on reaching `localStorage`, which the marks answer as none.
+  refusalMarks: RefusalMarks.make({
+    storage: {
+      getItem: (key) => localStorage.getItem(key),
+      setItem: (key, value) => localStorage.setItem(key, value),
+      removeItem: (key) => localStorage.removeItem(key),
+      key: (index) => localStorage.key(index),
+      get length() {
+        return localStorage.length
+      },
+    },
+    principal: () => (activation.state() === "retained" ? deviceOwner : undefined),
+    changes: (listener) => {
+      const heard = (event: StorageEvent) => {
+        if (event.storageArea === localStorage) listener(event.key)
+      }
+      window.addEventListener("storage", heard)
+      return () => window.removeEventListener("storage", heard)
+    },
+  }),
   ...(firstPaint?.bindSearch === undefined ? {} : { earlyIssueSearch: {
     show: (owner, name, q, issues) => firstPaint.showSearch?.(owner, name, q, issues),
     bind: (ask, forget) => firstPaint.bindSearch!((owner, name, q) => {
@@ -633,12 +659,16 @@ const render: BootOptions["render"] = (
     </StrictMode>,
   )
 
+// ChatApi's `401` to a read of a conversation's messages shard is told as it arrives, under the transport that then
+// reads the session again: that read may never answer, and what ChatApi refused is hidden without it.
+const readDenials = shardReadDenials()
+
 const page = {
   origin: window.location.origin,
   // Every request to ChatApi waits for the activation and carries the device's owner while this page has its data
   // open. Every session answer, Auth's at startup and on reconnect alike, checks the activation again: one naming
   // someone else, or a person signing in while this page is sealed until they do, reopens every page.
-  fetch: boundFetch(verifyingFetch(window.fetch.bind(window), firstPaint), {
+  fetch: boundFetch(readDenials.observing(verifyingFetch(window.fetch.bind(window), firstPaint)), {
     origin: window.location.origin,
     principal: () => (activation.state() === "retained" && deviceOwner !== undefined ? deviceOwner : NO_DEVICE_DATA),
     sessionTag: () => deviceSessionTag,
@@ -651,6 +681,7 @@ const page = {
     reopensOnSignIn: () => activation.state() === "memory" && sealedUntilSignIn,
     adopt,
   }),
+  readDenials,
   reload: reloadWith,
   host,
   target: window,

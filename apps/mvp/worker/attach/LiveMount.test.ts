@@ -1,7 +1,7 @@
 import { Deferred, Effect, Layer, Metric, Option } from "effect"
 import { shardHost } from "../../src/test/messagesShardHost.ts"
 import { MAX_BODY_LENGTH } from "@smthrs/app-state"
-import { type Answered, answerOwner, MessagesShardBridge, writes as bridgeWrites } from "../chat/MessagesShardBridge.ts"
+import { type Answered, answerOwner, MessagesShardBridge, questionOwner, writes as bridgeWrites } from "../chat/MessagesShardBridge.ts"
 import { FetchHttpClient, HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
@@ -546,6 +546,7 @@ test("an attached agent's answer and its completion are also sequenced into the 
     const bridge = MessagesShardBridge.of({
       asked: (asked) => counted.asked(asked).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
       answered: (answered) => counted.answered(answered).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
+      noted: counted.noted,
     })
     const h = yield* Effect.promise(() => setup(bridge))
     // Asked before the bridge reached this conversation: Postgres holds the pair, the shard nothing.
@@ -556,24 +557,32 @@ test("an attached agent's answer and its completion are also sequenced into the 
         (await h.post(mcp, tool("conversation_respond", { questionId: question.id.toUpperCase(), text }), bearer(token))).json())
     const state = () => Effect.map(host.state(h.target.conversation), ({ chat }) => chat.messages)
     const seq = () => Effect.map(host.head(h.target.conversation), (head) => head.seq)
-    const stored = {
-      id: question.answerId,
-      author: answerOwner(question.answerId),
-      body: "Answer",
-      status: "complete",
-      hubSeq: 1,
-      role: "assistant",
-      questionId: question.id,
-    }
-    // The answer, and the same answer given again: Postgres takes it once, and so does the shard.
+    // Each as Postgres committed it, read back after the commit: its place, its time, and the answer's last write.
+    const [asked, given] = yield* Effect.promise(() => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly position: number; readonly createdAt: string; readonly text: string }>`
+        SELECT position::int AS position, (created_at AT TIME ZONE 'UTC')::text || '+00' AS "createdAt", text
+        FROM messages WHERE conversation_id = ${h.target.conversation} ORDER BY position`)))
+    const stored = [
+      {
+        id: question.id, author: questionOwner(question.id), body: asked!.text, status: "posted", hubSeq: 1,
+        role: "user", position: asked!.position, createdAt: asked!.createdAt,
+      },
+      {
+        id: question.answerId, author: answerOwner(question.answerId), body: "Answer", status: "complete", hubSeq: 2,
+        role: "assistant", questionId: question.id, position: given!.position, createdAt: given!.createdAt,
+        updatedAt: expect.stringMatching(/\+00$/),
+      },
+    ]
+    // The answer, and the same answer given again: Postgres takes it once, and so does the shard. The question it
+    // answers comes with it: the shard held nothing of this conversation.
     for (let attempt = 0; attempt < 2; attempt++) {
       expect(yield* respond("Answer")).toMatchObject({ result: { structuredContent: { answered: true, answerId: question.answerId } } })
-      expect(yield* state()).toEqual([stored])
-      expect(yield* seq()).toBe(4)
+      expect(yield* state()).toEqual(stored)
+      expect(yield* seq()).toBe(6)
     }
     // Another answer once it is finished: Postgres refuses it, and the bridge is never asked.
     expect(yield* respond("Other words")).toMatchObject({ result: { structuredContent: { answered: false } } })
-    expect(yield* state()).toEqual([stored])
+    expect(yield* state()).toEqual(stored)
     const count = Effect.runSync(Metric.value(Metric.withAttributes(bridgeWrites, { write: "answered", outcome: "ok" })).pipe(
       Effect.provideService(Metric.MetricRegistry, registry),
     )).count
@@ -595,6 +604,7 @@ const observing = (host: Effect.Success<ReturnType<typeof shardHost>>) => {
   const outcomes: Array<string> = []
   const bridge = MessagesShardBridge.of({
     asked: real.asked,
+    noted: real.noted,
     answered: (answered: Answered) =>
       Effect.gen(function* () {
         const row = yield* Effect.promise(() => answerRow(answered.answerId))
@@ -646,24 +656,23 @@ test("an answer reaches the shard only after Postgres commits it: a rollback and
     expect(yield* Effect.promise(() => answered.json())).toMatchObject({ result: { structuredContent: { answered: true, answerId: question.answerId } } })
     // The bridge was called with the answer already committed: another connection read it finished, with this text.
     expect(committed).toEqual(["done:true"])
-    const stored = {
-      id: question.answerId,
-      author: answerOwner(question.answerId),
-      body: "Another answer",
-      status: "complete",
-      hubSeq: 1,
-      role: "assistant",
-      questionId: question.id,
-    }
-    expect(yield* state()).toEqual([stored])
-    expect(yield* seq()).toBe(4)
+    const stored = [
+      { id: question.id, author: questionOwner(question.id), status: "posted", hubSeq: 1, role: "user" },
+      {
+        id: question.answerId, author: answerOwner(question.answerId), body: "Another answer", status: "complete",
+        hubSeq: 2, role: "assistant", questionId: question.id,
+      },
+    ]
+    expect(yield* state()).toMatchObject(stored)
+    expect(yield* state()).toHaveLength(2)
+    expect(yield* seq()).toBe(6)
     // The same words again, as a retry gives them: committed as before, bridged again, and nothing added.
     const again = yield* respond("Another answer")
     expect(yield* Effect.promise(() => again.json())).toMatchObject({ result: { structuredContent: { answered: true } } })
     expect(committed).toEqual(["done:true", "done:true"])
     expect(outcomes).toEqual(["ok", "ok"])
-    expect(yield* state()).toEqual([stored])
-    expect(yield* seq()).toBe(4)
+    expect(yield* state()).toMatchObject(stored)
+    expect(yield* seq()).toBe(6)
     // The words that failed are now another answer to a finished question: Postgres refuses, and the bridge is not called.
     const late = yield* respond("Answer")
     expect(yield* Effect.promise(() => late.json())).toMatchObject({ result: { structuredContent: { answered: false } } })

@@ -14,16 +14,29 @@
  * so a message, command, event, or snapshot written before the groups existed
  * decodes and hashes exactly as it did.
  *
- * - origin (`role`, `questionId`, `position`, `createdAt`): set by the post, never changed.
+ * - origin (`role`, `questionId`, `position`, `createdAt`, `source`, `data`): set by the post, never changed.
  * - run (`parts`, `failure`, `modelId`, `stopReason`, `inputTokens`, `outputTokens`):
  *   written while the message streams, frozen once its status is terminal.
- * - notes (`summary`, `summaryRevision`, `phase`, `arc`, `updatedAt`): written at any time.
+ * - notes (`summary`, `summaryRevision`, `phase`, `arc`, `updatedAt`, `noteVersion`): written at any time.
  *
  * A post may carry its message's first run and notes fields, so a message and what is known of it at birth are one
  * command and one event: a post the reducer refuses writes none of them.
  *
  * Every added string and list is bounded here, at the Schema boundary, so nothing longer is ever decided, journaled
  * or hashed. Lean models the fields as unbounded `String` and `List`: a bound narrows the input, never a decision.
+ * A command's body, a post's as much as a body update's, is bounded and whole Unicode text too. A stored message and a
+ * posted event keep the unbounded `body` they always had, so a journal written before the bound still decodes.
+ *
+ * A message's place among its conversation's is `placesOf`, the one rule every reader orders by and the twin of Lean's
+ * `Chat.places`. Only ChatApi's bridge places a message: a `position` counts when the message's author is the bridge's
+ * owner name for its id (`questionOwner`, `answerOwner`), and is ignored from anyone else. Any other message is anchored
+ * where the shard sequenced it, never before a message that was already there. One movement is permitted, for a shard
+ * written before posts carried a position: a bridge answer posted with none reads straight after its bridge question
+ * once that question, with its position, is posted. No event changes a message's origin, and nothing else moves one.
+ *
+ * Notes carry a `noteVersion` when the bridge writes them: which write of the notes this is, counted where they are
+ * kept. A patch whose version is no newer than the stored one changes nothing, so a delayed older note never replaces
+ * a newer one.
  */
 import * as Schema from "effect/Schema"
 import { canonicalJson } from "./Canonical.ts"
@@ -65,19 +78,24 @@ export const MAX_BODY_LENGTH = 32_000
  * the size of its encoding.
  */
 export const MAX_BODY_WIRE_BYTES = MAX_BODY_LENGTH * 6 + 2
+/** The longest `data` a post carries, in UTF-16 code units: a view's values as JSON text (16 KiB of ASCII). */
+export const MAX_DATA_LENGTH = 16_384
 
 const Label = Schema.String.check(Schema.isMaxLength(MAX_LABEL_LENGTH))
 const Mark = Schema.String.check(Schema.isMaxLength(MAX_MARK_LENGTH))
 /** A surrogate with no partner. With the `u` flag a paired surrogate is one code point and never matches. */
 const LONE_SURROGATE = /\p{Cs}/u
+const isWhole = Schema.makeFilter((text: string) => !LONE_SURROGATE.test(text))
 /**
- * A streamed body: bounded, and whole Unicode text. A lone surrogate is refused, so "extends" means the same in
- * UTF-16 here and in code points in Lean.
+ * A body a command writes, a post's or a body update's: bounded, and whole Unicode text. A lone surrogate is refused,
+ * so "extends" means the same in UTF-16 here and in code points in Lean, and a body is the same text in UTF-8.
  */
-const StreamedBody = Schema.String.check(
-  Schema.isMaxLength(MAX_BODY_LENGTH),
-  Schema.makeFilter((body: string) => !LONE_SURROGATE.test(body))
-)
+const StreamedBody = Schema.String.check(Schema.isMaxLength(MAX_BODY_LENGTH), isWhole)
+const WholeLabel = Label.check(isWhole)
+
+/** The view a question was sent from, and the view's event that sent it. */
+export const MessageSource = Schema.Struct({ viewId: WholeLabel, event: WholeLabel })
+export type MessageSource = typeof MessageSource.Type
 
 /** One step an answer took: the flow it called and how the call went. */
 export const MessagePart = Schema.Struct({
@@ -95,7 +113,11 @@ const originFields = {
   /** The message's place in its conversation, when the poster assigns one. */
   position: Schema.optionalKey(MessageCount),
   /** When the poster made it. The reducer has no clock: it stores what the command says. */
-  createdAt: Schema.optionalKey(Label)
+  createdAt: Schema.optionalKey(Label),
+  /** On a question sent from a view: the view and its event. */
+  source: Schema.optionalKey(MessageSource),
+  /** The values sent with a question from a view, as JSON text. The reducer stores the text and never reads it. */
+  data: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MAX_DATA_LENGTH), isWhole))
 }
 const runFields = {
   parts: Schema.optionalKey(Schema.Array(MessagePart).check(Schema.isMaxLength(MAX_PARTS))),
@@ -111,7 +133,9 @@ const notesFields = {
   /** The phase, then the arc, that starts at this message, as JSON text. */
   phase: Schema.optionalKey(Mark),
   arc: Schema.optionalKey(Mark),
-  updatedAt: Schema.optionalKey(Label)
+  updatedAt: Schema.optionalKey(Label),
+  /** Which write of the notes this is. A patch that carries one no newer than the stored one changes nothing. */
+  noteVersion: Schema.optionalKey(MessageCount)
 }
 
 /** What a post sets once. */
@@ -150,7 +174,7 @@ export const emptyChat: Chat = { messages: [] }
 export const PostMessage = Schema.TaggedStruct("PostMessage", {
   messageId: Schema.String,
   author: Schema.String,
-  body: Schema.String,
+  body: StreamedBody,
   ...originFields,
   ...runFields,
   ...notesFields
@@ -241,6 +265,61 @@ export const metadataOf = (source: MessageMetadata): MessageMetadata => pick(MET
 
 const same = (left: unknown, right: unknown): boolean => canonicalJson(left) === canonicalJson(right)
 
+/**
+ * The owner name ChatApi's bridge writes question `questionId` under, and no one else: a person's, so the message reads
+ * as a question, and no signed-in person's. It names the question and nobody.
+ */
+export const questionOwner = (questionId: string): string => `person:question:${questionId}`
+
+/** The owner name ChatApi's bridge writes answer `answerId` under, and no one else. It names the answer and nobody. */
+export const answerOwner = (answerId: string): string => `answer:${answerId}`
+
+/** Whether the bridge posted `message`: its author is the bridge's owner name for its own id. */
+export const isBridged = (message: Pick<Message, "id" | "author">): boolean =>
+  message.author === questionOwner(message.id) || message.author === answerOwner(message.id)
+
+/**
+ * The highest `position` a reader admits (`2 ** 50`), the twin of Lean's `maxAdmittedPosition`. Every place is a
+ * position, a `hubSeq` or a floor one or two past one, so under this ceiling `placesOf` adds exactly: a double steps
+ * by one up to `2 ** 53`, and Lean's `Nat` agrees with it on every admitted position. A higher position is no
+ * position at all, whoever posted it; the shard also refuses a post that names one (worker/chat/MessagesShard.ts).
+ */
+export const MAX_ADMITTED_POSITION = 2 ** 50
+
+/** The `position` a post named, when a reader admits it (Lean's `MessageOrigin.place`). */
+export const placeOf = (origin: Pick<MessageOrigin, "position">): number | undefined =>
+  origin.position !== undefined && origin.position <= MAX_ADMITTED_POSITION ? origin.position : undefined
+
+/**
+ * Where each of `messages` reads, in the order given (the order the chat holds them). Readers sort by it, and among
+ * equal places by the order the chat holds. The twin of Lean's `placesOf`. A `position` below is an admitted one
+ * (`placeOf`):
+ * - a message the bridge posted with a `position` reads there;
+ * - a bridge answer posted with no position reads one past its bridge question's position, once that question holds
+ *   one (the permitted movement);
+ * - any other message is anchored at its `hubSeq`, and never below the floor: one past the highest anchor before it,
+ *   and two past a bridge question's position, whose next place is its answer's. A `position` its post carries is
+ *   ignored.
+ */
+export const placesOf = (messages: ReadonlyArray<Message>): ReadonlyArray<number> => {
+  let floor = 0
+  const anchors = messages.map((message) => {
+    const anchor = (isBridged(message) ? placeOf(message) : undefined) ?? Math.max(message.hubSeq, floor)
+    const placed = message.author === questionOwner(message.id) && placeOf(message) !== undefined
+    floor = Math.max(floor, anchor + (placed ? 2 : 1))
+    return anchor
+  })
+  return messages.map((message, index) => {
+    if (message.author !== answerOwner(message.id) || placeOf(message) !== undefined) return anchors[index]!
+    const asked = message.questionId
+    const question = asked === undefined
+      ? undefined
+      : messages.find((other) => other.id === asked && other.author === questionOwner(asked))
+    const place = question === undefined ? undefined : placeOf(question)
+    return place === undefined ? anchors[index]! : place + 1
+  })
+}
+
 export const findMessage = (chat: Chat, id: string): Message | undefined =>
   chat.messages.find((message) => message.id === id)
 
@@ -288,6 +367,11 @@ export const decideChat = (chat: Chat, command: ChatCommand): Decision<ChatEvent
       const after = { ...before, ...patch }
       if (same(before, after)) return accepted([])
       if (isTerminal(existing.status) && !same(runOf(before), runOf(after))) return refused("terminal_metadata")
+      // A write of the notes no newer than the one the message holds: delayed, and ignored whole.
+      if (
+        existing.noteVersion !== undefined && command.noteVersion !== undefined &&
+        command.noteVersion <= existing.noteVersion
+      ) return accepted([])
       return accepted([{ _tag: "MessageMetadataUpdated", id: command.messageId, ...patch }])
     }
     case "UpdateMessageBody": {

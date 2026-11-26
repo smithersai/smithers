@@ -9,6 +9,7 @@ import { Persistence } from "@smthrs/effect-tanstack-db"
 import { signOut } from "./features/auth/actions.vibe"
 import { AuthClient } from "./features/auth/api.vibe"
 import { DeviceWipe } from "./features/auth/device.vibe"
+import { REFUSAL_MARKS_KEY } from "./features/conversations/contract"
 import { AuthStore, SESSION } from "./features/auth/store.vibe"
 import { afterEach, expect, test, vi } from "vitest"
 import { tabEngine } from "./flows/engine.vibe"
@@ -93,6 +94,10 @@ const browser = () => {
             marks.set(key, value)
           },
           removeItem: (key) => void marks.delete(key),
+          key: (index) => [...marks.keys()][index] ?? null,
+          get length() {
+            return marks.size
+          },
         },
         directory: async () => directory,
         indexedDB,
@@ -138,6 +143,15 @@ const browser = () => {
 
 test("a page that still holds the device's data holds a sign-out's wipe off until it ends; the wipe then deletes both stores and clears the mark", async () => {
   const device = browser()
+  // The conversations' second record: a key to each fact, of the person signing out and of one who had the device
+  // before. A key of something else that only starts alike is no fact of it.
+  const facts = [
+    `${REFUSAL_MARKS_KEY}:refused:person-member:conversation:mark`,
+    `${REFUSAL_MARKS_KEY}:known:person-member:conversation`,
+    `${REFUSAL_MARKS_KEY}:open:person-other:conversation`,
+  ]
+  for (const key of facts) device.marks.set(key, "1")
+  device.marks.set(`${REFUSAL_MARKS_KEY}-theme`, "dark")
   // Tab 2 has the data open: its program runs, holding the outbox's database open.
   const two = device.page(async () => {})
   expect(await two.open()).toBe(true)
@@ -166,12 +180,18 @@ test("a page that still holds the device's data holds a sign-out's wipe off unti
   await until(() => expect(device.removed).toEqual([targets.engine]))
   expect(device.idb.waiting).toHaveLength(1)
   expect(device.marks.get(WIPE)).toBe("1")
+  // The refusals' second record, which names the person and their conversations, is still there: it goes with the
+  // stores.
+  expect(facts.map((key) => device.marks.has(key))).toEqual([true, true, true])
   // The connection closes: the wipe deletes, clears the mark, and the page opens on an empty device, holding the data
   // in turn.
   device.closeConnection()
   expect(await opened).toBe(true)
   expect(device.removed).toEqual([targets.engine])
   expect(device.deleted).toEqual([targets.outbox])
+  // Every fact went, whoever's, each by its own key; the key of something else stayed.
+  expect(facts.map((key) => device.marks.has(key))).toEqual([false, false, false])
+  expect(device.marks.get(`${REFUSAL_MARKS_KEY}-theme`)).toBe("dark")
   expect(device.marks.has(WIPE)).toBe(false)
 
   // Tab 2 loads again: nothing is marked, so it opens at once and deletes nothing more; both hold the data together.
@@ -268,6 +288,8 @@ test("an unmarked page opens without the wipe's lock; storage that refuses reads
         },
         setItem: () => {},
         removeItem: () => {},
+        key: () => null,
+        length: 0,
       },
       directory: () => Promise.reject(new Error("never read")),
       indexedDB: { deleteDatabase: () => { throw new Error("never deleted") } },
@@ -443,7 +465,7 @@ test("a broadcast delivered after sign-out takes the guard is retained through f
   const reloads: string[] = []
   const page = pageWipe({
     locks: navigator.locks,
-    marks: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    marks: { getItem: () => null, setItem: () => {}, removeItem: () => {}, key: () => null, length: 0 },
     channel: channels, reload: (reason) => { reloads.push(reason) },
     directory: async () => { throw new Error("A reopen must never open device stores") },
     indexedDB: { deleteDatabase: () => { throw new Error("A reopen must never delete a database") } },

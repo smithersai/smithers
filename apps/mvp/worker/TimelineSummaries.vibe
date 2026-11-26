@@ -7,6 +7,7 @@ import { checkPlan, exchangeUnits, phaseUnits, type PhaseRow, sealSpans } from "
 import { Sessions } from "./Actor.vibe"
 import { branchAccess, canView } from "./branch/Access.vibe"
 import { readBounded } from "./Body.vibe"
+import * as MessagesShardSource from "./chat/MessagesShardSource.ts"
 
 // The timeline's summaries, once per message for everyone (docs/features/timeline.md#cost). A tab that wants a model
 // summary of a finished answer claims it first; only the claim that inserts the row calls the model, and its summary is
@@ -104,7 +105,7 @@ export const make = effect <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, 
           : try branchAccess(actor, message.conversationId, "conversation")
         if (message === undefined || access === undefined || !(try sync(() => canView(access.access)))) return answer(404, { code: "not_found" })
         if (p.op === "record") {
-          return try sql.withTransaction(effect {
+          const recorded = try sql.withTransaction(effect {
             // Lock both the claim and its content: concurrent records and edits must agree on one revision.
             const [claim] = try sql<{ readonly id: string; readonly role: string; readonly text: string; readonly recorded: boolean }>`
               SELECT m.id, m.role, m.text, c.recorded_at IS NOT NULL AS recorded
@@ -116,12 +117,21 @@ export const make = effect <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, 
             // A retained receipt acknowledges the old record without replacing its text or a newer summary.
             if (claim.recorded) return answer(200, { recorded: true }, "recorded")
             if (p.revision !== (try sync(() => revisionOf(claim)))) return answer(409, { code: "stale" })
-            try sql`UPDATE messages SET summary = ${p.summary}, summary_revision = ${p.revision} WHERE id = ${messageId}`
+            // Each write of a note raises the row's version, which orders the notes in the shard (decision 0170).
+            try sql`
+              UPDATE messages SET summary = ${p.summary}, summary_revision = ${p.revision}, notes_version = notes_version + 1
+              WHERE id = ${messageId}`
             try sql`
               UPDATE timeline_summaries SET recorded_at = now()
               WHERE message_id = ${messageId} AND revision = ${p.revision}`
             return answer(200, { recorded: true }, "recorded")
           })
+          // Committed: the note is owed to the conversation's shard from that commit (decision 0170, slice 5a,
+          // `messages_shard_pending`), and what the conversation is owed is sent now, on a replay too. A shard that
+          // cannot be given it is still owed it: the next write, replay or read of the conversation sends it. It never
+          // fails and never changes this answer.
+          if (recorded.outcome === "recorded") try MessagesShardSource.drain(message.conversationId)
+          return recorded
         }
         if (p.op === "release") {
           try sql`
@@ -138,30 +148,63 @@ export const make = effect <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, 
         if (p.op === "record_spans") {
           const column = sql(p.level === 1 ? "phase" : "arc")
           if (p.revision !== (try sync(() => segmentRevision(messageId, p.level, p.read)))) return answer(400, { code: "invalid_request" })
-          return try sql.withTransaction(effect {
+          /** Keeps messages `ids` owed to the shard again: what a replay asks for, were its first bridge lost. */
+          const owe = (ids: ReadonlyArray<string>) => ids.length === 0 ? Effect.void : sql`
+            INSERT INTO messages_shard_pending (message_id, conversation_id, notes_version)
+            SELECT id, conversation_id, notes_version FROM messages WHERE id IN ${sql.in(ids)}
+            ON CONFLICT (message_id) DO NOTHING`
+          const recorded = try sql.withTransaction(effect {
             try sql`SELECT pg_advisory_xact_lock(hashtextextended(${`timeline:${message.conversationId}:${p.level}`}, 0))`
-            const [claim] = try sql<{ readonly recorded: boolean }>`
-              SELECT recorded_at IS NOT NULL AS recorded FROM timeline_phase_claims
+            const [claim] = try sql<{ readonly recorded: boolean; readonly marked: ReadonlyArray<string> | null }>`
+              SELECT recorded_at IS NOT NULL AS recorded, marked FROM timeline_phase_claims
               WHERE anchor_id = ${messageId} AND level = ${p.level} AND revision = ${p.revision} AND person_id = ${person} AND owner = ${p.owner} AND released_at IS NULL
               FOR UPDATE`
             if (claim === undefined) return answer(409, { code: "unclaimed" })
-            // A replay of what was recorded: it stands.
-            if (claim.recorded) return answer(200, { recorded: true }, "recorded")
+            // A replay of what was recorded: it stands, and the messages it marked are owed to the shard again, for a
+            // first bridge that never arrived. A claim recorded before they were kept names none, so it is reconciled
+            // with what Postgres holds: every message of the conversation that carries a note is owed, and kept as
+            // what the claim marked from now on.
+            if (claim.recorded) {
+              if (claim.marked !== null) {
+                try owe(claim.marked)
+                return answer(200, { recorded: true }, "recorded")
+              }
+              const noted = try sql<{ readonly id: string }>`
+                SELECT id FROM messages
+                WHERE conversation_id = ${message.conversationId} AND role IN ('user', 'assistant')
+                  AND (summary IS NOT NULL OR phase IS NOT NULL OR arc IS NOT NULL)
+                ORDER BY position`
+              const ids = noted.map(row => row.id)
+              try owe(ids)
+              try sql`
+                UPDATE timeline_phase_claims SET marked = ${JSON.stringify(ids)}::jsonb
+                WHERE anchor_id = ${messageId} AND level = ${p.level} AND revision = ${p.revision}`
+              return answer(200, { recorded: true }, "recorded")
+            }
             const units = try unitsOf(message.conversationId, p.level)
             const ids = try sync(() => checkPlan(units, messageId, p.read))
             if (typeof ids === "string") return answer(409, { code: ids })
             const marks = try sync(() => sealSpans(p.spans.map(span => ({ ...span, id: span.id.toLowerCase() })), ids))
             if (marks === undefined) return answer(400, { code: "invalid_request" })
             // Everything from the anchor on is open: `checkPlan` says so under the lock.
+            const cleared = try sql<{ readonly id: string }>`
+              UPDATE messages SET ${column} = NULL, notes_version = notes_version + 1
+              WHERE conversation_id = ${message.conversationId} AND position >= ${message.position} AND ${column} IS NOT NULL
+              RETURNING id`
+            for (const { id, mark } of marks) try sql`
+              UPDATE messages SET ${column} = ${mark}, notes_version = notes_version + 1 WHERE id = ${id}`
+            // What this record marked is kept with it, so a replay names the same messages. Each is owed to the shard
+            // by the write that marked it, in this transaction.
+            const touched = [...new Set([...cleared.map(row => row.id), ...marks.map(mark => mark.id)])]
             try sql`
-              UPDATE messages SET ${column} = NULL
-              WHERE conversation_id = ${message.conversationId} AND position >= ${message.position} AND ${column} IS NOT NULL`
-            for (const { id, mark } of marks) try sql`UPDATE messages SET ${column} = ${mark} WHERE id = ${id}`
-            try sql`
-              UPDATE timeline_phase_claims SET recorded_at = now()
+              UPDATE timeline_phase_claims SET recorded_at = now(), marked = ${JSON.stringify(touched)}::jsonb
               WHERE anchor_id = ${messageId} AND level = ${p.level} AND revision = ${p.revision}`
             return answer(200, { recorded: true }, "recorded")
           })
+          // Committed: what the conversation's shard is owed is sent now, each marked message's notes as Postgres now
+          // holds them, "" where a mark was taken away, on a replay too. A record that was refused wrote nothing.
+          if (recorded.outcome === "recorded") try MessagesShardSource.drain(message.conversationId)
+          return recorded
         }
         if (!message.finished) return answer(409, { code: "unfinished" })
         if (p.op === "claim_spans") {

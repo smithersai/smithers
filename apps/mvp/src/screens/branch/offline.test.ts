@@ -14,6 +14,7 @@ import { BranchStore } from "../../features/branch/store.vibe"
 import { retry, wentOffline } from "../../features/chat/actions"
 import { Chat } from "../../features/chat/chat"
 import { ChatStore } from "../../features/chat/store"
+import { ConversationOwners } from "../../features/conversations/owners"
 import { CodeIntel } from "../../features/code-intel/codeIntel.vibe"
 import { FlowsUi } from "../../features/flows-ui/flowsUi.vibe"
 import { Commands } from "../../features/commands/commands.vibe"
@@ -84,6 +85,10 @@ const open = async (reopenRoute?: () => void) => {
       const conversationId = crypto.randomUUID()
       yield* branchStore.conversations.restored
       yield* branchStore.conversations.insert({ id: "octo/hello/work", conversationId })
+      // The route was saved as ChatApi answered `branch/track` for the branch, which also told the gate the person
+      // may read its conversation: a route alone shows nothing offline (src/features/conversations/owners.ts).
+      const owners = yield* ConversationOwners
+      yield* owners.clear(conversationId, owners.fence())
       yield* store.asking.insert({ v: 2, id: crypto.randomUUID(), answerId: crypto.randomUUID(),
         text: "saved offline question", queuedAt: 1, conversationId })
     })),

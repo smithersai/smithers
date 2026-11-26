@@ -13,6 +13,7 @@ import * as PlanTreeRoutes from "./plan/PlanTreeRoutes.vibe"
 import { MessagesShardBridge } from "./chat/MessagesShardBridge.ts"
 import * as MessagesShardObject from "./chat/MessagesShardObject.ts"
 import * as MessagesShardRoutes from "./chat/MessagesShardRoutes.ts"
+import * as MessagesShardSource from "./chat/MessagesShardSource.ts"
 import * as SshKeyAccess from "./SshKeyAccess.vibe"
 import * as Artifacts from "./branch/Artifacts.vibe"
 import { CiArtifacts } from "../infra/GateMachine.ts"
@@ -22,7 +23,7 @@ import { EdgeCache } from "@smthrs/platform-cloudflare"
 import { CiJob } from "@smthrs/sandbox"
 import { RuntimeContext } from "alchemy"
 import * as Output from "alchemy/Output"
-import { Cause, Effect, Layer, Option, Predicate, Redacted } from "effect"
+import { Cause, Config, Effect, Layer, Option, Predicate, Redacted } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerRequest } from "effect/http"
 import { HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
@@ -430,6 +431,13 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const planObjects = yield* PlanTreeRoutes.PlanTreeObject
     // One Durable Object per conversation sequences its messages shard (decision 0170, slice 3).
     const messageObjects = yield* MessagesShardObject.MessagesShardObject
+    // The key a shard's owner names are digests under (worker/chat/MessagesShardRoutes.ts `ownerOf`): sign-in's sealing
+    // secret, which the stack pins, held to the length sign-in holds its secrets to. Without one, no page and no run
+    // submits to a shard.
+    const messageOwners = Option.getOrUndefined(Option.filter(
+      yield* Config.option(Config.Redacted("SESSION_SEAL_SECRET")).pipe(Effect.orDie),
+      (secret) => Redacted.value(secret).length >= 32,
+    ))
     const artifactBucket = machines.includes(JobMachines.GATE) ? yield* Cloudflare.R2.ReadWriteBucket(CiArtifacts) : undefined
     const artifactStorage = artifactBucket?.raw as unknown as Effect.Effect<Artifacts.Bucket, never, RuntimeContext> | undefined
     const artifactPolicy = { admins: deploymentAdmins }
@@ -590,6 +598,13 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                   (shard, outgoing) => messageObjects.getByName(shard).fetch(outgoing),
                   (actor, conversationId) =>
                     branchAccess(Option.some(actor), conversationId, "conversation").pipe(Effect.provide(database)),
+                  messageOwners,
+                  // Before a read: the notes Postgres committed and the shard has not acknowledged are sent first.
+                  (conversationId) =>
+                    MessagesShardSource.drainIn(database, conversationId).pipe(
+                      Effect.provideService(MessagesShardBridge, shardBridge),
+                      Effect.provideService(RuntimeContext, runtime),
+                    ),
                 ).pipe(Effect.provideService(RuntimeContext, runtime), Effect.provide(signedIn))
               }
               if (ArtifactRoutes.handles(path)) {

@@ -3,8 +3,10 @@
  *
  * Each trace drives one shard authority and three replicas through request
  * drops, response drops, duplicate and reordered deliveries, skipped pages,
- * stale generations, cycle-creating moves, concurrent edits, and streamed message
- * bodies written by their author, by strangers, late, and after the end. The TypeScript
+ * stale generations, cycle-creating moves, concurrent edits, streamed message
+ * bodies written by their author, by strangers, late, and after the end, questions
+ * sent from a view with its values, answers posted before their questions, posts the bridge placed and posts whose
+ * position is nobody's, and notes written under versions that arrive out of order. The TypeScript
  * machine checks its own invariants at every step. The same traces, run through
  * the compiled Lean oracle, produced `fixtures/lean-oracle-receipt.jsonl`;
  * the last test demands 100% agreement with it.
@@ -17,23 +19,29 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import {
+  answerOwner,
   type AppState,
   canonicalHash,
   canonicalJson,
   type Command,
   evolve,
   initialAppState,
+  isBridged,
   isTerminal,
+  MAX_ADMITTED_POSITION,
   type Message,
   metadataOf,
   originOf,
+  placeOf,
+  placesOf,
   type PlanTree,
+  questionOwner,
   rebasePending,
   runOf,
   type ShardState,
   walk
 } from "../src/index.ts"
-import { fnv, FNV_INIT, foldDigest, initialWorld, type Op, runOp, type World } from "./harness.ts"
+import { fnv, FNV_INIT, foldDigest, initialWorld, type Op, runOp, type World, worldView } from "./harness.ts"
 
 const TRACES = 500
 const STEPS = 36
@@ -59,6 +67,14 @@ interface Stats {
   idempotencyConflicts: number
   messageConflicts: number
   postsWithMetadata: number
+  sourcedPosts: number
+  answersBeforeQuestions: number
+  lateQuestions: number
+  bridgedPosts: number
+  ignoredPositions: number
+  inadmissiblePositions: number
+  legacyMoves: number
+  staleNotes: number
   metadataUpdates: number
   metadataNoops: number
   terminalStatusRefusals: number
@@ -90,6 +106,14 @@ const emptyStats = (): Stats => ({
   idempotencyConflicts: 0,
   messageConflicts: 0,
   postsWithMetadata: 0,
+  sourcedPosts: 0,
+  answersBeforeQuestions: 0,
+  lateQuestions: 0,
+  bridgedPosts: 0,
+  ignoredPositions: 0,
+  inadmissiblePositions: 0,
+  legacyMoves: 0,
+  staleNotes: 0,
   metadataUpdates: 0,
   metadataNoops: 0,
   terminalStatusRefusals: 0,
@@ -147,6 +171,10 @@ const ROLES = ["user", "assistant"] as const
 const FAILURES = ["quota", "rate_limited", "model_error", "empty", "abandoned", "unfinished"] as const
 const PART_STATUSES = ["running", "done", "failed"] as const
 const STAMPS = ["2026-11-25T10:00:00Z", "2026-11-25T10:00:01Z", "2026-11-25T10:00:02Z"] as const
+/** The views a question is sent from, and the values sent with it, as the JSON text a post carries. */
+const SOURCES = [{ viewId: "view-1", event: "submit" }, { viewId: "view-2", event: "pick" }] as const
+const DATA = ["{}", "{\"plan\":\"pro\",\"seats\":3}", "{\"ok\":true}"] as const
+
 /** What a run streams next. ASCII, so a prefix is the same prefix in UTF-16 and in Lean's code points. */
 const CHUNKS = [" and", " then", ".", " ok", "!"] as const
 
@@ -175,6 +203,11 @@ const simulate = (seed: number): Trace => {
   const rng = mulberry32(seed)
   const int = (n: number): number => Math.floor(rng() * n)
   const pick = <A>(items: ReadonlyArray<A>): A => items[int(items.length)]!
+  /** A position Postgres gave, or, now and then, one at or past the ceiling a reader admits. */
+  const somewhere = (): number =>
+    rng() < 0.12
+      ? pick([MAX_ADMITTED_POSITION, MAX_ADMITTED_POSITION + 1, Number.MAX_SAFE_INTEGER - 1, Number.MAX_SAFE_INTEGER])
+      : int(9)
   const stats = emptyStats()
   const ops: Array<Op> = []
   const results: Array<string> = []
@@ -269,6 +302,10 @@ const simulate = (seed: number): Trace => {
             fail(`a body update moved the status or the metadata of ${was.id}`)
           }
         }
+        // A note's version never goes back, and is never taken away.
+        if (was.noteVersion !== undefined && (now.noteVersion === undefined || now.noteVersion < was.noteVersion)) {
+          fail(`message ${was.id} went back to an older note`)
+        }
         if (!isTerminal(was.status)) continue
         if (now.status !== was.status) fail(`terminal message ${was.id} changed status`)
         if (canonicalJson(runOf(now)) !== canonicalJson(runOf(was))) fail(`terminal message ${was.id} changed its run`)
@@ -281,10 +318,58 @@ const simulate = (seed: number): Trace => {
           fail(`message ${born.id} was not born with its post's metadata`)
         }
         if (Object.keys(metadataOf(op.command)).length > 0) stats.postsWithMetadata++
+        // Its origin is the post's, whole: role, question, position, time, source and data.
+        if (canonicalJson(originOf(born)) !== canonicalJson(originOf(op.command))) {
+          fail(`message ${born.id} was not born with its post's origin`)
+        }
+        if (born.source !== undefined) stats.sourcedPosts++
+        // Out-of-order arrival: an answer is posted whether or not its question is there, and a question that
+        // arrives after its answer leaves the answer as it was (the loop above) and where it read (below).
+        const earlier = before.state.chat.messages
+        if (born.questionId !== undefined && !earlier.some((message) => message.id === born.questionId)) {
+          stats.answersBeforeQuestions++
+        }
+        if (earlier.some((message) => message.questionId === born.id)) stats.lateQuestions++
+        if (isBridged(born)) {
+          stats.bridgedPosts++
+          // A position past the ceiling is no position: the bridge's post is anchored like anyone's.
+          if (born.position !== undefined && placeOf(born) === undefined) stats.inadmissiblePositions++
+        }
+        else {
+          // No backdating: a post the bridge did not place reads after everything that was there, whatever position
+          // it names.
+          const place = placesOf(world.hub.state.chat.messages)[earlier.length]!
+          if (placesOf(earlier).some((other) => other >= place)) fail(`${born.id} reads before a message that was there`)
+          if (born.position !== undefined) stats.ignoredPositions++
+        }
       }
+      // Stable order: the messages that were there read where they did. The one movement: an answer the bridge
+      // posted with no position reads one past its question's, when the bridge posts that question with one.
+      const placesWas = placesOf(before.state.chat.messages)
+      const placesNow = placesOf(world.hub.state.chat.messages)
+      before.state.chat.messages.forEach((was, index) => {
+        if (placesNow[index] === placesWas[index]) return
+        const by = op.command
+        if (
+          by._tag !== "PostMessage" || kind !== "A" || !ran.code.endsWith(":1") ||
+          by.author !== questionOwner(by.messageId) || placeOf(by) === undefined ||
+          was.author !== answerOwner(was.id) || placeOf(was) !== undefined || was.questionId !== by.messageId ||
+          placesNow[index] !== placeOf(by)! + 1
+        ) fail(`${by._tag} moved message ${was.id}`)
+        stats.legacyMoves++
+      })
       if (op.command._tag === "UpdateMessageMetadata") {
         if (kind === "A" && ran.code.endsWith(":1")) stats.metadataUpdates++
-        else if (kind === "A") stats.metadataNoops++
+        else if (kind === "A") {
+          stats.metadataNoops++
+          // A delayed older note: it would have changed the message, and changed nothing.
+          const { messageId, noteVersion } = op.command
+          const was = before.state.chat.messages.find((message) => message.id === messageId)
+          if (
+            was?.noteVersion !== undefined && noteVersion !== undefined && noteVersion <= was.noteVersion &&
+            canonicalJson({ ...metadataOf(was), ...metadataOf(op.command) }) !== canonicalJson(metadataOf(was))
+          ) stats.staleNotes++
+        }
       }
       if (op.command._tag === "UpdateMessageBody" && kind === "A") {
         const { messageId, body } = op.command
@@ -423,7 +508,9 @@ const simulate = (seed: number): Trace => {
       ...maybe(0.3, () => ({ summary: pick(TITLES), summaryRevision: `rev${int(2)}` })),
       ...maybe(0.15, () => ({ phase: "{\"title\":\"plan\"}" })),
       ...maybe(0.15, () => ({ arc: "{\"title\":\"build\"}" })),
-      ...maybe(0.3, () => ({ updatedAt: pick(STAMPS) }))
+      ...maybe(0.3, () => ({ updatedAt: pick(STAMPS) })),
+      // Which write of the notes this is: versions arrive in any order, and an older one is ignored.
+      ...maybe(0.5, () => ({ noteVersion: int(4) }))
     }
   }
 
@@ -454,19 +541,53 @@ const simulate = (seed: number): Trace => {
       const detail = rng()
       // What the message is born with: a shared id posted with other notes conflicts on the notes alone.
       const born = rng()
+      // The bridge's answers that wait for a question it has not posted: often the next post is that question.
+      const waiting = view.chat.messages.flatMap((message) =>
+        message.author === answerOwner(message.id) && message.questionId !== undefined &&
+          !view.chat.messages.some((other) => other.id === message.questionId)
+          ? [message.questionId]
+          : []
+      )
+      const late = !shared && waiting.length > 0 && rng() < 0.6
+      // Most questions and answers are the bridge's, under its owner name for the id: only those are placed.
+      const bridged = late || rng() < 0.6
+      const shape = late ? "question" : detail < 0.3 ? "plain" : detail < 0.6 ? "question" : "answer"
+      const messageId = shared ? `shared${int(3)}` : late ? pick(waiting) : `m-${origin}-${messageCounter++}`
       return {
         _tag: "PostMessage",
-        messageId: shared ? `shared${int(3)}` : `m-${origin}-${messageCounter++}`,
-        author: shared ? "team" : origin,
+        messageId,
+        author: shared
+          ? "team"
+          : !bridged || shape === "plain"
+          ? origin
+          : shape === "question"
+          ? questionOwner(messageId)
+          : answerOwner(messageId),
         body: shared ? pick(["ack", "nack"]) : pick(TITLES),
         // A shared id posted with and without a role conflicts on the origin alone.
+        // So does one posted with and without a source, or with other data.
         ...(shared
-          ? (detail < 0.2 ? { role: "user" as const } : {})
-          : detail < 0.3
+          ? (detail < 0.2
+            ? { role: "user" as const }
+            : detail < 0.35
+            ? { role: "user" as const, source: pick(SOURCES), data: pick(DATA) }
+            : {})
+          : shape === "plain"
           ? {}
-          : detail < 0.6
-          ? { role: "user" as const, position: int(9), createdAt: pick(STAMPS) }
-          : { role: "assistant" as const, questionId: `m-${origin}-${int(4)}`, position: int(9) }),
+          : shape === "question"
+          ? {
+            role: "user" as const,
+            position: somewhere(),
+            createdAt: pick(STAMPS),
+            ...(rng() < 0.4 ? { source: pick(SOURCES), data: pick(DATA) } : {})
+          }
+          // An answer names a question that is there, or the next few ids, one of which may be posted after it.
+          // An earlier bridge posted its answers with no position.
+          : {
+            role: "assistant" as const,
+            questionId: `m-r${int(REPLICAS)}-${messageCounter + int(4) - 1}`,
+            ...(rng() < 0.6 ? { position: somewhere() } : {})
+          }),
         ...(born < 0.6
           ? {}
           : born < 0.8
@@ -649,11 +770,11 @@ describe("differential fuzz", () => {
       expect(lean["digest"], `${label}: Lean and TypeScript disagree on a decision or an intermediate state`).toBe(
         trace.digest
       )
-      expect(lean["finalFnv"], label).toBe(fnv(FNV_INIT, canonicalJson(trace.world)))
+      expect(lean["finalFnv"], label).toBe(fnv(FNV_INIT, canonicalJson(worldView(trace.world))))
       if (lean["results"] !== undefined) {
         detailed++
         expect(lean["results"], label).toEqual(trace.results)
-        expect(canonicalJson(lean["final"]), label).toBe(canonicalJson(trace.world))
+        expect(canonicalJson(lean["final"]), label).toBe(canonicalJson(worldView(trace.world)))
       }
       agreed++
     })

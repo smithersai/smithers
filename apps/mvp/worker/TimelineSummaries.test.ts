@@ -1,6 +1,6 @@
 import { ConfigProvider, Effect, Redacted, Stream } from "effect"
 import { SqlClient } from "effect/sql"
-import { HttpEffect } from "effect/http"
+import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
@@ -8,6 +8,12 @@ import * as TimelineSummaries from "./TimelineSummaries.vibe"
 import { TIMELINE_SUMMARIES_ROUTE } from "../src/features/timeline/contract.ts"
 import { revisionOf, segmentRevision } from "../src/features/timeline/identity.ts"
 import { answers, branchRoles, eventually, harness, signedIn, testFile } from "./test/harness.ts"
+import { branchOf, shardHost } from "../src/test/messagesShardHost.ts"
+import { ShardProtocol } from "@smthrs/sync"
+import { shardOf } from "./chat/MessagesShard.ts"
+import { MessagesShardBridge } from "./chat/MessagesShardBridge.ts"
+import * as MessagesShardRoutes from "./chat/MessagesShardRoutes.ts"
+import * as MessagesShardSource from "./chat/MessagesShardSource.ts"
 
 const runtime = testFile("timeline_summaries")
 const person = (id: string) => ({ subject: { kind: "person" as const, id }, role: "member" as const })
@@ -489,3 +495,216 @@ test("the cap's default is the caller's when unset, and the environment's when s
   expect(await Effect.runPromise(read({}, 100_000))).toBe(100_000)
   expect(await Effect.runPromise(read({ TIMELINE_SUMMARY_DAILY_CAP: "7" }, 100_000))).toBe(7)
 })
+
+/** The conversation a message is in. */
+const conversationOf = (messageId: string) =>
+  sql(sql => sql<{ readonly conversationId: string }>`SELECT conversation_id AS "conversationId" FROM messages WHERE id = ${messageId}`)
+    .then(rows => rows[0]!.conversationId)
+
+test("a recorded summary also reaches the conversation's shard, after Postgres commits it, and a replay adds nothing", () =>
+  Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const host = yield* shardHost()
+    const h = yield* Effect.promise(() => harness(runtime, answers("Hi"), { actor, messagesShard: MessagesShardBridge.make(host.forward) }))
+    const post = poster(h)
+    const { question, answer } = yield* Effect.promise(() => exchange())
+    const conversationId = yield* Effect.promise(() => conversationOf(answer))
+    // The pair as an answer brings it to the shard (worker/attach/LiveMount.ts): the notes below are written on it.
+    yield* MessagesShardSource.answered(question).pipe(
+      Effect.provideService(MessagesShardBridge, MessagesShardBridge.make(host.forward)),
+      (bridged) => Effect.promise(() => runtime.runPromise(bridged)),
+    )
+    // "" is a mark the message lacks, as no mark at all is.
+    const noted = () => Effect.map(host.state(conversationId), ({ chat }) =>
+      chat.messages.map(message => [message.id, message.summary, message.summaryRevision, message.phase || undefined]))
+    expect(yield* noted()).toEqual([[question, undefined, undefined, undefined], [answer, undefined, undefined, undefined]])
+    const head = () => Effect.map(host.head(conversationId), at => at.seq)
+    const before = yield* head()
+
+    // A summary: nothing reaches the shard on a claim, or on a record Postgres refuses; one entry once it commits.
+    const key = { messageId: answer, revision: yield* Effect.promise(() => currentRevision(answer)) }
+    yield* Effect.promise(() => post({ op: "claim", ...key, reason: "answer" }))
+    expect((yield* Effect.promise(() => post({ op: "record", ...key, revision: revision(9), summary: "Unclaimed" }))).status).toBe(409)
+    expect(yield* head()).toBe(before)
+    expect((yield* Effect.promise(() => post({ op: "record", ...key, summary: "Retried twice" }))).status).toBe(200)
+    expect(yield* noted()).toEqual([[question, undefined, undefined, undefined], [answer, "Retried twice", key.revision, undefined]])
+    expect(yield* head()).toBe(before + 1)
+    // A replay is acknowledged, and is its key's receipt in the shard.
+    expect((yield* Effect.promise(() => post({ op: "record", ...key, summary: "Changed replay" }))).status).toBe(200)
+    expect(yield* noted()).toEqual([[question, undefined, undefined, undefined], [answer, "Retried twice", key.revision, undefined]])
+    expect(yield* head()).toBe(before + 1)
+    expect(h.line("chat.shard.bridge")).toEqual([])
+  }))))
+
+test("a recorded segmentation's marks reach the shard as Postgres holds them, and so does the next one's rewrite", () =>
+  Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const host = yield* shardHost()
+    const bridge = MessagesShardBridge.make(host.forward)
+    const h = yield* Effect.promise(() => harness(runtime, answers("Hi"), { actor, messagesShard: bridge }))
+    const ids = yield* Effect.promise(() => exchanges(9))
+    const conversationId = yield* Effect.promise(() => conversationOf(ids[0]!))
+    const bring = (questions: ReadonlyArray<string>) =>
+      Effect.promise(() => runtime.runPromise(Effect.forEach(questions, MessagesShardSource.answered, { discard: true }).pipe(
+        Effect.provideService(MessagesShardBridge, bridge),
+      )))
+    yield* bring(ids)
+    /** Each question's phase, in Postgres and in the shard: `null` and `undefined` or `""` are both no mark. */
+    const phases = (of: ReadonlyArray<string>) => Effect.gen(function* () {
+      const inPostgres = (yield* Effect.promise(() => marks(of))).map(row => row.phase)
+      const { chat } = yield* host.state(conversationId)
+      const inShard = of.map(id => chat.messages.find(message => message.id === id)!.phase || null)
+      return { inPostgres, inShard }
+    })
+    const first = call(ids[0]!, 8)
+    yield* Effect.promise(() => poster(h)({ op: "claim_spans", ...first }))
+    const before = (yield* host.head(conversationId)).seq
+    expect((yield* Effect.promise(() => poster(h)({ op: "record_spans", ...first, spans: [span(ids[0]!, "Researching issue"), span(ids[4]!, "Fixing tests")] }))).status).toBe(200)
+    const marked = yield* phases(ids)
+    expect(marked.inShard).toEqual(marked.inPostgres)
+    expect(marked.inShard.map(phase => phase === null ? null : (JSON.parse(phase) as { readonly title: string }).title))
+      .toEqual(["Researching issue", null, null, null, "Fixing tests", null, null, null, null])
+    // One entry per marked message, and none for a replay: it bridges the messages its record marked again, each the
+    // same notes under the same version, which is its key's receipt.
+    expect((yield* host.head(conversationId)).seq).toBe(before + 2)
+    expect((yield* Effect.promise(() => poster(h)({ op: "record_spans", ...first, spans: [span(ids[0]!, "Rewritten")] }))).status).toBe(200)
+    expect((yield* host.head(conversationId)).seq).toBe(before + 2)
+
+    // More of the conversation, and the next segmentation from the open phase: its mark is taken away and written
+    // again, closed, and a new one starts. The shard follows both.
+    const more: Array<string> = []
+    for (let n = 0; n < 4; n++) more.push((yield* Effect.promise(() => exchange("done", conversationId))).question)
+    yield* bring(more)
+    const next = call(ids[4]!, 9)
+    yield* Effect.promise(() => poster(h)({ op: "claim_spans", ...next }))
+    const rewritten = yield* Effect.promise(() => poster(h)({ op: "record_spans", ...next, spans: [span(ids[4]!, "Fixing tests"), span(ids[8]!, "Shipping")] }))
+    expect(rewritten.status).toBe(200)
+    const after = yield* phases([...ids, ...more])
+    expect(after.inShard).toEqual(after.inPostgres)
+    expect(after.inShard.filter(phase => phase !== null).map(phase => JSON.parse(phase!) as { readonly title: string; readonly closed: boolean }).map(mark => [mark.title, mark.closed]))
+      .toEqual([["Researching issue", true], ["Fixing tests", true], ["Shipping", false]])
+    expect(h.line("chat.shard.bridge")).toEqual([])
+  }))), 30_000)
+
+test("a summary recorded before its message reached the shard brings the message with it", () =>
+  Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const host = yield* shardHost()
+    const h = yield* Effect.promise(() => harness(runtime, answers("Hi"), { actor, messagesShard: MessagesShardBridge.make(host.forward) }))
+    const post = poster(h)
+    // An exchange no bridge ever told the shard of: asked before the bridge, or its bridge was lost.
+    const { question, answer } = yield* Effect.promise(() => exchange())
+    const conversationId = yield* Effect.promise(() => conversationOf(answer))
+    expect((yield* host.head(conversationId)).seq).toBe(0)
+    const key = { messageId: answer, revision: yield* Effect.promise(() => currentRevision(answer)) }
+    yield* Effect.promise(() => post({ op: "claim", ...key, reason: "answer" }))
+    expect((yield* Effect.promise(() => post({ op: "record", ...key, summary: "Retried twice" }))).status).toBe(200)
+    // The note was never refused for a message the shard lacked: the pair landed first, as Postgres holds it.
+    expect((yield* host.state(conversationId)).chat.messages.map(message => [message.id, message.status, message.summary, message.noteVersion])).toEqual([
+      [question, "posted", undefined, undefined],
+      [answer, "complete", "Retried twice", 1],
+    ])
+    expect(h.line("chat.shard.bridge")).toEqual([])
+  }))))
+
+test("a segmentation whose bridge was lost stays owed, and the next read of the shard delivers it: nobody records it again", () =>
+  Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const host = yield* shardHost()
+    // The Worker cannot reach the conversation's object for a while: every write to it fails on the way.
+    let down = false
+    let target = host
+    const bridge = MessagesShardBridge.make((shard, request) => down ? Effect.fail("unreachable") : target.forward(shard, request))
+    const h = yield* Effect.promise(() => harness(runtime, answers("Hi"), { actor, messagesShard: bridge }))
+    const ids = yield* Effect.promise(() => exchanges(9))
+    const conversationId = yield* Effect.promise(() => conversationOf(ids[0]!))
+    yield* Effect.promise(() => runtime.runPromise(Effect.forEach(ids, MessagesShardSource.answered, { discard: true }).pipe(
+      Effect.provideService(MessagesShardBridge, bridge),
+    )))
+    const inShard = (column: "phase" | "arc" = "phase") => Effect.map(target.state(conversationId), ({ chat }) =>
+      ids.map(id => chat.messages.find(message => message.id === id)?.[column] || null))
+    const owed = () => Effect.promise(() => sql(sql => sql<{ readonly id: string }>`
+      SELECT message_id AS id FROM messages_shard_pending WHERE conversation_id = ${conversationId} ORDER BY enqueued_at, message_id`))
+    /** A reader's Pull of the conversation's shard, through ChatApi's route, which sends what the shard is owed first. */
+    const pull = () => Effect.promise(() => runtime.runPromise(
+      MessagesShardRoutes.dispatch(
+        (shard, request) => down ? Effect.fail("unreachable") : target.forward(shard, request),
+        (_, id) => Effect.succeed(branchOf(id, { access: "view" })),
+        undefined,
+        (id) => MessagesShardSource.drain(id).pipe(Effect.provideService(MessagesShardBridge, bridge)),
+      ).pipe(
+        Effect.provide(signedIn(person("a-reader"))),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request(
+          `https://smithers.example/api/conversations/${conversationId}/messages/pull?${ShardProtocol.pullQuery({ version: 2, shard: shardOf(conversationId), epoch: 0, after: 0, limit: 256 })}`,
+        ))),
+        Effect.flatMap((response) => Effect.promise(async () => ({ status: response.status, body: await HttpServerResponse.toWeb(response).text() }))),
+      ),
+    ))
+    const first = call(ids[0]!, 8)
+    const record = () => poster(h)({ op: "record_spans", ...first, spans: [span(ids[0]!, "Researching issue"), span(ids[4]!, "Fixing tests")] })
+    yield* Effect.promise(() => poster(h)({ op: "claim_spans", ...first }))
+    down = true
+    // The record is answered as recorded: Postgres has it. Its caller's step is done, and is never run again.
+    expect((yield* Effect.promise(record)).status).toBe(200)
+    // Postgres committed the marks, what they were written on, and that the shard is owed each; the shard heard nothing.
+    const inPostgres = (yield* Effect.promise(() => marks(ids))).map(row => row.phase)
+    expect(inPostgres.filter(phase => phase !== null)).toHaveLength(2)
+    expect(yield* inShard()).toEqual(ids.map(() => null))
+    expect(yield* Effect.promise(() => sql(sql => sql<{ readonly marked: ReadonlyArray<string> }>`
+      SELECT marked FROM timeline_phase_claims WHERE anchor_id = ${ids[0]!} AND revision = ${first.revision}`)))
+      .toEqual([{ marked: [ids[0]!, ids[4]!] }])
+    expect((yield* owed()).map(row => row.id).sort()).toEqual([ids[0]!, ids[4]!].sort())
+    const said = () => h.line("chat.shard.bridge").map((line) => {
+      const { span_id: _, trace_id: __, ...annotations } = line.annotations as Record<string, unknown>
+      return annotations
+    })
+    expect(said()).toEqual([
+      { write: "noted", conversationId, outcome: "unavailable", reason: "unreachable", settled: false },
+      { write: "noted", conversationId, outcome: "unavailable", reason: "unreachable", settled: false },
+      { write: "noted", outcome: "pending", pending: 2 },
+    ])
+    // A reader asks while the object is still down: the read fails as the object does, and the notes stay owed.
+    expect((yield* pull()).status).toBe(503)
+    expect((yield* owed())).toHaveLength(2)
+    // A note that committed in a request that died before it sent anything: only the row and what it owes exist, as
+    // a crash between the commit and the send leaves them, or a Worker deployed before the bridge wrote it.
+    const arc = JSON.stringify({ title: "Shipping", summary: "The crash.", closed: false, covered: 1 })
+    yield* Effect.promise(() => sql(sql => sql`UPDATE messages SET arc = ${arc} WHERE id = ${ids[2]!}`))
+    expect((yield* owed())).toHaveLength(3)
+    // The object wakes again, having lost nothing it held. Nobody records anything again: the next reader's Pull
+    // sends the shard what it is owed before it is answered, so that very read already carries the notes.
+    yield* host.restart
+    down = false
+    const read = yield* pull()
+    expect(read.status).toBe(200)
+    expect(read.body).toContain("Researching issue")
+    expect(read.body).toContain("Fixing tests")
+    expect(read.body).toContain("The crash.")
+    expect(yield* inShard()).toEqual(inPostgres)
+    expect(yield* inShard("arc")).toEqual(ids.map(id => id === ids[2] ? arc : null))
+    expect(yield* owed()).toEqual([])
+    // A second read sends nothing more, and the record's replay adds nothing and takes nothing back.
+    const head = (yield* host.head(conversationId)).seq
+    expect((yield* pull()).status).toBe(200)
+    expect((yield* Effect.promise(record)).status).toBe(200)
+    expect((yield* host.head(conversationId)).seq).toBe(head)
+    expect(yield* owed()).toEqual([])
+    // A claim that marked nothing owes nothing.
+    yield* Effect.promise(() => sql(sql => sql`UPDATE timeline_phase_claims SET marked = '[]'::jsonb WHERE anchor_id = ${ids[0]!}`))
+    expect((yield* Effect.promise(record)).status).toBe(200)
+    expect((yield* host.head(conversationId)).seq).toBe(head)
+
+    // A claim recorded before the marked messages were kept names none. Its replay is reconciled with what Postgres
+    // holds: every message of the conversation that carries a note is owed to the shard, whichever write noted it.
+    // Here the conversation's shard is one that never held any of it, so everything it is given comes from Postgres:
+    // each noted message with the exchange it belongs to, and nothing else.
+    yield* Effect.promise(() => sql(sql => sql`UPDATE timeline_phase_claims SET marked = NULL WHERE anchor_id = ${ids[0]!}`))
+    target = yield* shardHost()
+    expect((yield* target.head(conversationId)).seq).toBe(0)
+    expect((yield* Effect.promise(record)).status).toBe(200)
+    expect(yield* inShard()).toEqual(inPostgres)
+    expect(yield* inShard("arc")).toEqual(ids.map(id => id === ids[2] ? arc : null))
+    expect((yield* target.state(conversationId)).chat.messages.filter(message => message.role === "user").map(message => message.id))
+      .toEqual([ids[0]!, ids[2]!, ids[4]!])
+    expect(yield* owed()).toEqual([])
+    // The claim keeps what it was reconciled with, in the conversation's order, so its next replay names them.
+    expect(yield* Effect.promise(() => sql(sql => sql<{ readonly marked: ReadonlyArray<string> }>`
+      SELECT marked FROM timeline_phase_claims WHERE anchor_id = ${ids[0]!} AND revision = ${first.revision}`)))
+      .toEqual([{ marked: [ids[0]!, ids[2]!, ids[4]!] }])
+  }))), 30_000)

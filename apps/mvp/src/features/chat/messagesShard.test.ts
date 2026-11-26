@@ -1,4 +1,4 @@
-import { canonicalHash, emptyChat } from "@smthrs/app-state"
+import { answerOwner, canonicalHash, emptyChat, questionOwner } from "@smthrs/app-state"
 import { JournalCollection } from "@smthrs/effect-tanstack-db"
 import { ShardClient, ShardProtocol } from "@smthrs/sync"
 import { Context, Effect, Exit, Layer, Option, Schedule, Schema, Scope, SubscriptionRef } from "effect"
@@ -7,13 +7,15 @@ import { join } from "node:path"
 import { expect, test } from "vitest"
 import type { Actor } from "../../../worker/Actor.vibe"
 import * as WorkerShard from "../../../worker/chat/MessagesShard.ts"
-import { ada, bob, branchOf, type ShardHost, shardHost } from "../../test/messagesShardHost"
+import { boundFetch } from "../../device/identity"
+import { ada, bob, branchOf, ownerIn, type ShardHost, shardHost } from "../../test/messagesShardHost"
+import { SESSION_ROUTE } from "../auth/contract"
 import { tempDirectory } from "../../test/tempDirectory"
 import * as MessagesShard from "./messagesShard"
 import { MessagesShards, MessagesWriteRefused, type ShardMessage } from "./messagesShard"
 import * as MessagesShardClient from "./messagesShardClient"
-import { MessagesShardUnavailable, nodeOf, personOwner, shardOf } from "./messagesShardClient"
-import { Message as ChatRow } from "./schema"
+import { MessagesShardUnavailable, nodeOf, shardOf } from "./messagesShardClient"
+import { ShardRow as ChatRow } from "./schema"
 
 // The browser's replica of a conversation's shard, end to end with nothing replaced: a TanStack DB collection over
 // `ShardClient`, over the HTTP transport, over ChatApi's real route (worker/chat/MessagesShardRoutes.ts `dispatch`),
@@ -23,8 +25,9 @@ const conversation = "3f2b8c1e-5d4a-4b7e-9c1d-2a6f0e8b7c5d"
 const elsewhere = "9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d"
 const ORIGIN = "https://smithers.example"
 const shard = shardOf(conversation)
-const ADA = personOwner("ada")
-const BOB = personOwner("bob")
+// The owner names ChatApi admits each person under in this conversation: digests only it can build.
+const ADA = await ownerIn(conversation, ada)
+const BOB = await ownerIn(conversation, bob)
 const files = tempDirectory("messages-shard-client-")
 
 const run = <A, E>(program: Effect.Effect<A, E, Scope.Scope>) => Effect.runPromise(Effect.scoped(program))
@@ -100,7 +103,7 @@ test("a write shows at once, the real shard sequences it, and another person's r
     const host = yield* shardHost()
     const laptop = yield* open(host, ada, nodeOf(ADA, "laptop"))
     const phone = yield* open(host, bob, nodeOf(BOB, "phone"))
-    expect(yield* SubscriptionRef.get(laptop.status)).toEqual({ state: "pending", through: 0 })
+    expect(yield* SubscriptionRef.get(laptop.status)).toMatchObject({ state: "pending", through: 0 })
     expect(yield* rowsOf(laptop)).toEqual([])
 
     const posted = yield* laptop.messages.insert(row("m1", ADA, "hello"))
@@ -110,7 +113,7 @@ test("a write shows at once, the real shard sequences it, and another person's r
     yield* posted.persisted
     expect(yield* rowsOf(laptop)).toEqual([{ ...row("m1", ADA, "hello"), hubSeq: 1 }])
     expect(yield* laptop.messages.isSynced("m1")).toBe(true)
-    expect(yield* SubscriptionRef.get(laptop.status)).toEqual({ state: "ok", through: 1 })
+    expect(yield* SubscriptionRef.get(laptop.status)).toMatchObject({ state: "ok", through: 1 })
     expect(yield* laptop.state).toMatchObject({ applied: 1, nextCommand: 1, outbox: [] })
 
     expect(yield* phone.resume).toEqual({ shard, epoch: 0, seq: 1 })
@@ -162,7 +165,7 @@ test("writes made offline stay shown and queued, and are sent once each when the
       { ...row("m1", ADA), hubSeq: 1 },
       { ...row("m2", ADA), hubSeq: 2 },
     ])
-    expect(yield* SubscriptionRef.get(laptop.status)).toEqual({ state: "ok", through: 2 })
+    expect(yield* SubscriptionRef.get(laptop.status)).toMatchObject({ state: "ok", through: 2 })
     expect((yield* laptop.state).outbox).toEqual([])
     expect((yield* host.head(conversation)).seq).toBe(2)
   })))
@@ -233,6 +236,8 @@ test("after compaction a device with a cursor pulls on, and a new or lost one re
     host.fail(rewrite(() => ({ _tag: "Resync", shard, epoch: 0, snapshotSeq: 3 })), "/pull")
     yield* laptop.resume
     yield* eventually(Effect.map(SubscriptionRef.get(laptop.status), (now) => now.through === 4))
+    // The collection commits the snapshot, then the entry after it, a turn after the sync that folded them returns.
+    yield* eventually(Effect.map(rowsOf(laptop), (rows) => rows.length === hub.chat.messages.length))
     expect(yield* rowsOf(laptop)).toEqual(hub.chat.messages)
     expect(canonicalHash(yield* laptop.chat)).toBe(hub.hash)
 
@@ -336,6 +341,13 @@ test("a write ChatApi decides against rolls back and is never sent again; a retr
     expect(yield* failureOf(yield* laptop.messages.insert(row("m1", BOB)))).toEqual(
       new MessagesShardUnavailable({ request: "submit", reason: "refused", status: 403, refusal: "author" }),
     )
+    // Where a message reads, its times and its notes' version are Postgres's to give: a page that names one is
+    // refused, and nothing is stored.
+    for (const reserved of [{ position: 0 }, { createdAt: "2000-01-01 00:00:00+00" }, { updatedAt: "2000-01-01 00:00:00+00" }, { noteVersion: 9 }]) {
+      expect(yield* failureOf(yield* laptop.messages.insert({ ...row("m1", ADA), ...reserved }))).toEqual(
+        new MessagesShardUnavailable({ request: "submit", reason: "refused", status: 403, refusal: "reserved" }),
+      )
+    }
     // A conversation that is not there.
     host.grant(() => undefined)
     expect(yield* Effect.flip(laptop.resume)).toMatchObject({ request: "pull", status: 404 })
@@ -381,7 +393,7 @@ test("a post carries what it says about the message; an update patches its metad
     const host = yield* shardHost()
     const laptop = yield* open(host, ada, nodeOf(ADA, "laptop"))
     const phone = yield* open(host, bob, nodeOf(BOB, "phone"))
-    const said = { role: "assistant", questionId: "m0", position: 3, createdAt: "2026-11-25 10:00:00+00" } as const
+    const said = { role: "assistant", questionId: "m0" } as const
     const step = (id: string, status: "running" | "done") => ({ id, kind: "step", flow: "chat/copy", status }) as const
     const stored = Effect.map(host.state(conversation), (hub) => hub.chat.messages[0])
     const head = Effect.map(host.head(conversation), (position) => position.seq)
@@ -442,11 +454,12 @@ test("a post carries what it says about the message; an update patches its metad
     expect(yield* failureOf(late)).toEqual(new MessagesWriteRefused({ reason: "refused", detail: "terminal_metadata" }))
     expect(Option.getOrThrow(yield* laptop.messages.get("a1"))).toMatchObject({ inputTokens: 5 })
     // A note is still taken.
-    yield* (yield* laptop.messages.update("a1", (draft) => {
-      draft.summary = "nothing came back"
-      draft.updatedAt = "2026-11-25 10:00:09+00"
-    })).persisted
+    yield* (yield* laptop.messages.update("a1", (draft) => void (draft.summary = "nothing came back"))).persisted
     expect(yield* head).toBe(7)
+    // When it was last written is Postgres's to say: a page's own time is refused, and rolls back.
+    expect(yield* failureOf(yield* laptop.messages.update("a1", (draft) => void (draft.updatedAt = "2026-11-25 10:00:09+00")))).toEqual(
+      new MessagesShardUnavailable({ request: "submit", reason: "refused", status: 403, refusal: "reserved" }),
+    )
 
     // The reducer has no command that changes what the post said, and the collection takes no field away.
     const unsupported = new MessagesWriteRefused({ reason: "unsupported", detail: "update" })
@@ -457,7 +470,7 @@ test("a post carries what it says about the message; an update patches its metad
 
     // Another person's replica folds the same message, and both show it as the row chat's pages read.
     yield* phone.resume
-    const noted = { ...ended, summary: "nothing came back", updatedAt: "2026-11-25 10:00:09+00" }
+    const noted = { ...ended, summary: "nothing came back" }
     expect((yield* phone.chat).messages).toEqual([noted])
     expect(canonicalHash(yield* phone.chat)).toBe((yield* host.state(conversation)).hash)
     expect(canonicalHash(yield* laptop.chat)).toBe((yield* host.state(conversation)).hash)
@@ -466,21 +479,24 @@ test("a post carries what it says about the message; an update patches its metad
       role: "assistant",
       text: "",
       status: "failed",
-      questionId: "m0",
+      // The question its post named is not read off a page's own message: only ChatApi's pair names one.
+      questionId: null,
       failure: "empty",
       modelId: "m-large",
       stopReason: "end_turn",
       inputTokens: 5,
       outputTokens: 9,
-      position: 3,
-      createdAt: "2026-11-25 10:00:00+00",
-      updatedAt: "2026-11-25 10:00:09+00",
+      // Where the shard sequenced it, and no time: only ChatApi's bridge says either.
+      position: 1,
+      createdAt: "",
+      updatedAt: "",
       conversationId: conversation,
       parts: [step("0.0", "done")],
       summary: "nothing came back",
       summaryRevision: null,
       phase: null,
       arc: null,
+      shardSeq: 1,
     }])
   })))
 
@@ -488,7 +504,7 @@ test("a shard message maps to the row chat reads, with Postgres's defaults for w
   const decode = Schema.decodeUnknownSync(ChatRow)
   const context = { conversationId: conversation }
   // A message from before the reducer carried the fields: a person's is a question, at the place it was sequenced.
-  const bare = MessagesShard.rowOf({ ...row("m1", ADA, "hello"), hubSeq: 4 }, context)
+  const bare = MessagesShard.rowOf({ ...row("m1", ADA, "hello"), hubSeq: 4 }, context, 4)
   expect(bare).toEqual({
     id: "m1",
     role: "user",
@@ -508,28 +524,33 @@ test("a shard message maps to the row chat reads, with Postgres's defaults for w
     summaryRevision: null,
     phase: null,
     arc: null,
+    shardSeq: 4,
   })
   expect(bare).not.toHaveProperty("parts")
   expect(decode(bare)).toEqual(bare)
   // A run's is an answer. A person's post may say it is one too.
-  expect(MessagesShard.rowOf(row("a1", "agent:ada:run-1:run-1"), context)).toMatchObject({ role: "assistant", position: 0 })
-  expect(MessagesShard.rowOf({ ...row("m2", ADA), role: "assistant" }, context).role).toBe("assistant")
-  expect(MessagesShard.rowOf({ ...row("m2", ADA), role: "user" }, context).role).toBe("user")
+  expect(MessagesShard.rowOf(row("a1", "agent:ada:run-1:run-1"), context, 0)).toMatchObject({ role: "assistant", position: 0 })
+  expect(MessagesShard.rowOf({ ...row("m2", ADA), role: "assistant" }, context, 0).role).toBe("assistant")
+  expect(MessagesShard.rowOf({ ...row("m2", ADA), role: "user" }, context, 0).role).toBe("user")
   // A message whose verified author is not a person never reads as a person's, whatever its post says: not a run's,
   // and not one whose name only resembles a person's.
   for (const author of ["agent:ada:run-1:run-1", "flow:ada:summary:1", "ada", "Person:ada", "xperson:ada", " person:ada", ""]) {
-    expect(MessagesShard.rowOf({ ...row("a1", author), role: "user" }, context).role, author).toBe("assistant")
+    expect(MessagesShard.rowOf({ ...row("a1", author), role: "user" }, context, 0).role, author).toBe("assistant")
     expect(MessagesShard.rowsOf({ messages: [{ ...row("a1", author), role: "user" }] }, context)[0]!.role, author).toBe("assistant")
   }
-  expect(MessagesShard.rowOf({ ...row("m2", ADA), createdAt: "t0" }, context)).toMatchObject({ createdAt: "t0", updatedAt: "t0" })
+  // A time is Postgres's, which only ChatApi's bridge says: one a shard already holds from anyone else is not read.
+  expect(MessagesShard.rowOf({ ...row("m2", ADA), createdAt: "t0", updatedAt: "t1" }, context, 0))
+    .toMatchObject({ createdAt: "", updatedAt: "" })
+  expect(MessagesShard.rowOf({ ...row("m2", questionOwner("m2")), createdAt: "t0" }, context, 0))
+    .toMatchObject({ role: "user", createdAt: "t0", updatedAt: "t0" })
   expect((["posted", "streaming", "complete", "failed"] as const).map((status) =>
-    MessagesShard.rowOf({ ...row("m3", ADA), status }, context).status
+    MessagesShard.rowOf({ ...row("m3", ADA), status }, context, 0).status
   )).toEqual(["done", "streaming", "done", "failed"])
 
   // Every field the reducer carries reaches its column.
   const full: ShardMessage = {
     id: "a2",
-    author: "agent:ada:run-1:run-1",
+    author: answerOwner("a2"),
     body: "an answer",
     status: "complete",
     hubSeq: 9,
@@ -550,10 +571,39 @@ test("a shard message maps to the row chat reads, with Postgres's defaults for w
     updatedAt: "t1",
   }
   const { author: _, body, hubSeq: __, status: ___, ...columns } = full
-  const mapped = MessagesShard.rowOf(full, context)
-  expect(mapped).toEqual({ ...columns, text: body, status: "done", conversationId: conversation })
+  const mapped = MessagesShard.rowOf(full, context, 7, "m1")
+  expect(mapped).toEqual({ ...columns, position: 7, text: body, status: "done", conversationId: conversation, shardSeq: 9 })
+  // The question an answer names is read only when its caller verified the pair: alone, a message names none.
+  expect(MessagesShard.rowOf(full, context, 7).questionId).toBeNull()
+  // `rowsOf` verifies it: the answer and the question it names are both the bridge's own posts.
+  const asked: ShardMessage = { ...row("q1", questionOwner("q1")), hubSeq: 1, role: "user", position: 40 }
+  const paired: ShardMessage = { ...row("a9", answerOwner("a9"), ""), hubSeq: 2, role: "assistant", questionId: "q1", position: 41 }
+  const pairs = (messages: ReadonlyArray<ShardMessage>) =>
+    MessagesShard.rowsOf({ messages }, context).map((mapped) => [mapped.id, mapped.questionId])
+  expect(pairs([asked, paired])).toEqual([["q1", null], ["a9", "q1"]])
+  // Whoever else names the bridge's question, a person or a run, answers nothing on the timeline.
+  const claimed: ShardMessage = { ...row("d1", ADA), hubSeq: 3, questionId: "q1" }
+  const squatted: ShardMessage = { ...row("d2", "agent:ada:run-1:run-1"), hubSeq: 4, role: "assistant", questionId: "q1" }
+  expect(pairs([asked, paired, claimed, squatted])).toEqual([["q1", null], ["a9", "q1"], ["d1", null], ["d2", null]])
+  // The bridge's answer is paired with the bridge's question only: not one a page posted, not one the shard lacks,
+  // and not when it names none.
+  expect(pairs([{ ...row("q1", ADA), hubSeq: 1 }, paired])).toEqual([["q1", null], ["a9", null]])
+  expect(pairs([paired])).toEqual([["a9", null]])
+  const { questionId: _unasked, ...unasked } = paired
+  expect(pairs([asked, unasked])).toEqual([["q1", null], ["a9", null]])
+  // Each row carries the entry that posted it.
+  expect(MessagesShard.rowsOf({ messages: [asked, paired, claimed] }, context).map((mapped) => mapped.shardSeq)).toEqual([1, 2, 3])
   expect(decode(mapped)).toEqual(mapped)
   expect(MessagesShard.rowsOf({ messages: [full, row("m1", ADA)] }, context).map((mapped) => mapped.id)).toEqual(["a2", "m1"])
+  // Rows read where `placesOf` puts them. The bridge's answer reads at Postgres's place. A post a shard already holds
+  // from a page, with a place and a time of its own choosing, reads after it, where the shard sequenced it, undated.
+  const placed = { ...full, position: 40 }
+  const backdated: ShardMessage = { ...row("d1", ADA), hubSeq: 12, position: 0, createdAt: "1999-01-01", updatedAt: "1999-01-01" }
+  expect(
+    MessagesShard.rowsOf({ messages: [placed, backdated] }, context).map(({ id, position, createdAt, updatedAt }) => [id, position, createdAt, updatedAt]),
+  ).toEqual([["a2", 40, "t0", "t1"], ["d1", 41, "", ""]])
+  // An optimistic row, which the shard has not sequenced, reads after everything the projection holds.
+  expect(MessagesShard.rowsOf({ messages: [placed, row("m9", ADA)] }, context).map((row) => row.position)).toEqual([40, 41])
   expect(MessagesShard.rowsOf(emptyChat, context)).toEqual([])
 })
 
@@ -569,7 +619,7 @@ test("entries or a snapshot the reducer cannot fold fail the pull and move nothi
       entries: (page["entries"] as ReadonlyArray<object>).map((entry) => ({ ...entry, events: [{ _tag: "Unknown" }] })),
     })), "/pull")
     expect(yield* Effect.flip(phone.resume)).toEqual(unreadable)
-    expect(yield* SubscriptionRef.get(phone.status)).toEqual({ state: "failing", through: 0 })
+    expect(yield* SubscriptionRef.get(phone.status)).toMatchObject({ state: "failing", through: 0 })
     expect(yield* phone.state).toMatchObject({ applied: 0 })
 
     host.fail(rewrite(() => ({ _tag: "Resync", shard, epoch: 0, snapshotSeq: 0 })), "/pull")
@@ -580,7 +630,7 @@ test("entries or a snapshot the reducer cannot fold fail the pull and move nothi
 
     expect(yield* phone.resume).toEqual({ shard, epoch: 0, seq: 1 })
     yield* phone.messages.awaitRow((message) => message.id === "m1", "2 seconds")
-    expect(yield* SubscriptionRef.get(phone.status)).toEqual({ state: "ok", through: 1 })
+    expect(yield* SubscriptionRef.get(phone.status)).toMatchObject({ state: "ok", through: 1 })
   })))
 
 test("an answer that names another shard is refused by the protocol, and a write waiting on it rolls back", () =>
@@ -692,22 +742,31 @@ test("MessagesShards opens one replica a conversation, over the layer's HttpClie
   run(Effect.gen(function* () {
     const host = yield* shardHost()
     const stores = new Map<string, ShardClient.ClientStore>()
+    // The page's real transport (src/main.tsx), over a `fetch` that tells each read's 401 as it arrives.
+    const denials = MessagesShardClient.readDenials()
+    const paged = boundFetch(denials.observing(host.fetchAs(ada)), { origin: ORIGIN, principal: () => ada.subject.id, reauthorize: async () => false })
     const configured = MessagesShards.layer({
       origin: ORIGIN,
       within: "2 seconds",
-      owner: ADA,
       device: "laptop",
       retry: Schedule.spaced("5 millis"),
       follow: "5 millis",
       limit: 2,
+      denials,
       storeFor: (id) => {
         const store = ShardClient.memoryStore()
         stores.set(id, store)
         return store
       },
-    }).pipe(Layer.provide(httpOf(host, ada)))
-    const defaults = MessagesShards.layer({ origin: ORIGIN, within: "2 seconds", owner: BOB, device: "phone" })
-      .pipe(Layer.provide(httpOf(host, bob)))
+    }).pipe(Layer.provide(Layer.provide(FetchHttpClient.layer, Layer.succeed(FetchHttpClient.Fetch, paged))))
+    // A tab told how to learn its name asks that; any other asks ChatApi, conversation by conversation.
+    const asked: Array<string> = []
+    const defaults = MessagesShards.layer({
+      origin: ORIGIN,
+      within: "2 seconds",
+      device: "phone",
+      ownerIn: (id) => Effect.promise(() => ownerIn(id, bob)).pipe(Effect.tap(() => Effect.sync(() => void asked.push(id)))),
+    }).pipe(Layer.provide(httpOf(host, bob)))
 
     const laptop = yield* Effect.gen(function* () {
       const shards = Context.get(yield* Layer.build(configured), MessagesShards)
@@ -725,10 +784,42 @@ test("MessagesShards opens one replica a conversation, over the layer's HttpClie
       const other = yield* shards.open(elsewhere)
       expect(other.shard).toBe(shardOf(elsewhere))
       expect([...stores.keys()]).toEqual([conversation, elsewhere])
+      // Each conversation's replica writes under the person's name in that conversation, which ChatApi told it: one
+      // request each, and two names with nothing in common.
+      expect(shards.ownerOf(conversation.toUpperCase())).toBe(ADA)
+      expect(shards.ownerOf(elsewhere)).toBe(yield* Effect.promise(() => ownerIn(elsewhere, ada)))
+      expect(shards.ownerOf(elsewhere)).not.toBe(ADA)
+      expect(host.requests.filter((request) => request.endsWith("/messages/writer"))).toEqual([
+        `GET /api/conversations/${conversation}/messages/writer`,
+        `GET /api/conversations/${elsewhere}/messages/writer`,
+      ])
+      // A write in the other conversation is admitted under its own name there.
+      const theirs = yield* Effect.promise(() => ownerIn(elsewhere, ada))
+      yield* (yield* other.messages.insert(row("e1", theirs))).persisted
+      expect((yield* host.state(elsewhere)).chat.messages.map((message) => message.author)).toEqual([theirs])
+      // A name ChatApi cannot be asked for fails the open, and the next open asks again.
+      host.fail({ status: 503 }, "/messages/writer")
+      const third = "7c7c7c7c-7c7c-4c7c-8c7c-7c7c7c7c7c7c"
+      expect(yield* Effect.flip(shards.open(third))).toMatchObject({ _tag: "MessagesShardUnavailable", request: "writer", status: 503 })
+      expect(shards.opened(third)).toBeUndefined()
+      expect(shards.ownerOf(third)).toBeUndefined()
+      const opened = yield* shards.open(third)
+      expect(opened.shard).toBe(shardOf(third))
+      // A read ChatApi answers 401 hides the conversation as the page sees the answer, though its transport, finding
+      // the session someone else's, fails the request instead of returning it; the next read ChatApi serves shows it.
+      let hidden = 0
+      yield* opened.onRefused(() => void hidden++)
+      host.fail({ status: 401 }, `/api/conversations/${third}/messages/pull`)
+      host.fail(() => Response.json({ signedIn: true, personId: "someone-else" }), SESSION_ROUTE)
+      while (hidden === 0) yield* Effect.sleep(1)
+      while (opened.refused()) yield* Effect.sleep(1)
+      while ((yield* SubscriptionRef.get(opened.status)).state !== "ok") yield* Effect.sleep(1)
+      expect(hidden).toBe(1)
       return one
     })
 
     const phone = yield* Context.get(yield* Layer.build(defaults), MessagesShards).open(conversation)
+    expect(asked).toEqual([conversation])
     yield* post(phone, BOB, ["m1", "m2", "m3"])
     expect((yield* phone.state).outbox).toEqual([])
     // The configured replica follows on its own, in pages of two, and writes from the configured node.
@@ -737,16 +828,22 @@ test("MessagesShards opens one replica a conversation, over the layer's HttpClie
     yield* post(laptop, ADA, ["m4"])
     const page = yield* (yield* MessagesShardClient.make({ origin: ORIGIN, conversationId: conversation, within: "2 seconds" })
       .pipe(Effect.provide(httpOf(host, ada)))).pull({ version: 2, shard, epoch: 0, after: 3, limit: 1 })
-    expect(page).toMatchObject({ entries: [{ key: [nodeOf(ADA, "laptop"), "0"] }] })
+    // The entry is the configured owner's, from a node and under a command id that are this conversation's own
+    // digests: neither the device's name nor the command's count is journaled.
+    if (page._tag !== "Page") throw new Error("expected a page")
+    const [journaledNode, journaledId] = page.entries[0]!.key
+    expect(journaledNode).toMatch(new RegExp(`^${ADA}/[0-9a-f]{80}$`))
+    expect(journaledId).toMatch(/^[0-9a-f]{80}$/)
+    expect(JSON.stringify(page)).not.toContain("laptop")
     expect((yield* stores.get(conversation)!.load).nextCommand).toBe(1)
   })))
 
 test("a refused insert never changes the message that stands: two devices, one author, one id", () =>
   run(Effect.gen(function* () {
     const host = yield* shardHost({ path: (id) => join(files, `conflict-${id}.sqlite`) })
-    const said = { role: "user", position: 1, createdAt: "2026-11-25 10:00:00+00" } as const
-    const first: ShardMessage = { ...row("m1", ADA, "the first draft"), ...said, summary: "the first summary", updatedAt: "t1" }
-    const second: ShardMessage = { ...row("m1", ADA, "the second draft"), ...said, summary: "the second summary", updatedAt: "t2" }
+    const said = { role: "user" } as const
+    const first: ShardMessage = { ...row("m1", ADA, "the first draft"), ...said, summary: "the first summary" }
+    const second: ShardMessage = { ...row("m1", ADA, "the second draft"), ...said, summary: "the second summary" }
     const stands = { ...first, hubSeq: 1 }
 
     const laptop = yield* open(host, ada, nodeOf(ADA, "laptop"))
@@ -766,7 +863,7 @@ test("a refused insert never changes the message that stands: two devices, one a
     expect((yield* host.state(conversation)).chat.messages).toEqual([stands])
     expect((yield* host.head(conversation)).seq).toBe(1)
     expect(yield* host.events(conversation, 0)).toEqual([[{
-      _tag: "MessagePosted", id: "m1", author: ADA, body: "the first draft", ...said, summary: "the first summary", updatedAt: "t1",
+      _tag: "MessagePosted", id: "m1", author: ADA, body: "the first draft", ...said, summary: "the first summary",
     }]])
     // The refused device rolled back to the message that stands.
     yield* tablet.messages.awaitRow((message) => message.hubSeq === 1, "2 seconds")
@@ -833,15 +930,16 @@ test("a replica of an id that is not a conversation's sends nothing, and its wri
     const host = yield* shardHost()
     const shards = Context.get(
       yield* Layer.build(
-        MessagesShards.layer({ origin: ORIGIN, within: "2 seconds", owner: ADA, device: "laptop", retry: Schedule.spaced("5 millis") })
-          .pipe(Layer.provide(httpOf(host, ada))),
+        MessagesShards.layer({
+          origin: ORIGIN, within: "2 seconds", ownerIn: () => Effect.succeed(ADA), device: "laptop", retry: Schedule.spaced("5 millis"),
+        }).pipe(Layer.provide(httpOf(host, ada))),
       ),
       MessagesShards,
     )
     for (const id of ["../admin", `${conversation}/../../admin`, `${conversation}?foo=bar`]) {
       const replica = yield* shards.open(id)
       expect(yield* Effect.flip(replica.resume)).toMatchObject({ _tag: "MessagesShardUnavailable", reason: "invalid_target" })
-      expect(yield* SubscriptionRef.get(replica.status)).toEqual({ state: "refused", through: 0 })
+      expect(yield* SubscriptionRef.get(replica.status)).toMatchObject({ state: "refused", through: 0 })
       const write = yield* replica.messages.insert(row("m1", ADA))
       expect(yield* failureOf(write)).toMatchObject({ _tag: "MessagesShardUnavailable", reason: "invalid_target" })
       expect(yield* replica.messages.get("m1")).toEqual(Option.none())

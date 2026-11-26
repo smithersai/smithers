@@ -7,7 +7,7 @@ const host: WipeHost = {
   locks: { request: ((_name: string, options: LockOptions, callback: LockGrantedCallback<unknown>) =>
     navigator.locks.request(workerData.lock, options, callback)) as LockManager["request"] },
   channel: () => new BroadcastChannel(workerData.lock),
-  marks: { getItem: unexpected, setItem: unexpected, removeItem: unexpected },
+  marks: { getItem: unexpected, setItem: unexpected, removeItem: unexpected, key: unexpected, length: 0 },
   directory: async () => unexpected(),
   indexedDB: { deleteDatabase: unexpected },
   reload: unexpected,

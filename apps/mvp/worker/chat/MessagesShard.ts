@@ -1,4 +1,5 @@
 import {
+  answerOwner as bridgeAnswerOwner,
   canonicalHash,
   type Chat,
   Chat as ChatState,
@@ -8,12 +9,16 @@ import {
   emptyChat,
   evolveChat,
   findMessage,
-  type Message
+  MAX_ADMITTED_POSITION,
+  type Message,
+  questionOwner as bridgeQuestionOwner
 } from "@smthrs/app-state"
 import { DoSqliteShard, type ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { ShardClient, ShardProtocol } from "@smthrs/sync"
+import { Interactions } from "@smthrs/views"
 import { Data, Effect, Option, Schema } from "effect"
 import { parseMark } from "../../src/features/timeline/marks.ts"
+import { FormValues } from "../../src/features/views/schema.ts"
 
 // A conversation's messages as one event-sourced SQLite shard (decision 0170, slice 3). One Durable Object sequences
 // one conversation: it assigns each accepted command the next `hubSeq` and keeps one receipt per
@@ -27,7 +32,10 @@ export const shardOf = (conversationId: string): ShardProtocol.ShardId =>
 export const readCapability = (shard: ShardProtocol.ShardId) => "messages:read:" + shard
 export const writeCapability = (shard: ShardProtocol.ShardId) => "messages:write:" + shard
 
-/** What every person's owner name starts with (MessagesShardRoutes.ts `personOwner`). A run's starts with its act's kind. */
+/**
+ * What every person's owner name starts with (MessagesShardRoutes.ts `personOwner`). A run's starts with its act's
+ * kind. What follows the prefix names nobody: it is a keyed digest, the conversation's own.
+ */
 const PERSON_OWNER_PREFIX = "person:"
 
 /** A summary as the timeline writes one (TimelineSummaries.vibe `record`): one line of 1 to 96 characters, no markup. */
@@ -35,19 +43,41 @@ const SUMMARY = /^[^\n\r<>`]{1,96}$/
 
 /**
  * Whether the notes a command carries are ones the timeline reads: a summary in its own form, and a phase and an arc
- * that each parse as a mark (src/features/timeline/marks.ts `parseMark`, which caps a mark at 512 characters).
+ * that each parse as a mark (src/features/timeline/marks.ts `parseMark`, which caps a mark at 512 characters). A patch
+ * may also carry an empty mark, which is a mark taken away: a patch replaces a note and never removes one, and the
+ * timeline reads "" as no mark at all. A post is never born with one.
  */
 const readableNotes = (payload: ChatCommand): boolean =>
   payload._tag === "UpdateMessageStatus" || payload._tag === "UpdateMessageBody" ||
   ((payload.summary === undefined || SUMMARY.test(payload.summary)) &&
-    [payload.phase, payload.arc].every((mark) => mark === undefined || Option.isSome(parseMark(mark))))
+    [payload.phase, payload.arc].every((mark) =>
+      mark === undefined || (mark === "" && payload._tag === "UpdateMessageMetadata") || Option.isSome(parseMark(mark))))
+
+const isEvent = Schema.is(Interactions.Name)
+const valuesOf = Schema.decodeUnknownOption(Schema.fromJsonString(FormValues))
+
+/**
+ * Whether what a post says of the view it was sent from is what ChatApi stores of one (worker/Chat.ts `Question`):
+ * only on a question, a view's id as Postgres prints it and an event a view can declare, and values only beside them,
+ * as the JSON text of a form's values within their size (src/features/views/schema.ts `FormValues`).
+ */
+const readableSource = (payload: Extract<ChatCommand, { readonly _tag: "PostMessage" }>): boolean => {
+  const { source, data } = payload
+  if (source === undefined) return data === undefined
+  return payload.role === "user" && BRIDGE_ID.test(source.viewId) && isEvent(source.event) &&
+    (data === undefined || Option.isSome(valuesOf(data)))
+}
 
 /**
  * Why a submit never reached the sequencer: fixed codes, safe to log and to count by. `question` is a body update to
  * a question by the person who asked it: a question says what its post said, whoever asks to change it. `reserved` is
- * a post under a message id spelled as ChatApi's are (`BRIDGE_ID`) by anyone but the bridge's writer for that message.
+ * what only ChatApi's bridge writes, from anyone else: a post under a message id spelled as ChatApi's are
+ * (`BRIDGE_ID`); a post that names the view it was sent from, which only ChatApi has checked against its view
+ * (worker/Views.ts `askFrom`); and a message's place, its times and its notes' version (`position`, `createdAt`,
+ * `updatedAt`, `noteVersion`), which are Postgres's to give. `missing` is the bridge's own write to a message the shard
+ * does not hold yet: it leaves no receipt, so the same write is taken once the message is there.
  */
-export const REFUSAL_REASONS = ["invalid", "wrong_shard", "origin", "person_only", "author", "question", "reserved"] as const
+export const REFUSAL_REASONS = ["invalid", "wrong_shard", "origin", "person_only", "author", "question", "reserved", "missing"] as const
 export type RefusalReason = (typeof REFUSAL_REASONS)[number]
 
 /**
@@ -79,11 +109,15 @@ const submitOf = Schema.decodeUnknownOption(Schema.fromJsonString(ShardProtocol.
 const payloadOf = Schema.decodeUnknownOption(ChatCommand)
 
 /**
- * Whether `body` is a submit `submit` can read: a request of the protocol whose command is one of the reducer's. The
- * Worker forwards no other body (MessagesShardRoutes.ts `dispatch`), and reads it with the decoders `submit` does.
+ * The submit `body` holds, when it is one `submit` can read: a request of the protocol whose command is one of the
+ * reducer's. The Worker forwards no other body (MessagesShardRoutes.ts `dispatch`), and reads it with the decoders
+ * `submit` does.
  */
-export const decodes = (body: string): boolean =>
-  Option.isSome(Option.flatMap(submitOf(body), (request) => payloadOf(request.command.payload)))
+export const readSubmit = (body: string): Option.Option<ShardProtocol.SubmitRequest> =>
+  Option.filter(submitOf(body), (request) => Option.isSome(payloadOf(request.command.payload)))
+
+/** The device every command of ChatApi's bridge is submitted from, under its author's owner name. */
+export const BRIDGE_DEVICE = "chatapi"
 
 /**
  * A message id in ChatApi's namespace: a UUID in lowercase, as Postgres prints one and the bridge writes one
@@ -94,19 +128,26 @@ export const decodes = (body: string): boolean =>
 const BRIDGE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /**
- * The owner name question `questionId` is written under by ChatApi's bridge: a person's, so the message reads as a
- * question (src/features/chat/messagesShard.ts `rowOf`), and no signed-in person's, whose owner name has no `:` after
- * its prefix (MessagesShardRoutes.ts `personOwner`). It names the question and nobody: two questions one person asked
- * share nothing a reader can see.
+ * The owner name question `questionId` is written under by ChatApi's bridge (`@smthrs/app-state` `questionOwner`): a
+ * person's, so the message reads as a question (src/features/chat/messagesShard.ts `rowOf`), and no signed-in
+ * person's, whose owner name has no `:` after its prefix (MessagesShardRoutes.ts `personOwner`). It names the question
+ * and nobody: two questions one person asked share nothing a reader can see.
  */
-export const questionOwner = (questionId: string): string => `${PERSON_OWNER_PREFIX}question:${questionId}`
+export const questionOwner = bridgeQuestionOwner
 
 /**
- * The owner name the pending answer `answerId` is written under by ChatApi's bridge: never a person's, so the answer
- * reads as an answer, and never a run credential's, whose kinds are `agent`, `flow`, `app` and `sandbox`
- * (worker/Actor.ts `ActKind`). It names the answer and nobody.
+ * The owner name the pending answer `answerId` is written under by ChatApi's bridge (`@smthrs/app-state`
+ * `answerOwner`): never a person's, so the answer reads as an answer, and never a run credential's, whose kinds are
+ * `agent`, `flow`, `app` and `sandbox` (worker/Actor.ts `ActKind`). It names the answer and nobody.
  */
-export const answerOwner = (answerId: string): string => `answer:${answerId}`
+export const answerOwner = bridgeAnswerOwner
+
+/**
+ * Whether `writer` is ChatApi's bridge writing message `messageId`: no route admits a person or a run under either
+ * name (MessagesShardRoutes.ts `ownerOf`).
+ */
+const bridges = (writer: Writer, messageId: string): boolean =>
+  writer.author === questionOwner(messageId) || writer.author === answerOwner(messageId)
 
 /** Folds one delivery into a projection. Each message records the `hubSeq` of the entry that posted it. */
 export const apply = (chat: Chat, delivery: ShardClient.Delivery): Chat => {
@@ -174,11 +215,16 @@ export const make = Effect.fnUntraced(function*(storage: ObjectDatabase.Storage,
     // proceeds to `decideChat`, which refuses it with a receipt. A body update to a question is refused before any
     // author is compared, the one the update claims included, and named for who tried: a run (`person_only`), or the
     // person who asked it (`question`). Only then is a body update held to the admitted writer's own name.
+    //
+    // The bridge's own update is the exception to the missing message: Postgres holds the message, so the shard will,
+    // and a receipt that said `message_missing` would answer the same note for ever. It rolls back with no receipt
+    // (`missing`), and the note sent again after its message is taken.
     decide: (command) => {
       const payload = decodeCommand(command.payload)
       if (payload._tag !== "PostMessage") {
         const owner = originOwner(command.key[0])
         const target = findMessage(chat, payload.messageId)
+        if (target === undefined && bridges({ author: owner }, payload.messageId)) throw new Refused({ reason: "missing" })
         if (payload._tag === "UpdateMessageBody") {
           if (target !== undefined && isQuestion(target)) {
             if (!owner.startsWith(PERSON_OWNER_PREFIX)) throw new Refused({ reason: "person_only" })
@@ -218,16 +264,31 @@ export const make = Effect.fnUntraced(function*(storage: ObjectDatabase.Storage,
       // An id in ChatApi's namespace is posted by the bridge's writer for that message and nobody else. No route admits
       // a person or a run under a bridge owner name (MessagesShardRoutes.ts `ownerOf`), so the refusal needs nothing
       // but the command: it is the same in every shard, before and after ChatApi stores the id.
-      if (
-        BRIDGE_ID.test(payload.messageId) &&
-        writer.author !== questionOwner(payload.messageId) && writer.author !== answerOwner(payload.messageId)
-      ) {
+      if (BRIDGE_ID.test(payload.messageId) && !bridges(writer, payload.messageId)) return "reserved"
+      // The view a question was sent from, and its values, are ChatApi's to say: it checked them against the view.
+      if ((payload.source !== undefined || payload.data !== undefined) && writer.author !== questionOwner(payload.messageId)) {
         return "reserved"
       }
       // A question is a person's own: a run, whoever it acts for, never posts a message that reads as one, even when naming someone else.
       if (payload.role === "user" && (!writer.author.startsWith(PERSON_OWNER_PREFIX) || writer.person !== undefined)) {
         return "person_only"
       }
+    }
+    // Where a message reads, when it was made and last written, and which write of its notes this is, are Postgres's:
+    // only the bridge, which read them from the committed row, says them. Anyone else's post is placed by the shard's
+    // own sequence, and nobody else backdates a row or moves it among earlier ones (`@smthrs/app-state` `placesOf`).
+    if (
+      (payload._tag === "PostMessage" || payload._tag === "UpdateMessageMetadata") &&
+      ((payload._tag === "PostMessage" && (payload.position !== undefined || payload.createdAt !== undefined)) ||
+        payload.updatedAt !== undefined || payload.noteVersion !== undefined) &&
+      !bridges(writer, payload.messageId)
+    ) {
+      return "reserved"
+    }
+    // A place past the ceiling a reader admits is no place (`@smthrs/app-state` `placeOf`): Postgres never gives one,
+    // and none is journaled, so every place a reader derives adds exactly.
+    if (payload._tag === "PostMessage" && payload.position !== undefined && payload.position > MAX_ADMITTED_POSITION) {
+      return "invalid"
     }
     // A post and a body update name who writes: only the admitted writer, never the person a run acts for, which is
     // named before any other author is. Any other name on a post is refused here. On a body update it is refused in
@@ -237,7 +298,7 @@ export const make = Effect.fnUntraced(function*(storage: ObjectDatabase.Storage,
       if (payload.author === writer.person) return "person_only"
       if (payload._tag === "PostMessage") return "author"
     }
-    if (!readableNotes(payload)) return "invalid"
+    if (!readableNotes(payload) || (payload._tag === "PostMessage" && !readableSource(payload))) return "invalid"
     return undefined
   }
 

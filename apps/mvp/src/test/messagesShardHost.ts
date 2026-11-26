@@ -1,4 +1,4 @@
-import { Effect, Scope } from "effect"
+import { Effect, Redacted, Scope } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Reactivity from "effect/reactivity/Reactivity"
 import { openStorage } from "../../../../packages/smithers/flows/platform-cloudflare/test/SqliteObjectFixture.ts"
@@ -33,6 +33,16 @@ export type NetworkFault =
   | { readonly status: number; readonly sameSession?: boolean }
   | ((answer: Response) => Response | Promise<Response>)
 
+/** The secret this host's owner names are keyed with, as ChatApi's are with its own (`Routes.OwnerSecret`). */
+export const OWNER_SECRET: Routes.OwnerSecret = Redacted.make("messages-shard-host-owner-secret")
+
+/**
+ * The owner name this host admits `actor` under in conversation `conversationId`: what ChatApi would tell a writing
+ * page, which cannot build one (worker/chat/MessagesShardRoutes.ts `ownerOf`).
+ */
+export const ownerIn = (conversationId: string, actor: Actor): Promise<string> =>
+  Effect.runPromise(Routes.ownerOf(OWNER_SECRET, conversationId, actor))
+
 export const ada: Actor = { subject: { kind: "person", id: "ada" }, role: "member" }
 export const bob: Actor = { subject: { kind: "person", id: "bob" }, role: "member" }
 
@@ -54,7 +64,13 @@ export const branchOf = (conversationId: string, over: Partial<BranchAccess> = {
  * A host of conversations' shards. Each conversation's object is made on its first request, over `:memory:` or, with
  * `path`, a SQLite file a `restart` reopens. Closed with the scope.
  */
-export const shardHost = Effect.fnUntraced(function* (options: { readonly path?: (conversationId: string) => string } = {}) {
+export const shardHost = Effect.fnUntraced(function* (
+  options: {
+    readonly path?: (conversationId: string) => string
+    /** `null`: a ChatApi with no secret to key owner names with, which admits no submit. */
+    readonly secret?: null
+  } = {},
+) {
   const scope = yield* Effect.scope
   type Live = { db: ReturnType<typeof openStorage>; handler: Effect.Success<ReturnType<typeof makeShardHandler>> }
   const objects = new Map<string, Live>()
@@ -88,6 +104,7 @@ export const shardHost = Effect.fnUntraced(function* (options: { readonly path?:
       Routes.dispatch(
         forward,
         (who, conversationId) => Effect.sync(() => access(who, conversationId)),
+        options.secret === null ? undefined : OWNER_SECRET,
       ).pipe(
         Effect.provide(actor === null ? signedOut : signedIn(actor)),
         Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),

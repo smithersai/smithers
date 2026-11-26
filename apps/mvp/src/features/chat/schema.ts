@@ -57,6 +57,14 @@ export const Message = Schema.Struct({
 })
 export type Message = typeof Message.Type
 
+/**
+ * A message row read from its conversation's messages shard (src/features/chat/messagesShardRows.ts): a `Message`,
+ * with the entry of the shard that posted it. Rows that read at one `position` are ordered by it, as the shard holds
+ * them. Kept in memory only: a row Electric delivers, and one a device stored, has none.
+ */
+export const ShardRow = Schema.Struct({ ...Message.fields, shardSeq: Schema.optional(Schema.Number) })
+export type ShardRow = typeof ShardRow.Type
+
 /** The view a question was sent from, and the event that sent it (docs/features/views.md). */
 export const Source = Schema.Struct({ viewId: Schema.String, event: Schema.String })
 export type Source = typeof Source.Type
