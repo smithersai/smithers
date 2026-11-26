@@ -10,7 +10,7 @@ import {
 } from "@smthrs/app-state"
 import { DoSqliteShard, type ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { ShardClient, ShardProtocol } from "@smthrs/sync"
-import { Effect, Schema, Semaphore } from "effect"
+import { Effect, Schema } from "effect"
 
 export const update = "plan/update"
 export const review = "plan/review"
@@ -40,10 +40,40 @@ export const make = Effect.fnUntraced(function*(
   shard: ShardProtocol.ShardId,
   credentials: Principal.Credentials
 ) {
-  const { shard: journal } = yield* DoSqliteShard.make(storage, { shard })
-  const snapshot = yield* journal.snapshot(shard)
-  let tree = apply(emptyPlanTree, { _tag: "Reset", snapshot })
-  let receipts = snapshot.state === null ? [] : [...decodeSnapshot(snapshot.state).receipts]
+  // `(headSeq, tree, receipts)` is what SQLite has committed. This shard owns `storage` exclusively (never nested
+  // inside an enclosing transaction), so staging in `beforeCommit` and publishing synchronously once
+  // `storage.transactionSync` returns keeps in-memory state strictly equal to SQLite with no cross-request lock
+  // (decision 0104).
+  let tree = emptyPlanTree
+  let receipts: Array<CauseReceipt.CauseReceipt> = []
+  let headSeq = 0
+  const staged: Array<{ readonly tree: PlanTree; readonly causes: ReadonlyArray<CauseReceipt.CauseReceipt>; readonly seq: number }> = []
+  const trackedStorage: ObjectDatabase.Storage = {
+    ...storage,
+    transactionSync: <T>(closure: () => T): T => {
+      staged.length = 0
+      try {
+        const value = storage.transactionSync(closure)
+        const committed = staged.pop()
+        if (committed !== undefined) {
+          tree = committed.tree
+          receipts.push(...committed.causes)
+          headSeq = committed.seq
+        }
+        return value
+      } finally {
+        staged.length = 0
+      }
+    }
+  }
+  const { shard: journal } = yield* DoSqliteShard.make(trackedStorage, {
+    shard,
+    beforeCommit: (entry) => {
+      const nextTree = apply(tree, { _tag: "Entries", entries: [entry], through: { shard, epoch: entry.epoch, seq: entry.seq } })
+      const causes = entry.events.map((event) => decodeEvent(event).cause)
+      staged.push({ tree: nextTree, causes, seq: entry.seq })
+    }
+  })
   const reader = yield* ShardClient.make({
     shard,
     node: "authority",
@@ -51,6 +81,7 @@ export const make = Effect.fnUntraced(function*(
     store: ShardClient.memoryStore(),
     apply: (delivery) => Effect.sync(() => {
       tree = apply(tree, delivery)
+      headSeq = delivery._tag === "Reset" ? delivery.snapshot.position.seq : delivery.through.seq
       if (delivery._tag === "Reset") {
         receipts = delivery.snapshot.state === null ? [] : [...decodeSnapshot(delivery.snapshot.state).receipts]
       } else {
@@ -62,7 +93,6 @@ export const make = Effect.fnUntraced(function*(
   })
   // Rebuild the reducer from the durable snapshot and tail before admitting requests.
   const head = yield* reader.pull
-  const lock = yield* Semaphore.make(1)
   const payload = {
     type: "object",
     properties: { command: { type: "object", properties: {}, additionalProperties: true } },
@@ -102,7 +132,7 @@ export const make = Effect.fnUntraced(function*(
     initialReceipts: receipts.map((receipt) => ({ receipt })),
     flows: [flow(update), flow(review)],
     projections: [{ name: read, title: "Plan tree", collection: "plan", capabilities: [readCapability(shard)] }],
-    persist: (requested) => lock.withPermit(Effect.gen(function*() {
+    persist: (requested) => Effect.gen(function*() {
       const event = Schema.decodeUnknownSync(PlanEvent)(requested.output)
       const current = yield* journal.head
       const commit = yield* journal.submit({
@@ -116,9 +146,7 @@ export const make = Effect.fnUntraced(function*(
         }
       }).pipe(Effect.orDie)
       if (commit._tag !== "Accepted") return yield* Effect.die(new Error("Plan journal refused its own commit"))
-      tree = evolvePlan(tree, event)
-      receipts.push(requested.cause)
-    }))
+    })
   })
   return {
     shard,
@@ -129,7 +157,7 @@ export const make = Effect.fnUntraced(function*(
     ),
     journal: { pull: journal.pull, snapshot: journal.snapshot },
     state: Effect.sync(() => ({ tree, hash: canonicalHash(tree) })),
-    compact: lock.withPermit(Effect.flatMap(journal.head, ({ seq }) => journal.compact(seq, { tree, receipts })))
+    compact: Effect.suspend(() => journal.compact(headSeq, { tree, receipts: [...receipts] }))
   }
 })
 
