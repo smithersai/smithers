@@ -30,8 +30,8 @@ import * as CloudRuns from "./CloudRuns.vibe"
 import * as TodoSession from "./flows/TodoSession.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import * as ShapeAccess from "./ShapeAccess.vibe"
-import * as RepoRuns from "./RepoRuns.ts"
-import { stillAdmitted } from "./RunAuthority.ts"
+import * as RepoRuns from "./RepoRuns.vibe"
+import { stillAdmitted } from "./RunAuthority.vibe"
 import * as RepoRoles from "./github/RepoRoles.vibe"
 import { repositoryOf } from "./github/Config.vibe"
 import { mayRead } from "./stack/Access.vibe"
@@ -117,7 +117,7 @@ export interface Engine<E, R, RS = never> {
   /** The flows whose runs render through their own schemas: the remote flows a TODO and a repository start. */
   readonly flows: ReadonlyArray<Flow.Any>
   /**
-   * Hands the request's socket, already admitted as `admission`, to run `runId`'s transcript (worker/RunContent.ts
+   * Hands the request's socket, already admitted as `admission`, to run `runId`'s transcript (worker/RunContent.vibe
    * `connect`), which rechecks it while it stays open (worker/SocketAccess.ts).
    */
   readonly transcript: (

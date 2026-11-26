@@ -21,7 +21,7 @@ import {
   REVIEWS_SHAPE_ROUTE,
 } from "../../src/features/pulls/contract.ts"
 import * as Actor from "../Actor.vibe"
-import * as RepoRuns from "../RepoRuns.ts"
+import * as RepoRuns from "../RepoRuns.vibe"
 import * as Database from "../../db/Database.ts"
 import { FlowStarter, StartUnavailable } from "../Flows.vibe"
 import * as PullRefresh from "./PullRefresh.vibe"

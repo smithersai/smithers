@@ -87,7 +87,7 @@ import * as RemoteRuns from "./RemoteRuns.vibe"
 import * as RepoApi from "./RepoApi.vibe"
 import * as RepoConfig from "./RepoConfig.vibe"
 import * as RequestBackground from "./RequestBackground.vibe"
-import * as RunContent from "./RunContent.ts"
+import * as RunContent from "./RunContent.vibe"
 import * as RunnerAdmin from "./runners/Admin.vibe"
 import * as RunnersApi from "./runners/Api.vibe"
 import * as RunnerAudit from "./runners/Audit.vibe"
@@ -305,7 +305,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // Each branch's room, `RoomObject`s ChatApi hosts (worker/BranchRooms.ts), and the people a branch can be shared
     // with: everyone who signed in, and local development's own people (docs/features/branch-workspace.md#sharing).
     const roomObjects = (yield* BranchRooms.RoomObject) as Cloudflare.DurableObject<BranchRooms.RoomObjectShape>
-    // Each run's transcript, `RunContent`s ChatApi hosts (worker/RunContent.ts, docs/features/agent-transcripts.md).
+    // Each run's transcript, `RunContent`s ChatApi hosts (worker/RunContent.vibe, docs/features/agent-transcripts.md).
     const runContents = (yield* RunContent.RunContent) as Cloudflare.DurableObject<RunContent.RunContentShape>
     const localPeople = [options.fallback, ...Object.values(options.teammates ?? {})].flatMap((person) =>
       person === undefined ? [] : [person]
@@ -379,7 +379,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       // A repository's run stops on the Durable Object that holds it (docs/features/actions.md#acts).
       repositoryRun: (runId) => executions.getByName(runId).repositoryRun().pipe(Effect.map(Option.fromNullishOr)),
       stop: (runId) => executions.getByName(runId).cancel(),
-      // A TODO run's transcript, on its own Durable Object (worker/RunContent.ts).
+      // A TODO run's transcript, on its own Durable Object (worker/RunContent.vibe).
       transcript: (runId, admission) => RunContent.connect(runContents, runId, admission)
     }, roles)
     // A repository's flows run by hand, and its runs run again (docs/features/actions.md#running-a-flow-by-hand), on the

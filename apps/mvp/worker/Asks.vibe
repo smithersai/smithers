@@ -10,7 +10,7 @@ import { FlowStarter } from "./Flows.vibe"
 import { Ask, ASK_FLOW, askExecutionId, AskId } from "./flows/Ask.vibe"
 import { repositoryOf } from "./github/Config.vibe"
 import { type Machine, machineOf, type MachineScope } from "./github/MachineWrite.vibe"
-import { rowIdOf } from "./RepoRuns.ts"
+import { rowIdOf } from "./RepoRuns.vibe"
 import { bearerOf } from "./RunCredentials.vibe"
 
 // An agent asks a person (decision 0031, docs/features/agent-status.md#addressed-waits). With a machine token holding

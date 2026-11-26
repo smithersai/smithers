@@ -1,8 +1,8 @@
-// Admission (worker/Repos.ts, docs/features/repo.md#admission) against real Postgres: the fence on the attempt's row.
+// Admission (worker/Repos.vibe, docs/features/repo.md#admission) against real Postgres: the fence on the attempt's row.
 import { Effect } from "effect"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
-import * as Repos from "./Repos.ts"
+import * as Repos from "./Repos.vibe"
 import { testFile } from "./test/harness.ts"
 
 const runtime = testFile("repo_admission_fence")

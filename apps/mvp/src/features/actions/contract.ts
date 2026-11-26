@@ -26,7 +26,11 @@ export type RunEvent = (typeof RUN_EVENTS)[number]
 export const ACTION_STATES = ["working", "done", "failed", "stopped"] as const
 export type ActionState = (typeof ACTION_STATES)[number]
 
-/** The engine's settled status, as a repository run's row holds it. */
+/**
+ * The engine's settled status, as a repository run's row holds it.
+ *
+ * @throws {never}
+ */
 export const settledState = (status: "completed" | "failed" | "cancelled"): ActionState =>
   status === "completed" ? "done" : status === "cancelled" ? "stopped" : "failed"
 

@@ -1,5 +1,4 @@
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import * as RepoFlow from "./ci/RepoFlow.vibe"
 import {
@@ -43,34 +42,37 @@ export const writes = Metric.counter("smithers_repo_run_writes", {
 })
 
 /** A repository run's row id: the version 5 UUID of its execution id. */
-export const rowIdOf = (execution: string) =>
-  Uuid.v5(REPO_RUN_NAMESPACE, execution).pipe(Effect.provide(WebCrypto.layer))
+export const rowIdOf = (execution: string) => Effect.provide(Uuid.v5(REPO_RUN_NAMESPACE, execution), WebCrypto.layer)
 
 /** Records `run` working, once: a start sent again records nothing new. Answers whether it was new. */
 export const record = (run: RepoRun) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const id = yield* rowIdOf(run.execution)
-    const rows = yield* sql<{ readonly id: string }>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const id = try rowIdOf(run.execution)
+    const rows = try sql<{ readonly id: string }>`
       INSERT INTO runs (id, flow, status, launched_by, repo_id, sha, ref, event, execution)
       VALUES (${id}::uuid, ${run.flow}, 'working', ${run.launchedBy}, ${run.repoId}, ${run.sha}, ${run.ref},
         ${run.event}, ${run.execution})
       ON CONFLICT (id) DO NOTHING
       RETURNING id::text`
     const outcome = rows.length === 1 ? "recorded" : "existing"
-    yield* Metric.update(Metric.withAttributes(writes, { op: "record", outcome }), 1)
-    yield* Effect.logInfo("repo.run.record").pipe(
-      Effect.annotateLogs({ runId: run.execution, repoId: run.repoId, flow: run.flow, event: run.event, outcome }),
-    )
+    try Metric.update(Metric.withAttributes(writes, { op: "record", outcome }), 1)
+    try annotateLogs(logInfo("repo.run.record"), {
+      runId: run.execution,
+      repoId: run.repoId,
+      flow: run.flow,
+      event: run.event,
+      outcome,
+    })
     return rows.length === 1
-  }).pipe(Effect.withSpan("repo.run.record"))
+  } |> withSpan(%, "repo.run.record")
 
 /** The commit `execution`'s row recorded, when it has one: a start sent again replays the run at it. */
-export const recordedSha = (execution: string) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql<{ readonly sha: string | null }>`SELECT sha FROM runs WHERE execution = ${execution}`).pipe(
-      Effect.map((rows) => Option.fromNullishOr(rows[0]?.sha)),
-    )
+export const recordedSha = (execution: string) => effect {
+  const sql = try SqlClient.SqlClient
+  const rows = try sql<{ readonly sha: string | null }>`SELECT sha FROM runs WHERE execution = ${execution}`
+  return Option.fromNullishOr(rows[0]?.sha)
+}
 
 /**
  * Settles `execution`'s row, if it is a repository run still working, from the engine's status of the run in
@@ -83,32 +85,35 @@ export const settle = <E, R, FE = never, FR = never>(
   execution: string,
   engine: Layer.Layer<SqlClient.SqlClient, E, R>,
   /** Whether a run the engine completed reported failure in its result: a CI run whose jobs failed. */
-  reportedFailure: Effect.Effect<boolean, FE, FR> = Effect.succeed(false),
+  reportedFailure: boolean!FE!FR = succeed(false),
 ) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const working = yield* sql<{ readonly id: string }>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const working = try sql<{ readonly id: string }>`
       SELECT id::text FROM runs WHERE execution = ${execution} AND status = 'working'`
     if (working.length === 0) return Option.none<string>()
-    const status = yield* Effect.flatMap(SqlClient.SqlClient, (engineSql) =>
-      engineSql<{ readonly status: string }>`SELECT status FROM flows_runs WHERE run_id = ${execution}`).pipe(
-        Effect.provide(engine),
-        Effect.map((rows) => rows[0]?.status),
-      )
+    const status = try (engineStatus(execution) |> Effect.provide(%, engine))
     if (status !== undefined && status !== "completed" && status !== "failed" && status !== "cancelled") {
       return Option.none<string>()
     }
     const state = status === undefined
       ? "stopped"
-      : status === "completed" && (yield* reportedFailure)
+      : status === "completed" && (try reportedFailure)
       ? "failed"
       : settledState(status)
-    yield* sql`
+    try sql`
       UPDATE runs SET status = ${state}, updated_at = now() WHERE execution = ${execution} AND status = 'working'`
-    yield* Metric.update(Metric.withAttributes(writes, { op: "settle", outcome: state }), 1)
-    yield* Effect.logInfo("repo.run.settle").pipe(Effect.annotateLogs({ runId: execution, outcome: state }))
+    try Metric.update(Metric.withAttributes(writes, { op: "settle", outcome: state }), 1)
+    try annotateLogs(logInfo("repo.run.settle"), { runId: execution, outcome: state })
     return Option.some(state)
-  }).pipe(Effect.withSpan("repo.run.settle"))
+  } |> withSpan(%, "repo.run.settle")
+
+/** The engine's status of run `execution`, if it has one. */
+const engineStatus = (execution: string) => effect {
+  const engineSql = try SqlClient.SqlClient
+  const rows = try engineSql<{ readonly status: string }>`SELECT status FROM flows_runs WHERE run_id = ${execution}`
+  return rows[0]?.status
+}
 
 /** The recorded repository association. A stop also requires the execution object's authoritative intent. */
 export interface Admitted {
@@ -119,10 +124,9 @@ export interface Admitted {
 /** A stored execution intent's repository association, never inferred from the runs projection. */
 export const repositoryIntent = (intent: { readonly flow: string; readonly executionId: string; readonly payload: unknown }) => {
   if (intent.flow !== RepoFlow.Run._tag) return Option.none<Admitted>()
-  return Schema.decodeUnknownOption(RepoFlow.RunRequest)(intent.payload).pipe(
-    Option.filter((request) => request.run === intent.executionId),
-    Option.map((request): Admitted => ({ execution: request.run, repoId: `github/${request.repo.toLowerCase()}` })),
-  )
+  return Schema.decodeUnknownOption(RepoFlow.RunRequest)(intent.payload)
+    |> Option.filter(%, (request) => request.run === intent.executionId)
+    |> Option.map(%, (request): Admitted => ({ execution: request.run, repoId: `github/${request.repo.toLowerCase()}` }))
 }
 
 /**
@@ -133,41 +137,45 @@ export const repositoryIntent = (intent: { readonly flow: string; readonly execu
 export const firstAncestor = <A, E, R, E2, R2>(
   runId: string,
   engine: Layer.Layer<SqlClient.SqlClient, E, R>,
-  found: (generation: ReadonlyArray<string>) => Effect.Effect<Option.Option<A>, E2, R2>,
+  found: (generation: ReadonlyArray<string>) => Option.Option<A>!E2!R2,
   depth = LINEAGE_DEPTH,
 ) =>
-  Effect.gen(function* () {
-    const parentsOf = (ids: ReadonlyArray<string>) =>
-      Effect.flatMap(SqlClient.SqlClient, (engineSql) =>
-        engineSql<{ readonly id: string }>`
-          SELECT parent_run_id AS id FROM flows_runs WHERE run_id IN ${engineSql.in(ids)} AND parent_run_id IS NOT NULL
-          UNION
-          SELECT parent_id AS id FROM flows_run_parents WHERE child_id IN ${engineSql.in(ids)}`).pipe(
-          Effect.provide(engine),
-          Effect.map((rows) => rows.map((row) => row.id)),
-        )
+  effect {
     const seen = new Set<string>()
     let generation: ReadonlyArray<string> = [runId]
     for (let walked = 0; generation.length > 0; walked++) {
       for (const id of generation) seen.add(id)
-      const answer = yield* found(generation)
+      const answer = try found(generation)
       if (Option.isSome(answer)) return answer
-      generation = walked === depth ? [] : (yield* parentsOf(generation)).filter((id) => !seen.has(id))
+      generation = walked === depth
+        ? []
+        : (try (parentsOf(generation) |> Effect.provide(%, engine))).filter((id) => !seen.has(id))
     }
     return Option.none<A>()
-  })
+  }
+
+/** The engine's parents of every run in `ids`. */
+const parentsOf = (ids: ReadonlyArray<string>) => effect {
+  const engineSql = try SqlClient.SqlClient
+  const rows = try engineSql<{ readonly id: string }>`
+    SELECT parent_run_id AS id FROM flows_runs WHERE run_id IN ${engineSql.in(ids)} AND parent_run_id IS NOT NULL
+    UNION
+    SELECT parent_id AS id FROM flows_run_parents WHERE child_id IN ${engineSql.in(ids)}`
+  return rows.map((row) => row.id)
+}
 
 /**
  * The recorded repository run `runId` is, or descends from (a job it started, and the runs those started); none for
  * any other run. A recorded run the engine hasn't begun is admitted as itself.
  */
 export const admit = <E, R>(runId: string, engine: Layer.Layer<SqlClient.SqlClient, E, R>, depth = LINEAGE_DEPTH) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    firstAncestor(runId, engine, (generation) =>
-      Effect.map(
-        sql<{ readonly execution: string; readonly repo_id: string }>`
-          SELECT execution, repo_id FROM runs WHERE execution IN ${sql.in(generation)} ORDER BY execution LIMIT 1`,
-        (rows) => rows[0] === undefined
-          ? Option.none<Admitted>()
-          : Option.some<Admitted>({ execution: rows[0].execution, repoId: rows[0].repo_id }),
-      ), depth))
+  effect {
+    const sql = try SqlClient.SqlClient
+    return try firstAncestor(runId, engine, (generation) => effect {
+      const rows = try sql<{ readonly execution: string; readonly repo_id: string }>`
+        SELECT execution, repo_id FROM runs WHERE execution IN ${sql.in(generation)} ORDER BY execution LIMIT 1`
+      return rows[0] === undefined
+        ? Option.none<Admitted>()
+        : Option.some<Admitted>({ execution: rows[0].execution, repoId: rows[0].repo_id })
+    }, depth)
+  }

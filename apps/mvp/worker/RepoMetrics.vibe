@@ -1,5 +1,5 @@
 import { Metric } from "effect"
-import type { Spend } from "./Repos.ts"
+import type { Spend } from "./Repos.vibe"
 
 // The repository feature's server metrics, listed with their log lines in docs/observability.md#repositories. Labels
 // carry outcomes, statuses and reasons, never a repository's files, commit messages or Code Storage's text.

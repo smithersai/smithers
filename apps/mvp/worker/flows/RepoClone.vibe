@@ -6,7 +6,7 @@ import type { SqlClient } from "effect/sql"
 import { CAPACITY_REASONS, FAILURES } from "../../src/features/repo/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as RepoMetrics from "../RepoMetrics.vibe"
-import * as Repos from "../Repos.ts"
+import * as Repos from "../Repos.vibe"
 import type { RepoUpstream } from "../RepoUpstream.vibe"
 
 // `repo/Clone { id, owner, name, cloneId, requestedAt }` (decision 0006 §1, docs/features/repo.md#the-clone): mirrors

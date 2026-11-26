@@ -306,7 +306,7 @@ export const importRules: ReadonlyArray<ImportRule> = [
       "so Cloudflare reaches them only as injected layers wired in the Worker entries (worker/ChatApi.ts with the program it imports, worker/ChatApiProgram.ts, " +
       "worker/DevChatApi.ts, worker/index.ts, worker/Executions.ts with worker/ExecutionHost.ts for remote flows, " +
       "worker/BranchSandboxes.ts for the branches' machines, worker/BranchRooms.ts for their rooms, " +
-      "worker/RunContent.ts for run transcripts, worker/AuthBroker.vibe with worker/AuthBrokerHost.vibe, and " +
+      "worker/RunContent.vibe for run transcripts, worker/AuthBroker.vibe with worker/AuthBrokerHost.vibe, and " +
       "worker/GitHubConnection.vibe with worker/GitHubConnectionHost.vibe), alchemy.run.ts and " +
       "infra/. See apps/mvp/docs/rules.md."
   },

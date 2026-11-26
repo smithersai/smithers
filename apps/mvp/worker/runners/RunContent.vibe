@@ -6,7 +6,7 @@ import type { Row } from "../../src/features/transcript/schema.ts"
 import { parseStoredUpdate } from "./TranscriptJson.ts"
 
 // A run's transcript store (decision 0141, docs/features/agent-transcripts.md#the-store): what the run's `RunContent`
-// Durable Object (worker/RunContent.ts) keeps in its own SQLite, written here over a synchronous SQL port so the same
+// Durable Object (worker/RunContent.vibe) keeps in its own SQLite, written here over a synchronous SQL port so the same
 // code runs on the object's storage and, in tests, on Node's SQLite. One object per run, so one writer: every call here
 // runs inside one object event, and nothing here awaits.
 //
@@ -173,7 +173,7 @@ export class TranscriptsUnavailable extends Schema.TaggedError<TranscriptsUnavai
 /**
  * The runs' transcripts, as the runner events route reaches them: `append` stores a job generation's events in run
  * `runId`'s transcript and answers what `append` above answers but the stored events. ChatApi provides it from the
- * `RunContent` namespace (worker/RunContent.ts).
+ * `RunContent` namespace (worker/RunContent.vibe).
  */
 export class Transcripts extends Context.Service<Transcripts, {
   readonly append: (

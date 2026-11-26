@@ -4,7 +4,7 @@ import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import type * as Actor from "./Actor.vibe"
 import * as RepoMetrics from "./RepoMetrics.vibe"
-import * as Repos from "./Repos.ts"
+import * as Repos from "./Repos.vibe"
 import { testFile } from "./test/harness.ts"
 import { repoHarness, repositoryRow, resetRepos } from "./test/repos.ts"
 

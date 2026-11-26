@@ -7,7 +7,7 @@ import * as SocketAccess from "../SocketAccess.ts"
 import * as SocketHost from "../durable/SocketHost.ts"
 import * as Store from "./RunContent.vibe"
 
-// What a run's `RunContent` Durable Object does (worker/RunContent.ts), over ports a test fills: its SQLite, its
+// What a run's `RunContent` Durable Object does (worker/RunContent.vibe), over ports a test fills: its SQLite, its
 // storage and alarm, its sockets, and the checks of who it admitted (worker/SocketAccess.ts). Each watcher's socket
 // keeps its admission and lease as its attachment. Every send reads that attachment again right before it goes: a
 // watcher dropped, past its lease or past its session's end gets nothing. A lapsed lease is renewed first, one renewal

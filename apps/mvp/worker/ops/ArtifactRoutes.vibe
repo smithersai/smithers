@@ -4,7 +4,7 @@ import { Sessions } from "../Actor.vibe"
 import * as Artifacts from "../branch/Artifacts.vibe"
 import { repositoryOf } from "../github/Config.vibe"
 import type { RepoRoles } from "../github/RepoRoles.vibe"
-import type { Admitted } from "../RepoRuns.ts"
+import type { Admitted } from "../RepoRuns.vibe"
 import * as Visibility from "./ArtifactVisibility.ts"
 
 const route = /^\/api\/repos\/([^/]+)\/([^/]+)\/artifacts\/([^/]+)\/([^/]+)$/

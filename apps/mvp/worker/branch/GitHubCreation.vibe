@@ -9,7 +9,7 @@ import { classify, statusOf, withToken } from "../github/Calls.ts"
 import * as Config from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.vibe"
 import * as Conversations from "./Conversations.vibe"
-import * as Repos from "../Repos.ts"
+import * as Repos from "../Repos.vibe"
 import { CreateRefused } from "./CreateRefused.vibe"
 
 /** Explicit, repository-selected GitHub creation; never used by the default branch flow. */

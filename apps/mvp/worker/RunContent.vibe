@@ -1,0 +1,124 @@
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import type { Transcript } from "@smthrs/agent"
+import { RuntimeContext } from "alchemy"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { SqlClient } from "effect/sql"
+import * as Store from "./runners/RunContent.vibe"
+import * as TranscriptHost from "./runners/TranscriptHost.vibe"
+import * as SocketAccess from "./SocketAccess.ts"
+import * as SocketHost from "./durable/SocketHost.ts"
+import * as SocketChecks from "./SocketChecks.vibe"
+
+// Runs' transcripts on Cloudflare (decision 0141, docs/features/agent-transcripts.md): `RunContent`, one Durable Object
+// per run, named by the run's id, keeps its external agent's transcript in its own SQLite (worker/runners/RunContent.vibe)
+// and holds the sockets of everyone watching it. The runner events route (worker/runners/Api.ts) appends through
+// `append`; ChatApi hands it each watcher's socket after checking the person may read the run
+// (worker/RemoteRuns.ts), with who it admitted (worker/SocketAccess.ts), which each socket keeps as its attachment. It
+// hibernates: an idle object bills no duration and keeps its sockets. What it does with them, its retention and its
+// rechecks, is worker/runners/TranscriptHost.vibe. Nothing here logs an event's content.
+
+/** The object's methods, as ChatApi calls them. */
+export interface RunContentShape {
+  readonly append: (
+    generation: number,
+    events: ReadonlyArray<Transcript.Event>
+  ) => { readonly next: number; readonly summary: Store.Summary }!!RuntimeContext
+}
+
+/** The `RunContent` Durable Object namespace: a run's transcript is `getByName(runId)`. */
+export class RunContent extends Cloudflare.DurableObject<RunContent, RunContentShape>()("RunContent") {}
+
+/** The object's implementation: the transcript of one run. */
+export const live = <E, R>(
+  connection: Cloudflare.Hyperdrive.Connection!E!R,
+  options: SocketChecks.Options = {}
+) =>
+  RunContent.make(effect {
+    const state = try Cloudflare.DurableObjectState
+    const checks = try SocketChecks.checker(connection, options)
+    return effect {
+      const runtime = try RuntimeContext
+      const sql: Store.Sql = {
+        exec: (query, ...bindings) =>
+          state.storage.sql.raw.exec(query, ...bindings).toArray() as ReadonlyArray<Record<string, Store.SqlValue>>
+      }
+      Store.migrate(sql)
+
+      const host = TranscriptHost.make<RuntimeContext, RuntimeContext | SqlClient.SqlClient>({
+        sql,
+        storage: state.storage,
+        sockets: provideService(state.getWebSockets(), RuntimeContext, runtime),
+        check: checks.check,
+        within: checks.within
+      })
+      // A socket from before leases is closed before this incarnation sends anything.
+      try host.restore
+
+      const append = (generation: number, events: ReadonlyArray<Transcript.Event>) =>
+        withSpan(host.append(generation, events), "run_content.append", {
+          attributes: { "smithers.transcript.generation": generation }
+        })
+
+      /** A socket ChatApi admitted: replayed from `?after=`, then live (`TranscriptHost.join`). */
+      const joinSocket = effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const url = try sync(() => new URL(request.url, "http://run"))
+        const after = Number(url.searchParams.get("after") ?? "-1")
+        const admission = SocketAccess.admissionOf(request)
+        if (!Number.isInteger(after) || after < -1 || admission === undefined) {
+          return HttpServerResponse.empty({ status: 400 })
+        }
+        // A session that ended on the way here gets nothing; nor does a person over the cap.
+        const refusal = try host.admissible(admission)
+        if (refusal !== undefined) {
+          try annotateLogs(logWarning("run_content.join"), { outcome: refusal })
+          return HttpServerResponse.empty({ status: refusal === "expired" ? 401 : 429 })
+        }
+        const [response, socket] = try (try SocketHost.RoomUpgrade)
+        const events = try host.join(socket, admission, after)
+        try annotateLogs(logInfo("run_content.join"), { after, events })
+        return response
+      }
+
+      return {
+        append,
+        fetch: joinSocket,
+        alarm: () => host.alarm,
+        // Watchers only read; anything they send is ignored.
+        webSocketMessage: () => Effect.void,
+        webSocketClose: () => Effect.void,
+        webSocketError: () => Effect.void
+      }
+    }
+  })
+
+/** The namespace as ChatApi holds it once it has bound it (`yield* RunContent`). */
+type Objects = Cloudflare.DurableObject<RunContentShape>
+
+/** ChatApi's `Transcripts` over the bound namespace, for the request that calls it. */
+export const transcriptsOver = (objects: Objects) => effect {
+  const runtime = try RuntimeContext
+  return Store.Transcripts.of({
+    append: (runId, generation, events) => effect {
+      const object = try sync(() => objects.getByName(runId))
+      provide RuntimeContext = runtime {
+        return try object.append(generation, events)
+      }
+    } |> mapError(%, () => new Store.TranscriptsUnavailable())
+  })
+}
+
+/** `Transcripts` as a layer, for the runtime that calls it. */
+export const transcriptsLayer = (objects: Objects) => Layer.effect(Store.Transcripts, transcriptsOver(objects))
+
+/**
+ * Hands run `runId`'s transcript the request's socket, which ChatApi already admitted as `admission`; `503` when it
+ * can't.
+ */
+export const connect = (objects: Objects, runId: string, admission: SocketAccess.Admission) => effect {
+  const runtime = try RuntimeContext
+  const incoming = try HttpServerRequest.HttpServerRequest
+  const request = try sync(() => SocketAccess.forward(incoming, admission))
+  const object = try sync(() => objects.getByName(runId))
+  return provideService(object.fetch(request), RuntimeContext, runtime) catch () => HttpServerResponse.empty({ status: 503 })
+}

@@ -5,7 +5,7 @@ import { SqlClient } from "effect/sql"
 import { repoId } from "../../src/features/repo/contract.ts"
 import { MAX_OPTION_LENGTH, MAX_OPTIONS, MAX_PROMPT_LENGTH, QUEUE_ASK_FLOW } from "../../src/features/status/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
-import { rowIdOf } from "../RepoRuns.ts"
+import { rowIdOf } from "../RepoRuns.vibe"
 
 // `queue/ask { repo, id, to, askedBy, prompt, options? }` (decision 0031, docs/features/agent-status.md#addressed-waits):
 // an agent with no person behind it asks one person a question, and its run waits, for days if need be, for the answer.

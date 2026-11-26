@@ -106,7 +106,11 @@ const decode = Schema.decodeUnknownOption(Admission)
 /** `admission` decoded from a value a host kept, or `undefined`. */
 export const admissionFrom = (value: unknown): Admission | undefined => Option.getOrUndefined(decode(value))
 
-/** The admission ChatApi set on a request it handed a host, or `undefined`. */
+/**
+ * The admission ChatApi set on a request it handed a host, or `undefined`.
+ *
+ * @throws {never}
+ */
 export const admissionOf = (request: HttpServerRequest.HttpServerRequest): Admission | undefined =>
   Option.getOrUndefined(decodeJson(request.headers[ADMISSION_HEADER] ?? ""))
 

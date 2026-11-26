@@ -13,7 +13,7 @@ import {
 import { type Refs, RefsListing, TreeListing } from "../src/features/repo/schema.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as RepoMetrics from "./RepoMetrics.vibe"
-import * as Repos from "./Repos.ts"
+import * as Repos from "./Repos.vibe"
 
 // Reading a cloned repository (decision 0006 §1, docs/features/repo.md#reads): one implementation for RepoApi's `GET`
 // routes and the agent's `repo/tree`, `repo/read` and `repo/refs` flows. Nothing at a commit SHA changes, so every answer

@@ -14,9 +14,9 @@ import { withToken } from "../github/Calls.ts"
 import { type GitHubApp, type Repository, repositoryOf } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.vibe"
 import * as Tokens from "../github/Tokens.vibe"
-import * as RepoRuns from "../RepoRuns.ts"
+import * as RepoRuns from "../RepoRuns.vibe"
 import * as ShapeAccess from "../ShapeAccess.vibe"
-import { stillAdmitted } from "../RunAuthority.ts"
+import { stillAdmitted } from "../RunAuthority.vibe"
 import { mayRead } from "../stack/Access.vibe"
 import * as Realm from "./Realm.vibe"
 import * as RepoFlow from "./RepoFlow.vibe"
@@ -33,7 +33,7 @@ import * as Triggers from "./Triggers.vibe"
 //                                                        commit, all of it or only the jobs that didn't pass
 //
 // GitHub is read as the App (Contents: read); a flow's inputs are read in the QuickJS realm, never by the Worker. Each
-// start is recorded as a repository run (worker/RepoRuns.ts) before it starts, under `<flow>:<id>`, so a request sent
+// start is recorded as a repository run (worker/RepoRuns.vibe) before it starts, under `<flow>:<id>`, so a request sent
 // again starts nothing new. Records carry ids, names and outcomes, never an input's value.
 
 /** Starts, by `kind` (`manual`, `retry`, `retry_failed`) and `outcome` (`started`, `existing`, or the refusal's code). */

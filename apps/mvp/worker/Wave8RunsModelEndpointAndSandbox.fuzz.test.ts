@@ -31,7 +31,7 @@ import * as ModelEndpoint from "./test/modelEndpoint.ts"
 import * as ModelSpend from "./ModelSpend.vibe"
 import * as PersonalModels from "./personal/Models.vibe"
 import * as PersonalUsage from "./personal/Usage.vibe"
-import * as RepoRuns from "./RepoRuns.ts"
+import * as RepoRuns from "./RepoRuns.vibe"
 import * as RunCredentials from "./RunCredentials.vibe"
 import * as Runs from "./Runs.vibe"
 

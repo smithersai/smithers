@@ -36,7 +36,7 @@ import * as AboutStore from "./about/Store.vibe"
 import * as RepoAbout from "./RepoAbout.vibe"
 import * as RepoMetrics from "./RepoMetrics.vibe"
 import * as RepoReads from "./RepoReads.vibe"
-import * as Repos from "./Repos.ts"
+import * as Repos from "./Repos.vibe"
 
 // RepoApi (decision 0006 §1, docs/features/repo.md#repoapi): asking for a clone, the `repositories` shape, reading a
 // cloned repository at a commit, and listing its branches and tags. ChatApi routes `/api/repos/*` and

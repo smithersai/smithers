@@ -26,7 +26,7 @@ import { accountIdOf, appKey, type ScriptedGitHub, scriptedGitHub } from "../git
 import { configured, cookie, SECRET, signInHarness } from "../test/signIn.ts"
 import * as SessionKeys from "../SessionKeys.vibe"
 import * as SessionStore from "../SessionStore.vibe"
-import * as RepoRuns from "../RepoRuns.ts"
+import * as RepoRuns from "../RepoRuns.vibe"
 import * as RemoteRuns from "../RemoteRuns.vibe"
 import { SandboxCall } from "../flows/SandboxCall.vibe"
 import { noCommands } from "../test/commands.ts"

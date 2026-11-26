@@ -123,7 +123,7 @@ export default defineConfig({
         "worker/RepoConfig.vibe",
         "worker/RepoMetrics.vibe",
         "worker/RepoReads.vibe",
-        "worker/Repos.ts",
+        "worker/Repos.vibe",
         "worker/RepoUpstream.vibe",
         "db/migrations/0007_repositories.ts",
         // A clone attempt's own id (docs/features/repo.md#the-clone).
@@ -217,12 +217,14 @@ export default defineConfig({
         "db/migrations/0035_todo_report_receipts.ts",
         // A TODO's run, watched from the browser (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare).
         "worker/RemoteRuns.vibe",
-        "worker/RunAuthority.ts",
+        "worker/RunAuthority.vibe",
+        // Its transcript object; Alchemy's declaration and WebSocket upgrade are stood in (worker/RunContent.test.ts).
+        "worker/RunContent.vibe",
         // The runs on Cloudflare a person may read, for the Runs page (docs/features/runs.md#runs-on-cloudflare).
         "worker/CloudRuns.vibe",
         "db/migrations/0036_todo_run.ts",
         // A repository's runs (docs/features/actions.md).
-        "worker/RepoRuns.ts",
+        "worker/RepoRuns.vibe",
         "db/migrations/0053_repo_runs.ts",
         // The branch workspace: branches, their conversations and terminals (docs/features/branch-workspace.md).
         "worker/BranchRooms.vibe",

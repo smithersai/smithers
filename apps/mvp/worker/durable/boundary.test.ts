@@ -7,7 +7,7 @@ import { expect, test } from "vitest"
 const DURABLE_OWNERS = new Set([
   "BranchRooms.vibe",
   "BranchSandboxes.vibe",
-  "RunContent.ts",
+  "RunContent.vibe",
   "runners/TranscriptHost.vibe",
 ])
 

@@ -8,7 +8,7 @@ import * as RepoClone from "./flows/RepoClone.vibe"
 import { statusOf } from "./github/Calls.ts"
 import * as GitHubHost from "./github/Host.vibe"
 import * as RepoReads from "./RepoReads.vibe"
-import * as Repos from "./Repos.ts"
+import * as Repos from "./Repos.vibe"
 import { RepoUpstream } from "./RepoUpstream.vibe"
 
 // The repository feature's configuration (docs/features/repo.md#configuration), read with Effect `Config` where ChatApi

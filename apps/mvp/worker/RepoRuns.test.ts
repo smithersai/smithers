@@ -1,4 +1,4 @@
-// A repository's runs' rows (worker/RepoRuns.ts) on this file's schema of the compose Postgres (`pnpm db:up`), against
+// A repository's runs' rows (worker/RepoRuns.vibe) on this file's schema of the compose Postgres (`pnpm db:up`), against
 // a real engine on a schema of its own (worker/test/flowHost.ts), which keeps its runs in the same tables the Cloudflare
 // host does: a recorded run settles from the engine's own status, and the runs it started are admitted as its own.
 import { Action, Flow, FlowRuntime, Interpreter, Sleep } from "@smthrs/flow"
@@ -8,7 +8,7 @@ import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
-import * as RepoRuns from "./RepoRuns.ts"
+import * as RepoRuns from "./RepoRuns.vibe"
 import { build } from "./test/flowHost.ts"
 import { eventually, testFile, uuid } from "./test/harness.ts"
 

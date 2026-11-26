@@ -4,7 +4,7 @@ import { GitHub } from "@smthrs/integrations"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import type { HttpClient } from "effect/http"
 import * as ReadToken from "./github/ReadToken.vibe"
-import type { Size } from "./Repos.ts"
+import type { Size } from "./Repos.vibe"
 
 // What `repo/Inspect` asks GitHub before a clone (decision 0006 "Capacity and spend"): the repository's HEAD over git's
 // smart HTTP, which needs no key and spends no REST quota, and its size from the REST API, the only place GitHub says

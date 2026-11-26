@@ -11,7 +11,7 @@ import type { SqlClient } from "effect/sql"
 import * as Cron from "./ci/Cron.vibe"
 import * as Dispatch from "./ci/Dispatch.vibe"
 import * as RepoFlow from "./ci/RepoFlow.vibe"
-import * as RepoRuns from "./RepoRuns.ts"
+import * as RepoRuns from "./RepoRuns.vibe"
 import * as Ask from "./flows/Ask.vibe"
 import * as Checks from "./flows/Checks.vibe"
 import * as HyperdrivePool from "./HyperdrivePool.vibe"
@@ -451,7 +451,7 @@ export const readDatabase = (url: string, schema: string): Layer.Layer<SqlClient
  * fails nothing: on Cloudflare it starts the window's `ops/DatabaseLoad` (`DatabaseLoad.sampler`). `settled` takes the
  * run's settlement with its execution id (`ExecutionObject.alarm`): the alarm that settles the run, and every later
  * one until it succeeds, calls it, each failure retrying with backoff, and the object forgets the run only a retention
- * window after it succeeded. On Cloudflare it settles a repository run's row (worker/RepoRuns.ts `settle`).
+ * window after it succeeded. On Cloudflare it settles a repository run's row (worker/RepoRuns.vibe `settle`).
  */
 export const make = <RS, RD, ROut, E, R, RE, RR, RA = never, RT = never>(
   storage: ExecutionObject.Storage<RS>,
