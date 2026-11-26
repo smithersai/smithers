@@ -25,7 +25,7 @@ import {
 import * as Actor from "../Actor.ts"
 import * as Flows from "../Flows.ts"
 import * as ModelSeats from "../ModelSeats.ts"
-import * as ModelTiers from "../ModelTiers.ts"
+import * as ModelTiers from "../ModelTiers.vibe"
 import * as SpendAlert from "../flows/SpendAlert.ts"
 import { SecretKeys } from "../secrets/Keys.ts"
 import { eventually, harness, PERSONAL_KEYS, recorded, testFile } from "../test/harness.ts"

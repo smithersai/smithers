@@ -80,8 +80,9 @@ export default defineConfig({
         "worker/ModelSeats.ts",
         "worker/ModelRefusal.ts",
         "db/migrations/0059_model_quota_failure.ts",
-        "worker/ModelRoles.ts",
-        "worker/ModelUsage.ts",
+        "worker/ModelRoles.vibe",
+        "worker/ModelTiers.vibe",
+        "worker/ModelUsage.vibe",
         "worker/SetModel.vibe",
         "worker/HostedModel.ts",
         "db/migrations/0004_model_roles.ts",
@@ -156,7 +157,7 @@ export default defineConfig({
         // Unknown model spend keeps its reservation; reservations expire (docs/features/model-endpoint.md#budget).
         "db/migrations/0017_model_charges.ts",
         // Model spend and its alerts to Admins (docs/features/spend-alerts.md).
-        "worker/ModelSpend.ts",
+        "worker/ModelSpend.vibe",
         "worker/SpendAlerts.vibe",
         "db/migrations/0019_spend_alerts.ts",
         // Where spend alerts go outside the app, and their receipts (docs/features/spend-alerts.md#channels).

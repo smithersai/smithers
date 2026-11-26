@@ -1,4 +1,4 @@
-// Model spend at the metered model endpoint (worker/ModelSpend.ts, docs/features/spend-alerts.md), through ChatApi's
+// Model spend at the metered model endpoint (worker/ModelSpend.vibe, docs/features/spend-alerts.md), through ChatApi's
 // routes on this file's schema of the compose Postgres. The model provider is the only scripted seam. Remote flow starts
 // go to the harness's recording `FlowStarter` unless a test gives a failing one, as the host refusing a start.
 import type { ModelEvent } from "@smthrs/model"
@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, test } from "vitest"
 import type { Actor } from "./Actor.ts"
 import * as Flows from "./Flows.ts"
 import * as SpendAlert from "./flows/SpendAlert.ts"
-import * as ModelSpend from "./ModelSpend.ts"
+import * as ModelSpend from "./ModelSpend.vibe"
 import { delta, harness, stop, testFile } from "./test/harness.ts"
 
 const runtime = testFile("model_spend")

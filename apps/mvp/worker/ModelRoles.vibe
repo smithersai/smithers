@@ -112,20 +112,22 @@ const decodeRecord = Schema.decodeUnknownEffect(ModelRecord)
 export const summaryModel = Config.option(Config.schema(Schema.fromJsonString(ModelRecord), "SUMMARY_MODEL"))
 
 /** A role's record as the role resolves it: built with the key the Worker holds, and the effort it sets. */
-const fromRecord = (source: Resolved["source"], record: ModelRecord) =>
-  Effect.map(HostModel.make(hostRecord(record)), (built): Resolved => ({
+const fromRecord = (source: Resolved["source"], record: ModelRecord) => effect {
+  const built = try HostModel.make(hostRecord(record))
+  const resolved: Resolved = {
     source,
     modelId: built.modelId,
     model: built.model,
     ...(record.reasoningEffort === undefined ? {} : { reasoningEffort: record.reasoningEffort }),
-  }))
+  }
+  return resolved
+}
 
 /** The deployment default is captured as a seat result so missing credentials leave other Worker routes available. */
-export const defaultModel = Config.schema(Schema.fromJsonString(ModelRecord), "CHAT_MODEL").pipe(
-  Config.withDefault(DEFAULT_CHAT_MODEL),
-  Effect.mapError(() => new HostModelUnusable({ reason: "config" })),
-  Effect.flatMap((record) => fromRecord("default", record)),
-)
+export const defaultModel = Config.schema(Schema.fromJsonString(ModelRecord), "CHAT_MODEL")
+  |> Config.withDefault(%, DEFAULT_CHAT_MODEL)
+  |> mapError(%, () => new HostModelUnusable({ reason: "config" }))
+  |> flatMap(%, (record) => fromRecord("default", record))
 
 /**
  * The model `role` uses, on `tier`: its `model_roles` row, built with the key the Worker holds; else `SUMMARY_MODEL` for
@@ -134,35 +136,36 @@ export const defaultModel = Config.schema(Schema.fromJsonString(ModelRecord), "C
  * the planner's reason (`invalid` for a row that isn't a record, `unconfigured` for a summary role with nothing to
  * answer it, `config` for a default that doesn't parse). `defaults` are those captured when the endpoint built.
  */
-export const resolve = (role: ModelRole, tier: ModelTier, defaults: Defaults) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const rowOf = (name: ModelRole) =>
-      Effect.map(sql<{ readonly model: unknown }>`SELECT model FROM model_roles WHERE role = ${name}`, ([found]) => found)
-    const setting = (row: { readonly model: unknown }) =>
-      decodeRecord(row.model).pipe(
-        Effect.mapError(() => new HostModelUnusable({ reason: "invalid" })),
-        Effect.flatMap((record) => fromRecord("setting", record)),
-      )
-    const own = yield* rowOf(role)
-    if (own !== undefined) return yield* setting(own)
-    if (role === "summary") {
-      if (Result.isFailure(defaults.summary)) return yield* defaults.summary.failure
-      if (Option.isSome(defaults.summary.success)) return yield* fromRecord("default", defaults.summary.success.value)
-    }
-    if (Result.isFailure(defaults.tiers)) return yield* defaults.tiers.failure
-    const tiered = Option.flatMap(defaults.tiers.success, (tiers) => Option.fromNullishOr(tiers[tier]))
-    if (Option.isSome(tiered)) return yield* fromRecord("default", tiered.value)
-    const parent = INHERITS[role]
-    const inherited = parent === undefined ? undefined : yield* rowOf(parent)
-    if (inherited !== undefined) return yield* setting(inherited)
-    // The summary and coding roles require explicitly configured models.
-    if (role === "summary" || role === "coding") return yield* new HostModelUnusable({ reason: "unconfigured" })
-    if (defaults.fallback !== undefined) return yield* Effect.fromResult(defaults.fallback)
-    const fallback = yield* Effect.serviceOption(HostModel)
-    if (Option.isNone(fallback)) return yield* new HostModelUnusable({ reason: "unconfigured" })
-    return { source: "default", modelId: fallback.value.modelId, model: fallback.value.model } satisfies Resolved
-  })
+export const resolve = (role: ModelRole, tier: ModelTier, defaults: Defaults) => effect {
+  const sql = try SqlClient.SqlClient
+  const rowOf = effect (name: ModelRole) => {
+    const [found] = try sql<{ readonly model: unknown }>`SELECT model FROM model_roles WHERE role = ${name}`
+    return found
+  }
+  const setting = effect (row: { readonly model: unknown }) => {
+    const record = try (decodeRecord(row.model) |> mapError(%, () => new HostModelUnusable({ reason: "invalid" })))
+    return try fromRecord("setting", record)
+  }
+
+  const own = try rowOf(role)
+  if (own !== undefined) return try setting(own)
+  if (role === "summary") {
+    if (Result.isFailure(defaults.summary)) throw defaults.summary.failure
+    if (Option.isSome(defaults.summary.success)) return try fromRecord("default", defaults.summary.success.value)
+  }
+  if (Result.isFailure(defaults.tiers)) throw defaults.tiers.failure
+  const tiered = Option.flatMap(defaults.tiers.success, (tiers) => Option.fromNullishOr(tiers[tier]))
+  if (Option.isSome(tiered)) return try fromRecord("default", tiered.value)
+  const parent = INHERITS[role]
+  const inherited = parent === undefined ? undefined : try rowOf(parent)
+  if (inherited !== undefined) return try setting(inherited)
+  // The summary and coding roles require explicitly configured models.
+  if (role === "summary" || role === "coding") throw new HostModelUnusable({ reason: "unconfigured" })
+  if (defaults.fallback !== undefined) return try fromResult(defaults.fallback)
+  const fallback = try serviceOption(HostModel)
+  if (Option.isNone(fallback)) throw new HostModelUnusable({ reason: "unconfigured" })
+  return { source: "default", modelId: fallback.value.modelId, model: fallback.value.model } satisfies Resolved
+}
 
 /**
  * Sets `role`'s model and records the change, in one transaction. `invocationKey` names the step that made the change,
@@ -171,23 +174,20 @@ export const resolve = (role: ModelRole, tier: ModelTier, defaults: Defaults) =>
 export const set = (
   change: { readonly role: ModelRole; readonly model: ModelRecord },
   by: { readonly actorId: string; readonly invocationKey: string },
-) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const model = JSON.stringify(change.model)
-    yield* sql.withTransaction(
-      Effect.gen(function* () {
-        const inserted = yield* sql`
-          INSERT INTO model_role_changes (invocation_key, role, model, changed_by)
-          VALUES (${by.invocationKey}, ${change.role}, ${model}::jsonb, ${by.actorId})
-          ON CONFLICT (invocation_key) DO NOTHING
-          RETURNING invocation_key`
-        if (inserted.length === 0) return
-        yield* sql`
-          INSERT INTO model_roles (role, model, updated_by, updated_at)
-          VALUES (${change.role}, ${model}::jsonb, ${by.actorId}, now())
-          ON CONFLICT (role) DO UPDATE SET model = EXCLUDED.model, updated_by = EXCLUDED.updated_by,
-            updated_at = EXCLUDED.updated_at`
-      }),
-    )
+) => effect {
+  const sql = try SqlClient.SqlClient
+  const model = JSON.stringify(change.model)
+  try sql.withTransaction(effect {
+    const inserted = try sql`
+      INSERT INTO model_role_changes (invocation_key, role, model, changed_by)
+      VALUES (${by.invocationKey}, ${change.role}, ${model}::jsonb, ${by.actorId})
+      ON CONFLICT (invocation_key) DO NOTHING
+      RETURNING invocation_key`
+    if (inserted.length === 0) return
+    try sql`
+      INSERT INTO model_roles (role, model, updated_by, updated_at)
+      VALUES (${change.role}, ${model}::jsonb, ${by.actorId}, now())
+      ON CONFLICT (role) DO UPDATE SET model = EXCLUDED.model, updated_by = EXCLUDED.updated_by,
+        updated_at = EXCLUDED.updated_at`
   })
+}

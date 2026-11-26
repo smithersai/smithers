@@ -4,7 +4,7 @@ import { identity } from "effect/Function"
 import type { SqlClient } from "effect/sql"
 import { type Actor, CurrentActor } from "./Actor.ts"
 import { codeOf } from "./ErrorCode.ts"
-import * as ModelRoles from "./ModelRoles.ts"
+import * as ModelRoles from "./ModelRoles.vibe"
 
 // `admin/SetModel { role, model }` (docs/features/model-endpoint.md#roles): an admin sets which model answers a role.
 // The setting is a `model_roles` row, read on every call, so the next call uses it; the change is recorded in

@@ -1,8 +1,9 @@
-// Each role's tier and effort (worker/ModelTiers.ts, decision 0107): which turns are heavy, and which effort wins.
+// Each role's tier and effort (worker/ModelTiers.vibe, decision 0107): which turns are heavy, and which effort wins.
 // The endpoint's use of them, on real routes, is in worker/personal/PersonalModels.test.ts and worker/ModelEndpoint.test.ts.
 import { ModelRequest } from "@smthrs/model"
+import { ConfigProvider, Effect } from "effect"
 import { describe, expect, test } from "vitest"
-import { acceptsEffort, effortOf, heavy, ROLE_TIERS } from "./ModelTiers.ts"
+import { acceptsEffort, effortOf, heavy, ROLE_TIERS, roleTiers } from "./ModelTiers.vibe"
 
 const request = (messages: ReadonlyArray<ModelRequest.Message>, reasoningEffort?: ModelRequest.ReasoningEffort) =>
   ModelRequest.ModelRequest.make({
@@ -57,4 +58,13 @@ describe("effortOf", () => {
     // A record's effort is its author's choice for that model: it stands.
     expect(effortOf(ROLE_TIERS.judge, request([user]), "gpt-4.1-mini", "none")).toBe("none")
   })
+})
+
+test("a configured role tier replaces only that role's default and its effort", async () => {
+  const config = ConfigProvider.fromUnknown({
+    MODEL_ROLE_TIERS: JSON.stringify({ agent: { tier: "implement", reasoningEffort: "low" } }),
+  })
+  const routes = await Effect.runPromise(Effect.provideService(roleTiers, ConfigProvider.ConfigProvider, config))
+
+  expect(routes).toEqual({ ...ROLE_TIERS, agent: { tier: "implement", reasoningEffort: "low" } })
 })

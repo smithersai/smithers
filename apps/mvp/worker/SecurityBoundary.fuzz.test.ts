@@ -13,7 +13,7 @@ import * as SessionKeys from "./SessionKeys.vibe"
 import * as Throttle from "./Throttle.vibe"
 import { internalNames } from "../src/features/chat/productWords.ts"
 import * as ModelRefusal from "./ModelRefusal.ts"
-import * as ModelTiers from "./ModelTiers.ts"
+import * as ModelTiers from "./ModelTiers.vibe"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "150"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261123")

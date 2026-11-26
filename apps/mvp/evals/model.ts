@@ -1,6 +1,6 @@
 import { HostModel } from "@smthrs/model-host"
 import { Effect } from "effect"
-import { DEFAULT_CHAT_MODEL } from "../worker/ModelRoles.ts"
+import { DEFAULT_CHAT_MODEL } from "../worker/ModelRoles.vibe"
 
 /**
  * The deployment's default model, as ChatApi builds it: `CHAT_MODEL` and its key from the environment. Its provider

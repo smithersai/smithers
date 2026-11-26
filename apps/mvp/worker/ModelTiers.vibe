@@ -118,7 +118,10 @@ export const effortFor = (
   record?: ModelRequest.ReasoningEffort,
 ): Effect.Effect<ModelRequest.ReasoningEffort | undefined> => {
   const effort = effortOf(route, request, modelId, record)
-  if (record !== undefined || hintOf(route, request) === undefined) return Effect.succeed(effort)
+  if (record !== undefined || hintOf(route, request) === undefined) return succeed(effort)
   const outcome = acceptsEffort(modelId) ? "sent" : "dropped"
-  return Effect.as(Metric.update(Metric.withAttributes(effortHints, { role, outcome }), 1), effort)
+  return effect {
+    try Metric.update(Metric.withAttributes(effortHints, { role, outcome }), 1)
+    return effort
+  }
 }

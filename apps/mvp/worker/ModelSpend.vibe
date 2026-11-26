@@ -1,5 +1,6 @@
 import { type ModelProxy, Pricing } from "@smthrs/model"
 import { Config, Duration, Effect, Metric, Schema } from "effect"
+import { identity } from "effect/Function"
 import type { ModelRole } from "../src/features/model/contract.ts"
 import * as Flows from "./Flows.ts"
 import * as SpendAlert from "./flows/SpendAlert.ts"
@@ -29,25 +30,22 @@ export const usd = Metric.counter("smithers_model_spend_usd", {
  * estimated cost (`@smthrs/model`'s `Pricing.cost`: the provider's own charge when it reported one), and both counters.
  * A call whose model reported no tokens and no cost records nothing.
  */
-export const record = (role: ModelRole, end: Pick<ModelProxy.End, "invocationId" | "modelId" | "usage">) =>
-  Effect.gen(function* () {
-    const { inputTokens, outputTokens } = end.usage
-    const reported = (inputTokens ?? 0) + (outputTokens ?? 0)
-    const cost = Pricing.cost(end.usage, end.modelId)
-    if (reported === 0 && cost === undefined) return
-    const attributes = { role, model: end.modelId }
-    yield* Metric.update(Metric.withAttributes(tokens, attributes), reported)
-    if (cost !== undefined) yield* Metric.update(Metric.withAttributes(usd, attributes), cost.costUsd)
-    yield* Effect.logInfo("model.spend").pipe(
-      Effect.annotateLogs({
-        role,
-        modelId: end.modelId,
-        invocationId: end.invocationId,
-        tokens: reported,
-        ...(cost === undefined ? {} : { costUsd: cost.costUsd, costSource: cost.costSource }),
-      }),
-    )
+export const record = (role: ModelRole, end: Pick<ModelProxy.End, "invocationId" | "modelId" | "usage">) => effect {
+  const { inputTokens, outputTokens } = end.usage
+  const reported = (inputTokens ?? 0) + (outputTokens ?? 0)
+  const cost = try orDie(Effect.try({ try: () => Pricing.cost(end.usage, end.modelId), catch: identity }))
+  if (reported === 0 && cost === undefined) return
+  const attributes = { role, model: end.modelId }
+  try Metric.update(Metric.withAttributes(tokens, attributes), reported)
+  if (cost !== undefined) try Metric.update(Metric.withAttributes(usd, attributes), cost.costUsd)
+  try annotateLogs(logInfo("model.spend"), {
+    role,
+    modelId: end.modelId,
+    invocationId: end.invocationId,
+    tokens: reported,
+    ...(cost === undefined ? {} : { costUsd: cost.costUsd, costSource: cost.costSource }),
   })
+}
 
 /** An alert window: at least a second, and finite. */
 const Window = Schema.DurationFromString.check(
@@ -67,12 +65,11 @@ export interface AlertSettings {
  * all day, passes `false`) and `MODEL_SPEND_ALERT_WINDOW` (a duration of at least a second, {@link ALERT_WINDOW}
  * unset).
  */
-export const settings = (defaults: { readonly on?: boolean } = {}) =>
-  Effect.gen(function* () {
-    const on = yield* Config.Boolean("MODEL_SPEND_ALERTS").pipe(Config.withDefault(defaults.on ?? true))
-    const window = yield* Config.schema(Window, "MODEL_SPEND_ALERT_WINDOW").pipe(Config.withDefault(ALERT_WINDOW))
-    return { on, window } satisfies AlertSettings
-  })
+export const settings = (defaults: { readonly on?: boolean } = {}) => effect {
+  const on = try (Config.Boolean("MODEL_SPEND_ALERTS") |> Config.withDefault(%, defaults.on ?? true))
+  const window = try (Config.schema(Window, "MODEL_SPEND_ALERT_WINDOW") |> Config.withDefault(%, ALERT_WINDOW))
+  return { on, window } satisfies AlertSettings
+}
 
 /**
  * Returns what each admitted call runs: it starts the current window's `ops/SpendAlert` through `FlowStarter`, once
@@ -82,19 +79,16 @@ export const settings = (defaults: { readonly on?: boolean } = {}) =>
  * the call itself goes on. With alerts off, it does nothing.
  */
 export const alerter = (alerting: AlertSettings, budget: number) =>
-  Effect.map(
-    Flows.startEachWindow(
-      alerting.window,
-      (window) => ({
-        flow: SpendAlert.SpendAlert,
-        executionId: SpendAlert.executionId(window),
-        payload: { ...window, budget },
-      }),
-      (errorCode) =>
-        Effect.andThen(
-          Metric.update(Metric.withAttributes(SpendAlert.alerts, { outcome: "not_started" }), 1),
-          Effect.logError("model.spend.alert").pipe(Effect.annotateLogs({ outcome: "not_started", errorCode })),
-        ),
-    ),
-    (start): Effect.Effect<void, never, Flows.FlowStarter> => (alerting.on ? start : Effect.void),
+  Flows.startEachWindow(
+    alerting.window,
+    (window) => ({
+      flow: SpendAlert.SpendAlert,
+      executionId: SpendAlert.executionId(window),
+      payload: { ...window, budget },
+    }),
+    effect (errorCode) => {
+      try Metric.update(Metric.withAttributes(SpendAlert.alerts, { outcome: "not_started" }), 1)
+      try annotateLogs(logError("model.spend.alert"), { outcome: "not_started", errorCode })
+    },
   )
+  |> map(%, (start): Effect.Effect<void, never, Flows.FlowStarter> => (alerting.on ? start : Effect.void))

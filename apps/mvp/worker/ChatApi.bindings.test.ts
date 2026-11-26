@@ -16,7 +16,7 @@ import * as Electric from "../infra/Electric.ts"
 import * as Secrets from "../infra/Secrets.ts"
 import * as SignIn from "../infra/SignIn.ts"
 import ChatApi from "./ChatApi.ts"
-import { DEFAULT_CHAT_MODEL } from "./ModelRoles.ts"
+import { DEFAULT_CHAT_MODEL } from "./ModelRoles.vibe"
 
 /** The Workers whose settings ChatApi's Worker carries: ChatApi and the Durable Objects it hosts. */
 const HOSTED = ["ChatApi", "FlowExecution", "SandboxObject"]

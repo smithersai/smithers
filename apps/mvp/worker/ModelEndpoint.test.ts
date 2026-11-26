@@ -3,9 +3,9 @@
 // default model is a scripted `Model` (worker/test/harness.ts), and a model an admin sets is a real HostModel reaching
 // a scripted provider on loopback HTTP. `admin/SetModel` runs on the Node host (worker/test/flowHost.ts).
 import { Model, ModelError, type ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
-import { HostModel } from "@smthrs/model-host"
+import { HostModel, HostModelUnusable } from "@smthrs/model-host"
 import { Action, FlowRuntime } from "@smthrs/flow"
-import { Option, Cause, ConfigProvider, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Redacted, Schema, Scope, Stream } from "effect"
+import { Option, Cause, ConfigProvider, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Redacted, Result, Schema, Scope, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http"
@@ -17,10 +17,10 @@ import { type Actor, CurrentActor, Sessions, SessionsUnavailable } from "./Actor
 import * as Flows from "./Flows.ts"
 import * as HostedModel from "./HostedModel.ts"
 import * as ModelSeats from "./ModelSeats.ts"
-import * as ModelSpend from "./ModelSpend.ts"
-import * as ModelRoles from "./ModelRoles.ts"
-import * as ModelTiers from "./ModelTiers.ts"
-import * as ModelUsage from "./ModelUsage.ts"
+import * as ModelSpend from "./ModelSpend.vibe"
+import * as ModelRoles from "./ModelRoles.vibe"
+import * as ModelTiers from "./ModelTiers.vibe"
+import * as ModelUsage from "./ModelUsage.vibe"
 import { PersonalModels } from "./personal/Models.ts"
 import * as SetModel from "./SetModel.vibe"
 import * as SpendAlert from "./flows/SpendAlert.ts"
@@ -575,13 +575,38 @@ describe("roles", () => {
     expect(recorded(h)).not.toContain("private question")
   })
 
-  test("a role with no setting uses the deployment's default model", async () => {
+  test.each(["renderer", "plan"] as const)("uses the deployment default for %s when no setting applies", async (role) => {
     const h = await harness(runtime, answering, { actor: member, modelId: "default-model" })
 
-    await call(h, ask("hi"), "renderer")
-
+    expect((await call(h, ask("hi"), role)).status).toBe(200)
     expect(h.requests[0]!.modelId).toBe("default-model")
-    expect(h.only("model.proxy.serve").annotations).toMatchObject({ role: "renderer", modelId: "default-model" })
+    expect(h.only("model.proxy.serve").annotations).toMatchObject({ role, modelId: "default-model" })
+  })
+
+  test("reads the HostModel service when no captured fallback was supplied", async () => {
+    const resolve = ModelRoles.resolve("renderer", "fast", {
+      summary: Result.succeed(Option.none()),
+      tiers: Result.succeed(Option.none()),
+    })
+    expect(await runtime.runPromise(Effect.result(resolve))).toEqual(
+      Result.fail(new HostModelUnusable({ reason: "unconfigured" })),
+    )
+
+    const model = Model.make({ stream: answering })
+    const host = HostModel.of({ modelId: "runtime-default", model, route: { prepare: () => Effect.die("unused") } })
+    expect(await runtime.runPromise(Effect.provideService(resolve, HostModel, host))).toEqual({
+      source: "default",
+      modelId: "runtime-default",
+      model,
+    })
+  })
+
+  test("malformed CHAT_MODEL is recorded as unusable configuration", async () => {
+    const config = ConfigProvider.fromUnknown({ CHAT_MODEL: "not JSON" })
+    const model = ModelRoles.defaultModel.pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
+    expect(await Effect.runPromise(Effect.result(model))).toEqual(
+      Result.fail(new HostModelUnusable({ reason: "config" })),
+    )
   })
 
   test("a role change made by admin/SetModel applies on the next call, with no deploy", async () => {

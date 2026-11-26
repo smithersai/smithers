@@ -6,7 +6,7 @@ import type { ModelRole } from "../../src/features/model/contract.ts"
 import { canAsk, Sessions } from "../Actor.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as ModelSeats from "../ModelSeats.ts"
-import * as ModelSpend from "../ModelSpend.ts"
+import * as ModelSpend from "../ModelSpend.vibe"
 import type * as PersonalUsage from "../personal/Usage.ts"
 
 /**

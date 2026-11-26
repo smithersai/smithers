@@ -1,5 +1,5 @@
 import { ConfiguredModel } from '@smthrs/rpc'
-import { DEFAULT_CHAT_MODEL } from '../worker/ModelRoles.ts'
+import { DEFAULT_CHAT_MODEL } from '../worker/ModelRoles.vibe'
 import { provider } from '../bench/cerebras-load/providers.ts'
 
 /** Keep the real refusal test on the selected route, including custom credential origin pinning. */
