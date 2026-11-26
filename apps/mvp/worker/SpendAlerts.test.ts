@@ -9,7 +9,7 @@ import * as TestDatabase from "../db/TestDatabase.ts"
 import { SPEND_ALERT_COLUMNS } from "../src/features/spend/contract.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "./Actor.ts"
 import * as SpendAlert from "./flows/SpendAlert.ts"
-import * as SpendAlerts from "./SpendAlerts.ts"
+import * as SpendAlerts from "./SpendAlerts.vibe"
 import { runFlow } from "./test/flowHost.ts"
 import { delta, eventually, harness, stop, testFile, usage } from "./test/harness.ts"
 

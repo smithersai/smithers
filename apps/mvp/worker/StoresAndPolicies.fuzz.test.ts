@@ -21,7 +21,7 @@ import * as RunnersFence from "./runners/Fence.ts"
 import * as RunnersOverflow from "./runners/Overflow.ts"
 import * as RunnersStore from "./runners/Store.ts"
 import * as SessionStore from "./SessionStore.ts"
-import * as SetModel from "./SetModel.ts"
+import * as SetModel from "./SetModel.vibe"
 import * as SocketAccess from "./SocketAccess.ts"
 import * as WriteAuthority from "./WriteAuthority.ts"
 

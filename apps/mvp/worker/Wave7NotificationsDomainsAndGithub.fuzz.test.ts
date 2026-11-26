@@ -17,7 +17,7 @@ import * as TreeScope from "./github/TreeScope.ts"
 import * as HostedModel from "./HostedModel.ts"
 import * as ModelRoles from "./ModelRoles.ts"
 import * as Notifications from "./Notifications.ts"
-import * as SetModel from "./SetModel.ts"
+import * as SetModel from "./SetModel.vibe"
 import * as WriteAuthority from "./WriteAuthority.ts"
 
 const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")

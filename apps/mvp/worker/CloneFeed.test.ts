@@ -1,11 +1,11 @@
-// A clone in its asker's feed (worker/CloneFeed.ts), folded straight from rows written by hand over this file's schema
+// A clone in its asker's feed (worker/CloneFeed.vibe), folded straight from rows written by hand over this file's schema
 // of the compose Postgres: what the fold does with a row no request names and with a row from before the stages.
 // The fold through the clone's own steps is in worker/flows/RepoClone.test.ts.
 import { Effect } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import { cloneSubject } from "../src/features/repo/contract.ts"
-import * as CloneFeed from "./CloneFeed.ts"
+import * as CloneFeed from "./CloneFeed.vibe"
 import { testFile } from "./test/harness.ts"
 import { notificationRow, resetRepos } from "./test/repos.ts"
 

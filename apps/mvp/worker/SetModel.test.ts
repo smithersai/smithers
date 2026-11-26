@@ -1,10 +1,10 @@
-// admin/SetModel's step (worker/SetModel.ts) on its own, for what a flow run can't reach: a runtime that gives no
+// admin/SetModel's step (worker/SetModel.vibe) on its own, for what a flow run can't reach: a runtime that gives no
 // invocation key, and a database that refuses. Its runs on the Node host are in worker/ModelEndpoint.test.ts.
 import { Cause, Effect, Exit, Layer, Logger, Redacted } from "effect"
 import { describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
 import { type Actor, CurrentActor } from "./Actor.ts"
-import * as SetModel from "./SetModel.ts"
+import * as SetModel from "./SetModel.vibe"
 import { runFlow } from "./test/flowHost.ts"
 
 const admin: Actor = { subject: { kind: "person", id: "person-admin" }, role: "admin" }

@@ -34,7 +34,7 @@ import * as SandboxCallFlow from "./flows/SandboxCall.ts"
 import * as SpendAlertFlow from "./flows/SpendAlert.ts"
 import * as GitHubTokens from "./github/Tokens.ts"
 import * as Pins from "./Pins.ts"
-import * as WebPreview from "./WebPreview.ts"
+import * as WebPreview from "./WebPreview.vibe"
 
 const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")
 const execs = Math.max(20, Math.min(Math.ceil(baseExecs / 3), 50))
@@ -389,7 +389,7 @@ describe("Wave8: worker/ci/Realm.ts & worker/ci/RepoFlow.ts", () => {
   }, 90_000)
 })
 
-describe("Wave8: worker/AlertChannels.ts, worker/Pins.ts, worker/WebPreview.ts", () => {
+describe("Wave8: worker/AlertChannels.ts, worker/Pins.ts, worker/WebPreview.vibe", () => {
   it("fuzzes AlertChannels destinationsOf, destinationOf, channelsConfig, set route, and admin shapes", async () => {
     const modeArb = Arbitrary.schema(
       Schema.Literals([

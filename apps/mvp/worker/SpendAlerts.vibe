@@ -1,5 +1,4 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
-import { Effect, Metric } from "effect"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
 import { SPEND_ALERT_COLUMNS, SPEND_ALERTS_TABLE } from "../src/features/spend/contract.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
@@ -21,11 +20,11 @@ const ADMINS = "admin"
  * person with the Admin role; signed out, or any other role, 403; sessions unreadable, 503
  * (worker/ShapeAccess.ts). Each request is a `spend.alerts.shape` line and a count.
  */
-export const make = Effect.gen(function* () {
-  const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+export const make = effect {
+  const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
   return ShapeProxy.make({
     ...connection,
-    shape: Effect.as(ShapeAccess.admin, {
+    shape: as(ShapeAccess.admin, {
       table: SPEND_ALERTS_TABLE,
       where: "audience = $1",
       params: {
@@ -36,4 +35,4 @@ export const make = Effect.gen(function* () {
     name: "spend.alerts.shape",
     metric: shapes,
   })
-})
+}

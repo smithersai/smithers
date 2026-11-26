@@ -1,15 +1,17 @@
-// `POST /api/web/preview` (worker/WebPreview.ts, docs/features/web-pages.md#before-a-page-is-framed), through ChatApi's
+// `POST /api/web/preview` (worker/WebPreview.vibe, docs/features/web-pages.md#before-a-page-is-framed), through ChatApi's
 // real handler, `@smthrs/views`' real check and Effect's real fetch client. Outside pages answer from worker/test/pages.ts
 // (the outside web is a third party, scripted like the model); a page on this machine is a real HTTP server.
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
-import { Effect, Layer, Stream } from "effect"
+import { ImmutableCache } from "@smthrs/artifacts"
+import { Effect, Layer, Option, Stream } from "effect"
+import { FetchHttpClient, HttpEffect } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { MAX_PREVIEW_BODY_BYTES } from "../src/features/web/contract.ts"
 import * as Actor from "./Actor.ts"
 import { harness, recorded, testFile } from "./test/harness.ts"
 import { framable, iconPage, inlineIcon, outsideWeb, type Page, refusing } from "./test/pages.ts"
-import * as WebPreview from "./WebPreview.ts"
+import * as WebPreview from "./WebPreview.vibe"
 
 const runtime = testFile("web_preview")
 
@@ -220,6 +222,24 @@ describe("POST /api/web/preview", () => {
       expect((await stranger.check({ url: ALLOWS, mode: "embed" })).status, String(role)).toBe(200)
       expect(stranger.asked, String(role)).toEqual([ALLOWS, ALLOWS_ICON])
     }
+  })
+
+  test("the preview handler refuses an oversized body on its own before fetching a page", async () => {
+    const asked: Array<string> = []
+    const { preview } = await Effect.runPromise(WebPreview.make())
+    const sessions = Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.succeed(Option.some(member)) }))
+    const http = FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, outsideWeb({}, asked))))
+    const handler = HttpEffect.toWebHandler(preview.pipe(
+      Effect.provide(Layer.mergeAll(sessions, http, ImmutableCache.layerMemory())),
+    ))
+    const response = await handler(new Request("https://chat.test/api/web/preview", {
+      method: "POST",
+      body: JSON.stringify({ url: ALLOWS, mode: "embed", padding: "x".repeat(MAX_PREVIEW_BODY_BYTES) }),
+    }))
+
+    expect(response.status).toBe(413)
+    expect(await response.json()).toEqual({ code: "too_large" })
+    expect(asked).toEqual([])
   })
 
   test("sessions that can't be read are 503, logged by their error code", async () => {

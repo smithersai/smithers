@@ -7,7 +7,7 @@ import { MAX_HOSTED_MODEL_BODY_BYTES } from "../src/features/auth/contract.ts"
 import { type Actor, CurrentActor, Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.vibe"
 import { codeOf } from "./ErrorCode.ts"
-import { NoInvocationKey, NotAllowed } from "./SetModel.ts"
+import { NoInvocationKey, NotAllowed } from "./SetModel.vibe"
 
 // Hosted inference (docs/features/model-endpoint.md#hosted-inference, decision 0099): whether the deployment's own model
 // answers anyone. Will, 2026-10-25 13:28 PDT: "Please get it working with byok prioritize byok over our hosted

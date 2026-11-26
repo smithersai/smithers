@@ -81,7 +81,7 @@ export default defineConfig({
         "db/migrations/0059_model_quota_failure.ts",
         "worker/ModelRoles.ts",
         "worker/ModelUsage.ts",
-        "worker/SetModel.ts",
+        "worker/SetModel.vibe",
         "worker/HostedModel.ts",
         "db/migrations/0004_model_roles.ts",
         "db/migrations/0057_model_usage_outcome.ts",
@@ -116,7 +116,7 @@ export default defineConfig({
         "worker/about/*.ts",
         "db/migrations/0060_repo_about.ts",
         "db/migrations/0098_about_claim_generation.ts",
-        "worker/CloneFeed.ts",
+        "worker/CloneFeed.vibe",
         "db/migrations/0028_clone_progress.ts",
         // Who asked each question, which the answer routes require (docs/features/agent.md#the-answer-routes).
         "worker/Messages.ts",
@@ -127,7 +127,7 @@ export default defineConfig({
         "worker/ops/ArtifactRoutes.vibe",
         // The conversation's views and web pages (docs/features/web-pages.md).
         "worker/Views.ts",
-        "worker/WebPreview.ts",
+        "worker/WebPreview.vibe",
         "db/migrations/0010_views.ts",
         // A repository's docs and the docs view (docs/features/docs.md).
         "worker/docs/**/*.ts",
@@ -149,7 +149,7 @@ export default defineConfig({
         "db/migrations/0017_model_charges.ts",
         // Model spend and its alerts to Admins (docs/features/spend-alerts.md).
         "worker/ModelSpend.ts",
-        "worker/SpendAlerts.ts",
+        "worker/SpendAlerts.vibe",
         "db/migrations/0019_spend_alerts.ts",
         // Where spend alerts go outside the app, and their receipts (docs/features/spend-alerts.md#channels).
         "worker/AlertChannels.ts",

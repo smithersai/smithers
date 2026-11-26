@@ -1,6 +1,6 @@
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Effect, Layer, Schema } from "effect"
+import { identity } from "effect/Function"
 import type { SqlClient } from "effect/sql"
 import { type Actor, CurrentActor } from "./Actor.ts"
 import { codeOf } from "./ErrorCode.ts"
@@ -53,29 +53,26 @@ export const write = (
   actor: Actor,
   invocationKey: string | undefined,
 ) =>
-  Effect.gen(function* () {
-    if (actor.act !== undefined) return yield* new NotAllowed({ reason: "delegated" })
-    if (actor.role !== "admin") return yield* new NotAllowed({ reason: "not_admin" })
-    if (invocationKey === undefined) return yield* Effect.die(new NoInvocationKey())
-    yield* ModelRoles.set(change, { actorId: actor.subject.id, invocationKey })
+  effect {
+    if (actor.act !== undefined) throw new NotAllowed({ reason: "delegated" })
+    if (actor.role !== "admin") throw new NotAllowed({ reason: "not_admin" })
+    if (invocationKey === undefined) return try die(new NoInvocationKey())
+    try ModelRoles.set(change, { actorId: actor.subject.id, invocationKey })
     return { role: change.role, modelId: change.model.modelId }
-  }).pipe(
-    Effect.tap(() =>
-      Effect.logInfo("admin.set_model").pipe(
-        Effect.annotateLogs({ outcome: "set", role: change.role, modelId: change.model.modelId }),
-      )
-    ),
-    Effect.tapError((error) =>
-      error instanceof NotAllowed
-        ? Effect.logWarning("admin.set_model").pipe(
-          Effect.annotateLogs({ outcome: "refused", role: change.role, reason: error.reason }),
-        )
-        : Effect.logError("admin.set_model").pipe(
-          Effect.annotateLogs({ outcome: "error", role: change.role, errorCode: codeOf(error) }),
-        )
-    ),
-    Effect.withSpan("admin.set_model", { attributes: { "smithers.model.role": change.role } }),
-  )
+  }
+  |> tap(%, () => annotateLogs(logInfo("admin.set_model"), {
+    outcome: "set", role: change.role, modelId: change.model.modelId,
+  }))
+  |> tapError(%, effect (error) => {
+    if (error instanceof NotAllowed) {
+      return try annotateLogs(logWarning("admin.set_model"), {
+        outcome: "refused", role: change.role, reason: error.reason,
+      })
+    }
+    const errorCode = try orDie(Effect.try({ try: () => codeOf(error), catch: identity }))
+    try annotateLogs(logError("admin.set_model"), { outcome: "error", role: change.role, errorCode })
+  })
+  |> withSpan(%, "admin.set_model", { attributes: { "smithers.model.role": change.role } })
 
 /**
  * Registers `admin/SetModel` with its step, writing through `database` as the `CurrentActor` the host provides.
@@ -83,15 +80,14 @@ export const write = (
 export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   Interpreter.layerWithImplementations(
     SetModel,
-    WriteModel.toLayer((change) =>
-      Effect.gen(function* () {
-        const actor = yield* CurrentActor
-        const invocationKey = yield* Action.CurrentInvocationKey
-        // A refusal is the step's declared failure; a database failure is a defect that fails the run.
-        return yield* write(change, actor, invocationKey).pipe(
-          Effect.provide(database),
-          Effect.catch((error) => error instanceof NotAllowed ? Effect.fail(error) : Effect.die(error)),
-        )
-      })
-    ),
+    WriteModel.toLayer(effect (change) => {
+      const actor = try CurrentActor
+      const invocationKey = try Action.CurrentInvocationKey
+      // A refusal is the step's declared failure; a database failure is a defect that fails the run.
+      const persisted = write(change, actor, invocationKey) |> Effect.provide(%, database)
+      return persisted catch effect (error) => {
+        if (error instanceof NotAllowed) throw error
+        return try die(error)
+      }
+    }),
   ).pipe(Layer.provideMerge(Action.layerImplementations))

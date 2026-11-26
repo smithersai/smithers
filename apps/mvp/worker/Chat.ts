@@ -52,9 +52,9 @@ import * as ShapeAccess from "./ShapeAccess.ts"
 import * as AlertChannels from "./AlertChannels.ts"
 import * as BudgetApi from "./branch/BudgetApi.ts"
 import * as HostedModel from "./HostedModel.ts"
-import * as SpendAlerts from "./SpendAlerts.ts"
+import * as SpendAlerts from "./SpendAlerts.vibe"
 import * as Views from "./Views.ts"
-import * as WebPreview from "./WebPreview.ts"
+import * as WebPreview from "./WebPreview.vibe"
 
 // ChatApi's routes (docs/features/chat.md#contract). ChatApi.ts runs them on Cloudflare; the tests run them as they
 // are. ChatApi stores a question and its pending answer. The attached agent answers it over MCP.
