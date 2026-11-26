@@ -6,7 +6,7 @@ import { reloadAfter } from "../../test/reloadTiming"
 // would.
 import type { SandboxTools } from "@smthrs/sandbox"
 import { PresenceProtocol, SharedText } from "@smthrs/sync"
-import { type Duration, Effect, Exit, Layer, Logger, ManagedRuntime, Metric } from "effect"
+import { type Duration, Effect, Exit, Layer, Logger, ManagedRuntime, Metric, Ref } from "effect"
 import { Base64 } from "effect/encoding"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -41,10 +41,10 @@ import { Chat } from "../chat/chat"
 import { CONNECTION } from "../chat/schema"
 import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands"
-import { postUpdate, TextsClient, UpdateNotTaken } from "./api"
+import { postUpdate, TextsClient, UpdateNotTaken } from "./api.vibe"
 import { TEXTS_ROUTE, textRoute, textRoomRoute } from "./contract"
 import { sends } from "./metrics"
-import { CoeditStore, decodeCursor, encodeCursor, savedMarkOf, savedNameOf } from "./store"
+import { CoeditStore, decodeCursor, encodeCursor, savedMarkOf, savedNameOf } from "./store.vibe"
 import { answerOf, fileOf, openAnswerOf, promptOf, saveLabelOf } from "./view"
 import { TextWrites } from "./writes"
 
@@ -93,6 +93,7 @@ const tab = async (
     type: commands.actions.type,
     submit: commands.actions.submit,
     texts,
+    live: (id: string) => runtime.runSync(Effect.map(CoeditStore, (store) => store.live(id)!)),
     marks: (id: string) => runtime.runPromise(Effect.flatMap(CoeditStore, (store) => store.live(id)!.replica.marks)),
     prompt: () => promptOf(texts()),
     draft: () => chat.queries.composer.toArray[0]?.draft,
@@ -483,9 +484,11 @@ describe("a shared file", () => {
       generation: 1,
     }))
     await saving
-    const saved = fileOf(owner.texts(), conversation, "styles.css")!
-    expect(saved).toMatchObject({ saving: false, saveFailed: false, saved: true, text: merged })
-    expect(saveLabelOf(saved)).toBe("Saved")
+    await until(() => {
+      const saved = fileOf(owner.texts(), conversation, "styles.css")!
+      expect(saved).toMatchObject({ saving: false, saveFailed: false, saved: true, text: merged })
+      expect(saveLabelOf(saved)).toBe("Saved")
+    })
     // The owner saved, and Ben's tab says so too: the save's mark reaches everyone with the text.
     await until(() => expect(fileOf(benTabOpen.texts(), conversation, "styles.css")).toMatchObject({ saved: true, saving: false }))
 
@@ -635,7 +638,7 @@ describe("a shared file", () => {
     expect(write.call).toEqual({ tool: "write", path: "notes/new.md", content: "# New\n" })
     await opened.run(settle(write, { status: "done", result: { tool: "write", path: "notes/new.md", bytes: 6, sequence: 1 }, generation: 1 }))
     await saving
-    expect(fileOf(owner.texts(), conversation, "notes/new.md")).toMatchObject({ saving: false, saveFailed: false, saved: true })
+    await until(() => expect(fileOf(owner.texts(), conversation, "notes/new.md")).toMatchObject({ saving: false, saveFailed: false, saved: true }))
   }, WITHIN)
 
   test("a file too large to edit, a path that isn't a file, and a Save that fails say so", async () => {
@@ -922,6 +925,47 @@ describe("sending", () => {
     await until(() => expect(leader.prompt()?.text === both).toBe(true))
     await until(() => expect(follower.unsent()).toBe(0))
     expect(follower.sends("refused")).toBe(0)
+  }, WITHIN)
+
+  test("a text is stored only after both overlapping edits are admitted", async () => {
+    const opened = await open()
+    const device = nodeDevice({ agent: opened.api })
+    const first = Promise.withResolvers<void>()
+    const second = Promise.withResolvers<void>()
+    let admissions = 0
+    const storage = {
+      ...device.outbox.storage,
+      setMany: async (rows: Parameters<typeof device.outbox.storage.setMany>[0]) => {
+        admissions++
+        if (admissions === 1) {
+          await first.promise
+        } else {
+          await second.promise
+        }
+        await device.outbox.storage.setMany(rows)
+      },
+    }
+    const tab = await opened.ownTab({ ...device, outbox: { ...device.outbox, storage } })
+    await openShared(opened, tab)
+    const id = tab.prompt()!.id
+    const live = tab.live(id)
+    try {
+      const earlier = tab.coedit.type(id, "one")
+      await until(() => expect(admissions).toBe(1))
+      const later = tab.coedit.type(id, "one two")
+      await until(() => expect(Effect.runSync(Ref.get(live.admitting))).toBe(2))
+      first.resolve()
+      await earlier
+      expect(Effect.runSync(Ref.get(live.admitting))).toBe(1)
+      expect(tab.prompt()?.stored).toBe(false)
+      second.resolve()
+      await later
+      expect(tab.prompt()?.stored).toBe(true)
+      expect(tab.prompt()?.text).toBe("one two")
+    } finally {
+      first.resolve()
+      second.resolve()
+    }
   }, WITHIN)
 
   test("a keystroke the device couldn't store says so, and reaches nobody", async () => {
@@ -1255,7 +1299,10 @@ describe("cursors in a room", () => {
     ) as unknown as WebSocket
     closers.push(async () => ghost.close())
     await new Promise<void>((resolve) => ghost.addEventListener("message", () => resolve(), { once: true }))
-    ghost.send(PresenceProtocol.encodeClientFrame({ type: "state", state: encodeCursor(elsewhere) }))
+    const unresolved = encodeCursor(elsewhere)
+    ghost.send(PresenceProtocol.encodeClientFrame({ type: "state", state: unresolved }))
+    await until(() => expect(Effect.runSync(Ref.get(owner.live(textId).roster)).participants)
+      .toContainEqual(expect.objectContaining({ name: "ghost", state: unresolved })))
     owner.type("here", { anchor: 4, head: 4 })
     await until(() => expect(opened.rooms.occupants(textRoomRoute(textId))).toBe(2))
     await until(() => expect(owner.prompt()?.text).toBe("here"))

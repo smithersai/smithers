@@ -61,8 +61,10 @@ export const textsQuery = (texts: Collection.Collection<Shared, string>) =>
   LiveQuery.make((q) => q.from({ text: texts.tanstack }))
 
 /** A text's id: the version 5 UUID of what it is, the same on every device. */
-export const textIdOf = (of: TextOf) =>
-  Uuid.v5(TEXT_NAMESPACE, textName(of)).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+export const textIdOf = effect (of: TextOf) => {
+  const name = try Effect.sync(() => textName(of))
+  return try Uuid.v5(TEXT_NAMESPACE, name).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+}
 
 /** The key a text's row carries: the conversation, `<conversation>/<path>` for a file, or `<run>/<version>`. */
 export const keyOf = (of: TextOf) =>
@@ -117,74 +119,75 @@ export class CoeditStore extends Context.Service<
   static readonly layer = (config: CoeditConfig) => Layer.effect(CoeditStore, make(config))
 }
 
-const make = Effect.fnUntraced(function* (config: CoeditConfig) {
-  const scope = yield* Effect.scope
-  const persistence = yield* Persistence.Persistence
-  const { sending } = yield* TextWrites
-  const texts = yield* Collection.local<Shared, string>({ id: "coedit-texts", schema: Shared, getKey: (row) => row.id })
+const make = effect (config: CoeditConfig) => {
+  const scope = try Effect.scope
+  const persistence = try Persistence.Persistence
+  const { sending } = try TextWrites
+  const texts = try Collection.local<Shared, string>({ id: "coedit-texts", schema: Shared, getKey: (row) => row.id })
   const lives = new Map<string, Live>()
   // One open at a time, so two asks for one text open it once.
-  const opening = yield* Semaphore.make(1)
+  const opening = try Semaphore.make(1)
   const roomOrigin = config.origin.replace(/^http/, "ws")
   // The page's own WebSocket, unless a test gives another.
-  const sockets = Option.match(yield* Effect.serviceOption(Socket.WebSocketConstructor), {
+  const sockets = Option.match(try Effect.serviceOption(Socket.WebSocketConstructor), {
     onNone: () => Socket.layerWebSocketConstructorGlobal,
     onSome: (construct) => Layer.succeed(Socket.WebSocketConstructor, construct),
   })
 
   /** Where `cursor` is in `live`'s text now, or none before the text it points into has arrived. */
   const placeOf = (live: Live, cursor: Mine) =>
-    Effect.gen(function* () {
-      const anchor = yield* live.replica.resolve(cursor.anchor)
-      const head = yield* live.replica.resolve(cursor.head)
+    effect {
+      const anchor = try live.replica.resolve(cursor.anchor)
+      const head = try live.replica.resolve(cursor.head)
       return anchor === undefined || head === undefined ? Option.none<Selection>() : Option.some({ anchor, head })
-    })
+    }
 
   const refresh = (live: Live) =>
-    Effect.gen(function* () {
-      const text = yield* live.replica.text
-      const mine = yield* Ref.get(live.mine)
-      const selection = mine === undefined ? null : Option.getOrNull(yield* placeOf(live, mine))
-      const { self, participants } = yield* Ref.get(live.roster)
+    effect {
+      const text = try live.replica.text
+      const mine = try Ref.get(live.mine)
+      const selection = mine === undefined ? null : Option.getOrNull(try placeOf(live, mine))
+      const { self, participants } = try Ref.get(live.roster)
       const collaborators: Array<Collaborator> = []
       for (const participant of participants) {
         const cursor = participant.id === self ? undefined : decodeCursor(participant.state)
-        const at = cursor === undefined ? Option.none<Selection>() : yield* placeOf(live, cursor)
+        const at = cursor === undefined ? Option.none<Selection>() : try placeOf(live, cursor)
         if (Option.isSome(at)) collaborators.push({ id: participant.id, name: participant.name, ...at.value })
       }
-      const row = Option.getOrThrow(yield* texts.get(live.id))
+      const row = Option.getOrThrow(try texts.get(live.id))
       // Whoever saved, every tab reads it from the newest write's mark; a text changed since, by anyone, isn't saved.
-      const saved = isSaved(savedOf(yield* live.replica.marks).value, text)
+      const marks = try live.replica.marks
+      const saved = isSaved((try Effect.sync(() => savedOf(marks))).value, text)
       const same = row.text === text && row.saved === saved && JSON.stringify(row.selection) === JSON.stringify(selection) &&
         JSON.stringify(row.collaborators) === JSON.stringify(collaborators)
       if (same) return
-      yield* Effect.orDie(texts.update(live.id, (draft) => {
+      try Effect.orDie(texts.update(live.id, (draft) => {
         draft.text = text
         draft.saved = saved
         draft.selection = selection
         draft.collaborators = collaborators
       }))
-    })
+    }
 
   /** Applies one stored or queued update; bytes that aren't one are logged and skipped. */
   const apply = (live: Live, data: string) =>
-    Effect.gen(function* () {
+    effect {
       const bytes = Base64.decode(data)
-      const applied = bytes._tag === "Success" ? yield* Effect.exit(live.replica.apply(bytes.success)) : Exit.void
+      const applied = bytes._tag === "Success" ? try Effect.exit(live.replica.apply(bytes.success)) : Exit.void
       if (bytes._tag === "Failure" || Exit.isFailure(applied)) {
-        yield* Effect.logWarning("coedit.apply").pipe(Effect.annotateLogs({ outcome: "invalid", textId: live.id }))
+        try Effect.logWarning("coedit.apply").pipe(Effect.annotateLogs({ outcome: "invalid", textId: live.id }))
       }
-    })
+    }
 
   const open = (of: TextOf) =>
-    Effect.gen(function* () {
-      const id = yield* textIdOf(of)
+    effect {
+      const id = try textIdOf(of)
       const known = lives.get(id)
       if (known !== undefined) return known
-      const textScope = scopeOf(of)
-      const query = new URLSearchParams({ text: id, ...scopeParams(textScope) }).toString()
-      const replica = yield* SharedText.make
-      const updates = yield* ElectricCollection.make<TextUpdate>({
+      const textScope = try Effect.sync(() => scopeOf(of))
+      const query = try Effect.sync(() => new URLSearchParams({ text: id, ...scopeParams(textScope) }).toString())
+      const replica = try SharedText.make
+      const updates = try ElectricCollection.make<TextUpdate>({
         id: `text-updates:${id}`,
         schema: TextUpdate,
         getKey: (row) => row.id,
@@ -198,14 +201,14 @@ const make = Effect.fnUntraced(function* (config: CoeditConfig) {
         scope: textScope,
         replica,
         updates,
-        mine: yield* Ref.make<Mine | undefined>(undefined),
-        roster: yield* Ref.make<Roster>({ self: undefined, participants: [] }),
-        room: yield* Ref.make<Room | undefined>(undefined),
-        unsent: yield* Ref.make<ReadonlyArray<Uint8Array>>([]),
-        admitting: yield* Ref.make(0),
+        mine: try Ref.make<Mine | undefined>(undefined),
+        roster: try Ref.make<Roster>({ self: undefined, participants: [] }),
+        room: try Ref.make<Room | undefined>(undefined),
+        unsent: try Ref.make<ReadonlyArray<Uint8Array>>([]),
+        admitting: try Ref.make(0),
       }
       lives.set(id, live)
-      yield* Effect.orDie(texts.insert({
+      try Effect.orDie(texts.insert({
         id,
         kind: of.kind,
         key: keyOf(of),
@@ -223,34 +226,34 @@ const make = Effect.fnUntraced(function* (config: CoeditConfig) {
       }))
       // What ChatApi stored, then what this device typed and the outbox still holds. A file's first content comes only
       // from ChatApi, so every device starts it from the same seed.
-      yield* updates.changes({ initial: true }).pipe(
+      try updates.changes({ initial: true }).pipe(
         Stream.runForEach((changes) =>
-          Effect.gen(function* () {
-            for (const change of changes) if (change.type === "insert") yield* apply(live, change.value.data)
-            yield* refresh(live)
+          effect {
+            for (const change of changes) if (change.type === "insert") try apply(live, change.value.data)
+            try refresh(live)
             if (of.kind === "file" && changes.some((change) => change.type === "insert")) {
-              yield* Effect.orDie(texts.update(id, (draft) => void (draft.status = "ready")))
+              try Effect.orDie(texts.update(id, (draft) => void (draft.status = "ready")))
             }
-          })
+          }
         ),
         Effect.forkIn(scope),
       )
-      yield* sending.changes({ initial: true }).pipe(
+      try sending.changes({ initial: true }).pipe(
         Stream.runForEach((changes) =>
-          Effect.gen(function* () {
+          effect {
             const mineToApply = changes.filter((change) =>
               change.type === "insert" && change.value.textId === id && !change.value.seed
             )
-            for (const change of mineToApply) yield* apply(live, change.value.data)
-            if (mineToApply.length > 0) yield* refresh(live)
-          })
+            for (const change of mineToApply) try apply(live, change.value.data)
+            if (mineToApply.length > 0) try refresh(live)
+          }
         ),
         Effect.forkIn(scope),
       )
-      yield* Effect.logInfo("coedit.open").pipe(Effect.annotateLogs({ kind: of.kind, textId: id }))
-      yield* Metric.update(Metric.withAttributes(opens, { kind: of.kind }), 1)
+      try Effect.logInfo("coedit.open").pipe(Effect.annotateLogs({ kind: of.kind, textId: id }))
+      try Metric.update(Metric.withAttributes(opens, { kind: of.kind }), 1)
       return live
-    }).pipe(
+    }.pipe(
       opening.withPermits(1),
       Effect.provideService(Scope.Scope, scope),
       Effect.provideService(Persistence.Persistence, persistence),
@@ -258,25 +261,25 @@ const make = Effect.fnUntraced(function* (config: CoeditConfig) {
     )
 
   const show = (live: Live) =>
-    Effect.gen(function* () {
-      if ((yield* Ref.get(live.room)) !== undefined) return
-      const roomScope = yield* Scope.fork(scope)
-      const url = `${roomOrigin}${textRoomRoute(live.id)}?${new URLSearchParams(scopeParams(live.scope)).toString()}`
-      const connection = yield* PresenceSocket.connect(url).pipe(
+    effect {
+      if ((try Ref.get(live.room)) !== undefined) return
+      const roomScope = try Scope.fork(scope)
+      const url = try Effect.sync(() => `${roomOrigin}${textRoomRoute(live.id)}?${new URLSearchParams(scopeParams(live.scope)).toString()}`)
+      const connection = try PresenceSocket.connect(url).pipe(
         Effect.provide(sockets),
         Effect.provideService(Scope.Scope, roomScope),
       )
-      yield* Ref.set(live.room, { scope: roomScope, connection })
-      yield* Effect.orDie(texts.update(live.id, (draft) => void (draft.shown = true)))
-      const mine = yield* Ref.get(live.mine)
-      if (mine !== undefined) yield* connection.set(encodeCursor(mine))
-      yield* connection.roster.pipe(
+      try Ref.set(live.room, { scope: roomScope, connection })
+      try Effect.orDie(texts.update(live.id, (draft) => void (draft.shown = true)))
+      const mine = try Ref.get(live.mine)
+      if (mine !== undefined) try connection.set(encodeCursor(mine))
+      try connection.roster.pipe(
         Stream.runForEach((participants) =>
           Effect.andThen(Ref.update(live.roster, (roster) => ({ ...roster, participants })), refresh(live))
         ),
         Effect.forkIn(roomScope),
       )
-      yield* connection.status.pipe(
+      try connection.status.pipe(
         Stream.runForEach((status) =>
           status._tag === "Open"
             ? Effect.andThen(Ref.update(live.roster, (roster) => ({ ...roster, self: status.self })), refresh(live))
@@ -284,21 +287,21 @@ const make = Effect.fnUntraced(function* (config: CoeditConfig) {
         ),
         Effect.forkIn(roomScope),
       )
-    })
+    }
 
   const hide = (live: Live) =>
-    Effect.gen(function* () {
-      const room = yield* Ref.getAndSet(live.room, undefined)
+    effect {
+      const room = try Ref.getAndSet(live.room, undefined)
       if (room === undefined) return
-      yield* Scope.close(room.scope, Exit.void)
-      yield* Effect.orDie(texts.update(live.id, (draft) => void (draft.shown = false)))
-      yield* Ref.set(live.roster, { self: undefined, participants: [] })
-      yield* refresh(live)
-    })
+      try Scope.close(room.scope, Exit.void)
+      try Effect.orDie(texts.update(live.id, (draft) => void (draft.shown = false)))
+      try Ref.set(live.roster, { self: undefined, participants: [] })
+      try refresh(live)
+    }
 
   return CoeditStore.of({
     texts,
-    textsState: yield* textsQuery(texts),
+    textsState: try textsQuery(texts),
     open,
     live: (textId) => lives.get(textId),
     show,
@@ -306,4 +309,4 @@ const make = Effect.fnUntraced(function* (config: CoeditConfig) {
     refresh,
     scope,
   })
-})
+}

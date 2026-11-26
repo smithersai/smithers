@@ -3,9 +3,9 @@ import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { ChatStore } from "../chat/store"
 import type { StatusStore } from "../status/store"
-import { type Edit, followAnswers, hideFiles, save, select, showFile, type } from "./actions"
+import { type Edit, followAnswers, hideFiles, save, select, showFile, type } from "./actions.vibe"
 import type { Selection } from "./schema"
-import { CoeditStore } from "./store"
+import { CoeditStore } from "./store.vibe"
 import type { TextWrites } from "./writes"
 
 // Co-editing as a frontend sees it (docs/features/coedit.md#the-browser): a live query of the texts this tab has open,
@@ -39,11 +39,11 @@ export class Coedit extends Context.Service<Coedit, { readonly queries: CoeditQu
   "@smthrs/mvp/coedit/Coedit",
 ) {
   /** Binds frontend actions to the injected Effect services. */
-  static readonly make = Effect.gen(function* () {
-    const store = yield* CoeditStore
-    const context = yield* Effect.context<CoeditStore | ChatStore | TextWrites | FlowDispatch | StatusStore>()
+  static readonly make = effect {
+    const store = try CoeditStore
+    const context = try Effect.context<CoeditStore | ChatStore | TextWrites | FlowDispatch | StatusStore>()
     const { runSync: sync, runPromise: run } = runners(context, "coedit")
-    yield* followAnswers
+    try followAnswers
     return Coedit.of({
       queries: { texts: store.textsState.tanstack },
       actions: {
@@ -55,7 +55,7 @@ export class Coedit extends Context.Service<Coedit, { readonly queries: CoeditQu
         save: (textId) => run(save(textId)),
       },
     })
-  })
+  }
 
   /**
    * Binds the store's query and actions for frontends, with the services this layer was built with, and follows the

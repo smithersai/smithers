@@ -13,8 +13,9 @@ import { StatusStore } from "../status/store"
 import { CONVERSATION_NAMESPACE } from "../branch/contract"
 import { MAX_EDIT_BYTES, type TextOf } from "./contract"
 import { saves } from "./metrics"
+import { randomId } from "./platform"
 import type { Selection, Sending, Shared } from "./schema"
-import { CoeditStore, encodeCursor, type Live } from "./store"
+import { CoeditStore, encodeCursor, type Live } from "./store.vibe"
 import { TEXT_UPDATE, TextWrites } from "./writes"
 
 // What a person does with a text they edit together with others (decision 0013 §4, docs/features/coedit.md): type in
@@ -40,12 +41,12 @@ const setRow = (live: Live, change: Partial<Omit<Shared, "id">>) =>
  * Puts `update` in the outbox, with any this tab couldn't put there before. In a tab that doesn't lead the outbox, the
  * update waits in `unsent` while the tab takes the lead, and goes with the next one.
  */
-const send = (live: Live, update: Uint8Array | undefined): Effect.Effect<void, never, Needs> =>
-  Effect.gen(function* () {
-    const chat = yield* ChatStore
+const send = (live: Live, update: Uint8Array | undefined): void!!Needs =>
+  effect {
+    const chat = try ChatStore
     // What one request carries: the updates that wait, merged while they hold at most `MAX_EDIT_BYTES`. The rest wait
     // in order, and go once this one is in the outbox.
-    const [pending, more] = yield* Ref.modify(live.unsent, (unsent) => {
+    const [pending, more] = try Ref.modify(live.unsent, (unsent) => {
       const all = [...unsent, ...(update === undefined ? [] : [update])]
       let count = 1
       let bytes = all[0]?.byteLength ?? 0
@@ -53,72 +54,74 @@ const send = (live: Live, update: Uint8Array | undefined): Effect.Effect<void, n
       return [[all.slice(0, count), count < all.length] as const, all.slice(count)]
     })
     if (pending.length === 0) return
-    const merged = pending.length === 1 ? pending[0]! : SharedText.merge(pending)
-    const row = { id: crypto.randomUUID(), textId: live.id, scope: live.scope, data: Base64.encode(merged), seed: false }
+    const merged = pending.length === 1 ? pending[0]! : try Effect.sync(() => SharedText.merge(pending))
+    const row = { id: try randomId, textId: live.id, scope: live.scope, data: Base64.encode(merged), seed: false }
     const keep = Ref.update(live.unsent, (rest) => [merged, ...rest])
-    yield* setRow(live, { stored: false })
-    const write = yield* admit(row)
+    try setRow(live, { stored: false })
+    const write = try admit(row)
     if (Option.isNone(write)) {
       // Only a tab that doesn't lead is refused at once: it takes the lead, then sends what waits.
-      yield* keep
-      yield* chat.lead.pipe(Effect.andThen(send(live, undefined)))
+      try keep
+      try chat.lead.pipe(Effect.andThen(send(live, undefined)))
       return
     }
-    yield* Ref.update(live.admitting, (count) => count + 1)
+    try Ref.update(live.admitting, (count) => count + 1)
     // Stored once every update this tab made is in the outbox's storage, so a reload finds it.
-    const settled = Effect.gen(function* () {
-      const left = yield* Ref.updateAndGet(live.admitting, (count) => count - 1)
-      if (left === 0) yield* setRow(live, { stored: (yield* Ref.get(live.unsent)).length === 0 })
-    })
+    const settled = effect {
+      const left = try Ref.updateAndGet(live.admitting, (count) => count - 1)
+      if (left === 0) try setRow(live, { stored: (try Ref.get(live.unsent)).length === 0 })
+    }
     // The outbox's storage refused the update: kept in this tab to go with the next, and logged by its code.
-    const refused = (failure: Outbox.NotAdmitted) =>
-      Effect.logWarning("coedit.admit").pipe(
-        Effect.annotateLogs({ feature: "coedit", outcome: "failed", reason: failure.reason, errorCode: codeOf(failure) }),
+    const refused = effect (failure: Outbox.NotAdmitted) => {
+      const errorCode = try Effect.sync(() => codeOf(failure))
+      try Effect.logWarning("coedit.admit").pipe(
+        Effect.annotateLogs({ feature: "coedit", outcome: "failed", reason: failure.reason, errorCode }),
         Effect.andThen(keep),
       )
-    const admitted = yield* write.value.admitted.pipe(
+    }
+    const admitted = try write.value.admitted.pipe(
       Effect.as(true),
       Effect.catch((failure) => Effect.as(refused(failure), false)),
       Effect.ensuring(settled),
     )
-    if (admitted && more) yield* send(live, undefined)
-  }).pipe(Effect.orDie)
+    if (admitted && more) try send(live, undefined)
+  }.pipe(Effect.orDie)
 
 /** Puts `row` in the outbox: its write, or nothing in a tab that doesn't lead the outbox. */
 const admit = (row: Sending) =>
-  Effect.gen(function* () {
-    const chat = yield* ChatStore
-    const { sending } = yield* TextWrites
-    return yield* chat.outbox.transact(TEXT_UPDATE, { idempotencyKey: row.id, joinExisting: true }, Effect.asVoid(sending.insert(row))).pipe(
+  effect {
+    const chat = try ChatStore
+    const { sending } = try TextWrites
+    return try chat.outbox.transact(TEXT_UPDATE, { idempotencyKey: row.id, joinExisting: true }, Effect.asVoid(sending.insert(row))).pipe(
       Effect.map(Option.some),
       // expected: a follower tab takes the lead and sends later
       Effect.catchTag("NotAdmitted", () => Effect.succeedNone),
     )
-  })
+  }
 
 /** Remembers where this person's caret is in `live`, and tells its room. */
 const place = (live: Live, selection: Selection) =>
-  Effect.gen(function* () {
-    const mine = { anchor: yield* live.replica.anchor(selection.anchor), head: yield* live.replica.anchor(selection.head) }
-    yield* Ref.set(live.mine, mine)
-    const room = yield* Ref.get(live.room)
-    if (room !== undefined) yield* room.connection.set(encodeCursor(mine))
-  })
+  effect {
+    const mine = { anchor: try live.replica.anchor(selection.anchor), head: try live.replica.anchor(selection.head) }
+    try Ref.set(live.mine, mine)
+    const room = try Ref.get(live.room)
+    if (room !== undefined) try room.connection.set(encodeCursor(mine))
+  }
 
 /**
  * The person typed: text `textId` becomes `value` in this tab at once, merged with what everyone else typed, and the
  * change goes to them. A text this tab hasn't opened changes nothing.
  */
 export const type = (textId: string, value: string, edit: Edit = {}) =>
-  Effect.gen(function* () {
-    const store = yield* CoeditStore
+  effect {
+    const store = try CoeditStore
     const live = store.live(textId)
     if (live === undefined) return
-    const updates = yield* replace(live, value, edit)
-    if (edit.selection !== undefined) yield* place(live, edit.selection)
-    yield* store.refresh(live)
-    for (const update of updates) yield* send(live, update)
-  })
+    const updates = try replace(live, value, edit)
+    if (edit.selection !== undefined) try place(live, edit.selection)
+    try store.refresh(live)
+    for (const update of updates) try send(live, update)
+  }
 
 const encoder = new TextEncoder()
 
@@ -128,9 +131,9 @@ const encoder = new TextEncoder()
  * the text the one before made. A paste of any size reaches everyone, and so does every edit after it.
  */
 const replace = (live: Live, value: string, edit: Edit) =>
-  Effect.gen(function* () {
-    const base = edit.base ?? (yield* live.replica.text)
-    const change = SharedText.changeOf(base, value, edit.selection?.head)
+  effect {
+    const base = edit.base ?? (try live.replica.text)
+    const change = try Effect.sync(() => SharedText.changeOf(base, value, edit.selection?.head))
     const updates: Array<Uint8Array> = []
     let before = base
     let end = 0
@@ -140,44 +143,44 @@ const replace = (live: Live, value: string, edit: Edit) =>
       end += encoder.encodeInto(rest, new Uint8Array(Math.min(MAX_EDIT_BYTES, 3 * rest.length))).read
       const last = end === change.insert.length
       const next = last ? value : base.slice(0, change.from) + change.insert.slice(0, end) + base.slice(change.to)
-      const update = yield* live.replica.replace(next, { caret: last ? edit.selection?.head : change.from + end, base: before })
+      const update = try live.replica.replace(next, { caret: last ? edit.selection?.head : change.from + end, base: before })
       if (update !== undefined) updates.push(update)
       if (last) return updates
       before = next
     }
-  })
+  }
 
 /** The person moved their caret or selection in text `textId`: everyone in it sees where. */
 export const select = (textId: string, selection: Selection) =>
-  Effect.gen(function* () {
-    const store = yield* CoeditStore
+  effect {
+    const store = try CoeditStore
     const live = store.live(textId)
     if (live === undefined) return
-    yield* place(live, selection)
-    yield* store.refresh(live)
-  })
+    try place(live, selection)
+    try store.refresh(live)
+  }
 
 /** Opens `of` and joins its room, leaving the rooms of the other texts of its kind `others` names. */
 const showOnly = (of: TextOf, others: (row: Shared) => boolean) =>
-  Effect.gen(function* () {
-    const store = yield* CoeditStore
-    const live = yield* store.open(of)
-    for (const row of yield* store.texts.toArray) {
+  effect {
+    const store = try CoeditStore
+    const live = try store.open(of)
+    for (const row of try store.texts.toArray) {
       const other = store.live(row.id)
-      if (other !== undefined && other.id !== live.id && others(row)) yield* store.hide(other)
+      if (other !== undefined && other.id !== live.id && others(row)) try store.hide(other)
     }
-    yield* store.show(live)
+    try store.show(live)
     return live
-  })
+  }
 
 /** Leaves the room of the file shown, as when the live editor goes. Its text is kept. */
-export const hideFiles = Effect.gen(function* () {
-  const store = yield* CoeditStore
-  for (const row of yield* store.texts.toArray) {
+export const hideFiles = effect {
+  const store = try CoeditStore
+  for (const row of try store.texts.toArray) {
     const live = row.kind === "file" && row.shown ? store.live(row.id) : undefined
-    if (live !== undefined) yield* store.hide(live)
+    if (live !== undefined) try store.hide(live)
   }
-})
+}
 
 /** The shown prompt: the conversation it is of and its text's id. */
 export interface ShownPrompt {
@@ -186,10 +189,10 @@ export interface ShownPrompt {
 }
 
 /** The conversation chat shows now: a branch's, or `null` for the home conversation. */
-export const shownConversation = Effect.gen(function* () {
-  const { place } = yield* ChatStore
-  return Option.getOrThrow(yield* place.get(PLACE)).conversationId
-})
+export const shownConversation = effect {
+  const { place } = try ChatStore
+  return Option.getOrThrow(try place.get(PLACE)).conversationId
+}
 
 /**
  * Moves into `conversation`'s prompt what the person typed in it before it opened: `typed`, the whole draft the
@@ -201,22 +204,22 @@ export const shownConversation = Effect.gen(function* () {
  * the prompt again doesn't type it twice.
  */
 const adoptDraft = (conversation: string, live: Live, typed: string, adopting: Ref.Ref<ReadonlySet<string>>) =>
-  Effect.gen(function* () {
-    const { drafts } = yield* ChatStore
-    const store = yield* CoeditStore
+  effect {
+    const { drafts } = try ChatStore
+    const store = try CoeditStore
     // A tab that opens on a shared branch reads the kept draft once the device store has it.
-    yield* Effect.ignore(drafts.restored)
-    const kept = (yield* Ref.get(adopting)).has(conversation)
+    try Effect.ignore(drafts.restored)
+    const kept = (try Ref.get(adopting)).has(conversation)
       ? undefined
-      : Option.getOrUndefined(yield* drafts.get(conversation))
+      : Option.getOrUndefined(try drafts.get(conversation))
     // The composer showed the kept draft, so what was typed holds it already.
     const draft = typed !== "" ? typed : kept?.text
     if (draft === undefined) return
-    yield* type(live.id, draft, { base: "" })
-    yield* Effect.logInfo("coedit.draft adopted").pipe(Effect.annotateLogs({ textId: live.id, chars: draft.length }))
+    try type(live.id, draft, { base: "" })
+    try Effect.logInfo("coedit.draft adopted").pipe(Effect.annotateLogs({ textId: live.id, chars: draft.length }))
     if (kept === undefined) return
-    yield* Ref.update(adopting, (keys) => new Set(keys).add(conversation))
-    yield* store.texts.changes({ initial: true }).pipe(
+    try Ref.update(adopting, (keys) => new Set(keys).add(conversation))
+    try store.texts.changes({ initial: true }).pipe(
       Stream.filter((changes) => changes.some((change) => change.key === live.id && change.value.stored)),
       Stream.take(1),
       Stream.runDrain,
@@ -224,15 +227,15 @@ const adoptDraft = (conversation: string, live: Live, typed: string, adopting: R
       Effect.ensuring(Ref.update(adopting, (keys) => new Set([...keys].filter((key) => key !== conversation)))),
       Effect.forkIn(store.scope),
     )
-  })
+  }
 
 /** Leaves the room of the prompt shown: the composer's draft is the person's own again. */
-const hidePrompts = Effect.gen(function* () {
-  const store = yield* CoeditStore
-  const prompts = (yield* store.texts.toArray).filter((row) => row.kind === "prompt")
+const hidePrompts = effect {
+  const store = try CoeditStore
+  const prompts = (try store.texts.toArray).filter((row) => row.kind === "prompt")
   // The store opened every text it has a row of; hiding one that isn't shown changes nothing.
-  for (const row of prompts) yield* store.hide(store.live(row.id)!)
-})
+  for (const row of prompts) try store.hide(store.live(row.id)!)
+}
 
 /**
  * Follows the conversation chat shows. On a branch its owner shared, its prompt is shown, the composer's draft becomes
@@ -242,41 +245,41 @@ const hidePrompts = Effect.gen(function* () {
  * the composer's edits.
  */
 export const followPrompt = (current: Ref.Ref<ShownPrompt | undefined>, pending: Ref.Ref<string>) =>
-  Effect.gen(function* () {
-    const chat = yield* ChatStore
-    const store = yield* CoeditStore
-    const adopting = yield* Ref.make<ReadonlySet<string>>(new Set())
-    yield* chat.place.changes({ initial: true }).pipe(
+  effect {
+    const chat = try ChatStore
+    const store = try CoeditStore
+    const adopting = try Ref.make<ReadonlySet<string>>(new Set())
+    try chat.place.changes({ initial: true }).pipe(
       Stream.flatMap((changes) => Stream.fromIterable(changes)),
       Stream.map((change) => (change.value.shared ? change.value.conversationId : null)),
       Stream.changes,
       Stream.runForEach((conversation) =>
-        Effect.gen(function* () {
+        effect {
           if (conversation === null) {
-            yield* Ref.set(current, undefined)
-            yield* Ref.set(pending, "")
-            return yield* hidePrompts
+            try Ref.set(current, undefined)
+            try Ref.set(pending, "")
+            return try hidePrompts
           }
-          const live = yield* showOnly({ kind: "prompt", conversation }, (row) => row.kind === "prompt")
-          yield* Ref.set(current, { conversation, textId: live.id })
-          yield* adoptDraft(conversation, live, yield* Ref.getAndSet(pending, ""), adopting)
-          yield* mirrorDraft((yield* rowOf(live)).text)
-        })
+          const live = try showOnly({ kind: "prompt", conversation }, (row) => row.kind === "prompt")
+          try Ref.set(current, { conversation, textId: live.id })
+          try adoptDraft(conversation, live, try Ref.getAndSet(pending, ""), adopting)
+          try mirrorDraft((try rowOf(live)).text)
+        }
       ),
       Effect.forkIn(store.scope),
     )
     // It mirrors the text as it is when the change is heard, never the change's own: the person may have typed since.
-    yield* store.texts.changes().pipe(
+    try store.texts.changes().pipe(
       Stream.runForEach((changes) =>
-        Effect.gen(function* () {
-          const shown = (yield* Ref.get(current))?.textId
+        effect {
+          const shown = (try Ref.get(current))?.textId
           if (shown === undefined || !changes.some((change) => change.key === shown)) return
-          yield* mirrorDraft(Option.getOrThrow(yield* store.texts.get(shown)).text)
-        })
+          try mirrorDraft(Option.getOrThrow(try store.texts.get(shown)).text)
+        }
       ),
       Effect.forkIn(store.scope),
     )
-  })
+  }
 
 /**
  * Shows file `path` of branch `branchId`'s working copy to edit together, and joins its room; `undefined` leaves the
@@ -286,50 +289,50 @@ export const followPrompt = (current: Ref.Ref<ShownPrompt | undefined>, pending:
  * person may not read, fails. Resolves with the file's text id.
  */
 export const showFile = (branchId: string, path: string | undefined) =>
-  Effect.gen(function* () {
-    const store = yield* CoeditStore
-    if (path === undefined) return yield* Effect.as(hideFiles, undefined)
-    const conversation = yield* Uuid.v5(CONVERSATION_NAMESPACE, branchId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
-    const live = yield* showOnly({ kind: "file", conversation, path }, (row) => row.kind === "file")
-    if ((yield* rowOf(live)).status === "loading") yield* Effect.forkIn(seed(live, conversation, path), store.scope)
+  effect {
+    const store = try CoeditStore
+    if (path === undefined) return try Effect.as(hideFiles, undefined)
+    const conversation = try Uuid.v5(CONVERSATION_NAMESPACE, branchId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+    const live = try showOnly({ kind: "file", conversation, path }, (row) => row.kind === "file")
+    if ((try rowOf(live)).status === "loading") try Effect.forkIn(seed(live, conversation, path), store.scope)
     return live.id
-  })
+  }
 
 /** Gives a file nobody has opened its first content: the working copy's text, as the one seed every device starts from. */
 const seed = (live: Live, conversation: string, path: string) =>
-  Effect.gen(function* () {
+  effect {
     // What ChatApi has, if it can say. A seed sent for a file that has one already is dropped: every device starts it
     // from the seed ChatApi kept, so a second one is only a wasted read.
-    yield* Effect.ignore(live.updates.preload)
-    if ((yield* live.updates.toArray).length > 0) return
-    const flows = yield* FlowDispatch
-    const read = yield* Effect.result(
+    try Effect.ignore(live.updates.preload)
+    if ((try live.updates.toArray).length > 0) return
+    const flows = try FlowDispatch
+    const read = try Effect.result(
       flows.dispatch("sandbox/read", { path, conversationId: conversation }, { door: "button" }),
     )
     // The sandbox refuses a read to anyone who may not edit the branch: they see a file only once someone who may has
     // opened it.
-    if (read._tag === "Failure") return yield* setRow(live, { status: "failed", failure: "unavailable" })
+    if (read._tag === "Failure") return try setRow(live, { status: "failed", failure: "unavailable" })
     // Nothing at the path yet: a new file, which starts empty and is made by its first Save.
     const missing = read.success._tag === "Failed" &&
       read.success.error._tag === "@smthrs/mvp/sandbox/SandboxCallFailed" && read.success.error.failure === "not_found"
     if (read.success._tag === "Failed" && !missing) {
       const refused = read.success.error._tag === "@smthrs/mvp/sandbox/SandboxCallRefused"
-      return yield* setRow(live, { status: "failed", failure: refused ? "forbidden" : "unavailable" })
+      return try setRow(live, { status: "failed", failure: refused ? "forbidden" : "unavailable" })
     }
     const content = read.success._tag === "Done" ? read.success.value : { content: "", truncated: false }
-    if (content.truncated) return yield* setRow(live, { status: "failed", failure: "too_large" })
-    const chat = yield* ChatStore
+    if (content.truncated) return try setRow(live, { status: "failed", failure: "too_large" })
+    const chat = try ChatStore
     const row: Sending = {
-      id: crypto.randomUUID(),
+      id: try randomId,
       textId: live.id,
       scope: live.scope,
-      data: Base64.encode(SharedText.seed(content.content)),
+      data: Base64.encode(try Effect.sync(() => SharedText.seed(content.content))),
       seed: true,
     }
     // Only a tab that doesn't lead is refused at once: it takes the lead first. A tab that leads is never refused.
-    if (Option.isNone(yield* admit(row))) yield* Effect.andThen(chat.lead, Effect.flatMap(admit(row), Effect.fromOption))
-    yield* Effect.logInfo("coedit.seed").pipe(Effect.annotateLogs({ textId: live.id, bytes: row.data.length }))
-  }).pipe(Effect.orDie, Effect.annotateLogs({ feature: "coedit" }))
+    if (Option.isNone(try admit(row))) try Effect.andThen(chat.lead, Effect.flatMap(admit(row), Effect.fromOption))
+    try Effect.logInfo("coedit.seed").pipe(Effect.annotateLogs({ textId: live.id, bytes: row.data.length }))
+  }.pipe(Effect.orDie, Effect.annotateLogs({ feature: "coedit" }))
 
 /**
  * Save on an open file: what everyone typed is written to the branch's working copy through `sandbox/write`, the
@@ -339,65 +342,65 @@ const seed = (live: Live, conversation: string, path: string) =>
  * after says Save again.
  */
 export const save = (textId: string) =>
-  Effect.gen(function* () {
-    const store = yield* CoeditStore
+  effect {
+    const store = try CoeditStore
     const live = store.live(textId)
     if (live === undefined || live.of.kind !== "file") return
     const { conversation, path } = live.of
-    const startedAt = yield* Clock.currentTimeMillis
-    const content = yield* live.replica.text
+    const startedAt = try Clock.currentTimeMillis
+    const content = try live.replica.text
     // The run's id names its sandbox call too (src/features/sandbox/steps.ts), so the log line finds the machine's.
-    const executionId = crypto.randomUUID()
-    yield* setRow(live, { saving: true, saveFailed: false })
-    const flows = yield* FlowDispatch
-    const written = yield* Effect.result(
+    const executionId = try randomId
+    try setRow(live, { saving: true, saveFailed: false })
+    const flows = try FlowDispatch
+    const written = try Effect.result(
       flows.dispatch("sandbox/write", { path, content, conversationId: conversation, save: true }, { door: "button", executionId }),
     )
     const done = written._tag === "Success" && written.success._tag === "Done" ? written.success.value : undefined
     const outcome = done === undefined ? "failed" : "saved"
-    yield* setRow(live, { saving: false, saveFailed: outcome === "failed" })
-    yield* store.refresh(live)
-    yield* Metric.update(Metric.withAttributes(saves, { outcome }), 1)
-    yield* Effect.logWithLevel(outcome === "saved" ? "Info" : "Warn")("coedit.save").pipe(
+    try setRow(live, { saving: false, saveFailed: outcome === "failed" })
+    try store.refresh(live)
+    try Metric.update(Metric.withAttributes(saves, { outcome }), 1)
+    try Effect.logWithLevel(outcome === "saved" ? "Info" : "Warn")("coedit.save").pipe(
       Effect.annotateLogs({
         outcome,
         textId,
         executionId,
         bytes: content.length,
-        durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+        durationMs: (try Clock.currentTimeMillis) - startedAt,
       }),
     )
-  }).pipe(Effect.annotateLogs({ feature: "coedit" }), Effect.withSpan("coedit.save"))
+  }.pipe(Effect.annotateLogs({ feature: "coedit" }), Effect.withSpan("coedit.save"))
 
 /**
  * Follows the runs that need this person: the answer box of each open question is a text their devices type together,
  * open and shown while the question is; a question answered, closed or replaced leaves its room. Runs for as long as
  * the store does.
  */
-export const followAnswers = Effect.gen(function* () {
-  const status = yield* StatusStore
-  const store = yield* CoeditStore
-  yield* status.runs.changes({ initial: true }).pipe(
+export const followAnswers = effect {
+  const status = try StatusStore
+  const store = try CoeditStore
+  try status.runs.changes({ initial: true }).pipe(
     Stream.runForEach(() =>
-      Effect.gen(function* () {
+      effect {
         // An agent's question to the person (`queue/ask`) has no answer box: the queue's strip answers it, and its room
         // is its launcher's alone (worker/branch/Texts.ts), never the person's.
-        const open = (yield* status.runs.toArray).filter((run) =>
+        const open = (try status.runs.toArray).filter((run) =>
           run.status === "needs_you" && run.answeredAt === null && run.wait?.kind === "question" &&
           run.flow !== QUEUE_ASK_FLOW
         )
         const shown = new Set<string>()
         for (const run of open) {
-          const live = yield* store.open({ kind: "answer", run: run.id, version: run.version })
+          const live = try store.open({ kind: "answer", run: run.id, version: run.version })
           shown.add(live.id)
-          yield* store.show(live)
+          try store.show(live)
         }
-        for (const row of yield* store.texts.toArray) {
+        for (const row of try store.texts.toArray) {
           const live = row.kind === "answer" && !shown.has(row.id) ? store.live(row.id) : undefined
-          if (live !== undefined) yield* store.hide(live)
+          if (live !== undefined) try store.hide(live)
         }
-      })
+      }
     ),
     Effect.forkIn(store.scope),
   )
-})
+}

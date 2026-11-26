@@ -1,8 +1,8 @@
 import { Effect, Layer, Ref } from "effect"
 import { SharedPrompt } from "../chat/sharedPrompt"
 import type { ChatStore } from "../chat/store"
-import { followPrompt, shownConversation, type ShownPrompt, type } from "./actions"
-import type { CoeditStore } from "./store"
+import { followPrompt, shownConversation, type ShownPrompt, type } from "./actions.vibe"
+import type { CoeditStore } from "./store.vibe"
 import type { TextWrites } from "./writes"
 
 // The composer's draft on a branch its owner shared (docs/features/coedit.md#the-prompt): the branch's prompt, a text

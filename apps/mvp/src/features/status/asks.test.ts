@@ -15,7 +15,7 @@ import { presses, viewById } from "../../plugins/plugins"
 import { PluginsUi } from "../../plugins/ui"
 import { CHATAPI_ORIGIN, nodeDevice, openTab, openTestApp, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { plain } from "../../test/deviceFixture"
-import { CoeditStore } from "../coedit/store"
+import { CoeditStore } from "../coedit/store.vibe"
 import { AuthStore } from "../auth/store"
 import { StatusStore } from "./store"
 
