@@ -276,7 +276,7 @@ export const make = effect (
         wouldIdle: input.wouldIdle
       }).pipe(
         Effect.mapError(mapFailure),
-        Effect.flatMap((receipt) => drainOf(receipt, options))
+        Effect.flatMap((receipt) => Effect.suspend(() => drainOf(receipt, options)))
       )
   })
 }

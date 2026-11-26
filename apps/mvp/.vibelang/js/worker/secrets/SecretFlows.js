@@ -97,7 +97,7 @@ const unavailable = (error) => {
 };
 /** The steps over `database`, each writing and recording once under its invocation key; none sees a value. */
 export const steps = (database) => {
-    const store = (write) => ((effect) => recorded("put", write, effect))(Effect_1.gen(function* () {
+    const store = (write) => Effect_1.gen(function* () {
         const invocationKey = yield* Action.CurrentInvocationKey;
         if (invocationKey === undefined)
             return yield* Effect.die(new NoInvocationKey());
@@ -116,8 +116,8 @@ export const steps = (database) => {
             invocationKey,
         }), database), unavailable));
         return { change };
-    }));
-    const erase = (write) => ((effect) => recorded("delete", write, effect))(Effect_1.gen(function* () {
+    }).pipe((effect) => recorded("put", write, effect));
+    const erase = (write) => Effect_1.gen(function* () {
         const invocationKey = yield* Action.CurrentInvocationKey;
         if (invocationKey === undefined)
             return yield* Effect.die(new NoInvocationKey());
@@ -125,7 +125,7 @@ export const steps = (database) => {
             return { change: "stale" };
         const change = yield* (Effect.catch(Effect.provide(Store.remove({ ...write, invocationKey }), database), unavailable));
         return { change };
-    }));
+    }).pipe((effect) => recorded("delete", write, effect));
     return { store, erase };
 };
 /** Registers `secret/Put` and `secret/Delete` with their steps over `database`. */

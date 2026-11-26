@@ -791,7 +791,10 @@ export const make = (
   config: GitHubConfig = {},
   env: Readonly<Record<string, string | undefined>> = Environment.ambientEnvironment()
 ): Effect.Effect<GitHubClient, IntegrationError, HttpClient.HttpClient> =>
-  Effect.flatMap(Effect.service(HttpClient.HttpClient), (http) => build(config, env, forCredentials(http)))
+  effect {
+    const http = try Effect.service(HttpClient.HttpClient)
+    return try build(config, env, forCredentials(http))
+  }
 
 /**
  * Layer for a client bound to `config`, over the `HttpClient` in context.

@@ -500,7 +500,10 @@ const build = (config, env, http) => {
  * @category constructors
  * @since 1.0.0
  */
-export const make = (config = {}, env = Environment.ambientEnvironment()) => Effect.flatMap(Effect.service(HttpClient.HttpClient), (http) => build(config, env, forCredentials(http)));
+export const make = (config = {}, env = Environment.ambientEnvironment()) => Effect_1.gen(function* () {
+    const http = yield* Effect.service(HttpClient.HttpClient);
+    return yield* build(config, env, forCredentials(http));
+});
 /**
  * Layer for a client bound to `config`, over the `HttpClient` in context.
  *

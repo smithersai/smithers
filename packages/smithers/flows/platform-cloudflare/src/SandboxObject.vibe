@@ -216,8 +216,7 @@ export const wake = <F, E, R>(
         )
       }
       const timeoutMs = options.startTimeoutMs
-      try (timeoutMs === undefined ? start : (start
-        |> Effect.timeoutOrElse(%, {
+      try (timeoutMs === undefined ? start : start.pipe(Effect.timeoutOrElse({
           duration: timeoutMs,
           orElse: () => Effect.andThen(Metric.update(startTimeouts, 1), Effect.fail(new StartTimedOut({ timeoutMs })))
         })))
@@ -231,7 +230,7 @@ export const wake = <F, E, R>(
       try machine.interceptOutboundHttps("*", options.egress)
     }
     return running ? "running" as const : "started" as const
-  } |> ((effect) =>
+  }.pipe((effect) =>
     Observed.observed(effect, {
       span: "sandbox.wake",
       attributes: {
@@ -241,7 +240,7 @@ export const wake = <F, E, R>(
       attribute: "smithers.sandbox.wake",
       counter: wakes,
       log: "cloudflare.sandbox.wake"
-    }))(%)
+    }))
 
 /**
  * Re-arms the inactivity timeout of a container that runs, to
@@ -261,14 +260,14 @@ export const rearm = <F, E, R>(
     if (!(try machine.running)) return "stopped" as const
     try machine.setInactivityTimeout(inactivityTimeoutMs)
     return "rearmed" as const
-  } |> ((effect) =>
+  }.pipe((effect) =>
     Observed.observed(effect, {
       span: "sandbox.rearm",
       attributes: { "smithers.sandbox.inactivity_timeout_ms": inactivityTimeoutMs },
       attribute: "smithers.sandbox.rearm",
       counter: rearms,
       log: "cloudflare.sandbox.rearm"
-    }))(%)
+    }))
 
 /**
  * Options for {@link run}: the `uid:gid` the command runs as (the image's

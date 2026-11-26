@@ -104,16 +104,7 @@ export const rearms = Metric.counter("smithers_cloudflare_sandbox_rearms", {
  * @category operations
  * @since 1.0.0-rc.17
  */
-export const wake = (machine, options) => ((effect) => Observed.observed(effect, {
-    span: "sandbox.wake",
-    attributes: {
-        "smithers.sandbox.intercepts": options.intercepts.length,
-        "smithers.sandbox.egress": options.egress !== undefined
-    },
-    attribute: "smithers.sandbox.wake",
-    counter: wakes,
-    log: "cloudflare.sandbox.wake"
-}))(Effect_1.gen(function* () {
+export const wake = (machine, options) => Effect_1.gen(function* () {
     const running = yield* machine.running;
     if (!running) {
         const start = Effect_1.gen(function* start() {
@@ -122,7 +113,7 @@ export const wake = (machine, options) => ((effect) => Observed.observed(effect,
                 : { enableInternet: false, instance: options.instance });
         });
         const timeoutMs = options.startTimeoutMs;
-        yield* (timeoutMs === undefined ? start : (Effect.timeoutOrElse(start, {
+        yield* (timeoutMs === undefined ? start : start.pipe(Effect.timeoutOrElse({
             duration: timeoutMs,
             orElse: () => Effect.andThen(Metric.update(startTimeouts, 1), Effect.fail(new StartTimedOut({ timeoutMs })))
         })));
@@ -136,6 +127,15 @@ export const wake = (machine, options) => ((effect) => Observed.observed(effect,
         yield* machine.interceptOutboundHttps("*", options.egress);
     }
     return running ? "running" : "started";
+}).pipe((effect) => Observed.observed(effect, {
+    span: "sandbox.wake",
+    attributes: {
+        "smithers.sandbox.intercepts": options.intercepts.length,
+        "smithers.sandbox.egress": options.egress !== undefined
+    },
+    attribute: "smithers.sandbox.wake",
+    counter: wakes,
+    log: "cloudflare.sandbox.wake"
 }));
 /**
  * Re-arms the inactivity timeout of a container that runs, to
@@ -147,17 +147,17 @@ export const wake = (machine, options) => ((effect) => Observed.observed(effect,
  * @category operations
  * @since 1.0.0-rc.17
  */
-export const rearm = (machine, inactivityTimeoutMs = defaultInactivityTimeoutMs) => ((effect) => Observed.observed(effect, {
+export const rearm = (machine, inactivityTimeoutMs = defaultInactivityTimeoutMs) => Effect_1.gen(function* () {
+    if (!(yield* machine.running))
+        return "stopped";
+    yield* machine.setInactivityTimeout(inactivityTimeoutMs);
+    return "rearmed";
+}).pipe((effect) => Observed.observed(effect, {
     span: "sandbox.rearm",
     attributes: { "smithers.sandbox.inactivity_timeout_ms": inactivityTimeoutMs },
     attribute: "smithers.sandbox.rearm",
     counter: rearms,
     log: "cloudflare.sandbox.rearm"
-}))(Effect_1.gen(function* () {
-    if (!(yield* machine.running))
-        return "stopped";
-    yield* machine.setInactivityTimeout(inactivityTimeoutMs);
-    return "rearmed";
 }));
 /**
  * Runs `argv` in the running container to completion and answers its exit

@@ -233,7 +233,7 @@ export const make = (options) => {
                 targetLineageId: options.lineageId,
                 boundary: input.boundary,
                 wouldIdle: input.wouldIdle
-            }).pipe(Effect.mapError(mapFailure), Effect.flatMap((receipt) => drainOf(receipt, options)))
+            }).pipe(Effect.mapError(mapFailure), Effect.flatMap((receipt) => Effect.suspend(() => drainOf(receipt, options))))
         });
     });
 };
