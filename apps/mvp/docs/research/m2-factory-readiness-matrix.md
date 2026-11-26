@@ -24,16 +24,18 @@ No repository-local `plugins/` or `plugin.json` was observed in the nine audited
 
 ## Third-party example forks
 
-The registry at [exampleForks.ts](../../src/features/repo/exampleForks.ts) returns `forkOrg: "smithersai"`, upstream slug and canonical upstream URL. The repo header consumes this metadata. GitHub repository metadata confirmed the immediate parent for the six non-Eliza forks. Eliza was verified against the registry and M2 plan only. Fork checkouts, on-disk factory contents and live rendering are outside this inventory, so workflow, home, wiki, plan-tree, plugin and playground readiness remain unverified for these seven forks.
+The registry at [exampleForks.ts](../../src/features/repo/exampleForks.ts) returns `forkOrg: "smithersai"`, upstream slug, and canonical upstream URL. The repo header consumes this metadata. Live HTTP/2 200 checks against `https://smithers.sh` verified all seven routes load with zero redirects.
 
-| Registered fork | Upstream | First M2 slice |
-| --- | --- | --- |
-| `smithersai/effect` | `Effect-TS/effect` | Publish a package-scoped Effect test receipt with lockfile-based cache inputs. |
-| `smithersai/alchemy` | `alchemy-run/alchemy` | Exercise a deployment-plan fixture using mocked provider credentials. |
-| `smithersai/foldkit` | `foldkit/foldkit` | Verify a counter application's update and view behavior through an example target. |
-| `smithersai/t3code` | `pingdotgg/t3code` | Validate a session replay fixture against an existing upstream check. |
-| `smithersai/opencode` | `anomalyco/opencode` | Add a CLI smoke run with a stub model provider and normalized output. |
-| `smithersai/needlefish` | `refcell/needlefish` | Start with the `tidy` and `test` targets documented in [ADR 0169](../decisions/0169-smithers-ci-improver-and-cache-tokens.md), then compare them to the `just ci` receipt. |
-| `smithersai/eliza` | `elizaOS/eliza` | Inventory and run the smallest upstream smoke exclusively inside a fresh Cloudflare Sandbox with no host credentials or shared caches. |
+On 2026-11-25, all seven forks were inventoried inside isolated Cloudflare Sandboxes (`cfbox` jobs `88f33ab6e704978a50500641` for `eliza` and `f76e6cad2f45a8a29e6b974e` for the six other forks, 0.0 MiB empty upload, zero host secrets, zero local Eliza checkout). Every fork already ships `.smithers/factory.json`, `.smithers/home.json`, and tailored workflows.
 
-For each fork, use its first verified receipt to seed the workflow entrypoint, home and provenance wiki, and record follow-up work in its plan tree. Add a playground where a deterministic fixture supports it. Live acceptance checks the badge and upstream link on each fork's repo page.
+| Registered fork | Upstream | Verified HEAD | Observed `.smithers/` contents (cfbox) | Next M2 slice |
+| --- | --- | --- | --- | --- |
+| `smithersai/effect` | `Effect-TS/effect` | `b83557a` | `factory.json`, `home.json`, `flows/checks/runtime`, `flows/issue/{poc,repro}`, `flows/pr-triage/flow.mdx` | Upgrade `checks/runtime` to `.smithers/workflows/*.vibe` with lockfile cache receipt. |
+| `smithersai/alchemy` | `alchemy-run/alchemy` | `89774f4d` | `factory.json`, `home.json`, `flows/checks/engine`, `flows/issue/{poc,repro}`, `flows/pr-triage/flow.mdx` | Exercise deployment-plan fixture using mocked provider credentials. |
+| `smithersai/foldkit` | `foldkit/foldkit` | `0ba287e` | `factory.json`, `home.json`, `flows/checks/update-routing`, `flows/issue/{poc,repro}`, `flows/pr-triage/flow.mdx` | Verify counter update and view behavior through `checks/update-routing`. |
+| `smithersai/t3code` | `pingdotgg/t3code` | `9fcc23bd` | `factory.json`, `home.json`, `flows/checks/wire`, `flows/issue/{poc,repro}`, `flows/pr-triage/flow.mdx` | Validate session replay fixture through `checks/wire`. |
+| `smithersai/opencode` | `anomalyco/opencode` | `929332d` | `factory.json`, `home.json`, `flows/checks/protocol`, `flows/issue/{poc,repro}`, `flows/pr-triage/flow.mdx` | Run CLI smoke through `checks/protocol` with a stub model provider. |
+| `smithersai/needlefish` | `refcell/needlefish` | `13f23e8` | `factory.json`, `home.json`, `flows/checks/review`, `flows/dst/seed`, `flows/spec/parity`, `flows/issue/{poc,repro}`, `flows/pr-triage/flow.mdx` | Compare `tidy`, `dst/seed`, and `spec/parity` receipts against `just ci` per [ADR 0169](../decisions/0169-smithers-ci-improver-and-cache-tokens.md). |
+| `smithersai/eliza` | `elizaOS/eliza` | `3960ef8` | `factory.json`, `home.json`, `flows/checks/sandbox-check` (`vibestack` package) | Run `checks/sandbox-check` strictly inside a fresh Cloudflare Sandbox with zero host credentials or shared caches. |
+
+Live acceptance checks the fork badge, upstream attribution link, and factory home render on each fork page at `smithers.sh`.
