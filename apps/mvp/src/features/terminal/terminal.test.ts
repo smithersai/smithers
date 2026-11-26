@@ -28,15 +28,15 @@ import {
 } from "../../test/chatApi"
 import { AuthStore, SESSION } from "../auth/store"
 import { Branch } from "../branch/branch.vibe"
-import { attach as attachTerminal, open as openTerminal, show, socketUrl } from "./actions"
+import { attach as attachTerminal, open as openTerminal, show, socketUrl } from "./actions.vibe"
 import { OpenRefused, TerminalClient } from "./api.vibe"
 import { ADMIT_WAIT_SECONDS, DEFAULT_COLS, DEFAULT_ROWS, OPEN_DEADLINE_SECONDS, openExecutionId } from "./contract"
 import { TerminalOpenRefused, TerminalOpenUnavailable } from "./flows"
 import { bytes, ended, openMs, opens, reconnects } from "./metrics"
 import { PANEL } from "./schema"
-import { requestOpen } from "./steps"
+import { requestOpen } from "./steps.vibe"
 import { TerminalStore } from "./store.vibe"
-import { Terminal } from "./terminal"
+import { Terminal } from "./terminal.vibe"
 import { panelViewOf } from "./view"
 
 const closers: Array<() => Promise<void>> = []

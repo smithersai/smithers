@@ -35,9 +35,9 @@ import { Status } from "../status/status"
 import { Theme } from "../theme/theme"
 import { Todos } from "../todos/todos"
 import { Views } from "../views/views"
-import { Terminal } from "./terminal"
+import { Terminal } from "./terminal.vibe"
 import { TerminalStore } from "./store.vibe"
-import { show } from "./actions"
+import { show } from "./actions.vibe"
 import { PluginsUi } from "../../plugins/ui"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []

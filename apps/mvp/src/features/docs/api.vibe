@@ -1,4 +1,4 @@
-import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
+import { Context, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { docsPageRoute, docsRoute, type DocsRefusal } from "./contract"
 import { DocsListing, DocsPage, DocsRefusalBody } from "./schema"
@@ -10,11 +10,11 @@ import { DocsListing, DocsPage, DocsRefusalBody } from "./schema"
  * ChatApi didn't answer with docs: no network or no whole answer in time (no `status`), or a refusal (`status`, with
  * its `code` and, for a docs site that didn't answer, its `reason`, when its body had them).
  */
-export class DocsRefused extends Data.TaggedError("DocsRefused")<{
-  readonly status?: number
-  readonly code?: DocsRefusal
-  readonly reason?: string
-}> {}
+export error DocsRefused {
+  status?: number
+  code?: DocsRefusal
+  reason?: string
+}
 
 /** How long one request to the docs routes may take: the docs site's own deadline is 8 s. */
 export const DOCS_WITHIN = "20 seconds"
@@ -22,24 +22,25 @@ export const DOCS_WITHIN = "20 seconds"
 const decodeRefusal = Schema.decodeUnknownOption(Schema.fromJsonString(DocsRefusalBody))
 
 const get = <A, I>(url: string, schema: Schema.Codec<A, I>, within: Duration.Input) =>
-  Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient
-    const response = yield* client.execute(HttpClientRequest.get(url)).pipe(Effect.mapError(() => new DocsRefused({})))
-    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+  effect {
+    const client = try HttpClient.HttpClient
+    const response = try client.execute(HttpClientRequest.get(url)).pipe(Effect.mapError(() => new DocsRefused({})))
+    try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
     if (response.status !== 200) {
-      const body = decodeRefusal(yield* Effect.orElseSucceed(response.text, () => ""))
-      return yield* new DocsRefused({
+      const text = response.text catch () => ""
+      const body = decodeRefusal(text)
+      throw new DocsRefused({
         status: response.status,
         ...Option.match(body, { onNone: () => ({}), onSome: (refusal) => refusal }),
       })
     }
-    return yield* response.json.pipe(
+    return try response.json.pipe(
       Effect.flatMap(Schema.decodeUnknownEffect(schema)),
       Effect.mapError(() => new DocsRefused({ status: response.status })),
     )
-  }).pipe(
+  }.pipe(
     // Interrupting the request aborts its fetch, so a stalled body stops too.
-    Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new DocsRefused({})) }),
+    Effect.timeoutOrElse({ duration: within, orElse: effect () => { throw new DocsRefused({}) } }),
   )
 
 /**
@@ -57,20 +58,23 @@ export class DocsClient extends Context.Service<
   static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
     Layer.effect(
       DocsClient,
-      Effect.map(HttpClient.HttpClient, (client) => {
+      effect {
+        const client = try HttpClient.HttpClient
         const within = options.within ?? DOCS_WITHIN
         return DocsClient.of({
-          search: Effect.fn("docs.search.get")(function* (owner, name, query) {
-            return yield* get(`${options.origin}${docsRoute(owner, name, query)}`, DocsListing, within).pipe(
+          search: Effect.fn("docs.search.get")(effect (owner, name, query) => {
+            const route = try sync(() => docsRoute(owner, name, query))
+            return try get(`${options.origin}${route}`, DocsListing, within).pipe(
               Effect.provideService(HttpClient.HttpClient, client),
             )
           }),
-          page: Effect.fn("docs.page.get")(function* (owner, name, path) {
-            return yield* get(`${options.origin}${docsPageRoute(owner, name, path)}`, DocsPage, within).pipe(
+          page: Effect.fn("docs.page.get")(effect (owner, name, path) => {
+            const route = try sync(() => docsPageRoute(owner, name, path))
+            return try get(`${options.origin}${route}`, DocsPage, within).pipe(
               Effect.provideService(HttpClient.HttpClient, client),
             )
           }),
         })
-      }),
+      },
     )
 }

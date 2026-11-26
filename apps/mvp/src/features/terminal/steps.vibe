@@ -26,30 +26,30 @@ export const openFailure = (refused: OpenRefused): OpenFailure =>
  * outcome and ChatApi's status, and a count of `opens` by outcome: `opening`, the refusal's reason, or `unavailable`.
  */
 export const requestOpen = (request: typeof RequestOpen.payloadSchema.Type) =>
-  Effect.gen(function* () {
-    const startedAt = yield* Clock.currentTimeMillis
-    const answer = yield* Effect.result((yield* TerminalClient).open(request))
+  effect {
+    const startedAt = try Clock.currentTimeMillis
+    const answer = try Effect.result((try TerminalClient).open(request))
     const failure = answer._tag === "Failure" ? openFailure(answer.failure) : undefined
     const outcome = failure === undefined
       ? "opening"
       : failure._tag === "@smthrs/mvp/terminal/TerminalOpenRefused"
       ? failure.reason
       : "unavailable"
-    yield* Metric.update(Metric.withAttributes(opens, { outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ outcome })
-    yield* Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("terminal.open").pipe(
+    try Metric.update(Metric.withAttributes(opens, { outcome }), 1)
+    try Effect.annotateCurrentSpan({ outcome })
+    try Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("terminal.open").pipe(
       Effect.annotateLogs({
         outcome,
         terminalId: request.terminalId,
         branchId: request.branchId,
         ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
-        durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+        durationMs: (try Clock.currentTimeMillis) - startedAt,
         feature: "terminal",
       }),
     )
     if (answer._tag === "Success") return answer.success
-    return yield* Effect.fail(failure!)
-  }).pipe(Effect.withSpan("terminal.open"))
+    throw failure!
+  }.pipe(Effect.withSpan("terminal.open"))
 
 /** Registers `terminal/open` with its step, asking through the host's `TerminalClient`. */
 export const registration = Interpreter.layerWithImplementations(TerminalOpenRequest, RequestOpen.toLayer(requestOpen))

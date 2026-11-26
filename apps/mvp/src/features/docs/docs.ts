@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
 import { open, search, warm } from "./actions"
-import type { DocsClient } from "./api"
+import type { DocsClient } from "./api.vibe"
 import { DocsStore } from "./store"
 
 // A repository's docs as a frontend sees them: one live query to read and plain functions to act, with no Effect in

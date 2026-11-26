@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { TerminalView } from "../terminal"
+import type { TerminalView } from "../terminal.vibe"
 
 // What the terminal's components get: its live query and plain actions (src/features/terminal/terminal.ts).
 

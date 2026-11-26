@@ -1,6 +1,6 @@
 import type { BranchView } from "./branch.vibe"
 import { isMarkdownPath } from "../repo/paths"
-import type { TerminalView } from "../terminal/terminal"
+import type { TerminalView } from "../terminal/terminal.vibe"
 
 /**
  * Opens the live parts of a branch page only while this navigation still owns them. `search.edit` is a file of the

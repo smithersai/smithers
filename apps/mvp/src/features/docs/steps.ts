@@ -3,7 +3,7 @@ import { Effect, Layer } from "effect"
 import { isRepository } from "../repo/contract"
 import { ViewsClient } from "../views/api"
 import { isAgentCall, viewConversation } from "../views/conversation"
-import { DocsClient, type DocsRefused } from "./api"
+import { DocsClient, type DocsRefused } from "./api.vibe"
 import { AGENT_TEXT_BYTES, DEFAULT_SHOWN } from "./contract"
 import {
   DocsForbidden,

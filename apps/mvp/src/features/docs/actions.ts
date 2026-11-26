@@ -1,6 +1,6 @@
 import { Clock, Duration, Effect, Fiber, FiberHandle, Option } from "effect"
 import { put } from "../repo/actions"
-import { type DocsRefused, DocsClient } from "./api"
+import { type DocsRefused, DocsClient } from "./api.vibe"
 import { type LoadKind, recordLoad } from "./records"
 import { CURRENT, type CurrentRow, pageKeyOf, repoKeyOf, searchKeyOf } from "./rows"
 import { DocsStore } from "./store"
