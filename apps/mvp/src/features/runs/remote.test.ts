@@ -11,7 +11,7 @@ import { BrowserEngine } from "@smthrs/platform-browser"
 // `probe/Pause`, run under a TODO attempt's id by an engine on a schema of its own, as the Durable Object runs a TODO's
 // `todo` run: so what the tab reads, and when it reads it again, is what it does for a TODO's run.
 import { Context, Deferred, Effect, Layer, Logger, ManagedRuntime, Option } from "effect"
-import * as AgentJobs from "../../../worker/runners/Jobs.ts"
+import * as AgentJobs from "../../../worker/runners/Jobs.vibe"
 import { FetchHttpClient } from "effect/http"
 import { read as telemetry } from "../../test/otlp"
 import { SqlClient } from "effect/sql"

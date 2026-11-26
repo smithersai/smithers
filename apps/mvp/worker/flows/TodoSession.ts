@@ -9,7 +9,7 @@ import { SqlClient } from "effect/sql"
 import { RUNNER_STEER_BOUNDARY } from "../../src/features/runs/contract.ts"
 import type { Steering } from "../runners/Api.ts"
 import * as Stack from "../stack/Stack.vibe"
-import * as Jobs from "../runners/Jobs.ts"
+import * as Jobs from "../runners/Jobs.vibe"
 import * as Store from "../runners/Store.ts"
 import { promptOf } from "./TodoAgent.ts"
 

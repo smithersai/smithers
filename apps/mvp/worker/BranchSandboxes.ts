@@ -44,7 +44,7 @@ import { asUser, configuredSessionOn, failureFields, runOn, stageTimer, type Use
 import { userOf } from "./branch/Users.ts"
 import * as Agents from "./personal/Agents.ts"
 import * as Subscriptions from "./personal/Subscriptions.vibe"
-import * as Overflow from "./runners/Overflow.ts"
+import * as Overflow from "./runners/Overflow.vibe"
 import { SecretKeys } from "./secrets/Keys.vibe"
 import * as SandboxEgress from "./secrets/SandboxEgress.vibe"
 import * as SocketAccess from "./SocketAccess.ts"

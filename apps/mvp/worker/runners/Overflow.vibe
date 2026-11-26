@@ -72,13 +72,14 @@ export type Unusable = "connection"
  * protocol and base URL, whose host the egress binds the key to.
  */
 export const connectionOf = (personId: string, connectionId: string) =>
-  Effect.map(PersonalStore.saved(personId), (saved) => {
+  effect {
+    const saved = try PersonalStore.saved(personId)
     const row = saved.find((each) => each.id === connectionId)
     return row !== undefined && row.active && MODEL_KINDS.includes(row.kind) && row.protocol !== null &&
         row.baseUrl !== null
       ? Option.some({ protocol: row.protocol, baseUrl: row.baseUrl })
       : Option.none<{ readonly protocol: Protocol; readonly baseUrl: string }>()
-  })
+  }
 
 /**
  * Locks the overflow runner's row, then the repository's overflow row: the order every release writes them in (the
@@ -86,11 +87,11 @@ export const connectionOf = (personId: string, connectionId: string) =>
  * deploy runs, never deadlock (decision 0148).
  */
 const lockRunnerThenOverflow = (repoId: string) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    Effect.andThen(
-      sql`SELECT 1 FROM runners WHERE repo_id = ${repoId} AND name = ${RUNNER} FOR UPDATE`,
-      sql`SELECT 1 FROM repo_overflow WHERE repo_id = ${repoId} FOR UPDATE`,
-    ))
+  effect {
+    const sql = try SqlClient.SqlClient
+    try sql`SELECT 1 FROM runners WHERE repo_id = ${repoId} AND name = ${RUNNER} FOR UPDATE`
+    return try sql`SELECT 1 FROM repo_overflow WHERE repo_id = ${repoId} FOR UPDATE`
+  }
 
 /**
  * Turns overflow on, or changes it, for `write.repoId`: registers the overflow runner by the minted token's SHA-256
@@ -100,15 +101,15 @@ const lockRunnerThenOverflow = (repoId: string) =>
 export const set = (
   write: Overflow & { readonly tokenSha256: string; readonly repoAuthorized: boolean },
   by: Store.By,
-): Effect.Effect<Store.Change, unknown, SqlClient.SqlClient> =>
+): Store.Change!unknown!SqlClient.SqlClient =>
   Store.refusedWhenLate(write.repoId, RUNNER, by, Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql.withTransaction(Effect.gen(function* () {
-      yield* WriteAuthority.bound
+    sql.withTransaction(effect {
+      try WriteAuthority.bound
       // A replay answers what its action did, before anything is written (decision 0148).
-      const before = yield* Store.replayed("runners", write.repoId, RUNNER, by)
+      const before = try Store.replayed("runners", write.repoId, RUNNER, by)
       if (before !== undefined) return before
-      yield* lockRunnerThenOverflow(write.repoId)
-      const change = yield* Store.addRunner({
+      try lockRunnerThenOverflow(write.repoId)
+      const change = try Store.addRunner({
         repoId: write.repoId,
         name: RUNNER,
         tokenSha256: write.tokenSha256,
@@ -118,7 +119,7 @@ export const set = (
       }, by)
       // Written again, or refused by its fence: the setting stays as it is.
       if (change !== "set") return change
-      yield* sql`
+      try sql`
         INSERT INTO repo_overflow (repo_id, person_id, connection_id, origin, profile, argv, labels, min_queued_seconds,
           capacity, token_ciphertext, token_nonce, key_version, updated_by)
         VALUES (${write.repoId}, ${write.personId}, ${write.connectionId}, ${write.origin}, ${write.profile},
@@ -131,28 +132,28 @@ export const set = (
           token_ciphertext = EXCLUDED.token_ciphertext, token_nonce = EXCLUDED.token_nonce,
           key_version = EXCLUDED.key_version, updated_by = EXCLUDED.updated_by, updated_at = now(), reconfirm_at = NULL`
       // The setting's own write may have waited too: still within the authority's deadline, or none of it holds.
-      yield* Store.commitWithin(by)
+      try Store.commitWithin(by)
       return change
-    }))))
+    })))
 
 /** Turns overflow off: the overflow runner's token is refused from now on, and the sealed token is gone. */
 export const remove = (
   write: { readonly repoId: string },
   by: Store.By,
-): Effect.Effect<Store.Change, unknown, SqlClient.SqlClient> =>
+): Store.Change!unknown!SqlClient.SqlClient =>
   Store.refusedWhenLate(write.repoId, RUNNER, by, Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql.withTransaction(Effect.gen(function* () {
-      yield* WriteAuthority.bound
-      const before = yield* Store.replayed("runners", write.repoId, RUNNER, by)
+    sql.withTransaction(effect {
+      try WriteAuthority.bound
+      const before = try Store.replayed("runners", write.repoId, RUNNER, by)
       if (before !== undefined) return before
-      yield* lockRunnerThenOverflow(write.repoId)
-      const change = yield* Store.removeRunner({ repoId: write.repoId, name: RUNNER }, by)
+      try lockRunnerThenOverflow(write.repoId)
+      const change = try Store.removeRunner({ repoId: write.repoId, name: RUNNER }, by)
       // Written again, or refused by its fence: the setting stays as it is.
       if (change !== "removed" && change !== "missing") return change
-      yield* sql`DELETE FROM repo_overflow WHERE repo_id = ${write.repoId}`
-      yield* Store.commitWithin(by)
+      try sql`DELETE FROM repo_overflow WHERE repo_id = ${write.repoId}`
+      try Store.commitWithin(by)
       return change
-    }))))
+    })))
 
 interface Row {
   readonly repoId: string
@@ -170,28 +171,27 @@ interface Row {
 }
 
 /** A repository's overflow, when it is on. */
-export const read = (repoId: string): Effect.Effect<Option.Option<Overflow>, unknown, SqlClient.SqlClient> =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    Effect.map(
-      sql<Row>`
+export const read = (repoId: string): Option.Option<Overflow>!unknown!SqlClient.SqlClient =>
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [row] = try sql<Row>`
         SELECT repo_id AS "repoId", person_id AS "personId", connection_id AS "connectionId", origin, profile, argv,
           labels, min_queued_seconds AS "minQueuedSeconds", capacity, token_ciphertext AS ciphertext,
           token_nonce AS nonce, key_version AS "keyVersion"
-        FROM repo_overflow WHERE repo_id = ${repoId} AND reconfirm_at IS NULL`,
-      ([row]) =>
-        row === undefined ? Option.none() : Option.some<Overflow>({
-          repoId: row.repoId,
-          personId: row.personId,
-          connectionId: row.connectionId,
-          origin: row.origin,
-          profile: row.profile,
-          argv: row.argv,
-          labels: row.labels,
-          minQueuedSeconds: row.minQueuedSeconds,
-          capacity: row.capacity,
-          token: { ciphertext: row.ciphertext, nonce: row.nonce, keyVersion: row.keyVersion },
-        }),
-    ))
+        FROM repo_overflow WHERE repo_id = ${repoId} AND reconfirm_at IS NULL`
+    return row === undefined ? Option.none() : Option.some<Overflow>({
+      repoId: row.repoId,
+      personId: row.personId,
+      connectionId: row.connectionId,
+      origin: row.origin,
+      profile: row.profile,
+      argv: row.argv,
+      labels: row.labels,
+      minQueuedSeconds: row.minQueuedSeconds,
+      capacity: row.capacity,
+      token: { ciphertext: row.ciphertext, nonce: row.nonce, keyVersion: row.keyVersion },
+    })
+  }
 
 /** The repository a job's overflow box would serve, as the box's branch names it. */
 export interface Due {
@@ -203,10 +203,10 @@ export interface Due {
  * (a retry of a job the box ran, which only the box may claim), claimable for at least the repository's
  * `minQueuedSeconds`, and the overflow runner hasn't asked in `AWAKE_SECONDS` (its box sleeps).
  */
-export const due = (key: string): Effect.Effect<Option.Option<Due>, unknown, SqlClient.SqlClient> =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    Effect.map(
-      sql<{ readonly repoId: string }>`
+export const due = (key: string): Option.Option<Due>!unknown!SqlClient.SqlClient =>
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [row] = try sql<{ readonly repoId: string }>`
         SELECT j.repo_id AS "repoId" FROM agent_jobs j JOIN repo_overflow o ON o.repo_id = j.repo_id AND o.reconfirm_at IS NULL
         WHERE j.key = ${key} AND j.status = 'queued' AND NOT j.cancel_requested
           AND (j.pinned_runner IS NULL OR EXISTS (
@@ -216,9 +216,9 @@ export const due = (key: string): Effect.Effect<Option.Option<Due>, unknown, Sql
             <= now() - o.min_queued_seconds * interval '1 second'
           AND NOT EXISTS (
             SELECT 1 FROM runners r WHERE r.repo_id = j.repo_id AND r.name = ${RUNNER} AND r.removed_at IS NULL
-              AND r.seen_at > now() - ${AWAKE_SECONDS}::int * interval '1 second')`,
-      ([row]) => (row === undefined ? Option.none() : Option.some(row)),
-    ))
+              AND r.seen_at > now() - ${AWAKE_SECONDS}::int * interval '1 second')`
+    return row === undefined ? Option.none() : Option.some(row)
+  }
 
 /** The id of a repository's overflow box, as its `SandboxObject` and the sandbox ledger name it. */
 export const boxId = (repoId: string): string => `overflow-${repoId}`

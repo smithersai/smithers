@@ -16,7 +16,7 @@ import * as RunContentTest from "../test/runContent.ts"
 import { testFile } from "../test/harness.ts"
 import * as RunnersApi from "./Api.ts"
 import * as GitCredential from "./GitCredential.vibe"
-import * as Jobs from "./Jobs.ts"
+import * as Jobs from "./Jobs.vibe"
 import * as Store from "./Store.ts"
 
 const githubs: Array<ReturnType<typeof makeScriptedGitHub>> = []

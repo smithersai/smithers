@@ -21,11 +21,11 @@ import * as SandboxEgress from "../secrets/SandboxEgress.vibe"
 import * as FlowHost from "../test/flowHost.ts"
 import * as RunContentTest from "../test/runContent.ts"
 import { branchRoles, signedIn, signedOut, testFile } from "../test/harness.ts"
-import * as Admin from "./Admin.ts"
-import * as AdminFlows from "./AdminFlows.ts"
+import * as Admin from "./Admin.vibe"
+import * as AdminFlows from "./AdminFlows.vibe"
 import * as RunnersApi from "./Api.ts"
-import * as Jobs from "./Jobs.ts"
-import * as Overflow from "./Overflow.ts"
+import * as Jobs from "./Jobs.vibe"
+import * as Overflow from "./Overflow.vibe"
 import * as Store from "./Store.ts"
 
 const runtime = testFile("overflow")
@@ -198,6 +198,27 @@ describe("a replayed overflow action", () => {
     const expired = { ...putFirst, fenced: { ...putFirst.fenced!, fence: { ...putFirst.fenced!.fence, expiresAt: Date.now() - 1 } } }
     expect(await runtime.runPromise(Overflow.set(first, expired))).toBe("set")
     expect(await state()).toEqual(after)
+  })
+
+  test("superseded PUT and DELETE leave the newer setting and runner intact", async () => {
+    const connectionId = await seedKey()
+    const stalePut = await fenced("overflow-put:stale", "put")
+    const staleDelete = await fenced("overflow-delete:stale", "delete")
+    const newer = writeOf(connectionId, "new-profile", "1")
+    const admitted = await fenced("overflow-put:new", "put")
+    expect(await runtime.runPromise(Overflow.set(newer, admitted))).toBe("set")
+    const before = await state()
+
+    const older = writeOf(connectionId, "old-profile", "2")
+    expect(await runtime.runPromise(Overflow.set(older, stalePut))).toBe("superseded")
+    expect(await runtime.runPromise(Overflow.remove({ repoId: REPO }, staleDelete))).toBe("superseded")
+    expect(await state()).toEqual(before)
+
+    const retire = await fenced("overflow-delete:current", "delete")
+    expect(await runtime.runPromise(Overflow.remove({ repoId: REPO }, retire))).toBe("removed")
+    const alreadyOff = await fenced("overflow-delete:already-off", "delete")
+    expect(await runtime.runPromise(Overflow.remove({ repoId: REPO }, alreadyOff))).toBe("missing")
+    expect(await runtime.runPromise(Overflow.read(REPO))).toEqual(Option.none())
   })
 
   test("a DELETE replayed after overflow was turned on again, and after its authority ended, changes nothing", async () => {

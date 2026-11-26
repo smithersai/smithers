@@ -19,7 +19,7 @@ import { testFile } from "../test/harness.ts"
 import * as RunContentTest from "../test/runContent.ts"
 import * as RunnersApi from "./Api.ts"
 import * as Fleet from "./Fleet.ts"
-import * as Jobs from "./Jobs.ts"
+import * as Jobs from "./Jobs.vibe"
 import * as Store from "./Store.ts"
 
 const runtime = testFile("fleet")

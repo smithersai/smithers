@@ -11,7 +11,7 @@ import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { bearerOf } from "../RunCredentials.ts"
 import * as Fleet from "./Fleet.ts"
-import { SETTLE_GRACE_SECONDS } from "./Jobs.ts"
+import { SETTLE_GRACE_SECONDS } from "./Jobs.vibe"
 import { Transcripts } from "./RunContent.ts"
 
 // The runner routes (decision 0136, docs/features/agent-runners.md#the-runner-protocol): a runner machine pulls its

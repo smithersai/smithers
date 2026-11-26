@@ -5,7 +5,7 @@ import { Effect, Layer, Metric, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
 import * as Fence from "./Fence.vibe"
-import * as Overflow from "./Overflow.ts"
+import * as Overflow from "./Overflow.vibe"
 import * as Store from "./Store.ts"
 
 // `admin/AddRunner`, `admin/RemoveRunner`, `admin/SetAgent` and `admin/RemoveAgent` (decision 0136,
@@ -176,12 +176,12 @@ export const step = <
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
   name: (payload: P) => string,
   action: Omit<Store.Fenced, "fence">,
-  run: (payload: P, by: Store.By) => Effect.Effect<Store.Change, unknown, SqlClient.SqlClient>,
+  run: (payload: P, by: Store.By) => Store.Change!unknown!SqlClient.SqlClient,
 ) =>
 (payload: P) =>
-  Effect.gen(function* () {
-    const invocationKey = yield* Action.CurrentInvocationKey
-    if (invocationKey === undefined) return yield* Effect.die(new NoInvocationKey())
+  effect {
+    const invocationKey = try Action.CurrentInvocationKey
+    if (invocationKey === undefined) return try Effect.die(new NoInvocationKey())
     // An action with no fence was started before fences: refused, writing nothing but its receipt.
     const write = payload.fence === undefined
       ? Effect.as(
@@ -195,23 +195,19 @@ export const step = <
         "authorization_expired" as const,
       )
       : run(payload, { actorId: payload.actorId, invocationKey, fenced: { ...action, fence: payload.fence } })
-    const change = yield* write.pipe(
-      Effect.provide(database),
-      Effect.catch((error) =>
-        Effect.andThen(
-          Effect.logWarning("runner.admin").pipe(
-            Effect.annotateLogs({ flow: flowName, outcome: "unavailable", errorCode: codeOf(error) }),
-          ),
-          Effect.fail(new StoreUnavailable()),
-        )
-      ),
-    )
-    yield* Metric.update(Metric.withAttributes(writes, { flow: flowName, change }), 1)
-    yield* Effect.logInfo("runner.admin").pipe(
+    const change = Effect.provide(write, database) catch effect (error) => {
+      const errorCode = try Effect.sync(() => codeOf(error))
+      try Effect.logWarning("runner.admin").pipe(
+        Effect.annotateLogs({ flow: flowName, outcome: "unavailable", errorCode }),
+      )
+      throw new StoreUnavailable()
+    }
+    try Metric.update(Metric.withAttributes(writes, { flow: flowName, change }), 1)
+    try Effect.logInfo("runner.admin").pipe(
       Effect.annotateLogs({ flow: flowName, change, repoId: payload.repoId, name: name(payload) }),
     )
     return { change }
-  }).pipe(Effect.withSpan("runner.admin", { attributes: { "smithers.flow": flowName, "smithers.repo.id": payload.repoId } }))
+  }.pipe(Effect.withSpan("runner.admin", { attributes: { "smithers.flow": flowName, "smithers.repo.id": payload.repoId } }))
 
 /** Registers the flows with their steps over `database`. */
 export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>

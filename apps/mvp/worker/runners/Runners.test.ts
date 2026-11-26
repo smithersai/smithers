@@ -7,9 +7,9 @@ import { digestSync } from "@smthrs/crypto"
 import { Action, Fault, type Flow, FlowRuntime } from "@smthrs/flow"
 import { Database as FlowsDatabase, Journal } from "@smthrs/flows"
 import { Notification, NotificationQueue, SteerPayload } from "@smthrs/notifications"
-import { Context, Effect, Exit, Layer, Logger, Option, Scope, Tracer } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Logger, Option, Scope, Tracer } from "effect"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
-import { HttpEffect } from "effect/http"
+import { HttpEffect, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as MigrationReauthorization from "../../db/migrations/0095_runner_reauthorization.ts"
@@ -28,11 +28,11 @@ import * as Flows from "../Flows.ts"
 import * as FlowHost from "../test/flowHost.ts"
 import * as RunContentTest from "../test/runContent.ts"
 import { branchRoles, signedIn, signedOut, testFile } from "../test/harness.ts"
-import * as Admin from "./Admin.ts"
+import * as Admin from "./Admin.vibe"
 import type * as Fence from "./Fence.vibe"
-import * as AdminFlows from "./AdminFlows.ts"
+import * as AdminFlows from "./AdminFlows.vibe"
 import * as RunnersApi from "./Api.ts"
-import * as Jobs from "./Jobs.ts"
+import * as Jobs from "./Jobs.vibe"
 import * as RunContent from "./RunContent.ts"
 import * as Store from "./Store.ts"
 
@@ -124,6 +124,16 @@ const done = (changes: AgentRunner.Changes = { additions: [{ path: "NOTES.md", c
   ({ _tag: "Done", changes, summary: "Added alpha.", usage: {} }) as const
 
 describe("the job store and the runner routes", () => {
+  test("a malformed generation key is a defect and leaves the job store untouched", async () => {
+    const store = await jobs()
+    const key = "todo:malformed"
+    for (const operation of [store.start(taskOf(), key), store.cancel(key)]) {
+      const cause = await Effect.runPromise(Effect.flip(Effect.sandbox(operation)))
+      expect(Cause.squash(cause)).toEqual(new RangeError("AgentRunner.parseKey: not a generation key"))
+    }
+    expect(await sql`SELECT key FROM agent_jobs WHERE key = ${key}`).toEqual([])
+  })
+
   test("a fleet database outage after claiming preserves the claim and records its code", async () => {
     const token = await register("projection-claim")
     await Effect.runPromise((await jobs()).start(taskOf(), "todo:claim-projection#g1"))
@@ -1485,6 +1495,7 @@ describe("the repository's runners and agents", () => {
       expect((await asAdmin.send("runners/nyc-01", "DELETE")).status).toBe(202)
       expect(await query(Store.codingAgent(REPO))).toEqual(Option.none())
       expect(await sql`SELECT count(*)::int AS n FROM runners WHERE removed_at IS NOT NULL`).toEqual([{ n: 1 }])
+      expect(Admin.handles("/api/runners/admin-receipts/receipt")).toBe(true)
       expect(Admin.handles("/api/repos/acme/widgets/agents/coder")).toBe(true)
       expect(Admin.handles("/api/repos/acme/widgets/agents")).toBe(false)
       expect(Admin.handles("/api/repos/acme/widgets/agents/%E0")).toBe(false)
@@ -1992,6 +2003,13 @@ describe("unhappy paths, through a database that is down or a starter that refus
     expect(await query(Store.removeAgent({ repoId: REPO, name: "coder" }, remove))).toBe("repeat")
   })
 
+  test("an unavailable ordering store refuses the request before running its handler", async () => {
+    const api = await Effect.runPromise(Admin.make(down))
+    const handler = HttpEffect.toWebHandler(api.admit(Effect.succeed(HttpServerResponse.empty({ status: 204 }))))
+    const response = await handler(new Request("http://localhost/api/repos/acme/widgets/runners/nyc-01", { method: "DELETE" }))
+    expect([response.status, await response.json()]).toEqual([503, { code: "unavailable" }])
+  })
+
   test("an Admin route answers 503 when its flow can't start or who is asking can't be read", async () => {
     await recordInstallation()
     const db = await database()
@@ -2010,6 +2028,13 @@ describe("unhappy paths, through a database that is down or a starter that refus
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       })).then((response) => response.status)
     const asAdmin = as(signedIn(admin))
+    const receipt = "http://localhost/api/runners/admin-receipts/"
+    const unauthorizedReceipt = await as(signedOut)(new Request(receipt + "execution"))
+    expect([unauthorizedReceipt.status, await unauthorizedReceipt.json()]).toEqual([401, { code: "authentication" }])
+    const postReceipt = await asAdmin(new Request(receipt + "execution", { method: "POST" }))
+    expect([postReceipt.status, postReceipt.headers.get("allow")]).toEqual([405, "GET"])
+    const malformedReceipt = await asAdmin(new Request(receipt + "%"))
+    expect([malformedReceipt.status, await malformedReceipt.json()]).toEqual([503, { code: "unavailable" }])
     expect(await send(asAdmin, "runners/nyc-01", "DELETE")).toBe(503)
     expect(await send(asAdmin, "runners/nyc-01", "PUT", { tokenSha256: "d".repeat(64), labels: [], capacity: 1 })).toBe(503)
     expect(await send(asAdmin, "agents/coder", "PUT", { labels: [], profile: "p" })).toBe(503)
