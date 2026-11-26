@@ -1,5 +1,3 @@
-import { Effect, Metric } from "effect"
-
 // The records of a person's own model in the browser (docs/observability.md#your-model): ops, outcomes, ChatApi's
 // refusal codes, a failed test's model error code, and HTTP statuses. Never a key, a URL or a model id.
 
@@ -36,10 +34,7 @@ export const RECORD: Record<Op, string> = {
 }
 
 /** One record's log line, named for its op, and its count. */
-export const record = (op: Op, outcome: Outcome, fields: Fields = {}) =>
-  Effect.andThen(
-    Metric.update(Metric.withAttributes(writes, { op, outcome }), 1),
-    Effect.logWithLevel(quiet.includes(outcome) ? "Info" : "Warn")(RECORD[op]).pipe(
-      Effect.annotateLogs({ op, outcome, ...fields }),
-    ),
-  )
+export const record = effect (op: Op, outcome: Outcome, fields: Fields = {}) => {
+  try Metric.update(Metric.withAttributes(writes, { op, outcome }), 1)
+  try annotateLogs(logWithLevel(quiet.includes(outcome) ? "Info" : "Warn")(RECORD[op]), { op, outcome, ...fields })
+}
