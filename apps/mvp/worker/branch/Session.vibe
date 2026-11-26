@@ -1,14 +1,14 @@
-import { Cause, Clock, Config, Effect, Schema, type Scope } from "effect"
+import { Cause, Clock, Config, Schema, type Scope } from "effect"
 import { WORKSPACE } from "../../src/features/terminal/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
-import { SandboxUnavailable } from "./Sandboxes.ts"
+import { SandboxUnavailable } from "./Sandboxes.vibe"
 import { envOf, idOf, provisionArgv, userOf } from "./Users.ts"
 
 /** The command boundary session provisioning needs; the host owns the scoped process. */
 export interface Container<E = never, R = never> {
-  exec(argv: Array<string>, options: ExecOptions): Effect.Effect<{
-    readonly exitCode: Effect.Effect<number, E, R>
-  }, E, R | Scope.Scope>
+  exec(argv: Array<string>, options: ExecOptions): {
+    readonly exitCode: number!E!R
+  }!E!(R | Scope.Scope)
 }
 
 /**
@@ -34,9 +34,9 @@ export interface SessionOptions extends UserOptions {
 
 export interface Services<R = never> {
   readonly box: Container<unknown, R>
-  readonly start: Effect.Effect<unknown, unknown, R>
-  readonly touch: Effect.Effect<unknown, unknown, R>
-  readonly ensureSession: (options: SessionOptions) => Effect.Effect<unknown, unknown, R>
+  readonly start: unknown!unknown!R
+  readonly touch: unknown!unknown!R
+  readonly ensureSession: (options: SessionOptions) => unknown!unknown!R
 }
 
 /** The whole terminal session start's deadline, including provisioning and tmux; 60 seconds unless set. */
@@ -56,12 +56,14 @@ export const failureFields = (cause: Cause.Cause<unknown>) => {
 
 /** Records a stage's elapsed time when it succeeds, fails or is interrupted, without recording its input or cause. */
 export const stageTimer = <S extends string>(stage: () => S, took: Partial<Record<`${S}Ms`, number>>) =>
-  <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    Effect.flatMap(Clock.currentTimeMillis, (startedAt) => {
-      const key = `${stage()}Ms` as const
-      return Effect.onExit(effect, () =>
-        Effect.map(Clock.currentTimeMillis, (now) => void (took[key] = now - startedAt)))
+  effect <A, E, R>(effect: A!E!R) => {
+    const startedAt = try Clock.currentTimeMillis
+    const key = `${stage()}Ms` as const
+    return try onExit(effect, effect () => {
+      const now = try Clock.currentTimeMillis
+      took[key] = now - startedAt
     })
+  }
 
 /** The stage a terminal's session start has reached, as its `sandbox.session` line names it. */
 export type SessionStage = "start" | "provision" | "session"
@@ -70,43 +72,46 @@ export type SessionStage = "start" | "provision" | "session"
  * How a command runs as the machine's user `name`: its numeric `uid:gid` (a deployed container refuses a name) and the
  * variables `exec` doesn't give it (worker/branch/Users.ts). A name with no uid is a defect.
  */
-export const asUser = (name: string) => {
-  const user = idOf(name)
-  return user === undefined
-    ? Effect.die(new Error("the machine has no uid for this user"))
-    : Effect.succeed({ user, env: envOf(name) })
+export const asUser = effect (name: string) => {
+  const user = try sync(() => idOf(name))
+  if (user === undefined) return try die(new Error("the machine has no uid for this user"))
+  return { user, env: try sync(() => envOf(name)) }
 }
 
 /** Runs a command on the container as its numeric user, its output discarded, waiting for its scoped process to exit. */
-export const runOn = <E, R>(box: Container<E, R>, argv: Array<string>, name: string) =>
-  Effect.flatMap(asUser(name), (options) =>
-    Effect.scoped(Effect.flatMap(
-      box.exec(argv, { ...options, stdout: "ignore", stderr: "ignore" }),
-      (process) => process.exitCode,
-    )))
+export const runOn = effect <E, R>(box: Container<E, R>, argv: Array<string>, name: string) => {
+  const options = try asUser(name)
+  return try scoped(effect {
+    const command = try box.exec(argv, { ...options, stdout: "ignore", stderr: "ignore" })
+    return try command.exitCode
+  })
+}
 
 /** The object's terminal session boundary, over its injected container and lifecycle services. */
 export const sessionOn = <R>(options: Services<R> & { readonly timeoutMs: number }) => (terminalId: string, ownerId: string) =>
-  Effect.suspend(() => {
+  suspend(() => {
     let stage: SessionStage = "start"
     const took: Partial<Record<`${SessionStage}Ms`, number>> = {}
     const timed = stageTimer<SessionStage>(() => stage, took)
-    return Effect.gen(function* () {
-      yield* timed(Effect.andThen(options.start, options.touch))
+    return effect {
+      try timed(andThen(options.start, options.touch))
       stage = "provision"
-      const name = userOf(ownerId)
-      const exit = yield* timed(runOn(options.box, provisionArgv(name), "root"))
-      if (exit !== 0) return yield* new SandboxUnavailable({ reason: "exec" })
+      const name = try sync(() => userOf(ownerId))
+      const argv = try sync(() => provisionArgv(name))
+      const exit = try timed(runOn(options.box, argv, "root"))
+      if (exit !== 0) throw new SandboxUnavailable({ reason: "exec" })
       stage = "session"
-      yield* timed(Effect.flatMap(asUser(name), ({ env, user }) =>
-        options.ensureSession({ name: terminalId, user, cwd: WORKSPACE, env })))
-      yield* Effect.logInfo("sandbox.session").pipe(Effect.annotateLogs({ outcome: "started", ...took }))
+      try timed(effect {
+        const { env, user } = try asUser(name)
+        try options.ensureSession({ name: terminalId, user, cwd: WORKSPACE, env })
+      })
+      try logInfo("sandbox.session").pipe(annotateLogs({ outcome: "started", ...took }))
       return true
-    }).pipe(
-      Effect.timeout(options.timeoutMs),
-      Effect.catchCause((cause) =>
-        Effect.as(
-          Effect.logWarning("sandbox.session").pipe(Effect.annotateLogs({
+    }.pipe(
+      timeout(options.timeoutMs),
+      catchCause((cause) =>
+        as(
+          logWarning("sandbox.session").pipe(annotateLogs({
             stage,
             outcome: Cause.isTimeoutError(Cause.squash(cause)) ? "timeout" : "failed",
             ...took,
@@ -119,5 +124,5 @@ export const sessionOn = <R>(options: Services<R> & { readonly timeoutMs: number
   })
 
 /** Capture configuration once when the object initializes, before any session request runs. */
-export const configuredSessionOn = Effect.map(sandboxSessionTimeoutSeconds.pipe(Effect.orDie), (seconds) =>
+export const configuredSessionOn = map(sandboxSessionTimeoutSeconds.pipe(orDie), (seconds) =>
   <R>(options: Services<R>) => sessionOn({ ...options, timeoutMs: seconds * 1000 }))

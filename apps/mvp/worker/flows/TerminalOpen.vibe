@@ -4,7 +4,7 @@ import { Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { ADMIT_WAIT_SECONDS, FAILURES, OPEN_DEADLINE_SECONDS } from "../../src/features/terminal/contract.ts"
 import * as Budget from "../branch/Budget.vibe"
-import { CheckoutFailed, SandboxBranch, Sandboxes, SandboxUnavailable } from "../branch/Sandboxes.ts"
+import { CheckoutFailed, SandboxBranch, Sandboxes, SandboxUnavailable } from "../branch/Sandboxes.vibe"
 import { codeOf } from "../ErrorCode.ts"
 
 // `terminal/Open { terminalId, branch }` (decision 0013 §2, docs/features/branch-workspace.md#opening-a-terminal):

@@ -58,7 +58,7 @@ test("the final write checks use the shared absolute deadline", () => {
   expect(sourceText(new URL("./stack/Stack.vibe", import.meta.url))).toContain("WriteAuthority.requireAtCommit(")
  expect(sourceText(new URL("./runners/Fence.vibe", import.meta.url))).toContain("WriteAuthority.deadline(")
  expect(sourceText(new URL("./stack/Stack.vibe", import.meta.url))).toContain("WriteAuthority.requireAtCommit(")
-  const text = sourceText(new URL("./branch/Texts.ts", import.meta.url))
+  const text = sourceText(new URL("./branch/Texts.vibe", import.meta.url))
   expect(text).toContain("WriteAuthority.live(")
   expect(text).not.toContain("WriteAuthority.holds(")
 })

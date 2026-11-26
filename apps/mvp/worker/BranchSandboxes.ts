@@ -39,8 +39,8 @@ import {
   Sandboxes,
   SandboxUnavailable,
   TerminalSockets
-} from "./branch/Sandboxes.ts"
-import { asUser, configuredSessionOn, failureFields, runOn, stageTimer, type UserOptions } from "./branch/Session.ts"
+} from "./branch/Sandboxes.vibe"
+import { asUser, configuredSessionOn, failureFields, runOn, stageTimer, type UserOptions } from "./branch/Session.vibe"
 import { userOf } from "./branch/Users.ts"
 import * as Agents from "./personal/Agents.ts"
 import * as Subscriptions from "./personal/Subscriptions.vibe"

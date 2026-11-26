@@ -21,10 +21,11 @@ import {
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import { branchHarness, type BranchHarness, resetBranches, shared, tracked } from "../test/branch.ts"
 import { eventually, recorded, testFile } from "../test/harness.ts"
-import * as Texts from "./Texts.ts"
+import * as Texts from "./Texts.vibe"
 import { BranchRoles } from "./Access.vibe"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import { repositoryOf } from "../github/Config.ts"
+import { confirmedSession } from "../github/test/fixtures.ts"
 import { app } from "../github/test/harness.ts"
 import { accountIdOf, appKey, INSTALLATION_ID, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 
@@ -121,6 +122,23 @@ describe("POST /api/texts/<id>", () => {
     expect(h.count(Texts.writes, { outcome: "existing" })).toBe(1)
     expect(h.span("text.write")).toHaveLength(2)
     expect(recorded(h)).not.toContain(SENTINEL)
+  })
+
+  test("rolls back a valid update when the resolved session has expired", async () => {
+    const actor = { ...maya, subject: { ...maya.subject, id: crypto.randomUUID() }, session: crypto.randomUUID() }
+    await confirmedSession(runtime, actor)
+    const branch = await tracked(runtime, REPO, "feature/text-expired", "open", actor.subject.id)
+    const h = await open(actor)
+    const textId = crypto.randomUUID()
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE sessions SET expires_at = now() - interval '1 second' WHERE id = ${actor.session}`))
+
+    expect(await json(await write(h, textId, { conversation: branch.conversationId }, typed(SENTINEL)))).toEqual([
+      503,
+      { code: "unavailable" },
+    ])
+    expect(await stored(`branch:${branch.branchId}`, textId)).toEqual([])
+    expect(h.only("text.write").annotations).toMatchObject({ errorCode: "WriteAuthorityExpired" })
   })
 
   test("a viewer's update is refused before it is stored, and so is anyone's who may not see the text", async () => {
@@ -356,6 +374,24 @@ describe("GET /api/texts/<id>/room", () => {
       200,
       { joined: { principal: "person-nolog", name: "person-nolog", role: "member", access: "view" } },
     ])
+  })
+
+  test("a stale role or ended session cannot join a text room", async () => {
+    const actor = { ...maya, subject: { ...maya.subject, id: crypto.randomUUID() }, session: crypto.randomUUID() }
+    await confirmedSession(runtime, actor)
+    const branch = await tracked(runtime, REPO, "feature/text-admission", "open", actor.subject.id)
+    const h = await open(actor)
+    const textId = crypto.randomUUID()
+    const scope = `conversation=${branch.conversationId}`
+
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE sessions SET role_verified_at = now() - interval '3 hours' WHERE id = ${actor.session}`))
+    expect(await json(await join(h, textId, scope))).toEqual([503, { code: "unavailable" }])
+
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`DELETE FROM sessions WHERE id = ${actor.session}`))
+    expect(await json(await join(h, textId, scope))).toEqual([401, { code: "authentication" }])
+    expect(h.rooms.joined).toEqual([])
   })
 
   test("refuses who may not see the text, and anything but this app's page asking for a socket", async () => {

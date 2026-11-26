@@ -13,9 +13,9 @@ import * as ConversationApi from "./ConversationApi.vibe"
 import * as Presence from "./Presence.vibe"
 import * as Publications from "./Publications.vibe"
 import * as SandboxCalls from "./SandboxCalls.vibe"
-import * as Shares from "./Shares.ts"
-import * as Terminals from "./Terminals.ts"
-import * as Texts from "./Texts.ts"
+import * as Shares from "./Shares.vibe"
+import * as Terminals from "./Terminals.vibe"
+import * as Texts from "./Texts.vibe"
 
 // The branch workspace's routes (decision 0013, docs/features/branch-workspace.md): tracking a branch, sharing it, its
 // publication on GitHub (docs/features/branch-publish.md), a person's own list of conversations and archiving one

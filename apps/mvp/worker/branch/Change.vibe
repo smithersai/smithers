@@ -1,7 +1,7 @@
 import { SandboxTools } from "@smthrs/sandbox"
 import { Schema } from "effect"
 import { Machines } from "./Machines.vibe"
-import type { SandboxBranch } from "./Sandboxes.ts"
+import type { SandboxBranch } from "./Sandboxes.vibe"
 
 // A working copy's change, read whole from its branch's machine (docs/features/branch-publish.md#publish,
 // docs/features/todos.md#the-run): every file that differs from an immutable base commit, local commits included, each

@@ -21,7 +21,7 @@ import { Forge } from "../branch/Forge.vibe"
 import type { BranchRoles, Policy } from "../branch/Access.vibe"
 import { Directory, type Person } from "../branch/People.vibe"
 import { type Member, RoomUnavailable, Rooms } from "../branch/Rooms.vibe"
-import { type Attachment, type Revoked, SandboxUnavailable, TerminalSockets } from "../branch/Sandboxes.ts"
+import { type Attachment, type Revoked, SandboxUnavailable, TerminalSockets } from "../branch/Sandboxes.vibe"
 import * as Flows from "../Flows.ts"
 import { branchRoles, signedIn, type testFile } from "./harness.ts"
 

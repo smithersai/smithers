@@ -5,7 +5,7 @@ import { expect, test } from "vitest"
 import {
   asUser, configuredSessionOn, runOn, sandboxSessionTimeoutSeconds, sessionOn,
   type Container, type ExecOptions, type SessionOptions,
-} from "./Session.ts"
+} from "./Session.vibe"
 import { envOf, idOf, provisionArgv, userOf } from "./Users.ts"
 
 const TERMINAL = "12345678-1234-1234-1234-123456789abc"

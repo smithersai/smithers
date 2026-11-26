@@ -11,7 +11,7 @@ import type { Repository } from "../github/Config.ts"
 import { Forge } from "./Forge.vibe"
 import { Machines } from "./Machines.vibe"
 import type { BranchRow, Publication } from "./Publish.vibe"
-import type { SandboxBranch } from "./Sandboxes.ts"
+import type { SandboxBranch } from "./Sandboxes.vibe"
 
 // Resync (docs/features/branch-publish.md#resync; ruling GH-6, Will, 2026-10-20 06:39: "update branch resync"): a
 // published branch's GitHub branch moves on GitHub (an Update branch's merge, a push, a commit on github.com), and the

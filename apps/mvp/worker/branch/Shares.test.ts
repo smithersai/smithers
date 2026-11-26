@@ -19,7 +19,7 @@ import {
 } from "../test/branch.ts"
 import { eventually, recorded, testFile } from "../test/harness.ts"
 import { Directory, DirectoryUnavailable } from "./People.vibe"
-import * as Shares from "./Shares.ts"
+import * as Shares from "./Shares.vibe"
 import * as Conversations from "./Conversations.vibe"
 
 const runtime = testFile("shares")
@@ -127,6 +127,16 @@ describe("POST /api/branches/<id>/shares", () => {
     ])
     expect(h.count(Shares.changes, { change: "person", outcome: "changed" })).toBe(1)
     expect(h.span("branch.share")).toHaveLength(2)
+  })
+
+  test("a delegate acting for the owner cannot grant access or change live sessions", async () => {
+    const branch = await mine()
+    const h = await open({ ...maya, act: { kind: "agent", id: crypto.randomUUID() } })
+
+    expect(await json(await post(h, branch.branchId, { login: "ben", access: "view" }))).toEqual([403, { code: "person_only" }])
+    expect(await grants(branch.branchId)).toEqual([])
+    expect(h.sockets.enforced).toEqual([])
+    expect(h.rooms.enforced).toEqual([])
   })
 
   test("a person who signed in is found in people, by their login in any case", async () => {

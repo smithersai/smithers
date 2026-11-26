@@ -1,7 +1,7 @@
 import { withUserAgent } from "../github/Http.ts"
 import { Egress } from "@smthrs/secrets"
 import type { HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
-import type { SandboxBranch } from "./Sandboxes.ts"
+import type { SandboxBranch } from "./Sandboxes.vibe"
 
 // A box's registry egress (ruling ARCH-15, docs/features/sandbox-tools.md#the-machine): what the outbound HTTP and HTTPS
 // of a branch's, a TODO's or a check job's box reach when it holds no secret. Most repositories install packages and

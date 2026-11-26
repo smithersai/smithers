@@ -11,7 +11,7 @@ import { SqlClient } from "effect/sql"
 import { CALL_FAILURES, COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { ToolResult } from "../../src/features/sandbox/results.ts"
 import { Machines } from "../branch/Machines.vibe"
-import { checkoutDetails, CheckoutFailed, SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.ts"
+import { checkoutDetails, CheckoutFailed, SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { Command, ToolCall } from "./SandboxCommand.vibe"
 

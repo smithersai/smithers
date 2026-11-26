@@ -1,5 +1,5 @@
 import { Fault } from "@smthrs/flow"
-import { Context, type Effect, Schema } from "effect"
+import { Context, Schema } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Admission } from "../SocketAccess.ts"
 import type { Role } from "../Actor.ts"
@@ -109,12 +109,12 @@ export class Sandboxes extends Context.Service<
     readonly wake: (
       branch: SandboxBranch,
       ownerId?: string,
-    ) => Effect.Effect<{ readonly generation: number }, SandboxUnavailable | CheckoutFailed>
+    ) => { readonly generation: number }!(SandboxUnavailable | CheckoutFailed)
     /**
      * Starts terminal `terminalId`'s shell session in the branch's machine unless it is there, as its owner's own user,
      * made on first use, so one person's shell can't reach another's.
      */
-    readonly session: (branchId: string, terminalId: string, ownerId: string) => Effect.Effect<void, SandboxUnavailable>
+    readonly session: (branchId: string, terminalId: string, ownerId: string) => void!SandboxUnavailable
   }
 >()("@smthrs/mvp/branch/Sandboxes") {}
 
@@ -126,12 +126,12 @@ export class TerminalSockets extends Context.Service<
     readonly attach: (
       branchId: string,
       attachment: Attachment,
-    ) => Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpServerRequest.HttpServerRequest>
+    ) => HttpServerResponse.HttpServerResponse!!HttpServerRequest.HttpServerRequest
     /**
      * Whether the terminal's session is alive in the branch's machine: the machine runs and the session is there. A
      * machine that slept or was lost has no sessions. Never wakes a machine.
      */
-    readonly alive: (branchId: string, terminalId: string, ownerId: string) => Effect.Effect<boolean>
+    readonly alive: (branchId: string, terminalId: string, ownerId: string) => boolean!!
     /**
      * Applies the branch's permission list to every socket attached on its machine: a viewer who may no longer view
      * the branch is detached for good (close 1008), one whose access changed reconnects to get the new one, and each
@@ -141,6 +141,6 @@ export class TerminalSockets extends Context.Service<
       branchId: string,
       policy: Policy,
       revoked: ReadonlyArray<Revoked>,
-    ) => Effect.Effect<void, SandboxUnavailable>
+    ) => void!SandboxUnavailable
   }
 >()("@smthrs/mvp/branch/TerminalSockets") {}

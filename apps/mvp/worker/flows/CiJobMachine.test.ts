@@ -5,7 +5,7 @@ import { Effect, Exit, Layer } from "effect"
 import { describe, expect, test } from "vitest"
 import { noCommands } from "../test/commands.ts"
 import { Machines } from "../branch/Machines.vibe"
-import { SandboxUnavailable } from "../branch/Sandboxes.ts"
+import { SandboxUnavailable } from "../branch/Sandboxes.vibe"
 import { runFlow } from "../test/flowHost.ts"
 import * as CiJobMachine from "./CiJobMachine.vibe"
 

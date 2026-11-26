@@ -1,5 +1,5 @@
 import { digestSync } from "@smthrs/crypto"
-import type { SandboxBranch } from "../branch/Sandboxes.ts"
+import type { SandboxBranch } from "../branch/Sandboxes.vibe"
 import type { ChecksRequest } from "./Checks.vibe"
 
 export const jobMachineOf = (request: ChecksRequest): { readonly branch: SandboxBranch; readonly ownerId: string } => {

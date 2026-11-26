@@ -56,6 +56,7 @@ export const ACCESS_LABELS: Readonly<Record<Access, string>> = { owner: "Owner",
 /**
  * Whether `login` can be a GitHub login: 1 to 39 letters, digits and single hyphens, neither first nor last. GitHub
  * compares logins ignoring case.
+ * @throws {never}
  */
 export const isLogin = (login: string): boolean => login.length <= 39 && /^[A-Za-z0-9](?:-?[A-Za-z0-9])*$/.test(login)
 

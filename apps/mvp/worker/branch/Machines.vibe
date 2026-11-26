@@ -1,7 +1,7 @@
 import { type SandboxCommand, SandboxTools } from "@smthrs/sandbox"
 import { Context, Schema } from "effect"
 import { ToolResult } from "../../src/features/sandbox/results.ts"
-import { checkoutDetails, CheckoutFailed, CheckoutOutcome, type SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "./Sandboxes.ts"
+import { checkoutDetails, CheckoutFailed, CheckoutOutcome, type SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "./Sandboxes.vibe"
 
 // What a branch's machine does for the sandbox tools and its own lifecycle (decision 0005 §2-§3,
 // docs/features/sandbox-tools.md): run one tool call as the person who asked, and go to sleep when nothing happens in

@@ -1,6 +1,6 @@
 import { digestSync } from "@smthrs/crypto"
 import type { CiJob } from "@smthrs/sandbox"
-import type { SandboxBranch } from "../branch/Sandboxes.ts"
+import type { SandboxBranch } from "../branch/Sandboxes.vibe"
 
 /**
  * The machine job `job` of `target`'s run runs on: one per run and job name, named by a digest of the two, of the kind

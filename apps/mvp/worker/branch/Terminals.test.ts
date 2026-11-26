@@ -21,6 +21,7 @@ import {
 } from "../../src/features/terminal/contract.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import * as Flows from "../Flows.ts"
+import { confirmedSession } from "../github/test/fixtures.ts"
 import {
   branchHarness,
   type BranchHarness,
@@ -34,8 +35,8 @@ import { eventually, recorded, testFile } from "../test/harness.ts"
 import { BranchRoles } from "./Access.vibe"
 import * as BranchApi from "./BranchApi.vibe"
 import * as Conversations from "./Conversations.vibe"
-import { TerminalSockets } from "./Sandboxes.ts"
-import * as Terminals from "./Terminals.ts"
+import { TerminalSockets } from "./Sandboxes.vibe"
+import * as Terminals from "./Terminals.vibe"
 
 const runtime = testFile("terminals")
 beforeEach(() => resetBranches(runtime))
@@ -421,6 +422,24 @@ describe("GET /api/terminals/<id>: the socket", () => {
     } finally {
       await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE github_repositories`))
     }
+  })
+
+  test("a stale role or ended session cannot attach to a live terminal", async () => {
+    const { branchId, terminalId } = await opened()
+    const actor = { ...other, subject: { ...other.subject, id: crypto.randomUUID() }, session: crypto.randomUUID() }
+    await confirmedSession(runtime, actor)
+    await shared(runtime, branchId, actor.subject.id, "view")
+    const h = await open(actor)
+
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE sessions SET role_verified_at = now() - interval '3 hours' WHERE id = ${actor.session}`))
+    expect(await json(await connect(h, terminalId))).toEqual([503, { code: "unavailable" }])
+
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`DELETE FROM sessions WHERE id = ${actor.session}`))
+    expect(await json(await connect(h, terminalId))).toEqual([401, { code: "authentication" }])
+    expect(h.sockets.attached).toEqual([])
+    expect(await terminalRows(runtime, branchId)).toEqual([expect.objectContaining({ id: terminalId, status: "open" })])
   })
 
   test("attaches the owner to type and someone the branch is shared with to view to watch", async () => {

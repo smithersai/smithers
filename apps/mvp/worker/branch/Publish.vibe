@@ -27,7 +27,7 @@ import { keyOf, pushedOf } from "./PublishDigests.ts"
 import type { Forge } from "./Forge.vibe"
 import { Machines } from "./Machines.vibe"
 import { resync, ResyncRefused, ResyncUnavailable } from "./Resync.vibe"
-import type { SandboxBranch } from "./Sandboxes.ts"
+import type { SandboxBranch } from "./Sandboxes.vibe"
 
 export { keyOf, pushedOf } from "./PublishDigests.ts"
 
