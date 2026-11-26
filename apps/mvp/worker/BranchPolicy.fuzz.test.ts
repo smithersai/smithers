@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import { REPOSITORY_GRANTEE, type ShareAccess } from "../src/features/branch/contract.ts"
 import type { Role } from "./Actor.ts"
 import * as Access from "./branch/Access.ts"
-import * as Budget from "./branch/Budget.ts"
+import * as Budget from "./branch/Budget.vibe"
 import * as RegistryEgress from "./branch/RegistryEgress.ts"
 import { CI_OWNER } from "./flows/CiJobMachine.vibe"
 

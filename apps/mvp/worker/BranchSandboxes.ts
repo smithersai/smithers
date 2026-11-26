@@ -14,7 +14,7 @@ import { FORGE_HOST, SANDBOX_USER, WORKSPACE } from "../src/features/terminal/co
 import type { Role } from "./Actor.ts"
 import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.ts"
 import * as Artifacts from "./branch/Artifacts.ts"
-import * as Budget from "./branch/Budget.ts"
+import * as Budget from "./branch/Budget.vibe"
 import { CHECKOUT_FAILURES, checkoutArgv, forgeRemote } from "./branch/Checkout.ts"
 import { Forge, proxy } from "./branch/Forge.ts"
 import * as JobMachines from "./branch/JobMachines.ts"

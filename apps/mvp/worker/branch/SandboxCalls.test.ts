@@ -24,7 +24,7 @@ import * as Messages from "../Messages.ts"
 import { branchHarness, type BranchHarness, resetBranches, shared, tracked } from "../test/branch.ts"
 import { recorded, testFile } from "../test/harness.ts"
 import { BranchRoles } from "./Access.ts"
-import * as BranchApi from "./BranchApi.ts"
+import * as BranchApi from "./BranchApi.vibe"
 import * as Conversations from "./Conversations.ts"
 import * as SandboxCalls from "./SandboxCalls.ts"
 

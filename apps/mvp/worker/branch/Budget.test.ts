@@ -11,7 +11,7 @@ import { DEFAULT_SANDBOX_LIMITS } from "../../src/features/spend/contract.ts"
 import { CI_OWNER } from "../flows/CiJobMachine.vibe"
 import { memory } from "../test/box.ts"
 import { testFile } from "../test/harness.ts"
-import * as Budget from "./Budget.ts"
+import * as Budget from "./Budget.vibe"
 
 const runtime = testFile("sandbox_budget")
 

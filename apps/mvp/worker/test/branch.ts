@@ -15,7 +15,7 @@ import { PUBLICATIONS_TABLE, SHARES_TABLE } from "../../src/features/branch/cont
 import { TEXT_UPDATES_TABLE } from "../../src/features/coedit/contract.ts"
 import { TERMINALS_TABLE } from "../../src/features/terminal/contract.ts"
 import * as Actor from "../Actor.ts"
-import * as BranchApi from "../branch/BranchApi.ts"
+import * as BranchApi from "../branch/BranchApi.vibe"
 import * as Conversations from "../branch/Conversations.ts"
 import { Forge } from "../branch/Forge.ts"
 import type { BranchRoles, Policy } from "../branch/Access.ts"

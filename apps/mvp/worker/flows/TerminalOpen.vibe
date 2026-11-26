@@ -3,7 +3,7 @@ import { Node, type Planned } from "@smthrs/plan"
 import { Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { ADMIT_WAIT_SECONDS, FAILURES, OPEN_DEADLINE_SECONDS } from "../../src/features/terminal/contract.ts"
-import * as Budget from "../branch/Budget.ts"
+import * as Budget from "../branch/Budget.vibe"
 import { CheckoutFailed, SandboxBranch, Sandboxes, SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { codeOf } from "../ErrorCode.ts"
 

@@ -8,7 +8,7 @@ import type { SqlClient } from "effect/sql"
 import { BRANCHES_ROUTE, PUBLICATIONS_SHAPE_ROUTE, SHARES_SHAPE_ROUTE } from "../../src/features/branch/contract.ts"
 import { commandMaxSeconds } from "../../src/features/sandbox/config.ts"
 import { TERMINALS_ROUTE, TERMINALS_SHAPE_ROUTE } from "../../src/features/terminal/contract.ts"
-import * as Branches from "./Branches.ts"
+import * as Branches from "./Branches.vibe"
 import * as ConversationApi from "./ConversationApi.ts"
 import * as Presence from "./Presence.ts"
 import * as Publications from "./Publications.ts"
@@ -40,34 +40,34 @@ const branchPath = (path: string) => {
  * The routes over `database`, which opens a Postgres client for each request's scope. Reads `SANDBOX_COMMAND_MAX_SECONDS`
  * once, for the sandbox calls' commands. Captures the GitHub App and Code Storage client before building handlers.
  */
-export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
-  Effect.gen(function* () {
-    const app = yield* GitHubConfig.configured
-    const client = yield* RepoConfig.codeStorage
-    const conversations = yield* ConversationApi.make(database)
-    const terminals = yield* Terminals.make(database)
-    const shares = yield* Shares.make(database)
-    const publications = yield* Publications.make(database)
-    const room = Presence.make(database)
-    const sandboxCalls = SandboxCalls.make(database, yield* commandMaxSeconds)
-    const texts = yield* Texts.make(database)
-    const fetch = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      const path = request.url.split("?")[0]!
-      if (ConversationApi.handles(path)) return yield* conversations.fetch
-      if (path === CREATION_ROUTE) return yield* Creation.route(client, database)
-      if (path === BRANCHES_ROUTE) return yield* Branches.make(database, app)
-      if (SandboxCalls.handles(path)) return yield* sandboxCalls.fetch
-      if (Texts.handles(path)) return yield* texts.fetch
-      if (path === SHARES_SHAPE_ROUTE) return yield* shares.shape
-      if (path === PUBLICATIONS_SHAPE_ROUTE) return yield* publications
-      if (path === TERMINALS_ROUTE) return yield* terminals.open
-      if (path === TERMINALS_SHAPE_ROUTE) return yield* terminals.shape
-      if (path.startsWith(`${TERMINALS_ROUTE}/`)) return yield* terminals.connect(path.slice(TERMINALS_ROUTE.length + 1))
-      const branch = branchPath(path)
-      if (branch?.what === "shares") return yield* shares.change(branch.branchId)
-      if (branch?.what === "room") return yield* room(branch.branchId)
-      return HttpServerResponse.empty({ status: 404 })
-    })
-    return { fetch }
-  })
+export const make = effect <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
+  const app = try GitHubConfig.configured
+  const client = try RepoConfig.codeStorage
+  const conversations = try ConversationApi.make(database)
+  const terminals = try Terminals.make(database)
+  const shares = try Shares.make(database)
+  const publications = try Publications.make(database)
+  const room = try sync(() => Presence.make(database))
+  const commandSeconds = try commandMaxSeconds
+  const sandboxCalls = try sync(() => SandboxCalls.make(database, commandSeconds))
+  const texts = try Texts.make(database)
+  const fetch = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const path = request.url.split("?")[0]!
+    if (try sync(() => ConversationApi.handles(path))) return try conversations.fetch
+    if (path === CREATION_ROUTE) return try Creation.route(client, database)
+    if (path === BRANCHES_ROUTE) return try Branches.make(database, app)
+    if (try sync(() => SandboxCalls.handles(path))) return try sandboxCalls.fetch
+    if (try sync(() => Texts.handles(path))) return try texts.fetch
+    if (path === SHARES_SHAPE_ROUTE) return try shares.shape
+    if (path === PUBLICATIONS_SHAPE_ROUTE) return try publications
+    if (path === TERMINALS_ROUTE) return try terminals.open
+    if (path === TERMINALS_SHAPE_ROUTE) return try terminals.shape
+    if (path.startsWith(`${TERMINALS_ROUTE}/`)) return try terminals.connect(path.slice(TERMINALS_ROUTE.length + 1))
+    const branch = branchPath(path)
+    if (branch?.what === "shares") return try shares.change(branch.branchId)
+    if (branch?.what === "room") return try room(branch.branchId)
+    return HttpServerResponse.empty({ status: 404 })
+  }
+  return { fetch }
+}

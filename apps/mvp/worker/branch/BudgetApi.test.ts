@@ -2,14 +2,15 @@
 // sets them through ChatApi's real handler over this file's schema of the compose Postgres, and they sync through the
 // compose Electric to Admins only.
 import { Data, Effect, Layer } from "effect"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { SANDBOX_LIMIT_COLUMNS } from "../../src/features/spend/contract.ts"
+import { MAX_SANDBOX_LIMITS_BODY_BYTES, SANDBOX_LIMIT_COLUMNS } from "../../src/features/spend/contract.ts"
 import type { Actor } from "../Actor.ts"
-import { answers, harness, testFile } from "../test/harness.ts"
-import * as Budget from "./Budget.ts"
-import * as BudgetApi from "./BudgetApi.ts"
+import { answers, harness, signedIn, testFile } from "../test/harness.ts"
+import * as Budget from "./Budget.vibe"
+import * as BudgetApi from "./BudgetApi.vibe"
 
 const runtime = testFile("sandbox_limits")
 
@@ -100,6 +101,22 @@ describe("POST /api/sandbox-limits", () => {
     expect([response.status, await response.json()]).toEqual([status, { code }])
     expect(await limits()).toEqual({ awake: 20, perPerson: 2, monthlyAlertUsd: 100 })
     expect(h.only("sandbox.limits")).toMatchObject({ level: "WARN", annotations: { status } })
+  })
+
+  test("the handler refuses an oversized body even without ChatApi write admission", async () => {
+    const database = Layer.effect(SqlClient.SqlClient, Effect.die("unexpected database access"))
+    const { set } = await runtime.runPromise(BudgetApi.make(database))
+    const request = HttpServerRequest.fromWeb(new Request("http://chat.test/api/sandbox-limits", {
+      method: "POST",
+      body: "x".repeat(MAX_SANDBOX_LIMITS_BODY_BYTES + 1),
+    }))
+    const response = HttpServerResponse.toWeb(await runtime.runPromise(set.pipe(
+      Effect.provide(signedIn(admin)),
+      Effect.provideService(HttpServerRequest.HttpServerRequest, request),
+    )))
+
+    expect([response.status, await response.json()]).toEqual([413, { code: "too_large" }])
+    expect(response.headers.get("cache-control")).toBe("no-store")
   })
 
   test("405 for another method", async () => {

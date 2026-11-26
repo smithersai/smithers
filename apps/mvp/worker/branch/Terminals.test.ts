@@ -7,7 +7,10 @@ import { SqlClient } from "effect/sql"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { BRANCHES_ROUTE, SHARES_SHAPE_ROUTE } from "../../src/features/branch/contract.ts"
+import { BRANCHES_ROUTE, PUBLICATIONS_SHAPE_ROUTE, SHARES_SHAPE_ROUTE } from "../../src/features/branch/contract.ts"
+import { CREATION_ROUTE } from "../../src/features/branch/creation.ts"
+import { MY_CONVERSATIONS_SHAPE_ROUTE } from "../../src/features/conversations/contract.ts"
+import { TEXTS_SHAPE_ROUTE } from "../../src/features/coedit/contract.ts"
 import {
   MAX_OPEN_BODY_BYTES,
   ADMIT_WAIT_SECONDS,
@@ -29,7 +32,7 @@ import {
 } from "../test/branch.ts"
 import { eventually, recorded, testFile } from "../test/harness.ts"
 import { BranchRoles } from "./Access.ts"
-import * as BranchApi from "./BranchApi.ts"
+import * as BranchApi from "./BranchApi.vibe"
 import * as Conversations from "./Conversations.ts"
 import { TerminalSockets } from "./Sandboxes.ts"
 import * as Terminals from "./Terminals.ts"
@@ -638,6 +641,9 @@ describe("BranchApi", () => {
         `${BRANCHES_ROUTE}/x/shares`,
         `${BRANCHES_ROUTE}/x/room`,
         SHARES_SHAPE_ROUTE,
+        PUBLICATIONS_SHAPE_ROUTE,
+        TEXTS_SHAPE_ROUTE,
+        MY_CONVERSATIONS_SHAPE_ROUTE,
         TERMINALS_ROUTE,
         TERMINALS_SHAPE_ROUTE,
         `${TERMINALS_ROUTE}/x`,
@@ -648,6 +654,12 @@ describe("BranchApi", () => {
     for (const path of ["/api/branch", "/api/terminalsx", "/api/shapes/branches", "/api/questions"]) {
       expect([path, BranchApi.handles(path)]).toEqual([path, false])
     }
+  })
+
+  test("the creation path routes independently of its query string", async () => {
+    const h = await open()
+    const response = await h.fetch(`${CREATION_ROUTE}?request=ignored`, { method: "POST" })
+    expect([response.status, response.headers.get("allow")]).toEqual([405, "GET"])
   })
 
   test("a path it doesn't handle is 404, a branch's other paths included", async () => {

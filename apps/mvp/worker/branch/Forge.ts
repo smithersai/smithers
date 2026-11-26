@@ -129,7 +129,10 @@ export const createBranch = (repository: Repository, branch: string, from: strin
     Effect.withSpan("forge.createBranch"),
   )
 
-/** Safe typed error metadata only: never a URL, branch, credential, message or raw cause. */
+/**
+ * Safe typed error metadata only: never a URL, branch, credential, message or raw cause.
+ * @throws {never}
+ */
 export const failureFields = (
   operation: "default_branch" | "create_ref" | "refs_read",
   error: CreateRefused | GitRemote.GitRemoteError,

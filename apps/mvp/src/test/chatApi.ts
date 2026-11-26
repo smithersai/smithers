@@ -56,7 +56,7 @@ import {
   ATTACH_TOKENS_ROUTE,
 } from "../features/mcp/contract"
 import * as Actor from "../../worker/Actor.ts"
-import * as BranchApi from "../../worker/branch/BranchApi.ts"
+import * as BranchApi from "../../worker/branch/BranchApi.vibe"
 import * as Conversations from "../../worker/branch/Conversations.ts"
 import { Forge } from "../../worker/branch/Forge.ts"
 import { Directory } from "../../worker/branch/People.ts"

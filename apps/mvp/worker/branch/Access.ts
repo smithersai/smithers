@@ -65,7 +65,10 @@ export const accessOf = (actor: Option.Option<Actor>, grants: Grants): Access | 
   return lower(rank[person] >= rank[link] ? person : link, ceiling)
 }
 
-/** Whether `access` opens the live branch: its conversation, terminals and room. */
+/**
+ * Whether `access` opens the live branch: its conversation, terminals and room.
+ * @throws {never}
+ */
 export const canView = (access: Access | "none"): access is Access => access !== "none"
 
 /** Whether `access` writes to the live branch: asks in its conversation and types in its terminals. */
