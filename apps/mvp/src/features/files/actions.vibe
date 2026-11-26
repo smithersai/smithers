@@ -1,9 +1,9 @@
-import { Context, Effect, Layer, Option } from "effect"
+import { Context, Layer, Option } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { RepoStore } from "../repo/store"
 import { VIEW } from "../repo/rows"
 import type { FilesCall, FilesReply, Here } from "./schema"
-import { FilesStore } from "./store"
+import { FilesStore } from "./store.vibe"
 import { fileHref, hereOf, rootHref, tabsAt } from "./view"
 
 // What file tabs do in the tab (docs/features/files.md): open a file of the repository the tab shows as a tab at its
@@ -16,7 +16,7 @@ export class FilesPage extends Context.Service<
   FilesPage,
   {
     /** The repository, revision and location the tab shows; none when it shows no repository. */
-    readonly here: Effect.Effect<Option.Option<Here>>
+    readonly here: Option.Option<Here>!!
     /** Takes this tab to `path`, an app path. */
     readonly navigate: (path: string) => void
   }
@@ -28,69 +28,72 @@ export class FilesPage extends Context.Service<
   static readonly layer = (host: { readonly pathname?: () => string; readonly navigate: (path: string) => void }) =>
     Layer.effect(
       FilesPage,
-      Effect.gen(function* () {
-        const repo = yield* RepoStore
+      effect {
+        const repo = try RepoStore
         return FilesPage.of({
-          here: host.pathname === undefined ? Effect.succeedNone : Effect.map(
+          here: host.pathname === undefined ? succeedNone : map(
             repo.view.get(VIEW),
             Option.flatMap((view) => Option.fromNullishOr(hereOf(host.pathname!(), view))),
           ),
           navigate: host.navigate,
         })
-      }),
+      },
     )
 }
 
 const nowhere: FilesReply = { repository: null, ref: null, done: false }
 
 /** Opens `path` at `here` as a tab with `lines`, and takes the tab to it. */
-export const open = (path: string, lines: string | null) =>
-  Effect.gen(function* () {
-    const page = yield* FilesPage
-    const here = yield* page.here
-    if (Option.isNone(here)) return nowhere
-    yield* (yield* FilesStore).keep(here.value, path, lines).pipe(Effect.orDie)
-    page.navigate(fileHref(here.value, path, lines))
-    return { repository: `${here.value.owner}/${here.value.name}`, ref: here.value.revision, done: true }
-  })
+export const open = effect (path: string, lines: string | null) => {
+  const page = try FilesPage
+  const here = try page.here
+  if (Option.isNone(here)) return nowhere
+  try orDie((try FilesStore).keep(here.value, path, lines))
+  const href = try sync(() => fileHref(here.value, path, lines))
+  page.navigate(href)
+  return { repository: `${here.value.owner}/${here.value.name}`, ref: here.value.revision, done: true }
+}
 
 /**
  * Closes `path`'s tab at `here`. When it is the file on screen, the tab takes its place: the next tab, else the one
  * before, else the repository's root.
  */
-export const close = (path: string) =>
-  Effect.gen(function* () {
-    const page = yield* FilesPage
-    const store = yield* FilesStore
-    const here = yield* page.here
-    if (Option.isNone(here)) return nowhere
-    const at = here.value
-    const strip = tabsAt(yield* store.tabs.toArray, at)
-    const index = strip.findIndex((row) => row.path === path)
-    const closed = yield* store.drop(at, path)
-    if (closed && at.kind === "blob" && at.path === path) {
-      const next = strip[index + 1] ?? strip[index - 1]
-      page.navigate(next === undefined ? rootHref(at) : fileHref(at, next.path, next.lines))
-    }
-    return { repository: `${at.owner}/${at.name}`, ref: at.revision, done: closed }
-  })
+export const close = effect (path: string) => {
+  const page = try FilesPage
+  const store = try FilesStore
+  const here = try page.here
+  if (Option.isNone(here)) return nowhere
+  const at = here.value
+  const rows = try store.tabs.toArray
+  const strip = try sync(() => tabsAt(rows, at))
+  const index = strip.findIndex((row) => row.path === path)
+  const closed = try store.drop(at, path)
+  if (closed && at.kind === "blob" && at.path === path) {
+    const next = strip[index + 1] ?? strip[index - 1]
+    const href = try sync(() => next === undefined ? rootHref(at) : fileHref(at, next.path, next.lines))
+    page.navigate(href)
+  }
+  return { repository: `${at.owner}/${at.name}`, ref: at.revision, done: closed }
+}
 
 /** What the tab answers a step's call with. */
 export const answer = (call: FilesCall) => call.op === "open" ? open(call.path, call.lines ?? null) : close(call.path)
 
 /** A person's click or key on a tab: `file/open` at the lines the tab last highlighted. */
-export const openTab = (path: string) =>
-  Effect.gen(function* () {
-    const store = yield* FilesStore
-    const here = yield* (yield* FilesPage).here
-    const row = Option.isNone(here) ? undefined : tabsAt(yield* store.tabs.toArray, here.value).find((r) => r.path === path)
-    yield* Effect.ignore(
-      (yield* FlowDispatch).dispatch("file/open", { path, ...(row?.lines == null ? {} : { lines: row.lines }) }, {
-        door: "button",
-      }),
-    )
-  })
+export const openTab = effect (path: string) => {
+  const store = try FilesStore
+  const here = try (try FilesPage).here
+  const row = Option.isNone(here)
+    ? undefined
+    : try map(store.tabs.toArray, (rows) => tabsAt(rows, here.value).find((r) => r.path === path))
+  const dispatch = try FlowDispatch
+  try ignore(dispatch.dispatch("file/open", { path, ...(row?.lines == null ? {} : { lines: row.lines }) }, {
+    door: "button",
+  }))
+}
 
 /** A person's close button or key on a tab: `file/close`. */
-export const closeTab = (path: string) =>
-  Effect.flatMap(FlowDispatch, (dispatch) => Effect.ignore(dispatch.dispatch("file/close", { path }, { door: "button" })))
+export const closeTab = effect (path: string) => {
+  const dispatch = try FlowDispatch
+  try ignore(dispatch.dispatch("file/close", { path }, { door: "button" }))
+}

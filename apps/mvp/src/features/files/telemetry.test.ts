@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { expect, test } from "vitest"
 import { openTestApp, TestChatApi } from "../../test/chatApi"
 import { read } from "../../test/otlp"
-import { Files } from "./files"
+import { Files } from "./files.vibe"
 
 test("focus requests, consumption and drops reach the app's OTLP logs, spans and counts without paths", async () => {
   const runtime = openTestApp({ sessionLifecycle: false })

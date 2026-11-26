@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { FilesView } from "../files"
+import type { FilesView } from "../files.vibe"
 
 // What React components get: file tabs' live query to render and plain actions to call (features/files/files.ts).
 

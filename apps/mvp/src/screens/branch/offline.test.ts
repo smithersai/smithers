@@ -1,4 +1,4 @@
-import { Files } from "../../features/files/files"
+import { Files } from "../../features/files/files.vibe"
 import { branchRenderer, DeniedBranchHeader } from "./offline-render"
 // A fresh device with tracking held at the injected engine service, as a durable branch/track waiting offline.
 // The app, router, stores and components are real; releasing the fault runs the real flow against ChatApi.

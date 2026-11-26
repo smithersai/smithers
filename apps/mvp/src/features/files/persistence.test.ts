@@ -3,8 +3,8 @@ import { Effect, Exit, Layer, ManagedRuntime, Option } from "effect"
 import { expect, test, vi } from "vitest"
 import { repoAuthority } from "../../test/repoAuthority"
 import { nodeDevice } from "../../test/chatApi"
-import { close, FilesPage, open } from "./actions"
-import { FilesStore } from "./store"
+import { close, FilesPage, open } from "./actions.vibe"
+import { FilesStore } from "./store.vibe"
 
 const at = { owner: "octocat", name: "Spoon-Knife", revision: "main" } as const
 

@@ -1,10 +1,10 @@
 import type { FileTabsFocusEvent } from "@smthrs/ui"
 import { runners } from "../../boundary.vibe"
-import { Context, Effect, Layer, Metric } from "effect"
+import { Context, Layer, Metric } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
-import { closeTab, FilesPage, openTab } from "./actions"
+import { closeTab, FilesPage, openTab } from "./actions.vibe"
 import { fileFocus } from "./metrics"
-import { FilesStore } from "./store"
+import { FilesStore } from "./store.vibe"
 
 // File tabs as a frontend sees them: a live query to read and plain functions to act. React renders the query with
 // `useLiveQuery` and calls the actions from the strip; it holds no state and runs no Effect.
@@ -33,23 +33,22 @@ export class Files extends Context.Service<Files, { readonly queries: FilesQueri
    */
   static readonly layer = Layer.effect(
     Files,
-    Effect.gen(function* () {
-      const store = yield* FilesStore
-      const { runPromise: run } = runners(yield* Effect.context<FilesStore | FilesPage | FlowDispatch>(), "files")
-      const { runSync: record } = runners(yield* Effect.context<never>(), "files")
+    effect {
+      const store = try FilesStore
+      const { runPromise: run } = runners(try context<FilesStore | FilesPage | FlowDispatch>(), "files")
+      const { runSync: record } = runners(try context<never>(), "files")
       return Files.of({
         queries: { tabs: store.all.tanstack },
         actions: {
-          recordFocus: (event) => record(Effect.logInfo("files.focus").pipe(
-            Effect.annotateLogs(event),
-            Effect.andThen(Metric.update(Metric.withAttributes(fileFocus, event), 1)),
-            Effect.withSpan("files.focus", { attributes: event }),
-          )),
+          recordFocus: (event) => record(logInfo("files.focus")
+            |> annotateLogs(%, event)
+            |> andThen(%, Metric.update(Metric.withAttributes(fileFocus, event), 1))
+            |> withSpan(%, "files.focus", { attributes: event })),
           open: (path) => run(openTab(path)),
           close: (path) => run(closeTab(path)),
         },
       })
-    }),
+    },
   )
 }
 

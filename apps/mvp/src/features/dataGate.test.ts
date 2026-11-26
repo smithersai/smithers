@@ -12,7 +12,7 @@ const source = `
   import { RepoStore } from "./repo/store"
   import { Plugins } from "../plugins/plugins"
   import { HomeStore } from "./home/store"
-  import { FilesStore } from "./files/store"
+  import { FilesStore } from "./files/store.vibe"
   import { DomainsStore } from "./domains/store.vibe"
   import { SecretsStore } from "./secrets/store"
   import { FleetStore } from "./fleet/store"

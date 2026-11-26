@@ -1,4 +1,4 @@
-import { FileTabsTabs } from "../features/files/flows"
+import { FileTabsTabs } from "../features/files/flows.vibe"
 import { BugTabs } from "../features/bugs/flows.vibe"
 import { FlowRegistry } from "../flows/registry"
 // Client flows on a Node host over the real ChatApi handler. A model is injected only into the test host.

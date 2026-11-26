@@ -1,7 +1,7 @@
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserCollectionCoordinator } from "@tanstack/browser-db-sqlite-persistence"
-import { close as closeFile, FilesPage, open as openFile } from "./actions"
-import { FilesStore } from "./store"
+import { close as closeFile, FilesPage, open as openFile } from "./actions.vibe"
+import { FilesStore } from "./store.vibe"
 import { replaceRole, RepoStore } from "../repo/store"
 // File tabs (docs/features/files.md): the strip and its links as pure functions; then a tab on RepoApi's real handler
 // and Electric (src/test/repoDevice.ts), whose repository view keeps a tab for every file it shows, and whose
@@ -21,7 +21,7 @@ import { BROWSER_TELEMETRY } from "../../telemetry"
 import { openTab, type Tab } from "../../test/repoDevice"
 import { nodeDevice } from "../../test/chatApi"
 import { FILES_TELEMETRY, filesChannel, LINES_PATTERN } from "./contract"
-import { CloseFile, FileTabsTabs, normalPath, OpenFile, registration } from "./flows"
+import { CloseFile, FileTabsTabs, normalPath, OpenFile, registration } from "./flows.vibe"
 import { fileTabs } from "./metrics"
 import type { FileTabRow, Here } from "./schema"
 import { fileHref, hereOf, linesOf, rootHref, stripOf, tabKey, tabsAt } from "./view"

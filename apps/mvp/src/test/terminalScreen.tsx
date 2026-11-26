@@ -1,6 +1,6 @@
 import { HomeProvider } from "../features/home/components/HomeContext"
 import { FilesProvider } from "../features/files/components/FilesContext"
-import type { FilesView } from "../features/files/files"
+import type { FilesView } from "../features/files/files.vibe"
 // Render the real branch screen for router integration tests; React stays in the view adapter.
 import { Match, RouterContextProvider } from "@tanstack/react-router"
 import { renderToStaticMarkup } from "react-dom/server"

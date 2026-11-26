@@ -17,7 +17,7 @@ import {
 } from "../features/sandbox/flows"
 import { AuthRefresh } from "../features/auth/flows"
 import { ChatCopy, ChatEdit } from "../features/chat/flows"
-import { CloseFile, OpenFile } from "../features/files/flows"
+import { CloseFile, OpenFile } from "../features/files/flows.vibe"
 import { Navigate } from "../features/navigation/flows"
 import { RepoAbout, RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../features/repo/flows"
 import type { Role } from "../features/auth/contract"

@@ -1,4 +1,4 @@
-import { Files } from "../files/files"
+import { Files } from "../files/files.vibe"
 // The real router and terminal view on the browser layer, with Electric's injected slow transport. No dev server:
 // ChatApi, Postgres and Electric are the same dependencies as terminal.test.ts. Only the shape responses are held.
 import { ShapeSource } from "@smthrs/effect-electric"
