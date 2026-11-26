@@ -6,7 +6,7 @@ import { repoOf } from "./features/attention/progress"
 import { admissionNamespace, admitCommand, hasEngineAdmission, hasOutboxAdmission, startOperation } from "./features/commands/admission.vibe"
 import type { FlowName } from "./flows/registry"
 import { IssuesStore } from "./features/issues/store"
-import { TodosStore } from "./features/todos/store"
+import { TodosStore } from "./features/todos/store.vibe"
 import { admissionReceipt, beginAttempt, executionOf, finishAdmission, identifyAdmission, recordAdmission, settledEngineInputs, WriteIntents, type WriteIntent } from "./writeAdmission"
 
 /**

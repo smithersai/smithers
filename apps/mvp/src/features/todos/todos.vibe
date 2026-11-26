@@ -1,11 +1,10 @@
-import { Context, Effect, Layer, Stream } from "effect"
 import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { attach, configureStack, retryChange, retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setAfter, setAttachmentIssue, setIssue, setPrompt, setTitle, warm } from "./actions.vibe"
 import type { StackClient } from "./api.vibe"
 import type { StackBase } from "./contract"
 import { syncIssueChoices } from "./issuePickers.vibe"
-import { type RepoStack, TodosStore } from "./store"
+import { type RepoStack, TodosStore } from "./store.vibe"
 
 // TODOs as a frontend sees it: live queries to read and plain functions to act, with no Effect in sight. React renders
 // the queries with `useLiveQuery`, and the stack routes' loaders call `open`.
@@ -78,17 +77,17 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
   /** Binds the store's queries and the actions for frontends, run with the services this layer was built with. */
   static readonly layer = Layer.effect(
     Todos,
-    Effect.gen(function* () {
-      const store = yield* TodosStore
+    effect {
+      const store = try TodosStore
       // Routes and restored or newly kept drafts own issue subscriptions, even without a mounted card.
-      yield* Stream.zipLatest(store.viewQuery.rows, store.draftsQuery.rows).pipe(
+      try Stream.zipLatest(store.viewQuery.rows, store.draftsQuery.rows).pipe(
         Stream.runForEach(([views, drafts]) => syncIssueChoices([
           ...views.map((view) => view.repoId),
           ...drafts.map((draft) => draft.repoId),
         ])),
-        Effect.forkIn(store.scope, { startImmediately: true }),
+        forkIn(store.scope, { startImmediately: true }),
       )
-      const context = yield* Effect.context<TodosStore | FlowDispatch | StackClient>()
+      const context = try Effect.context<TodosStore | FlowDispatch | StackClient>()
       const { runSync: run, runPromise: runAsync } = runners(context, "todos")
       const stackQueries = (stack: RepoStack): StackQueries => ({
         todos: stack.todos.tanstack,
@@ -125,7 +124,7 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
           discard: (opId) => run(discard(opId)),
         },
       })
-    }),
+    },
   )
 }
 

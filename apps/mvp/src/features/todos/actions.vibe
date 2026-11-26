@@ -1,5 +1,5 @@
 import { clearWriteComposer } from "../../admissionSource.vibe"
-import { keep } from "./writes"
+import { keep } from "./writes.vibe"
 import { admissionReceipt, beginAdmission, executionOf, finishAdmission, finishRetainedAdmission, whileAdmitting, forgetAdmission, forgetDraftAdmissions, identifyAdmission } from "../../writeAdmission"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import type { Collection } from "@smthrs/effect-tanstack-db"
@@ -12,7 +12,7 @@ import { isPrompt, isTitle, OP_ID_NAMESPACE, type StackBase, stackPath } from ".
 import { StackClient } from "./api.vibe"
 import { pendingActions } from "./metrics"
 import { type Draft, type QueuedOp, type Requested, VIEW } from "./schema"
-import { TodosStore } from "./store"
+import { TodosStore } from "./store.vibe"
 
 // TODO writes await local durable admission (decision 0016 §3, docs/features/todos.md). Commit
 // and Drop are the flows `todo/commit` and `todo/drop`, dispatched with door `button` in the store's scope: the press

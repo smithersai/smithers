@@ -55,7 +55,7 @@ import {
   withDrop,
   withTodos,
 } from "./view"
-import { reasonOf } from "./writes"
+import { reasonOf } from "./writes.vibe"
 
 const REPO = "github/octo/hello"
 

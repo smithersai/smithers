@@ -1,7 +1,7 @@
 import { WriteIntents } from "../../writeAdmission"
 import { RunSteers } from "../runs/steers.vibe"
 import { SteerWrites } from "../runs/writes"
-import { TodosStore } from "../todos/store"
+import { TodosStore } from "../todos/store.vibe"
 import { PendingSnapshot } from "@smthrs/platform-browser"
 import { resumeAdmissions } from "../../resumeAdmissions"
 import { reloadAfter } from "../../test/reloadTiming"

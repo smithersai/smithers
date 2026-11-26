@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { TodosView } from "../todos"
+import type { TodosView } from "../todos.vibe"
 
 // What React components get: the TODOs layer's live queries to render and plain actions to call
 // (features/todos/todos.ts).

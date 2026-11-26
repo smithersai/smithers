@@ -7,7 +7,7 @@ import { TEXT_UPDATE, TextWrites } from "./features/coedit/writes.vibe"
 import { IssuesClient } from "./features/issues/api.vibe"
 import { ISSUE_WRITE, IssueWrites } from "./features/issues/writes"
 import { StackClient } from "./features/todos/api.vibe"
-import { StackWrites, TODO_OP } from "./features/todos/writes"
+import { StackWrites, TODO_OP } from "./features/todos/writes.vibe"
 import { OutboxWrites } from "./outbox"
 
 // How features hand their writes to the device's one outbox (src/outbox.ts): a second feature adds its own to the

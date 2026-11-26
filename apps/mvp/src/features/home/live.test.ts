@@ -8,7 +8,7 @@ import { openTestApp, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { repoId } from "../repo/contract"
 import { Repo } from "../repo/repo"
 import type { Todo } from "../todos/schema"
-import { Todos } from "../todos/todos"
+import { Todos } from "../todos/todos.vibe"
 import { Home } from "./home.vibe"
 import { homePageOf, issuesOf, stackOf } from "./view"
 

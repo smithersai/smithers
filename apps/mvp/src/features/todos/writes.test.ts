@@ -10,7 +10,7 @@ import { describe, expect, test } from "vitest"
 import { deviceRegistry } from "../../device/registry"
 import { faultyPersistenceOn } from "../../test/deviceFixture"
 import { type Requested, Requested as RequestedRow, type Sending } from "./schema"
-import { keep, requestOf } from "./writes"
+import { keep, requestOf } from "./writes.vibe"
 
 const row: Sending = {
   id: "0b6e2c4f-7a1d-4e38-9c52-1f0d3a8b6e74",

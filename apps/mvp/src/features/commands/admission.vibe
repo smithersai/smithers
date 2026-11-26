@@ -8,7 +8,7 @@ import { QueuedWrite } from "../issues/schema"
 import { IssuesStore } from "../issues/store"
 import { OP_ID_NAMESPACE } from "../todos/contract"
 import { QueuedOp } from "../todos/schema"
-import { TodosStore } from "../todos/store"
+import { TodosStore } from "../todos/store.vibe"
 import { STEER_ID_NAMESPACE } from "../runs/contract"
 import { RunSteers } from "../runs/steers.vibe"
 

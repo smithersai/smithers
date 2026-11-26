@@ -8,7 +8,7 @@ import { repoId } from "../repo/contract"
 import { AuthStore } from "../auth/store"
 import { Repo } from "../repo/repo"
 import { RepoStore } from "../repo/store"
-import { TodosStore } from "./store"
+import { TodosStore } from "./store.vibe"
 import { stackAccess } from "./source"
 
 const id = "github/acme/repo"
