@@ -87,7 +87,9 @@ export const REFUSALS = [
 ] as const
 export type Refusal = (typeof REFUSALS)[number]
 
-/** Whether `owner` and `name` name a GitHub repository the app may clone: valid, and not a reserved first segment. */
+/** Whether `owner` and `name` name a GitHub repository the app may clone: valid, and not a reserved first segment.
+ * @throws {never}
+ */
 export const isRepository = (owner: string, name: string): boolean =>
   OWNER_PATTERN.test(owner) && NAME_PATTERN.test(name) && !RESERVED_OWNERS.includes(owner.toLowerCase())
 
@@ -104,7 +106,9 @@ export const repoId = (owner: string, name: string): string => `github/${owner}/
  */
 export const cloneExecutionId = (id: string, cloneId: string): string => `repo-clone:${id}:${cloneId}`
 
-/** Whether `path` is a file path RepoApi reads: relative, bounded, with no empty, `.` or `..` segment. */
+/** Whether `path` is a file path RepoApi reads: relative, bounded, with no empty, `.` or `..` segment.
+ * @throws {never}
+ */
 export const isFilePath = (path: string): boolean => {
   if (path.length === 0 || path.length > MAX_PATH_LENGTH || path.includes("\0")) return false
   const segments = path.split("/")
@@ -170,6 +174,7 @@ export const COPY_WITHIN = "5 seconds"
 /**
  * The `BroadcastChannel` `repo/copy`'s step asks the tabs of engine `name` on, as `app/navigate`'s does on its own: only
  * the tab that started the request writes its clipboard.
+ * @throws {never}
  */
 export const clipboardChannel = (name: string): string => `${name}/clipboard`
 

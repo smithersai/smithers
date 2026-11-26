@@ -2,7 +2,7 @@ import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { Schema } from "effect"
 import { MAX_ISSUE_NUMBER } from "../issues/contract"
-import { RepoName } from "../repo/flows"
+import { RepoName } from "../repo/flows.vibe"
 import { isAcceptance, isPrompt, isTitle, MAX_TODO_NUMBER } from "./contract"
 import { TodoStatusRead } from "./schema"
 

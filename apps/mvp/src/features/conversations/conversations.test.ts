@@ -23,7 +23,7 @@ import { CREATION } from "../../plugins/builtinFlows"
 import { dropped } from "./metrics"
 import { ConversationsStore } from "./store"
 import { repoId } from "../repo/contract"
-import { replaceRole, RepoStore } from "../repo/store"
+import { replaceRole, RepoStore } from "../repo/store.vibe"
 
 /** The deployment's own repository, whose `main` is the home conversation. */
 const DEPLOYMENT = TEST_REPOSITORY

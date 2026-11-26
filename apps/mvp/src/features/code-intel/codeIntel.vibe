@@ -1,7 +1,7 @@
 import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch.vibe"
 import type { RepoClient } from "../repo/api"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 import { follow, hover, keyAction, problem, select, definition, targetOf, togglePane, type Token, type KeyModifiers } from "./actions.vibe"
 import { CODE_INTEL } from "./rows"
 import type { LanguageServers } from "./session.vibe"

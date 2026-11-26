@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { expect, test } from "vitest"
 import { sourceText, sourcesUnder } from "../../../../packages/repo-targets/test-utils/source-readers.mjs"
 import { openTestApp } from "../test/chatApi"
-import { RepoStore } from "../features/repo/store"
+import { RepoStore } from "../features/repo/store.vibe"
 import { REPOSITORY_MEMORY, REPOSITORY_STORES, UNSCOPED_LOCAL, UNWIPED_FAMILIES } from "./repoStores"
 import { deviceRegistry } from "./registry"
 

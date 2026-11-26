@@ -1,6 +1,6 @@
 import { ShapeSource } from "@smthrs/effect-electric"
 import { Effect, Layer } from "effect"
-import { RepoStore } from "../features/repo/store"
+import { RepoStore } from "../features/repo/store.vibe"
 
 // Isolated store tests still use the real authority and their supplied persistence. Hold its unrelated repository
 // shape at the Effect transport boundary; feature shapes keep the test's own transport and real dependencies.

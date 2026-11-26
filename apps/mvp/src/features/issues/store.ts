@@ -8,11 +8,11 @@ import { Cache, Clock, Context, Effect, Exit, Layer, Metric, Option, Ref, Scope,
 import { signedInChanges, signedInShapeSource } from "../auth/source"
 import { AuthStore } from "../auth/store"
 import { ChatStore } from "../chat/store"
-import { role } from "../repo/actions"
+import { role } from "../repo/actions.vibe"
 import { RepoClient } from "../repo/api"
 import { repoId } from "../repo/contract"
 import { sendingAdmitted } from "../../outboxAdmission"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 import type { Gated } from "../repo/gate"
 import { repositoryAccess, wipeAuthority, repositoryAccessChanges, repositoryShapeSource, revokingSource, syncStatusAfter, type Transport } from "./source"
 import {

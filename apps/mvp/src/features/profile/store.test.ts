@@ -2,7 +2,7 @@ import { LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { expect, test } from "vitest"
 import { repoAuthority } from "../../test/repoAuthority"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 import { ProfileStore } from "./store.vibe"
 
 // With the repository feature on the tab, profile cards badge its synced repositories rather than an empty stand-in.

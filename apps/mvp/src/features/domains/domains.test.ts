@@ -24,7 +24,7 @@ import { DomainsStore } from "./store.vibe"
 import { DOMAINS_SHAPE_ROUTE } from "./contract"
 import { AuthStore, SESSION } from "../auth/store"
 import { repoId } from "../repo/contract"
-import { replaceRole, RepoStore } from "../repo/store"
+import { replaceRole, RepoStore } from "../repo/store.vibe"
 
 const maintainer: Actor = { subject: { kind: "person", id: "person-maintainer" }, role: "maintainer" }
 const [owner, name] = TEST_REPOSITORY.split("/") as [string, string]

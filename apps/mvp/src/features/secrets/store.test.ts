@@ -4,7 +4,7 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import { expect, test } from "vitest"
 import { repoAuthority } from "../../test/repoAuthority"
 import { repoId } from "../repo/contract"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 import { SECRETS_SHAPE_ROUTE } from "./contract"
 import { SecretsStore } from "./store.vibe"
 

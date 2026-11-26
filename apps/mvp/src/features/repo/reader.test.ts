@@ -1,8 +1,8 @@
 import { Effect, Layer } from "effect"
 import { describe, expect, test } from "vitest"
 import { RepoClient, RepoRefused } from "./api"
-import { RepoNotFound, RepoReader, RepoReadsPaused, RepoReadUnavailable } from "./flows"
-import { readerLayer, readFailure } from "./reader"
+import { RepoNotFound, RepoReader, RepoReadsPaused, RepoReadUnavailable } from "./flows.vibe"
+import { readerLayer, readFailure } from "./reader.vibe"
 import type { Refs } from "./schema"
 
 // The device's `RepoReader`: what each RepoApi answer means to the agent's read steps. RepoApi's real answers reach it
@@ -112,7 +112,7 @@ describe("refs", () => {
 
 test("a clone whose transport never answers remains unavailable without inventing an HTTP status", async () => {
   const { launchClone } = await import("./clone")
-  const { RepoCloneUnavailable } = await import("./flows")
+  const { RepoCloneUnavailable } = await import("./flows.vibe")
   const fault = RepoClient.of({ clone: () => Effect.die("unused"), launch: () => Effect.fail(new RepoRefused({})),
     tree: () => Effect.die("unused"), blob: () => Effect.die("unused"), refs: () => Effect.die("unused"), about: () => Effect.die("unused"),
     role: () => Effect.die("unused"),

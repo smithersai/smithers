@@ -317,30 +317,34 @@ export const parts = (repo: string): readonly [string, string] => {
 export const registration = Layer.mergeAll(
   Interpreter.layerWithImplementations(
     RepoAbout,
-    ReadAbout.toLayer(({ repo }) => {
+    ReadAbout.toLayer(effect ({ repo }) => {
       const [owner, name] = parts(repo)
-      return AboutReader.use((reader) => reader.about(owner, name))
+      const reader = try AboutReader
+      return try reader.about(owner, name)
     }),
   ),
   Interpreter.layerWithImplementations(
     RepoTree,
-    ReadTree.toLayer(({ repo, revision }) => {
+    ReadTree.toLayer(effect ({ repo, revision }) => {
       const [owner, name] = parts(repo)
-      return RepoReader.use((reader) => reader.tree(owner, name, revision))
+      const reader = try RepoReader
+      return try reader.tree(owner, name, revision)
     }),
   ),
   Interpreter.layerWithImplementations(
     RepoRead,
-    ReadFile.toLayer(({ repo, revision, path }) => {
+    ReadFile.toLayer(effect ({ repo, revision, path }) => {
       const [owner, name] = parts(repo)
-      return RepoReader.use((reader) => reader.read(owner, name, revision, path))
+      const reader = try RepoReader
+      return try reader.read(owner, name, revision, path)
     }),
   ),
   Interpreter.layerWithImplementations(
     RepoRefs,
-    ReadRefs.toLayer(({ repo }) => {
+    ReadRefs.toLayer(effect ({ repo }) => {
       const [owner, name] = parts(repo)
-      return RepoReader.use((reader) => reader.refs(owner, name))
+      const reader = try RepoReader
+      return try reader.refs(owner, name)
     }),
   ),
 )

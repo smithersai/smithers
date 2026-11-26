@@ -12,7 +12,7 @@ import type { Available, GlobalFleetShape } from "../features/fleet/globalContra
 import { FleetStore, type GlobalAccess } from "../features/fleet/store.vibe"
 import { AuthStore } from "../features/auth/store"
 import { repoId } from "../features/repo/contract"
-import { RepoStore } from "../features/repo/store"
+import { RepoStore } from "../features/repo/store.vibe"
 import type { Gated } from "../features/repo/gate"
 import { repoVisibility } from "../features/repo/visibility"
 import { StatusStore } from "../features/status/store"

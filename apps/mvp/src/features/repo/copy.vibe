@@ -4,7 +4,7 @@ import { asker } from "../../flows/askingTab"
 import type { Door } from "../../flows/dispatch.vibe"
 import { requesterOf } from "../../flows/requests.vibe"
 import { clipboardChannel, cloneUrl, COPY_WITHIN, type CopyOutcome } from "./contract"
-import { Copied, type CopyFailure, CopyText, parts, RepoCopy, RepoCopyRefused, RepoReader } from "./flows"
+import { Copied, type CopyFailure, CopyText, parts, RepoCopy, RepoCopyRefused, RepoReader } from "./flows.vibe"
 import { copies } from "./metrics"
 import { hrefFor } from "./paths"
 

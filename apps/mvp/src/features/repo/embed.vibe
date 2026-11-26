@@ -1,10 +1,10 @@
 import { Clock, Effect, Metric, Option } from "effect"
-import { aboutOf, ensureBlob, ensureTree, locate, put, shown, until } from "./actions"
+import { aboutOf, ensureBlob, ensureTree, locate, put, shown, until } from "./actions.vibe"
 import { isRepository, repoId } from "./contract"
 import { embedLoadMs } from "./metrics"
 import { blobKey, readmeOf, treeKey } from "./paths"
 import type { EmbedRow } from "./rows"
-import { RepoStore } from "./store"
+import { RepoStore } from "./store.vibe"
 
 // A repository's view in a conversation (docs/features/views.md#a-repository-and-its-issues, decision 0004 §3): the
 // `repo` template's row names the repository and where it opens; this tab loads what it shows, as the routed view

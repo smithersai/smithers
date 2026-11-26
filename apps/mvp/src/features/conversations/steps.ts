@@ -8,7 +8,7 @@ import { CONVERSATION_NAMESPACE } from "../branch/contract"
 import { BranchTrackRefused } from "../branch/flows"
 import { trackFailure } from "../branch/steps.vibe"
 import { GoTo, goTo } from "../navigation/flows.vibe"
-import { parts } from "../repo/flows"
+import { parts } from "../repo/flows.vibe"
 import { ArchiveNotTaken, ConversationsClient } from "./api"
 import { branchPath, newBranchName } from "./contract"
 import {

@@ -6,7 +6,7 @@ import { openTestApp, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { IssuesStore } from "../issues/store"
 import { Runs } from "../runs/runs.vibe"
 import { Pulls } from "../pulls/pulls.vibe"
-import { role as readRole } from "../repo/actions"
+import { role as readRole } from "../repo/actions.vibe"
 import { repoId } from "../repo/contract"
 import { AuthStore, SESSION } from "./store"
 

@@ -1,4 +1,4 @@
-import { put } from "../repo/actions"
+import { put } from "../repo/actions.vibe"
 import { ProfileClient, type ProfileRefused } from "./api.vibe"
 import {
   isProfileOwner,

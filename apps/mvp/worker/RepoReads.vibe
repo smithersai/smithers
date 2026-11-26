@@ -9,7 +9,7 @@ import {
   RepoReader,
   RepoReadsPaused,
   RepoReadUnavailable,
-} from "../src/features/repo/flows.ts"
+} from "../src/features/repo/flows.vibe"
 import { type Refs, RefsListing, TreeListing } from "../src/features/repo/schema.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as RepoMetrics from "./RepoMetrics.vibe"

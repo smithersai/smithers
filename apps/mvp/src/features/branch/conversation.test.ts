@@ -23,7 +23,7 @@ import { Chat } from "../chat/chat"
 import { COULDNT_ANSWER, QUESTIONS_ROUTE } from "../chat/contract"
 import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands"
-import { replaceRole, RepoStore } from "../repo/store"
+import { replaceRole, RepoStore } from "../repo/store.vibe"
 import { ViewsStore } from "../views/store"
 import { Views } from "../views/views"
 
@@ -453,7 +453,7 @@ describe("delivering to a branch's conversation", () => {
     const offline = await tabOn(openFaultyApp({ ...quick, host: device }, (faults) => faults.down()))
     await offline.chat.actions.show(branch)
     await until(() => expect(offline.history(branch)).toMatchObject({ opened: true }))
-    expect(offline.shown(branch)).toContain("user done kept on this device")
+    await until(() => expect(offline.shown(branch)).toContain("user done kept on this device"))
     expect(offline.history(branch)?.opened).toBe(true)
   }, WITHIN)
 

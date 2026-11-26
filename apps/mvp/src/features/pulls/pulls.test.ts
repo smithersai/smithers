@@ -1,4 +1,4 @@
-import { role as readRepositoryRole } from "../repo/actions"
+import { role as readRepositoryRole } from "../repo/actions.vibe"
 import { RepoClient, RepoRefused } from "../repo/api"
 import { router } from "../../router"
 // Pull requests on the tab (decision 0012 §6, docs/features/pulls.md#the-browser), driven as React drives them: the

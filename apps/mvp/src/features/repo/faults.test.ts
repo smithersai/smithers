@@ -6,10 +6,10 @@ import { AuthStore } from "../auth/store"
 import { RepoClient, RepoRefused } from "./api"
 import { CAPACITY_COPY, FAILURE_COPY, MEMBERS_CLONE, SIGN_IN_TO_CLONE } from "./contract"
 import { cloneClicks, clones, opens } from "./metrics"
-import { NotCopied } from "./repo"
+import { NotCopied } from "./repo.vibe"
 import { VIEW } from "./rows"
-import { put } from "./actions"
-import { firstSyncOf, RepoStore } from "./store"
+import { put } from "./actions.vibe"
+import { firstSyncOf, RepoStore } from "./store.vibe"
 import { headerOf } from "./view"
 
 // The repository state machine's unhappy paths, driven as React drives it, with no React: RepoApi refusing, unreachable

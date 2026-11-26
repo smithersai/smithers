@@ -15,7 +15,7 @@ import { BUSY, NOT_CLONED, NOT_FOUND, READING_PAUSED } from "./contract"
 import { embed, type EmbedTarget } from "./embed"
 import { embedShown, fullScreenHref } from "./embedView"
 import { embedLoadMs } from "./metrics"
-import { RepoStore } from "./store"
+import { RepoStore } from "./store.vibe"
 
 const server = testFile("repo_embed")
 beforeEach(() => resetRepos(server))

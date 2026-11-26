@@ -2,9 +2,9 @@ import { TabRequests } from "../../flows/requests.vibe"
 import { reloadAfter } from "../../test/reloadTiming"
 import { deviceFrom, type Fixture, prepare } from "../../test/deviceFixture"
 import { deviceRegistry } from "../../device/registry"
-import { replaceRole, RepoStore } from "../repo/store"
+import { replaceRole, RepoStore } from "../repo/store.vibe"
 import { RepoClient } from "../repo/api"
-import { role as readRepositoryRole } from "../repo/actions"
+import { role as readRepositoryRole } from "../repo/actions.vibe"
 // TODOs on the tab (decision 0016 slice 1, Track A; docs/features/todos.md), driven as React drives them: the TODOs
 // layer's plain actions, its live queries and the view's pure functions, with no React. Each device runs the browser's
 // own layer (`appLayer`) on a Node device whose engine leads (src/test/chatApi.ts), against ChatApi's real stack routes

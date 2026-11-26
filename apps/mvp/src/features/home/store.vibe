@@ -3,7 +3,7 @@ import { Context, Effect, FiberHandle, Layer, Option, Semaphore, type Schema } f
 import { CuratedHomesStore, HomesStore } from "../../device/registry"
 import { ItemSummary, SyncRow, syncKey } from "../issues/schema"
 import type { Source, Visible } from "../repo/gate"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 import { Run } from "../status/schema"
 import { StatusStore } from "../status/store"
 import { Access, Todo } from "../todos/schema"

@@ -1,6 +1,6 @@
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { Repository } from "../repo/schema"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 import { emptyProfileView, ProfileRow, ProfileViewRow } from "./schema"
 
 // Tab-local state for the profile feature:

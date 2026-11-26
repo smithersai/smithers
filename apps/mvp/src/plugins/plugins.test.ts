@@ -11,7 +11,7 @@ import queue from "../../plugins/queue/plugin.json" with { type: "json" }
 import type { QueueTab } from "../../plugins/queue/src/tab"
 import { Chat } from "../features/chat/chat"
 import { Home } from "../features/home/home.vibe"
-import { Repo } from "../features/repo/repo"
+import { Repo } from "../features/repo/repo.vibe"
 import type { Need } from "../features/status/schema"
 import { StatusStore } from "../features/status/store"
 import { dispatches } from "../flows/dispatch.vibe"

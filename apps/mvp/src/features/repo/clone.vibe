@@ -9,7 +9,7 @@ import {
   RepoCloneRequest,
   RepoCloneUnavailable,
   RequestClone,
-} from "./flows"
+} from "./flows.vibe"
 import { clones } from "./metrics"
 
 // `repo/clone`'s steps (docs/features/repo.md#flows): asks RepoApi for the clone, `POST /api/repos` through `RepoClient`,

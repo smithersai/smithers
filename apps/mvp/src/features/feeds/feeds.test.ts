@@ -17,7 +17,7 @@ import type { FeedDocument, FeedItem } from "./schema"
 import { documents, FeedsStore } from "./store.vibe"
 import { AuthStore, SESSION } from "../auth/store"
 import { repoId } from "../repo/contract"
-import { replaceRole, RepoStore } from "../repo/store"
+import { replaceRole, RepoStore } from "../repo/store.vibe"
 
 const WITHIN = 60_000
 const VIEW = "probe/feeds"

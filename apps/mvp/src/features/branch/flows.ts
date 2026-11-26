@@ -1,7 +1,7 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { Schema } from "effect"
-import { RepoName } from "../repo/flows"
+import { RepoName } from "../repo/flows.vibe"
 import { isBranchName } from "./contract"
 import { Tracked } from "./schema"
 

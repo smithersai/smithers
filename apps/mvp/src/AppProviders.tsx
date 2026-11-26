@@ -30,7 +30,7 @@ import type { PersonalModelView } from "./features/personal-model/personalModel.
 import { PullsProvider } from "./features/pulls/components/PullsContext"
 import type { PullsLayer } from "./features/pulls/pulls.vibe"
 import { RepoProvider } from "./features/repo/components/RepoContext"
-import type { RepoView } from "./features/repo/repo"
+import type { RepoView } from "./features/repo/repo.vibe"
 import { RunsProvider } from "./features/runs/components/RunsContext"
 import type { RunsView } from "./features/runs/runs.vibe"
 import { SecretsProvider } from "./features/secrets/components/SecretsContext"

@@ -8,7 +8,7 @@ import { openTab, type Tab } from "../../test/repoDevice"
 import { HomeClient, HomeRefused } from "../home/api.vibe"
 import { homePageOf } from "../home/view"
 import { RepoClient, RepoRefused } from "./api"
-import { RepoStore } from "./store"
+import { RepoStore } from "./store.vibe"
 
 // Warming a repository page (docs/features/navigation.md), driven as the router drives it, with no React: a link's
 // hover or focus calls the route's warm, which loads what the page shows into the tab without opening it; a navigation
@@ -291,6 +291,7 @@ describe("a repository's refusal", () => {
           Effect.ensuring(Effect.sync(() => completed.resolve())),
         )),
     })
+    await waitForRepository(tab, id)
     const warming = tab.repo.actions.warmRoute("tree", { ...SPOON, ref: "main" }, {})
     await waitFor(() => expect(tab.repo.lookups.tree(id, headSha)?.state).toBe("loading"))
     const repos = await tab.runtime.runPromise(Effect.service(RepoStore))

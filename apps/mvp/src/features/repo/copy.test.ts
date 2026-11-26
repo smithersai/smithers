@@ -9,10 +9,10 @@ import { RepoClient } from "./api"
 import { Clipboard } from "../../clipboard.vibe"
 import { clipboardChannel } from "./contract"
 import * as Copy from "./copy"
-import { RepoCopy } from "./flows"
+import { RepoCopy } from "./flows.vibe"
 import { copies } from "./metrics"
-import { readerLayer } from "./reader"
-import { tabClipboard } from "./tab"
+import { readerLayer } from "./reader.vibe"
+import { tabClipboard } from "./tab.vibe"
 
 // `repo/copy` over the engine's clipboard channel, on Node's own `BroadcastChannel`: which tab writes, the door it
 // reports, and what the step ignores. The whole tab, with RepoApi's real handler, is in repo.test.ts.

@@ -1,11 +1,11 @@
 import { Clock, Duration, Effect, Fiber, FiberHandle, Option } from "effect"
-import { put } from "../repo/actions"
+import { put } from "../repo/actions.vibe"
 import { type DocsRefused, DocsClient } from "./api.vibe"
 import { type LoadKind, recordLoad } from "./records.vibe"
 import { CURRENT, type CurrentRow, pageKeyOf, repoKeyOf, searchKeyOf } from "./rows"
 import { DocsStore } from "./store.vibe"
 import { repoId } from "../repo/contract"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 
 // What the Docs tab does (docs/features/docs.md#the-docs-tab). A route opens a repository's docs: its index, and the
 // page it names; the searchbox searches as the person types. Each is one read of ChatApi's docs routes, kept in this

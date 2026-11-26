@@ -6,7 +6,7 @@ import { AuthStore } from "../auth/store"
 import { BranchStore } from "../branch/store.vibe"
 import type { Gated, Source } from "../repo/gate"
 import { repoId } from "../repo/contract"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 import { MY_CONVERSATIONS_SHAPE_ROUTE } from "./contract"
 import { Mine } from "./schema"
 

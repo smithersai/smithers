@@ -9,7 +9,7 @@ const ROOT = resolve(import.meta.dirname, "../..")
 const STORES = ["Plugins", "HomeStore", "FilesStore", "DomainsStore", "SecretsStore", "FleetStore", "RunsStore"] as const
 const source = `
   import { Layer } from "effect"
-  import { RepoStore } from "./repo/store"
+  import { RepoStore } from "./repo/store.vibe"
   import { Plugins } from "../plugins/plugins"
   import { HomeStore } from "./home/store.vibe"
   import { FilesStore } from "./files/store.vibe"

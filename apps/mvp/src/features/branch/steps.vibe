@@ -12,7 +12,7 @@ import {
   TrackStamp,
 } from "./flows"
 import { tracks } from "./metrics"
-import { parts } from "../repo/flows"
+import { parts } from "../repo/flows.vibe"
 
 // `branch/track`'s and `branch/create`'s steps (docs/features/branch-workspace.md#tracking-a-branch): one
 // `POST /api/branches` through `BranchClient`, `create: true` for a new branch. A person opening a branch's page, a

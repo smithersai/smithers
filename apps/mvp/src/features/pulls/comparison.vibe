@@ -3,7 +3,7 @@ import { Effect, Option, type Scope } from "effect"
 import { WebCrypto } from "effect/crypto/WebCrypto"
 import { codeOf } from "../../errorCode"
 import { PullsClient } from "./api.vibe"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 import { comparisonKey, SHA } from "./contract"
 import type { FilesRow } from "./schema"
 

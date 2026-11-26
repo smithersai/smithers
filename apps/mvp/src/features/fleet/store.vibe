@@ -4,7 +4,7 @@ import { Cache, Context, Effect, Latch, Layer, Option, Scope, Stream } from "eff
 import { AuthStore, SESSION } from "../auth/store"
 import { repoId } from "../repo/contract"
 import type { Source } from "../repo/gate"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 import { repoVisibility } from "../repo/visibility"
 import { AGENT_RUNS_SHAPE_ROUTE, MACHINES_SHAPE_ROUTE } from "./contract"
 import { FLEET_ACCOUNTS_SHAPE_ROUTE, FLEET_NODES_SHAPE_ROUTE, FLEET_SESSIONS_SHAPE_ROUTE, type FleetAvailability, type GlobalFleetShape } from "./globalContract"

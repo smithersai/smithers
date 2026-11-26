@@ -14,7 +14,7 @@ import { domainOutcomeOf, hasDomainOutcome } from "./todoRun"
 import { repoId } from "../repo/contract"
 import { AuthStore } from "../auth/store"
 import type { By, Gated, Source } from "../repo/gate"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 import { cloudRunList, memberRunSource, whenSignedIn } from "./source.vibe"
 import { codeOf } from "../../errorCode"
 

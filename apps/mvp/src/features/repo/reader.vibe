@@ -1,7 +1,7 @@
 import { Effect, Layer } from "effect"
 import { RepoClient, type RepoRefused } from "./api"
 import { textOf } from "./contract"
-import { AboutReader, type FileRead, RepoNotFound, RepoReader, RepoReadsPaused, RepoReadUnavailable } from "./flows"
+import { AboutReader, type FileRead, RepoNotFound, RepoReader, RepoReadsPaused, RepoReadUnavailable } from "./flows.vibe"
 
 // The device's `RepoReader` (src/features/repo/flows.ts): the agent's `repo/tree`, `repo/read` and `repo/refs` steps,
 // and `repo/copy`'s contents, read through RepoApi's GET routes, the same answers the view reads; and its `AboutReader`,
@@ -27,15 +27,18 @@ export const readFailure = (refused: RepoRefused): RepoNotFound | RepoReadsPause
 /** `AboutReader` over the browser's `RepoClient`: RepoApi's about route. */
 export const aboutLayer = Layer.effect(
   AboutReader,
-  Effect.map(RepoClient, (client) =>
-    AboutReader.of({ about: (owner, name) => client.about(owner, name).pipe(Effect.mapError(readFailure)) })),
+  effect {
+    const client = try RepoClient
+    return AboutReader.of({ about: (owner, name) => client.about(owner, name).pipe(Effect.mapError(readFailure)) })
+  },
 )
 
 /** `RepoReader` over the browser's `RepoClient`. A file over RepoApi's limit reads as `too-large` with its size. */
 export const readerLayer = Layer.effect(
   RepoReader,
-  Effect.map(RepoClient, (client) =>
-    RepoReader.of({
+  effect {
+    const client = try RepoClient
+    return RepoReader.of({
       tree: (owner, name, sha) => client.tree(owner, name, sha).pipe(Effect.mapError(readFailure)),
       refs: (owner, name) => client.refs(owner, name).pipe(Effect.mapError(readFailure)),
       read: (owner, name, sha, path) =>
@@ -51,5 +54,6 @@ export const readerLayer = Layer.effect(
               ? Effect.succeed<FileRead>({ state: "too-large", size: refused.size })
               : Effect.fail(readFailure(refused))),
         ),
-    })),
+    })
+  },
 )

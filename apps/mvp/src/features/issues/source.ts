@@ -2,7 +2,7 @@ import { ShapeSource } from "@smthrs/effect-electric"
 import { Effect, type Scope, Stream, SubscriptionRef } from "effect"
 import type { Session, RepoRole } from "../auth/schema"
 import type { AuthStore } from "../auth/store"
-import type { RepoStore } from "../repo/store"
+import type { RepoStore } from "../repo/store.vibe"
 import type { Access } from "./schema"
 
 /**

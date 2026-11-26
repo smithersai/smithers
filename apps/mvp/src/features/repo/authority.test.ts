@@ -1,5 +1,5 @@
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
-import { Deferred, Effect, Fiber, Metric, Option, Schema, Scope } from "effect"
+import { Deferred, Effect, Fiber, Metric, Option, Scheduler, Schema, Scope } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { SqlClient } from "effect/sql"
 import { nodeDevice, openTab, openTestApi, TestChatApi, TEST_REPOSITORY } from "../../test/chatApi"
@@ -8,8 +8,8 @@ import { read } from "../../test/otlp"
 import { ChatWrites } from "../chat/writes"
 import { AuthStore, SESSION } from "../auth/store"
 import { RepoClient, RepoRefused } from "./api"
-import { role } from "./actions"
-import { replaceRole, RepoStore } from "./store"
+import { role } from "./actions.vibe"
+import { replaceRole, RepoStore } from "./store.vibe"
 import { repoVisibility } from "./visibility"
 
 const closing: Array<{ dispose: () => Promise<void> }> = []
@@ -201,4 +201,121 @@ test("public repository visibility comes from the real role route and clears whe
     role: (owner, name) => client.role(owner, name).pipe(Effect.map(({ public: _public, ...answer }) => answer)),
   })))
   expect(Option.getOrThrow(await tab.runtime.runPromise(tab.store.roles.get(repoId))).public).toBeUndefined()
+})
+
+
+test("a role refusal removes cached files and a later answer without a grant keeps the refusal", async () => {
+  const tab = await open()
+  const { runtime, store } = tab
+  await runtime.runPromise(store.refusalsKnown)
+  await runtime.runPromise(store.wiped(id))
+  const other = "github/another/repository"
+  const blob = (key: string, repoId: string) => ({
+    key, repoId, state: "text" as const, contents: "cached", size: 6, message: null,
+  })
+  await runtime.runPromise(store.blobs.insert([blob(`${id}:legacy`, id), blob(`${other}@cached`, other)]))
+  const client = await runtime.runPromise(RepoClient)
+  await runtime.runPromise(role(...named).pipe(Effect.provideService(RepoClient, {
+    ...client,
+    role: () => Effect.fail(new RepoRefused({ status: 403 })),
+  })))
+  await runtime.runPromise(store.wiped(id))
+  expect((await runtime.runPromise(store.blobs.toArray)).map(row => row.repoId)).toEqual([other])
+  const marks = store.refusalSnapshot(id)
+  expect(marks).toHaveLength(1)
+  expect(store.isRefused(id)).toBe(true)
+
+  const wiped: string[] = []
+  await runtime.runPromise(store.registerCache(["late-cache"], repoId => Effect.sync(() => { wiped.push(repoId) })))
+  await runtime.runPromise(store.wiped(id))
+  expect(wiped).toEqual([id])
+  await runtime.runPromise(role(...named).pipe(Effect.provideService(RepoClient, {
+    ...client,
+    role: () => Effect.succeed({ role: null, own: true, readable: false, public: false }),
+  })))
+  expect(store.refusalSnapshot(id)).toEqual(marks)
+  expect(store.isRefused(id)).toBe(true)
+  expect(Option.getOrThrow(await runtime.runPromise(store.roles.get(id)))).toMatchObject({
+    role: null, own: false, refused: "forbidden",
+  })
+})
+
+test.each(["durable", "rolled back"] as const)("clearing a refusal keeps a concurrent %s mark", async durability => {
+  const device = nodeDevice()
+  let refuseWrites = false
+  const tab = await open({
+    ...device,
+    persistence: {
+      ...device.persistence,
+      open: async () => {
+        const database = await device.persistence.open()
+        return {
+          ...database,
+          execute: <T>(sql: string, params?: ReadonlyArray<unknown>): Promise<ReadonlyArray<T>> =>
+            refuseWrites && /^\s*insert\b/i.test(sql)
+              ? Promise.reject(new Error("disk full"))
+              : database.execute<T>(sql, params),
+        }
+      },
+    },
+  })
+  const { runtime, store } = tab
+  await runtime.runPromise(store.refusalsKnown)
+  await runtime.runPromise(store.refuse(id))
+  const before = store.refusalSnapshot(id)
+  expect(before).toHaveLength(1)
+
+  // Pause the clearing fiber after the optimistic delete so a new refusal arrives before its final check.
+  const paused = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  let clearingFiber: number | undefined
+  let pauseNext = false
+  let pausedOnce = false
+  const base = new Scheduler.MixedScheduler("async", run => {
+    if (!pauseNext) {
+      const timer = setImmediate(run)
+      return () => clearImmediate(timer)
+    }
+    pauseNext = false
+    paused.resolve()
+    let cancelled = false
+    void release.promise.then(() => { if (!cancelled) run() })
+    return () => { cancelled = true }
+  })
+  const scheduler: Scheduler.Scheduler = {
+    executionMode: base.executionMode,
+    makeDispatcher: () => base.makeDispatcher(),
+    shouldYield: fiber => {
+      if (!pausedOnce && fiber.id === clearingFiber && store.refusalSnapshot(id).length === 0) {
+        pausedOnce = true
+        pauseNext = true
+        return true
+      }
+      return base.shouldYield(fiber)
+    },
+  }
+  const clearing = runtime.runPromise(Effect.withFiber(fiber => {
+    clearingFiber = fiber.id
+    return store.clearRefusal(id)
+  }), { scheduler })
+  try {
+    await Promise.race([
+      paused.promise,
+      clearing.then(() => { throw new Error("the clear finished before the concurrent refusal") }),
+    ])
+    await until(() => expect(device.storedRows("repo-refusals")).toEqual([]))
+    refuseWrites = durability === "rolled back"
+    await runtime.runPromise(store.refuse(id))
+    const remaining = store.refusalSnapshot(id)
+    expect(remaining).toHaveLength(1)
+    expect(remaining).not.toEqual(before)
+    expect(device.storedRows("repo-refusals")).toHaveLength(durability === "durable" ? 1 : 0)
+    release.resolve()
+    expect(await clearing).toBe(false)
+    expect(store.refusalSnapshot(id)).toEqual(remaining)
+    expect(store.isRefused(id)).toBe(true)
+  } finally {
+    release.resolve()
+    await clearing
+  }
 })

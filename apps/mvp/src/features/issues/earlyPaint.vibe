@@ -1,5 +1,5 @@
 import { runners } from "../../boundary.vibe"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 import { repoId } from "../repo/contract"
 import { IssuesClient } from "./api.vibe"
 import type { EarlyRead, EarlySearchHost } from "./earlySearch.vibe"

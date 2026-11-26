@@ -2,7 +2,7 @@ import { Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserCollectionCoordinator } from "@tanstack/browser-db-sqlite-persistence"
 import { close as closeFile, FilesPage, open as openFile } from "./actions.vibe"
 import { FilesStore } from "./store.vibe"
-import { replaceRole, RepoStore } from "../repo/store"
+import { replaceRole, RepoStore } from "../repo/store.vibe"
 // File tabs (docs/features/files.md): the strip and its links as pure functions; then a tab on RepoApi's real handler
 // and Electric (src/test/repoDevice.ts), whose repository view keeps a tab for every file it shows, and whose
 // `file/open` and `file/close` run on its own engine through dispatch, the person's door and the agent's, asking the

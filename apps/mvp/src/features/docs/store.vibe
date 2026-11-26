@@ -1,7 +1,7 @@
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, FiberHandle, Layer, Option } from "effect"
 import type { Source } from "../repo/gate"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 import { CurrentRow, emptyCurrent, IndexRow, PageRow, SearchRow } from "./rows"
 
 // The Docs tab's state (docs/features/docs.md#the-docs-tab): local rows only, read through one live query. Actions reach

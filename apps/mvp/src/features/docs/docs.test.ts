@@ -15,7 +15,7 @@ import { Docs } from "./docs.vibe"
 import { loads } from "./records.vibe"
 import { pageKeyOf, searchKeyOf } from "./rows"
 import { DocsStore } from "./store.vibe"
-import { replaceRole, RepoStore } from "../repo/store"
+import { replaceRole, RepoStore } from "../repo/store.vibe"
 import { docsPageOf } from "./view"
 
 // The Docs tab on a tab, driven as React drives it, with no React: the routes call `warm` and `open`, the searchbox

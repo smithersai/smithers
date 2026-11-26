@@ -1,6 +1,6 @@
 import { Context, Layer, Option } from "effect"
 import { FlowDispatch } from "../../flows/dispatch.vibe"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 import { VIEW } from "../repo/rows"
 import type { FilesCall, FilesReply, Here } from "./schema"
 import { FilesStore } from "./store.vibe"

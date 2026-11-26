@@ -1,7 +1,7 @@
 import { Clock, Context, Data, Effect, Layer, Metric, Option } from "effect"
 import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch.vibe"
-import { aboutOf, fileAtTree, knownName, clone, copy, navigate, open, rawHref, refresh, retryAbout, retryClone, role, warm } from "./actions"
+import { aboutOf, fileAtTree, knownName, clone, copy, navigate, open, rawHref, refresh, retryAbout, retryClone, role, warm } from "./actions.vibe"
 import type { RepoClient } from "./api"
 import type { CopyKind } from "./contract"
 import { type RouteParams, type Target, targetOf } from "./paths"
@@ -9,7 +9,7 @@ import { aliasChecks } from "./metrics"
 import { reads } from "./queries"
 import type { BlobRow, TreeRow } from "./rows"
 import type { Repository } from "./schema"
-import { RepoStore } from "./store"
+import { RepoStore } from "./store.vibe"
 
 // The repository feature as a frontend sees it: live queries to read and plain functions to act, with no Effect in
 // sight. React renders the queries with `useLiveQuery`, and a route's loader calls `openRoute`.
@@ -98,9 +98,9 @@ export class Repo extends Context.Service<
    */
   static readonly layer = Layer.effect(
     Repo,
-    Effect.gen(function* () {
-      const store = yield* RepoStore
-      const context = yield* Effect.context<RepoStore | RepoClient | FlowDispatch>()
+    effect {
+      const store = try RepoStore
+      const context = try Effect.context<RepoStore | RepoClient | FlowDispatch>()
       const { runSync: run, runPromise: promise } = runners(context, "repo")
       const now = <A>(read: Effect.Effect<Option.Option<A>>) => Option.getOrUndefined(run(read))
       const device = reads(store)
@@ -123,15 +123,15 @@ export class Repo extends Context.Service<
           readme: (id, sha, dir) => now(device.readme(id, sha, dir)),
         },
         actions: {
-          fileAtTree: (params) => promise(Effect.gen(function* () {
-            const startedAt = yield* Clock.currentTimeMillis
-            const checked = yield* fileAtTree(targetOf("tree", params, {})).pipe(Effect.timeoutOption(store.pageWait))
+          fileAtTree: (params) => promise(effect {
+            const startedAt = try Clock.currentTimeMillis
+            const checked = try fileAtTree(targetOf("tree", params, {})).pipe(Effect.timeoutOption(store.pageWait))
             const outcome = Option.isNone(checked) ? "timed_out" : checked.value ? "file" : "unconfirmed"
-            const durationMs = (yield* Clock.currentTimeMillis) - startedAt
-            yield* Metric.update(Metric.withAttributes(aliasChecks, { outcome }), 1)
-            yield* Effect.logInfo("repo.alias.check").pipe(Effect.annotateLogs({ outcome, durationMs, feature: "repo" }))
+            const durationMs = (try Clock.currentTimeMillis) - startedAt
+            try Metric.update(Metric.withAttributes(aliasChecks, { outcome }), 1)
+            try Effect.logInfo("repo.alias.check").pipe(Effect.annotateLogs({ outcome, durationMs, feature: "repo" }))
             return Option.getOrElse(checked, () => false)
-          }).pipe(Effect.withSpan("repo.alias.check"))),
+          }.pipe(Effect.withSpan("repo.alias.check"))),
           canonicalName: (owner, name) => promise(Effect.map(aboutOf(owner, name), (row) => row.about?.name)),
           knownName: (owner, name) => run(knownName(owner, name)),
           clone: (owner, name) => run(clone(owner, name)),
@@ -148,7 +148,7 @@ export class Repo extends Context.Service<
           role: (owner, name, reuse) => run(Effect.asVoid(Effect.forkIn(role(owner, name, reuse), store.scope))),
         },
       })
-    }),
+    },
   )
 }
 

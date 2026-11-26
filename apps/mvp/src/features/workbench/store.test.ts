@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 import { HttpClientError } from "effect/http"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { describe, expect, test } from "vitest"

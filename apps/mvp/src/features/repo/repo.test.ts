@@ -14,16 +14,16 @@ import { persistenceOn } from "../../test/deviceFixture"
 import { tempDirectory } from "../../test/tempDirectory"
 import { join } from "node:path"
 import { SqlClient } from "effect/sql"
-import { firstSyncOf, replaceRole, RepoStore } from "./store"
+import { firstSyncOf, replaceRole, RepoStore } from "./store.vibe"
 import { VIEW } from "./rows"
-import { ensureBlob, ensureTree, locate, rawHref, role as readRole } from "./actions"
+import { ensureBlob, ensureTree, locate, rawHref, role as readRole } from "./actions.vibe"
 import { blobKey, refsKey, treeKey } from "./paths"
 import { RepoClient, RepoRefused } from "./api"
 import { BUSY, COULDNT_LOAD, GITHUB_DOWN, GITHUB_LIMIT, NOT_FOUND, rawRoute, READING_PAUSED, repoId } from "./contract"
 import { TabClipboard } from "./copy"
-import { RepoCloneRequest, RepoCopy, RepoCopyRefused, RepoRead, RepoRefs, RepoTree } from "./flows"
+import { RepoCloneRequest, RepoCopy, RepoCopyRefused, RepoRead, RepoRefs, RepoTree } from "./flows.vibe"
 import { aliasChecks, aboutLoadMs, blobLoadMs, clones, copies, refsLoadMs, roleAnswers, treeLoadMs } from "./metrics"
-import { NotCopied } from "./repo"
+import { NotCopied } from "./repo.vibe"
 import { aboutOf, generatedLinksFor, headerOf, previewReadmeOf, previewTreeOf } from "./view"
 import * as Repos from "../../../worker/Repos.vibe"
 import * as RepoMetrics from "../../../worker/RepoMetrics.vibe"
@@ -377,6 +377,7 @@ describe("reading a ready repository", () => {
     h.scripted.fail("listFiles", failure, failure)
     const { headSha } = await h.seed("octocat", "Spoon-Knife")
     const tab = await open(h)
+    await rowReady(tab, "github/octocat/spoon-knife")
     tab.repo.actions.open(root("octocat", "Spoon-Knife"))
     await waitFor(() => expect(tab.tree().tree).toMatchObject({ state: "failed", message: BUSY }))
     expect(tab.histogramCount(treeLoadMs, { outcome: "failed" })).toBe(1)
@@ -1125,6 +1126,7 @@ describe("what GitHub says, cloned or not", () => {
       files: { ...fixture().files, ".smithers/generated.json": manifest, ".smithers/flows/docs/build/flow.ts": "x" },
     }))
     const tab = await open(h)
+    await rowReady(tab, "github/octocat/spoon-knife")
     at(tab, "blob", "main", "docs/guide.md")
     await waitFor(() => expect(tab.manifest().manifest?.state).toBe("text"))
     await waitFor(() => expect(tab.file().file?.state).toBe("text"))
@@ -1151,6 +1153,7 @@ describe("what GitHub says, cloned or not", () => {
       },
     }))
     const project = await open(nested)
+    await rowReady(project, "github/octocat/nested")
     project.repo.actions.openRoute("blob", { owner: "octocat", repo: "Nested", ref: "main", _splat: "tools/docgen/out/a.md" }, {})
     await waitFor(() => expect(project.view().view.manifestPath).toBe("tools/docgen/.smithers/generated.json"))
     project.repo.actions.openRoute("tree", { owner: "octocat", repo: "Nested", ref: "main", _splat: "tools/docgen" }, {})
@@ -1159,6 +1162,7 @@ describe("what GitHub says, cloned or not", () => {
     const plain = await repoHarness(server)
     await plain.seed("octocat", "Plain")
     const other = await open(plain)
+    await rowReady(other, "github/octocat/plain")
     other.repo.actions.openRoute("blob", { owner: "octocat", repo: "Plain", ref: "main", _splat: "README.md" }, {})
     await waitFor(() => expect(other.file().file?.state).toBe("text"))
     await waitFor(() => expect(other.tree().tree?.state).toBe("ready"))
@@ -1188,6 +1192,7 @@ test("leaving during Refresh cannot reopen the old file when its read finishes",
   const h = await repoHarness(server)
   const { headSha } = await h.seed("octocat", "Spoon-Knife")
   const tab = await open(h)
+  await rowReady(tab, "github/octocat/spoon-knife")
   const file = { ...root("octocat", "Spoon-Knife"), kind: "blob" as const, ref: headSha, path: "README.md" }
   h.scripted.fail("readFile", h.scripted.error("readFile", "internal_error", 500))
   tab.repo.actions.open(file)
@@ -1217,7 +1222,9 @@ test("canonical naming comes from GitHub; an absent repository invents no spelli
 test("tree URLs redirect only files present at the resolved revision", async () => {
   const h = await repoHarness(server)
   await h.seed("octocat", "Spoon-Knife", branched())
-  const tab = await open(h)
+  const tab = await openTab({ origin: h.origin, fetch: h.fetch, pageWait: "5 seconds" })
+  tabs.push(tab)
+  await rowReady(tab, "github/octocat/spoon-knife")
   const at = (ref: string, path: string) => tab.repo.actions.fileAtTree({ owner: "octocat", repo: "Spoon-Knife", ref, _splat: path })
   expect(await at("main", "README.md")).toBe(true)
   expect(tab.count(aliasChecks, { outcome: "file" })).toBe(1)
@@ -1249,6 +1256,7 @@ test("a held tree read cannot block route alias checks and its late answer remai
     }),
   }) })
   tabs.push(tab)
+  await rowReady(tab, "github/octocat/spoon-knife")
   const params = { owner: "octocat", repo: "Spoon-Knife", ref: "main", _splat: "README.md" }
   try {
     expect(await tab.repo.actions.fileAtTree(params)).toBe(false)

@@ -1,6 +1,6 @@
 import type { LanguageServer } from "@smthrs/std"
 import type { Collection } from "@smthrs/effect-tanstack-db"
-import { navigate } from "../repo/actions"
+import { navigate } from "../repo/actions.vibe"
 import { RepoClient } from "../repo/api"
 import { textOf } from "../repo/contract"
 import { hrefFor } from "../repo/paths"

@@ -2,7 +2,7 @@ import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { Schema } from "effect"
 import { IssueNumber } from "../issues/flows.vibe"
-import { RepoName } from "../repo/flows"
+import { RepoName } from "../repo/flows.vibe"
 import { REVIEW_REFUSALS, SHA } from "./contract"
 
 // Review on request (decision 0129, docs/features/pulls.md#review-on-request):

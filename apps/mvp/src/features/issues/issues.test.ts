@@ -7,9 +7,9 @@ import { resumeAdmissions } from "../../resumeAdmissions"
 import { reloadAfter } from "../../test/reloadTiming"
 import { comment as commentAction, create as createAction, edit as editAction, open as openAction, readIssue, restoreSearch, retryWrite, search as searchAction, triage as triageAction } from "./actions.vibe"
 import { dispatches, FlowDispatch } from "../../flows/dispatch.vibe"
-import { replaceRole, RepoStore } from "../repo/store"
+import { replaceRole, RepoStore } from "../repo/store.vibe"
 import { RepoClient } from "../repo/api"
-import { role as readRepositoryRole } from "../repo/actions"
+import { role as readRepositoryRole } from "../repo/actions.vibe"
 import { check as checkSession } from "../auth/actions"
 // Issues on the tab (decision 0012 slice G0, docs/features/issues.md), driven as React drives them: the issues layer's
 // plain actions, its live queries and the slash commands, with no React. Each device runs the browser's own layer

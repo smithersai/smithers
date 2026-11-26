@@ -105,7 +105,9 @@ export type Role = (typeof ROLES)[number]
 /** The roles that may ask Smithers (`repo:ask`, decision 0007 §2): Member or above. */
 export const ASKING_ROLES: ReadonlyArray<Role> = ["admin", "maintainer", "member"]
 
-/** Whether a person with `role` may ask Smithers: Member, Maintainer or Admin; a Guest or no role may not. */
+/** Whether a person with `role` may ask Smithers: Member, Maintainer or Admin; a Guest or no role may not.
+ * @throws {never}
+ */
 export const mayAsk = (role: Role | null): boolean => role !== null && ASKING_ROLES.includes(role)
 
 /** The roles that may add and remove a repository's custom domains (`repo:domain-write`, decision 0039). */

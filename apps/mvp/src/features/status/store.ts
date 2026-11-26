@@ -12,7 +12,7 @@ import { deliveriesQuery, latestQuery, shownRunsQuery, statusesQuery, waitRunsQu
 import { Local, Run } from "./schema"
 import type { Message } from "../chat/schema"
 import type { Source } from "../repo/gate"
-import { RepoStore } from "../repo/store"
+import { RepoStore } from "../repo/store.vibe"
 
 // Agent status on this tab (decision 0015, docs/features/agent-status.md#the-browser): the person's `runs`, synced by
 // Electric and kept on the device; this tab's own rows about each question; the live queries the views read, each

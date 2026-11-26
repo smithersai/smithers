@@ -1,7 +1,7 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { COMMITMENTS } from "./lifecycle"
-import { RepoName } from "../repo/flows"
+import { RepoName } from "../repo/flows.vibe"
 import {
   MAX_BODY_LENGTH,
   MAX_ISSUE_NUMBER,

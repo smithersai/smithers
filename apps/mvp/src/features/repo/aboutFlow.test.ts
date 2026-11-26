@@ -4,10 +4,10 @@ import { Clock, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { expect, test } from "vitest"
-import { AboutReader, registration, RepoAbout, RepoNotFound, RepoReadsPaused, RepoReadUnavailable } from "./flows"
+import { AboutReader, registration, RepoAbout, RepoNotFound, RepoReadsPaused, RepoReadUnavailable } from "./flows.vibe"
 import type { About } from "./schema"
 import { RepoClient } from "./api"
-import { readerLayer } from "./reader"
+import { readerLayer } from "./reader.vibe"
 
 const about: About = {
   name: "octocat/Spoon-Knife", description: "Refreshed", homepage: null, topics: [], stars: 0, forks: 0, watchers: 0,

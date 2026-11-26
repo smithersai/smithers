@@ -2,7 +2,7 @@ import { useLiveQuery } from "@tanstack/react-db"
 import { createContext, useContext } from "react"
 import type { RepoAnswer } from "../../auth/viewer"
 import { repoId } from "../contract"
-import type { RepoView } from "../repo"
+import type { RepoView } from "../repo.vibe"
 
 // What React components get: the repository layer's live queries to render and plain actions to call
 // (features/repo/repo.ts).
