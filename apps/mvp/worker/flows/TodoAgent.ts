@@ -12,7 +12,7 @@ import { CHECKS_DIRECTORY } from "../../src/features/pulls/contract.ts"
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import type { Seat as EndpointSeat } from "../ModelSeats.ts"
-import * as SandboxCommand from "./SandboxCommand.ts"
+import * as SandboxCommand from "./SandboxCommand.vibe"
 import * as Machine from "./TodoMachine.ts"
 
 // The `todo` run's implement step (decision 0016, the factory simplified): the agent (`AgentAction` from

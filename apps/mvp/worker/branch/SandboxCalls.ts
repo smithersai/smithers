@@ -17,7 +17,7 @@ import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import { SandboxCall } from "../flows/SandboxCall.ts"
-import { ToolCall } from "../flows/SandboxCommand.ts"
+import { ToolCall } from "../flows/SandboxCommand.vibe"
 import { branchAccess, canEdit } from "./Access.ts"
 
 // The sandbox tools' routes (decision 0005 §5, docs/features/sandbox-tools.md#the-routes):

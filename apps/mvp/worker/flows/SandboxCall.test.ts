@@ -22,7 +22,7 @@ import { instantCommands } from "../test/commands.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as SandboxCall from "./SandboxCall.ts"
-import * as SandboxCommandJob from "./SandboxCommand.ts"
+import * as SandboxCommandJob from "./SandboxCommand.vibe"
 
 const runtime = testFile("sandbox_call")
 beforeEach(() => resetBranches(runtime))

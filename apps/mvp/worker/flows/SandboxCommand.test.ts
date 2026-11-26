@@ -29,7 +29,7 @@ import * as Box from "../test/box.ts"
 import { resetBranches, tracked } from "../test/branch.ts"
 import { testFile } from "../test/harness.ts"
 import * as SandboxCall from "./SandboxCall.ts"
-import * as SandboxCommand from "./SandboxCommand.ts"
+import * as SandboxCommand from "./SandboxCommand.vibe"
 
 const runtime = testFile("sandbox_command")
 beforeEach(() => resetBranches(runtime))
@@ -332,6 +332,21 @@ describe("a command a run's own step runs, on a host that dies mid-command", { t
     expect(outcome).toEqual({ killed: 1, status: "completed", job: "completed" })
     expect(runs).toBe("ran\n")
   })
+})
+
+test("a machine lookup exception stays a command defect", () => {
+  const defect = new Error("machine lookup failed")
+  const machines = Machines.of({
+    commands: () => { throw defect },
+    tool: () => Effect.die("a command does not call a tool"),
+    sleepIfIdle: () => Effect.die("a command does not check for sleep"),
+  })
+  const operation = SandboxCommand.operationsOn(machines).start({
+    target: { branch: { branchId: "b", owner: "o", name: "n", branch: "main" }, ownerId: OWNER, callId: "c-1" },
+    call: { tool: "run", command: "echo ready" },
+  }, "command-key")
+
+  expect(Effect.runSyncExit(operation)).toEqual(Exit.die(defect))
 })
 
 describe("SandboxCommand.run", () => {

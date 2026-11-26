@@ -5,7 +5,7 @@ import * as Store from "./SessionStore.ts"
 import * as Keys from "./SessionKeys.vibe"
 import * as Notifications from "./Notifications.ts"
 import * as GitHubStore from "./github/Store.ts"
-import * as SandboxSpend from "./flows/SandboxSpend.ts"
+import * as SandboxSpend from "./flows/SandboxSpend.vibe"
 import { testFile } from "./test/harness.ts"
 import { configured, cookie, setCookies, signInHarness } from "./test/signIn.ts"
 

@@ -8,7 +8,7 @@ import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as Database from "../../db/Database.ts"
 import * as Keys from "../../worker/SessionKeys.vibe"
-import * as Rotation from "../../worker/flows/SessionSigningKeys.ts"
+import * as Rotation from "../../worker/flows/SessionSigningKeys.vibe"
 import { refuseUncheckedTls } from "../tls.mjs"
 
 /** Rotation resumes by key id; each explicitly confirmed seal reset is a new operation. */

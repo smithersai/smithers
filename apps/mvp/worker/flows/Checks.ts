@@ -31,7 +31,7 @@ import { fetchPull, projectPull } from "../github/Pulls.ts"
 import { type GitHubTokens, TokenUnavailable } from "../github/Tokens.ts"
 import type { Seat } from "../ModelSeats.ts"
 import type { SandboxBranch } from "../branch/Sandboxes.ts"
-import * as SandboxCommand from "./SandboxCommand.ts"
+import * as SandboxCommand from "./SandboxCommand.vibe"
 
 // A pull request's checks (decision 0012 decision 12, decision 0016's factory simplified): Smithers runs on its head
 // SHA, never GitHub check runs. `checks/Run` runs once per head (`check:<repo>:<sha>:all`), started when the `todo` run

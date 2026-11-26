@@ -4,7 +4,7 @@ import { expect, test } from "vitest"
 import * as Recheck from "./RecheckRole.vibe"
 import * as Revoke from "./RevokeGitHubToken.ts"
 import * as Cleanup from "./RevokeReplacedGitHubToken.ts"
-import * as Keys from "./SessionSigningKeys.ts"
+import * as Keys from "./SessionSigningKeys.vibe"
 
 const ending = ["db:write:sessions", "db:write:host_sessions", "db:write:github_token_cleanups", "db:write:session_end_receipts"]
 const capabilities = (declaration: { readonly annotations: Context.Context<never> }) => Context.get(declaration.annotations, Flow.Capabilities)

@@ -171,22 +171,21 @@ export const SandboxSpend = Flow.make("ops/SandboxSpend", {
 })
 
 /** Reads the `SqlClient` in context at `nowMs`: the month's spend so far, the machines awake, and the Admins' alert. */
-export const sample = (nowMs: number) =>
-  Effect.gen(function* () {
-    const month = Budget.monthOf(nowMs)
-    const spent = yield* Budget.spendIn(month)
-    const limit = yield* Budget.limits
-    const awake = yield* Budget.awake
-    return {
-      alertId: alertIdOf({ month: month.label, limitUsd: limit.monthlyAlertUsd }),
-      month: month.label,
-      usd: spent.usd,
-      hours: spent.hours,
-      awake,
-      limitUsd: limit.monthlyAlertUsd,
-      over: limit.monthlyAlertUsd > 0 && spent.usd >= limit.monthlyAlertUsd,
-    } satisfies Sampled
-  })
+export const sample = effect (nowMs: number) => {
+  const month = Budget.monthOf(nowMs)
+  const spent = try Budget.spendIn(month)
+  const limit = try Budget.limits
+  const awake = try Budget.awake
+  return {
+    alertId: alertIdOf({ month: month.label, limitUsd: limit.monthlyAlertUsd }),
+    month: month.label,
+    usd: spent.usd,
+    hours: spent.hours,
+    awake,
+    limitUsd: limit.monthlyAlertUsd,
+    over: limit.monthlyAlertUsd > 0 && spent.usd >= limit.monthlyAlertUsd,
+  } satisfies Sampled
+}
 
 /**
  * The sample step over `database`, with its records: a `sandbox.spend` line (Info under the alert, Warn at it or past
@@ -194,14 +193,12 @@ export const sample = (nowMs: number) =>
  * hours and counts only.
  */
 export const observedSample = <E, R>(window: Flows.Window, database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
-  Effect.flatMap(Clock.currentTimeMillis, sample).pipe(
+  effect { return try sample(try Clock.currentTimeMillis) }.pipe(
     Effect.provide(database),
-    Effect.tapError((error) =>
-      Effect.andThen(
-        Metric.update(Metric.withAttributes(samples, { outcome: "failed" }), 1),
-        Effect.logWarning("sandbox.spend").pipe(Effect.annotateLogs({ outcome: "failed", errorCode: codeOf(error) })),
-      )
-    ),
+    Effect.tapError(effect (error) => {
+      try Metric.update(Metric.withAttributes(samples, { outcome: "failed" }), 1)
+      try Effect.logWarning("sandbox.spend").pipe(Effect.annotateLogs({ outcome: "failed", errorCode: codeOf(error) }))
+    }),
     Effect.mapError(() => new SpendUnavailable({ reason: "database" })),
     Effect.tap((sampled) => {
       const outcome = sampled.over ? "over" : "under"
@@ -243,18 +240,17 @@ export const NOTICE: AlertDelivery.Notice = { kind: "Sandbox spend", repository:
  * Puts the alert in the bell of every Admin with a live session, against the `SqlClient` in context: one `spend`
  * notification each (`sandbox-spend:<month>:<limit>`), never twice. Answers how many Admins it reached this time.
  */
-export const bell = (alert: typeof Bell.payloadSchema.Type) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const subject = alert.alertId.replace(/^sandbox-spend-(\d{4}-\d{2})-/, "sandbox-spend:$1:")
-    const rows = yield* sql`
-      INSERT INTO notifications (recipient, subject, kind, state, title, href)
-      SELECT DISTINCT person_id::text, ${subject}, 'spend', 'update', ${detailOf(alert)}, ${SETTINGS_HREF}
-      FROM sessions s WHERE role = 'admin' AND ${yield* sessionLive(sql, sql`s`)}
-      ON CONFLICT (recipient, subject) DO NOTHING
-      RETURNING recipient`
-    return { admins: rows.length }
-  })
+export const bell = effect (alert: typeof Bell.payloadSchema.Type) => {
+  const sql = try SqlClient.SqlClient
+  const subject = alert.alertId.replace(/^sandbox-spend-(\d{4}-\d{2})-/, "sandbox-spend:$1:")
+  const rows = try sql`
+    INSERT INTO notifications (recipient, subject, kind, state, title, href)
+    SELECT DISTINCT person_id::text, ${subject}, 'spend', 'update', ${detailOf(alert)}, ${SETTINGS_HREF}
+    FROM sessions s WHERE role = 'admin' AND ${try sessionLive(sql, sql`s`)}
+    ON CONFLICT (recipient, subject) DO NOTHING
+    RETURNING recipient`
+  return { admins: rows.length }
+}
 
 /** The bell step over `database`, with its `sandbox.spend.bell` line and span. Never an Admin's id. */
 export const observedBell = <E, R>(alert: typeof Bell.payloadSchema.Type, database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
@@ -311,9 +307,8 @@ export const registration = <E, R>(
 export const sampler = Flows.startEachWindow(
   WINDOW,
   (window) => ({ flow: SandboxSpend, executionId: executionId(window), payload: window }),
-  (errorCode) =>
-    Effect.andThen(
-      Metric.update(Metric.withAttributes(samples, { outcome: "not_started" }), 1),
-      Effect.logError("sandbox.spend").pipe(Effect.annotateLogs({ outcome: "not_started", errorCode })),
-    ),
+  effect (errorCode) => {
+    try Metric.update(Metric.withAttributes(samples, { outcome: "not_started" }), 1)
+    try Effect.logError("sandbox.spend").pipe(Effect.annotateLogs({ outcome: "not_started", errorCode }))
+  },
 )

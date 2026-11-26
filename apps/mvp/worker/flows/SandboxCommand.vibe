@@ -62,7 +62,10 @@ export const ToolCall = (seconds: number) =>
 /** The job's operations on `machines`: every operation reaches the branch's machine as the person's user. */
 export const operationsOn = (machines: Machines["Service"]) =>
   SandboxCommand.operations((target: Target) =>
-    Effect.succeed(machines.commands(target.branch, target.ownerId, target.callId))
+    Effect.orDie(Effect.try({
+      try: () => machines.commands(target.branch, target.ownerId, target.callId),
+      catch: (error) => error,
+    }))
   )
 
 /** The job's steps over the host's `Machines` (`operationsOn`). */
@@ -109,22 +112,21 @@ export class NoRun extends Schema.TaggedError<NoRun>()("@smthrs/mvp/sandbox/NoRu
  * the same key, or joins the same job, so the command runs once and its result is collected once. Needs the asking
  * run's `FlowRuntime`, else fails `NoRun`.
  */
-export const run = (
+export const run = effect (
   machines: Machines["Service"],
   target: Omit<Target, "callId">,
   callId: string,
   call: typeof SandboxTools.Run.Type,
   wait: Duration.Input = stepWait(call),
-) =>
-  Effect.gen(function* () {
-    const runtime = yield* Effect.serviceOption(FlowRuntime.FlowRuntime)
-    if (Option.isNone(runtime)) return yield* new NoRun()
-    // The job's implementations are registered with the runtime too (`registration`), for the job a longer command goes
-    // on as.
-    const ran = Command.run({ target: { ...target, callId }, call }, {
-      executionId: commandExecutionId(callId),
-      operations: operationsOn(machines),
-      wait,
-    })
-    return yield* ran.pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime.value), Effect.provide(WebCrypto.layer))
+) => {
+  const runtime = try Effect.serviceOption(FlowRuntime.FlowRuntime)
+  if (Option.isNone(runtime)) throw new NoRun()
+  // The job's implementations are registered with the runtime too (`registration`), for the job a longer command goes
+  // on as.
+  const ran = Command.run({ target: { ...target, callId }, call }, {
+    executionId: commandExecutionId(callId),
+    operations: operationsOn(machines),
+    wait,
   })
+  return try ran.pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime.value), Effect.provide(WebCrypto.layer))
+}

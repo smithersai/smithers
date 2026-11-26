@@ -23,7 +23,7 @@ import * as Stack from "../stack/Stack.vibe"
 import { build, runFlow } from "../test/flowHost.ts"
 import { eventually, testFile } from "../test/harness.ts"
 import * as Box from "../test/box.ts"
-import * as SandboxCommand from "./SandboxCommand.ts"
+import * as SandboxCommand from "./SandboxCommand.vibe"
 import * as TodoCli from "./TodoCli.ts"
 
 const runtime = testFile("todo_cli_edges")

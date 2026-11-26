@@ -52,20 +52,30 @@ export const EmergencyDropSigningKey = Flow.make("auth/EmergencyDropSigningKey",
 
 /** The operator's database credential is the authority; these flows are not registered on the app's public host. */
 export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, secrets: Keys.Secrets) => {
-  const run = <A, E2>(effect: Effect.Effect<A, E2, SqlClient.SqlClient>) => effect.pipe(
-    Effect.provide(database), Effect.mapError(error => new RotationFailed({
+  const run = <A, E2>(operation: A!E2!SqlClient.SqlClient) => operation.pipe(
+    Effect.provide(database),
+    Effect.mapError((error) => new RotationFailed({
       reason: error instanceof Keys.RotationRefused ? error.reason : "database",
     })),
   )
-  const configured = (keyId: string) => Object.hasOwn(secrets, keyId) ? Effect.void
-    : Effect.fail(new RotationFailed({ reason: "unknown_key" }))
+  const configured = effect (keyId: string) => {
+    if (!Object.hasOwn(secrets, keyId)) throw new RotationFailed({ reason: "unknown_key" })
+  }
   const implementations = Layer.mergeAll(
-    PrepareEmergency.toLayer(({ keyId, replacementId }) => Effect.andThen(configured(replacementId),
-      run(Keys.prepareEmergency(keyId, replacementId, secrets[replacementId]!)))),
+    PrepareEmergency.toLayer(effect ({ keyId, replacementId }) => {
+      try configured(replacementId)
+      return try run(Keys.prepareEmergency(keyId, replacementId, secrets[replacementId]!))
+    }),
     Compromise.toLayer(({ keyId }) => run(Keys.compromise(keyId))),
-    Stage.toLayer(({ keyId }) => Effect.andThen(configured(keyId), run(Keys.stage(keyId, secrets[keyId]!)))),
-    Promote.toLayer(({ keyId }) => Effect.andThen(configured(keyId), run(Keys.promote(keyId)))),
-    Cease.toLayer(({ keyIds }) => run(Effect.asVoid(Effect.forEach(keyIds, id => Keys.cease(id))))),
+    Stage.toLayer(effect ({ keyId }) => {
+      try configured(keyId)
+      try run(Keys.stage(keyId, secrets[keyId]!))
+    }),
+    Promote.toLayer(effect ({ keyId }) => {
+      try configured(keyId)
+      return try run(Keys.promote(keyId))
+    }),
+    Cease.toLayer(({ keyIds }) => run(Effect.forEach(keyIds, Keys.cease, { discard: true }))),
     ResetSeal.toLayer(() => run(Keys.resetSeal())),
     Retire.toLayer(({ keyId }) => run(Keys.retire(keyId))),
   )

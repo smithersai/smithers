@@ -272,7 +272,10 @@ export interface Month {
   readonly until: number
 }
 
-/** The UTC calendar month `atMs` falls in. */
+/**
+ * The UTC calendar month `atMs` falls in.
+ * @throws {never}
+ */
 export const monthOf = (atMs: number): Month => {
   const at = new Date(atMs)
   const year = at.getUTCFullYear()

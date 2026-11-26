@@ -27,7 +27,7 @@ import * as Box from "../test/box.ts"
 import { build, runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as Checks from "./Checks.ts"
-import * as SandboxCommand from "./SandboxCommand.ts"
+import * as SandboxCommand from "./SandboxCommand.vibe"
 
 const runtime = testFile("checks_run")
 const boxes = realpathSync(mkdtempSync(join(tmpdir(), "smthrs-checks-box-")))

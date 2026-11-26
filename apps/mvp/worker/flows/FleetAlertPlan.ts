@@ -3,7 +3,7 @@ import { Channels } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
 import * as Fleet from "../runners/Fleet.vibe"
-import * as AlertDelivery from "./AlertDelivery.ts"
+import * as AlertDelivery from "./AlertDelivery.vibe"
 
 // Captured callbacks contribute to the persisted plan digest.
 const nonNegative = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))

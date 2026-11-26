@@ -5,7 +5,6 @@ import { SqlClient } from "effect/sql"
 import { DEFAULT_IDLE_SECONDS, KEEP_EVERY_SECONDS } from "../../src/features/sandbox/contract.ts"
 import * as Budget from "../branch/Budget.ts"
 import { Machines } from "../branch/Machines.ts"
-import { SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { codeOf } from "../ErrorCode.ts"
 
 // `sandbox/Keep { branchId, generation }` (decision 0005 §2, docs/features/sandbox-tools.md#sleep-and-wake): keeps one
@@ -94,50 +93,46 @@ export const idleSeconds = Config.Int("SANDBOX_IDLE_SECONDS").pipe(Config.withDe
 
 /** The steps over the host's `Machines` and `database`, the machine idle for `idleMs` before it sleeps. */
 export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, idleMs: number) => {
-  const sleepIfIdle = ({ branchId, generation, machine }: typeof SleepIfIdle.payloadSchema.Type) =>
-    Effect.flatMap(Machines, (machines) => machines.sleepIfIdle(branchId, generation, idleMs, machine)).pipe(
-      Effect.catchTag("@smthrs/mvp/branch/SandboxUnavailable", (error: SandboxUnavailable) =>
-        Effect.as(
-          Effect.logWarning("sandbox.keep").pipe(Effect.annotateLogs({ branchId, generation, errorCode: codeOf(error) })),
-          "unavailable" as const,
-        )),
-      Effect.tap((outcome) => Metric.update(Metric.withAttributes(keeps, { outcome }), 1)),
-      // A busy machine is awake: its ledger slot is renewed. A renewal Postgres refused is logged; the next ask renews it.
-      Effect.tap((outcome) =>
-        outcome === "busy"
-          ? Budget.seen(branchId, generation).pipe(
-            Effect.provide(database),
-            Effect.catchCause((cause) =>
-              Effect.logWarning("sandbox.keep.seen").pipe(
-                Effect.annotateLogs({ branchId, generation, errorCode: codeOf(Cause.squash(cause)) }),
-              )
-            ),
+  const sleepIfIdle = ({ branchId, generation, machine }: typeof SleepIfIdle.payloadSchema.Type) => effect {
+    const machines = try Machines
+    const outcome = try machines.sleepIfIdle(branchId, generation, idleMs, machine).pipe(
+      Effect.catchTag("@smthrs/mvp/branch/SandboxUnavailable", effect (error) => {
+        try Effect.logWarning("sandbox.keep").pipe(Effect.annotateLogs({ branchId, generation, errorCode: codeOf(error) }))
+        return "unavailable" as const
+      }),
+    )
+    try Metric.update(Metric.withAttributes(keeps, { outcome }), 1)
+    // A busy machine is awake: its ledger slot is renewed. A renewal Postgres refused is logged; the next ask renews it.
+    if (outcome === "busy") {
+      try Budget.seen(branchId, generation).pipe(
+        Effect.provide(database),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("sandbox.keep.seen").pipe(
+            Effect.annotateLogs({ branchId, generation, errorCode: codeOf(Cause.squash(cause)) }),
           )
-          : Effect.void
-      ),
-      Effect.flatMap((outcome) =>
-        outcome === "slept" || outcome === "gone" ? Effect.succeed(outcome) : Effect.fail(new MachineBusy())
-      ),
-      Effect.withSpan("sandbox.keep", { attributes: { "smithers.branch.id": branchId } }),
-    )
-
-  const slept = ({ branchId, generation, ended }: typeof Slept.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient
-      const rows = yield* sql`
-        UPDATE terminal_sessions SET status = 'ended', ended_reason = 'slept', ended_at = now(), updated_at = now()
-        WHERE branch_id = ${branchId} AND generation = ${generation} AND status = 'open'
-        RETURNING id`
-      yield* Budget.ended(branchId, generation)
-      yield* Effect.logInfo("sandbox.slept").pipe(
-        Effect.annotateLogs({ branchId, generation, ended, terminals: rows.length }),
+        ),
       )
-      return { ended, terminals: rows.length }
-    }).pipe(
-      Effect.provide(database),
-      Effect.mapError(() => new SleptUnrecorded()),
-      Effect.withSpan("sandbox.slept", { attributes: { "smithers.branch.id": branchId } }),
+    }
+    if (outcome === "slept" || outcome === "gone") return outcome
+    throw new MachineBusy()
+  }.pipe(Effect.withSpan("sandbox.keep", { attributes: { "smithers.branch.id": branchId } }))
+
+  const slept = ({ branchId, generation, ended }: typeof Slept.payloadSchema.Type) => effect {
+    const sql = try SqlClient.SqlClient
+    const rows = try sql`
+      UPDATE terminal_sessions SET status = 'ended', ended_reason = 'slept', ended_at = now(), updated_at = now()
+      WHERE branch_id = ${branchId} AND generation = ${generation} AND status = 'open'
+      RETURNING id`
+    try Budget.ended(branchId, generation)
+    try Effect.logInfo("sandbox.slept").pipe(
+      Effect.annotateLogs({ branchId, generation, ended, terminals: rows.length }),
     )
+    return { ended, terminals: rows.length }
+  }.pipe(
+    Effect.provide(database),
+    Effect.mapError(() => new SleptUnrecorded()),
+    Effect.withSpan("sandbox.slept", { attributes: { "smithers.branch.id": branchId } }),
+  )
 
   return { sleepIfIdle, slept }
 }

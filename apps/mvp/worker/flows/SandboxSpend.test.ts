@@ -16,7 +16,7 @@ import { type AlertProviders, startAlertProviders } from "../test/alertProviders
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as AlertDelivery from "./AlertDelivery.vibe"
-import * as SandboxSpend from "./SandboxSpend.ts"
+import * as SandboxSpend from "./SandboxSpend.vibe"
 
 const runtime = testFile("sandbox_spend")
 

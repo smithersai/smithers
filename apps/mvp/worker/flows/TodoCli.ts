@@ -9,7 +9,7 @@ import * as Agents from "../personal/Agents.ts"
 import * as Codex from "../personal/Codex.vibe"
 import * as Subscriptions from "../personal/Subscriptions.vibe"
 import { SecretKeys } from "../secrets/Keys.vibe"
-import * as SandboxCommand from "./SandboxCommand.ts"
+import * as SandboxCommand from "./SandboxCommand.vibe"
 import { Implemented, ImplementPayload, promptOf, SYSTEM, TOOL_CALL_NAMESPACE } from "./TodoAgent.ts"
 import * as Machine from "./TodoMachine.ts"
 

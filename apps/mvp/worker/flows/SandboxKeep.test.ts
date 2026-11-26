@@ -15,7 +15,7 @@ import { SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { resetBranches, tracked } from "../test/branch.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
-import * as SandboxKeep from "./SandboxKeep.ts"
+import * as SandboxKeep from "./SandboxKeep.vibe"
 
 const runtime = testFile("sandbox_keep")
 beforeEach(() => resetBranches(runtime))

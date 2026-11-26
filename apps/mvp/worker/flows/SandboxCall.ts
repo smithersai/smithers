@@ -13,7 +13,7 @@ import { ToolResult } from "../../src/features/sandbox/results.ts"
 import { Machines } from "../branch/Machines.ts"
 import { checkoutDetails, CheckoutFailed, SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { codeOf } from "../ErrorCode.ts"
-import { Command, ToolCall } from "./SandboxCommand.ts"
+import { Command, ToolCall } from "./SandboxCommand.vibe"
 
 // `sandbox/Call { callId, ownerId, branch, call }` (decision 0005 §3 and §5, docs/features/sandbox-tools.md#the-remote-flow):
 // runs one sandbox tool on a branch's machine, as the person who asked. `POST /api/sandbox/calls` admits it (signed
