@@ -1,11 +1,10 @@
-import { Context, Effect, Layer, Option, Ref, Stream } from "effect"
 import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { RepoClient } from "../repo/api"
 import { RepoStore } from "../repo/store"
-import { follow, hover, keyAction, problem, select, definition, targetOf, togglePane, type Token, type KeyModifiers } from "./actions"
+import { follow, hover, keyAction, problem, select, definition, targetOf, togglePane, type Token, type KeyModifiers } from "./actions.vibe"
 import { CODE_INTEL } from "./rows"
-import type { LanguageServers } from "./session"
+import type { LanguageServers } from "./session.vibe"
 import { CodeIntelStore } from "./store"
 
 // Code intelligence as a frontend sees it: one live query to read and plain functions to act, with no Effect in sight
@@ -47,25 +46,24 @@ export class CodeIntel extends Context.Service<
    */
   static readonly layer = Layer.effect(
     CodeIntel,
-    Effect.gen(function* () {
-      const store = yield* CodeIntelStore
-      const repo = yield* RepoStore
+    effect {
+      const store = try CodeIntelStore
+      const repo = try RepoStore
       const { runSync: run } = runners(
-        yield* Effect.context<CodeIntelStore | RepoStore | RepoClient | LanguageServers | FlowDispatch>(),
+        try context<CodeIntelStore | RepoStore | RepoClient | LanguageServers | FlowDispatch>(),
         "code-intel",
       )
-      const background = (effect: Effect.Effect<void, never, CodeIntelStore | RepoClient | LanguageServers | FlowDispatch>) =>
-        run(Effect.asVoid(Effect.forkIn(effect, store.scope)))
-      yield* Stream.zipLatest(repo.treeState.rows, repo.viewState.rows).pipe(
-        Stream.map(([trees, views]) => targetOf(trees[0], views[0]?.repository?.defaultBranch ?? null)),
-        Stream.changesWith((left, right) =>
+      const background = (effect: void!!(CodeIntelStore | RepoClient | LanguageServers | FlowDispatch)) =>
+        run(asVoid(forkIn(effect, store.scope)))
+      const routedFiles = Stream.zipLatest(repo.treeState.rows, repo.viewState.rows)
+        |> Stream.map(%, ([trees, views]) => targetOf(trees[0], views[0]?.repository?.defaultBranch ?? null))
+        |> Stream.changesWith(%, (left, right) =>
           // Late repository metadata doesn't change this file or its definition URLs
           // (blob links always carry their revision). Reloading would erase an active lookup.
           left?.owner === right?.owner && left?.name === right?.name && left?.sha === right?.sha && left?.path === right?.path && left?.revision === right?.revision
-        ),
-        Stream.runForEach(follow),
-        Effect.forkIn(store.scope),
-      )
+        )
+        |> Stream.runForEach(%, follow)
+      fork.in(store.scope) routedFiles
       return CodeIntel.of({
         queries: { state: store.query.tanstack },
         actions: {
@@ -84,7 +82,7 @@ export class CodeIntel extends Context.Service<
           togglePane: () => background(togglePane),
         },
       })
-    }),
+    },
   )
 }
 

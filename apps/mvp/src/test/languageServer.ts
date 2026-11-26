@@ -8,7 +8,7 @@ import { readFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { dirname, join } from "node:path"
 import ts from "typescript"
-import { LanguageServers } from "../features/code-intel/session"
+import { LanguageServers } from "../features/code-intel/session.vibe"
 
 const libDirectory = dirname(createRequire(import.meta.url).resolve("typescript"))
 

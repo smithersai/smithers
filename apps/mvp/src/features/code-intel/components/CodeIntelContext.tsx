@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { CodeIntelView } from "../codeIntel"
+import type { CodeIntelView } from "../codeIntel.vibe"
 
 // What React components get: code intelligence's live query to render and plain actions to call
 // (features/code-intel/codeIntel.ts).

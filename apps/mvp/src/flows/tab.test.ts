@@ -73,7 +73,7 @@ const reached = async (entry: string): Promise<ReadonlyArray<string>> => {
  * importer of std, or of the agent, fails the check.
  */
 const languageServerSeam = new Set([
-  "@smthrs/std <- src/features/code-intel/session.ts",
+  "@smthrs/std <- src/features/code-intel/session.vibe",
   "@smthrs/std <- ../../packages/smithers/flows/platform-browser/src/BrowserLanguageServer.ts",
 ])
 

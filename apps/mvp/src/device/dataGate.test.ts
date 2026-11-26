@@ -31,7 +31,7 @@ const ACTS: Readonly<Record<string, string>> = {
   "src/features/chat/shortcuts.ts": "reads the composer's draft to act on a key; renders nothing",
   "src/features/views/embeds.ts": "follows which conversation is routed, to open its embeds; renders nothing",
   "src/features/runs/steers.ts": "reads the person's own queued steers to send or drop one; renders nothing",
-  "src/features/code-intel/codeIntel.ts": "reads the editor's own hover state to answer a key; renders nothing",
+  "src/features/code-intel/codeIntel.vibe": "reads the editor's own hover state to answer a key; renders nothing",
 }
 
 /**

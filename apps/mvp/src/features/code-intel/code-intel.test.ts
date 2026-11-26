@@ -6,12 +6,12 @@ import { type RepoHarness, repoHarness, resetRepos } from "../../../worker/test/
 import { inProcessLanguageServers } from "../../test/languageServer"
 import { openTab, type Tab } from "../../test/repoDevice"
 import { emptyView } from "../repo/rows"
-import { identifierAt, lineOf, targetOf } from "./actions"
+import { identifierAt, lineOf, targetOf } from "./actions.vibe"
 import { kindLabel, problemsLabel, supports } from "./contract"
-import { hoverOf, outlineOf, placesOf, problemsOf } from "./lsp"
+import { hoverOf, outlineOf, placesOf, problemsOf } from "./lsp.vibe"
 import { asks, sessions } from "./metrics"
 import type { CodeIntelRow } from "./rows"
-import { LanguageServers } from "./session"
+import { LanguageServers } from "./session.vibe"
 import { hoverCardOf, marksOf, paneOf, problemsAt } from "./view"
 
 // Code intelligence on a tab, driven as React drives it, with no React: through the `CodeIntel` layer's plain actions,

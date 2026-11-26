@@ -1,7 +1,7 @@
 import type { LanguageServer } from "@smthrs/std"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, FiberHandle, Layer, Ref, ScopedRef } from "effect"
-import type { Place } from "./lsp"
+import type { Place } from "./lsp.vibe"
 import { CODE_INTEL, CodeIntelRow, fresh } from "./rows"
 
 // Code intelligence's state on this tab (docs/features/code-intelligence.md#the-browser): the one local row the view

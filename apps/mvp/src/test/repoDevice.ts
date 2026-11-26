@@ -34,8 +34,8 @@ import { RepoStore } from "../features/repo/store"
 import { tabClipboard } from "../features/repo/tab"
 import { ClientEngine, FlowDispatch } from "../flows/dispatch"
 import type { TabRequests } from "../flows/requests"
-import { CodeIntel } from "../features/code-intel/codeIntel"
-import type { LanguageServers } from "../features/code-intel/session"
+import { CodeIntel } from "../features/code-intel/codeIntel.vibe"
+import type { LanguageServers } from "../features/code-intel/session.vibe"
 import { CodeIntelStore } from "../features/code-intel/store"
 
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>

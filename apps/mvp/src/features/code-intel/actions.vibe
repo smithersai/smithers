@@ -1,0 +1,340 @@
+import type { LanguageServer } from "@smthrs/std"
+import type { Collection } from "@smthrs/effect-tanstack-db"
+import { navigate } from "../repo/actions"
+import { RepoClient } from "../repo/api"
+import { textOf } from "../repo/contract"
+import { hrefFor } from "../repo/paths"
+import type { TreeRow, ViewRow } from "../repo/rows"
+import { supports } from "./contract"
+import { hoverOf, outlineOf, type Place, placesOf, problemsOf } from "./lsp.vibe"
+import { asks, sessions } from "./metrics"
+import { CODE_INTEL, type CodeIntelRow, fresh, type PlaceRow } from "./rows"
+import { LanguageServers } from "./session.vibe"
+import { problemsAt } from "./view"
+import { CodeIntelStore, type Session, type Target } from "./store"
+
+// What a person does with code intelligence, as Effects: the routed file opening, hovering a token, selecting a symbol,
+// going to a definition, stepping through problems and the keys. Each reads the language server of the shown
+// repository and commit through `LanguageServers`, and writes the one row the view reads.
+
+/** A token the view named: its 1-based line and column, and its text. */
+export interface Token {
+  readonly line: number
+  readonly column: number
+  readonly text: string
+}
+
+type Act = "hover" | "definition" | "references" | "problems" | "outline"
+
+/** Counts `act` by how it ended: `answered`, `none` when there was nothing to show, or `failed`. */
+const counted = <A, E, R>(program: A!E!R, act: Act, empty: (value: A) => boolean) =>
+  program
+    |> tap(%, (value) => Metric.update(Metric.withAttributes(asks, { act, outcome: empty(value) ? "none" : "answered" }), 1))
+    |> tapError(%, effect (error) => {
+      try Metric.update(Metric.withAttributes(asks, { act, outcome: "failed" }), 1)
+      try (logWarning("code.ask.failed") |> annotateLogs(%, { act, error: String((error as { _tag?: unknown })._tag) }))
+    })
+    |> withSpan(%, `code.${act}`, { attributes: { act } })
+
+/** The routed file the view shows, when the language server serves it: a file at a commit whose file list is loaded. */
+export const targetOf = (
+  row: { readonly view: ViewRow; readonly tree?: TreeRow | undefined } | undefined,
+  defaultBranch: string | null,
+): Target | undefined => {
+  if (row === undefined) return undefined
+  const { view, tree } = row
+  if (view.kind !== "blob" || view.sha === null || tree?.state !== "ready" || !supports(view.path)) return undefined
+  if (!tree.paths.includes(view.path)) return undefined
+  return {
+    owner: view.owner,
+    name: view.name,
+    sha: view.sha,
+    path: view.path,
+    paths: tree.paths,
+    revision: view.revision ?? view.sha,
+    defaultBranch,
+  }
+}
+
+const workspaceOf = (target: Target) => `${target.owner}/${target.name}@${target.sha}`
+const fileOf = (target: Target) => `${workspaceOf(target)}:${target.path}`
+
+/** A token's position as the server takes it: an absolute path, 0-based. */
+const positionOf = (path: string, at: { readonly line: number; readonly column: number }): LanguageServer.Position => ({
+  path: `/${path}`,
+  line: at.line - 1,
+  character: at.column - 1,
+})
+
+/** The server of `target`'s repository and commit: the one running, or a new one in place of another. */
+const sessionFor = effect (target: Target) => {
+  const store = try CodeIntelStore
+  const key = workspaceOf(target)
+  const running = try ScopedRef.get(store.session)
+  if (running?.key === key) return running
+  const client = try RepoClient
+  const servers = try LanguageServers
+  try ScopedRef.set(
+    store.session,
+    withSpan(effect {
+      const texts = new Map<string, string>()
+      const server = try servers.open({
+        paths: target.paths,
+        read: (path) =>
+          client.blob(target.owner, target.name, target.sha, path).pipe(
+            map((blob) => {
+              const text = textOf(blob.bytes)
+              if (text !== undefined) texts.set(path, text)
+              return text
+            }),
+          ),
+      })
+      try Metric.update(sessions, 1)
+      return { key, server, texts, paths: new Set(target.paths) } satisfies Session
+    }, "code.session.open", { attributes: { files: target.paths.length } }),
+  )
+  return (try ScopedRef.get(store.session))!
+}
+
+/** The row as an update writes it. */
+type Draft = Parameters<Parameters<CodeIntelStore["Service"]["state"]["update"]>[1]>[0]
+
+/** Writes the row while it still describes `file`. */
+const writeIf = (file: string, recipe: (row: Draft) => void) =>
+  flatMap(CodeIntelStore, (store) =>
+    orDie(
+      store.state.update(CODE_INTEL, (row) => {
+        if (row.file === file) recipe(row)
+      }),
+    ))
+
+/** The row now. */
+const rowNow = flatMap(CodeIntelStore, (store) => map(store.state.get(CODE_INTEL), Option.getOrThrow))
+
+/** The open file's session and row, or `undefined` when the view shows nothing the server serves. */
+const opened = effect {
+  const store = try CodeIntelStore
+  const row = try rowNow
+  const target = try Ref.get(store.target)
+  const session = try ScopedRef.get(store.session)
+  if (row.file === null || row.path === null || target === undefined || session === undefined) return undefined
+  return { row, file: row.file, path: row.path, target, session }
+}
+
+/**
+ * The 1-based line `line` of a file the session read, or empty while its text is still loading.
+ */
+export const lineOf = (texts: ReadonlyMap<string, string>, path: string, line: number) =>
+  texts.get(path)?.split(/\r\n|\r|\n/)[line - 1] ?? ""
+
+/** The identifier starting at a 1-based position of `line`: the keyboard cursor names no text of its own. */
+export const identifierAt = (line: string, column: number) => /^[\w$]+/.exec(line.slice(column - 1))?.[0] ?? ""
+
+const placeRows = (session: Session, places: ReadonlyArray<Place>): Array<PlaceRow> =>
+  places.map((place) => ({ ...place, text: lineOf(session.texts, place.path, place.line).trim() }))
+
+/** Places in an answer that are files of the repository. */
+const placesIn = (session: Session, root: string) => (answer: unknown) =>
+  placesOf(answer, root, (path) => session.paths.has(path))
+
+/**
+ * Opens the routed file: starts or keeps its repository's server, then asks for its problems and its outline. A
+ * file the server doesn't serve clears the row.
+ */
+export const openFile = (target: Target | undefined) =>
+  withSpan(effect {
+    const store = try CodeIntelStore
+    try Ref.set(store.target, target)
+    try Ref.update(store.defining, (n) => n + 1)
+    try Ref.update(store.asked, (n) => n + 1)
+    try Ref.set(store.hovering, false)
+    if (target === undefined) {
+      try orDie(store.state.update(CODE_INTEL, (row) => void Object.assign(row, fresh(null, null, row.pane))))
+      return
+    }
+    const file = fileOf(target)
+    const session = try sessionFor(target)
+    const landing = try Ref.getAndSet(store.landing, undefined)
+    try orDie(
+      store.state.update(CODE_INTEL, (row) => {
+        Object.assign(row, fresh(file, target.path, row.pane))
+        if (landing?.path === target.path) row.cursor = { line: landing.line, column: landing.column }
+      }),
+    )
+    const path = `/${target.path}`
+    const [problems, outline] = try all(
+      [
+        session.server.diagnostics(path)
+          |> flatMap(%, problemsOf)
+          |> counted(%, "problems", (found) => found.length === 0)
+          |> orElseSucceed(%, () => []),
+        session.server.documentSymbols(path)
+          |> flatMap(%, outlineOf)
+          |> counted(%, "outline", (found) => found.length === 0)
+          |> orElseSucceed(%, () => []),
+      ],
+      { concurrency: 2 },
+    )
+    try writeIf(file, (row) => {
+      row.problems = [...problems]
+      row.outline = [...outline]
+    })
+  }, "code.file.open")
+
+/** Opens each routed file as the view moves, interrupting the previous load. */
+export const follow = (target: Target | undefined) =>
+  flatMap(CodeIntelStore, (store) => asVoid(FiberHandle.run(store.loader, openFile(target))))
+
+/** Asks for the hover card at `token`; `cursor` moves the keyboard cursor there first. An older answer is dropped. */
+export const hover = effect (token: Token, cursor: boolean) => {
+  const store = try CodeIntelStore
+  const asked = try Ref.updateAndGet(store.asked, (n) => n + 1)
+  const open = try opened
+  if (open === undefined) return
+  try Ref.set(store.hovering, true)
+  const at = { line: token.line, column: token.column }
+  if (cursor) try writeIf(open.file, (row) => void (row.cursor = at))
+  const info = open.session.server.hover(positionOf(open.path, at))
+    |> flatMap(%, hoverOf)
+    |> counted(%, "hover", (found) => found === null)
+  const answer = info catch () => null
+  if ((try Ref.get(store.asked)) !== asked) return
+  try Ref.set(store.hovering, false)
+  try writeIf(open.file, (row) => {
+    row.hover = answer === null && problemsAt(row as CodeIntelRow, at).length === 0
+      ? null
+      : { ...at, signature: answer?.signature ?? null, documentation: answer?.documentation ?? "" }
+  })
+}
+
+/**
+ * Selects the symbol at `token`, as a click on it does: the cursor moves there, the Symbols pane opens on it, and its
+ * definitions, references and occurrences in this file load.
+ */
+export const select = effect (token: Token) => {
+  const open = try opened
+  if (open === undefined) return
+  const at = { line: token.line, column: token.column }
+  const name = token.text === "" ? identifierAt(lineOf(open.session.texts, open.path, at.line), at.column) : token.text
+  try writeIf(open.file, (row) => {
+    row.cursor = at
+    row.symbol = { name, ...at }
+    row.definitions = null
+    row.references = null
+    row.highlights = []
+    row.pane = true
+  })
+  const { root } = try LanguageServers
+  const position = positionOf(open.path, at)
+  const [definitions, references] = try all(
+    [
+      open.session.server.definition(position)
+        |> flatMap(%, placesIn(open.session, root))
+        |> counted(%, "definition", (found) => found.length === 0)
+        |> orElseSucceed(%, (): ReadonlyArray<Place> => []),
+      open.session.server.references(position)
+        |> flatMap(%, placesIn(open.session, root))
+        |> counted(%, "references", (found) => found.length === 0)
+        |> orElseSucceed(%, (): ReadonlyArray<Place> => []),
+    ],
+    { concurrency: 2 },
+  )
+  try writeIf(open.file, (row) => {
+    if (row.symbol?.line !== at.line || row.symbol.column !== at.column) return
+    row.symbol.name = token.text === "" ? identifierAt(lineOf(open.session.texts, open.path, at.line), at.column) : token.text
+    row.definitions = placeRows(open.session, definitions)
+    row.references = placeRows(open.session, references)
+    row.highlights = references
+      .filter((place) => place.path === open.path)
+      .map((place) => ({ line: place.line, column: place.column }))
+  })
+}
+
+/**
+ * Goes to the definition of the symbol at `token`: the line in this file, or the file that defines it, at the same
+ * revision, through `app/navigate`, so Back returns. The cursor lands on the definition.
+ */
+export const definition = effect (token: Token) => {
+  const store = try CodeIntelStore
+  const open = try opened
+  if (open === undefined) return
+  const asked = try Ref.updateAndGet(store.defining, (n) => n + 1)
+  const { root } = try LanguageServers
+  const answer = open.session.server.definition(positionOf(open.path, token))
+    |> flatMap(%, placesIn(open.session, root))
+    |> counted(%, "definition", (found) => found.length === 0)
+  const places = answer catch (): ReadonlyArray<Place> => []
+  const place = places[0]
+  if (place === undefined || (try Ref.get(store.defining)) !== asked || (try Ref.get(store.target)) !== open.target) return
+  if (place.path === open.path) try writeIf(open.file, (row) => void (row.cursor = { line: place.line, column: place.column }))
+  else try Ref.set(store.landing, place)
+  const { target } = open
+  const href = try sync(() => hrefFor(
+    { owner: target.owner, name: target.name, defaultBranch: target.defaultBranch },
+    target.revision,
+    { kind: "blob", path: place.path, line: place.line },
+  ))
+  try navigate(href)
+}
+
+/** Moves the cursor to the next problem after it (`step` 1) or the one before (`-1`), around the file, with its card. */
+export const problem = effect (step: 1 | -1) => {
+  const row = try rowNow
+  if (row.problems.length === 0) return
+  const order = [...row.problems].sort((left, right) => left.line - right.line || left.column - right.column)
+  const at = row.cursor ?? { line: 0, column: 0 }
+  const after = (problem: { readonly line: number; readonly column: number }) =>
+    problem.line > at.line || (problem.line === at.line && problem.column > at.column)
+  const next = step === 1
+    ? order.find(after) ?? order[0]!
+    : order.findLast((problem) => problem.line < at.line || (problem.line === at.line && problem.column < at.column)) ??
+      order.at(-1)!
+  try hover({ line: next.line, column: next.column, text: "" }, true)
+}
+
+/** Shows or hides the Symbols pane; hiding it lets go of the selected symbol. */
+export const togglePane: Collection.Transaction!!CodeIntelStore = flatMap(CodeIntelStore, (store) =>
+  orDie(
+    store.state.update(CODE_INTEL, (row) => {
+      row.pane = !row.pane
+      if (row.pane) return
+      row.symbol = null
+      row.highlights = []
+    }),
+  ))
+
+/** Browser modifiers whose shortcuts remain owned by the browser. */
+export interface KeyModifiers {
+  readonly ctrlKey?: boolean
+  readonly metaKey?: boolean
+  readonly altKey?: boolean
+}
+
+/** What a key does while the code has focus; undefined leaves the key to the page. */
+export const keyAction = (row: CodeIntelRow, key: string, shift: boolean, modifiers: KeyModifiers = {}, hovering = false) => {
+  if (modifiers.ctrlKey || modifiers.metaKey || modifiers.altKey) return undefined
+  const cursor = row.cursor === null ? undefined : { ...row.cursor, text: "" }
+  switch (key) {
+    case "Enter":
+      return cursor === undefined ? undefined : definition(cursor)
+    case "F12":
+      return cursor === undefined ? undefined : shift ? select(cursor) : definition(cursor)
+    case "r":
+      return cursor === undefined ? undefined : select(cursor)
+    case "F8":
+      return row.problems.length === 0 ? undefined : problem(shift ? -1 : 1)
+    case "o":
+      return togglePane
+    case "Escape":
+      // A card shows only on an open file.
+      if (row.hover !== null || hovering) return effect {
+        const store = try CodeIntelStore
+        try Ref.update(store.asked, (n) => n + 1)
+        try Ref.set(store.hovering, false)
+        try writeIf(row.file!, (current) => void (current.hover = null))
+      }
+      return row.pane ? togglePane : undefined
+    default:
+      return undefined
+  }
+}
