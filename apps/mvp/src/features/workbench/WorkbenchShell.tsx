@@ -21,6 +21,8 @@ import {
   type WaitlistCardProps,
   type WorkflowNodeItem,
 } from "@smthrs/ui"
+import { PlaygroundFrame } from "./PlaygroundFrame.tsx"
+import type { PlaygroundPreset, PlaygroundRequest } from "./playgroundBridge.ts"
 import {
   clampAudienceRole,
   type DiffScope,
@@ -67,6 +69,10 @@ export type WorkbenchShellProps = {
     readonly onVerifyProof?: () => void
   }
   readonly waitlist?: WaitlistCardProps
+  readonly playground?: {
+    readonly preset: PlaygroundPreset
+    readonly onInvoke?: (request: PlaygroundRequest) => unknown | Promise<unknown>
+  }
   readonly activeCause?: CauseReceiptData
   readonly onRevealRun?: (runId: string) => void
   readonly diffContent?: ReactNode
@@ -80,6 +86,7 @@ const PANE_LABEL: Record<WorkbenchPaneId, string> = {
   "state-machine": "State machine",
   diff: "Diff review",
   waitlist: "Host repository",
+  playground: "Playground",
 }
 
 const DIFF_SCOPE_LABEL: Record<DiffScope, string> = {
@@ -109,6 +116,7 @@ export function WorkbenchShell({
   workflow,
   stateMachine,
   waitlist,
+  playground,
   activeCause,
   onRevealRun,
   diffContent,
@@ -207,6 +215,15 @@ export function WorkbenchShell({
         ) : (
           <div data-slot="workbench-empty-pane">Waitlist unavailable.</div>
         )
+      case "playground":
+        return playground ? (
+          <PlaygroundFrame
+            preset={playground.preset}
+            {...(playground.onInvoke !== undefined ? { onInvoke: playground.onInvoke } : {})}
+          />
+        ) : (
+          <div data-slot="workbench-empty-pane">No interactive playground is configured for this repository.</div>
+        )
     }
   })()
 
@@ -249,7 +266,7 @@ export function WorkbenchShell({
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
           <nav aria-label="Workbench panes" style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-            {(["plan", "attach", "workflow", "state-machine", "diff", "waitlist"] as const).map((paneId) => (
+            {(["plan", "attach", "workflow", "state-machine", "diff", "waitlist", "playground"] as const).map((paneId) => (
               <Button
                 key={paneId}
                 type="button"

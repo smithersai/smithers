@@ -307,3 +307,62 @@ describe("workbench layout reducer and parser edge coverage", () => {
     expect(reduceWorkbenchLayout({ ...init, frame: -1 }, { type: "stepBack", totalFrames: 5 }).frame).toBe(3)
   })
 })
+
+describe("playground pane wiring", () => {
+  test("supports digit 7 shortcut and renders strictly sandboxed iframe for preset repos", () => {
+    const def = defaultWorkbenchLayout("visitor")
+    expect(workbenchShortcutAction({ key: "7" }, def, 1)).toEqual({ type: "openPane", pane: "playground" })
+    const opened = reduceWorkbenchLayout(def, { type: "openPane", pane: "playground" })
+    expect(serializeWorkbenchSearch(opened, "visitor").toString()).toBe("pane=playground&size=side")
+    expect(parseWorkbenchSearch("?pane=playground&size=side", "visitor").pane).toBe("playground")
+
+    const withPreset = renderWorkbenchShell({
+      repoSlug: "evmts/tevm-monorepo",
+      layout: opened,
+      maxRole: "visitor",
+      onDispatch: () => {},
+      totalFrames: 1,
+      planNodes: [],
+      attach: {
+        mode: "local-stdio",
+        state: "unattached",
+        promptText: "connect",
+        repoSlug: "evmts/tevm-monorepo",
+        branch: "main",
+        onModeChange: () => {},
+        onCopyPrompt: () => {},
+      },
+      playground: {
+        preset: {
+          id: "tevm-evm",
+          title: "Tevm Live Sandbox",
+          summary: "Run deterministic EVM calls and inspect execution receipts in an isolated sandbox.",
+          allowedFlows: ["playground/tevm-call"],
+          defaultFlow: "playground/tevm-call",
+        },
+      },
+    })
+    expect(withPreset).toContain(`sandbox="allow-scripts"`)
+    expect(withPreset).not.toContain("allow-same-origin")
+    expect(withPreset).toContain("Tevm Live Sandbox")
+
+    const withoutPreset = renderWorkbenchShell({
+      repoSlug: "other/repo",
+      layout: opened,
+      maxRole: "visitor",
+      onDispatch: () => {},
+      totalFrames: 1,
+      planNodes: [],
+      attach: {
+        mode: "local-stdio",
+        state: "unattached",
+        promptText: "connect",
+        repoSlug: "other/repo",
+        branch: "main",
+        onModeChange: () => {},
+        onCopyPrompt: () => {},
+      },
+    })
+    expect(withoutPreset).toContain("No interactive playground is configured for this repository.")
+  })
+})

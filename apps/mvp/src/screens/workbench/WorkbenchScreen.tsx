@@ -16,6 +16,7 @@ import {
 import { effectivePaneSize } from "../../features/workbench/conversationState"
 import { attachPromptFor, roleToAudience } from "../../features/workbench/store"
 import { useWorkbenchOptional } from "../../features/workbench/WorkbenchContext"
+import { playgroundPresetFor } from "../../features/workbench/playgroundBridge"
 import { WorkbenchShell } from "../../features/workbench/WorkbenchShell"
 import "./workbench-screen.css"
 
@@ -51,6 +52,7 @@ export function WorkbenchScreen() {
   const layout = { ...rawLayout, size: effectivePaneSize(rawLayout.size, viewportWidth) }
   const branch = repoData?.repository?.defaultBranch ?? "main"
   const fork = exampleForkOf(owner, repo)
+  const playgroundPreset = playgroundPresetFor(repoSlug)
   const origin = typeof window === "undefined" ? "https://smithers.sh" : window.location.origin
 
   const handleDispatch = (action: WorkbenchAction) => {
@@ -177,6 +179,7 @@ function WorkbenchBound({
         onDispatch={onDispatch}
         totalFrames={totalFrames}
         {...(fork !== undefined ? { fork } : {})}
+        {...(playgroundPresetFor(`${owner}/${repo}`) !== undefined ? { playground: { preset: playgroundPresetFor(`${owner}/${repo}`)! } } : {})}
         planNodes={plan?.nodes ?? []}
         attach={{
           mode,

@@ -39,3 +39,7 @@ Shortcuts ignore editable inputs, IME composition, modified chords, and already 
 ## Audience lens
 
 The audience switcher defaults to the signed-in person role on the repository and clamps strictly downward (`maintainer` -> `contributor` -> `visitor`). No view can escalate above the repository role returned by the server.
+
+## Sandboxed Playgrounds
+
+Press `7` or open the `Playground` pane on supported first-party repositories (`evmts/tevm-monorepo`, `evmts/tevm-effect`, `evmts/zevm`, `smithersai/vibelang`, `smithersai/smithers`) to run bounded, credential-free workflow fixtures inside an isolated `sandbox="allow-scripts"` iframe.

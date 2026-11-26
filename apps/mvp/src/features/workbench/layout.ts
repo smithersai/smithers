@@ -7,6 +7,7 @@ export type WorkbenchPaneId =
   | "state-machine"
   | "diff"
   | "waitlist"
+  | "playground"
 
 export type DiffScope = "turn" | "branch" | "all"
 
@@ -42,6 +43,7 @@ const VALID_PANES: ReadonlySet<string> = new Set([
   "state-machine",
   "diff",
   "waitlist",
+  "playground",
 ])
 
 const VALID_SIZES: ReadonlySet<string> = new Set(["inline", "side", "full"])
@@ -265,6 +267,7 @@ const PANE_BY_DIGIT: ReadonlyArray<WorkbenchPaneId> = [
   "state-machine",
   "diff",
   "waitlist",
+  "playground",
 ]
 
 /**
@@ -297,7 +300,7 @@ export function workbenchShortcutAction(
   if (event.key === "0" && !event.repeat && layout.frame !== "live") {
     return { type: "returnLive" }
   }
-  if (!event.repeat && !event.shiftKey && /^[1-6]$/.test(event.key)) {
+  if (!event.repeat && !event.shiftKey && /^[1-7]$/.test(event.key)) {
     const pane = PANE_BY_DIGIT[Number.parseInt(event.key, 10) - 1]
     if (pane !== undefined && pane !== layout.pane) {
       return { type: "openPane", pane }
