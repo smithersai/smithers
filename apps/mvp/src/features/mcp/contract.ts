@@ -104,7 +104,9 @@ export interface McpConsentDetails {
   readonly effectiveRole: Role | null
 }
 
-/** Attribution label for an agent acting on behalf of `login` via MCP (matches decision 0028). */
+/** Attribution label for an agent acting on behalf of `login` via MCP (matches decision 0028).
+ * @throws {never}
+ */
 export const mcpAgentLabel = (login: string): string => `${login} (agent)`
 
 /** Canonical full URL for a repository-scoped MCP endpoint. */

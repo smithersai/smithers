@@ -15,7 +15,7 @@ import {
 } from "../src/features/mcp/contract.ts"
 import { type Actor, type Role, Sessions } from "./Actor.ts"
 import { makeMcpAuthService } from "./mcp/Auth.vibe"
-import * as OAuth from "./mcp/OAuth.ts"
+import * as OAuth from "./mcp/OAuth.vibe"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "250" : "100"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261128")

@@ -1,5 +1,5 @@
 import { digestSync } from "@smthrs/crypto"
-import { Effect, Logger, Option, Redacted, References } from "effect"
+import { Effect, Layer, Logger, Option, Redacted, References } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
@@ -25,15 +25,19 @@ import * as SessionKeys from "../SessionKeys.vibe"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import { repositoryOf } from "../github/Config.ts"
 import { verifiedRedirect } from "../../src/features/mcp/view.ts"
-import { type Actor, type Role, Sessions } from "../Actor.ts"
+import { type Actor, type Role, Sessions, SessionsUnavailable } from "../Actor.ts"
 import { makeMcpAuthService } from "./Auth.vibe"
 import {
   isValidRedirectUri,
+  makeOAuthHandlers,
+  OAUTH_MAX_BODY_BYTES,
+  parseRepoScope,
+  parseScopes,
   pkceS256,
   validateClientName,
   validateRedirectUri,
   verifyPkceS256,
-} from "./OAuth.ts"
+} from "./OAuth.vibe"
 
 const ORIGIN = "https://smithers.test"
 const ALICE_ID = "11111111-1111-4111-8111-111111111111"
@@ -79,7 +83,7 @@ const createHarness = async (options: { readonly role?: Role } = {}) => {
   const send = async (
     method: string,
     path: string,
-    init: { readonly headers?: Record<string, string>; readonly body?: string } = {},
+    init: { readonly headers?: Record<string, string>; readonly body?: string | Uint8Array<ArrayBuffer> } = {},
   ) => {
     const req = HttpServerRequest.fromWeb(
       new Request(`${ORIGIN}${path}`, {
@@ -744,4 +748,286 @@ describe("Person-only Token Management (/api/me/mcp-tokens)", () => {
     })
     expect(secondRevoke.status).toBe(404)
   })
+})
+
+describe("OAuth request boundaries", () => {
+  test("rejects malformed registration messages before storing a client", async () => {
+    const { send } = await createHarness()
+    const valid = { client_name: "editor", redirect_uris: [CALLBACK] }
+    for (const [body, media, status] of [
+      ["{}", "text/plain", 415],
+      ["{", "application/json", 400],
+      [" ".repeat(OAUTH_MAX_BODY_BYTES + 1), "application/json", 413],
+      [JSON.stringify({ ...valid, token_endpoint_auth_method: "client_secret_basic" }), "application/json", 400],
+      [JSON.stringify({ ...valid, grant_types: ["refresh_token"] }), "application/json", 400],
+      [JSON.stringify({ ...valid, response_types: ["token"] }), "application/json", 400],
+    ] as const) {
+      const response = await send("POST", MCP_OAUTH_REGISTER_ROUTE, { headers: { "content-type": media }, body })
+      expect(response.status).toBe(status)
+      expect(response.json?.error).toBeDefined()
+    }
+    expect(await queryDb((sql) => sql`SELECT client_id FROM mcp_oauth_clients`)).toEqual([])
+  })
+
+  test("refuses malformed token requests with the OAuth error for the failed check", async () => {
+    const { send } = await createHarness()
+    const valid = {
+      grant_type: "authorization_code",
+      code: "unused",
+      client_id: "unregistered",
+      redirect_uri: CALLBACK,
+      code_verifier: RFC_VERIFIER,
+    }
+    for (const [input, status, error] of [
+      [[], 400, "invalid_request"],
+      [{ grant_type: 5 }, 400, "invalid_request"],
+      [{ ...valid, grant_type: "" }, 400, "invalid_request"],
+      [{ ...valid, grant_type: "refresh_token" }, 400, "unsupported_grant_type"],
+      [{ ...valid, code: "" }, 400, "invalid_request"],
+      [{ ...valid, client_id: "" }, 400, "invalid_request"],
+      [{ ...valid, redirect_uri: "" }, 400, "invalid_request"],
+      [{ ...valid, code_verifier: "" }, 400, "invalid_request"],
+      [{ ...valid, code_verifier: "short" }, 400, "invalid_grant"],
+      [{ ...valid, resource: "http://smithers.test/mcp" }, 400, "invalid_request"],
+    ] as const) {
+      const response = await send("POST", MCP_OAUTH_TOKEN_ROUTE, {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      expect(response.status).toBe(status)
+      expect(response.json?.error).toBe(error)
+    }
+  })
+
+  test("maps an unavailable database to HTTP 503 without exposing the connection failure", async () => {
+    const unavailable = new Error("private connection details")
+    const oauth = await Effect.runPromise(makeOAuthHandlers({
+      database: Layer.effect(SqlClient.SqlClient, Effect.fail(unavailable)),
+      sessions: Sessions.of({
+        resolve: Effect.succeed(Option.some({
+          subject: { kind: "person", id: ALICE_ID },
+          login: "alice",
+          role: "maintainer",
+        })),
+      }),
+    }))
+    for (const [method, path, body] of [
+      ["POST", MCP_OAUTH_REGISTER_ROUTE, { client_name: "editor", redirect_uris: [CALLBACK] }],
+      ["GET", MCP_TOKENS_ROUTE, undefined],
+      ["DELETE", `${MCP_TOKENS_ROUTE}/${BOB_ID}`, undefined],
+      ["POST", MCP_OAUTH_TOKEN_ROUTE, {
+        grant_type: "authorization_code",
+        code: "unused",
+        client_id: "unregistered",
+        redirect_uri: CALLBACK,
+        code_verifier: RFC_VERIFIER,
+      }],
+    ] as const) {
+      const req = HttpServerRequest.fromWeb(new Request(ORIGIN + path, {
+        method,
+        headers: { origin: ORIGIN, "content-type": "application/json" },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      }))
+      const result = await Effect.runPromise(oauth.handleOAuthOrTokenRoute(req, ORIGIN))
+      const response = HttpServerResponse.toWeb(Option.getOrThrow(result))
+      expect(response.status).toBe(503)
+      expect(await response.text()).not.toContain(unavailable.message)
+    }
+  })
+})
+
+test("validates scope and repository values at the public helper boundary", () => {
+  expect(validateClientName(null)).toBeNull()
+  expect(parseScopes(null)).toEqual(["mcp:read"])
+  expect(parseScopes(["mcp:write", "mcp:read", "mcp:write"])).toEqual(["mcp:read", "mcp:write"])
+  expect(parseScopes(8)).toBeNull()
+  expect(parseRepoScope("a/")).toBe("invalid")
+  expect(parseRepoScope("github/a/", { allowCanonical: true })).toBe("invalid")
+})
+
+test("considers reserved IPv4 ranges and explicit port boundaries during redirect validation", () => {
+  for (const host of ["100.64.0.1", "192.0.2.1", "192.88.99.1", "198.18.0.1", "198.19.0.1",
+    "198.51.100.1", "203.0.113.1"]) {
+    expect(validateRedirectUri(`https://${host}/callback`)).toEqual({ ok: false, reason: "non_public_https_host" })
+  }
+  for (const host of ["100.63.0.1", "100.128.0.1", "192.1.2.1", "192.88.100.1", "198.51.101.1",
+    "203.0.114.1", "203.1.113.1"]) {
+    expect(isValidRedirectUri(`https://${host}/callback`)).toBe(true)
+  }
+  const longHost = Array.from({ length: 4 }, () => "a".repeat(63)).join(".")
+  expect(validateRedirectUri(`https://${longHost}/callback`)).toEqual({ ok: false, reason: "non_public_https_host" })
+  expect(validateRedirectUri("https://example.org:0/callback")).toEqual({ ok: false, reason: "invalid_port" })
+  expect(validateRedirectUri("cursor://editor:80/callback")).toEqual({ ok: false, reason: "invalid_custom_target" })
+})
+
+test("rejects inconsistent repository resources, cross-site consent, and unsupported discovery methods", async () => {
+  const h = await createHarness()
+  const clientId = await registerClient(h)
+  const params = authorizeParams(clientId, { resource: ORIGIN + "/another/repo/mcp" })
+  const consent = await h.send("GET", `${MCP_OAUTH_AUTHORIZE_ROUTE}?${params}`)
+  expect(consent.status).toBe(400)
+  expect(consent.json?.error_description).toContain("different repositories")
+  h.setActor(Option.some({ subject: { kind: "person", id: ALICE_ID }, role: "maintainer" }))
+  const mismatchedHeaders: ReadonlyArray<Record<string, string>> = [
+    { "sec-fetch-site": "cross-site", origin: ORIGIN },
+    { [DEVICE_PERSON_HEADER]: BOB_ID, origin: ORIGIN },
+  ]
+  for (const headers of mismatchedHeaders) {
+    const response = await h.send("POST", MCP_OAUTH_AUTHORIZE_ROUTE, {
+      headers,
+      body: JSON.stringify({ decision: "approve" }),
+    })
+    expect(response.status).toBe(403)
+  }
+  for (const path of [MCP_OAUTH_AUTH_SERVER_ROUTE, `${MCP_TOKENS_ROUTE}/${BOB_ID}`]) {
+    const response = await h.send("PUT", path)
+    expect(response.status).toBe(405)
+    expect(response.headers.get("allow")).toMatch(/^(GET|DELETE)$/)
+  }
+})
+
+test("consent storage failures return unavailable without issuing a code", async () => {
+  const h = await createHarness()
+  const clientId = await registerClient(h)
+  const path = `${MCP_OAUTH_AUTHORIZE_ROUTE}?${authorizeParams(clientId)}`
+  h.setActor(Option.some({ subject: { kind: "person", id: "invalid-uuid" }, role: null }))
+  const lookup = await h.send("GET", path)
+  expect(lookup.status).toBe(503)
+  expect(lookup.json).toEqual({ code: "unavailable", error: "temporarily_unavailable" })
+
+  await queryDb((sql) => sql`DELETE FROM people WHERE id = ${BOB_ID}::uuid`)
+  h.setActor(Option.some({ subject: { kind: "person", id: BOB_ID }, role: null }))
+  const approval = await h.send("POST", path, {
+    headers: { origin: ORIGIN, "content-type": "application/json" },
+    body: JSON.stringify({ decision: "approve" }),
+  })
+  expect(approval.status).toBe(503)
+  expect(approval.json).toEqual({ code: "unavailable", error: "temporarily_unavailable" })
+  expect(await queryDb((sql) => sql`SELECT code_sha256 FROM mcp_oauth_codes`)).toEqual([])
+})
+
+test("exchanging a code for a different repository cannot issue a token", async () => {
+  const h = await createHarness()
+  const clientId = await registerClient(h)
+  const approval = await h.send("POST", `${MCP_OAUTH_AUTHORIZE_ROUTE}?${authorizeParams(clientId)}`, {
+    headers: { origin: ORIGIN, [DEVICE_PERSON_HEADER]: ALICE_ID, "content-type": "application/json" },
+    body: JSON.stringify({ decision: "approve" }),
+  })
+  expect(approval.status).toBe(200)
+  const redirect = new URL(String(approval.json?.redirectTo))
+  const response = await h.send("POST", MCP_OAUTH_TOKEN_ROUTE, {
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      grant_type: "authorization_code",
+      code: redirect.searchParams.get("code"),
+      client_id: clientId,
+      redirect_uri: CALLBACK,
+      code_verifier: RFC_VERIFIER,
+      resource: ORIGIN + "/another/repo/mcp",
+    }),
+  })
+  expect(response.status).toBe(400)
+  expect(response.json).toEqual({ code: "invalid_grant", error: "invalid_grant" })
+  expect(await queryDb((sql) => sql`SELECT id FROM mcp_tokens`)).toEqual([])
+})
+
+test("malformed UTF-8 receives HTTP 400 on each OAuth body route", async () => {
+  const h = await createHarness()
+  for (const path of [MCP_OAUTH_REGISTER_ROUTE, MCP_OAUTH_AUTHORIZE_ROUTE, MCP_OAUTH_TOKEN_ROUTE]) {
+    const response = await h.send("POST", path, {
+      headers: { origin: ORIGIN, [DEVICE_PERSON_HEADER]: ALICE_ID, "content-type": "application/json" },
+      body: Uint8Array.of(0xc0, 0xaf),
+    })
+    expect(response.status).toBe(400)
+    expect(response.json?.error).toBeDefined()
+  }
+})
+
+test("only matching browser identity can change OAuth state", async () => {
+  const h = await createHarness()
+  const { service } = h
+  const invalidTokenPath = `${MCP_TOKENS_ROUTE}/`
+  const request = HttpServerRequest.fromWeb(new Request(ORIGIN + invalidTokenPath, { method: "DELETE" }))
+  expect(Option.isNone(await Effect.runPromise(service.handleOAuthOrTokenRoute(request, ORIGIN)))).toBe(true)
+
+  h.setActor(Option.none())
+  expect((await h.send("DELETE", `${MCP_TOKENS_ROUTE}/${BOB_ID}`)).status).toBe(401)
+  h.setActor(Option.some({ subject: { kind: "person", id: ALICE_ID }, role: null,
+    act: { kind: "agent", id: "delegation" } }))
+  expect((await h.send("POST", MCP_OAUTH_AUTHORIZE_ROUTE)).status).toBe(403)
+  h.setActor(Option.some({ subject: { kind: "person", id: ALICE_ID }, role: null }))
+  expect((await h.send("GET", MCP_TOKENS_ROUTE, { headers: { authorization: "Basic credentials" } })).status).toBe(401)
+  expect((await h.send("DELETE", `${MCP_TOKENS_ROUTE}/${BOB_ID}`, {
+    headers: { "sec-fetch-site": "same-origin" },
+  })).status).toBe(404)
+
+  const missingMedia = await h.send("POST", MCP_OAUTH_TOKEN_ROUTE, { body: new TextEncoder().encode("{}") })
+  expect(missingMedia.status).toBe(415)
+})
+
+test("an unavailable session resolver distinguishes OAuth and token-management responses", async () => {
+  const oauth = await Effect.runPromise(makeOAuthHandlers({
+    database: Layer.effect(SqlClient.SqlClient, Effect.die("A failed session must not acquire a database")),
+    sessions: Sessions.of({ resolve: Effect.fail(new SessionsUnavailable()) }),
+  }))
+  for (const [path, body] of [
+    [MCP_OAUTH_AUTHORIZE_ROUTE, { code: "unavailable", error: "temporarily_unavailable" }],
+    [MCP_TOKENS_ROUTE, { code: "unavailable" }],
+  ] as const) {
+    const request = HttpServerRequest.fromWeb(new Request(ORIGIN + path))
+    const result = await Effect.runPromise(oauth.handleOAuthOrTokenRoute(request, ORIGIN))
+    const response = HttpServerResponse.toWeb(Option.getOrThrow(result))
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual(body)
+  }
+})
+
+test("a resource can narrow a grant issued without a repository", async () => {
+  const h = await createHarness()
+  const clientId = await registerClient(h)
+  const approval = await h.send("POST",
+    `${MCP_OAUTH_AUTHORIZE_ROUTE}?${authorizeParams(clientId, { repo: "" })}`, {
+      headers: { origin: ORIGIN, [DEVICE_PERSON_HEADER]: ALICE_ID, "content-type": "application/json" },
+      body: JSON.stringify({ decision: "approve" }),
+    })
+  expect(approval.status).toBe(200)
+  const code = new URL(String(approval.json?.redirectTo)).searchParams.get("code")
+  const keyed = await h.send("POST", MCP_OAUTH_TOKEN_ROUTE, {
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      grant_type: "authorization_code",
+      code,
+      client_id: clientId,
+      redirect_uri: CALLBACK,
+      code_verifier: RFC_VERIFIER,
+      resource: ORIGIN + "/evmts/voltaire/mcp",
+    }),
+  })
+  expect(keyed.status).toBe(200)
+  expect(await queryDb((sql) => sql`SELECT repo_scope FROM mcp_tokens`)).toEqual([{ repo_scope: "github/evmts/voltaire" }])
+})
+
+test("only valid repository paths have protected resource metadata", async () => {
+  const h = await createHarness()
+  for (const suffix of ["/evmts/invalid%20repo/mcp", "/api/repos/evmts/invalid%20repo/mcp"]) {
+    const result = await h.send("GET", MCP_OAUTH_PROTECTED_RESOURCE_ROUTE + suffix)
+    expect(result.status).toBe(404)
+  }
+})
+
+test("registration and consent accept JSON bytes without a media header and deduplicate redirects", async () => {
+  const h = await createHarness()
+  const encodeJson = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
+  const registration = await h.send("POST", MCP_OAUTH_REGISTER_ROUTE, {
+    body: encodeJson({ client_name: "editor", redirect_uris: [CALLBACK, CALLBACK] }),
+  })
+  expect(registration.status).toBe(201)
+  expect(registration.json?.redirect_uris).toEqual([CALLBACK])
+  const params = authorizeParams(String(registration.json?.client_id))
+  const consent = await h.send("POST", `${MCP_OAUTH_AUTHORIZE_ROUTE}?${params}`, {
+    headers: { origin: ORIGIN, [DEVICE_PERSON_HEADER]: ALICE_ID },
+    body: encodeJson({ decision: "deny" }),
+  })
+  expect(consent.status).toBe(200)
+  expect(new URL(String(consent.json?.redirectTo)).searchParams.get("error")).toBe("access_denied")
 })

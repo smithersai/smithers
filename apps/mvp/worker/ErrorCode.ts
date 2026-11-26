@@ -14,6 +14,7 @@ const known = (tag: unknown): tag is string => typeof tag === "string" && tag.le
  * `Error` when it has the shape of a failure class's name, otherwise `unknown`. Never its message, which can quote what someone
  * wrote or a provider's text, and never a `_tag` on a plain value or one of another shape, which can hold the same. It
  * never throws, whatever the failure's properties do: it is what a failure handler calls.
+ * @throws {never}
  */
 export const codeOf = (error: unknown): string => {
   try {

@@ -24,7 +24,7 @@ import {
   previewText,
   resolveRepoArgs,
   TOOL_SPECS,
-} from "./mcp/Tools.ts"
+} from "./mcp/Tools.vibe"
 import { mayChange, mayConfigure, mayRead, mayRetryAny, viaOf } from "./stack/Access.vibe"
 import { type Change, payloadHash } from "./stack/Stack.vibe"
 

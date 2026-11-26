@@ -33,7 +33,7 @@ import {
   type RefListing,
   type TreeListing,
   type WriteReceipt,
-} from "./Tools.ts"
+} from "./Tools.vibe"
 
 const decoder = new TextDecoder("utf-8", { fatal: false })
 const decodeTree = Schema.decodeUnknownEffect(Schema.fromJsonString(RepoTreeListing))

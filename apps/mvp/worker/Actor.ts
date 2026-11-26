@@ -12,7 +12,9 @@ export { PERSON_ONLY_FLOWS, type PersonOnlyEnforcement, type PersonOnlyFlow, ref
 
 export type { Role }
 
-/** A role's authority, from no role (0) through Admin (4). */
+/** A role's authority, from no role (0) through Admin (4).
+ * @throws {never}
+ */
 export const rankOf = (role: Role | null): number => role === null ? 0 : ["guest", "member", "maintainer", "admin"].indexOf(role) + 1
 
 /**

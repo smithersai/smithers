@@ -22,7 +22,7 @@ import {
   type McpRepoAccess,
   McpToolError,
 } from "./Contract.vibe"
-import { makeOAuthHandlers, timingSafeEqual, timingSafeEqualString } from "./OAuth.ts"
+import { makeOAuthHandlers, timingSafeEqual, timingSafeEqualString } from "./OAuth.vibe"
 
 export { timingSafeEqual, timingSafeEqualString }
 

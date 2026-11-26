@@ -11,10 +11,14 @@ export const timingSafeEqual = (left: Uint8Array, right: Uint8Array): boolean =>
   return diff === 0
 }
 
-/** Constant-time UTF-8 string comparison built over {@link timingSafeEqual}. */
+/** Constant-time UTF-8 string comparison built over {@link timingSafeEqual}.
+ * @throws {never}
+ */
 export const timingSafeEqualString = (left: string, right: string): boolean =>
   timingSafeEqual(encoder.encode(left), encoder.encode(right))
 
-/** Validates RFC 7636 `code_verifier` format (43..128 unreserved ASCII chars). */
+/** Validates RFC 7636 `code_verifier` format (43..128 unreserved ASCII chars).
+ * @throws {never}
+ */
 export const validateCodeVerifier = (value: string): boolean => CODE_VERIFIER_PATTERN.test(value)
 

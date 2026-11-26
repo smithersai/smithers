@@ -1,0 +1,1513 @@
+import { digestSync, Uuid, WebCrypto } from "@smthrs/crypto"
+import { Cause, Clock, Effect, type Layer, Metric, Option } from "effect"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { SqlClient } from "effect/sql"
+import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../../src/features/auth/contract.ts"
+import {
+  MCP_AUTH_CODE_TTL_SECONDS,
+  MCP_CONSENT_PATH,
+  MCP_MAX_ACTIVE_TOKENS_PER_PERSON,
+  MCP_MAX_REQUEST_BYTES,
+  MCP_OAUTH_AUTH_SERVER_ROUTE,
+  MCP_OAUTH_AUTHORIZE_ROUTE,
+  MCP_OAUTH_PROTECTED_RESOURCE_ROUTE,
+  MCP_OAUTH_REGISTER_ROUTE,
+  MCP_OAUTH_TOKEN_ROUTE,
+  MCP_ROUTE,
+  MCP_SCOPES,
+  MCP_TOKEN_PREFIX,
+  MCP_TOKEN_TTL_DAYS,
+  MCP_TOKENS_ROUTE,
+  type McpConsentDetails,
+  type McpScope,
+  type McpTokenSummary,
+  parsePublicRepoMcpPath,
+} from "../../src/features/mcp/contract.ts"
+import { isRepository, repoId } from "../../src/features/repo/contract.ts"
+import { type Actor, personOnlyRefusals, type Role, Sessions } from "../Actor.ts"
+import { readBounded } from "../Body.vibe"
+import { networkOf } from "../Throttle.vibe"
+import { codeOf } from "../ErrorCode.ts"
+import { type Repository, repositoryOf } from "../github/Config.ts"
+import * as RepoRoles from "../github/RepoRoles.ts"
+import { McpAuthError } from "./Contract.vibe"
+import * as Metrics from "./Metrics.vibe"
+import { timingSafeEqualString, validateCodeVerifier } from "./Pkce.ts"
+import * as OAuthCrypto from "./OAuthCrypto.ts"
+
+export { timingSafeEqual, timingSafeEqualString, validateCodeVerifier } from "./Pkce.ts"
+
+// OAuth 2.1 + RFC 9728 + RFC 8414 + RFC 7591 + PKCE S256 + Person-Only MCP Token Management.
+//
+// Matches committed Postgres schema `db/migrations/0126_mcp_tokens.ts`:
+//   - mcp_oauth_clients(client_id, client_name, redirect_uris, created_at)
+//   - mcp_oauth_codes(code_sha256, person_id, client_id, redirect_uri, repo_scope, scopes, code_challenge, created_at, expires_at, used_at)
+//   - mcp_tokens(id, person_id, client_id, client_name, token_sha256, repo_scope, scopes, created_at, expires_at, last_used_at, revoked_at)
+//
+// Security invariants:
+// 1. Discovery metadata advertises S256-only PKCE, public (`none`) auth, and RFC 9207 `iss` responses.
+// 2. Dynamic Client Registration validates `client_name` (1..120 UTF-8 bytes, no control/bidi chars)
+//    and `redirect_uris` (1..8 URIs: loopback HTTP, public non-IPv6 HTTPS, or explicit allowlisted editor schemes;
+//    rejects fragments, userinfo, whitespace, backslashes, control chars, encoded controls, `javascript:`, `data:`, `file:`).
+// 3. `GET`/`POST /api/mcp/oauth/authorize` (JSON) and `/api/me/mcp-tokens*` are strictly person-only:
+//    MCP `sma_` bearer or `actor.act !== undefined` -> 403 `person_only`; signed-out -> 401 `authentication`.
+//    Browser HTML `GET /api/mcp/oauth/authorize` redirects 302 to `/app/mcp/authorize?<query>`.
+// 4. Codes and bearer tokens are NEVER stored or logged in plaintext; only SHA-256 hex digests hit Postgres.
+// 5. Code consumption and issuance share one transaction. Invalid exchanges commit the burn;
+//    the code digest names exactly one grant, so a replay revokes only that grant.
+// 6. Per-person active token limit (`MCP_MAX_ACTIVE_TOKENS_PER_PERSON`) is checked on approval and enforced
+//    atomically inside a transaction-scoped advisory lock on token issuance.
+// 7. OBS-5: zero tokens, auth codes, verifiers, request bodies, or logins appear in logs, spans, or metrics.
+
+/** Maximum byte size for OAuth JSON/form request bodies (16 KiB, bounded under `MCP_MAX_REQUEST_BYTES`). */
+export const OAUTH_MAX_BODY_BYTES = Math.min(16 * 1024, MCP_MAX_REQUEST_BYTES)
+
+/** Maximum UTF-8 byte length of `mcp_oauth_clients.client_name` (matches DB CHECK). */
+export const MAX_CLIENT_NAME_BYTES = 120
+
+/** Maximum redirect URIs per registered OAuth client (matches DB CHECK `BETWEEN 1 AND 8`). */
+export const MAX_REDIRECT_URIS = 8
+
+/** Maximum UTF-8 byte length of a single redirect URI (matches DB CHECK `BETWEEN 1 AND 2048`). */
+export const MAX_REDIRECT_URI_BYTES = 2048
+
+const NETWORK_REGISTRATIONS_PER_MINUTE = 30
+const GLOBAL_REGISTRATIONS_PER_MINUTE = 3000
+const UNUSED_CLIENT_DAYS = 30
+const GRANT_NAMESPACE = "81c97868-570f-49f6-9d82-0ad317744a64"
+
+const MAX_CLIENT_ID_BYTES = 128
+const MAX_CODE_BYTES = 512
+const MAX_STATE_LENGTH = 1024
+
+const NO_STORE_HEADERS: Readonly<Record<string, string>> = {
+  "cache-control": "no-store",
+  "referrer-policy": "no-referrer",
+}
+
+const TOKEN_RESPONSE_HEADERS: Readonly<Record<string, string>> = {
+  "cache-control": "no-store",
+  pragma: "no-cache",
+  "referrer-policy": "no-referrer",
+}
+
+const WELL_KNOWN_HEADERS: Readonly<Record<string, string>> = {
+  "cache-control": "public, max-age=300",
+  "access-control-allow-origin": "*",
+}
+
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/
+const BIDI_OVERRIDE_CHARS = /[\u200e\u200f\u202a-\u202e\u2066-\u2069]/
+const VISIBLE_ASCII = /^[\x21-\x7e]+$/
+const ENCODED_CONTROL = /%(?:0[0-9a-f]|1[0-9a-f]|7f)/i
+const CODE_CHALLENGE_PATTERN = /^[A-Za-z0-9_-]{43,128}$/
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const IPV4_PATTERN = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
+const LOOPBACK_AUTHORITY_PATTERN = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::(\d{1,5}))?$/i
+const DNS_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
+
+const PRIVATE_DNS_SUFFIXES: ReadonlyArray<string> = [
+  ".localhost",
+  ".local",
+  ".localdomain",
+  ".internal",
+  ".intranet",
+  ".lan",
+  ".home",
+  ".corp",
+  ".home.arpa",
+  ".onion",
+  ".invalid",
+]
+
+/** Allowlisted native/editor callback schemes for MCP OAuth clients (RFC 8252 §7.1). */
+export const ALLOWED_CUSTOM_SCHEMES: ReadonlySet<string> = new Set([
+  "cursor:",
+  "vscode:",
+  "vscode-insiders:",
+  "claude:",
+  "windsurf:",
+  "zed:",
+])
+
+const VALID_SCOPES: ReadonlySet<string> = new Set(MCP_SCOPES)
+
+const encoder = new TextEncoder()
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Pure crypto & PKCE helpers (workerd-safe: Web Crypto + @smthrs/crypto, zero `node:crypto`).
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Generates a 32-byte cryptographically random URL-safe authorization code (43 base64url chars). */
+export const generateAuthCode = OAuthCrypto.generateAuthCode
+
+/** Generates a 16-byte cryptographically random dynamic OAuth client identifier (`smc_<32 hex>`). */
+export const generateClientId = OAuthCrypto.generateClientId
+
+/** Generates a 32-byte cryptographically random opaque MCP bearer token (`sma_<64 lowercase hex>`). */
+export const generateMcpToken = OAuthCrypto.generateMcpToken
+
+/** Computes RFC 7636 PKCE S256 challenge: `base64url(SHA-256(ASCII(verifier)))` without padding. */
+export const pkceS256 = OAuthCrypto.pkceS256
+
+/** Validates RFC 7636 `code_challenge` format (43..128 unpadded base64url chars). */
+export const validateCodeChallenge = (value: string): boolean => CODE_CHALLENGE_PATTERN.test(value)
+
+/** Verifies PKCE S256 (`base64url(SHA-256(verifier)) === challenge`) in constant time. */
+export const verifyPkceS256 = (verifier: string, challenge: string): boolean =>
+  OAuthCrypto.verifyPkceS256(verifier, challenge, validateCodeChallenge)
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Strict OAuth 2.1 / RFC 7591 validation helpers.
+// ---------------------------------------------------------------------------------------------------------------------
+
+const isValidPort = (rawPort: string | undefined): boolean => {
+  if (rawPort === undefined || rawPort === "") return true
+  const num = Number(rawPort)
+  return Number.isInteger(num) && num >= 1 && num <= 65_535
+}
+
+const isPrivateOrReservedIpv4 = (match: RegExpExecArray): boolean => {
+  const a = Number(match[1])
+  const b = Number(match[2])
+  const c = Number(match[3])
+  const d = Number(match[4])
+  if (a === 0 || a === 10 || a === 127 || a >= 224) return true
+  if (a === 100 && b >= 64 && b <= 127) return true // CGNAT
+  if (a === 169 && b === 254) return true // Link-local / cloud metadata
+  if (a === 172 && b >= 16 && b <= 31) return true // RFC 1918
+  if (a === 192 && (b === 168 || (b === 0 && (c === 0 || c === 2)) || (b === 88 && c === 99))) return true
+  if (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) return true
+  if (a === 203 && b === 0 && c === 113) return true
+  return false
+}
+
+const isPublicHttpsHost = (rawAuthorityHost: string, parsedHost: string): boolean => {
+  const host = parsedHost.toLowerCase()
+  // Reject IPv6 literals, empty host, trailing dots, and single-label names.
+  if (host === "" || host.startsWith("[") || host.endsWith(".") || !host.includes(".")) return false
+  // Ensure the raw authority named the host verbatim so obfuscated IPv4 forms (`0x7f.1`, decimal ints) fail.
+  if (rawAuthorityHost.toLowerCase() !== host) return false
+  // URL has already validated and normalized each IPv4 octet.
+  const ipv4 = IPV4_PATTERN.exec(host)
+  if (ipv4 !== null) return !isPrivateOrReservedIpv4(ipv4)
+  if (host.length > 253) return false
+  if (PRIVATE_DNS_SUFFIXES.some((suffix) => host.endsWith(suffix))) return false
+  return host.split(".").every((label) => DNS_LABEL_PATTERN.test(label))
+}
+
+export type RedirectUriValidation =
+  | { readonly ok: true; readonly url: URL }
+  | { readonly ok: false; readonly reason: string }
+
+/**
+ * Validates an OAuth 2.1 redirect URI for MCP public clients:
+ * - Loopback HTTP (`http://127.0.0.1[:port]/...`, `http://localhost[:port]/...`, `http://[::1][:port]/...`)
+ * - Public HTTPS (`https://<public-host>[:port]/...`, rejecting private/link-local/loopback/IPv6-literal/single-label)
+ * - Explicit allowlisted custom schemes (`cursor://`, `vscode://`, `vscode-insiders://`, `claude://`, `windsurf://`, `zed://`)
+ * Always rejects fragments, userinfo, whitespace, control characters, encoded controls, backslashes, and all other schemes.
+ */
+export const validateRedirectUri = (value: unknown): RedirectUriValidation => {
+  if (typeof value !== "string" || value.length === 0 || encoder.encode(value).byteLength > MAX_REDIRECT_URI_BYTES) {
+    return { ok: false, reason: "length" }
+  }
+  if (!VISIBLE_ASCII.test(value) || value.includes("#") || value.includes("\\") || ENCODED_CONTROL.test(value)) {
+    return { ok: false, reason: "invalid_characters" }
+  }
+  const authorityMatch = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]+)/i.exec(value)
+  if (authorityMatch === null) return { ok: false, reason: "missing_authority" }
+  const authority = authorityMatch[2]!
+  if (authority.includes("@")) return { ok: false, reason: "userinfo" }
+
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    return { ok: false, reason: "malformed_url" }
+  }
+
+  const protocol = parsed.protocol.toLowerCase()
+  if (protocol === "http:") {
+    const loop = LOOPBACK_AUTHORITY_PATTERN.exec(authority)
+    if (loop === null || !isValidPort(loop[1])) return { ok: false, reason: "http_must_be_loopback" }
+    return { ok: true, url: parsed }
+  }
+  if (protocol === "https:") {
+    if (!isValidPort(parsed.port)) return { ok: false, reason: "invalid_port" }
+    const rawHost = authority.startsWith("[") ? authority : authority.split(":", 1)[0]!
+    if (!isPublicHttpsHost(rawHost, parsed.hostname)) return { ok: false, reason: "non_public_https_host" }
+    return { ok: true, url: parsed }
+  }
+  if (ALLOWED_CUSTOM_SCHEMES.has(protocol)) {
+    if (parsed.hostname === "" || parsed.port !== "") return { ok: false, reason: "invalid_custom_target" }
+    return { ok: true, url: parsed }
+  }
+  return { ok: false, reason: "unsupported_scheme" }
+}
+
+/** Boolean guard over {@link validateRedirectUri}. */
+export const isValidRedirectUri = (value: unknown): value is string => validateRedirectUri(value).ok
+
+/** Validates & trims `client_name` (1..120 UTF-8 bytes, no control or bidi-override characters). */
+export const validateClientName = (raw: unknown): string | null => {
+  if (typeof raw !== "string") return null
+  if (CONTROL_CHARS.test(raw) || BIDI_OVERRIDE_CHARS.test(raw)) return null
+  const trimmed = raw.trim()
+  const bytes = encoder.encode(trimmed).byteLength
+  if (bytes < 1 || bytes > MAX_CLIENT_NAME_BYTES) return null
+  return trimmed
+}
+
+/** Parses space-separated string or string array of MCP scopes. Empty/omitted defaults to `["mcp:read"]`. */
+export const parseScopes = (raw: unknown): ReadonlyArray<McpScope> | null => {
+  if (raw === undefined || raw === null) return ["mcp:read"]
+  const parts = typeof raw === "string"
+    ? raw.trim() === "" ? [] : raw.trim().split(/\s+/)
+    : Array.isArray(raw)
+    ? raw
+    : null
+  if (parts === null) return null
+  if (parts.length === 0) return ["mcp:read"]
+  const seen = new Set<McpScope>()
+  for (const part of parts) {
+    if (typeof part !== "string" || !VALID_SCOPES.has(part)) return null
+    seen.add(part as McpScope)
+  }
+  return MCP_SCOPES.filter((scope) => seen.has(scope))
+}
+
+/** Parses an optional `repo` parameter (`owner/name`, or `github/owner/name` when `allowCanonical` is set). */
+export const parseRepoScope = (
+  raw: unknown,
+  options: { readonly allowCanonical?: boolean } = {},
+): { readonly owner: string; readonly name: string; readonly repoId: string } | null | "invalid" => {
+  if (raw === undefined || raw === null || raw === "") return null
+  if (typeof raw !== "string" || CONTROL_CHARS.test(raw) || /\s/.test(raw)) return "invalid"
+  const parts = raw.split("/")
+  if (parts.length === 2) {
+    const [owner, name] = parts as [string, string]
+    if (!isRepository(owner, name)) return "invalid"
+    return { owner, name, repoId: repoId(owner, name) }
+  }
+  if (options.allowCanonical === true && parts.length === 3 && parts[0]!.toLowerCase() === "github") {
+    const owner = parts[1]!
+    const name = parts[2]!
+    if (!isRepository(owner, name)) return "invalid"
+    return { owner, name, repoId: repoId(owner, name) }
+  }
+  return "invalid"
+}
+
+const parseRepoFromMcpPath = (
+  pathname: string,
+): { readonly owner: string; readonly name: string; readonly repoId: string } | null => {
+  const clean = pathname.replace(/\/+$/, "")
+  const publicMatch = parsePublicRepoMcpPath(clean)
+  if (publicMatch !== null) {
+    return isRepository(publicMatch.owner, publicMatch.name)
+      ? { owner: publicMatch.owner, name: publicMatch.name, repoId: repoId(publicMatch.owner, publicMatch.name) }
+      : null
+  }
+  if (clean.startsWith("/api/repos/")) {
+    const inner = parsePublicRepoMcpPath(clean.slice("/api/repos".length))
+    if (inner !== null && isRepository(inner.owner, inner.name)) {
+      return { owner: inner.owner, name: inner.name, repoId: repoId(inner.owner, inner.name) }
+    }
+  }
+  return null
+}
+
+/** Parses an optional RFC 8707 `resource` indicator on `origin`. */
+const parseResourceRepo = (
+  raw: unknown,
+  origin: string,
+): { readonly owner: string; readonly name: string; readonly repoId: string } | null | "invalid" => {
+  if (raw === undefined || raw === null || raw === "") return null
+  if (typeof raw !== "string" || CONTROL_CHARS.test(raw) || /\s/.test(raw)) return "invalid"
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    return "invalid"
+  }
+  if (parsed.origin !== cleanOrigin(origin) || parsed.search !== "" || parsed.hash !== "") return "invalid"
+  const pathname = parsed.pathname.replace(/\/+$/, "")
+  if (pathname === MCP_ROUTE) return null
+  return parseRepoFromMcpPath(pathname) ?? "invalid"
+}
+
+const validateState = (raw: unknown): string | null | "invalid" => {
+  if (raw === undefined || raw === null || raw === "") return null
+  if (typeof raw !== "string" || raw.length > MAX_STATE_LENGTH || CONTROL_CHARS.test(raw)) return "invalid"
+  return raw
+}
+
+const cleanOrigin = (origin: string): string => {
+  try {
+    return new URL(origin).origin
+  } catch {
+    return origin.replace(/\/+$/, "")
+  }
+}
+
+/** RFC 9728 OAuth Protected Resource Metadata document. */
+export const protectedResourceMetadata = (origin: string, resourcePath: string = MCP_ROUTE) => {
+  const base = cleanOrigin(origin)
+  return {
+    resource: `${base}${resourcePath}`,
+    authorization_servers: [base],
+    bearer_methods_supported: ["header"] as const,
+    scopes_supported: [...MCP_SCOPES],
+  } as const
+}
+
+/** RFC 8414 OAuth Authorization Server Metadata document. */
+export const authorizationServerMetadata = (origin: string) => {
+  const base = cleanOrigin(origin)
+  return {
+    issuer: base,
+    authorization_endpoint: `${base}${MCP_OAUTH_AUTHORIZE_ROUTE}`,
+    token_endpoint: `${base}${MCP_OAUTH_TOKEN_ROUTE}`,
+    registration_endpoint: `${base}${MCP_OAUTH_REGISTER_ROUTE}`,
+    response_types_supported: ["code"] as const,
+    grant_types_supported: ["authorization_code"] as const,
+    code_challenge_methods_supported: ["S256"] as const,
+    token_endpoint_auth_methods_supported: ["none"] as const,
+    scopes_supported: [...MCP_SCOPES],
+    authorization_response_iss_parameter_supported: true as const,
+  } as const
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// HTTP / Request helpers.
+// ---------------------------------------------------------------------------------------------------------------------
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+const parseJsonObject = (text: string): Record<string, unknown> | null => {
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return isPlainObject(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/** Reads `URLSearchParams`, rejecting duplicate parameter names per OAuth 2.1 §3.1. */
+const uniqueSearchParams = (params: URLSearchParams): Record<string, string> | null => {
+  const out: Record<string, string> = Object.create(null)
+  for (const [key, value] of params) {
+    if (Object.hasOwn(out, key)) return null
+    out[key] = value
+  }
+  return out
+}
+
+const wantsHtml = (request: HttpServerRequest.HttpServerRequest): boolean => {
+  const accept = (request.headers["accept"] ?? "").toLowerCase()
+  return accept.includes("text/html") && !accept.includes("application/json")
+}
+
+const hasMcpBearerHeader = (request: HttpServerRequest.HttpServerRequest): boolean => {
+  const header = request.headers["authorization"]
+  if (header === undefined) return false
+  const match = /^bearer[ \t]+(\S+)$/i.exec(header.trim())
+  return match !== null && match[1]!.startsWith(MCP_TOKEN_PREFIX)
+}
+
+const parseProtectedResourceSuffix = (pathname: string): string | null => {
+  if (pathname === MCP_OAUTH_PROTECTED_RESOURCE_ROUTE) return MCP_ROUTE
+  const suffix = pathname.slice(MCP_OAUTH_PROTECTED_RESOURCE_ROUTE.length)
+  if (CONTROL_CHARS.test(suffix) || /\s/.test(suffix) || suffix.includes("..") || suffix.includes("\\")) return null
+  if (suffix === MCP_ROUTE || parseRepoFromMcpPath(suffix) !== null) return suffix
+  return null
+}
+
+const parseDeleteTokenId = (pathname: string): string | null => {
+  const prefix = `${MCP_TOKENS_ROUTE}/`
+  if (!pathname.startsWith(prefix)) return null
+  const rest = pathname.slice(prefix.length)
+  if (rest === "" || rest.includes("/")) return null
+  try {
+    return decodeURIComponent(rest)
+  } catch {
+    return null
+  }
+}
+
+const errorJson = (
+  status: number,
+  code: string,
+  oauthError?: string,
+  detail?: string,
+  headers: Readonly<Record<string, string>> = NO_STORE_HEADERS,
+) =>
+  HttpServerResponse.jsonUnsafe(
+    {
+      code,
+      ...(oauthError === undefined ? {} : { error: oauthError }),
+      ...(detail === undefined ? {} : { error_description: detail }),
+    },
+    { status, headers },
+  )
+
+const methodNotAllowed = (allow: string, headers: Readonly<Record<string, string>> = NO_STORE_HEADERS) =>
+  HttpServerResponse.empty({ status: 405, headers: { ...headers, allow } })
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Row shapes (exact match to `db/migrations/0126_mcp_tokens.ts`).
+// ---------------------------------------------------------------------------------------------------------------------
+
+interface ClientRow {
+  readonly clientId: string
+  readonly clientName: string
+  readonly redirectUris: ReadonlyArray<string>
+}
+
+interface ConsumedCodeRow {
+  readonly personId: string
+  readonly clientId: string
+  readonly redirectUri: string
+  readonly repoScope: string | null
+  readonly scopes: ReadonlyArray<string>
+  readonly codeChallenge: string
+}
+
+interface TokenSummaryRow {
+  readonly id: string
+  readonly clientName: string
+  readonly repoScope: string | null
+  readonly scopes: ReadonlyArray<string>
+  readonly createdAt: string
+  readonly expiresAt: string
+  readonly lastUsedAt: string | null
+  readonly revokedAt: string | null
+}
+
+const summaryOf = (row: TokenSummaryRow): McpTokenSummary => ({
+  id: row.id,
+  clientName: row.clientName,
+  repoScope: row.repoScope,
+  scopes: MCP_SCOPES.filter((scope) => row.scopes.includes(scope)),
+  createdAt: row.createdAt,
+  expiresAt: row.expiresAt,
+  lastUsedAt: row.lastUsedAt,
+  revokedAt: row.revokedAt,
+})
+
+// ---------------------------------------------------------------------------------------------------------------------
+// OAuth & Token Management route factory.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Options for building the MCP OAuth 2.1 and person-only token management handlers. */
+export interface OAuthHandlerOptions<E, R, R2> {
+  /** Request-scoped Postgres client layer (`Database.layer(...)` in ChatApiProgram.ts). */
+  readonly database: Layer.Layer<SqlClient.SqlClient, E, R>
+  /** Live per-repository role resolver used to display `effectiveRole` on the consent screen. */
+  readonly resolveRole?: (
+    actor: Actor,
+    repository: Repository,
+  ) => (Role | null)!RepoRoles.RoleRefused!R2
+  /** Optional explicit `Sessions` override (defaults to `Sessions` from Effect context, else signed-out). */
+  readonly sessions?: Sessions["Service"]
+}
+
+/** OAuth 2.1 + token management surface consumed by `worker/mcp/Auth.ts`. */
+export interface OAuthHandlers {
+  readonly listTokens: (personId: string) => ReadonlyArray<McpTokenSummary>!McpAuthError
+  readonly revokeToken: (personId: string, tokenId: string) => boolean!McpAuthError
+  readonly handleOAuthOrTokenRoute: (
+    request: HttpServerRequest.HttpServerRequest,
+    origin: string,
+  ) => Option.Option<HttpServerResponse.HttpServerResponse>!!
+}
+
+/** Builds all MCP OAuth 2.1, discovery metadata, DCR, consent, token exchange, and `/api/me/mcp-tokens` handlers. */
+export const makeOAuthHandlers = effect <E, R, R2>(
+  options: OAuthHandlerOptions<E, R, R2>,
+): OAuthHandlers!never!(R | R2) => {
+  const context = try Effect.context<R | R2>()
+  const sessions = options.sessions
+    ?? Option.getOrElse(try Effect.serviceOption(Sessions), () => Sessions.of({ resolve: Effect.succeedNone }))
+
+  const withDb = <A, E2>(effect: A!E2!SqlClient.SqlClient) =>
+    effect.pipe(Effect.provide(options.database), Effect.provide(context))
+
+  const recordEvent = (step: string, outcome: string, extra: Record<string, string | number | boolean> = {}) =>
+    Effect.andThen(
+      Metric.update(Metric.withAttributes(Metrics.oauthEvents, { step, outcome }), 1),
+      Effect.logWithLevel(
+        outcome === "error"
+          ? "Error"
+          : outcome === "ok" || outcome === "created" || outcome === "issued" || outcome === "approved"
+              || outcome === "revoked" || outcome === "redirected"
+          ? "Info"
+          : "Warn",
+      )(
+        "mcp.oauth",
+      ).pipe(Effect.annotateLogs({ step, outcome, ...extra })),
+    )
+
+  const recordPersonOnly = (act: string, by: string, runId: string, depth: number) =>
+    Effect.andThen(
+      Metric.update(Metric.withAttributes(personOnlyRefusals, { act, by }), 1),
+      Effect.logWarning("auth.person_only").pipe(Effect.annotateLogs({ act, by, runId, depth })),
+    )
+
+  /**
+   * Resolves a strictly person-only browser session actor.
+   * - Any `Authorization: Bearer sma_...` -> `403 person_only` (never falls back to cookie).
+   * - Any other `Authorization` header -> `401 authentication` (or `403 person_only` if `Sessions` resolved an `act`).
+   * - `Sessions` actor with `act !== undefined` -> `403 person_only`.
+   * - Signed-out -> `401 authentication`.
+   */
+  const requirePerson = effect (
+    request: HttpServerRequest.HttpServerRequest,
+    act: string,
+    oauthStyle = false,
+  ): Actor!HttpServerResponse.HttpServerResponse => {
+    if (hasMcpBearerHeader(request)) {
+      try recordPersonOnly(act, "agent", "mcp:bearer", 1)
+      throw errorJson(403, "person_only", oauthStyle ? "access_denied" : undefined)
+    }
+    const resolved = try sessions.resolve.pipe(
+      Effect.provideService(HttpServerRequest.HttpServerRequest, request),
+      Effect.mapError(() => errorJson(503, "unavailable", oauthStyle ? "temporarily_unavailable" : undefined)),
+    )
+    if (Option.isNone(resolved)) {
+      throw errorJson(401, "authentication", oauthStyle ? "access_denied" : undefined)
+    }
+    const actor = resolved.value
+    if (actor.act !== undefined) {
+      try recordPersonOnly(act, actor.act.kind, actor.act.id, actor.act.chain?.length ?? 1)
+      throw errorJson(403, "person_only", oauthStyle ? "access_denied" : undefined)
+    }
+    if (request.headers["authorization"] !== undefined) {
+      throw errorJson(401, "authentication", oauthStyle ? "access_denied" : undefined)
+    }
+    return actor
+  }
+
+  /**
+   * Enforces CSRF & same-origin/device-person binding on state-changing person-only routes (`POST authorize`, `DELETE token`).
+   * - Always rejects `sec-fetch-site: cross-site`.
+   * - Always rejects mismatched `Origin` header.
+   * - Always rejects mismatched `x-smithers-device-person` (other person or `@anonymous`).
+   * - Requires at least one proof of same-origin page origin: matching `x-smithers-device-person === actor.subject.id`,
+   *   same-origin `Origin`, or `sec-fetch-site: same-origin` (supporting private tabs with `NO_DEVICE_DATA`).
+   */
+  const verifyMutationBinding = (
+    request: HttpServerRequest.HttpServerRequest,
+    actor: Actor,
+    expectedOrigin: string,
+  ): boolean => {
+    const fetchSite = request.headers["sec-fetch-site"]
+    if (fetchSite === "cross-site") return false
+    const reqOrigin = request.headers["origin"]
+    if (reqOrigin !== undefined && reqOrigin !== expectedOrigin) return false
+    const devicePerson = request.headers[DEVICE_PERSON_HEADER]
+    if (devicePerson !== undefined && devicePerson !== actor.subject.id && devicePerson !== NO_DEVICE_DATA) {
+      return false
+    }
+    if (devicePerson === actor.subject.id) return true
+    return reqOrigin === expectedOrigin || fetchSite === "same-origin"
+  }
+
+  const findClient = (clientId: string) =>
+    withDb(
+      effect {
+        const sql = try SqlClient.SqlClient
+        const rows = try sql<ClientRow>`
+            SELECT
+              client_id AS "clientId",
+              client_name AS "clientName",
+              redirect_uris AS "redirectUris"
+            FROM mcp_oauth_clients c
+            WHERE client_id = ${clientId} AND (created_at > now() - make_interval(days => ${UNUSED_CLIENT_DAYS})
+                OR EXISTS (SELECT 1 FROM mcp_tokens t WHERE t.client_id = c.client_id)
+                OR EXISTS (SELECT 1 FROM mcp_oauth_codes a WHERE a.client_id = c.client_id AND a.expires_at > now()))`
+        return Option.fromNullishOr(rows[0])
+      },
+    )
+
+  const findPersonLogin = (personId: string) =>
+    withDb(
+      effect {
+        const sql = try SqlClient.SqlClient
+        const rows = try sql<{ readonly login: string }>`
+            SELECT github_login AS login
+            FROM people
+            WHERE id = ${personId}::uuid`
+        return Option.fromNullishOr(rows[0]?.login)
+      },
+    )
+
+  const countActiveTokens = (personId: string) =>
+    withDb(
+      effect {
+        const sql = try SqlClient.SqlClient
+        const [row] = try sql<{ readonly count: number | string }>`
+            SELECT count(*)::int AS count
+            FROM mcp_tokens
+            WHERE person_id = ${personId}::uuid
+              AND revoked_at IS NULL
+              AND expires_at > clock_timestamp()`
+        return Number(row!.count)
+      },
+    )
+
+  /** Lists the person's MCP tokens (bounded, newest first; never selects `token_sha256`). */
+  const listTokens = (personId: string): ReadonlyArray<McpTokenSummary>!McpAuthError =>
+    withDb(
+      effect {
+        const sql = try SqlClient.SqlClient
+        const rows = try sql<TokenSummaryRow>`
+            SELECT
+              id::text AS id,
+              client_name AS "clientName",
+              repo_scope AS "repoScope",
+              scopes,
+              to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
+              to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "expiresAt",
+              to_char(last_used_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "lastUsedAt",
+              to_char(revoked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "revokedAt"
+            FROM mcp_tokens
+            WHERE person_id = ${personId}::uuid
+            ORDER BY created_at DESC, id
+            LIMIT 100`
+        return rows.map(summaryOf)
+      },
+    ).pipe(
+      Effect.catchCause((cause) =>
+        Effect.andThen(
+          recordEvent("list_tokens", "error", { errorCode: codeOf(Cause.squash(cause)) }),
+          Effect.fail(new McpAuthError({ code: "unavailable", status: 503 })),
+        )
+      ),
+    )
+
+  /** Revokes a single active MCP token owned by `personId`. Malformed UUIDs return `false`. */
+  const revokeToken = (personId: string, tokenId: string): boolean!McpAuthError =>
+    effect {
+      if (!UUID_PATTERN.test(tokenId)) return false
+      const rows = try withDb(
+        effect {
+          const sql = try SqlClient.SqlClient
+          return try sql<{ readonly id: string }>`
+              UPDATE mcp_tokens
+              SET revoked_at = clock_timestamp()
+              WHERE id = ${tokenId}::uuid
+                AND person_id = ${personId}::uuid
+                AND revoked_at IS NULL
+              RETURNING id::text AS id`
+        },
+      )
+      return rows.length === 1
+    }.pipe(
+      Effect.catchCause((cause) =>
+        Effect.andThen(
+          recordEvent("revoke_token", "error", { errorCode: codeOf(Cause.squash(cause)) }),
+          Effect.fail(new McpAuthError({ code: "unavailable", status: 503 })),
+        )
+      ),
+    )
+
+  // -----------------------------------------------------------------------------------------------------------------
+  // Shared OAuth authorize parameter validator.
+  // -----------------------------------------------------------------------------------------------------------------
+
+  interface ValidatedAuthorize {
+    readonly client: ClientRow
+    readonly redirectUri: string
+    readonly codeChallenge: string
+    readonly scopes: ReadonlyArray<McpScope>
+    readonly repo: { readonly owner: string; readonly name: string; readonly repoId: string } | null
+    readonly state: string | null
+  }
+
+  const validateAuthorizeParams = effect (
+    params: Record<string, unknown>,
+    origin: string,
+  ): ValidatedAuthorize!HttpServerResponse.HttpServerResponse => {
+    if (params["response_type"] !== "code") {
+      throw errorJson(400, "invalid_request", "invalid_request", "response_type must be code.")
+    }
+    const clientId = params["client_id"]
+    if (
+      typeof clientId !== "string"
+      || clientId.length === 0
+      || encoder.encode(clientId).byteLength > MAX_CLIENT_ID_BYTES
+      || CONTROL_CHARS.test(clientId)
+    ) {
+      throw errorJson(400, "invalid_client", "invalid_client", "Missing or invalid client_id.")
+    }
+    const redirectUri = params["redirect_uri"]
+    if (!isValidRedirectUri(redirectUri)) {
+      throw errorJson(400, "invalid_redirect_uri", "invalid_redirect_uri", "Missing or invalid redirect_uri.")
+    }
+    if (params["code_challenge_method"] !== "S256") {
+      throw errorJson(400, "invalid_request", "invalid_request", "code_challenge_method=S256 is required.")
+    }
+    const codeChallenge = params["code_challenge"]
+    if (typeof codeChallenge !== "string" || !validateCodeChallenge(codeChallenge)) {
+      throw errorJson(400, "invalid_request", "invalid_request", "code_challenge must be 43..128 base64url characters.")
+    }
+    const scopes = parseScopes(params["scope"])
+    if (scopes === null) {
+      throw errorJson(400, "invalid_scope", "invalid_scope", "Unsupported scope.")
+    }
+    const state = validateState(params["state"])
+    if (state === "invalid") {
+      throw errorJson(400, "invalid_request", "invalid_request", "Invalid state parameter.")
+    }
+    const explicitRepo = parseRepoScope(params["repo"], { allowCanonical: true })
+    if (explicitRepo === "invalid") {
+      throw errorJson(400, "invalid_request", "invalid_request", "repo must be owner/name.")
+    }
+    const resourceRepo = parseResourceRepo(params["resource"], origin)
+    if (resourceRepo === "invalid") {
+      throw errorJson(400, "invalid_request", "invalid_request", "Invalid resource parameter.")
+    }
+    if (explicitRepo !== null && resourceRepo !== null && explicitRepo.repoId !== resourceRepo.repoId) {
+      throw errorJson(400, "invalid_request", "invalid_request", "repo and resource name different repositories.")
+    }
+    const client = try findClient(clientId).pipe(
+      Effect.mapError(() => errorJson(503, "unavailable", "temporarily_unavailable")),
+    )
+    if (Option.isNone(client)) {
+      throw errorJson(400, "invalid_client", "invalid_client", "Unknown OAuth client.")
+    }
+    // OAuth 2.1 §2.3.1: strict exact-string match against registered redirect_uris.
+    if (!client.value.redirectUris.includes(redirectUri)) {
+      throw errorJson(
+        400,
+        "invalid_redirect_uri",
+        "invalid_redirect_uri",
+        "redirect_uri is not registered for this client.",
+      )
+    }
+    return {
+      client: client.value,
+      redirectUri,
+      codeChallenge,
+      scopes,
+      repo: explicitRepo ?? resourceRepo,
+      state,
+    }
+  }
+
+  // -----------------------------------------------------------------------------------------------------------------
+  // Route handlers.
+  // -----------------------------------------------------------------------------------------------------------------
+
+  /** `POST /api/mcp/oauth/register` (RFC 7591 Dynamic Client Registration). */
+  const handleRegister = (request: HttpServerRequest.HttpServerRequest) =>
+    effect {
+      if (request.method !== "POST") return methodNotAllowed("POST")
+      const rawMedia = request.headers["content-type"]
+      if (rawMedia !== undefined) {
+        const media = rawMedia.split(";", 1)[0]!.trim().toLowerCase()
+        if (media !== "application/json") {
+          try recordEvent("register", "unsupported_media_type")
+          return errorJson(415, "invalid_request", "invalid_client_metadata", "Content-Type must be application/json.")
+        }
+      }
+      const rawBody = try readBounded(request, OAUTH_MAX_BODY_BYTES).pipe(Effect.result)
+      if (rawBody._tag === "Failure") {
+        const status = rawBody.failure.reason === "too_large" ? 413 : 400
+        try recordEvent("register", rawBody.failure.reason)
+        return errorJson(
+          status,
+          "invalid_request",
+          "invalid_client_metadata",
+          "Invalid or oversized registration body.",
+        )
+      }
+      const body = parseJsonObject(rawBody.success)
+      if (body === null) {
+        try recordEvent("register", "invalid_json")
+        return errorJson(400, "invalid_request", "invalid_client_metadata", "Expected a JSON object.")
+      }
+
+      const clientName = validateClientName(body["client_name"])
+      if (clientName === null) {
+        try recordEvent("register", "invalid_client_name")
+        return errorJson(
+          400,
+          "invalid_request",
+          "invalid_client_metadata",
+          "client_name must be 1..120 printable bytes.",
+        )
+      }
+
+      const rawUris = body["redirect_uris"]
+      if (!Array.isArray(rawUris) || rawUris.length === 0 || rawUris.length > MAX_REDIRECT_URIS) {
+        try recordEvent("register", "invalid_redirect_uri")
+        return errorJson(
+          400,
+          "invalid_redirect_uri",
+          "invalid_redirect_uri",
+          `redirect_uris must list 1..${MAX_REDIRECT_URIS} URIs.`,
+        )
+      }
+      const redirectUris: Array<string> = []
+      const seenUris = new Set<string>()
+      for (const entry of rawUris) {
+        const check = validateRedirectUri(entry)
+        if (!check.ok) {
+          try recordEvent("register", "invalid_redirect_uri", { reason: check.reason })
+          return errorJson(400, "invalid_redirect_uri", "invalid_redirect_uri", "Redirect URI is not permitted.")
+        }
+        const uri = entry as string
+        if (!seenUris.has(uri)) {
+          seenUris.add(uri)
+          redirectUris.push(uri)
+        }
+      }
+
+      const authMethod = body["token_endpoint_auth_method"]
+      if (authMethod !== undefined && authMethod !== "none") {
+        try recordEvent("register", "unsupported_auth_method")
+        return errorJson(
+          400,
+          "invalid_request",
+          "invalid_client_metadata",
+          "Only public clients (token_endpoint_auth_method=none) are supported.",
+        )
+      }
+      const grantTypes = body["grant_types"]
+      if (grantTypes !== undefined && !(Array.isArray(grantTypes) && grantTypes.includes("authorization_code"))) {
+        try recordEvent("register", "unsupported_grant_type")
+        return errorJson(
+          400,
+          "invalid_request",
+          "invalid_client_metadata",
+          "grant_types must include authorization_code.",
+        )
+      }
+      const responseTypes = body["response_types"]
+      if (responseTypes !== undefined && !(Array.isArray(responseTypes) && responseTypes.includes("code"))) {
+        try recordEvent("register", "unsupported_response_type")
+        return errorJson(400, "invalid_request", "invalid_client_metadata", "response_types must include code.")
+      }
+
+      const clientId = try Effect.orDie(Effect.try(generateClientId))
+      const issuedAt = Math.floor((try Clock.currentTimeMillis) / 1000)
+
+      const networkDigest = try Effect.orDie(Effect.try(() => digestSync(networkOf(request.headers))))
+      const registered = try withDb(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(effect {
+        // The deployment-wide limit also covers requests distributed across networks and Worker isolates.
+        try sql`SELECT pg_advisory_xact_lock(hashtextextended('mcp-dynamic-registration', 0))`
+        try sql`DELETE FROM mcp_registration_admissions WHERE admitted_at <= clock_timestamp() - interval '1 minute'`
+        const [recent] = try sql<{ total: number; network: number }>`
+            SELECT count(*)::int AS total, (count(*) FILTER (WHERE network_digest = ${networkDigest}))::int AS network
+            FROM mcp_registration_admissions`
+        if (recent!.network >= NETWORK_REGISTRATIONS_PER_MINUTE || recent!.total >= GLOBAL_REGISTRATIONS_PER_MINUTE) {
+          return false
+        }
+        try sql`INSERT INTO mcp_registration_admissions (network_digest) VALUES (${networkDigest})`
+        try sql`DELETE FROM mcp_oauth_clients c WHERE NOT (created_at > now() - make_interval(days => ${UNUSED_CLIENT_DAYS})
+                OR EXISTS (SELECT 1 FROM mcp_tokens t WHERE t.client_id = c.client_id)
+                OR EXISTS (SELECT 1 FROM mcp_oauth_codes a WHERE a.client_id = c.client_id AND a.expires_at > now()))`
+        try sql`INSERT INTO mcp_oauth_clients (client_id, client_name, redirect_uris)
+            VALUES (${clientId}, ${clientName}, ${redirectUris}::text[])`
+        return true
+      })))
+      if (!registered) {
+        try recordEvent("register", "rate_limited")
+        return errorJson(429, "rate_limited", "temporarily_unavailable", undefined, {
+          ...NO_STORE_HEADERS,
+          "retry-after": "60",
+        })
+      }
+
+      try recordEvent("register", "created", { redirectUriCount: redirectUris.length })
+      return HttpServerResponse.jsonUnsafe(
+        {
+          client_id: clientId,
+          client_name: clientName,
+          redirect_uris: redirectUris,
+          token_endpoint_auth_method: "none",
+          grant_types: ["authorization_code"],
+          response_types: ["code"],
+          client_id_issued_at: issuedAt,
+        },
+        { status: 201, headers: NO_STORE_HEADERS },
+      )
+    }.pipe(
+      Effect.catchCause((cause) =>
+        Effect.as(
+          recordEvent("register", "error", { errorCode: codeOf(Cause.squash(cause)) }),
+          errorJson(503, "unavailable", "temporarily_unavailable"),
+        )
+      ),
+      Effect.withSpan("mcp.oauth.register"),
+    )
+
+  /** `GET /api/mcp/oauth/authorize`: HTML navigation -> 302 to consent UI; JSON -> `McpConsentDetails`. */
+  const handleAuthorizeGet = (request: HttpServerRequest.HttpServerRequest, url: URL, origin: string) =>
+    effect {
+      // Browser navigation from an OAuth client: redirect to the React consent screen with the query intact.
+      if (wantsHtml(request)) {
+        try recordEvent("authorize_get", "redirected")
+        return HttpServerResponse.redirect(`${origin}${MCP_CONSENT_PATH}${url.search}`, {
+          status: 302,
+          headers: NO_STORE_HEADERS,
+        })
+      }
+
+      const personResult = try requirePerson(request, "mcp/oauth_authorize", true).pipe(Effect.result)
+      if (personResult._tag === "Failure") {
+        try recordEvent("authorize_get", personResult.failure.status === 403 ? "person_only" : "unauthenticated")
+        return personResult.failure
+      }
+      const actor = personResult.success
+
+      const queryParams = uniqueSearchParams(url.searchParams)
+      if (queryParams === null) {
+        try recordEvent("authorize_get", "duplicate_param")
+        return errorJson(400, "invalid_request", "invalid_request", "Duplicate query parameter.")
+      }
+
+      const validated = try validateAuthorizeParams(queryParams, origin).pipe(Effect.result)
+      if (validated._tag === "Failure") {
+        try recordEvent("authorize_get", "invalid_request", { status: validated.failure.status })
+        return validated.failure
+      }
+      const asked = validated.success
+
+      const login = actor.login
+        ?? Option.getOrUndefined(try findPersonLogin(actor.subject.id))
+      if (login === undefined || login === "") {
+        try recordEvent("authorize_get", "missing_person")
+        return errorJson(401, "authentication", "access_denied")
+      }
+
+      let effectiveRole: Role | null = actor.role ?? null
+      if (asked.repo !== null) {
+        if (options.resolveRole === undefined) {
+          effectiveRole = null
+        } else {
+          const repo = asked.repo
+          const repository = try Effect.orDie(Effect.try(() => repositoryOf(`${repo.owner}/${repo.name}`)))
+          const roleResult = try options
+            .resolveRole(actor, repository)
+            .pipe(
+              Effect.provide(context),
+              Effect.catch((refused) =>
+                RepoRoles.CANT_ACT.has(refused.code)
+                  ? Effect.succeed<Role | null>(null)
+                  : Effect.fail(refused)
+              ),
+              Effect.result,
+            )
+          if (roleResult._tag === "Failure") {
+            try recordEvent("authorize_get", "error", { reason: roleResult.failure.code })
+            return errorJson(503, "unavailable", "temporarily_unavailable")
+          }
+          effectiveRole = roleResult.success
+        }
+      }
+
+      const details: McpConsentDetails = {
+        clientId: asked.client.clientId,
+        clientName: asked.client.clientName,
+        redirectUri: asked.redirectUri,
+        repoScope: asked.repo === null ? null : asked.repo.repoId,
+        scopes: asked.scopes,
+        state: asked.state,
+        codeChallenge: asked.codeChallenge,
+        codeChallengeMethod: "S256",
+        login,
+        effectiveRole,
+      }
+
+      try recordEvent("authorize_get", "ok", { hasRepoScope: asked.repo !== null })
+      return HttpServerResponse.jsonUnsafe(details, { status: 200, headers: NO_STORE_HEADERS })
+    }.pipe(
+      Effect.catchCause((cause) =>
+        Effect.as(
+          recordEvent("authorize_get", "error", { errorCode: codeOf(Cause.squash(cause)) }),
+          errorJson(503, "unavailable", "temporarily_unavailable"),
+        )
+      ),
+      Effect.withSpan("mcp.oauth.authorize_get"),
+    )
+
+  /** `POST /api/mcp/oauth/authorize`: person-only consent submission returning `{ redirectTo }`. */
+  const handleAuthorizePost = (request: HttpServerRequest.HttpServerRequest, url: URL, origin: string) =>
+    effect {
+      const personResult = try requirePerson(request, "mcp/oauth_authorize", true).pipe(Effect.result)
+      if (personResult._tag === "Failure") {
+        try recordEvent("authorize_post", personResult.failure.status === 403 ? "person_only" : "unauthenticated")
+        return personResult.failure
+      }
+      const actor = personResult.success
+
+      if (!verifyMutationBinding(request, actor, origin)) {
+        try recordEvent("authorize_post", "csrf_rejected")
+        return errorJson(403, "forbidden", "access_denied", "Consent must originate from the signed-in browser page.")
+      }
+
+      const rawMedia = request.headers["content-type"]
+      if (rawMedia !== undefined) {
+        const media = rawMedia.split(";", 1)[0]!.trim().toLowerCase()
+        if (media !== "application/json") {
+          try recordEvent("authorize_post", "unsupported_media_type")
+          return errorJson(415, "invalid_request", "invalid_request", "Content-Type must be application/json.")
+        }
+      }
+
+      const rawBody = try readBounded(request, OAUTH_MAX_BODY_BYTES).pipe(Effect.result)
+      if (rawBody._tag === "Failure") {
+        const status = rawBody.failure.reason === "too_large" ? 413 : 400
+        try recordEvent("authorize_post", rawBody.failure.reason)
+        return errorJson(status, "invalid_request", "invalid_request")
+      }
+      const body = parseJsonObject(rawBody.success)
+      if (body === null) {
+        try recordEvent("authorize_post", "invalid_json")
+        return errorJson(400, "invalid_request", "invalid_request", "Expected a JSON object.")
+      }
+
+      const decision = body["decision"]
+      if (decision !== "approve" && decision !== "deny") {
+        try recordEvent("authorize_post", "invalid_decision")
+        return errorJson(400, "invalid_request", "invalid_request", "decision must be approve or deny.")
+      }
+
+      const queryParams = uniqueSearchParams(url.searchParams)
+      if (queryParams === null) {
+        try recordEvent("authorize_post", "duplicate_param")
+        return errorJson(400, "invalid_request", "invalid_request", "Duplicate query parameter.")
+      }
+
+      // Merge URL query parameters (`store.ts` `McpClient.decide`) with any body parameters, rejecting conflicts.
+      const merged: Record<string, unknown> = Object.assign(Object.create(null), queryParams)
+      for (const [key, value] of Object.entries(body)) {
+        if (key === "decision" || value === undefined) continue
+        if (Object.hasOwn(merged, key) && merged[key] !== value) {
+          try recordEvent("authorize_post", "conflicting_params")
+          return errorJson(400, "invalid_request", "invalid_request", "Conflicting query and body parameters.")
+        }
+        merged[key] = value
+      }
+
+      const validated = try validateAuthorizeParams(merged, origin).pipe(Effect.result)
+      if (validated._tag === "Failure") {
+        try recordEvent("authorize_post", "invalid_request", { status: validated.failure.status })
+        return validated.failure
+      }
+      const asked = validated.success
+
+      const redirect = try Effect.orDie(Effect.try(() => new URL(asked.redirectUri)))
+      redirect.searchParams.delete("code")
+      redirect.searchParams.delete("error")
+      redirect.searchParams.delete("state")
+      redirect.searchParams.delete("iss")
+      redirect.searchParams.set("iss", origin)
+      if (asked.state !== null) redirect.searchParams.set("state", asked.state)
+
+      if (decision === "deny") {
+        redirect.searchParams.set("error", "access_denied")
+        try recordEvent("authorize_post", "denied")
+        return HttpServerResponse.jsonUnsafe(
+          { redirectTo: redirect.toString() },
+          { status: 200, headers: NO_STORE_HEADERS },
+        )
+      }
+
+      // Fail fast on the consent screen if the person already holds the maximum active tokens.
+      const activeCount = try countActiveTokens(actor.subject.id)
+      if (activeCount >= MCP_MAX_ACTIVE_TOKENS_PER_PERSON) {
+        try recordEvent("authorize_post", "token_limit")
+        return errorJson(
+          403,
+          "token_limit",
+          "access_denied",
+          `Maximum active MCP tokens (${MCP_MAX_ACTIVE_TOKENS_PER_PERSON}) reached.`,
+        )
+      }
+
+      const rawCode = try Effect.orDie(Effect.try(generateAuthCode))
+      const codeSha256 = try Effect.orDie(Effect.try(() => digestSync(rawCode)))
+      const repoScope = asked.repo === null ? null : asked.repo.repoId
+
+      try withDb(
+        effect {
+          const sql = try SqlClient.SqlClient
+          try sql`
+              INSERT INTO mcp_oauth_codes (
+                code_sha256,
+                person_id,
+                client_id,
+                redirect_uri,
+                repo_scope,
+                scopes,
+                code_challenge,
+                expires_at
+              )
+              VALUES (
+                ${codeSha256},
+                ${actor.subject.id}::uuid,
+                ${asked.client.clientId},
+                ${asked.redirectUri},
+                ${repoScope},
+                ${asked.scopes}::text[],
+                ${asked.codeChallenge},
+                clock_timestamp() + make_interval(secs => ${MCP_AUTH_CODE_TTL_SECONDS})
+              )`
+        },
+      )
+
+      redirect.searchParams.set("code", rawCode)
+      try recordEvent("authorize_post", "approved", {
+        hasRepoScope: repoScope !== null,
+        scopeCount: asked.scopes.length,
+      })
+      return HttpServerResponse.jsonUnsafe(
+        { redirectTo: redirect.toString() },
+        { status: 200, headers: NO_STORE_HEADERS },
+      )
+    }.pipe(
+      Effect.catchCause((cause) =>
+        Effect.as(
+          recordEvent("authorize_post", "error", { errorCode: codeOf(Cause.squash(cause)) }),
+          errorJson(503, "unavailable", "temporarily_unavailable"),
+        )
+      ),
+      Effect.withSpan("mcp.oauth.authorize_post"),
+    )
+
+  /** `POST /api/mcp/oauth/token`: atomic single-use code exchange + PKCE S256 + active token cap. */
+  const handleToken = (request: HttpServerRequest.HttpServerRequest, origin: string) =>
+    effect {
+      if (request.method !== "POST") return methodNotAllowed("POST", TOKEN_RESPONSE_HEADERS)
+
+      const rawBody = try readBounded(request, OAUTH_MAX_BODY_BYTES).pipe(Effect.result)
+      if (rawBody._tag === "Failure") {
+        const status = rawBody.failure.reason === "too_large" ? 413 : 400
+        try recordEvent("token", rawBody.failure.reason)
+        return errorJson(status, "invalid_request", "invalid_request", undefined, TOKEN_RESPONSE_HEADERS)
+      }
+
+      const contentType = (request.headers["content-type"] ?? "").split(";", 1)[0]!.trim().toLowerCase()
+      let params: Record<string, string> | null = null
+      if (contentType === "application/x-www-form-urlencoded") {
+        params = uniqueSearchParams(new URLSearchParams(rawBody.success))
+      } else if (contentType === "application/json") {
+        const parsed = parseJsonObject(rawBody.success)
+        if (parsed !== null) {
+          params = Object.create(null) as Record<string, string>
+          for (const [k, v] of Object.entries(parsed)) {
+            if (typeof v === "string") params[k] = v
+          }
+        }
+      } else {
+        try recordEvent("token", "unsupported_media_type")
+        return errorJson(
+          415,
+          "invalid_request",
+          "invalid_request",
+          "Content-Type must be application/x-www-form-urlencoded or application/json.",
+          TOKEN_RESPONSE_HEADERS,
+        )
+      }
+
+      if (params === null) {
+        try recordEvent("token", "malformed_body")
+        return errorJson(400, "invalid_request", "invalid_request", undefined, TOKEN_RESPONSE_HEADERS)
+      }
+
+      const grantType = params["grant_type"]
+      if (grantType === undefined || grantType === "") {
+        try recordEvent("token", "missing_grant_type")
+        return errorJson(400, "invalid_request", "invalid_request", "grant_type is required.", TOKEN_RESPONSE_HEADERS)
+      }
+      if (grantType !== "authorization_code") {
+        try recordEvent("token", "unsupported_grant_type")
+        return errorJson(
+          400,
+          "invalid_request",
+          "unsupported_grant_type",
+          "Only authorization_code grant_type is supported.",
+          TOKEN_RESPONSE_HEADERS,
+        )
+      }
+
+      const code = params["code"]
+      const clientId = params["client_id"]
+      const redirectUri = params["redirect_uri"]
+      const codeVerifier = params["code_verifier"]
+      if (
+        code === undefined || code === "" || encoder.encode(code).byteLength > MAX_CODE_BYTES
+        || clientId === undefined || clientId === "" || encoder.encode(clientId).byteLength > MAX_CLIENT_ID_BYTES
+        || redirectUri === undefined || redirectUri === ""
+        || encoder.encode(redirectUri).byteLength > MAX_REDIRECT_URI_BYTES
+        || codeVerifier === undefined || codeVerifier === ""
+      ) {
+        try recordEvent("token", "missing_params")
+        return errorJson(
+          400,
+          "invalid_request",
+          "invalid_request",
+          "code, client_id, redirect_uri, and code_verifier are required.",
+          TOKEN_RESPONSE_HEADERS,
+        )
+      }
+
+      if (!validateCodeVerifier(codeVerifier)) {
+        try recordEvent("token", "invalid_code_verifier")
+        return errorJson(400, "invalid_grant", "invalid_grant", undefined, TOKEN_RESPONSE_HEADERS)
+      }
+
+      const resourceRepo = parseResourceRepo(params["resource"], origin)
+      if (resourceRepo === "invalid") {
+        try recordEvent("token", "invalid_resource")
+        return errorJson(
+          400,
+          "invalid_request",
+          "invalid_request",
+          "Invalid resource parameter.",
+          TOKEN_RESPONSE_HEADERS,
+        )
+      }
+
+      const codeSha256 = try Effect.orDie(Effect.try(() => digestSync(code)))
+
+      const resourceRequested = params["resource"] !== undefined
+      // The public grant ID is a namespaced digest of the code, independent of the random bearer secret.
+      const tokenId = try Uuid.v5(GRANT_NAMESPACE, codeSha256).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+      return try withDb(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(effect {
+        const [consumed] = try sql<ConsumedCodeRow>`
+            UPDATE mcp_oauth_codes
+            SET used_at = clock_timestamp()
+            WHERE code_sha256 = ${codeSha256}
+              AND used_at IS NULL
+              AND expires_at > clock_timestamp()
+            RETURNING
+              person_id::text AS "personId",
+              client_id AS "clientId",
+              redirect_uri AS "redirectUri",
+              repo_scope AS "repoScope",
+              scopes,
+              code_challenge AS "codeChallenge"`
+        if (consumed === undefined) {
+          const revoked = try sql`UPDATE mcp_tokens SET revoked_at = clock_timestamp()
+              WHERE id = ${tokenId}::uuid AND revoked_at IS NULL RETURNING id`
+          try recordEvent("token", revoked.length > 0 ? "code_replay_revoked" : "invalid_grant")
+          return errorJson(400, "invalid_grant", "invalid_grant", undefined, TOKEN_RESPONSE_HEADERS)
+        }
+
+        if (
+          !timingSafeEqualString(consumed.clientId, clientId)
+          || !timingSafeEqualString(consumed.redirectUri, redirectUri)
+          || !verifyPkceS256(codeVerifier, consumed.codeChallenge)
+        ) {
+          try recordEvent("token", "invalid_grant")
+          return errorJson(400, "invalid_grant", "invalid_grant", undefined, TOKEN_RESPONSE_HEADERS)
+        }
+
+        if (
+          resourceRequested && resourceRepo !== null && consumed.repoScope !== null
+          && resourceRepo.repoId !== consumed.repoScope
+        ) {
+          try recordEvent("token", "invalid_grant")
+          return errorJson(400, "invalid_grant", "invalid_grant", undefined, TOKEN_RESPONSE_HEADERS)
+        }
+
+        const effectiveRepoScope = consumed.repoScope ?? (resourceRepo === null ? null : resourceRepo.repoId)
+        const validScopes = MCP_SCOPES.filter((scope) => consumed.scopes.includes(scope))
+        if (validScopes.length === 0) {
+          try recordEvent("token", "invalid_grant")
+          return errorJson(400, "invalid_grant", "invalid_grant", undefined, TOKEN_RESPONSE_HEADERS)
+        }
+
+        const ttlSeconds = MCP_TOKEN_TTL_DAYS * 24 * 60 * 60
+        const rawToken = try Effect.orDie(Effect.try(generateMcpToken))
+        const tokenSha256 = try Effect.orDie(Effect.try(() => digestSync(rawToken)))
+
+        try sql`SELECT pg_advisory_xact_lock(hashtextextended(${`mcp-tokens:${consumed.personId}`}, 0))`
+        const [countRow] = try sql<{ readonly count: number | string }>`
+            SELECT count(*)::int AS count
+            FROM mcp_tokens
+            WHERE person_id = ${consumed.personId}::uuid
+              AND revoked_at IS NULL
+              AND expires_at > clock_timestamp()`
+        if (Number(countRow!.count) >= MCP_MAX_ACTIVE_TOKENS_PER_PERSON) {
+          try recordEvent("token", "token_limit")
+          return errorJson(403, "token_limit", "access_denied", undefined, TOKEN_RESPONSE_HEADERS)
+        }
+        const clientRows = try sql<{ readonly clientName: string }>`
+            SELECT client_name AS "clientName"
+            FROM mcp_oauth_clients
+            WHERE client_id = ${consumed.clientId}`
+        const clientName = clientRows[0]?.clientName
+        if (clientName === undefined) {
+          try recordEvent("token", "invalid_client")
+          return errorJson(400, "invalid_client", "invalid_client", undefined, TOKEN_RESPONSE_HEADERS)
+        }
+
+        try sql`
+            INSERT INTO mcp_tokens (
+              id,
+              person_id,
+              client_id,
+              client_name,
+              token_sha256,
+              repo_scope,
+              scopes,
+              expires_at
+            )
+            VALUES (
+              ${tokenId}::uuid,
+              ${consumed.personId}::uuid,
+              ${consumed.clientId},
+              ${clientName},
+              ${tokenSha256},
+              ${effectiveRepoScope},
+              ${validScopes}::text[],
+              clock_timestamp() + make_interval(secs => ${ttlSeconds})
+            )`
+        try recordEvent("token", "issued", {
+          hasRepoScope: effectiveRepoScope !== null,
+          scopeCount: validScopes.length,
+        })
+        return HttpServerResponse.jsonUnsafe(
+          {
+            access_token: rawToken,
+            token_type: "Bearer",
+            expires_in: ttlSeconds,
+            scope: validScopes.join(" "),
+            repo_scope: effectiveRepoScope,
+          },
+          { status: 200, headers: TOKEN_RESPONSE_HEADERS },
+        )
+      })))
+    }.pipe(
+      Effect.catchCause((cause) =>
+        Effect.as(
+          recordEvent("token", "error", { errorCode: codeOf(Cause.squash(cause)) }),
+          errorJson(503, "unavailable", "temporarily_unavailable", undefined, TOKEN_RESPONSE_HEADERS),
+        )
+      ),
+      Effect.withSpan("mcp.oauth.token"),
+    )
+
+  /** `GET /api/me/mcp-tokens` (person-only). */
+  const handleListTokens = (request: HttpServerRequest.HttpServerRequest) =>
+    effect {
+      if (request.method !== "GET") return methodNotAllowed("GET")
+      const personResult = try requirePerson(request, "mcp/tokens_list").pipe(Effect.result)
+      if (personResult._tag === "Failure") {
+        try recordEvent("list_tokens", personResult.failure.status === 403 ? "person_only" : "unauthenticated")
+        return personResult.failure
+      }
+      const tokens = try listTokens(personResult.success.subject.id).pipe(Effect.result)
+      if (tokens._tag === "Failure") {
+        return errorJson(tokens.failure.status, tokens.failure.code)
+      }
+      try recordEvent("list_tokens", "ok", { count: tokens.success.length })
+      return HttpServerResponse.jsonUnsafe({ tokens: tokens.success }, { status: 200, headers: NO_STORE_HEADERS })
+    }.pipe(Effect.withSpan("mcp.oauth.list_tokens"))
+
+  /** `DELETE /api/me/mcp-tokens/:id` (person-only; enforces ownership & CSRF binding). */
+  const handleDeleteToken = (request: HttpServerRequest.HttpServerRequest, tokenId: string, origin: string) =>
+    effect {
+      if (request.method !== "DELETE") return methodNotAllowed("DELETE")
+      const personResult = try requirePerson(request, "mcp/tokens_revoke").pipe(Effect.result)
+      if (personResult._tag === "Failure") {
+        try recordEvent("revoke_token", personResult.failure.status === 403 ? "person_only" : "unauthenticated")
+        return personResult.failure
+      }
+      const actor = personResult.success
+      if (!verifyMutationBinding(request, actor, origin)) {
+        try recordEvent("revoke_token", "csrf_rejected")
+        return errorJson(403, "forbidden")
+      }
+      const revoked = try revokeToken(actor.subject.id, tokenId).pipe(Effect.result)
+      if (revoked._tag === "Failure") {
+        return errorJson(revoked.failure.status, revoked.failure.code)
+      }
+      if (!revoked.success) {
+        try recordEvent("revoke_token", "not_found")
+        return errorJson(404, "not_found")
+      }
+      try recordEvent("revoke_token", "revoked")
+      return HttpServerResponse.jsonUnsafe({ revoked: true }, { status: 200, headers: NO_STORE_HEADERS })
+    }.pipe(Effect.withSpan("mcp.oauth.revoke_token"))
+
+  /** Unified dispatcher for `.well-known/*`, `/api/mcp/oauth/*`, and `/api/me/mcp-tokens*`. */
+  const handleOAuthOrTokenRoute = effect (
+    request: HttpServerRequest.HttpServerRequest,
+    origin: string,
+  ): Option.Option<HttpServerResponse.HttpServerResponse>!! => {
+    const normalizedOrigin = cleanOrigin(origin)
+    const url = URL.parse(request.url, normalizedOrigin)
+    if (url === null) {
+      return Option.some(errorJson(400, "invalid_request", "invalid_request"))
+    }
+    const pathname = url.pathname
+
+    if (
+      pathname === MCP_OAUTH_PROTECTED_RESOURCE_ROUTE
+      || pathname.startsWith(`${MCP_OAUTH_PROTECTED_RESOURCE_ROUTE}/`)
+    ) {
+      if (request.method !== "GET") return Option.some(methodNotAllowed("GET", WELL_KNOWN_HEADERS))
+      const resourcePath = parseProtectedResourceSuffix(pathname)
+      if (resourcePath === null) {
+        return Option.some(errorJson(404, "not_found", undefined, undefined, WELL_KNOWN_HEADERS))
+      }
+      try recordEvent("protected_resource", "ok")
+      return Option.some(
+        HttpServerResponse.jsonUnsafe(protectedResourceMetadata(normalizedOrigin, resourcePath), {
+          status: 200,
+          headers: WELL_KNOWN_HEADERS,
+        }),
+      )
+    }
+
+    if (pathname === MCP_OAUTH_AUTH_SERVER_ROUTE) {
+      if (request.method !== "GET") return Option.some(methodNotAllowed("GET", WELL_KNOWN_HEADERS))
+      try recordEvent("authorization_server", "ok")
+      return Option.some(
+        HttpServerResponse.jsonUnsafe(authorizationServerMetadata(normalizedOrigin), {
+          status: 200,
+          headers: WELL_KNOWN_HEADERS,
+        }),
+      )
+    }
+
+    if (pathname === MCP_OAUTH_REGISTER_ROUTE) {
+      return Option.some(try handleRegister(request))
+    }
+
+    if (pathname === MCP_OAUTH_AUTHORIZE_ROUTE) {
+      if (request.method === "GET") return Option.some(try handleAuthorizeGet(request, url, normalizedOrigin))
+      if (request.method === "POST") return Option.some(try handleAuthorizePost(request, url, normalizedOrigin))
+      return Option.some(methodNotAllowed("GET, POST"))
+    }
+
+    if (pathname === MCP_OAUTH_TOKEN_ROUTE) {
+      return Option.some(try handleToken(request, normalizedOrigin))
+    }
+
+    if (pathname === MCP_TOKENS_ROUTE) {
+      return Option.some(try handleListTokens(request))
+    }
+
+    const deleteId = parseDeleteTokenId(pathname)
+    if (deleteId !== null) {
+      return Option.some(try handleDeleteToken(request, deleteId, normalizedOrigin))
+    }
+
+    return Option.none()
+  }
+
+  return {
+    listTokens,
+    revokeToken,
+    handleOAuthOrTokenRoute,
+  }
+}

@@ -20,8 +20,8 @@ import { repositoryOf } from "./github/Config.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { agentActor, makeMcpAuthService, McpAuthServiceLive } from "./mcp/Auth.vibe"
 import { McpAuthService, type McpPrincipal, type McpRepoAccess, type McpToolContext, McpToolError } from "./mcp/Contract.vibe"
-import * as OAuth from "./mcp/OAuth.ts"
-import { makeLiveToolDeps, makeMcpToolRegistry, MAX_FILE_PREVIEW_BYTES } from "./mcp/Tools.ts"
+import * as OAuth from "./mcp/OAuth.vibe"
+import { makeLiveToolDeps, makeMcpToolRegistry, MAX_FILE_PREVIEW_BYTES } from "./mcp/Tools.vibe"
 
 const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")
 const execs = Math.max(15, Math.min(Math.ceil(baseExecs / 4), 40))

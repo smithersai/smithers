@@ -26,8 +26,8 @@ import {
   timingSafeEqualString,
 } from "./Auth.vibe"
 import { McpAuthService, type McpPrincipal } from "./Contract.vibe"
-import { generateMcpToken } from "./OAuth.ts"
-import { makeLiveToolDeps, makeMcpToolRegistry } from "./Tools.ts"
+import { generateMcpToken } from "./OAuth.vibe"
+import { makeLiveToolDeps, makeMcpToolRegistry } from "./Tools.vibe"
 
 const ALICE_ID = "11111111-1111-4111-8111-111111111111"
 const BOB_ID = "22222222-2222-4222-8222-222222222222"

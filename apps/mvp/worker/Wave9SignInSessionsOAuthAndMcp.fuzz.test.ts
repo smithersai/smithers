@@ -30,8 +30,8 @@ import * as SignIn from "./SignIn.ts"
 import * as SocketAccess from "./SocketAccess.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import * as McpAuth from "./mcp/Auth.vibe"
-import * as McpOAuth from "./mcp/OAuth.ts"
-import * as McpTools from "./mcp/Tools.ts"
+import * as McpOAuth from "./mcp/OAuth.vibe"
+import * as McpTools from "./mcp/Tools.vibe"
 import * as H from "./test/harness.ts"
 
 const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")

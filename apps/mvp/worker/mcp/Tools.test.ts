@@ -1,6 +1,7 @@
 // The MCP tool catalog (worker/mcp/Tools.ts) over fake deps and a fake McpAuthService: no network, no database.
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { Effect, Exit, Option } from "effect"
+import { Effect, Exit, Layer, Option } from "effect"
+import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import { MCP_BLOCKED_ACTS, type McpScope } from "../../src/features/mcp/contract.ts"
 import { rankOf, type Role } from "../Actor.ts"
@@ -16,7 +17,7 @@ import {
   previewText,
   resolveRepoArgs,
   UNTRUSTED_NOTICE,
-} from "./Tools.ts"
+} from "./Tools.vibe"
 
 const VOLTAIRE = { owner: "evmts", name: "voltaire" }
 
@@ -190,9 +191,9 @@ const fakeAuth = McpAuthService.of({
   handleOAuthOrTokenRoute: () => Effect.succeed(Option.none()),
 })
 
-const setup = () => {
+const setup = (overrides: Partial<McpToolDeps> = {}) => {
   const calls: Calls = { reads: [], creates: [], comments: [], drafts: [], links: [], todos: [] }
-  const registry = Effect.runSync(makeMcpToolRegistry(fakeDeps(calls)).pipe(Effect.provideService(McpAuthService, fakeAuth)))
+  const registry = Effect.runSync(makeMcpToolRegistry({ ...fakeDeps(calls), ...overrides }).pipe(Effect.provideService(McpAuthService, fakeAuth)))
   const ctx = (login: string | null, requestId = "1", scopes?: ReadonlyArray<McpScope>): McpToolContext => ({
     principal: login === null ? Option.none() : Option.some(principalOf(login, scopes)),
     defaultRepo: VOLTAIRE,
@@ -500,4 +501,80 @@ describe("docs_list, docs_read, and pull_files", () => {
     expect(body.files[0]!.filename).toBe("src/primitives/address.ts")
     expect(body.files[0]!.untrusted.patch).toContain("export const check = true")
   })
+})
+
+test("list operations pass through explicit state, pagination and the resolved repository", async () => {
+  const { payload, ctx } = setup({
+    listIssues: (owner, name, query) => {
+      expect([owner, name]).toEqual(["example", "repo"])
+      expect(query).toEqual({ state: "closed", q: "updated", limit: 12, cursor: "next" })
+      return Effect.succeed({ issues: [], nextCursor: null })
+    },
+    listPulls: (owner, name, state) => {
+      expect([owner, name, state]).toEqual(["evmts", "voltaire", "closed"])
+      return Effect.succeed([])
+    },
+  })
+  expect(await payload("issues_list", {
+    repository: "example/repo",
+    state: "closed",
+    q: " updated ",
+    limit: 12,
+    cursor: "next",
+  }, ctx(null))).toEqual({ issues: [], nextCursor: null })
+  expect(await payload("pulls_list", { state: "closed" }, ctx(null))).toEqual({ pulls: [] })
+})
+
+test("pull patches share one byte budget and preserve rename metadata", async () => {
+  const counts = { additions: 1, deletions: 0, changes: 1 }
+  const { payload, ctx } = setup({
+    getPullFiles: () => Effect.succeed({
+      files: [
+        { ...counts, filename: "binary", status: "modified", patch: null },
+        { ...counts, filename: "renamed", previousFilename: "old", status: "renamed",
+          patch: "x".repeat(MAX_FILE_PREVIEW_BYTES + 1) },
+        { ...counts, filename: "later", status: "modified", patch: "omitted" },
+      ],
+      truncated: false,
+    }),
+  })
+  const result = await payload("pull_files", { number: 7 }, ctx(null))
+  expect(result.truncated).toBe(true)
+  expect(result.files).toEqual([
+    { ...counts, filename: "binary", status: "modified", untrusted: { patch: null } },
+    { ...counts, filename: "renamed", status: "renamed", previousFilename: "old",
+      untrusted: { patch: "x".repeat(MAX_FILE_PREVIEW_BYTES) } },
+    { ...counts, filename: "later", status: "modified", untrusted: { patch: null } },
+  ])
+})
+
+test("refuses a malformed work-link URL and records an optional summary on a valid link", async () => {
+  const { calls, callExit, ctx } = setup()
+  const args = { number: 7, kind: "session", ref: "feature", status: "working", summary: "Current work" }
+  expect(codeOf(await callExit("work_link_post", { ...args, url: "not a URL" }, ctx("roninjin10")))).toBe("invalid_params")
+  expect(calls.links).toEqual([])
+  expect(Exit.isSuccess(await callExit("work_link_post", { ...args, url: "https://example.org/branch" }, ctx("roninjin10")))).toBe(true)
+  expect(calls.links).toEqual([expect.objectContaining({ summary: args.summary, url: "https://example.org/branch" })])
+})
+
+test("preserves a flow read failure when the content source is unavailable", async () => {
+  const { callExit, ctx } = setup({
+    readFile: (...args) => args[2] === ".smithers/factory.json"
+      ? Effect.succeed({ path: args[2], ref: "main", content: FACTORY })
+      : Effect.fail(new McpToolError({ code: "unavailable", message: "source offline" })),
+  })
+  expect(codeOf(await callExit("flow_get", { id: "issue/repro" }, ctx(null)))).toBe("unavailable")
+})
+
+test("an absent Fleet admin list grants no Fleet access", async () => {
+  const database = Layer.effect(SqlClient.SqlClient, Effect.die("A refused call must not acquire a database"))
+  const { registry, callExit, ctx } = setup({ fleet: { database } })
+  const principal = Option.some({ ...principalOf("roninjin10"), repoScope: null })
+  const tools = await Effect.runPromise(registry.listTools(principal, VOLTAIRE))
+  expect(tools.some((tool) => tool.name.startsWith("fleet_"))).toBe(false)
+  expect(codeOf(await callExit("fleet_overview", {}, { ...ctx("roninjin10"), principal }))).toBe("forbidden")
+})
+
+test("a fractional preview budget is bounded to a whole byte", () => {
+  expect(previewText("ab", 1.5)).toEqual({ text: "a", bytes: 2, truncated: true })
 })

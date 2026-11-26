@@ -18,7 +18,7 @@ import { testFile } from "../test/harness.ts"
 import { makeMcpAuthService } from "./Auth.vibe"
 import { McpAuthService, type McpPrincipal } from "./Contract.vibe"
 import { makeLiveDeps } from "./LiveDeps.vibe"
-import { makeLiveToolDeps, makeMcpToolRegistry, MAX_FILE_PREVIEW_BYTES } from "./Tools.ts"
+import { makeLiveToolDeps, makeMcpToolRegistry, MAX_FILE_PREVIEW_BYTES } from "./Tools.vibe"
 
 const runtime = testFile("mcp_repository_reads")
 const sha = "a".repeat(40)
