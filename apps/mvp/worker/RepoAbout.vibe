@@ -94,17 +94,18 @@ const minutes = (name: string, fallback: number) =>
   Config.schema(Schema.Int.check(Schema.isGreaterThan(0)), name).pipe(Config.withDefault(fallback), Config.map(Duration.minutes))
 
 /** Reads {@link Settings} at program build. An App configuration that doesn't read leaves the App out. */
-export const settings = Effect.gen(function* () {
+export const settings = effect {
+  const token = try ReadToken.fromConfig
   return {
-    token: yield* ReadToken.fromConfig,
-    apiBaseUrl: yield* Config.String("GITHUB_API_URL").pipe(Config.withDefault(GitHubConfig.DEFAULT_API_URL)),
-    appSlug: yield* appSlug,
-    freshFor: yield* minutes("REPO_ABOUT_FRESH_MINUTES", 10),
-    anonymousFreshFor: yield* minutes("REPO_ABOUT_ANONYMOUS_FRESH_MINUTES", 60),
-    app: yield* GitHubConfig.configured.pipe(Effect.orElseSucceed(() => Option.none<GitHubConfig.GitHubApp>())),
-    allowed: yield* allowedRepositories,
+    token,
+    apiBaseUrl: try (Config.String("GITHUB_API_URL").pipe(Config.withDefault(GitHubConfig.DEFAULT_API_URL))),
+    appSlug: try appSlug,
+    freshFor: try minutes("REPO_ABOUT_FRESH_MINUTES", 10),
+    anonymousFreshFor: try minutes("REPO_ABOUT_ANONYMOUS_FRESH_MINUTES", 60),
+    app: try (GitHubConfig.configured.pipe(Effect.orElseSucceed(() => Option.none<GitHubConfig.GitHubApp>()))),
+    allowed: try allowedRepositories,
   } satisfies Settings
-})
+}
 
 /** What one read of GitHub did, for the records: never a token or the answer. */
 export interface GitHubRead {
@@ -210,7 +211,7 @@ export const make = <E, R>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
   timing: Timing = { waitFor: WAIT_FOR, poll: POLL },
 ) =>
-  Effect.gen(function* () {
+  effect {
     // The App's JWT signer, built for each read that mints a token: a signer one request built and another awaited
     // would resume that request on the first one's I/O.
     const app = Option.map(options.app, (configured) => ({
@@ -235,39 +236,39 @@ export const make = <E, R>(
       member: Effect.Effect<boolean>,
       failed: Array<string>,
     ): Effect.Effect<Chosen, never, HttpClient.HttpClient | R> =>
-      Effect.gen(function* () {
+      effect {
         let tokenError: string | undefined
         if (Option.isSome(app) && mayAct(app.value.repository, id) && !(appAbsentUntilMs !== null && appAbsentUntilMs > nowMs)) {
-          const minted = yield* Effect.gen(function* () {
-            const tokens = Tokens.make({ app: yield* app.value.auth, keys: Option.none(), refresh: Function.constant(Effect.void) })
-            return yield* tokens.forInstallation({ owner, name, id }, "contents")
-          }).pipe(Effect.provide(database), Effect.result)
+          const minted = try (effect {
+            const tokens = Tokens.make({ app: try app.value.auth, keys: Option.none(), refresh: Function.constant(Effect.void) })
+            return try tokens.forInstallation({ owner, name, id }, "contents")
+          }.pipe(Effect.provide(database), Effect.result))
           if (minted._tag === "Success") return { via: "app", token: Option.some(minted.success) }
           if (minted.failure instanceof Tokens.TokenUnavailable && minted.failure.reason === "app_not_installed") {
-            yield* store.appAbsent(id, nowMs + ms(APP_RECHECK)).pipe(Effect.catch(() => Effect.sync(() => void failed.push("app_absent"))))
+            try (store.appAbsent(id, nowMs + ms(APP_RECHECK)).pipe(Effect.catch(() => Effect.sync(() => void failed.push("app_absent")))))
           } else {
             tokenError = minted.failure instanceof Tokens.TokenUnavailable ? `token:${minted.failure.reason}` : codeOf(minted.failure)
           }
         }
         // Curated repositories are deployment-owned public entry points, not arbitrary caller input.
-        const deployment = (Curated.find(owner, name) !== undefined || (yield* member))
-          ? yield* options.token : Option.none<Redacted.Redacted<string>>()
+        const deployment = ((try Effect.sync(() => Curated.find(owner, name))) !== undefined || (try member))
+          ? try options.token : Option.none<Redacted.Redacted<string>>()
         return {
           via: Option.isSome(deployment) ? "deployment" : "anonymous",
           token: deployment,
           ...(tokenError === undefined ? {} : { tokenError }),
         }
-      })
+      }
 
     /** One read of GitHub with `token`: GraphQL with one, REST without; and the least rate limit its calls left. */
     const fromGitHub = (owner: string, name: string, token: Option.Option<Redacted.Redacted<string>>) =>
-      Effect.gen(function* () {
-        const remaining = yield* Ref.make<number | undefined>(undefined)
+      effect {
+        const remaining = try Ref.make<number | undefined>(undefined)
         const http = HttpClient.tap(
-          yield* HttpClient.HttpClient,
+          try HttpClient.HttpClient,
           (response) => Ref.update(remaining, (current) => least(current, response.headers["x-ratelimit-remaining"])),
         )
-        const client = yield* GitHub.GitHubClient.make(
+        const client = try (GitHub.GitHubClient.make(
           {
             apiBaseUrl: options.apiBaseUrl,
             requestTimeout: REQUEST_TIMEOUT,
@@ -275,10 +276,10 @@ export const make = <E, R>(
           },
           // An explicit, empty environment: no ambient GITHUB_TOKEN chooses the account.
           {},
-        ).pipe(Effect.provideService(HttpClient.HttpClient, http), Effect.orDie)
-        const read = yield* (Option.isSome(token) && Curated.find(owner, name) === undefined ? graphql : rest)(client, owner, name, options.appSlug).pipe(Effect.result)
-        return { read, rateRemaining: yield* Ref.get(remaining) }
-      })
+        ).pipe(Effect.provideService(HttpClient.HttpClient, http), Effect.orDie))
+        const read = try ((Option.isSome(token) && (try Effect.sync(() => Curated.find(owner, name))) === undefined ? graphql : rest)(client, owner, name, options.appSlug).pipe(Effect.result))
+        return { read, rateRemaining: try Ref.get(remaining) }
+      }
 
     /**
      * Whether github.com's own page for `owner/name` is a 404, the answer the spent anonymous API quota withheld. The
@@ -316,12 +317,12 @@ export const make = <E, R>(
 
     /** Records one read of GitHub: `repo.about.read` and `repo_about_reads`, and the rate limit it left. */
     const recorded = (id: string, read: GitHubRead) =>
-      Effect.gen(function* () {
-        yield* Metric.update(Metric.withAttributes(RepoMetrics.aboutReads, { via: read.via, outcome: read.outcome }), 1)
+      effect {
+        try Metric.update(Metric.withAttributes(RepoMetrics.aboutReads, { via: read.via, outcome: read.outcome }), 1)
         if (read.rateRemaining !== undefined) {
-          yield* Metric.update(Metric.withAttributes(RepoMetrics.aboutRateRemaining, { via: read.via }), read.rateRemaining)
+          try Metric.update(Metric.withAttributes(RepoMetrics.aboutRateRemaining, { via: read.via }), read.rateRemaining)
         }
-        yield* Effect.logWithLevel(read.outcome === "answered" ? "Info" : "Warn")("repo.about.read").pipe(
+        try (Effect.logWithLevel(read.outcome === "answered" ? "Info" : "Warn")("repo.about.read").pipe(
           Effect.annotateLogs({
             repoId: id,
             via: read.via,
@@ -333,20 +334,20 @@ export const make = <E, R>(
             ...(read.missing.length === 0 ? {} : { missing: read.missing.join(",") }),
             ...(read.tokenError === undefined ? {} : { tokenError: read.tokenError }),
           }),
-        )
-      })
+        ))
+      }
 
     /**
      * Another request's first read of `id`, watched in the store from `startedMs` until it keeps an answer or a
      * refusal, for `timing.waitFor` at most; then the browser is asked to come back in `WAIT`.
      */
     const awaitRead = (id: string, startedMs: number): Effect.Effect<Outcome, never, R> =>
-      Effect.gen(function* () {
+      effect {
         while (true) {
-          yield* Effect.sleep(timing.poll)
+          try Effect.sleep(timing.poll)
           // A store that can't answer now is nothing yet; the wait still ends at its deadline.
-          const row = Option.getOrUndefined(Option.flatten(yield* store.get(id).pipe(Effect.option)))
-          const nowMs = yield* Clock.currentTimeMillis
+          const row = Option.getOrUndefined(Option.flatten(try (store.get(id).pipe(Effect.option))))
+          const nowMs = try Clock.currentTimeMillis
           const waitedMs = nowMs - startedMs
           const answer = row === undefined ? undefined : Option.getOrUndefined(row.answer)
           const refusal = row?.refusal ?? null
@@ -365,7 +366,7 @@ export const make = <E, R>(
             return { _tag: "Refused" as const, code: "unavailable" as const, cache: "wait" as const, retryAfterMillis: ms(WAIT), waitedMs }
           }
         }
-      })
+      }
 
     /** The answer for `id` (`owner/name` as the request named it) for one request. */
     const resolve = (
@@ -374,11 +375,11 @@ export const make = <E, R>(
       name: string,
       member: Effect.Effect<boolean>,
     ): Effect.Effect<Outcome, never, HttpClient.HttpClient | R> =>
-      Effect.gen(function* () {
+      effect {
         const failed: Array<string> = []
         const storeDown = <A>(op: string, fallback: A) => () => Effect.sync(() => (failed.push(op), fallback))
-        const kept = yield* store.get(id).pipe(Effect.option)
-        const nowMs = yield* Clock.currentTimeMillis
+        const kept = try (store.get(id).pipe(Effect.option))
+        const nowMs = try Clock.currentTimeMillis
         if (Option.isNone(kept)) {
           return { _tag: "Refused", code: "unavailable", cache: "wait", retryAfterMillis: ms(WAIT), store: ["get"] }
         }
@@ -397,14 +398,14 @@ export const make = <E, R>(
         // deployment token; the store atomically replaces the refusal with a claim, so concurrent reads still wait.
         // Even the deployment token effect may mint through GitHub. Take ownership before choosing any token;
         // if none is available, restore the original anonymous hold without reading repository metadata.
-        const recoverAnonymous = !due && Curated.find(owner, name) !== undefined &&
+        const recoverAnonymous = !due && (try Effect.sync(() => Curated.find(owner, name))) !== undefined &&
           Option.isSome(row) && row.value.refusal === "rate_limited" &&
           (row.value.refusalVia === undefined || row.value.refusalVia === "anonymous")
         // Unknown ownership refuses both cold reads and refreshes; an outage never fans out to GitHub.
         const claim = store.claim(id, nowMs, nowMs + ms(CLAIM), recoverAnonymous).pipe(
           Effect.catch(storeDown("claim", undefined)),
         )
-        const claimed = (due || recoverAnonymous) && (yield* claim)
+        const claimed = (due || recoverAnonymous) && (try claim)
         if (claimed === undefined) {
           return { _tag: "Refused", code: "unavailable", cache: "wait", retryAfterMillis: ms(WAIT), ...extra() }
         }
@@ -412,7 +413,7 @@ export const make = <E, R>(
           const found = Option.getOrUndefined(row)
           const refusal = found?.refusal ?? null
           // Nothing fresh to serve: another request is reading it.
-          if (refusal === null || recoverAnonymous) return { ...(yield* awaitRead(id, nowMs)), ...extra() }
+          if (refusal === null || recoverAnonymous) return { ...(try awaitRead(id, nowMs)), ...extra() }
           // A kept refusal always has its wait: `refuse` writes both.
           return {
             _tag: "Refused" as const,
@@ -423,19 +424,19 @@ export const make = <E, R>(
             ...extra(),
           }
         }
-        const chosen = yield* tokenFor(owner, name, id, Option.getOrUndefined(row)?.appAbsentUntilMs ?? null, nowMs, member, failed)
+        const chosen = try tokenFor(owner, name, id, Option.getOrUndefined(row)?.appAbsentUntilMs ?? null, nowMs, member, failed)
         if (recoverAnonymous && Option.isNone(chosen.token)) {
           // Authentication could not be obtained: retain the anonymous quota hold without reading metadata.
           const held = Option.getOrThrow(row)
-          const saved = yield* store.refuse(id, "rate_limited", held.nextReadAtMs!, held.refusalVia, claimed)
-            .pipe(Effect.catch(storeDown("refuse", false)))
+          const saved = try (store.refuse(id, "rate_limited", held.nextReadAtMs!, held.refusalVia, claimed)
+            .pipe(Effect.catch(storeDown("refuse", false))))
           return { _tag: "Refused", code: saved ? "rate_limited" : "unavailable", cache: saved ? "refusal" : "wait",
             retryAfterMillis: saved ? Math.max(1000, held.nextReadAtMs! - nowMs) : ms(WAIT),
             ...(held.refusalVia === undefined ? {} : { refusalVia: held.refusalVia }),
             ...(saved ? {} : { writeRejected: "refuse" as const }), ...extra() }
         }
-        const { read, rateRemaining } = yield* fromGitHub(owner, name, chosen.token)
-        const durationMs = (yield* Clock.currentTimeMillis) - nowMs
+        const { read, rateRemaining } = try fromGitHub(owner, name, chosen.token)
+        const durationMs = (try Clock.currentTimeMillis) - nowMs
         const facts = {
           via: chosen.via,
           ...(rateRemaining === undefined ? {} : { rateRemaining }),
@@ -452,13 +453,13 @@ export const make = <E, R>(
             freshUntilMs: nowMs + (missing.length === 0 ? window : Math.min(window, ms(PARTIAL_FRESH))),
           }
           const record: GitHubRead = { ...facts, outcome: missing.length === 0 ? "answered" : "partial", missing }
-          yield* recorded(id, record)
-          const saved = yield* store.keep(id, fresh, claimed).pipe(Effect.catch(storeDown("keep", false)))
+          try recorded(id, record)
+          const saved = try (store.keep(id, fresh, claimed).pipe(Effect.catch(storeDown("keep", false))))
           if (!saved) {
             return { _tag: "Refused", code: "unavailable", cache: "wait", retryAfterMillis: ms(WAIT),
               read: record, writeRejected: "keep", ...extra() }
           }
-          const answeredAtMs = yield* Clock.currentTimeMillis
+          const answeredAtMs = try Clock.currentTimeMillis
           if (fresh.freshUntilMs <= answeredAtMs) {
             return { _tag: "Refused", code: "unavailable", cache: "wait", retryAfterMillis: ms(WAIT), read: record, ...extra() }
           }
@@ -467,7 +468,7 @@ export const make = <E, R>(
         // GH-4: with the shared anonymous quota spent and nothing to serve, a rate limit says nothing of the repository,
         // so github.com's own 404 decides.
         const absent = read.failure.code === "rate_limited" && chosen.via === "anonymous" &&
-          (yield* absentOnWeb(owner, name))
+          (try absentOnWeb(owner, name))
         const refusal = absent ? new AboutRefused({ code: "not_found", stage: "web", upstreamStatus: 404 }) : read.failure
         const record: GitHubRead = {
           ...facts,
@@ -476,8 +477,8 @@ export const make = <E, R>(
           ...(refusal.upstreamStatus === undefined ? {} : { upstreamStatus: refusal.upstreamStatus }),
           missing: [],
         }
-        yield* recorded(id, record)
-        const saved = yield* store.refuse(id, refusal.code, nowMs + holdFor(refusal, nowMs), chosen.via, claimed).pipe(Effect.catch(storeDown("refuse", false)))
+        try recorded(id, record)
+        const saved = try (store.refuse(id, refusal.code, nowMs + holdFor(refusal, nowMs), chosen.via, claimed).pipe(Effect.catch(storeDown("refuse", false))))
         if (!saved) {
           return { _tag: "Refused", code: "unavailable", cache: "wait", retryAfterMillis: ms(WAIT),
             read: record, writeRejected: "refuse", ...extra() }
@@ -490,10 +491,10 @@ export const make = <E, R>(
           read: record,
           ...extra(),
         }
-      })
+      }
 
     const answer: Source<R>["answer"] = (owner, name, member) =>
       resolve(repoId(owner, name), owner, name, member).pipe(Effect.withSpan("repo.about.answer"))
 
     return { answer } satisfies Source<R>
-  })
+  }

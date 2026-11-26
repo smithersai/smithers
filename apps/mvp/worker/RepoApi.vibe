@@ -33,9 +33,9 @@ import { codeOf } from "./ErrorCode.ts"
 import { FlowStarter } from "./Flows.vibe"
 import { Clone } from "./flows/RepoClone.vibe"
 import * as AboutStore from "./about/Store.vibe"
-import * as RepoAbout from "./RepoAbout.ts"
+import * as RepoAbout from "./RepoAbout.vibe"
 import * as RepoMetrics from "./RepoMetrics.vibe"
-import * as RepoReads from "./RepoReads.ts"
+import * as RepoReads from "./RepoReads.vibe"
 import * as Repos from "./Repos.ts"
 
 // RepoApi (decision 0006 §1, docs/features/repo.md#repoapi): asking for a clone, the `repositories` shape, reading a
@@ -118,11 +118,11 @@ const rawType = (bytes: Uint8Array): string =>
  * route answers `503 unavailable`, never a guessed role.
  */
 const clonesHere = (actor: Actor, id: string, fields: Record<string, string | number>) =>
-  Effect.gen(function* () {
-    const role = yield* (yield* BranchRoles).roleOn(actor, id)
+  effect {
+    const role = try (try BranchRoles).roleOn(actor, id)
     fields.role = role ?? "none"
     return canClone({ ...actor, role })
-  })
+  }
 
 /** A role read's refusal as a read's: not found, rate limited, or unavailable, with GitHub's wait. */
 const readRefusalOf = (error: unknown, fields: Record<string, string | number | null>) => {
@@ -146,18 +146,18 @@ export interface Options {
  * returns RepoApi's `fetch` handler, and the reads it answers with, for the agent's flows on this host.
  */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, options: Options) =>
-  Effect.gen(function* () {
-    const budgets = yield* Repos.budgets
-    const aboutSource = yield* RepoAbout.make(yield* RepoAbout.settings, AboutStore.postgres(database), database)
-    const maxTreePaths = yield* RepoReads.maxTreePaths
-    const maxRefs = yield* RepoReads.maxRefs
+  effect {
+    const budgets = try Repos.budgets
+    const aboutSource = try RepoAbout.make(try RepoAbout.settings, AboutStore.postgres(database), database)
+    const maxTreePaths = try RepoReads.maxTreePaths
+    const maxRefs = try RepoReads.maxRefs
     const reads = Option.map(
       options.codeStorage,
       (codeStorage) => RepoReads.make({ codeStorage, database, budgets, maxTreePaths, maxRefs }),
     )
     // GET /api/shapes/repositories: Electric's `repositories`, whole, with no subset requests.
     const shape = ShapeProxy.make({
-      ...(yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })),
+      ...(try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })),
       shape: { table: REPOSITORIES_TABLE },
       name: "repo.shape",
       metric: RepoMetrics.shapes,
@@ -170,11 +170,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * execution to finish it.
      */
     const start = (id: string, clone: Repos.Clone) =>
-      Effect.flatMap(FlowStarter, (starter) =>
-        starter.start(Clone, {
-          executionId: cloneExecutionId(id, clone.cloneId),
+      (effect {
+        const starter = try FlowStarter
+        const executionId = try Effect.sync(() => cloneExecutionId(id, clone.cloneId))
+        return try starter.start(Clone, {
+          executionId,
           payload: { id, owner: clone.owner, name: clone.name, cloneId: clone.cloneId, requestedAt: clone.requestedAt },
-        })).pipe(
+        })
+      }).pipe(
           Effect.as(true),
           Effect.catchTag("@smthrs/mvp/flows/StartConflict", () =>
             Repos.settle({ id, cloneId: clone.cloneId }, { status: "failed", failure: "unavailable" }, budgets).pipe(
@@ -183,50 +186,50 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             )),
         )
 
-    const clone = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      const startedAt = yield* Clock.currentTimeMillis
+    const clone = effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      const startedAt = try Clock.currentTimeMillis
       const fields: Record<string, string | number> = {}
       /** A refusal, recorded as the request's outcome: the refusal's code unless `outcome` says otherwise. */
       const refused = (status: number, code: Refusal, outcome: string = code) => {
         fields.outcome = outcome
         return refuse(status, code)
       }
-      const response = yield* Effect.gen(function* () {
+      const response = try (effect {
         if (request.method !== "POST") {
           fields.outcome = "method"
           return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
         }
-        const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+        const actor = try ((try Sessions).resolve.pipe(Effect.option))
         if (Option.isNone(actor)) return refused(503, "unavailable")
         if (Option.isNone(actor.value)) return refused(401, "authentication")
-        const text = yield* readBounded(request, MAX_REQUEST_BYTES).pipe(Effect.result)
+        const text = try (readBounded(request, MAX_REQUEST_BYTES).pipe(Effect.result))
         if (text._tag === "Failure") {
           return text.failure.reason === "too_large" ? refused(413, "too_large") : refused(400, "invalid")
         }
         const body = decodeCloneBody(text.success)
-        if (Option.isNone(body) || !isRepository(body.value.owner, body.value.name)) return refused(400, "invalid")
+        if (Option.isNone(body) || !(try Effect.sync(() => isRepository(body.value.owner, body.value.name)))) return refused(400, "invalid")
         const id = repoId(body.value.owner, body.value.name)
         fields.id = id
-        yield* Effect.annotateCurrentSpan({ "smithers.repo.id": id })
-        if (!(yield* clonesHere(actor.value.value, id, fields))) return refused(403, "forbidden")
+        try Effect.annotateCurrentSpan({ "smithers.repo.id": id })
+        if (!(try clonesHere(actor.value.value, id, fields))) return refused(403, "forbidden")
         if (Option.isNone(options.codeStorage)) return refused(503, "not_configured")
-        const requested = yield* Repos.request({ id, ...body.value }, budgets, actor.value.value.subject.id).pipe(
+        const requested = try (Repos.request({ id, ...body.value }, budgets, actor.value.value.subject.id).pipe(
           Effect.provide(database),
-        )
+        ))
         if (requested.kind === "limit") {
           fields.scope = requested.scope
           fields.used = requested.used
           fields.limit = requested.limit
-          yield* Effect.annotateCurrentSpan({ "smithers.repo.limit.scope": requested.scope })
-          yield* Metric.update(Metric.withAttributes(RepoMetrics.capacity, { reason: `${requested.scope}_repositories` }), 1)
+          try Effect.annotateCurrentSpan({ "smithers.repo.limit.scope": requested.scope })
+          try Metric.update(Metric.withAttributes(RepoMetrics.capacity, { reason: `${requested.scope}_repositories` }), 1)
           return refused(429, "repository_limit")
         }
         fields.attempt = requested.attempt
         fields.cloneId = requested.cloneId
         // The request is persisted: it answers now, and the asker's `repo/clone` launches it (`launch`, below).
         if (requested.kind === "existing") {
-          if (requested.status === "ready") yield* MirrorRefresh.request(body.value.owner, body.value.name)
+          if (requested.status === "ready") try MirrorRefresh.request(body.value.owner, body.value.name)
           fields.outcome = "existing"
           fields.row = requested.status
           return HttpServerResponse.jsonUnsafe(
@@ -239,7 +242,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           { txid: requested.txid, id, attempt: requested.attempt, cloneId: requested.cloneId },
           { status: 202, headers: noStore },
         )
-      }).pipe(
+      }.pipe(
         // Postgres couldn't be reached: nothing was persisted, and the asker asks again.
         Effect.catchCause((cause) =>
           Effect.sync(() => {
@@ -247,22 +250,22 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             return refused(503, "unavailable")
           })
         ),
-      )
+      ))
       const outcome = String(fields.outcome)
-      yield* Metric.update(Metric.withAttributes(RepoMetrics.cloneRequests, { outcome }), 1)
-      yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-      yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+      try Metric.update(Metric.withAttributes(RepoMetrics.cloneRequests, { outcome }), 1)
+      try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+      try (Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
         "repo.clone.request",
       ).pipe(
         Effect.annotateLogs({
           ...fields,
           outcome,
           status: response.status,
-          durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+          durationMs: (try Clock.currentTimeMillis) - startedAt,
         }),
-      )
+      ))
       return response
-    }).pipe(Effect.withSpan("repo.clone.request", { kind: "server" }))
+    }.pipe(Effect.withSpan("repo.clone.request", { kind: "server" }))
 
     /**
      * `POST /api/repos/launch` `{ owner, name, cloneId }`: starts the durable remote `repo/Clone` for the attempt a
@@ -273,33 +276,33 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * `unavailable` and answers `200 { launched: false, status: "failed" }`; a Durable Object that can't be reached is
      * `503`, which the step tries again.
      */
-    const launch = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      const startedAt = yield* Clock.currentTimeMillis
+    const launch = effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      const startedAt = try Clock.currentTimeMillis
       const fields: Record<string, string | number> = {}
       const refused = (status: number, code: Refusal, outcome: string = code) => {
         fields.outcome = outcome
         return refuse(status, code)
       }
-      const response = yield* Effect.gen(function* () {
+      const response = try (effect {
         if (request.method !== "POST") {
           fields.outcome = "method"
           return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
         }
-        const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+        const actor = try ((try Sessions).resolve.pipe(Effect.option))
         if (Option.isNone(actor)) return refused(503, "unavailable")
         if (Option.isNone(actor.value)) return refused(401, "authentication")
-        const text = yield* readBounded(request, MAX_REQUEST_BYTES).pipe(Effect.result)
+        const text = try (readBounded(request, MAX_REQUEST_BYTES).pipe(Effect.result))
         if (text._tag === "Failure") {
           return text.failure.reason === "too_large" ? refused(413, "too_large") : refused(400, "invalid")
         }
         const body = decodeLaunchBody(text.success)
-        if (Option.isNone(body) || !isRepository(body.value.owner, body.value.name)) return refused(400, "invalid")
+        if (Option.isNone(body) || !(try Effect.sync(() => isRepository(body.value.owner, body.value.name)))) return refused(400, "invalid")
         const id = repoId(body.value.owner, body.value.name)
         fields.id = id
         fields.cloneId = body.value.cloneId
-        if (!(yield* clonesHere(actor.value.value, id, fields))) return refused(403, "forbidden")
-        const row = yield* Repos.current(id).pipe(Effect.provide(database))
+        if (!(try clonesHere(actor.value.value, id, fields))) return refused(403, "forbidden")
+        const row = try (Repos.current(id).pipe(Effect.provide(database)))
         if (Option.isNone(row)) {
           return Option.isNone(options.codeStorage) ? refused(503, "not_configured") : refused(404, "not_found")
         }
@@ -312,19 +315,19 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         // A persisted request must settle when launch is refused permanently. The browser's launch step
         // does not retry not_configured, so no execution will ever reach repo/Settle for this attempt.
         if (Option.isNone(options.codeStorage)) {
-          yield* Repos.settle({ id, cloneId: row.value.cloneId }, { status: "failed", failure: "unavailable" }, budgets).pipe(
+          try (Repos.settle({ id, cloneId: row.value.cloneId }, { status: "failed", failure: "unavailable" }, budgets).pipe(
             Effect.provide(database),
-          )
+          ))
           return refused(503, "not_configured")
         }
-        if (!(yield* start(id, row.value))) {
+        if (!(try start(id, row.value))) {
           fields.outcome = "conflict"
           fields.errorCode = "conflict"
           return HttpServerResponse.jsonUnsafe({ launched: false, status: "failed" }, { status: 200, headers: noStore })
         }
         fields.outcome = "launched"
         return HttpServerResponse.jsonUnsafe({ launched: true }, { status: 202, headers: noStore })
-      }).pipe(
+      }.pipe(
         // Postgres or the Durable Object couldn't be reached: the row still says `cloning`, and the step tries again.
         Effect.catchCause((cause) =>
           Effect.sync(() => {
@@ -332,17 +335,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             return refused(503, "unavailable")
           })
         ),
-      )
+      ))
       const outcome = String(fields.outcome)
-      yield* Metric.update(Metric.withAttributes(RepoMetrics.cloneLaunches, { outcome }), 1)
-      yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-      yield* Effect.logWithLevel(
+      try Metric.update(Metric.withAttributes(RepoMetrics.cloneLaunches, { outcome }), 1)
+      try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+      try (Effect.logWithLevel(
         response.status >= 500 || outcome === "conflict" ? "Error" : response.status >= 400 ? "Warn" : "Info",
       )("repo.clone.launch").pipe(
-        Effect.annotateLogs({ ...fields, outcome, status: response.status, durationMs: (yield* Clock.currentTimeMillis) - startedAt }),
-      )
+        Effect.annotateLogs({ ...fields, outcome, status: response.status, durationMs: (try Clock.currentTimeMillis) - startedAt }),
+      ))
       return response
-    }).pipe(Effect.withSpan("repo.clone.launch", { kind: "server" }))
+    }.pipe(Effect.withSpan("repo.clone.launch", { kind: "server" }))
 
     /**
      * A tree, file or refs read: validated, answered from the cache or Code Storage, and recorded. The refs answer
@@ -351,30 +354,30 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * anyone without a role there, and what a read answers is kept only as long as `kept` says.
      */
     const read = (path: string) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        const startedAt = yield* Clock.currentTimeMillis
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const startedAt = try Clock.currentTimeMillis
         const target = parseRead(path)
         const kind = target?.kind ?? "tree"
         const fields: Record<string, string | number | null> = {}
-        const response = yield* Effect.gen(function* () {
-          if (target === undefined || !isRepository(target.owner, target.name) || target.extra > 0) {
+        const response = try (effect {
+          if (target === undefined || !(try Effect.sync(() => isRepository(target.owner, target.name))) || target.extra > 0) {
             return refuse(404, "not_found")
           }
           if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
           if (target.kind !== "refs" && !SHA_PATTERN.test(target.sha)) return refuse(400, "invalid")
           if ((target.kind === "blob" || target.kind === "raw") && target.file.length > MAX_PATH_LENGTH) return refuse(404, "not_found")
-          if ((target.kind === "blob" || target.kind === "raw") && !isFilePath(target.file)) return refuse(400, "invalid")
+          if ((target.kind === "blob" || target.kind === "raw") && !(try Effect.sync(() => isFilePath(target.file)))) return refuse(400, "invalid")
           fields.repoId = repoId(target.owner, target.name)
           if (target.kind !== "refs") fields.sha = target.sha
           if (Option.isNone(reads)) return refuse(503, "not_configured")
           const attachment = target.kind === "raw" && new URL(request.url, "http://localhost").searchParams.get("download") === "1"
           // Who reads the copy, before any cached answer: the refs read decides its own (`RefReads.visible`).
-          const reader = target.kind === "refs" ? Effect.succeed("public" as const) : Effect.gen(function* () {
-            const actor = yield* (yield* Sessions).resolve
+          const reader = target.kind === "refs" ? Effect.succeed("public" as const) : effect {
+            const actor = try (try Sessions).resolve
             const id = repoId(target.owner, target.name)
-            return yield* readsCopy(actor, id, installedOn(id).pipe(Effect.provide(database)))
-          }).pipe(Effect.mapError((error) => readRefusalOf(error, fields)))
+            return try readsCopy(actor, id, installedOn(id).pipe(Effect.provide(database)))
+          }.pipe(Effect.mapError((error) => readRefusalOf(error, fields)))
           let cache: Record<string, string> = noStore
           const answered = Effect.flatMap(reader, (shown) => {
             if (target.kind !== "refs") fields.reader = shown
@@ -389,15 +392,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                 })),
               )
               : target.kind === "refs"
-              ? Effect.gen(function* () {
-                const names = yield* Effect.gen(function* () {
-                  const actor = yield* (yield* Sessions).resolve
-                  return yield* RefReads.visible(repoId(target.owner, target.name), actor).pipe(Effect.provide(database))
-                }).pipe(Effect.mapError((error) => readRefusalOf(error, fields)))
-                const refs = yield* reads.value.refs(target.owner, target.name, names)
-                yield* MirrorRefresh.request(target.owner, target.name).pipe(Effect.catch(() => Effect.void))
+              ? effect {
+                const names = try (effect {
+                  const actor = try (try Sessions).resolve
+                  return try (RefReads.visible(repoId(target.owner, target.name), actor).pipe(Effect.provide(database)))
+                }.pipe(Effect.mapError((error) => readRefusalOf(error, fields))))
+                const refs = try reads.value.refs(target.owner, target.name, names)
+                try (MirrorRefresh.request(target.owner, target.name).pipe(Effect.catch(() => Effect.void)))
                 return refs
-              }).pipe(
+              }.pipe(
                 Effect.map((refs) => {
                   const bytes = encoder.encode(JSON.stringify(refs))
                   fields.bytes = bytes.length
@@ -435,7 +438,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                 }),
               )
           })
-          return yield* answered.pipe(
+          return try (answered.pipe(
             Effect.catchTag("ReadRefused", (refused): Effect.Effect<HttpServerResponse.HttpServerResponse, never, FlowStarter | R | HttpClient.HttpClient | Sessions | HttpServerRequest.HttpServerRequest> => {
               fields.errorCode = refused.code
               switch (refused.code) {
@@ -445,15 +448,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                     Effect.catch(() => Effect.succeed(refuse(503, "not_synced", {}, { "retry-after": "2" }))),
                   )
                 case "not_imported":
-                  return Effect.gen(function* () {
+                  return effect {
                     // No local copy proves neither existence nor absence. Use the same shared, bounded metadata
                     // answer as About before offering an import; private and absent are indistinguishable.
-                    const sessions = yield* Effect.context<Sessions | HttpServerRequest.HttpServerRequest>()
-                    const member = Effect.gen(function* () {
-                      const actor = yield* (yield* Sessions).resolve
+                    const sessions = try Effect.context<Sessions | HttpServerRequest.HttpServerRequest>()
+                    const member = effect {
+                      const actor = try (try Sessions).resolve
                       return Option.isSome(actor) && canClone(actor.value)
-                    }).pipe(Effect.orElseSucceed(() => false), Effect.provideContext(sessions))
-                    const outcome = yield* aboutSource.answer(target.owner, target.name, member)
+                    }.pipe(Effect.orElseSucceed(() => false), Effect.provideContext(sessions))
+                    const outcome = try aboutSource.answer(target.owner, target.name, member)
                     Object.assign(fields, RepoAbout.fieldsOf(outcome))
                     if (outcome._tag === "Refused") {
                       fields.errorCode = outcome.code
@@ -465,7 +468,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                       status: 204,
                       headers: { "cache-control": "private, no-store", "x-repo-state": "not_imported" },
                     })
-                  })
+                  }
                 case "not_found":
                   return Effect.succeed(refuse(404, "not_found"))
                 case "too_large":
@@ -490,29 +493,29 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                   )
               }
             }),
-          )
-        }).pipe(
+          ))
+        }.pipe(
           Effect.catchDefect((defect) =>
             Effect.sync(() => {
               fields.errorCode = codeOf(defect)
               return refuse(503, "unavailable")
             })
           ),
-        )
+        ))
         const bytes = Number(fields.bytes ?? 0)
-        yield* RepoReads.counted(kind, response.status, bytes)
-        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.repo.bytes": bytes })
-        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+        try RepoReads.counted(kind, response.status, bytes)
+        try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.repo.bytes": bytes })
+        try (Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
           `repo.${kind}`,
         ).pipe(
           Effect.annotateLogs({
             ...fields,
             status: response.status,
-            durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+            durationMs: (try Clock.currentTimeMillis) - startedAt,
           }),
-        )
+        ))
         return response
-      }).pipe(Effect.withSpan(`repo.${parseRead(path)?.kind ?? "tree"}`, { kind: "server" }))
+      }.pipe(Effect.withSpan(`repo.${parseRead(path)?.kind ?? "tree"}`, { kind: "server" }))
 
     /**
      * `GET /api/repos/<owner>/<name>/about`: what GitHub says of a repository, cloned or not, through the about read
@@ -523,24 +526,24 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * another data center reads it for the first time.
      */
     const about = (target: { readonly owner: string; readonly name: string }) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        const startedAt = yield* Clock.currentTimeMillis
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const startedAt = try Clock.currentTimeMillis
         const fields: Record<string, string | number> = {}
-        const response = yield* Effect.gen(function* () {
-          if (!isRepository(target.owner, target.name)) return refuse(404, "not_found")
+        const response = try (effect {
+          if (!(try Effect.sync(() => isRepository(target.owner, target.name)))) return refuse(404, "not_found")
           if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
           fields.repoId = repoId(target.owner, target.name)
           // Whether the asker is a Member or above of the deployment's own repository (the session's role): asked only
           // when a read must choose the deployment's token, whose quota is the deployment's (ruling AUTH-8).
-          const sessions = yield* Effect.context<Sessions | HttpServerRequest.HttpServerRequest>()
-          const member = Effect.gen(function* () {
-            const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+          const sessions = try Effect.context<Sessions | HttpServerRequest.HttpServerRequest>()
+          const member = effect {
+            const actor = try ((try Sessions).resolve.pipe(Effect.option))
             return Option.isSome(actor) && Option.isSome(actor.value) && canClone(actor.value.value)
-          }).pipe(Effect.provideContext(sessions))
-          const outcome = yield* aboutSource.answer(target.owner, target.name, member)
+          }.pipe(Effect.provideContext(sessions))
+          const outcome = try aboutSource.answer(target.owner, target.name, member)
           Object.assign(fields, RepoAbout.fieldsOf(outcome))
-          yield* Metric.update(Metric.withAttributes(RepoMetrics.aboutAnswers, { cache: outcome.cache }), 1)
+          try Metric.update(Metric.withAttributes(RepoMetrics.aboutAnswers, { cache: outcome.cache }), 1)
           if (outcome._tag === "Answered") {
             const bytes = encoder.encode(outcome.text)
             fields.bytes = bytes.length
@@ -556,23 +559,23 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             ? {}
             : { "retry-after": String(Math.max(1, Math.ceil(outcome.retryAfterMillis / 1000))) }
           return outcome.code === "not_found" ? refuse(404, "not_found") : refuse(503, outcome.code, {}, wait)
-        }).pipe(
+        }.pipe(
           Effect.catchDefect((defect) =>
             Effect.sync(() => {
               fields.errorCode = codeOf(defect)
               return refuse(503, "unavailable")
             })
           ),
-        )
-        yield* RepoReads.counted("about", response.status, Number(fields.bytes ?? 0))
-        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+        ))
+        try RepoReads.counted("about", response.status, Number(fields.bytes ?? 0))
+        try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+        try (Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
           "repo.about",
         ).pipe(
-          Effect.annotateLogs({ ...fields, status: response.status, durationMs: (yield* Clock.currentTimeMillis) - startedAt }),
-        )
+          Effect.annotateLogs({ ...fields, status: response.status, durationMs: (try Clock.currentTimeMillis) - startedAt }),
+        ))
         return response
-      }).pipe(Effect.withSpan("repo.about", { kind: "server" }))
+      }.pipe(Effect.withSpan("repo.about", { kind: "server" }))
 
     const fetch: Effect.Effect<
       HttpServerResponse.HttpServerResponse,
@@ -584,17 +587,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       | ImmutableCache.ImmutableCache
       | BranchRoles
       | R
-    > = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
+    > = effect {
+      const request = try HttpServerRequest.HttpServerRequest
       const path = request.url.split("?")[0]!
-      if (path === REPOSITORIES_SHAPE_ROUTE) return yield* shape
-      if (path === REPOS_ROUTE) return yield* clone
-      if (path === LAUNCH_ROUTE) return yield* launch
+      if (path === REPOSITORIES_SHAPE_ROUTE) return try shape
+      if (path === REPOS_ROUTE) return try clone
+      if (path === LAUNCH_ROUTE) return try launch
       const aboutTarget = parseAbout(path)
-      if (aboutTarget !== undefined) return yield* about(aboutTarget)
-      if (path.startsWith(`${REPOS_ROUTE}/`)) return yield* read(path)
+      if (aboutTarget !== undefined) return try about(aboutTarget)
+      if (path.startsWith(`${REPOS_ROUTE}/`)) return try read(path)
       return HttpServerResponse.empty({ status: 404 })
-    })
+    }
 
     return { fetch: withRequestRay(fetch), reads, about: aboutSource }
-  })
+  }

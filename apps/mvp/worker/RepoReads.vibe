@@ -79,18 +79,18 @@ const pages = <A, E>(
   >,
   max: number,
 ) =>
-  Effect.gen(function* () {
+  effect {
     const items: Array<A> = []
     let cursor: string | undefined
     let bytesRead = 0
     do {
-      const next = yield* page(cursor)
+      const next = try page(cursor)
       bytesRead += next.bytesRead
       items.push(...next.items)
       cursor = next.nextCursor
     } while (cursor !== undefined && items.length < max)
     return { items: items.slice(0, max), truncated: cursor !== undefined || items.length > max, bytesRead }
-  })
+  }
 
 /** The reads over `services`. Each needs the `ImmutableCache` in context. */
 export const make = <E, R>(services: Services<E, R>) => {
@@ -116,14 +116,14 @@ export const make = <E, R>(services: Services<E, R>) => {
   // A missing path at a known commit is genuinely absent. A missing commit isn't proof of absence on GitHub.
   const classifyMissing = (id: string, sha: string, error: CodeStorage.CodeStorageError) => {
     if (!MISSING.has(error.code)) return Effect.fail(refusedBy(error))
-    return Effect.gen(function* () {
-      const head = yield* Repos.readyHead(id).pipe(Effect.provide(database), Effect.mapError(() => new ReadRefused({ code: "unavailable" })))
-      if (Option.isNone(head)) return yield* new ReadRefused({ code: "not_imported" })
-      const commit = yield* codeStorage.listCommits(id, { ref: sha, limit: 1 }).pipe(Effect.result)
-      if (commit._tag === "Failure" && !MISSING.has(commit.failure.code)) return yield* refusedBy(commit.failure)
-      if (commit._tag === "Success") yield* meter(commit.success.bytesRead)
-      return yield* new ReadRefused({ code: commit._tag === "Success" && commit.success.commits.length > 0 ? "not_found" : "not_synced" })
-    })
+    return effect {
+      const head = try (Repos.readyHead(id).pipe(Effect.provide(database), Effect.mapError(() => new ReadRefused({ code: "unavailable" }))))
+      if (Option.isNone(head)) return try new ReadRefused({ code: "not_imported" })
+      const commit = try (codeStorage.listCommits(id, { ref: sha, limit: 1 }).pipe(Effect.result))
+      if (commit._tag === "Failure" && !MISSING.has(commit.failure.code)) return try refusedBy(commit.failure)
+      if (commit._tag === "Success") try meter(commit.success.bytesRead)
+      return try new ReadRefused({ code: commit._tag === "Success" && commit.success.commits.length > 0 ? "not_found" : "not_synced" })
+    }
   }
 
   /** Every page of `id`'s files at `sha`, until `maxTreePaths`. */
@@ -147,9 +147,9 @@ export const make = <E, R>(services: Services<E, R>) => {
 
   /** Every page of `id`'s branches, then of its tags, each until `maxRefs`. */
   const listRefs = (id: string) =>
-    Effect.gen(function* () {
+    effect {
       const options = (cursor: string | undefined) => ({ limit: REFS_PAGE_SIZE, ...(cursor === undefined ? {} : { cursor }) })
-      const branches = yield* pages(
+      const branches = try pages(
         (cursor) =>
           Effect.map(codeStorage.listBranches(id, options(cursor)), (page) => ({
             items: page.branches.map(({ name, sha }) => ({ name, sha })),
@@ -158,7 +158,7 @@ export const make = <E, R>(services: Services<E, R>) => {
           })),
         services.maxRefs,
       )
-      const tags = yield* pages(
+      const tags = try pages(
         (cursor) =>
           Effect.map(codeStorage.listTags(id, options(cursor)), (page) => ({
             items: page.tags,
@@ -171,19 +171,19 @@ export const make = <E, R>(services: Services<E, R>) => {
         listing: { branches: branches.items, tags: tags.items, truncated: branches.truncated || tags.truncated },
         bytesRead: branches.bytesRead + tags.bytesRead,
       }
-    })
+    }
 
   /** `owner/name`'s files at `sha`, as `TreeListing` JSON. */
   const tree = (owner: string, name: string, sha: string) => {
     const id = repoId(owner, name)
     return ImmutableCache.readThrough(
-      ImmutableCache.key("repo.tree", id, sha),
-      Effect.gen(function* () {
-        yield* admitRead
-        const { listing, bytesRead } = yield* listAll(id, sha).pipe(Effect.catch((error) => classifyMissing(id, sha, error)))
-        yield* meter(bytesRead)
+      { namespace: "repo.tree", parts: [id, sha] },
+      effect {
+        try admitRead
+        const { listing, bytesRead } = try (listAll(id, sha).pipe(Effect.catch((error) => classifyMissing(id, sha, error))))
+        try meter(bytesRead)
         return { bytes: encoder.encode(JSON.stringify(listing)), metadata: {} }
-      }),
+      },
     ).pipe(Effect.map((entry) => entry.bytes))
   }
 
@@ -198,16 +198,16 @@ export const make = <E, R>(services: Services<E, R>) => {
   const blob = (owner: string, name: string, sha: string, path: string) => {
     const id = repoId(owner, name)
     return ImmutableCache.readThrough(
-      ImmutableCache.key("repo.blob", id, sha, path),
-      Effect.gen(function* () {
-        yield* admitRead
-        const file = yield* codeStorage.readFile(id, { path, ref: sha, maxBytes: MAX_BLOB_BYTES }).pipe(
+      { namespace: "repo.blob", parts: [id, sha, path] },
+      effect {
+        try admitRead
+        const file = try (codeStorage.readFile(id, { path, ref: sha, maxBytes: MAX_BLOB_BYTES }).pipe(
           Effect.catch((error) => classifyMissing(id, sha, error)),
-        )
-        yield* meter(file.bytes.length)
+        ))
+        try meter(file.bytes.length)
         const metadata: Record<string, string> = file.blobSha === undefined ? {} : { blobSha: file.blobSha }
         return { bytes: file.bytes, metadata }
-      }),
+      },
     )
   }
 
@@ -217,35 +217,35 @@ export const make = <E, R>(services: Services<E, R>) => {
    */
   const refs = (owner: string, name: string, ephemeralNames: ReadonlyArray<string> = []) => {
     const id = repoId(owner, name)
-    return Effect.gen(function* () {
-      const head = yield* Repos.readyHead(id).pipe(
+    return effect {
+      const head = try (Repos.readyHead(id).pipe(
         Effect.provide(database),
         Effect.mapError(() => new ReadRefused({ code: "unavailable" })),
-      )
-      if (Option.isNone(head)) return yield* new ReadRefused({ code: "not_imported" })
-      const entry = yield* ImmutableCache.readThrough(
-        ImmutableCache.key("repo.refs", id, head.value.sha, String(head.value.refsChangedAt)),
-        Effect.gen(function* () {
-          yield* admitRead
-          const { listing, bytesRead } = yield* listRefs(id).pipe(Effect.mapError(refusedBy))
-          yield* meter(bytesRead)
+      ))
+      if (Option.isNone(head)) return try new ReadRefused({ code: "not_imported" })
+      const entry = try ImmutableCache.readThrough(
+        { namespace: "repo.refs", parts: [id, head.value.sha, String(head.value.refsChangedAt)] },
+        effect {
+          try admitRead
+          const { listing, bytesRead } = try (listRefs(id).pipe(Effect.mapError(refusedBy)))
+          try meter(bytesRead)
           return { bytes: encoder.encode(JSON.stringify(listing)), metadata: {} }
-        }),
+        },
       )
-      const listing = yield* Effect.orDie(decodeRefs(decoder.decode(entry.bytes)))
+      const listing = try Effect.orDie(decodeRefs(decoder.decode(entry.bytes)))
       if (ephemeralNames.length === 0) {
         return { defaultBranch: head.value.defaultBranch, head: head.value.sha, refsChangedAt: head.value.refsChangedAt, ...listing } satisfies Refs
       }
       // The default listing is shared; ephemeral discovery is authorized per request and never cached on a device
       // across an access decision. Object reads remain pinned to SHA: both namespaces share Git objects.
-      yield* admitRead
-      const ephemeral = yield* pages(
+      try admitRead
+      const ephemeral = try (pages(
         (cursor) => codeStorage.listBranches(id, { namespace: "ephemeral", cursor, limit: REFS_PAGE_SIZE }).pipe(
           Effect.map((page) => ({ items: page.branches, nextCursor: page.nextCursor, bytesRead: page.bytesRead })),
         ),
         services.maxRefs,
-      ).pipe(Effect.mapError(refusedBy))
-      yield* meter(ephemeral.bytesRead)
+      ).pipe(Effect.mapError(refusedBy)))
+      try meter(ephemeral.bytesRead)
       const visible = new Set(ephemeralNames)
       const branches = new Map(listing.branches.map((branch) => [branch.name, branch]))
       for (const { name, sha } of ephemeral.items) {
@@ -255,30 +255,30 @@ export const make = <E, R>(services: Services<E, R>) => {
         defaultBranch: head.value.defaultBranch, head: head.value.sha, refsChangedAt: head.value.refsChangedAt,
         tags: listing.tags, branches: [...branches.values()], truncated: listing.truncated || ephemeral.truncated,
       } satisfies Refs
-    })
+    }
   }
 
   // Downloads stream original bytes, without buffering them or contaminating the preview cache.
-  const download = (owner: string, name: string, sha: string, path: string) => Effect.gen(function* () {
+  const download = (owner: string, name: string, sha: string, path: string) => effect {
     const id = repoId(owner, name)
-    yield* admitRead
-    const file = yield* codeStorage.streamFile(id, { path, ref: sha }).pipe(
+    try admitRead
+    const file = try (codeStorage.streamFile(id, { path, ref: sha }).pipe(
       Effect.catch((error) => classifyMissing(id, sha, error)),
-    )
-    const context = yield* Effect.context<R>()
-    const received = yield* Ref.make(0)
+    ))
+    const context = try Effect.context<R>()
+    const received = try Ref.make(0)
     return { ...file, stream: file.stream.pipe(
       Stream.mapError(refusedBy),
       Stream.tap((chunk) => Ref.update(received, (bytes) => bytes + chunk.length)),
-      Stream.ensuring(Effect.gen(function* () {
-        const bytes = yield* Ref.get(received)
-        yield* meter(bytes)
-        yield* Metric.update(RepoMetrics.readBytes, bytes)
-        yield* Effect.logInfo("repo.download.closed").pipe(Effect.annotateLogs({ repoId: id, bytes }))
-      })),
+      Stream.ensuring(effect {
+        const bytes = try Ref.get(received)
+        try meter(bytes)
+        try Metric.update(RepoMetrics.readBytes, bytes)
+        try (Effect.logInfo("repo.download.closed").pipe(Effect.annotateLogs({ repoId: id, bytes })))
+      }),
       Stream.provideContext(context),
     ) }
-  })
+  }
   return { tree, files, blob, refs, download }
 }
 

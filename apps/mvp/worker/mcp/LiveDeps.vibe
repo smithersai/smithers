@@ -15,7 +15,7 @@ import type * as ReadToken from "../github/ReadToken.vibe"
 import * as Store from "../github/Store.vibe"
 import * as WorkLinks from "../github/WorkLinks.vibe"
 import { Write } from "../github/Write.vibe"
-import type * as RepoReads from "../RepoReads.ts"
+import type * as RepoReads from "../RepoReads.vibe"
 import { McpToolError } from "./Contract.vibe"
 import {
   makeLiveToolDeps,

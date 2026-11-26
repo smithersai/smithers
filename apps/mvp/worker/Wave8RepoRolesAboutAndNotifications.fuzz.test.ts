@@ -26,7 +26,7 @@ import * as BranchAccess from "./branch/Access.vibe"
 import { repositoryOf } from "./github/Config.vibe"
 import * as RepoRoles from "./github/RepoRoles.vibe"
 import * as Notifications from "./Notifications.ts"
-import * as RepoAbout from "./RepoAbout.ts"
+import * as RepoAbout from "./RepoAbout.vibe"
 import * as TimelineSummaries from "./TimelineSummaries.vibe"
 
 const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")

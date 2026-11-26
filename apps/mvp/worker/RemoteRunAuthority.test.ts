@@ -11,7 +11,7 @@ import { beforeEach, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { steersRoute, stopRoute } from "../src/features/runs/contract.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
-import * as RemoteRuns from "./RemoteRuns.ts"
+import * as RemoteRuns from "./RemoteRuns.vibe"
 import * as RepoRuns from "./RepoRuns.ts"
 import * as Stack from "./stack/Stack.vibe"
 import * as Jobs from "./runners/Jobs.vibe"
@@ -44,6 +44,7 @@ test.each([
   { kind: "todo", authority: "role", gate: "held" },
   { kind: "repo", authority: "unchanged", gate: "held" },
   { kind: "todo", authority: "unchanged", gate: "held" },
+  { kind: "todo", authority: "missing-job", gate: "held" },
   { kind: "repo", authority: "deadline", gate: "github" },
   { kind: "todo", authority: "deadline", gate: "held" },
   { kind: "repo", authority: "rekey", gate: "held" },
@@ -92,13 +93,15 @@ test.each([
       if (applied.kind !== "applied") return yield* Effect.die("attempt not admitted")
       const start = applied.receipt.starts[0]!
       runId = `todo:${start.attemptId}`
-      jobKey = `stop-authority:${uuid()}#g1`
-      const task: AgentRunner.Task = {
-        agent: { name: "coder", labels: [], profile: "coder", maxHours: 1, restarts: 0 },
-        repository: REPOSITORY.id, base: "a".repeat(40), system: [], prompt: "Inspect",
-        limits: { files: 1, bytes: 100 }, context: { attemptId: start.attemptId },
+      if (authority !== "missing-job") {
+        jobKey = `stop-authority:${uuid()}#g1`
+        const task: AgentRunner.Task = {
+          agent: { name: "coder", labels: [], profile: "coder", maxHours: 1, restarts: 0 },
+          repository: REPOSITORY.id, base: "a".repeat(40), system: [], prompt: "Inspect",
+          limits: { files: 1, bytes: 100 }, context: { attemptId: start.attemptId },
+        }
+        yield* Jobs.make(database).start(task, jobKey)
       }
-      yield* Jobs.make(database).start(task, jobKey)
       yield* Effect.forkScoped((Context.get(context, FlowRuntime.FlowRuntime)).execute(Working, {
         executionId: runId, payload: {},
       }).pipe(Effect.provide(context)))
@@ -137,6 +140,7 @@ test.each([
       const response = await pending
       expect([response.status, await response.json()], `delayed cancel must revalidate ${authority}`).toEqual(
         authority === "unchanged" ? [202, { outcome: "requested" }]
+          : authority === "missing-job" ? [409, { code: "not_working" }]
           : authority === "role" ? [403, { code: "forbidden" }]
           : authority === "stale-home-role" ? [503, { code: "unavailable" }] : [401, { code: "authentication" }],
       )

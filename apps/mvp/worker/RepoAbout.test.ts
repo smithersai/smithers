@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import * as AboutStore from "./about/Store.vibe"
 import { APP_ID, appKey } from "./github/test/scriptedGitHub.ts"
-import * as RepoAbout from "./RepoAbout.ts"
+import * as RepoAbout from "./RepoAbout.vibe"
 import * as RepoMetrics from "./RepoMetrics.vibe"
 import { testFile } from "./test/harness.ts"
 import { type ScriptedGitHub, scriptedGitHub, spoonKnife } from "./test/githubRest.ts"
@@ -299,6 +299,34 @@ describe("whose quota a read spends", () => {
     const one = await isolate(github)
     expect(await one.answer("Effect-TS", "effect")).toMatchObject({ _tag: "Refused", cache: "refusal", refusalVia: "anonymous" })
     expect(github.calls).toEqual([])
+  })
+
+  test("a superseded anonymous hold without a recorded quota refuses the obsolete write", async () => {
+    const github = scriptedGitHub()
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    const real = AboutStore.postgres(scratch.database)
+    await runtime.runPromise(seedRefusal(real, "github/effect-ts/effect", "rate_limited", Date.now() + 600_000))
+    const one = await isolate(github, { store: { ...real, refuse: () => Effect.succeed(false) } })
+    const outcome = await one.answer("Effect-TS", "effect")
+    expect(outcome).toMatchObject({
+      _tag: "Refused", code: "unavailable", cache: "wait", retryAfterMillis: 1000, writeRejected: "refuse",
+    })
+    expect(outcome).not.toHaveProperty("refusalVia")
+    expect(github.calls).toEqual([])
+  })
+
+  test("failure to remember a missing installation still permits an anonymous read", async () => {
+    const github = scriptedGitHub()
+    github.publish("octocat", "Spoon-Knife")
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    const real = AboutStore.postgres(scratch.database)
+    const one = await isolate(github, {
+      config: await appConfig(),
+      store: { ...real, appAbsent: () => Effect.fail(new AboutStore.StoreUnavailable({ op: "app_absent" })) },
+    })
+    expect(answered(await one.answer("octocat", "Spoon-Knife"))).toMatchObject({
+      via: "anonymous", store: ["app_absent"],
+    })
   })
 
   test("a curated visitor falls back to the configured App's metadata read token when its own installation is absent", async () => {

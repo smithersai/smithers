@@ -115,18 +115,18 @@ export default defineConfig({
         "db/migrations/0008_browser_answering.ts",
         "db/migrations/0133_byoa_cutover.ts",
         // Repositories: RepoApi, cloning into Code Storage and its spend (docs/features/repo.md).
-        "worker/RepoApi.ts",
+        "worker/RepoApi.vibe",
         "worker/MirrorRefresh.vibe",
         "worker/RepoConfig.vibe",
         "worker/RepoMetrics.vibe",
-        "worker/RepoReads.ts",
+        "worker/RepoReads.vibe",
         "worker/Repos.ts",
         "worker/RepoUpstream.vibe",
         "db/migrations/0007_repositories.ts",
         // A clone attempt's own id (docs/features/repo.md#the-clone).
         "db/migrations/0009_clone_ids.ts",
         // What GitHub says of a repository, the clone in its asker's feed, and the reclaim mark (docs/features/repo.md).
-        "worker/RepoAbout.ts",
+        "worker/RepoAbout.vibe",
         "worker/about/*.{ts,vibe}",
         "db/migrations/0060_repo_about.ts",
         "db/migrations/0098_about_claim_generation.ts",
@@ -213,7 +213,7 @@ export default defineConfig({
         "db/migrations/0022_todos.ts",
         "db/migrations/0035_todo_report_receipts.ts",
         // A TODO's run, watched from the browser (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare).
-        "worker/RemoteRuns.ts",
+        "worker/RemoteRuns.vibe",
         "worker/RunAuthority.ts",
         // The runs on Cloudflare a person may read, for the Runs page (docs/features/runs.md#runs-on-cloudflare).
         "worker/CloudRuns.ts",

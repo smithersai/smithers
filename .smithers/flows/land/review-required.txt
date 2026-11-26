@@ -36,9 +36,9 @@ apps/mvp/worker/WriteAuthority.ts
 apps/mvp/worker/Chat.ts
 apps/mvp/worker/ModelEndpoint.ts
 apps/mvp/worker/Notifications.ts
-apps/mvp/worker/RemoteRuns.ts
-apps/mvp/worker/RepoAbout.ts
-apps/mvp/worker/RepoApi.ts
+apps/mvp/worker/RemoteRuns.vibe
+apps/mvp/worker/RepoAbout.vibe
+apps/mvp/worker/RepoApi.vibe
 apps/mvp/worker/RepoRuns.ts
 apps/mvp/worker/RunContent.ts
 apps/mvp/worker/Views.ts

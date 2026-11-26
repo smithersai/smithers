@@ -6,7 +6,7 @@ import { describe, expect, test, vi } from "vitest"
 import { MAX_LISTED } from "../../src/features/docs/contract.ts"
 import { StartUnavailable } from "../Flows.vibe"
 import * as Store from "../github/Store.vibe"
-import * as RepoReads from "../RepoReads.ts"
+import * as RepoReads from "../RepoReads.vibe"
 import { makeLiveDeps } from "./LiveDeps.vibe"
 
 const emptySql = Layer.succeed(

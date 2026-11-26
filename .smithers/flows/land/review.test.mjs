@@ -974,7 +974,7 @@ test("the shipped list covers the access areas and spares tests, generated files
       "apps/mvp/worker/runners/Fleet.ts",
       "apps/mvp/worker/github/Api.vibe",
       "apps/mvp/worker/about/GitHubRead.ts",
-      "apps/mvp/worker/RepoAbout.ts",
+      "apps/mvp/worker/RepoAbout.vibe",
       "apps/mvp/worker/RunContent.ts",
       "apps/mvp/worker/ModelEndpoint.ts",
       "apps/mvp/worker/ProtectedAuthority.ts",

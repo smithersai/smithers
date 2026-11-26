@@ -6,7 +6,7 @@ import type { HttpClient } from "effect/http"
 import { type DocsRefusal, MAX_PAGE_BYTES } from "../../src/features/docs/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Curated from "../home/Curated.ts"
-import type * as RepoAbout from "../RepoAbout.ts"
+import type * as RepoAbout from "../RepoAbout.vibe"
 
 // A repository's docs as ChatApi reads them (ruling AGENT-6, docs/features/docs.md#where-docs-come-from): the docs index
 // a repository names in its own home (`"docs"` in `.smithers/home.json`, read from what GitHub says of it through the

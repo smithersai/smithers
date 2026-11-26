@@ -29,7 +29,7 @@ import { transcriptRoute } from "../src/features/transcript/contract.ts"
 import * as Actor from "./Actor.vibe"
 import * as CloudRuns from "./CloudRuns.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
-import * as RemoteRuns from "./RemoteRuns.ts"
+import * as RemoteRuns from "./RemoteRuns.vibe"
 import type * as SocketAccess from "./SocketAccess.ts"
 import * as RepoRuns from "./RepoRuns.ts"
 import * as RepoRoles from "./github/RepoRoles.vibe"
@@ -160,6 +160,7 @@ interface Engine {
   /** Starts `Watched` as `executionId` and returns at once; the run goes on until the engine closes. */
   readonly start: (executionId: string, pauseMs: number) => Promise<void>
   readonly cancel: (executionId: string) => Promise<void>
+  readonly startSystem: (executionId: string) => Promise<void>
   /** Starts `Reviewed` as `executionId` and returns at once. */
   readonly review: (executionId: string, pauseMs: number) => Promise<void>
   /** Runs `Checked` as `executionId` until it fails. */
@@ -170,11 +171,20 @@ interface Engine {
   readonly children: (executionId: string) => Promise<ReadonlyArray<string>>
 }
 
+const ExternalSession = Action.make("agent/Session", { payload: {} })
+const SystemRun = Flow.make("ops/SpendAlert", {
+  payload: {}, body: Node.capture({}, () => ExternalSession.call({})),
+})
+
 const withEngine = <A>(body: (engine: Engine) => Promise<A>): Promise<A> =>
   Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
-        const { context, engine } = yield* build(registration)
+        const running = yield* Deferred.make<void>()
+        const system = Layer.merge(Interpreter.layer(SystemRun),
+          ExternalSession.toLayer(() => Deferred.succeed(running, undefined).pipe(Effect.andThen(Effect.never))),
+        ).pipe(Layer.provideMerge(Action.layerImplementations))
+        const { context, engine } = yield* build(Layer.merge(registration, system))
         const scope = yield* Effect.scope
         const server = yield* TestDatabase.serverUrl
         const flows = Context.get(context, FlowRuntime.FlowRuntime)
@@ -205,6 +215,9 @@ const withEngine = <A>(body: (engine: Engine) => Promise<A>): Promise<A> =>
                   Effect.map((rows) => rows.map((row) => row.run_id)),
                   Effect.provide(ExecutionHost.readDatabase(server.toString(), engine.schema)),
                 )),
+            startSystem: (executionId) => Effect.runPromise(Effect.forkIn(
+              Effect.ignore(flows.execute(SystemRun, { executionId, payload: {} }).pipe(Effect.provide(context))), scope,
+            ).pipe(Effect.andThen(Deferred.await(running)))),
             cancel: (executionId) => Effect.runPromise(flows.interrupt(Watched, executionId).pipe(Effect.provide(context))),
             run: (executionId, pauseMs = 0) => Effect.runPromise(Effect.asVoid(Effect.orDie(execute(executionId, pauseMs)))),
             start: (executionId, pauseMs) =>
@@ -1128,7 +1141,24 @@ describe("POST /api/remote-runs/<runId>/stop", () => {
     })
   })
 
-  test("an attempt committed between access and Stop cannot inherit permission from an absent run", async () => {
+  test("stopping a completed repository run acknowledges settlement without calling its host", async () => {
+    const runId = "ci:" + uuid()
+    await recordRepoRun(runId)
+    await withEngine(async (engine) => {
+      const state = JSON.stringify({ version: 1, flowName: "repo/Run", payload: {
+        run: runId, repo: "octo/hello", flow: "ci", sha: "b".repeat(40), ref: "main", event: "push", secrets: false,
+      } })
+      await Effect.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json) VALUES (${runId}, 'completed', ${Date.now()}, ${state})`
+      ).pipe(Effect.provide(engine.writer)))
+      const asked: Array<string> = []
+      const h = await routes(engine, { actor: member, stop: (id) => Effect.sync(() => void asked.push(id)) })
+      expect(await json(await h.fetch(stopRoute(runId), { method: "POST" }))).toEqual([200, { outcome: "settled" }])
+      expect(asked).toEqual([])
+    })
+  })
+
+  test.each([false, true])("an attempt committed during Stop cannot inherit permission from a missing or system run (%s)", async (system) => {
     const started = Effect.runSync(Deferred.make<Stack.AttemptStart>())
     const release = Effect.runSync(Deferred.make<void>())
     const committed = Effect.runSync(Deferred.make<void>())
@@ -1151,12 +1181,14 @@ describe("POST /api/remote-runs/<runId>/stop", () => {
         return db
       }))).pipe(Layer.orDie)
       await withEngine(async (engine) => {
-        const h = await routes(engine, { actor: member, database: delayed })
-        const response = await h.fetch(stopRoute(todoExecutionId(request.attemptId)), { method: "POST" })
+        const runId = todoExecutionId(request.attemptId)
+        if (system) await engine.startSystem(runId)
+        const h = await routes(engine, { actor: system ? admin : member, database: delayed })
+        const response = await h.fetch(stopRoute(runId), { method: "POST" })
         expect([response.status, await response.json()]).toEqual([403, { code: "forbidden" }])
         expect(h.line("run.stop").map((line) => line.annotations.outcome)).toEqual(["forbidden"])
       })
-      expect(reads).toBe(2)
+      expect(reads).toBe(system ? 3 : 2)
     } finally {
       await Effect.runPromise(Deferred.succeed(release, undefined))
       await Effect.runPromise(Fiber.join(writer))
@@ -1434,6 +1466,31 @@ describe("GET /api/remote-runs/<runId>/transcript", () => {
         "upgrade",
       ])
       expect(h.spans.filter((span) => span.name === "run.transcript")).toHaveLength(2)
+    })
+  })
+
+  test.each(["ended", "stale"] as const)("a %s session is refused before opening a transcript", async (state) => {
+    const start = await attempt()
+    const runId = todoExecutionId(start.attemptId)
+    const person = uuid()
+    const session = uuid()
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+      yield* sql`INSERT INTO people (id, github_id, github_login) VALUES (${person}, ${Math.floor(Math.random() * 1e9)}, ${person})`
+      if (state === "stale") yield* sql`
+        INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, role_verified_at, expires_at)
+        VALUES (${session}, ${uuid()}, ${person}, 'member', now(), now() - interval '2 hours', now() + interval '1 hour')`
+    }))))
+    await withEngine(async (engine) => {
+      const handed: string[] = []
+      const h = await routes(engine, {
+        actor: { ...member, subject: { kind: "person", id: person }, session },
+        roles: rolesOn({}),
+        transcript: (id) => Effect.sync(() => (handed.push(id), HttpServerResponse.text("handed"))),
+      })
+      expect(await json(await h.fetch(transcriptRoute(runId), socket()))).toEqual(
+        state === "ended" ? [401, { code: "authentication" }] : [503, { code: "unavailable" }],
+      )
+      expect(handed).toEqual([])
     })
   })
 

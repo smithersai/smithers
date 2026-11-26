@@ -6,7 +6,7 @@ import { PostgresDatabase } from "@smthrs/database"
 import { ConfigProvider, Effect, Option } from "effect"
 import { FetchHttpClient, HttpEffect, type HttpClient, type HttpServerRequest, type HttpServerResponse } from "effect/http"
 import * as Actor from "../../Actor.vibe"
-import * as RepoApi from "../../RepoApi.ts"
+import * as RepoApi from "../../RepoApi.vibe"
 
 interface Env {
   readonly HYPERDRIVE: { readonly connectionString: string }

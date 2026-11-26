@@ -197,14 +197,14 @@ const parameter = (
 
 /** The TODO attempt whose run `runId` is, if a TODO's attempt started it: `todo:<attempt id>`. */
 const attemptOf = (runId: string) =>
-  Effect.gen(function* () {
-    if (!isRemoteRun(runId)) return Option.none<{ readonly id: string; readonly repoId: string }>()
-    const sql = yield* SqlClient.SqlClient
+  effect {
+    if (!(try Effect.sync(() => isRemoteRun(runId)))) return Option.none<{ readonly id: string; readonly repoId: string }>()
+    const sql = try SqlClient.SqlClient
     const attemptId = runId.slice("todo:".length)
-    const rows = yield* sql<{ readonly id: string; readonly repoId: string }>`
+    const rows = try sql<{ readonly id: string; readonly repoId: string }>`
       SELECT id::text, repo_id AS "repoId" FROM todo_attempts WHERE id = ${attemptId}::uuid`
     return Option.fromNullishOr(rows[0])
-  })
+  }
 
 /** How many of an inspection's values were cut to their limit. */
 const clippedValues = (inspection: EngineStore.RunInspection.Inspection): number =>
@@ -226,15 +226,15 @@ const noStore = { "cache-control": "no-store" }
 /**
  * Reads Electric's connection and returns the routes over `database`, the app's tables (`todo_attempts`), and `engine`.
  * They read who is asking from `Sessions`.
+ * @param roles Resolves the asker's role on the recorded run's repository.
  */
 export const make = <E, R, EE, ER, RS>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
   engine: Engine<EE, ER, RS>,
-  /** Resolves the asker's role on the recorded run's repository. */
   roles: RepoRoles.RepoRoles<R>,
 ) =>
-  Effect.gen(function* () {
-    const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+  effect {
+    const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
     // The deployment's system flows an Admin reads are rendered through their own declarations too.
     const inspection = EngineStore.RunInspection.layerWith({ flows: [...engine.flows, ...CloudRuns.SYSTEM_FLOWS] })
     // The run's queue, over the engine's own journal in its schema. The route runs no migrations (the engine owns
@@ -262,39 +262,39 @@ export const make = <E, R, EE, ER, RS>(
      * A run's access comes from its recorded repository, never the deployment's session role on another one: a TODO's
      * run from its attempt's repository, a repository's run from the run's (decision 0079).
      */
-    const access = (runId: string, actor: Actor) => Effect.gen(function* () {
+    const access = (runId: string, actor: Actor) => effect {
       const ownRole = mayRead(Option.some(actor))
       // A TODO's run or a run it started, such as its `agent/Session`, whose page reads it; repository flows may also
       // be named `todo`.
-      const attempt = yield* RepoRuns.firstAncestor(runId, engine.database, (generation) =>
+      const attempt = try RepoRuns.firstAncestor(runId, engine.database, (generation) =>
         Effect.map(
           Effect.forEach(generation, attemptOf),
           (attempts) => Option.fromNullishOr(attempts.find(Option.isSome)).pipe(Option.flatten),
         ))
       if (Option.isSome(attempt)) {
-        const authority = yield* resolvedMember(actor, attempt.value.repoId)
+        const authority = try resolvedMember(actor, attempt.value.repoId)
         const permitted = Option.isSome(authority)
         return { allowed: permitted, watched: permitted, repoRun: Option.none<RepoRuns.Admitted>(), authority }
       }
-      const admitted = yield* RepoRuns.admit(runId, engine.database)
+      const admitted = try RepoRuns.admit(runId, engine.database)
       if (Option.isNone(admitted)) {
         // An Admin reads the deployment's own system flows (worker/CloudRuns.ts), and only those.
-        const system = actor.role === "admin" && (yield* Effect.flatMap(
+        const system = actor.role === "admin" && (try (Effect.flatMap(
           EngineStore.RunInspection.RunInspection,
           (reads) => reads.list({ runIds: [runId], flows: CloudRuns.SYSTEM_FLOW_TAGS, roots: false, limit: 1 }),
-        ).pipe(Effect.provide(inspection), Effect.provide(engine.database))).runs.length === 1
+        ).pipe(Effect.provide(inspection), Effect.provide(engine.database)))).runs.length === 1
         return { allowed: ownRole || system, watched: system, repoRun: admitted, authority: Option.none<RepoRoles.Resolved>() }
       }
-      const authority = yield* resolvedMember(actor, admitted.value.repoId)
+      const authority = try resolvedMember(actor, admitted.value.repoId)
       const permitted = Option.isSome(authority)
       return { allowed: ownRole || permitted, watched: permitted, repoRun: permitted ? admitted : Option.none<RepoRuns.Admitted>(), authority }
-    }).pipe(Effect.provide(database))
+    }.pipe(Effect.provide(database))
 
     /** `POST /api/remote-runs/<runId>/stop`: a repository's run, stopped on its Durable Object. */
     const stop = (runId: string) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        const startedAt = yield* Clock.currentTimeMillis
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const startedAt = try Clock.currentTimeMillis
         const fields: Record<string, string | number> = { host: "remote", runId }
         const refused = (status: number, code: StopRefusal) => {
           fields.outcome = code
@@ -303,92 +303,92 @@ export const make = <E, R, EE, ER, RS>(
             headers: status === 503 ? { ...noStore, "retry-after": String(ShapeAccess.RETRY_AFTER_SECONDS) } : noStore,
           })
         }
-        const response = yield* Effect.gen(function* () {
+        const response = try (effect {
           if (request.method !== "POST") {
             fields.outcome = "method"
             return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
           }
-          const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+          const actor = try ((try Sessions).resolve.pipe(Effect.option))
           if (Option.isNone(actor)) return refused(503, "unavailable")
           if (Option.isNone(actor.value)) return refused(401, "authentication")
           // A Member or above, in person or through an agent acting for them (ruling FLOW-3): stopping neither
           // approves nor merges.
-          const admitted = yield* access(runId, actor.value.value)
+          const admitted = try access(runId, actor.value.value)
           if (!admitted.allowed) return refused(403, "forbidden")
           fields.via = actor.value.value.act === undefined ? "person" : "agent"
           const who = actor.value.value
           // Retain the resolved receipt, then lock and recheck it after all delayed reads, through the stop write.
           const write = <E2, R2>(body: Effect.Effect<HttpServerResponse.HttpServerResponse, E2, R2>) =>
-            Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+            Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(effect {
               if (Option.isNone(admitted.authority)) return refused(403, "forbidden")
-              const refusal = yield* stillAdmitted(who, admitted.authority.value)
+              const refusal = try stillAdmitted(who, admitted.authority.value)
               if (refusal !== undefined) return refused({ authentication: 401, forbidden: 403, unavailable: 503 }[refusal], refusal)
-              return yield* body
-            }))).pipe(Effect.provide(database))
+              return try body
+            })).pipe(Effect.provide(database))
           // A TODO's run: its external agent stops, and the run goes on to fail the TODO, which keeps its place for
           // Retry (docs/features/runs.md#stopping-a-todos-agent).
-          const attempt = yield* attemptOf(runId).pipe(Effect.provide(database))
+          const attempt = try (attemptOf(runId).pipe(Effect.provide(database)))
           if (Option.isSome(attempt)) {
             if (!admitted.watched) return refused(403, "forbidden")
-            const read = yield* Effect.flatMap(
+            const read = try (Effect.flatMap(
               EngineStore.RunInspection.RunInspection,
               (reads) => reads.inspect(runId, { limit: 1 }),
-            ).pipe(Effect.provide(inspection), Effect.provide(engine.database), Effect.option)
-            if (Option.isNone(read) || !stoppable(read.value.run, read.value.steps)) return refused(409, "not_working")
-            return yield* write(Effect.gen(function* () {
-              const open = yield* TodoSession.stop(attempt.value.id)
+            ).pipe(Effect.provide(inspection), Effect.provide(engine.database), Effect.option))
+            if (Option.isNone(read) || !(try Effect.sync(() => stoppable(read.value.run, read.value.steps)))) return refused(409, "not_working")
+            return try write(effect {
+              const open = try TodoSession.stop(attempt.value.id)
               if (open === 0) return refused(409, "not_working")
               fields.outcome = "requested"
               fields.generations = open
               return HttpServerResponse.jsonUnsafe({ outcome: "requested" }, { status: 202, headers: noStore })
-            }))
+            })
           }
           // Only a repository's run itself: a job stops with its run.
           if (Option.isNone(admitted.repoRun) || admitted.repoRun.value.execution !== runId) return refused(404, "not_found")
           // Settled history outlives the object's intent retention. Its payload must independently prove ownership.
-          const history = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          const history = try (Effect.flatMap(SqlClient.SqlClient, (sql) =>
             sql<{ readonly status: string; readonly flow: string; readonly payload: unknown }>`
               SELECT status, state_json::jsonb ->> 'flowName' AS flow, state_json::jsonb -> 'payload' AS payload
-              FROM flows_runs WHERE run_id = ${runId}`).pipe(Effect.provide(engine.database))
-          const ended = history[0] !== undefined && settled(history[0].status)
+              FROM flows_runs WHERE run_id = ${runId}`).pipe(Effect.provide(engine.database)))
+          const ended = history[0] !== undefined && (try Effect.sync(() => settled(history[0].status)))
           // Old conflicting starts may have left a poisoned projection. Neither path trusts that projection alone.
           const owned = ended
-            ? RepoRuns.repositoryIntent({ flow: history[0]!.flow, executionId: runId, payload: history[0]!.payload })
-            : yield* engine.repositoryRun(runId)
+            ? (try Effect.sync(() => RepoRuns.repositoryIntent({ flow: history[0]!.flow, executionId: runId, payload: history[0]!.payload })))
+            : try engine.repositoryRun(runId)
           if (Option.isNone(owned) || owned.value.execution !== runId || owned.value.repoId !== admitted.repoRun.value.repoId) {
             return refused(404, "not_found")
           }
           // A run that ended has nothing to stop. One its object hasn't begun is stopped before it starts.
           const outcome = ended ? "settled" as const : "requested" as const
-          return yield* write(Effect.gen(function* () {
-            if (outcome === "requested") yield* engine.stop(runId)
+          return try write(effect {
+            if (outcome === "requested") try engine.stop(runId)
             fields.outcome = outcome
             return HttpServerResponse.jsonUnsafe({ outcome }, { status: outcome === "requested" ? 202 : 200, headers: noStore })
-          }))
-        }).pipe(
+          })
+        }.pipe(
           Effect.catchCause((cause) =>
             Effect.sync(() => {
               fields.errorCode = codeOf(Cause.squash(cause))
               return refused(503, "unavailable")
             })
           ),
-        )
+        ))
         const outcome = String(fields.outcome)
         fields.status = response.status
-        fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
-        yield* Metric.update(Metric.withAttributes(stops, { outcome }), 1)
-        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.run.host": "remote", outcome })
-        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+        fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+        try Metric.update(Metric.withAttributes(stops, { outcome }), 1)
+        try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.run.host": "remote", outcome })
+        try (Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
           "run.stop",
-        ).pipe(Effect.annotateLogs({ ...fields, outcome }))
+        ).pipe(Effect.annotateLogs({ ...fields, outcome })))
         return response
-      }).pipe(Effect.withSpan("run.stop", { kind: "server" }))
+      }.pipe(Effect.withSpan("run.stop", { kind: "server" }))
 
     /** `GET /api/remote-runs/<runId>/transcript`: a TODO run's transcript socket, for a Member. */
     const transcript = (runId: string) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        const startedAt = yield* Clock.currentTimeMillis
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const startedAt = try Clock.currentTimeMillis
         const fields: Record<string, string | number> = { host: "remote", runId }
         const refused = (status: number, code: string) => {
           fields.outcome = code
@@ -397,54 +397,54 @@ export const make = <E, R, EE, ER, RS>(
             headers: status === 503 ? { ...noStore, "retry-after": String(ShapeAccess.RETRY_AFTER_SECONDS) } : noStore,
           })
         }
-        const response = yield* Effect.gen(function* () {
+        const response = try (effect {
           if (request.method !== "GET") {
             fields.outcome = "method"
             return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
           }
-          const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+          const actor = try ((try Sessions).resolve.pipe(Effect.option))
           if (Option.isNone(actor)) return refused(503, "unavailable")
           if (Option.isNone(actor.value)) return refused(401, "authentication")
           // Only a TODO's run has a transcript, read by a Member or above of its attempt's repository (decision 0079).
-          const attempt = yield* attemptOf(runId).pipe(Effect.provide(database))
+          const attempt = try (attemptOf(runId).pipe(Effect.provide(database)))
           if (Option.isNone(attempt)) return refused(404, "not_found")
-          if (!(yield* memberOn(actor.value.value, attempt.value.repoId).pipe(Effect.provide(database)))) {
+          if (!(try (memberOn(actor.value.value, attempt.value.repoId).pipe(Effect.provide(database))))) {
             return refused(403, "forbidden")
           }
-          if (!isUpgrade(request)) return refused(426, "upgrade")
+          if (!(try Effect.sync(() => isUpgrade(request)))) return refused(426, "upgrade")
           // A cookie rides along on a cross-site WebSocket: the `Origin` keeps another site's page out.
-          if (!sameOrigin(request)) return refused(403, "origin")
-          const admission = yield* SocketAccess.admit(actor.value.value, {
+          if (!(try Effect.sync(() => sameOrigin(request)))) return refused(403, "origin")
+          const admission = try (SocketAccess.admit(actor.value.value, {
             kind: "run",
             repoId: attempt.value.repoId,
-          }, "member").pipe(Effect.provide(database))
+          }, "member").pipe(Effect.provide(database)))
           if (admission._tag === "ended") return refused(401, "authentication")
           if (admission._tag === "stale") return refused(503, "unavailable")
           fields.outcome = "connected"
-          return yield* engine.transcript(runId, admission.admission)
-        }).pipe(
+          return try engine.transcript(runId, admission.admission)
+        }.pipe(
           Effect.catchCause((cause) =>
             Effect.sync(() => {
               fields.errorCode = codeOf(Cause.squash(cause))
               return refused(503, "unavailable")
             })
           ),
-        )
+        ))
         const outcome = String(fields.outcome)
         fields.status = response.status
-        fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
-        yield* Metric.update(Metric.withAttributes(transcriptConnects, { outcome }), 1)
-        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
-        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 && response.status !== 426
-          ? "Warn" : "Info")("run.transcript").pipe(Effect.annotateLogs({ ...fields, outcome }))
+        fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+        try Metric.update(Metric.withAttributes(transcriptConnects, { outcome }), 1)
+        try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+        try (Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 && response.status !== 426
+          ? "Warn" : "Info")("run.transcript").pipe(Effect.annotateLogs({ ...fields, outcome })))
         return response
-      }).pipe(Effect.withSpan("run.transcript", { kind: "server" }))
+      }.pipe(Effect.withSpan("run.transcript", { kind: "server" }))
 
     /** `POST /api/remote-runs/<runId>/steers`. */
     const steer = (runId: string) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        const startedAt = yield* Clock.currentTimeMillis
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const startedAt = try Clock.currentTimeMillis
         const fields: Record<string, string | number> = { host: "remote" }
         const refused = (status: number, code: SteerRefusal) => {
           fields.outcome = code
@@ -453,21 +453,21 @@ export const make = <E, R, EE, ER, RS>(
             headers: status === 503 ? { ...noStore, "retry-after": String(ShapeAccess.RETRY_AFTER_SECONDS) } : noStore,
           })
         }
-        const response = yield* Effect.gen(function* () {
+        const response = try (effect {
           if (request.method !== "POST") {
             fields.outcome = "method"
             return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
           }
-          const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+          const actor = try ((try Sessions).resolve.pipe(Effect.option))
           if (Option.isNone(actor)) return refused(503, "unavailable")
           if (Option.isNone(actor.value)) return refused(401, "authentication")
           // A Member or above on the TODO's repository (decision 0079), in person or through an agent acting for them
           // (ruling FLOW-3): steering neither commits, approves nor merges. Checked once the run's TODO is found.
           const steerer = steererOf(actor.value.value)
           fields.via = steerer.via
-          const text = yield* readBounded(request, MAX_STEER_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
+          const text = try (readBounded(request, MAX_STEER_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
             Effect.result,
-          )
+          ))
           if (text._tag === "Failure") return refused(text.failure.reason === "too_large" ? 413 : 400, text.failure.reason === "too_large" ? "too_large" : "invalid")
           const body = decodeSteerBody(text.success)
           if (Option.isNone(body)) return refused(400, "invalid")
@@ -478,47 +478,47 @@ export const make = <E, R, EE, ER, RS>(
           ) return refused(413, "too_large")
           const id = body.value.id.toLowerCase()
           fields.steerId = id
-          const attempt = yield* attemptOf(runId).pipe(Effect.provide(database))
+          const attempt = try (attemptOf(runId).pipe(Effect.provide(database)))
           if (Option.isNone(attempt)) return refused(404, "not_found")
           const who = actor.value.value
-          const authority = yield* resolvedMember(who, attempt.value.repoId)
+          const authority = try resolvedMember(who, attempt.value.repoId)
           if (Option.isNone(authority)) return refused(403, "forbidden")
           if (!canAsk(who)) return refused(403, "forbidden")
           fields.runId = runId
           // The app's transaction stays open from before the engine writer is taken until the steer commits. Once the
           // writer is held, the session and role receipt are locked and rechecked, as Stop does, through admission.
-          const admitted = yield* Effect.flatMap(SqlClient.SqlClient, (app) => app.withTransaction(Effect.gen(function* () {
-            const journal = yield* Journal.Journal.Journal
-            const notifications = yield* NotificationQueue.NotificationQueue
-            const reads = yield* EngineStore.RunInspection.RunInspection
-            return yield* journal.transact(Effect.gen(function* () {
-              const refusal = yield* stillAdmitted(who, authority.value).pipe(Effect.provideService(SqlClient.SqlClient, app))
-              if (refusal !== undefined) return yield* new Revoked({ refusal })
+          const admitted = try (Effect.flatMap(SqlClient.SqlClient, (app) => app.withTransaction(effect {
+            const journal = try Journal.Journal.Journal
+            const notifications = try NotificationQueue.NotificationQueue
+            const reads = try EngineStore.RunInspection.RunInspection
+            return try journal.transact(effect {
+              const refusal = try (stillAdmitted(who, authority.value).pipe(Effect.provideService(SqlClient.SqlClient, app)))
+              if (refusal !== undefined) return try new Revoked({ refusal })
               // Admission resolves durable identity first. A duplicate keeps its
               // receipt even after completion; a new steer is rolled back unless
               // the run is steerable under this same engine writer transaction.
-              const receipt = yield* notifications.admit(
+              const receipt = try notifications.admit(
                 runId,
-                Notification.humanSteer({
+                try Effect.sync(() => Notification.humanSteer({
                   runId,
                   id,
                   actor: steerer.actor,
                   attribution: { login: steerer.login, via: steerer.via },
                   payload: SteerPayload.encode({ kind: "Message", body: body.value.body }),
-                }),
+                })),
               )
               if (!receipt.duplicate) {
-                const read = yield* reads.inspect(runId, { limit: 1 }).pipe(
+                const read = try (reads.inspect(runId, { limit: 1 }).pipe(
                   Effect.catchIf(
                     (error) => Predicate.isTagged(error, "@smthrs/engine-store/RunNotFound"),
                     () => Effect.fail(new NotWorking()),
                   ),
-                )
-                if (!steerable(read.run, read.steps)) return yield* new NotWorking()
+                ))
+                if (!(try Effect.sync(() => steerable(read.run, read.steps)))) return try new NotWorking()
               }
               return receipt
-            }))
-          }).pipe(Effect.provide(queue), Effect.scoped))).pipe(Effect.provide(database), Effect.result)
+            })
+          }.pipe(Effect.provide(queue), Effect.scoped))).pipe(Effect.provide(database), Effect.result))
           if (admitted._tag === "Failure") {
             const failure = admitted.failure
             if (Predicate.isTagged(failure, "Revoked")) {
@@ -537,30 +537,30 @@ export const make = <E, R, EE, ER, RS>(
             { id, seq: admitted.success.seq },
             { status: admitted.success.duplicate ? 200 : 202, headers: noStore },
           )
-        }).pipe(
+        }.pipe(
           Effect.catchCause((cause) =>
             Effect.sync(() => {
               fields.errorCode = codeOf(Cause.squash(cause))
               return refused(503, "unavailable")
             })
           ),
-        )
+        ))
         const outcome = String(fields.outcome)
         fields.status = response.status
-        fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
-        yield* Metric.update(Metric.withAttributes(steers, { outcome }), 1)
-        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.run.host": "remote", outcome })
-        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+        fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+        try Metric.update(Metric.withAttributes(steers, { outcome }), 1)
+        try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.run.host": "remote", outcome })
+        try (Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
           "run.steer",
-        ).pipe(Effect.annotateLogs({ ...fields, outcome }))
+        ).pipe(Effect.annotateLogs({ ...fields, outcome })))
         return response
-      }).pipe(Effect.withSpan("run.steer", { kind: "server" }))
+      }.pipe(Effect.withSpan("run.steer", { kind: "server" }))
 
     /** `GET /api/remote-runs/<runId>`. */
     const read = (runId: string) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        const startedAt = yield* Clock.currentTimeMillis
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const startedAt = try Clock.currentTimeMillis
         const fields: Record<string, string | number> = { host: "remote" }
         const refused = (status: number, code: RemoteReadRefusal) => {
           fields.outcome = code
@@ -569,15 +569,15 @@ export const make = <E, R, EE, ER, RS>(
             headers: status === 503 ? { ...noStore, "retry-after": String(ShapeAccess.RETRY_AFTER_SECONDS) } : noStore,
           })
         }
-        const response = yield* Effect.gen(function* () {
+        const response = try (effect {
           if (request.method !== "GET") {
             fields.outcome = "method"
             return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
           }
-          const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+          const actor = try ((try Sessions).resolve.pipe(Effect.option))
           if (Option.isNone(actor)) return refused(503, "unavailable")
           if (Option.isNone(actor.value)) return refused(401, "authentication")
-          const admitted = yield* access(runId, actor.value.value)
+          const admitted = try access(runId, actor.value.value)
           if (!admitted.allowed) return refused(403, "forbidden")
           const query = new URL(request.url, "http://localhost").searchParams
           const afterSeq = parameter(query, "afterSeq", decodeAfterSeq, -1)
@@ -585,10 +585,10 @@ export const make = <E, R, EE, ER, RS>(
           if (Option.isNone(afterSeq) || Option.isNone(limit)) return refused(400, "invalid")
           if (!admitted.watched) return refused(404, "not_found")
           fields.runId = runId
-          const read = yield* Effect.flatMap(
+          const read = try (Effect.flatMap(
             EngineStore.RunInspection.RunInspection,
             (reads) => reads.inspect(runId, { afterSeq: afterSeq.value, limit: limit.value }),
-          ).pipe(Effect.provide(inspection), Effect.provide(engine.database), Effect.result)
+          ).pipe(Effect.provide(inspection), Effect.provide(engine.database), Effect.result))
           if (read._tag === "Failure") {
             if (Predicate.isTagged(read.failure, "@smthrs/engine-store/RunNotFound")) return refused(404, "not_started")
             fields.errorCode = codeOf(read.failure)
@@ -600,43 +600,43 @@ export const make = <E, R, EE, ER, RS>(
           fields.bytes = new TextEncoder().encode(body).length
           fields.clipped = clippedValues(read.success)
           return HttpServerResponse.text(body, { contentType: "application/json", headers: noStore })
-        }).pipe(
+        }.pipe(
           Effect.catchCause((cause) =>
             Effect.sync(() => {
               fields.errorCode = codeOf(Cause.squash(cause))
               return refused(503, "unavailable")
             })
           ),
-        )
+        ))
         const outcome = String(fields.outcome)
         fields.status = response.status
-        fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
-        yield* Metric.update(Metric.withAttributes(reads, { outcome }), 1)
-        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.run.host": "remote", outcome })
-        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+        fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+        try Metric.update(Metric.withAttributes(reads, { outcome }), 1)
+        try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.run.host": "remote", outcome })
+        try (Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
           "run.inspect",
-        ).pipe(Effect.annotateLogs({ ...fields, outcome }))
+        ).pipe(Effect.annotateLogs({ ...fields, outcome })))
         return response
-      }).pipe(Effect.withSpan("run.inspect", { kind: "server" }))
+      }.pipe(Effect.withSpan("run.inspect", { kind: "server" }))
 
     /** `GET /api/shapes/remote-runs?run=<runId>`: the run's row of the change feed, for a Member; refused otherwise. */
     const changes = ShapeProxy.make({
       ...connection,
-      shape: Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        const actor = yield* ShapeAccess.actor
-        if (Option.isNone(actor)) return yield* new ShapeProxy.Refused({ status: 401 })
+      shape: effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const actor = try ShapeAccess.actor
+        if (Option.isNone(actor)) return try new ShapeProxy.Refused({ status: 401 })
         const runId = new URL(request.url, "http://localhost").searchParams.get("run") ?? ""
-        const admitted = yield* access(runId, actor.value).pipe(Effect.mapError(() => ShapeAccess.unavailable))
+        const admitted = try (access(runId, actor.value).pipe(Effect.mapError(() => ShapeAccess.unavailable)))
         // A run no TODO and no repository started is no Member's to follow.
-        if (!admitted.allowed || !admitted.watched) return yield* new ShapeProxy.Refused({ status: 403 })
+        if (!admitted.allowed || !admitted.watched) return try new ShapeProxy.Refused({ status: 403 })
         return {
           table: `${engine.schema}.${RUN_CHANGES_TABLE}`,
           where: "run_id = $1",
           params: { "1": runId },
           columns: RUN_CHANGE_COLUMNS,
         }
-      }),
+      },
       name: "runs.shape.remote",
       metric: shapeRequests,
     })
@@ -644,19 +644,19 @@ export const make = <E, R, EE, ER, RS>(
     /** `GET /api/cloud-runs`: the runs on Cloudflare the asker may read (worker/CloudRuns.ts). */
     const list = CloudRuns.route({ database, engine: engine.database, inspection, roles })
 
-    const fetch = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
+    const fetch = effect {
+      const request = try HttpServerRequest.HttpServerRequest
       const path = request.url.split("?")[0]!
-      if (path === REMOTE_RUN_SHAPE_ROUTE) return yield* changes
-      if (path === CLOUD_RUNS_ROUTE) return yield* list
+      if (path === REMOTE_RUN_SHAPE_ROUTE) return try changes
+      if (path === CLOUD_RUNS_ROUTE) return try list
       const steered = parseSteerPath(path)
-      if (steered !== undefined) return yield* steer(steered)
+      if (steered !== undefined) return try steer(steered)
       const stopped = parseStopPath(path)
-      if (stopped !== undefined) return yield* stop(stopped)
+      if (stopped !== undefined) return try stop(stopped)
       const watched = parseTranscriptPath(path)
-      if (watched !== undefined) return yield* transcript(watched)
+      if (watched !== undefined) return try transcript(watched)
       const runId = parseRunPath(path)
-      return runId === undefined ? HttpServerResponse.empty({ status: 404 }) : yield* read(runId)
-    })
+      return runId === undefined ? HttpServerResponse.empty({ status: 404 }) : try read(runId)
+    }
     return { fetch }
-  })
+  }

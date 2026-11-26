@@ -1300,6 +1300,52 @@ test("refs retains a role refusal's diagnostics, ray and retryable rate limit", 
 })
 
 
+test("refs translate a missing role receipt without a retry hint", async () => {
+  const h = await repoHarness(runtime, { branchRoles: Layer.succeed(BranchRoles, BranchRoles.of({
+    roleOn: () => Effect.fail(new RepoRoles.RoleRefused({ code: "not_found", stage: "permission" })),
+  })) })
+  await sql("INSERT INTO github_repositories (repo_id, installation_id) VALUES ('github/octocat/absent-role', 77)")
+  await runtime.runPromise(Conversations.track("github/octocat/absent-role", "private-ref", "open", "a".repeat(40), "octocat", undefined, "ephemeral"))
+  const response = await h.fetch(refsRoute("octocat", "absent-role"))
+  expect(response.status).toBe(404)
+  expect(response.headers.get("retry-after")).toBeNull()
+})
+
+test("unimported refs can use public metadata when the membership lookup fails after admission", async () => {
+  let resolutions = 0
+  const sessions = Layer.succeed(Actor.Sessions, Actor.Sessions.of({
+    resolve: Effect.suspend(() => ++resolutions === 1 ? Effect.succeed(Option.none()) : Effect.fail(new Actor.SessionsUnavailable())),
+  }))
+  const h = await repoHarness(runtime, { sessions })
+  h.github.publish("octocat", "Spoon-Knife")
+  const response = await h.fetch(refsRoute("octocat", "Spoon-Knife"))
+  expect(response.status).toBe(204)
+  expect(resolutions).toBe(2)
+})
+
+test("a missing blob refuses when its ready head cannot be checked", async () => {
+  const source = await repoHarness(runtime)
+  const { headSha } = await source.seed("octocat", "Spoon-Knife")
+  const { database } = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+  const down = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
+  let missing = false
+  const h = await repoHarness(runtime, {
+    scripted: source.scripted,
+    database: Layer.fresh(Layer.unwrap(Effect.sync(() => missing ? down : database))),
+    codeStorage: {
+      ...source.scripted.client,
+      readFile: () => Effect.suspend(() => {
+        missing = true
+        return Effect.fail(new CodeStorage.CodeStorageError({ operation: "readFile", code: "not_found" }))
+      }),
+    },
+  })
+  const response = await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "gone.txt"))
+  expect(missing).toBe(true)
+  expect(response.status).toBe(503)
+  expect(await response.json()).toEqual({ code: "unavailable" })
+})
+
 test("About HTTP caches must revalidate even with max-age=0 and refuse an expired answer", async () => {
   const time = ManagedRuntime.make(TestClock.layer())
   try {
