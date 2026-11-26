@@ -7,7 +7,7 @@ import { ALERT_PERCENT } from "../../infra/Connections.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import * as HyperdrivePool from "../HyperdrivePool.ts"
-import * as AlertDelivery from "./AlertDelivery.ts"
+import * as AlertDelivery from "./AlertDelivery.vibe"
 
 // `ops/DatabaseLoad { from, until }` (docs/features/database-alerts.md): how many connections the app's Postgres has
 // in use, once a window, and an alert to the deployment's Admins when they reach `ALERT_PERCENT` of `max_connections`.

@@ -33,11 +33,13 @@ export const Pause = Flow.make("probe/Pause", {
  * Registers `Pause` with `mark` as its step, through the canonical composition, so a new incarnation on any host
  * rebuilds the plan the previous one recorded.
  */
-export const registration = <R>(mark: (label: string) => Effect.Effect<string, never, R>) =>
+export const registration = <R>(mark: (label: string) => string!never!R) =>
   Interpreter.layerWithImplementations(Pause, Mark.toLayer(({ label }) => mark(label))).pipe(
     Layer.provideMerge(Action.layerImplementations),
   )
 
 /** The step a deployed host runs: one `probe.mark` log line carrying the label, which names a step, never content. */
-export const logged = (label: string) =>
-  Effect.logInfo("probe.mark").pipe(Effect.annotateLogs({ label }), Effect.as(label))
+export const logged = effect (label: string) => {
+  try (Effect.logInfo("probe.mark").pipe(Effect.annotateLogs({ label })))
+  return label
+}

@@ -6,7 +6,7 @@ import { SqlClient } from "effect/sql"
 import { BUG_INBOX_PATH, bugAlertId, bugSubject } from "../../src/features/bugs/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { latestRole, sessionLive } from "../SessionStore.ts"
-import * as AlertDelivery from "./AlertDelivery.ts"
+import * as AlertDelivery from "./AlertDelivery.vibe"
 
 // `ops/BugReport { id }` (docs/features/bugs.md#the-admins-hear): once a person files a report
 // (worker/bugs/Api.ts), each Admin gets it in their bell, never as a toast, and by email and Telegram where an Admin set
@@ -127,12 +127,11 @@ export const titleOf = (filed: Filed) => {
 export const NOTICE: AlertDelivery.Notice = { kind: "Bug report", repository: null, href: BUG_INBOX_PATH }
 
 /** Who filed report `id` and where, against the `SqlClient` in context; none when there is no such report. */
-export const filedOf = (id: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const rows = yield* sql<Filed>`SELECT reporter_login AS login, route FROM bug_reports WHERE id = ${id}`
-    return Option.fromNullishOr(rows[0])
-  })
+export const filedOf = effect (id: string) => {
+  const sql = try SqlClient.SqlClient
+  const rows = try sql<Filed>`SELECT reporter_login AS login, route FROM bug_reports WHERE id = ${id}`
+  return Option.fromNullishOr(rows[0])
+}
 
 /**
  * Puts report `id` in the bell of every Admin with a live session, against the `SqlClient` in context: one `bug`
@@ -140,20 +139,19 @@ export const filedOf = (id: string) =>
  * (`latestRole`) is Admin, so an older session's Admin role never outlives a later demotion. Answers how many Admins
  * it reached this time; none for a report that isn't there.
  */
-export const bell = (report: typeof Bell.payloadSchema.Type) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const filed = yield* filedOf(report.id)
-    if (Option.isNone(filed)) return { admins: 0 }
-    const rows = yield* sql`
-      INSERT INTO notifications (recipient, subject, kind, state, title, href)
-      SELECT p.id::text, ${bugSubject(report.id)}, 'bug', 'update', ${titleOf(filed.value)}, ${BUG_INBOX_PATH}
-      FROM people p WHERE ${latestRole(sql, sql`p.id`)} = 'admin' AND EXISTS (
-        SELECT 1 FROM sessions live WHERE live.person_id = p.id AND ${yield* sessionLive(sql, sql`live`)})
-      ON CONFLICT (recipient, subject) DO NOTHING
-      RETURNING recipient`
-    return { admins: rows.length }
-  })
+export const bell = effect (report: typeof Bell.payloadSchema.Type) => {
+  const sql = try SqlClient.SqlClient
+  const filed = try filedOf(report.id)
+  if (Option.isNone(filed)) return { admins: 0 }
+  const rows = try sql`
+    INSERT INTO notifications (recipient, subject, kind, state, title, href)
+    SELECT p.id::text, ${bugSubject(report.id)}, 'bug', 'update', ${titleOf(filed.value)}, ${BUG_INBOX_PATH}
+    FROM people p WHERE ${latestRole(sql, sql`p.id`)} = 'admin' AND EXISTS (
+      SELECT 1 FROM sessions live WHERE live.person_id = p.id AND ${try sessionLive(sql, sql`live`)})
+    ON CONFLICT (recipient, subject) DO NOTHING
+    RETURNING recipient`
+  return { admins: rows.length }
+}
 
 /** The bell step over `database`, with its `bug.report.bell` line and span: the alert and a count, never who or where. */
 export const observedBell = <E, R>(

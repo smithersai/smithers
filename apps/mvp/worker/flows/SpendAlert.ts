@@ -6,8 +6,8 @@ import { Clock, Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { ALERT_WORD } from "../../src/features/spend/copy.ts"
 import { codeOf } from "../ErrorCode.ts"
-import * as AlertDelivery from "./AlertDelivery.ts"
-import { DeliverUnavailable, noChannels } from "./AlertDelivery.ts"
+import * as AlertDelivery from "./AlertDelivery.vibe"
+import { DeliverUnavailable, noChannels } from "./AlertDelivery.vibe"
 
 // `ops/SpendAlert { from, until, budget }` (docs/features/spend-alerts.md): one alert to the deployment's Admins about
 // the model spend of one window. Will, 2026-10-19: any model spend at all alerts, because there are no users yet. The

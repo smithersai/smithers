@@ -9,7 +9,7 @@ import * as Flows from "../Flows.ts"
 import * as Fleet from "../runners/Fleet.vibe"
 import { AUDIENCE } from "../runners/FleetAudience.vibe"
 export { AUDIENCE } from "../runners/FleetAudience.vibe"
-import * as AlertDelivery from "./AlertDelivery.ts"
+import * as AlertDelivery from "./AlertDelivery.vibe"
 
 // The fleet's alerts (decision 0143, docs/features/fleet.md#alerts): durable flows, no sweeps (ruling DUR-2).
 //

@@ -20,7 +20,7 @@ import * as HyperdrivePool from "../HyperdrivePool.ts"
 import { type AlertProviders, startAlertProviders } from "../test/alertProviders.ts"
 import { build, runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
-import * as AlertDelivery from "./AlertDelivery.ts"
+import * as AlertDelivery from "./AlertDelivery.vibe"
 import * as V1 from "../test/DatabaseLoadV1.ts"
 import * as DatabaseLoad from "./DatabaseLoad.ts"
 

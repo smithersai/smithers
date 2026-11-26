@@ -13,8 +13,8 @@ import { bugAlertId } from "../../src/features/bugs/contract.ts"
 import { type AlertProviders, startAlertProviders } from "../test/alertProviders.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
-import * as AlertDelivery from "./AlertDelivery.ts"
-import * as BugReport from "./BugReport.ts"
+import * as AlertDelivery from "./AlertDelivery.vibe"
+import * as BugReport from "./BugReport.vibe"
 
 const runtime = testFile("bug_report_flow")
 

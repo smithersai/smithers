@@ -68,7 +68,7 @@ import * as Asks from "../../worker/Asks.ts"
 import * as ExecutionHost from "../../worker/ExecutionHost.ts"
 import { executions } from "../../worker/test/executions.ts"
 import * as TodoSession from "../../worker/flows/TodoSession.ts"
-import * as Pause from "../../worker/flows/Pause.ts"
+import * as Pause from "../../worker/flows/Pause.vibe"
 import * as GitHubApi from "../../worker/github/Api.ts"
 import { repositoryOf } from "../../worker/github/Config.ts"
 import {

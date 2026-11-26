@@ -91,7 +91,10 @@ export type Refusal = (typeof REFUSALS)[number]
 export const isRepository = (owner: string, name: string): boolean =>
   OWNER_PATTERN.test(owner) && NAME_PATTERN.test(name) && !RESERVED_OWNERS.includes(owner.toLowerCase())
 
-/** A repository's id: `github/<owner>/<name>`, lowercased. Also its Code Storage name and its clone's key. */
+/**
+ * A repository's id: `github/<owner>/<name>`, lowercased. Also its Code Storage name and its clone's key.
+ * @throws {never}
+ */
 export const repoId = (owner: string, name: string): string => `github/${owner}/${name}`.toLowerCase()
 
 /**

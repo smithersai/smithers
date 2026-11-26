@@ -9,7 +9,7 @@ import { Node } from "@smthrs/plan"
 import { Duration, Schema } from "effect"
 import { ALERT_PERCENT } from "../../infra/Connections.ts"
 import type * as Flows from "../Flows.ts"
-import * as AlertDelivery from "../flows/AlertDelivery.ts"
+import * as AlertDelivery from "../flows/AlertDelivery.vibe"
 
 const nonNegative = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const positive = Schema.Int.check(Schema.isGreaterThan(0))

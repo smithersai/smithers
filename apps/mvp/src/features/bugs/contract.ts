@@ -61,10 +61,16 @@ export const BUG_FORM_PATH = "/app/bugs/report"
 /** The repository "Open on GitHub" files on when the page shows none. */
 export const DEFAULT_ISSUE_REPOSITORY = "smithersai/smithers"
 
-/** The remote execution that tells the Admins about report `id`, and its alert's id in `alert_deliveries`. */
+/**
+ * The remote execution that tells the Admins about report `id`, and its alert's id in `alert_deliveries`.
+ * @throws {never}
+ */
 export const bugAlertId = (id: string) => `bug-report-${id}`
 
-/** The notification's subject in each Admin's feed. */
+/**
+ * The notification's subject in each Admin's feed.
+ * @throws {never}
+ */
 export const bugSubject = (id: string) => `bug:${id}`
 
 /** The engine's channel the report's step asks its tab on: `<engine>/bug-context`. */

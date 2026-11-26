@@ -84,15 +84,16 @@ interface Receipt {
 }
 
 /** Records one attempt's receipt for an alert and channel; a later attempt overwrites it and counts. */
-const recordReceipt = (target: Target, receipt: Receipt) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql`
-      INSERT INTO alert_deliveries (alert_id, channel, status, code, reason, http_status, provider_id)
-      VALUES (${target.alertId}, ${target.channel}, ${receipt.status}, ${receipt.code}, ${receipt.reason},
-        ${receipt.httpStatus}, ${receipt.providerId})
-      ON CONFLICT (alert_id, channel) DO UPDATE SET status = EXCLUDED.status, code = EXCLUDED.code,
-        reason = EXCLUDED.reason, http_status = EXCLUDED.http_status, provider_id = EXCLUDED.provider_id,
-        attempts = alert_deliveries.attempts + 1, updated_at = now()`)
+const recordReceipt = effect (target: Target, receipt: Receipt) => {
+  const sql = try SqlClient.SqlClient
+  try sql`
+    INSERT INTO alert_deliveries (alert_id, channel, status, code, reason, http_status, provider_id)
+    VALUES (${target.alertId}, ${target.channel}, ${receipt.status}, ${receipt.code}, ${receipt.reason},
+      ${receipt.httpStatus}, ${receipt.providerId})
+    ON CONFLICT (alert_id, channel) DO UPDATE SET status = EXCLUDED.status, code = EXCLUDED.code,
+      reason = EXCLUDED.reason, http_status = EXCLUDED.http_status, provider_id = EXCLUDED.provider_id,
+      attempts = alert_deliveries.attempts + 1, updated_at = now()`
+}
 
 /** A failure's receipt: its status, code and HTTP status. */
 const failedReceipt = (error: Channels.DeliveryError): Receipt => ({
@@ -110,43 +111,40 @@ const failedReceipt = (error: Channels.DeliveryError): Receipt => ({
  * refusal, including a channel the deployment has no provider for (`unconfigured`), is recorded and returned; a failure
  * another attempt may clear is recorded and fails the step.
  */
-export const deliver = <E, R>(
+export const deliver = effect <E, R>(
   target: Target,
-  notice: Effect.Effect<Option.Option<Notice>, E, R>,
-) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [earlier] = yield* sql<{ readonly status: string }>`
-      SELECT status FROM alert_deliveries WHERE alert_id = ${target.alertId} AND channel = ${target.channel}`
-    if (earlier !== undefined && earlier.status !== "failed") return { outcome: "existing" } satisfies Delivered
-    const [setting] = yield* sql<ChannelRow>`
-      SELECT destinations, app_url AS "appUrl" FROM alert_channels WHERE channel = ${target.channel}`
-    if (setting === undefined) return { outcome: "off" } satisfies Delivered
-    const found = yield* notice
-    if (Option.isNone(found)) return { outcome: "none" } satisfies Delivered
-    const message = wordsOf(found.value, setting.appUrl)
-    const destination = destinationOf(target.channel, setting.destinations)
-    const sent = Option.isNone(destination)
-      ? yield* Effect.fail(
-        new Channels.DeliveryRefused({ channel: target.channel, code: "rejected", reason: "invalid_destination" }),
-      ).pipe(Effect.result)
-      : yield* (yield* Channels.Channels).send(destination.value, { id: target.alertId, ...message }).pipe(
-        Effect.result,
-      )
-    if (sent._tag === "Success") {
-      yield* recordReceipt(target, {
-        status: "sent",
-        code: null,
-        reason: null,
-        httpStatus: null,
-        providerId: sent.success.providerId,
-      })
-      return { outcome: "sent" } satisfies Delivered
-    }
-    yield* recordReceipt(target, failedReceipt(sent.failure))
-    if (sent.failure._tag === "@smthrs/notifications/DeliveryRefused") return { outcome: "refused" } satisfies Delivered
-    return yield* sent.failure
-  })
+  notice: Option.Option<Notice>!E!R,
+) => {
+  const sql = try SqlClient.SqlClient
+  const [earlier] = try sql<{ readonly status: string }>`
+    SELECT status FROM alert_deliveries WHERE alert_id = ${target.alertId} AND channel = ${target.channel}`
+  if (earlier !== undefined && earlier.status !== "failed") return { outcome: "existing" } satisfies Delivered
+  const [setting] = try sql<ChannelRow>`
+    SELECT destinations, app_url AS "appUrl" FROM alert_channels WHERE channel = ${target.channel}`
+  if (setting === undefined) return { outcome: "off" } satisfies Delivered
+  const found = try notice
+  if (Option.isNone(found)) return { outcome: "none" } satisfies Delivered
+  const message = wordsOf(found.value, setting.appUrl)
+  const destination = destinationOf(target.channel, setting.destinations)
+  const sent = Option.isNone(destination)
+    ? try Effect.result(effect {
+      throw new Channels.DeliveryRefused({ channel: target.channel, code: "rejected", reason: "invalid_destination" })
+    })
+    : try Effect.result((try Channels.Channels).send(destination.value, { id: target.alertId, ...message }))
+  if (sent._tag === "Success") {
+    try recordReceipt(target, {
+      status: "sent",
+      code: null,
+      reason: null,
+      httpStatus: null,
+      providerId: sent.success.providerId,
+    })
+    return { outcome: "sent" } satisfies Delivered
+  }
+  try recordReceipt(target, failedReceipt(sent.failure))
+  if (sent.failure._tag === "@smthrs/notifications/DeliveryRefused") return { outcome: "refused" } satisfies Delivered
+  throw sent.failure
+}
 
 /** What an alert flow records each delivery as: its log line's and span's name, its counter, and its span's id key. */
 export interface Records {
@@ -167,7 +165,7 @@ export interface Records {
 export const observed = <E, R, DE, DR>(
   records: Records,
   target: Target,
-  delivery: Effect.Effect<Delivered, E, R>,
+  delivery: Delivered!E!R,
   database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
 ) =>
   delivery.pipe(

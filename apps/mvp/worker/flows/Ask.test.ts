@@ -13,8 +13,8 @@ import { rowIdOf } from "../RepoRuns.ts"
 import { engineSchema, executions, memory, status } from "../test/executions.ts"
 import { build } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
-import * as Ask from "./Ask.ts"
-import * as Pause from "./Pause.ts"
+import * as Ask from "./Ask.vibe"
+import * as Pause from "./Pause.vibe"
 
 const app = testFile("queue_ask")
 
@@ -195,15 +195,15 @@ test("no execution, a flow this host doesn't run, a run parked on no human task 
 test("each step writes once: a replayed open finds its row, a settled row stays settled, Postgres down is retried", async () => {
   const database = await appDatabase()
   const recorded = recording()
-  const payload = request()
+  const { options, ...payload } = request()
   const executionId = Ask.askExecutionId(payload.repo, payload.id)
   const step = <A, E>(effect: Effect.Effect<A, E, FlowRuntime.FlowInstance>) =>
     Effect.runPromise(Effect.exit(recorded.observed(effect.pipe(
       Effect.provideService(FlowRuntime.FlowInstance, { executionId } as unknown as FlowRuntime.FlowInstance["Service"]),
     ))))
   expect(await step(Ask.open(database)(payload))).toEqual(Exit.succeed({ opened: true }))
-  expect(await step(Ask.open(database)({ ...payload, prompt: "other" }))).toEqual(Exit.succeed({ opened: false }))
-  expect((await rowOf(executionId))!.wait).toMatchObject({ prompt: PROMPT })
+  expect(await step(Ask.open(database)({ ...payload, prompt: "other", options }))).toEqual(Exit.succeed({ opened: false }))
+  expect((await rowOf(executionId))!.wait).toEqual({ execution: executionId, kind: "question", prompt: PROMPT, options: [] })
   expect(await step(Ask.settle(database)({ answer: ANSWER }))).toEqual(Exit.succeed({ answered: true, answer: ANSWER }))
   expect(await step(Ask.settle(database)({ answer: null }))).toEqual(Exit.succeed({ answered: false }))
   expect(await rowOf(executionId)).toMatchObject({ status: "done", answer: { value: ANSWER } })
