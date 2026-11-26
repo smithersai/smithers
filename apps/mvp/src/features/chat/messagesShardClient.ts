@@ -15,26 +15,41 @@ export const MESSAGES_REFUSAL_HEADER = "x-smithers-messages-refusal"
 export const shardOf = (conversationId: string): ShardProtocol.ShardId =>
   Schema.decodeUnknownSync(ShardProtocol.ShardId)("conv:" + conversationId.toLowerCase())
 
+/** What every person's owner name starts with. A run's starts with its act's kind (worker/chat/MessagesShardRoutes.ts `ownerOf`). */
+export const PERSON_OWNER_PREFIX = "person:"
+
 /** The owner name ChatApi admits person `id` under: their messages' author and the prefix of their nodes. */
-export const personOwner = (id: string): string => "person:" + encodeURIComponent(id)
+export const personOwner = (id: string): string => PERSON_OWNER_PREFIX + encodeURIComponent(id)
 
 /** The node a person's `device` submits from. The shard refuses a node whose prefix is another owner's. */
 export const nodeOf = (owner: string, device: string): string => `${owner}/${device}`
 
-/** Where ChatApi serves conversation `conversationId`'s shard on `origin`. */
-export const messagesRoute = (origin: string, conversationId: string): string =>
-  `${origin}/api/conversations/${conversationId.toLowerCase()}/messages`
+const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Where ChatApi serves conversation `conversationId`'s shard on `origin`, or nothing when no request may be built from
+ * them: the id must be a UUID, so it adds one path segment and no delimiter, and `origin` must be an `http:` or
+ * `https:` URL, of which only the origin is kept (never a path, a query or credentials).
+ */
+export const messagesRoute = (origin: string, conversationId: string): string | undefined => {
+  if (!CONVERSATION_ID.test(conversationId) || !URL.canParse(origin)) return undefined
+  const base = new URL(origin)
+  return base.protocol === "http:" || base.protocol === "https:"
+    ? `${base.origin}/api/conversations/${conversationId.toLowerCase()}/messages`
+    : undefined
+}
 
 /**
  * The shard gave no protocol answer:
  * - `unreachable`: no whole answer within the deadline, its body included, for example offline;
  * - `refused`: a status other than 200, with ChatApi's `refusal` when it names one (`origin`, `author`, `person_only`,
  *   `wrong_shard`);
- * - `invalid_response`: 200 with a body outside protocol v2, or entries the reducer cannot fold.
+ * - `invalid_response`: 200 with a body outside protocol v2, or entries the reducer cannot fold;
+ * - `invalid_target`: the conversation id is not a UUID or the origin is not an HTTP origin, so nothing was sent.
  */
 export class MessagesShardUnavailable extends Data.TaggedError("MessagesShardUnavailable")<{
   readonly request: "submit" | "pull" | "snapshot"
-  readonly reason: "unreachable" | "refused" | "invalid_response"
+  readonly reason: "unreachable" | "refused" | "invalid_response" | "invalid_target"
   readonly status?: number
   readonly refusal?: string
   readonly sessionCheck?: "same_person"
@@ -43,12 +58,15 @@ export class MessagesShardUnavailable extends Data.TaggedError("MessagesShardUna
 /**
  * Whether sending the request again can succeed with nothing else changed: no answer, an answer outside the contract,
  * a `401` the page's transport found was the same person's session, or a status that is not the request's own fault.
- * `400`, `401`, `403`, `404` and `413` are final: ChatApi decided against this person or this body.
+ * `400`, `401`, `403`, `404` and `413` are final: ChatApi decided against this person or this body. So is a target
+ * no request may be built from.
  */
 export const isTransient = (error: MessagesShardUnavailable): boolean =>
-  error.reason !== "refused" ||
-  (error.status === 401 && error.sessionCheck === "same_person") ||
-  ![400, 401, 403, 404, 413].includes(error.status!)
+  error.reason !== "invalid_target" && (
+    error.reason !== "refused" ||
+    (error.status === 401 && error.sessionCheck === "same_person") ||
+    ![400, 401, 403, 404, 413].includes(error.status!)
+  )
 
 export interface TransportOptions {
   /** ChatApi's origin, as the browser reaches it. */
@@ -67,11 +85,13 @@ export const make = Effect.fnUntraced(function* (options: TransportOptions) {
   const route = messagesRoute(options.origin, options.conversationId)
   const ask = <A>(
     request: MessagesShardUnavailable["request"],
-    send: HttpClientRequest.HttpClientRequest,
+    send: (route: string) => HttpClientRequest.HttpClientRequest,
     decode: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, unknown>,
   ): Effect.Effect<A, MessagesShardUnavailable> =>
     Effect.gen(function* () {
-      const response = yield* client.execute(send).pipe(
+      // No route, no request: an id or an origin that is not what it must be is never put into a signed-in URL.
+      if (route === undefined) return yield* new MessagesShardUnavailable({ request, reason: "invalid_target" })
+      const response = yield* client.execute(send(route)).pipe(
         Effect.mapError(() => new MessagesShardUnavailable({ request, reason: "unreachable" })),
       )
       yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
@@ -100,22 +120,23 @@ export const make = Effect.fnUntraced(function* (options: TransportOptions) {
     submit: (request) =>
       ask(
         "submit",
-        HttpClientRequest.post(`${route}/submit`).pipe(
-          HttpClientRequest.bodyJsonUnsafe(request),
-          HttpClientRequest.setHeader(CONFIRM_401_HEADER, "1"),
-        ),
+        (route) =>
+          HttpClientRequest.post(`${route}/submit`).pipe(
+            HttpClientRequest.bodyJsonUnsafe(request),
+            HttpClientRequest.setHeader(CONFIRM_401_HEADER, "1"),
+          ),
         HttpClientResponse.schemaBodyJson(ShardProtocol.SubmitResponse),
       ),
     pull: (request) =>
       ask(
         "pull",
-        HttpClientRequest.get(`${route}/pull?${ShardProtocol.pullQuery(request)}`),
+        (route) => HttpClientRequest.get(`${route}/pull?${ShardProtocol.pullQuery(request)}`),
         HttpClientResponse.schemaBodyJson(ShardProtocol.PullResponse),
       ),
     snapshot: (shard) =>
       ask(
         "snapshot",
-        HttpClientRequest.get(`${route}/snapshot?${new URLSearchParams({ shard })}`),
+        (route) => HttpClientRequest.get(`${route}/snapshot?${new URLSearchParams({ shard })}`),
         HttpClientResponse.schemaBodyJson(ShardProtocol.SnapshotResponse),
       ),
   }

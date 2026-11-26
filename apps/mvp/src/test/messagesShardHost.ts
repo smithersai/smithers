@@ -138,6 +138,13 @@ export const shardHost = Effect.fnUntraced(function* (options: { readonly path?:
     /** The state a fresh wake of the conversation's object rebuilds from its SQLite. */
     state: (conversationId: string) => Effect.flatMap(live(conversationId), (hub) => hub.state),
     head: (conversationId: string) => Effect.flatMap(live(conversationId), (hub) => hub.journal.head),
+    /** The events of each entry the conversation's shard sequenced after `after`, as its journal holds them. */
+    events: (conversationId: string, after: number) =>
+      Effect.gen(function* () {
+        const shard = Messages.shardOf(conversationId)
+        const page = yield* (yield* live(conversationId)).journal.pull({ version: 2, shard, epoch: 0, after, limit: 256 })
+        return page._tag === "Page" ? page.entries.map((entry) => entry.events) : []
+      }),
     /** Folds the conversation's history through its head into the snapshot, then wakes its object over it. */
     compact: (conversationId: string) =>
       Effect.gen(function* () {

@@ -12,12 +12,17 @@ import {
   Command as CommandSchema,
   type Command,
   decide,
+  type DomainEvent,
   Envelope,
   evolve,
   initialAppState,
   initialReplica,
   initialShardState,
   installSnapshot,
+  MAX_LABEL_LENGTH,
+  MAX_MARK_LENGTH,
+  MAX_PARTS,
+  MAX_SUMMARY_LENGTH,
   rebasePending,
   referenceMachine,
   sha256Hex,
@@ -227,6 +232,230 @@ describe("chat", () => {
     expect(reasonOf(shard.state, status("m1", "failed"))).toBe("terminal_status")
     expect(reasonOf(shard.state, status("m1", "complete"))).toBe("accepted:0")
     expect(reasonOf(shard.state, status("nope", "complete"))).toBe("message_missing")
+  })
+
+  type Post = Extract<Command, { _tag: "PostMessage" }>
+  type Metadata = Omit<Extract<Command, { _tag: "UpdateMessageMetadata" }>, "_tag" | "messageId">
+  const meta = (messageId: string, fields: Metadata): Command => ({ _tag: "UpdateMessageMetadata", messageId, ...fields })
+  const origin = { role: "assistant", questionId: "q1", position: 7, createdAt: "2026-11-25T10:00:00Z" } as const
+  const answer: Post = { _tag: "PostMessage", messageId: "a1", author: "run", body: "", ...origin }
+  const step = (id: string, state: "running" | "done" | "failed") =>
+    ({ id, kind: "step", flow: "chat/copy", status: state }) as const
+
+  it("keeps a message, a command, an event, and a snapshot from before the added fields exactly as they were", () => {
+    const shard = build([post("m1", "one")])
+    expect(shard.state.chat.messages).toEqual([{ id: "m1", author: "will", body: "one", status: "posted", hubSeq: 1 }])
+    expect(Object.keys(shard.state.chat.messages[0]!)).toEqual(["id", "author", "body", "status", "hubSeq"])
+    expect(shard.log[0]!.event).toEqual({ _tag: "MessagePosted", id: "m1", author: "will", body: "one" })
+    // The five-field shard of the previous model decodes, and hashes to what the extended model holds.
+    const legacy = {
+      epoch: 0,
+      headSeq: 1,
+      state: { plan: { revision: 0, nodes: {} }, chat: { messages: [{ id: "m1", author: "will", body: "one", status: "posted", hubSeq: 1 }] } },
+      receipts: {
+        [JSON.stringify(["t", "c0"])]: { origin: "t", commandId: "c0", command: { _tag: "PostMessage", messageId: "m1", author: "will", body: "one" }, firstSeq: 1, count: 1 }
+      },
+      log: [{ hubSeq: 1, epoch: 0, origin: "t", commandId: "c0", event: { _tag: "MessagePosted", id: "m1", author: "will", body: "one" } }]
+    }
+    expect(canonicalJson(shard)).toBe(canonicalJson(legacy))
+    expect(canonicalHash(Schema.decodeUnknownSync(ShardState)(JSON.parse(JSON.stringify(legacy))))).toBe(canonicalHash(shard))
+  })
+
+  it("stores what the post says about the message, and compares it on a repeated post", () => {
+    const shard = build([answer])
+    expect(shard.state.chat.messages).toEqual([{ id: "a1", author: "run", body: "", status: "posted", hubSeq: 1, ...origin }])
+    expect(shard.log[0]!.event).toEqual({ _tag: "MessagePosted", id: "a1", author: "run", body: "", ...origin })
+    expect(reasonOf(shard.state, answer)).toBe("accepted:0")
+    expect(reasonOf(shard.state, { ...answer, role: "user" })).toBe("message_conflict")
+    expect(reasonOf(shard.state, { ...answer, position: 8 })).toBe("message_conflict")
+    const { questionId: _, ...unlinked } = answer
+    expect(reasonOf(shard.state, unlinked)).toBe("message_conflict")
+    // A post without origin fields over one that has none is the same post; over one that has some, it is not.
+    expect(reasonOf(build([post("m1", "one")]).state, { ...post("m1", "one"), role: "user" } as Command)).toBe("message_conflict")
+  })
+
+  it("patches metadata field by field while a message streams", () => {
+    const shard = build([
+      answer,
+      status("a1", "streaming"),
+      meta("a1", { parts: [step("0.0", "running")], modelId: "m-large", inputTokens: 12 }),
+      meta("a1", { parts: [step("0.0", "done"), step("0.1", "running")], outputTokens: 3, updatedAt: "t1" }),
+      meta("a1", { outputTokens: 40, stopReason: "end_turn", summary: "s", summaryRevision: "r", phase: "{}", arc: "[]" })
+    ])
+    expect(shard.state.chat.messages).toEqual([{
+      id: "a1",
+      author: "run",
+      body: "",
+      status: "streaming",
+      hubSeq: 1,
+      ...origin,
+      parts: [step("0.0", "done"), step("0.1", "running")],
+      modelId: "m-large",
+      stopReason: "end_turn",
+      inputTokens: 12,
+      outputTokens: 40,
+      summary: "s",
+      summaryRevision: "r",
+      phase: "{}",
+      arc: "[]",
+      updatedAt: "t1"
+    }])
+    expect(shard.log[3]!.event).toEqual({
+      _tag: "MessageMetadataUpdated",
+      id: "a1",
+      parts: [step("0.0", "done"), step("0.1", "running")],
+      outputTokens: 3,
+      updatedAt: "t1"
+    })
+    // A patch that changes nothing, an empty one included, takes no hubSeq.
+    expect(reasonOf(shard.state, meta("a1", {}))).toBe("accepted:0")
+    expect(reasonOf(shard.state, meta("a1", { inputTokens: 12, summary: "s" }))).toBe("accepted:0")
+    expect(reasonOf(shard.state, meta("a1", { parts: [step("0.0", "done"), step("0.1", "running")] }))).toBe("accepted:0")
+    expect(reasonOf(shard.state, meta("a1", { parts: [] }))).toBe("accepted:1")
+    expect(reasonOf(shard.state, meta("nope", { summary: "s" }))).toBe("message_missing")
+    // An explicit `undefined` is an absent field: it erases nothing.
+    const sparse = { _tag: "UpdateMessageMetadata", messageId: "a1", modelId: undefined, summary: "s2" } as unknown as Command
+    const next = submit(shard, { epoch: 0, origin: "t", commandId: "sparse", command: sparse }).state
+    expect(next.state.chat.messages[0]).toMatchObject({ modelId: "m-large", summary: "s2" })
+    expect(Object.keys(next.log.at(-1)!.event).sort()).toEqual(["_tag", "id", "summary"])
+  })
+
+  it("freezes run metadata once the status is terminal, and still takes notes", () => {
+    for (const terminal of ["complete", "failed"] as const) {
+      const ended = [
+        answer,
+        meta("a1", { parts: [step("0.0", "done")], failure: "empty", inputTokens: 1 }),
+        status("a1", terminal)
+      ]
+      const shard = build(ended)
+      expect(reasonOf(shard.state, meta("a1", { inputTokens: 2 }))).toBe("terminal_metadata")
+      expect(reasonOf(shard.state, meta("a1", { outputTokens: 0 }))).toBe("terminal_metadata")
+      expect(reasonOf(shard.state, meta("a1", { failure: "quota" }))).toBe("terminal_metadata")
+      expect(reasonOf(shard.state, meta("a1", { parts: [step("0.0", "failed")] }))).toBe("terminal_metadata")
+      expect(reasonOf(shard.state, meta("a1", { modelId: "m" }))).toBe("terminal_metadata")
+      expect(reasonOf(shard.state, meta("a1", { stopReason: "end_turn" }))).toBe("terminal_metadata")
+      // One changed run field refuses the whole patch, notes included.
+      expect(reasonOf(shard.state, meta("a1", { summary: "s", inputTokens: 2 }))).toBe("terminal_metadata")
+      // The same run values with new notes: accepted, and the status stays where it ended.
+      const noted = build([...ended, meta("a1", { inputTokens: 1, summary: "s", phase: "{}", arc: "[]", updatedAt: "t2" })])
+      expect(noted.state.chat.messages[0]).toMatchObject({ status: terminal, inputTokens: 1, summary: "s", updatedAt: "t2" })
+      expect(noted.state.chat.messages[0]).toMatchObject(shard.state.chat.messages[0]!)
+      expect(reasonOf(noted.state, status("a1", "streaming"))).toBe("terminal_status")
+    }
+  })
+
+  it("never aliases a command's parts into an event or the state", () => {
+    const parts = [{ id: "0.0", kind: "step" as const, flow: "chat/copy", status: "running" as "running" | "done" }]
+    const posted = build([answer]).state
+    const decision = decide(posted, meta("a1", { parts }))
+    const event = (decision as { events: ReadonlyArray<DomainEvent> }).events[0]!
+    const state = evolve(posted, { hubSeq: 2, epoch: 0, origin: "t", commandId: "c", event })
+    parts[0]!.status = "done"
+    parts.push({ id: "0.1", kind: "step", flow: "chat/edit", status: "running" })
+    expect(event).toEqual({ _tag: "MessageMetadataUpdated", id: "a1", parts: [step("0.0", "running")] })
+    ;(event as unknown as { parts: Array<unknown> }).parts.length = 0
+    expect(state.chat.messages[0]!.parts).toEqual([step("0.0", "running")])
+  })
+
+  it("refuses a negative or fractional count or position at the wire, as Lean's Nat does", () => {
+    const decode = Schema.decodeUnknownExit(CommandSchema)
+    for (const value of [-1, 0.5]) {
+      expect(decode({ ...answer, position: value })._tag).toBe("Failure")
+      expect(decode(meta("a1", { inputTokens: value }))._tag).toBe("Failure")
+      expect(decode(meta("a1", { outputTokens: value }))._tag).toBe("Failure")
+    }
+    expect(decode({ ...answer, role: "system" })._tag).toBe("Failure")
+    expect(decode(meta("a1", { failure: "nope" as "quota" }))._tag).toBe("Failure")
+    expect(decode({ ...meta("a1", {}), parts: [{ id: "0.0", kind: "tool", flow: "f", status: "done" }] })._tag).toBe("Failure")
+    expect(decode(answer)._tag).toBe("Success")
+    expect(decode(meta("a1", { parts: [step("0.0", "done")], inputTokens: 0, failure: "unfinished" }))._tag).toBe("Success")
+  })
+
+  it("posts a message with its first run and notes as one command and one event", () => {
+    const born: Post = { ...answer, parts: [step("0.0", "running")], modelId: "m-large", summary: "a summary" }
+    const shard = build([born])
+    const { _tag: _, messageId, ...said } = born
+    expect(shard.log).toHaveLength(1)
+    expect(shard.log[0]!.event).toEqual({ _tag: "MessagePosted", id: messageId, ...said })
+    expect(shard.state.chat.messages).toEqual([{ id: messageId, status: "posted", hubSeq: 1, ...said }])
+    // The post again, or with less: everything it says already holds.
+    expect(reasonOf(shard.state, born)).toBe("accepted:0")
+    expect(reasonOf(shard.state, answer)).toBe("accepted:0")
+    expect(reasonOf(shard.state, { ...answer, summary: "a summary" })).toBe("accepted:0")
+    // The posted parts are the event's own copy.
+    ;(born.parts as Array<unknown>).length = 0
+    expect(shard.state.chat.messages[0]!.parts).toEqual([step("0.0", "running")])
+  })
+
+  it("never lets a post change a message that exists: other run fields or notes are a conflict", () => {
+    const first: Post = { ...answer, modelId: "m-large", summary: "the first summary" }
+    const shard = build([first])
+    for (const other of [
+      { ...first, summary: "the second summary" },
+      { ...first, modelId: "m-small" },
+      { ...first, phase: "{}" },
+      { ...answer, inputTokens: 1 },
+      { ...first, body: "other text", summary: "the second summary" }
+    ] satisfies ReadonlyArray<Post>) {
+      const { result, state } = submit(shard, { epoch: 0, origin: "elsewhere", commandId: "c", command: other })
+      expect(result).toEqual({ _tag: "Refused", reason: "message_conflict" })
+      expect(state).toBe(shard)
+      expect(rebasePending(shard.state, [other]).state).toBe(shard.state)
+    }
+    expect(shard.state.chat.messages[0]).toMatchObject({ body: "", modelId: "m-large", summary: "the first summary" })
+    // Once a later patch has moved a field, the post that named its old value no longer holds.
+    const moved = build([first, meta("a1", { summary: "rewritten" })])
+    expect(reasonOf(moved.state, first)).toBe("message_conflict")
+    expect(reasonOf(moved.state, answer)).toBe("accepted:0")
+  })
+
+  it("bounds every added string and list at the wire, on a post and on a patch alike", () => {
+    const decode = Schema.decodeUnknownExit(CommandSchema)
+    const text = (length: number) => "x".repeat(length)
+    const steps = (count: number) => Array.from({ length: count }, (_, index) => step(`0.${index}`, "done"))
+    expect([MAX_SUMMARY_LENGTH, MAX_MARK_LENGTH, MAX_PARTS, MAX_LABEL_LENGTH]).toEqual([96, 512, 64, 256])
+    const within: Metadata = {
+      summary: text(96),
+      phase: text(512),
+      arc: text(512),
+      parts: steps(64),
+      modelId: text(256),
+      stopReason: text(256),
+      summaryRevision: text(256),
+      updatedAt: text(256)
+    }
+    expect(decode(meta("a1", within))._tag).toBe("Success")
+    expect(decode({ ...answer, ...within, questionId: text(256), createdAt: text(256) })._tag).toBe("Success")
+    const over: ReadonlyArray<Record<string, unknown>> = [
+      { summary: text(97) },
+      { phase: text(513) },
+      { arc: text(513) },
+      { parts: steps(65) },
+      { parts: [{ ...step("0.0", "done"), id: text(257) }] },
+      { parts: [{ ...step("0.0", "done"), flow: text(257) }] },
+      { modelId: text(257) },
+      { stopReason: text(257) },
+      { summaryRevision: text(257) },
+      { updatedAt: text(257) }
+    ]
+    for (const fields of over) {
+      expect(decode({ ...meta("a1", {}), ...fields })._tag, Object.keys(fields)[0]).toBe("Failure")
+      expect(decode({ ...answer, ...fields })._tag, Object.keys(fields)[0]).toBe("Failure")
+    }
+    expect(decode({ ...answer, questionId: text(257) })._tag).toBe("Failure")
+    expect(decode({ ...answer, createdAt: text(257) })._tag).toBe("Failure")
+    // A stored message and an event are held to the same bounds: nothing longer is ever folded.
+    const state = { ...initialShardState, state: { plan: initialAppState.plan, chat: { messages: [{ id: "m", author: "a", body: "", status: "posted", hubSeq: 1, summary: text(97) }] } } }
+    expect(Schema.decodeUnknownExit(ShardState)(state)._tag).toBe("Failure")
+  })
+
+  it("decodes a command to its declared fields only: what the schema does not name is dropped", () => {
+    const decode = Schema.decodeUnknownSync(CommandSchema)
+    const extra = { __proto__: null, smuggled: { deep: [1, 2, 3] }, hubSeq: 99, status: "complete" }
+    expect(decode({ ...answer, summary: "s", ...extra })).toEqual({ ...answer, summary: "s" })
+    expect(decode({ ...meta("a1", { parts: [{ ...step("0.0", "done"), smuggled: true } as never] }), ...extra }))
+      .toEqual(meta("a1", { parts: [step("0.0", "done")] }))
+    expect(decode({ ...status("a1", "complete"), smuggled: 1, summary: "s" })).toEqual(status("a1", "complete"))
   })
 })
 

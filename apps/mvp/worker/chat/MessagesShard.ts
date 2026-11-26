@@ -11,7 +11,8 @@ import {
 } from "@smthrs/app-state"
 import { DoSqliteShard, type ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { ShardClient, ShardProtocol } from "@smthrs/sync"
-import { Data, Effect, Schema } from "effect"
+import { Data, Effect, Option, Schema } from "effect"
+import { parseMark } from "../../src/features/timeline/marks.ts"
 
 // A conversation's messages as one event-sourced SQLite shard (decision 0170, slice 3). One Durable Object sequences
 // one conversation: it assigns each accepted command the next `hubSeq` and keeps one receipt per
@@ -25,6 +26,21 @@ export const shardOf = (conversationId: string): ShardProtocol.ShardId =>
 export const readCapability = (shard: ShardProtocol.ShardId) => "messages:read:" + shard
 export const writeCapability = (shard: ShardProtocol.ShardId) => "messages:write:" + shard
 
+/** What every person's owner name starts with (MessagesShardRoutes.ts `personOwner`). A run's starts with its act's kind. */
+const PERSON_OWNER_PREFIX = "person:"
+
+/** A summary as the timeline writes one (TimelineSummaries.vibe `record`): one line of 1 to 96 characters, no markup. */
+const SUMMARY = /^[^\n\r<>`]{1,96}$/
+
+/**
+ * Whether the notes a command carries are ones the timeline reads: a summary in its own form, and a phase and an arc
+ * that each parse as a mark (src/features/timeline/marks.ts `parseMark`, which caps a mark at 512 characters).
+ */
+const readableNotes = (payload: ChatCommand): boolean =>
+  payload._tag === "UpdateMessageStatus" ||
+  ((payload.summary === undefined || SUMMARY.test(payload.summary)) &&
+    [payload.phase, payload.arc].every((mark) => mark === undefined || Option.isSome(parseMark(mark))))
+
 /** Why a submit never reached the sequencer. */
 export type RefusalReason = "invalid" | "wrong_shard" | "origin" | "person_only" | "author"
 
@@ -34,7 +50,8 @@ export class Refused extends Data.TaggedError("MessagesRefused")<{ readonly reas
 /**
  * Who submits, as the Worker admitted them: `author` is their owner name (MessagesShardRoutes.ts `ownerOf`), the only
  * name their messages may carry and the prefix of every node they submit from. It never contains a slash. `person` is
- * the owner name of the person a run acts for, so a run posting under it is named for what it tried.
+ * the owner name of the person a run acts for, so a run posting under it, or posting a question (`role: "user"`), is
+ * named for what it tried. Only a person, acting as themselves, posts a question.
  */
 export interface Writer {
   readonly author: string
@@ -97,12 +114,12 @@ export const make = Effect.fnUntraced(function*(storage: ObjectDatabase.Storage,
   }
   const { shard: journal } = yield* DoSqliteShard.make(trackedStorage, {
     shard,
-    // Inside `transactionSync`, after `StaleEpoch` and receipt checks: a status update for an existing message owned
-    // by another author rolls back with no receipt and no `hubSeq`; a status for a missing message proceeds to
-    // `decideChat`, which refuses it with a receipt.
+    // Inside `transactionSync`, after `StaleEpoch` and receipt checks: a status or metadata update for an existing
+    // message owned by another author rolls back with no receipt and no `hubSeq`; an update for a missing message
+    // proceeds to `decideChat`, which refuses it with a receipt.
     decide: (command) => {
       const payload = decodeCommand(command.payload)
-      if (payload._tag === "UpdateMessageStatus") {
+      if (payload._tag !== "PostMessage") {
         const author = findMessage(chat, payload.messageId)?.author
         if (author !== undefined && author !== originOwner(command.key[0])) {
           throw new Refused({ reason: "author" })
@@ -134,9 +151,14 @@ export const make = Effect.fnUntraced(function*(storage: ObjectDatabase.Storage,
   /** Request-scoped refusals that depend only on the admitted writer and command, never on mutable state. */
   const refusal = (writer: Writer, command: ShardProtocol.Command, payload: ChatCommand): RefusalReason | undefined => {
     if (!ownsOrigin(writer.author, command.key[0])) return "origin"
-    if (payload._tag === "PostMessage" && payload.author !== writer.author) {
-      return payload.author === writer.person ? "person_only" : "author"
+    if (payload._tag === "PostMessage") {
+      // A question is a person's own: a run, whoever it acts for, never posts a message that reads as one, even when naming someone else.
+      if (payload.role === "user" && (!writer.author.startsWith(PERSON_OWNER_PREFIX) || writer.person !== undefined)) {
+        return "person_only"
+      }
+      if (payload.author !== writer.author) return payload.author === writer.person ? "person_only" : "author"
     }
+    if (!readableNotes(payload)) return "invalid"
     return undefined
   }
 
@@ -157,7 +179,9 @@ export const make = Effect.fnUntraced(function*(storage: ObjectDatabase.Storage,
         )
         const reason = refusal(writer, request.command, payload)
         if (reason !== undefined) return yield* new Refused({ reason })
-        return yield* journal.submit(request).pipe(
+        // The journal sequences and hashes the decoded payload, which holds the schema's fields and nothing else:
+        // whatever else the body carried is never walked, stored or sent on.
+        return yield* journal.submit({ ...request, command: { ...request.command, payload } }).pipe(
           Effect.orDie,
           Effect.catchDefect((defect) => (defect instanceof Refused ? Effect.fail(defect) : Effect.die(defect)))
         )

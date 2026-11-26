@@ -1,7 +1,7 @@
 import { canonicalHash, emptyChat } from "@smthrs/app-state"
 import { JournalCollection } from "@smthrs/effect-tanstack-db"
 import { ShardClient, ShardProtocol } from "@smthrs/sync"
-import { Context, Effect, Exit, Layer, Option, Schedule, Scope, SubscriptionRef } from "effect"
+import { Context, Effect, Exit, Layer, Option, Schedule, Schema, Scope, SubscriptionRef } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { join } from "node:path"
 import { expect, test } from "vitest"
@@ -13,6 +13,7 @@ import * as MessagesShard from "./messagesShard"
 import { MessagesShards, MessagesWriteRefused, type ShardMessage } from "./messagesShard"
 import * as MessagesShardClient from "./messagesShardClient"
 import { MessagesShardUnavailable, nodeOf, personOwner, shardOf } from "./messagesShardClient"
+import { Message as ChatRow } from "./schema"
 
 // The browser's replica of a conversation's shard, end to end with nothing replaced: a TanStack DB collection over
 // `ShardClient`, over the HTTP transport, over ChatApi's real route (worker/chat/MessagesShardRoutes.ts `dispatch`),
@@ -375,6 +376,187 @@ test("a write the reducer has no command for is refused before anything is queue
     expect((yield* host.head(conversation)).seq).toBe(2)
   })))
 
+test("a post carries what it says about the message; an update patches its metadata, then moves its status", () =>
+  run(Effect.gen(function* () {
+    const host = yield* shardHost()
+    const laptop = yield* open(host, ada, nodeOf(ADA, "laptop"))
+    const phone = yield* open(host, bob, nodeOf(BOB, "phone"))
+    const said = { role: "assistant", questionId: "m0", position: 3, createdAt: "2026-11-25 10:00:00+00" } as const
+    const step = (id: string, status: "running" | "done") => ({ id, kind: "step", flow: "chat/copy", status }) as const
+    const stored = Effect.map(host.state(conversation), (hub) => hub.chat.messages[0])
+    const head = Effect.map(host.head(conversation), (position) => position.seq)
+
+    // An insert with metadata is one command and one entry: the post carries it.
+    host.requests.length = 0
+    yield* (yield* laptop.messages.insert({ ...row("a1", ADA, ""), ...said, modelId: "m-large" })).persisted
+    const posted = { id: "a1", author: ADA, body: "", status: "posted", hubSeq: 1, ...said, modelId: "m-large" }
+    expect(yield* stored).toEqual(posted)
+    expect(yield* head).toBe(1)
+    expect(submits(host)).toBe(1)
+    expect(yield* host.events(conversation, 0)).toEqual([
+      [{ _tag: "MessagePosted", id: "a1", author: ADA, body: "", ...said, modelId: "m-large" }],
+    ])
+
+    // Metadata and status in one write: the patch first, only with what changed, then the status.
+    yield* (yield* laptop.messages.update("a1", (draft) => {
+      draft.parts = [step("0.0", "running")]
+      draft.inputTokens = 5
+      draft.status = "streaming"
+    })).persisted
+    expect(yield* head).toBe(3)
+    expect(yield* host.events(conversation, 1)).toEqual([
+      [{ _tag: "MessageMetadataUpdated", id: "a1", parts: [step("0.0", "running")], inputTokens: 5 }],
+      [{ _tag: "MessageStatusUpdated", id: "a1", status: "streaming" }],
+    ])
+
+    // Metadata alone is one command, and what did not change is not sent again.
+    yield* (yield* laptop.messages.update("a1", (draft) => {
+      draft.parts = [step("0.0", "done")]
+      draft.outputTokens = 9
+    })).persisted
+    expect(yield* head).toBe(4)
+    expect(yield* host.events(conversation, 3)).toEqual([
+      [{ _tag: "MessageMetadataUpdated", id: "a1", parts: [step("0.0", "done")], outputTokens: 9 }],
+    ])
+
+    // How an answer ended, and its end, in one write: the run metadata lands before the status freezes it.
+    yield* (yield* laptop.messages.update("a1", (draft) => {
+      draft.failure = "empty"
+      draft.stopReason = "end_turn"
+      draft.status = "failed"
+    })).persisted
+    expect(yield* head).toBe(6)
+    const ended = {
+      ...posted,
+      status: "failed",
+      parts: [step("0.0", "done")],
+      inputTokens: 5,
+      outputTokens: 9,
+      failure: "empty",
+      stopReason: "end_turn",
+    }
+    expect(yield* stored).toEqual(ended)
+
+    // Once it has ended its run metadata is frozen, and the refused write rolls back.
+    const late = yield* laptop.messages.update("a1", (draft) => void (draft.inputTokens = 6))
+    expect(yield* failureOf(late)).toEqual(new MessagesWriteRefused({ reason: "refused", detail: "terminal_metadata" }))
+    expect(Option.getOrThrow(yield* laptop.messages.get("a1"))).toMatchObject({ inputTokens: 5 })
+    // A note is still taken.
+    yield* (yield* laptop.messages.update("a1", (draft) => {
+      draft.summary = "nothing came back"
+      draft.updatedAt = "2026-11-25 10:00:09+00"
+    })).persisted
+    expect(yield* head).toBe(7)
+
+    // The reducer has no command that changes what the post said, and the collection takes no field away.
+    const unsupported = new MessagesWriteRefused({ reason: "unsupported", detail: "update" })
+    expect((yield* Effect.exit(laptop.messages.update("a1", (draft) => void delete draft.summary)))._tag).toBe("Failure")
+    expect(yield* failureOf(yield* laptop.messages.update("a1", (draft) => void (draft.role = "user")))).toEqual(unsupported)
+    expect(yield* failureOf(yield* laptop.messages.update("a1", (draft) => void (draft.position = 4)))).toEqual(unsupported)
+    expect(yield* head).toBe(7)
+
+    // Another person's replica folds the same message, and both show it as the row chat's pages read.
+    yield* phone.resume
+    const noted = { ...ended, summary: "nothing came back", updatedAt: "2026-11-25 10:00:09+00" }
+    expect((yield* phone.chat).messages).toEqual([noted])
+    expect(canonicalHash(yield* phone.chat)).toBe((yield* host.state(conversation)).hash)
+    expect(canonicalHash(yield* laptop.chat)).toBe((yield* host.state(conversation)).hash)
+    expect(MessagesShard.rowsOf(yield* phone.chat, { conversationId: conversation })).toEqual([{
+      id: "a1",
+      role: "assistant",
+      text: "",
+      status: "failed",
+      questionId: "m0",
+      failure: "empty",
+      modelId: "m-large",
+      stopReason: "end_turn",
+      inputTokens: 5,
+      outputTokens: 9,
+      position: 3,
+      createdAt: "2026-11-25 10:00:00+00",
+      updatedAt: "2026-11-25 10:00:09+00",
+      conversationId: conversation,
+      parts: [step("0.0", "done")],
+      summary: "nothing came back",
+      summaryRevision: null,
+      phase: null,
+      arc: null,
+    }])
+  })))
+
+test("a shard message maps to the row chat reads, with Postgres's defaults for what it lacks", () => {
+  const decode = Schema.decodeUnknownSync(ChatRow)
+  const context = { conversationId: conversation }
+  // A message from before the reducer carried the fields: a person's is a question, at the place it was sequenced.
+  const bare = MessagesShard.rowOf({ ...row("m1", ADA, "hello"), hubSeq: 4 }, context)
+  expect(bare).toEqual({
+    id: "m1",
+    role: "user",
+    text: "hello",
+    status: "done",
+    questionId: null,
+    failure: null,
+    modelId: null,
+    stopReason: null,
+    inputTokens: null,
+    outputTokens: null,
+    position: 4,
+    createdAt: "",
+    updatedAt: "",
+    conversationId: conversation,
+    summary: null,
+    summaryRevision: null,
+    phase: null,
+    arc: null,
+  })
+  expect(bare).not.toHaveProperty("parts")
+  expect(decode(bare)).toEqual(bare)
+  // A run's is an answer. A person's post may say it is one too.
+  expect(MessagesShard.rowOf(row("a1", "agent:ada:run-1:run-1"), context)).toMatchObject({ role: "assistant", position: 0 })
+  expect(MessagesShard.rowOf({ ...row("m2", ADA), role: "assistant" }, context).role).toBe("assistant")
+  expect(MessagesShard.rowOf({ ...row("m2", ADA), role: "user" }, context).role).toBe("user")
+  // A message whose verified author is not a person never reads as a person's, whatever its post says: not a run's,
+  // and not one whose name only resembles a person's.
+  for (const author of ["agent:ada:run-1:run-1", "flow:ada:summary:1", "ada", "Person:ada", "xperson:ada", " person:ada", ""]) {
+    expect(MessagesShard.rowOf({ ...row("a1", author), role: "user" }, context).role, author).toBe("assistant")
+    expect(MessagesShard.rowsOf({ messages: [{ ...row("a1", author), role: "user" }] }, context)[0]!.role, author).toBe("assistant")
+  }
+  expect(MessagesShard.rowOf({ ...row("m2", ADA), createdAt: "t0" }, context)).toMatchObject({ createdAt: "t0", updatedAt: "t0" })
+  expect((["posted", "streaming", "complete", "failed"] as const).map((status) =>
+    MessagesShard.rowOf({ ...row("m3", ADA), status }, context).status
+  )).toEqual(["done", "streaming", "done", "failed"])
+
+  // Every field the reducer carries reaches its column.
+  const full: ShardMessage = {
+    id: "a2",
+    author: "agent:ada:run-1:run-1",
+    body: "an answer",
+    status: "complete",
+    hubSeq: 9,
+    role: "assistant",
+    questionId: "m1",
+    position: 0,
+    createdAt: "t0",
+    parts: [{ id: "0.0", kind: "step", flow: "chat/copy", status: "done" }],
+    failure: "unfinished",
+    modelId: "m-large",
+    stopReason: "end_turn",
+    inputTokens: 0,
+    outputTokens: 12,
+    summary: "a summary",
+    summaryRevision: "rev-1",
+    phase: "{\"title\":\"plan\"}",
+    arc: "{\"title\":\"build\"}",
+    updatedAt: "t1",
+  }
+  const { author: _, body, hubSeq: __, status: ___, ...columns } = full
+  const mapped = MessagesShard.rowOf(full, context)
+  expect(mapped).toEqual({ ...columns, text: body, status: "done", conversationId: conversation })
+  expect(decode(mapped)).toEqual(mapped)
+  expect(MessagesShard.rowsOf({ messages: [full, row("m1", ADA)] }, context).map((mapped) => mapped.id)).toEqual(["a2", "m1"])
+  expect(MessagesShard.rowsOf(emptyChat, context)).toEqual([])
+})
+
 test("entries or a snapshot the reducer cannot fold fail the pull and move nothing; the next pull recovers", () =>
   run(Effect.gen(function* () {
     const host = yield* shardHost()
@@ -471,6 +653,14 @@ test("the browser folds deliveries exactly as the shard does", () => {
         entry(3, [{ _tag: "MessageStatusUpdated", id: "m1", status: "complete" }]),
       ],
     },
+    {
+      _tag: "Entries",
+      through: { shard, epoch: 0, seq: 5 },
+      entries: [
+        entry(4, [{ _tag: "MessagePosted", id: "m2", author: ADA, body: "two", role: "user", position: 2, createdAt: "t0" }]),
+        entry(5, [{ _tag: "MessageMetadataUpdated", id: "m2", summary: "a summary", inputTokens: 3 }]),
+      ],
+    },
     { _tag: "Reset", snapshot: { position: { shard, epoch: 0, seq: 0 }, state: null } },
     {
       _tag: "Reset",
@@ -488,9 +678,11 @@ test("the browser folds deliveries exactly as the shard does", () => {
     theirs = WorkerShard.apply(theirs, delivery)
     expect(mine).toEqual(theirs)
     if (delivery._tag === "Entries") {
-      expect(MessagesShard.changesBetween(before, mine)).toEqual([{ type: "insert", value: mine.messages[0] }])
+      // The message the delivery posts, and then moves: an insert from before it, an update from between.
+      const posted = mine.messages.at(-1)
+      expect(MessagesShard.changesBetween(before, mine)).toEqual([{ type: "insert", value: posted }])
       const moved = MessagesShard.fold(before, { ...delivery, entries: delivery.entries.slice(0, 1) })
-      expect(MessagesShard.changesBetween(moved, mine)).toEqual([{ type: "update", value: mine.messages[0] }])
+      expect(MessagesShard.changesBetween(moved, mine)).toEqual([{ type: "update", value: posted }])
       expect(MessagesShard.changesBetween(mine, mine)).toEqual([])
     }
   }
@@ -547,4 +739,113 @@ test("MessagesShards opens one replica a conversation, over the layer's HttpClie
       .pipe(Effect.provide(httpOf(host, ada)))).pull({ version: 2, shard, epoch: 0, after: 3, limit: 1 })
     expect(page).toMatchObject({ entries: [{ key: [nodeOf(ADA, "laptop"), "0"] }] })
     expect((yield* stores.get(conversation)!.load).nextCommand).toBe(1)
+  })))
+
+test("a refused insert never changes the message that stands: two devices, one author, one id", () =>
+  run(Effect.gen(function* () {
+    const host = yield* shardHost({ path: (id) => join(files, `conflict-${id}.sqlite`) })
+    const said = { role: "user", position: 1, createdAt: "2026-11-25 10:00:00+00" } as const
+    const first: ShardMessage = { ...row("m1", ADA, "the first draft"), ...said, summary: "the first summary", updatedAt: "t1" }
+    const second: ShardMessage = { ...row("m1", ADA, "the second draft"), ...said, summary: "the second summary", updatedAt: "t2" }
+    const stands = { ...first, hubSeq: 1 }
+
+    const laptop = yield* open(host, ada, nodeOf(ADA, "laptop"))
+    yield* (yield* laptop.messages.insert(first)).persisted
+    // The same person's second device, which has not read `m1`, inserts another draft under its id.
+    const tablet = yield* open(host, ada, nodeOf(ADA, "tablet"))
+    host.requests.length = 0
+    const conflicting = yield* tablet.messages.insert(second)
+    expect(yield* failureOf(conflicting)).toEqual(new MessagesWriteRefused({ reason: "refused", detail: "message_conflict" }))
+    // One logical write is one command: there was no second submit to land on the first device's message.
+    expect(submits(host)).toBe(1)
+    expect(yield* tablet.state).toMatchObject({ outbox: [] })
+
+    // SQLite, read by a fresh wake of the object and again after a restart: the first device's body and summary.
+    expect((yield* host.state(conversation)).chat.messages).toEqual([stands])
+    yield* host.restart
+    expect((yield* host.state(conversation)).chat.messages).toEqual([stands])
+    expect((yield* host.head(conversation)).seq).toBe(1)
+    expect(yield* host.events(conversation, 0)).toEqual([[{
+      _tag: "MessagePosted", id: "m1", author: ADA, body: "the first draft", ...said, summary: "the first summary", updatedAt: "t1",
+    }]])
+    // The refused device rolled back to the message that stands.
+    yield* tablet.messages.awaitRow((message) => message.hubSeq === 1, "2 seconds")
+    expect(Option.getOrThrow(yield* tablet.messages.get("m1"))).toMatchObject(stands)
+
+    // The same body with another summary is refused too: a post never patches a message that exists.
+    const phone = yield* open(host, ada, nodeOf(ADA, "phone"))
+    const renoted = yield* phone.messages.insert({ ...first, summary: "the second summary" })
+    expect(yield* failureOf(renoted)).toEqual(new MessagesWriteRefused({ reason: "refused", detail: "message_conflict" }))
+    expect((yield* host.head(conversation)).seq).toBe(1)
+    // The very same message from another device is the same post: its entry holds no event, and nothing changes.
+    const watch = yield* open(host, ada, nodeOf(ADA, "watch"))
+    yield* (yield* watch.messages.insert(first)).persisted
+    expect(yield* host.events(conversation, 1)).toEqual([[]])
+    expect((yield* host.state(conversation)).chat.messages).toEqual([stands])
+    expect(canonicalHash(yield* laptop.chat)).toBe((yield* host.state(conversation)).hash)
+  })))
+
+test("an update's status is never sent after its metadata was refused", () =>
+  run(Effect.gen(function* () {
+    const host = yield* shardHost()
+    const stored = Effect.map(host.state(conversation), (hub) => hub.chat.messages[0])
+    yield* post(yield* open(host, ada, nodeOf(ADA, "laptop")), ADA, ["m1"])
+    // The same node after a reload that lost its store: its first key names the post above, its second is free.
+    const reloaded = yield* open(host, ada, nodeOf(ADA, "laptop"))
+    yield* reloaded.resume
+    yield* reloaded.messages.awaitRow((message) => message.id === "m1", "2 seconds")
+    host.requests.length = 0
+    const ending = yield* reloaded.messages.update("m1", (draft) => {
+      draft.failure = "empty"
+      draft.inputTokens = 5
+      draft.status = "failed"
+    })
+    expect(yield* failureOf(ending)).toEqual(new MessagesWriteRefused({ reason: "idempotency_conflict" }))
+    // The status would have been accepted under the free key, ending the message without how it ended, for good.
+    expect(submits(host)).toBe(1)
+    expect(yield* stored).toEqual({ ...row("m1", ADA), hubSeq: 1 })
+    expect((yield* host.head(conversation)).seq).toBe(1)
+    expect(yield* reloaded.state).toMatchObject({ outbox: [], nextCommand: 1 })
+    expect(Option.getOrThrow(yield* reloaded.messages.get("m1"))).toMatchObject({ status: "posted" })
+
+    // The reducer's own refusal of the metadata stops the write the same way.
+    const tablet = yield* open(host, ada, nodeOf(ADA, "tablet"))
+    yield* tablet.resume
+    yield* tablet.messages.awaitRow((message) => message.id === "m1", "2 seconds")
+    const phone = yield* open(host, ada, nodeOf(ADA, "phone"))
+    yield* phone.resume
+    yield* phone.messages.awaitRow((message) => message.id === "m1", "2 seconds")
+    yield* (yield* phone.messages.update("m1", (draft) => void (draft.status = "complete"))).persisted
+    host.requests.length = 0
+    const stale = yield* tablet.messages.update("m1", (draft) => {
+      draft.inputTokens = 6
+      draft.status = "complete"
+    })
+    expect(yield* failureOf(stale)).toEqual(new MessagesWriteRefused({ reason: "refused", detail: "terminal_metadata" }))
+    expect(submits(host)).toBe(1)
+    expect(yield* stored).toEqual({ ...row("m1", ADA), status: "complete", hubSeq: 1 })
+    expect((yield* host.head(conversation)).seq).toBe(2)
+    expect(yield* tablet.state).toMatchObject({ outbox: [], nextCommand: 1 })
+  })))
+
+test("a replica of an id that is not a conversation's sends nothing, and its writes roll back", () =>
+  run(Effect.gen(function* () {
+    const host = yield* shardHost()
+    const shards = Context.get(
+      yield* Layer.build(
+        MessagesShards.layer({ origin: ORIGIN, within: "2 seconds", owner: ADA, device: "laptop", retry: Schedule.spaced("5 millis") })
+          .pipe(Layer.provide(httpOf(host, ada))),
+      ),
+      MessagesShards,
+    )
+    for (const id of ["../admin", `${conversation}/../../admin`, `${conversation}?foo=bar`]) {
+      const replica = yield* shards.open(id)
+      expect(yield* Effect.flip(replica.resume)).toMatchObject({ _tag: "MessagesShardUnavailable", reason: "invalid_target" })
+      expect(yield* SubscriptionRef.get(replica.status)).toEqual({ state: "refused", through: 0 })
+      const write = yield* replica.messages.insert(row("m1", ADA))
+      expect(yield* failureOf(write)).toMatchObject({ _tag: "MessagesShardUnavailable", reason: "invalid_target" })
+      expect(yield* replica.messages.get("m1")).toEqual(Option.none())
+      expect(yield* replica.state).toMatchObject({ outbox: [] })
+    }
+    expect(host.requests).toEqual([])
   })))

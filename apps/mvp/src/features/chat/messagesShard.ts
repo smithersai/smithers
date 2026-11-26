@@ -1,10 +1,23 @@
-import { type Chat, Chat as ChatState, type ChatCommand, ChatEvent, emptyChat, evolveChat, Message } from "@smthrs/app-state"
+import {
+  canonicalJson,
+  type Chat,
+  Chat as ChatState,
+  type ChatCommand,
+  ChatEvent,
+  emptyChat,
+  evolveChat,
+  Message,
+  type MessageMetadata,
+  metadataOf,
+  originOf,
+} from "@smthrs/app-state"
 import { type Collection, JournalCollection } from "@smthrs/effect-tanstack-db"
 import { ShardClient, ShardProtocol } from "@smthrs/sync"
 import { Context, Data, type Duration, Effect, Layer, Queue, Schedule, Schema, Scope, Semaphore, Stream, SubscriptionRef } from "effect"
 import { HttpClient } from "effect/http"
 import * as MessagesShardClient from "./messagesShardClient"
-import { isTransient, MessagesShardUnavailable, nodeOf, shardOf } from "./messagesShardClient"
+import { isTransient, MessagesShardUnavailable, nodeOf, PERSON_OWNER_PREFIX, shardOf } from "./messagesShardClient"
+import type { Message as ChatRow } from "./schema"
 
 // One conversation's messages on this tab, read from its SQLite shard (decision 0170, slice 4). A `ShardClient` keeps
 // the outbox and the cursor in its store; each page it pulls is folded with the shard's own reducer (`evolveChat`,
@@ -13,9 +26,63 @@ import { isTransient, MessagesShardUnavailable, nodeOf, shardOf } from "./messag
 // while the shard cannot be reached. Electric still serves the conversation the chat pages show (store.ts): this is
 // the shard's read and write side, ready for the shape to leave.
 
-/** A message as the shard's reducer holds it: `hubSeq` is the entry that posted it, `0` on an optimistic row. */
+/**
+ * A message as the shard's reducer holds it: `hubSeq` is the entry that posted it, `0` on an optimistic row. Besides
+ * its id, author, body and status it may carry what its post said (`role`, `questionId`, `position`, `createdAt`),
+ * what its run wrote (`parts`, `failure`, `modelId`, `stopReason`, token counts) and what was noted on it since
+ * (`summary`, `summaryRevision`, `phase`, `arc`, `updatedAt`); a message from before the reducer carried them has none.
+ */
 export const ShardMessage = Message
 export type ShardMessage = typeof Message.Type
+
+/** What a chat row says that its shard message does not: the conversation is the shard's, not the message's. */
+export interface RowContext {
+  readonly conversationId: string
+}
+
+const ROW_STATUS = { posted: "done", streaming: "streaming", complete: "done", failed: "failed" } as const
+
+/**
+ * A shard message as the row chat's queries and pages read (schema.ts `Message`): the projection that replaces
+ * Electric's `messages` row. What the message lacks takes the value Postgres gives the column, or one read off the
+ * message itself:
+ * - `role`: read off the author the shard verified, never off the post alone. Only a person's message can be a
+ *   question (`user`), and is one unless its post says otherwise; anyone else's is an answer (`assistant`), whatever
+ *   its post says;
+ * - `position`: the `hubSeq` that posted it, so rows order as the shard sequenced them (`0` on an optimistic row);
+ * - `createdAt`: empty when the post gave no time; `updatedAt`: the time it was made;
+ * - every other column: `null`, and no `parts` at all, as on a row the device kept from before the app read them.
+ *
+ * A posted message is `done`: the row has no status for a question that is only stored.
+ */
+export const rowOf = (message: ShardMessage, context: RowContext): ChatRow => {
+  const createdAt = message.createdAt ?? ""
+  return {
+    id: message.id,
+    role: message.author.startsWith(PERSON_OWNER_PREFIX) ? message.role ?? "user" : "assistant",
+    text: message.body,
+    status: ROW_STATUS[message.status],
+    questionId: message.questionId ?? null,
+    failure: message.failure ?? null,
+    modelId: message.modelId ?? null,
+    stopReason: message.stopReason ?? null,
+    inputTokens: message.inputTokens ?? null,
+    outputTokens: message.outputTokens ?? null,
+    position: message.position ?? message.hubSeq,
+    createdAt,
+    updatedAt: message.updatedAt ?? createdAt,
+    conversationId: context.conversationId,
+    ...(message.parts === undefined ? {} : { parts: message.parts }),
+    summary: message.summary ?? null,
+    summaryRevision: message.summaryRevision ?? null,
+    phase: message.phase ?? null,
+    arc: message.arc ?? null,
+  }
+}
+
+/** A projection as rows, in the order the shard holds its messages. */
+export const rowsOf = (chat: Chat, context: RowContext): ReadonlyArray<ChatRow> =>
+  chat.messages.map((message) => rowOf(message, context))
 
 const Snapshot = Schema.Struct({ chat: ChatState })
 const decodeSnapshot = Schema.decodeUnknownSync(Snapshot)
@@ -36,7 +103,7 @@ export const fold = (chat: Chat, delivery: ShardClient.Delivery): Chat => {
 type Batch = JournalCollection.Batch<ShardMessage, string>
 type Change = JournalCollection.RowChange<ShardMessage, string>
 
-/** The rows one fold changed. The reducer only appends a message or replaces the one whose status moved. */
+/** The rows one fold changed. The reducer only appends a message or replaces the one whose status or metadata moved. */
 export const changesBetween = (before: Chat, after: Chat): ReadonlyArray<Change> => {
   const known = new Map(before.messages.map((message) => [message.id, message]))
   return after.messages.flatMap((message): ReadonlyArray<Change> => {
@@ -48,10 +115,11 @@ export const changesBetween = (before: Chat, after: Chat): ReadonlyArray<Change>
 
 /**
  * The shard decided against a write, so its optimistic row rolls back:
- * - `refused`: the reducer's `reason` (`message_conflict`, `message_missing`, `terminal_status`), kept as the key's
- *   receipt;
+ * - `refused`: the reducer's `reason` (`message_conflict`, `message_missing`, `terminal_status`,
+ *   `terminal_metadata`), kept as the key's receipt;
  * - `idempotency_conflict`: its key already names a command with other content, so this node's id is not its own;
- * - `unsupported`: the reducer has no command for it (a delete, or an update that changes more than the status).
+ * - `unsupported`: the reducer has no command for it (a delete, an insert that is not `posted`, or an update that
+ *   changes the author, the body or what the post said).
  */
 export class MessagesWriteRefused extends Data.TaggedError("MessagesWriteRefused")<{
   readonly reason: "refused" | "idempotency_conflict" | "unsupported"
@@ -89,21 +157,59 @@ export interface ReplicaOptions {
 
 const keyText = (key: readonly [string, string]) => JSON.stringify(key)
 
-/** The command a collection write asks the shard to sequence. */
-const commandOf = (
+const same = (left: unknown, right: unknown) => canonicalJson(left) === canonicalJson(right)
+
+/**
+ * The metadata `value` holds that `known` does not: what an update asks the shard to patch. A patch replaces fields
+ * and never removes one, and neither does a collection update: its schema refuses a row whose field was taken away.
+ */
+const patchOf = (known: ShardMessage, value: ShardMessage): MessageMetadata => {
+  const before: { readonly [key: string]: unknown } = metadataOf(known)
+  return Object.fromEntries(
+    Object.entries(metadataOf(value)).filter(([key, item]) => !Object.hasOwn(before, key) || !same(before[key], item)),
+  )
+}
+
+const unsupported = (detail: string) => Effect.fail(new MessagesWriteRefused({ reason: "unsupported", detail }))
+
+/**
+ * The commands a collection write asks the shard to sequence, in order. An insert is one command: the post carries the
+ * message with whatever the row says of it, so the shard takes all of it or none. An update patches the metadata that
+ * changed and then moves the status, so one write can record how an answer ended and end it: the shard freezes a
+ * message's run metadata once its status is terminal. The second command is sent only once the shard accepted the
+ * first (`submit`). An update that changes nothing still asks for its status, which the shard answers without a new
+ * entry.
+ */
+const commandsOf = (
   mutation: JournalCollection.Mutation<ShardMessage, string>,
   known: ShardMessage | undefined,
-): Effect.Effect<ChatCommand, MessagesWriteRefused> => {
+): Effect.Effect<ReadonlyArray<ChatCommand>, MessagesWriteRefused> => {
   const { type, value } = mutation
+  const patched = (patch: MessageMetadata): ReadonlyArray<ChatCommand> =>
+    Object.keys(patch).length === 0 ? [] : [{ _tag: "UpdateMessageMetadata", messageId: value.id, ...patch }]
   if (type === "insert") {
-    return value.status === "posted"
-      ? Effect.succeed({ _tag: "PostMessage", messageId: value.id, author: value.author, body: value.body })
-      : Effect.fail(new MessagesWriteRefused({ reason: "unsupported", detail: "insert_status" }))
+    if (value.status !== "posted") return unsupported("insert_status")
+    return Effect.succeed([{
+      _tag: "PostMessage",
+      messageId: value.id,
+      author: value.author,
+      body: value.body,
+      ...originOf(value),
+      ...metadataOf(value),
+    }])
   }
-  if (type === "update" && known !== undefined && known.author === value.author && known.body === value.body) {
-    return Effect.succeed({ _tag: "UpdateMessageStatus", messageId: value.id, status: value.status })
+  if (
+    type === "update" && known !== undefined && known.author === value.author && known.body === value.body &&
+    same(originOf(known), originOf(value))
+  ) {
+    const metadata = patched(patchOf(known, value))
+    return Effect.succeed(
+      metadata.length > 0 && known.status === value.status
+        ? metadata
+        : [...metadata, { _tag: "UpdateMessageStatus", messageId: value.id, status: value.status }],
+    )
   }
-  return Effect.fail(new MessagesWriteRefused({ reason: "unsupported", detail: type }))
+  return unsupported(type)
 }
 
 /**
@@ -187,11 +293,12 @@ export const make = Effect.fnUntraced(function* (options: ReplicaOptions) {
       { ...state, outbox: state.outbox.filter((command) => !mine.has(keyText(command.key))) },
     ])
 
-  const submit: JournalCollection.Source<ShardMessage, string>["submit"] = (mutations) =>
+  /**
+   * Queues `payloads` and syncs until the shard has answered each: the `hubSeq` the projection reached, or the
+   * refusal of the first one the shard decided against.
+   */
+  const send = (payloads: ReadonlyArray<ChatCommand>) =>
     Effect.gen(function* () {
-      const known = new Map(chat.messages.map((message) => [message.id, message]))
-      // Every write is translated before any is queued, so a transaction is queued whole or not at all.
-      const payloads = yield* Effect.forEach(mutations, (mutation) => commandOf(mutation, known.get(mutation.key)))
       const commands = yield* Effect.forEach(payloads, (payload) => client.enqueue(stream, payload))
       const mine = new Set(commands.map((command) => keyText(command.key)))
       // Queued until the shard answers: a failure a retry can fix is retried, so the row stays shown while offline.
@@ -209,6 +316,18 @@ export const make = Effect.fnUntraced(function* (options: ReplicaOptions) {
           : new MessagesWriteRefused({ reason: "idempotency_conflict" })
       }
       return position.seq
+    })
+
+  const submit: JournalCollection.Source<ShardMessage, string>["submit"] = (mutations) =>
+    Effect.gen(function* () {
+      const known = new Map(chat.messages.map((message) => [message.id, message]))
+      // Every write is translated before any is queued, so a write the reducer has no command for queues nothing.
+      const plans = yield* Effect.forEach(mutations, (mutation) => commandsOf(mutation, known.get(mutation.key)))
+      // A write's second command depends on its first: it is queued only once the shard accepted the first, so a
+      // refused command is never followed by one that assumed it, in this tab or from the outbox after a restart.
+      const seq = yield* send(plans.flatMap((plan) => plan.slice(0, 1)))
+      const dependent = plans.flatMap((plan) => plan.slice(1))
+      return dependent.length === 0 ? seq : yield* send(dependent)
     })
 
   const messages: Collection.Collection<ShardMessage, string> = yield* JournalCollection.make({

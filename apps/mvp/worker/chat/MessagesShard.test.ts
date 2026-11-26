@@ -27,10 +27,16 @@ const other = Messages.shardOf(elsewhere)
 const stream = Schema.decodeUnknownSync(ShardProtocol.StreamId)(shard)
 
 type Key = readonly [string, string]
+const text96 = "x".repeat(96)
 const post = (messageId: string, author: string, body = messageId): ChatCommand =>
   ({ _tag: "PostMessage", messageId, author, body })
 const mark = (messageId: string, status: "streaming" | "complete" | "failed"): ChatCommand =>
   ({ _tag: "UpdateMessageStatus", messageId, status })
+const notes = [{ summary: "a summary" }, { inputTokens: 1 }, { parts: [] }] as const
+const note = (messageId: string, fields: Omit<Extract<ChatCommand, { _tag: "UpdateMessageMetadata" }>, "_tag" | "messageId">): ChatCommand =>
+  ({ _tag: "UpdateMessageMetadata", messageId, ...fields })
+/** A phase or an arc as the timeline stores one (src/features/timeline/marks.ts `Mark`). */
+const span = JSON.stringify({ title: "Plan the sync", summary: "The plan was agreed.", closed: false, covered: 1 })
 const submitRequest = (
   key: Key,
   payload: unknown,
@@ -265,8 +271,19 @@ test("the shard refuses a submit it cannot decode, another shard's, another node
       // A stale update never overwrites a terminal status.
       expect(yield* hub.submit(agent, submitRequest(["agent:run-1", "5"], mark("a1", "streaming"))))
         .toMatchObject({ _tag: "Refused", reason: "terminal_status" })
+      // Metadata is the author's too: nobody else writes it, and a patch for no message is the reducer's to refuse.
+      expect(yield* reasonOf(person, submitRequest(["ada", "2"], note("a1", { summary: "not mine" })))).toBe("author")
+      expect(yield* hub.submit(person, submitRequest(["ada", "3"], note("nope", { summary: "s" }))))
+        .toMatchObject({ _tag: "Refused", reason: "message_missing" })
+      // A finished message's run metadata is frozen; a note on it is still sequenced.
+      expect(yield* hub.submit(agent, submitRequest(["agent:run-1", "6"], note("a1", { inputTokens: 9 }))))
+        .toMatchObject({ _tag: "Refused", reason: "terminal_metadata" })
+      expect(yield* hub.submit(agent, submitRequest(["agent:run-1", "7"], note("a1", { summary: "done", arc: span }))))
+        .toMatchObject({ _tag: "Accepted", position: { seq: 4 } })
+      // A count the reducer's `Nat` cannot hold never reaches it.
+      expect(yield* reasonOf(agent, submitRequest(["agent:run-1", "8"], note("a1", { outputTokens: -1 })))).toBe("invalid")
       expect((yield* hub.state).chat.messages).toEqual([
-        { id: "a1", author: "agent:run-1", body: "a1", status: "complete", hubSeq: 1 },
+        { id: "a1", author: "agent:run-1", body: "a1", status: "complete", hubSeq: 1, summary: "done", arc: span },
       ])
     }))
   } finally {
@@ -468,6 +485,183 @@ test("the route answers 401 signed out, 403 without access, 404 off the map, 413
       app.close()
     }
   }))
+})
+
+test("a question is a person's own: no run, and no writer acting for someone, posts a message that reads as one", async () => {
+  const db = openStorage(":memory:")
+  try {
+    await scoped(Effect.gen(function*() {
+      const hub = yield* open(db.storage)
+      const person = { author: ADA }
+      const agent = { author: RUN, person: ADA }
+      const ask = (messageId: string, author: string): ChatCommand =>
+        ({ _tag: "PostMessage", messageId, author, body: messageId, role: "user" })
+      const reasonOf = (writer: Messages.Writer, body: string) =>
+        Effect.map(Effect.flip(hub.submit(writer, body)), (refused) => refused.reason)
+      // A run posting as itself, with the role only a person's message has.
+      expect(yield* reasonOf(agent, submitRequest([RUN, "1"], ask("q1", RUN)))).toBe("person_only")
+      // The same from a run that acts for nobody, and from any owner name outside the people's namespace.
+      expect(yield* reasonOf({ author: RUN }, submitRequest([RUN, "1"], ask("q1", RUN)))).toBe("person_only")
+      expect(yield* reasonOf({ author: "ada" }, submitRequest(["ada", "1"], ask("q1", "ada")))).toBe("person_only")
+      // A writer acting for someone is not that person, whatever name it was admitted under.
+      expect(yield* reasonOf({ author: ADA, person: ADA }, submitRequest([ADA, "1"], ask("q1", ADA)))).toBe("person_only")
+      // A run posting a user-role message under any author (its own person or another) is refused as person_only.
+      expect(yield* reasonOf(agent, submitRequest([RUN, "1"], ask("q1", ADA)))).toBe("person_only")
+      expect(yield* reasonOf(agent, submitRequest([RUN, "1"], ask("q1", BOB)))).toBe("person_only")
+      // Without user role, naming a third person is still an author mismatch.
+      expect(yield* reasonOf(agent, submitRequest([RUN, "1"], post("a0", BOB)))).toBe("author")
+      expect(yield* hub.journal.head).toMatchObject({ seq: 0 })
+      expect((yield* hub.state).chat.messages).toEqual([])
+
+      // The person asks; the run answers as itself, with an answer's role or none.
+      expect(yield* hub.submit(person, submitRequest([ADA + "/laptop", "1"], ask("q1", ADA))))
+        .toMatchObject({ _tag: "Accepted", position: { seq: 1 } })
+      const answer: ChatCommand = { _tag: "PostMessage", messageId: "a1", author: RUN, body: "a1", role: "assistant", questionId: "q1" }
+      expect(yield* hub.submit(agent, submitRequest([RUN, "1"], answer))).toMatchObject({ _tag: "Accepted", position: { seq: 2 } })
+      expect(yield* hub.submit(agent, submitRequest([RUN, "2"], post("a2", RUN)))).toMatchObject({ _tag: "Accepted", position: { seq: 3 } })
+      expect((yield* hub.state).chat.messages.map((message) => [message.author, message.role])).toEqual([
+        [ADA, "user"],
+        [RUN, "assistant"],
+        [RUN, undefined],
+      ])
+    }))
+  } finally {
+    db.hibernate()
+  }
+})
+
+test("the route refuses a run's question as the person-only act, and stores nothing", async () => {
+  await scoped(Effect.gen(function*() {
+    const app = yield* world()
+    const registry: Metric.MetricRegistry = new Map()
+    try {
+      yield* Effect.gen(function*() {
+        const question = { ...post("q1", RUN), role: "user" }
+        const refused = yield* app.routed(run, branch(), "submit", { body: submitRequest([RUN, "1"], question) })
+        expect(refused.status).toBe(403)
+        expect(refused.headers[Routes.refusalHeader]).toBe("person_only")
+        const counted = yield* Metric.value(Metric.withAttributes(personOnlyRefusals, { act: "conversation/ask", by: "agent" }))
+        expect(counted.count).toBe(1)
+        expect(yield* app.json(app.routed(ada, branch(), pullPath(0)))).toMatchObject({ _tag: "Page", entries: [], head: 0 })
+        // The person's own session posts the same question.
+        expect(yield* app.submit(ada, [ADA + "/laptop", "1"], { ...post("q1", ADA), role: "user" }))
+          .toMatchObject({ _tag: "Accepted", position: { seq: 1 } })
+      }).pipe(Effect.provideService(Metric.MetricRegistry, registry))
+    } finally {
+      app.close()
+    }
+  }))
+})
+
+test("notes outside the timeline's contract, and fields past their bounds, are refused before the journal", async () => {
+  const db = openStorage(":memory:")
+  try {
+    await scoped(Effect.gen(function*() {
+      const hub = yield* open(db.storage)
+      const writer = { author: ADA }
+      let command = 0
+      const key = (): Key => [ADA + "/laptop", String(command++)]
+      const reasonOf = (payload: unknown) =>
+        Effect.map(Effect.flip(hub.submit(writer, submitRequest(key(), payload))), (refused) => refused.reason)
+      const text = (length: number) => "x".repeat(length)
+      const part = (id: string) => ({ id, kind: "step", flow: "chat/copy", status: "done" })
+      expect(yield* hub.submit(writer, submitRequest(key(), post("m1", ADA)))).toMatchObject({ _tag: "Accepted" })
+      const refusedFields: ReadonlyArray<Record<string, unknown>> = [
+        // Past the schema's bounds.
+        { summary: text(97) },
+        { phase: text(513) },
+        { arc: text(513) },
+        { parts: Array.from({ length: 65 }, (_, index) => part(`0.${index}`)) },
+        { parts: [part(text(257))] },
+        { modelId: text(257) },
+        { stopReason: text(257) },
+        { summaryRevision: text(257) },
+        { updatedAt: text(257) },
+        // Inside the bounds, and not what the timeline writes: an empty or marked-up summary, a mark that is not one.
+        { summary: "" },
+        { summary: "two\nlines" },
+        { summary: "<b>bold</b>" },
+        { summary: "a `tick`" },
+        { phase: "{}" },
+        { arc: "[]" },
+        { phase: "" },
+        { arc: JSON.stringify({ title: "", summary: "s", closed: false, covered: 1 }) },
+        { phase: JSON.stringify({ title: "Plan", summary: "s", closed: false, covered: 0 }) },
+      ]
+      for (const fields of refusedFields) {
+        const label = JSON.stringify(fields).slice(0, 40)
+        expect(yield* reasonOf({ _tag: "UpdateMessageMetadata", messageId: "m1", ...fields }), label).toBe("invalid")
+        // A post is held to the same contract for the notes it is born with.
+        expect(yield* reasonOf({ ...post("m2", ADA), ...fields }), label).toBe("invalid")
+      }
+      expect(yield* hub.journal.head).toMatchObject({ seq: 1 })
+      expect((yield* hub.state).chat.messages).toEqual([{ id: "m1", author: ADA, body: "m1", status: "posted", hubSeq: 1 }])
+
+      // At the bounds, in the timeline's own form: sequenced.
+      const summary = text(96)
+      const longest = JSON.stringify({ title: text(48), summary: text(180), closed: true, covered: 100_000 })
+      expect(longest.length).toBeLessThanOrEqual(512)
+      const within = { summary, phase: span, arc: longest, parts: Array.from({ length: 64 }, (_, index) => part(`0.${index}`)) }
+      expect(yield* hub.submit(writer, submitRequest(key(), note("m1", within as never))))
+        .toMatchObject({ _tag: "Accepted", position: { seq: 2 } })
+      expect(yield* hub.submit(writer, submitRequest(key(), { ...post("m2", ADA), summary, phase: span })))
+        .toMatchObject({ _tag: "Accepted", position: { seq: 3 } })
+      expect((yield* hub.state).chat.messages[1]).toEqual({
+        id: "m2", author: ADA, body: "m2", status: "posted", hubSeq: 3, summary, phase: span,
+      })
+    }))
+  } finally {
+    db.hibernate()
+  }
+})
+
+test("the journal sequences and hashes only the fields the schema names: excess JSON is dropped at admission", async () => {
+  const db = openStorage(":memory:")
+  try {
+    await scoped(Effect.gen(function*() {
+      const hub = yield* open(db.storage)
+      const writer = { author: ADA }
+      const key = [ADA + "/laptop", "1"] as const
+      const position = { shard, epoch: 0, seq: 1 }
+      const clean = { ...post("m1", ADA), parts: [{ id: "0.0", kind: "step", flow: "chat/copy", status: "done" }] }
+      let nested: unknown = "leaf"
+      for (let depth = 0; depth < 512; depth++) nested = { [`k${depth}`]: [nested] }
+      const padded = {
+        ...clean,
+        parts: [{ ...clean.parts[0], smuggled: nested }],
+        smuggled: nested,
+        hubSeq: 99,
+        status: "complete",
+      }
+      expect(yield* hub.submit(writer, submitRequest(key, padded))).toEqual({ _tag: "Accepted", key, position })
+      // The receipt's content hash is the declared fields': the same command without the excess is the same command,
+      // and the excess in another shape is too.
+      expect(yield* hub.submit(writer, submitRequest(key, clean))).toEqual({ _tag: "Duplicate", key, position })
+      expect(yield* hub.submit(writer, submitRequest(key, { ...clean, other: [1, 2, 3] }))).toEqual({ _tag: "Duplicate", key, position })
+      // A declared field that differs is still other content.
+      expect(yield* hub.submit(writer, submitRequest(key, { ...clean, body: "other" }))).toMatchObject({ _tag: "IdempotencyConflict" })
+      const page = yield* hub.journal.pull({ version: 2, shard, epoch: 0, after: 0, limit: 10 })
+      expect(page._tag === "Page" && page.entries.map((entry) => entry.events)).toEqual([
+        [{ _tag: "MessagePosted", id: "m1", author: ADA, body: "m1", parts: clean.parts }],
+      ])
+      expect(JSON.stringify(page)).not.toContain("smuggled")
+      expect((yield* hub.state).chat.messages).toEqual([
+        { id: "m1", author: ADA, body: "m1", status: "posted", hubSeq: 1, parts: clean.parts },
+      ])
+      // The same holds for a patch and a status.
+      const noteKey = [ADA + "/laptop", "2"] as const
+      expect(yield* hub.submit(writer, submitRequest(noteKey, { ...note("m1", { summary: "s" }), smuggled: nested })))
+        .toMatchObject({ _tag: "Accepted", position: { seq: 2 } })
+      expect(yield* hub.submit(writer, submitRequest(noteKey, note("m1", { summary: "s" })))).toMatchObject({ _tag: "Duplicate" })
+      const markKey = [ADA + "/laptop", "3"] as const
+      expect(yield* hub.submit(writer, submitRequest(markKey, { ...mark("m1", "complete"), summary: text96 })))
+        .toMatchObject({ _tag: "Accepted", position: { seq: 3 } })
+      expect(yield* hub.submit(writer, submitRequest(markKey, mark("m1", "complete")))).toMatchObject({ _tag: "Duplicate" })
+      expect((yield* hub.state).chat.messages[0]).toMatchObject({ status: "complete", summary: "s" })
+    }))
+  } finally {
+    db.hibernate()
+  }
 })
 
 test("a run acts inside its ceiling and as itself: it never posts as the person it acts for", async () => {
@@ -814,6 +1008,14 @@ test("a person-only refusal is counted and logged without the run id its launche
       expect(refusal[0]!.annotations).toMatchObject({ act: "conversation/ask", by: "agent", depth: 1 })
       expect(refusal[0]!.annotations).not.toHaveProperty("runId")
       expect(JSON.stringify(logs)).not.toContain("launcher")
+      // A run posting role: "user" under a third person's name also fails with person_only and increments the refusal audit log.
+      const thirdPartyQuestion: ChatCommand = { _tag: "PostMessage", messageId: "q2", author: BOB, body: "q2", role: "user" }
+      const reply2 = yield* app.routed(chosen, branch(), "submit", { body: submitRequest([owner + "/n", "2"], thirdPartyQuestion) }).pipe(
+        Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
+        Effect.provideService(Metric.MetricRegistry, new Map()),
+      )
+      expect([reply2.status, reply2.headers[Routes.refusalHeader]]).toEqual([403, "person_only"])
+      expect(logs.filter((log) => String(log.message).includes("auth.person_only"))).toHaveLength(2)
     } finally {
       app.close()
     }
@@ -824,7 +1026,7 @@ test("a person-only refusal is counted and logged without the run id its launche
 // leaves the shard, a replica that followed along and a replica that joined last byte for byte where a plain fold of
 // the pure reducer says they are. Rows never duplicate, `hubSeq` is gapless, and the follower is never reset.
 type Step =
-  | { readonly kind: "post" | "mark"; readonly node: number; readonly command: number; readonly message: number; readonly variant: number }
+  | { readonly kind: "post" | "mark" | "note"; readonly node: number; readonly command: number; readonly message: number; readonly variant: number }
   | { readonly kind: "redeliver"; readonly index: number }
   | { readonly kind: "restart" | "compact" | "pull" }
 
@@ -832,7 +1034,7 @@ const authors = ["ada", "bob", "agent:run-1"]
 const statuses = ["streaming", "complete", "failed"] as const
 const step: fc.Arbitrary<Step> = fc.oneof(
   { weight: 6, arbitrary: fc.record({
-    kind: fc.constantFrom("post" as const, "mark" as const),
+    kind: fc.constantFrom("post" as const, "mark" as const, "note" as const),
     node: fc.nat({ max: authors.length - 1 }),
     command: fc.nat({ max: 7 }),
     message: fc.nat({ max: 3 }),
@@ -892,14 +1094,16 @@ test("any trace converges: the shard, a follower and a late joiner equal the pur
           for (const event of decision.events) model = evolveChat(model, head, event)
         })
         for (const next of trace) {
-          if (next.kind === "post" || next.kind === "mark") {
+          if (next.kind === "post" || next.kind === "mark" || next.kind === "note") {
             const author = authors[next.node]!
             const delivery = {
               writer: { author },
               key: [author + "/node", String(next.command)] as const,
               payload: next.kind === "post"
                 ? post("m" + next.message, author, "body " + next.variant)
-                : mark("m" + next.message, statuses[next.variant]!),
+                : next.kind === "mark"
+                ? mark("m" + next.message, statuses[next.variant]!)
+                : note("m" + next.message, notes[next.variant]!),
             }
             sent.push(delivery)
             yield* deliver(delivery)

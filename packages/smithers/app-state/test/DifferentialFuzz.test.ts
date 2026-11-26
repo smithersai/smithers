@@ -5,7 +5,7 @@
  * drops, response drops, duplicate and reordered deliveries, skipped pages,
  * stale generations, cycle-creating moves, and concurrent edits. The TypeScript
  * machine checks its own invariants at every step. The same traces, run through
- * the compiled Lean oracle on nyc-02, produced `fixtures/lean-oracle-receipt.jsonl`;
+ * the compiled Lean oracle, produced `fixtures/lean-oracle-receipt.jsonl`;
  * the last test demands 100% agreement with it.
  *
  * Regenerate the fixture after any change to the machine or the generator:
@@ -22,8 +22,13 @@ import {
   type Command,
   evolve,
   initialAppState,
+  isTerminal,
+  type Message,
+  metadataOf,
+  originOf,
   type PlanTree,
   rebasePending,
+  runOf,
   type ShardState,
   walk
 } from "../src/index.ts"
@@ -52,6 +57,12 @@ interface Stats {
   revisionConflicts: number
   idempotencyConflicts: number
   messageConflicts: number
+  postsWithMetadata: number
+  metadataUpdates: number
+  metadataNoops: number
+  terminalStatusRefusals: number
+  terminalMetadataRefusals: number
+  terminalNotes: number
   staleGenerationSubmits: number
   requestDrops: number
   responseDrops: number
@@ -71,6 +82,12 @@ const emptyStats = (): Stats => ({
   revisionConflicts: 0,
   idempotencyConflicts: 0,
   messageConflicts: 0,
+  postsWithMetadata: 0,
+  metadataUpdates: 0,
+  metadataNoops: 0,
+  terminalStatusRefusals: 0,
+  terminalMetadataRefusals: 0,
+  terminalNotes: 0,
   staleGenerationSubmits: 0,
   requestDrops: 0,
   responseDrops: 0,
@@ -113,6 +130,14 @@ const MILESTONES = ["M0", "M1", "M2", "M3"] as const
 const NODE_STATUSES = ["pending", "in_progress", "blocked_on_will", "done", "failed"] as const
 const MESSAGE_STATUSES = ["posted", "streaming", "complete", "failed"] as const
 const ASSUMPTIONS = ["hub is sole sequencer", "sqlite wal on", "epoch is monotonic"] as const
+const ROLES = ["user", "assistant"] as const
+const FAILURES = ["quota", "rate_limited", "model_error", "empty", "abandoned", "unfinished"] as const
+const PART_STATUSES = ["running", "done", "failed"] as const
+const STAMPS = ["2026-11-25T10:00:00Z", "2026-11-25T10:00:01Z", "2026-11-25T10:00:02Z"] as const
+
+/** What no event after the post may change. Independent of `decide`: read straight off two states. */
+const identityOf = (message: Message): string =>
+  canonicalJson([message.id, message.author, message.body, message.hubSeq, originOf(message)])
 
 interface Pending {
   readonly commandId: string
@@ -199,6 +224,31 @@ const simulate = (seed: number): Trace => {
         else if (ran.code === "R:revision_mismatch") stats.revisionConflicts++
         else if (ran.code === "R:idempotency_conflict") stats.idempotencyConflicts++
         else if (ran.code === "R:message_conflict") stats.messageConflicts++
+        else if (ran.code === "R:terminal_status") stats.terminalStatusRefusals++
+        else if (ran.code === "R:terminal_metadata") stats.terminalMetadataRefusals++
+      }
+      // Whatever the op was: identity never changes, a terminal status never moves,
+      // and a terminal message's run fields are frozen.
+      const after = new Map(world.hub.state.chat.messages.map((message) => [message.id, message]))
+      for (const was of before.state.chat.messages) {
+        const now = after.get(was.id) ?? fail(`message ${was.id} vanished`)
+        if (identityOf(now) !== identityOf(was)) fail(`message ${was.id} changed identity`)
+        if (!isTerminal(was.status)) continue
+        if (now.status !== was.status) fail(`terminal message ${was.id} changed status`)
+        if (canonicalJson(runOf(now)) !== canonicalJson(runOf(was))) fail(`terminal message ${was.id} changed its run`)
+        if (now !== was) stats.terminalNotes++
+      }
+      if (op.command._tag === "PostMessage" && kind === "A" && ran.code.endsWith(":1")) {
+        // Atomic post: the one commit appended the message with every run field and note the command carried.
+        const born = after.get(op.command.messageId) ?? fail(`posted message ${op.command.messageId} is missing`)
+        if (canonicalJson(metadataOf(born)) !== canonicalJson(metadataOf(op.command))) {
+          fail(`message ${born.id} was not born with its post's metadata`)
+        }
+        if (Object.keys(metadataOf(op.command)).length > 0) stats.postsWithMetadata++
+      }
+      if (op.command._tag === "UpdateMessageMetadata") {
+        if (kind === "A" && ran.code.endsWith(":1")) stats.metadataUpdates++
+        else if (kind === "A") stats.metadataNoops++
       }
       checkHub()
     } else if (op.op === "deliver") {
@@ -254,7 +304,45 @@ const simulate = (seed: number): Trace => {
     }
   }
 
+  /** A status or a metadata update for a message the replica can see, or, rarely, for one that does not exist. */
+  const messageUpdate = (view: AppState): Command => {
+    const messages = view.chat.messages
+    // Half of the time a finished message, when there is one: the frozen side of the machine.
+    const finished = messages.filter((message) => isTerminal(message.status))
+    const late = finished.length > 0 && rng() < 0.5
+    const target = late ? finished : messages
+    const messageId = target.length > 0 && rng() < 0.9 ? pick(target).id : "m-missing"
+    if (rng() < 0.5) {
+      return { _tag: "UpdateMessageStatus", messageId, status: rng() < 0.4 ? "complete" : pick(MESSAGE_STATUSES) }
+    }
+    // On a finished message, half of the patches carry notes only: the ones it still takes.
+    const run = late && rng() < 0.5 ? 0 : 1
+    const maybe = <A extends object>(chance: number, fields: () => A): A | Record<string, never> =>
+      rng() < chance ? fields() : {}
+    return {
+      _tag: "UpdateMessageMetadata",
+      messageId,
+      ...maybe(run * 0.3, () => ({
+        parts: Array.from({ length: int(3) }, (_, index) => ({
+          id: `0.${index}`,
+          kind: "step" as const,
+          flow: pick(["chat/copy", "chat/edit"]),
+          status: pick(PART_STATUSES)
+        }))
+      })),
+      ...maybe(run * 0.15, () => ({ failure: pick(FAILURES) })),
+      ...maybe(run * 0.2, () => ({ modelId: pick(["m-small", "m-large"]), stopReason: pick(["end_turn", "max_tokens"]) })),
+      ...maybe(run * 0.3, () => ({ inputTokens: int(3), outputTokens: int(3) })),
+      ...maybe(0.3, () => ({ summary: pick(TITLES), summaryRevision: `rev${int(2)}` })),
+      ...maybe(0.15, () => ({ phase: "{\"title\":\"plan\"}" })),
+      ...maybe(0.15, () => ({ arc: "{\"title\":\"build\"}" })),
+      ...maybe(0.3, () => ({ updatedAt: pick(STAMPS) }))
+    }
+  }
+
   const command = (view: AppState, origin: string): Command => {
+    // A conversation in progress: its messages move far more often than new ones arrive.
+    if (view.chat.messages.length > 0 && rng() < 0.3) return messageUpdate(view)
     const known = Object.keys(view.plan.nodes)
     const node = (): string => (known.length > 0 && rng() < 0.92 ? pick(known) : pick(NODE_IDS))
     const roll = rng()
@@ -272,21 +360,38 @@ const simulate = (seed: number): Trace => {
     if (roll < 0.73) {
       return { _tag: "AttachArtifact", nodeId: node(), artifactId: `art${int(3)}`, expectedRevision: expected(view) }
     }
-    if (roll < 0.9) {
+    if (roll < 0.84) {
       const shared = rng() < 0.25
+      const detail = rng()
+      // What the message is born with: a shared id posted with other notes conflicts on the notes alone.
+      const born = rng()
       return {
         _tag: "PostMessage",
         messageId: shared ? `shared${int(3)}` : `m-${origin}-${messageCounter++}`,
         author: shared ? "team" : origin,
-        body: shared ? pick(["ack", "nack"]) : pick(TITLES)
+        body: shared ? pick(["ack", "nack"]) : pick(TITLES),
+        // A shared id posted with and without a role conflicts on the origin alone.
+        ...(shared
+          ? (detail < 0.2 ? { role: "user" as const } : {})
+          : detail < 0.3
+          ? {}
+          : detail < 0.6
+          ? { role: "user" as const, position: int(9), createdAt: pick(STAMPS) }
+          : { role: "assistant" as const, questionId: `m-${origin}-${int(4)}`, position: int(9) }),
+        ...(born < 0.6
+          ? {}
+          : born < 0.8
+          ? { summary: pick(["first", "second"]) }
+          : {
+            parts: [{ id: "0.0", kind: "step" as const, flow: "chat/copy", status: pick(PART_STATUSES) }],
+            modelId: pick(["m-small", "m-large"]),
+            inputTokens: int(3),
+            summary: pick(TITLES),
+            updatedAt: pick(STAMPS)
+          })
       }
     }
-    const messages = view.chat.messages
-    return {
-      _tag: "UpdateMessageStatus",
-      messageId: messages.length > 0 && rng() < 0.9 ? pick(messages).id : "m-missing",
-      status: pick(MESSAGE_STATUSES)
-    }
+    return messageUpdate(view)
   }
 
   const create = (index: number): void => {

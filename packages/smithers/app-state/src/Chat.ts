@@ -3,19 +3,118 @@
  *
  * Mirrors `lean/smithers-state/SmithersState/Chat.lean`. A message records the
  * `hubSeq` of the commit that appended it; 0 means "optimistic, not yet committed".
+ *
+ * Besides `id`, `author`, `body`, `status`, and `hubSeq`, a message carries three
+ * groups of optional fields. An absent field is absent from the canonical JSON,
+ * so a message, command, event, or snapshot written before the groups existed
+ * decodes and hashes exactly as it did.
+ *
+ * - origin (`role`, `questionId`, `position`, `createdAt`): set by the post, never changed.
+ * - run (`parts`, `failure`, `modelId`, `stopReason`, `inputTokens`, `outputTokens`):
+ *   written while the message streams, frozen once its status is terminal.
+ * - notes (`summary`, `summaryRevision`, `phase`, `arc`, `updatedAt`): written at any time.
+ *
+ * A post may carry its message's first run and notes fields, so a message and what is known of it at birth are one
+ * command and one event: a post the reducer refuses writes none of them.
+ *
+ * Every added string and list is bounded here, at the Schema boundary, so nothing longer is ever decided, journaled
+ * or hashed. Lean models the fields as unbounded `String` and `List`: a bound narrows the input, never a decision.
  */
 import * as Schema from "effect/Schema"
+import { canonicalJson } from "./Canonical.ts"
 import { accepted, type Decision, refused } from "./Decision.ts"
 
 export const MessageStatus = Schema.Literals(["posted", "streaming", "complete", "failed"])
 export type MessageStatus = typeof MessageStatus.Type
+
+export const MessageRole = Schema.Literals(["user", "assistant"])
+export type MessageRole = typeof MessageRole.Type
+
+export const MessageFailure = Schema.Literals([
+  "quota",
+  "rate_limited",
+  "model_error",
+  "empty",
+  "abandoned",
+  "unfinished"
+])
+export type MessageFailure = typeof MessageFailure.Type
+
+/** A count or a position. Lean models it as `Nat`, so the wire refuses negatives and fractions. */
+export const MessageCount = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+
+/** The longest summary: the timeline's own cap on the line it writes and shows. */
+export const MAX_SUMMARY_LENGTH = 96
+/** The longest phase or arc: the timeline reads nothing longer as a mark. */
+export const MAX_MARK_LENGTH = 512
+/** The most steps one answer records. */
+export const MAX_PARTS = 64
+/** The longest id, flow name, model name, stop reason, revision or timestamp. */
+export const MAX_LABEL_LENGTH = 256
+
+const Label = Schema.String.check(Schema.isMaxLength(MAX_LABEL_LENGTH))
+const Mark = Schema.String.check(Schema.isMaxLength(MAX_MARK_LENGTH))
+
+/** One step an answer took: the flow it called and how the call went. */
+export const MessagePart = Schema.Struct({
+  id: Label,
+  kind: Schema.Literal("step"),
+  flow: Label,
+  status: Schema.Literals(["running", "done", "failed"])
+})
+export type MessagePart = typeof MessagePart.Type
+
+const originFields = {
+  role: Schema.optionalKey(MessageRole),
+  /** On an answer: the id of the question it answers. */
+  questionId: Schema.optionalKey(Label),
+  /** The message's place in its conversation, when the poster assigns one. */
+  position: Schema.optionalKey(MessageCount),
+  /** When the poster made it. The reducer has no clock: it stores what the command says. */
+  createdAt: Schema.optionalKey(Label)
+}
+const runFields = {
+  parts: Schema.optionalKey(Schema.Array(MessagePart).check(Schema.isMaxLength(MAX_PARTS))),
+  failure: Schema.optionalKey(MessageFailure),
+  modelId: Schema.optionalKey(Label),
+  stopReason: Schema.optionalKey(Label),
+  inputTokens: Schema.optionalKey(MessageCount),
+  outputTokens: Schema.optionalKey(MessageCount)
+}
+const notesFields = {
+  summary: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MAX_SUMMARY_LENGTH))),
+  summaryRevision: Schema.optionalKey(Label),
+  /** The phase, then the arc, that starts at this message, as JSON text. */
+  phase: Schema.optionalKey(Mark),
+  arc: Schema.optionalKey(Mark),
+  updatedAt: Schema.optionalKey(Label)
+}
+
+/** What a post sets once. */
+export const MessageOrigin = Schema.Struct(originFields)
+export type MessageOrigin = typeof MessageOrigin.Type
+
+/** What a run writes while its message streams. Frozen once the status is terminal. */
+export const MessageRun = Schema.Struct(runFields)
+export type MessageRun = typeof MessageRun.Type
+
+/** What anyone may still write once the message is terminal. */
+export const MessageNotes = Schema.Struct(notesFields)
+export type MessageNotes = typeof MessageNotes.Type
+
+/** A metadata patch: each field it has replaces the message's, each field it lacks leaves the message's. */
+export const MessageMetadata = Schema.Struct({ ...runFields, ...notesFields })
+export type MessageMetadata = typeof MessageMetadata.Type
 
 export const Message = Schema.Struct({
   id: Schema.String,
   author: Schema.String,
   body: Schema.String,
   status: MessageStatus,
-  hubSeq: Schema.Int
+  hubSeq: Schema.Int,
+  ...originFields,
+  ...runFields,
+  ...notesFields
 })
 export type Message = typeof Message.Type
 
@@ -27,28 +126,72 @@ export const emptyChat: Chat = { messages: [] }
 export const PostMessage = Schema.TaggedStruct("PostMessage", {
   messageId: Schema.String,
   author: Schema.String,
-  body: Schema.String
+  body: Schema.String,
+  ...originFields,
+  ...runFields,
+  ...notesFields
 })
 export const UpdateMessageStatus = Schema.TaggedStruct("UpdateMessageStatus", {
   messageId: Schema.String,
   status: MessageStatus
 })
-export const ChatCommand = Schema.Union([PostMessage, UpdateMessageStatus])
+export const UpdateMessageMetadata = Schema.TaggedStruct("UpdateMessageMetadata", {
+  messageId: Schema.String,
+  ...runFields,
+  ...notesFields
+})
+export const ChatCommand = Schema.Union([PostMessage, UpdateMessageStatus, UpdateMessageMetadata])
 export type ChatCommand = typeof ChatCommand.Type
 
 export const MessagePosted = Schema.TaggedStruct("MessagePosted", {
   id: Schema.String,
   author: Schema.String,
-  body: Schema.String
+  body: Schema.String,
+  ...originFields,
+  ...runFields,
+  ...notesFields
 })
 export const MessageStatusUpdated = Schema.TaggedStruct("MessageStatusUpdated", {
   id: Schema.String,
   status: MessageStatus
 })
-export const ChatEvent = Schema.Union([MessagePosted, MessageStatusUpdated])
+export const MessageMetadataUpdated = Schema.TaggedStruct("MessageMetadataUpdated", {
+  id: Schema.String,
+  ...runFields,
+  ...notesFields
+})
+export const ChatEvent = Schema.Union([MessagePosted, MessageStatusUpdated, MessageMetadataUpdated])
 export type ChatEvent = typeof ChatEvent.Type
 
-export type ChatRefusal = "message_conflict" | "message_missing" | "terminal_status"
+export type ChatRefusal = "message_conflict" | "message_missing" | "terminal_status" | "terminal_metadata"
+
+const ORIGIN_KEYS = Object.keys(originFields) as ReadonlyArray<keyof MessageOrigin>
+const RUN_KEYS = Object.keys(runFields) as ReadonlyArray<keyof MessageRun>
+const METADATA_KEYS = [...RUN_KEYS, ...Object.keys(notesFields)] as ReadonlyArray<keyof MessageMetadata>
+
+/**
+ * The `keys` of `source` that hold a value, each copied, so the result never
+ * aliases its source and an explicit `undefined` never overwrites a field.
+ */
+const pick = <A extends object>(keys: ReadonlyArray<keyof A>, source: A): A => {
+  const out: { -readonly [K in keyof A]?: A[K] } = {}
+  for (const key of keys) {
+    const value = source[key]
+    if (value !== undefined) out[key] = structuredClone(value)
+  }
+  return out as A
+}
+
+/** The origin fields `source` holds: a message's, a post's, or a posted event's. */
+export const originOf = (source: MessageOrigin): MessageOrigin => pick(ORIGIN_KEYS, source)
+
+/** The run fields `source` holds. */
+export const runOf = (source: MessageRun): MessageRun => pick(RUN_KEYS, source)
+
+/** The run and notes fields `source` holds: a message's, an update's, or an updated event's. */
+export const metadataOf = (source: MessageMetadata): MessageMetadata => pick(METADATA_KEYS, source)
+
+const same = (left: unknown, right: unknown): boolean => canonicalJson(left) === canonicalJson(right)
 
 export const findMessage = (chat: Chat, id: string): Message | undefined =>
   chat.messages.find((message) => message.id === id)
@@ -60,10 +203,25 @@ export const decideChat = (chat: Chat, command: ChatCommand): Decision<ChatEvent
   switch (command._tag) {
     case "PostMessage": {
       const existing = findMessage(chat, command.messageId)
+      const origin = originOf(command)
+      const metadata = metadataOf(command)
       if (existing === undefined) {
-        return accepted([{ _tag: "MessagePosted", id: command.messageId, author: command.author, body: command.body }])
+        return accepted([
+          {
+            _tag: "MessagePosted",
+            id: command.messageId,
+            author: command.author,
+            body: command.body,
+            ...origin,
+            ...metadata
+          }
+        ])
       }
-      return existing.author === command.author && existing.body === command.body
+      // A post never changes a message that exists. It is a no-op when everything it says already holds, a
+      // conflict otherwise: the run and notes it carries are compared as a patch that must change nothing.
+      const before = metadataOf(existing)
+      return existing.author === command.author && existing.body === command.body &&
+          same(originOf(existing), origin) && same(before, { ...before, ...metadata })
         ? accepted([])
         : refused("message_conflict")
     }
@@ -74,6 +232,16 @@ export const decideChat = (chat: Chat, command: ChatCommand): Decision<ChatEvent
       if (isTerminal(existing.status)) return refused("terminal_status")
       return accepted([{ _tag: "MessageStatusUpdated", id: command.messageId, status: command.status }])
     }
+    case "UpdateMessageMetadata": {
+      const existing = findMessage(chat, command.messageId)
+      if (existing === undefined) return refused("message_missing")
+      const patch = metadataOf(command)
+      const before = metadataOf(existing)
+      const after = { ...before, ...patch }
+      if (same(before, after)) return accepted([])
+      if (isTerminal(existing.status) && !same(runOf(before), runOf(after))) return refused("terminal_metadata")
+      return accepted([{ _tag: "MessageMetadataUpdated", id: command.messageId, ...patch }])
+    }
   }
 }
 
@@ -83,7 +251,15 @@ export const evolveChat = (chat: Chat, hubSeq: number, event: ChatEvent): Chat =
       return {
         messages: [
           ...chat.messages,
-          { id: event.id, author: event.author, body: event.body, status: "posted", hubSeq }
+          {
+            id: event.id,
+            author: event.author,
+            body: event.body,
+            status: "posted",
+            hubSeq,
+            ...originOf(event),
+            ...metadataOf(event)
+          }
         ]
       }
     case "MessageStatusUpdated":
@@ -92,5 +268,11 @@ export const evolveChat = (chat: Chat, hubSeq: number, event: ChatEvent): Chat =
           message.id === event.id ? { ...message, status: event.status } : message
         )
       }
+    case "MessageMetadataUpdated": {
+      const patch = metadataOf(event)
+      return {
+        messages: chat.messages.map((message) => (message.id === event.id ? { ...message, ...patch } : message))
+      }
+    }
   }
 }

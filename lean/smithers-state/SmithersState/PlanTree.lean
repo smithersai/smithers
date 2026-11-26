@@ -132,8 +132,9 @@ def evolvePlan (t : PlanTree) : Event → PlanTree
   | .artifactAttached id artifactId =>
     { revision := t.revision + 1
       nodes := updateNode t.nodes id (fun n => { n with artifactIds := n.artifactIds ++ [artifactId] }) }
-  | .messagePosted _ _ _ => t
+  | .messagePosted _ _ _ _ _ _ => t
   | .messageStatusUpdated _ _ => t
+  | .messageMetadataUpdated _ _ _ => t
 
 /-! ## Well-formedness -/
 
@@ -427,8 +428,9 @@ theorem evolvePlan_preserves_wf (t : PlanTree) (e : Event) (hwf : t.WF)
     · exact hwf
     · intro n; rfl
     · intro n; rfl
-  | messagePosted _ _ _ => exact hwf
+  | messagePosted _ _ _ _ _ _ => exact hwf
   | messageStatusUpdated _ _ => exact hwf
+  | messageMetadataUpdated _ _ _ => exact hwf
 
 /-- `decide` emits zero events or exactly one valid event. -/
 def ValidEvents (t : PlanTree) (evs : List Event) : Prop :=

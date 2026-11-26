@@ -54,6 +54,66 @@ def strs (j : Json) (k : String) : Except String (List String) := do
   let a ← (← j.getObjVal? k).getArr?
   a.toList.mapM (fun x => x.getStr?)
 
+/-- An optional key: absent means `none`. TypeScript's canonical JSON omits absent fields. -/
+def keyStr (j : Json) (k : String) : Except String (Option String) :=
+  match j.getObjVal? k with
+  | .ok v => do pure (some (← v.getStr?))
+  | .error _ => pure none
+
+def keyNat (j : Json) (k : String) : Except String (Option Nat) :=
+  match j.getObjVal? k with
+  | .ok v => do pure (some (← v.getNat?))
+  | .error _ => pure none
+
+def parsePart (j : Json) : Except String MessagePart := do
+  pure { id := ← str j "id", flow := ← str j "flow", status := ← str j "status" }
+
+def keyParts (j : Json) (k : String) : Except String (Option (List MessagePart)) :=
+  match j.getObjVal? k with
+  | .ok v => do pure (some (← (← v.getArr?).toList.mapM parsePart))
+  | .error _ => pure none
+
+def parseOrigin (j : Json) : Except String MessageOrigin := do
+  pure {
+    role := ← keyStr j "role", questionId := ← keyStr j "questionId",
+    position := ← keyNat j "position", createdAt := ← keyStr j "createdAt" }
+
+def parseRun (j : Json) : Except String MessageRun := do
+  pure {
+    parts := ← keyParts j "parts", failure := ← keyStr j "failure",
+    modelId := ← keyStr j "modelId", stopReason := ← keyStr j "stopReason",
+    inputTokens := ← keyNat j "inputTokens", outputTokens := ← keyNat j "outputTokens" }
+
+def parseNotes (j : Json) : Except String MessageNotes := do
+  pure {
+    summary := ← keyStr j "summary", summaryRevision := ← keyStr j "summaryRevision",
+    phase := ← keyStr j "phase", arc := ← keyStr j "arc", updatedAt := ← keyStr j "updatedAt" }
+
+/-- The fields that hold a value. An absent field has no key in the output. -/
+def present (fields : List (String × Option Json)) : List (String × Json) :=
+  fields.filterMap (fun (k, v) => v.map (fun j => (k, j)))
+
+def partJ (p : MessagePart) : Json :=
+  Json.mkObj [("id", p.id), ("kind", "step"), ("flow", p.flow), ("status", p.status)]
+
+def originJ (o : MessageOrigin) : List (String × Json) :=
+  present [("role", o.role.map Json.str), ("questionId", o.questionId.map Json.str),
+    ("position", o.position.map toJson), ("createdAt", o.createdAt.map Json.str)]
+
+def runJ (r : MessageRun) : List (String × Json) :=
+  present [("parts", r.parts.map (fun ps => Json.arr (ps.map partJ).toArray)),
+    ("failure", r.failure.map Json.str), ("modelId", r.modelId.map Json.str),
+    ("stopReason", r.stopReason.map Json.str), ("inputTokens", r.inputTokens.map toJson),
+    ("outputTokens", r.outputTokens.map toJson)]
+
+def notesJ (n : MessageNotes) : List (String × Json) :=
+  present [("summary", n.summary.map Json.str),
+    ("summaryRevision", n.summaryRevision.map Json.str), ("phase", n.phase.map Json.str),
+    ("arc", n.arc.map Json.str), ("updatedAt", n.updatedAt.map Json.str)]
+
+/-- Required fields, typed so that optional ones can be appended. -/
+def fields (xs : List (String × Json)) : List (String × Json) := xs
+
 def parseCommand (j : Json) : Except String Command := do
   let tag ← str j "_tag"
   match tag with
@@ -71,9 +131,12 @@ def parseCommand (j : Json) : Except String Command := do
   | "AttachArtifact" =>
     pure (.attachArtifact (← str j "nodeId") (← str j "artifactId") (← optNat j "expectedRevision"))
   | "PostMessage" =>
-    pure (.postMessage (← str j "messageId") (← str j "author") (← str j "body"))
+    pure (.postMessage (← str j "messageId") (← str j "author") (← str j "body")
+      (← parseOrigin j) (← parseRun j) (← parseNotes j))
   | "UpdateMessageStatus" =>
     pure (.updateMessageStatus (← str j "messageId") (← str j "status"))
+  | "UpdateMessageMetadata" =>
+    pure (.updateMessageMetadata (← str j "messageId") (← parseRun j) (← parseNotes j))
   | other => throw s!"unknown command tag {other}"
 
 def commandJ : Command → Json
@@ -94,11 +157,14 @@ def commandJ : Command → Json
   | .attachArtifact nodeId artifactId exp =>
     Json.mkObj [("_tag", "AttachArtifact"), ("nodeId", nodeId), ("artifactId", artifactId),
       ("expectedRevision", optNatJ exp)]
-  | .postMessage messageId author body =>
-    Json.mkObj [("_tag", "PostMessage"), ("messageId", messageId), ("author", author),
-      ("body", body)]
+  | .postMessage messageId author body origin run notes =>
+    Json.mkObj (fields [("_tag", "PostMessage"), ("messageId", messageId), ("author", author),
+      ("body", body)] ++ originJ origin ++ runJ run ++ notesJ notes)
   | .updateMessageStatus messageId status =>
     Json.mkObj [("_tag", "UpdateMessageStatus"), ("messageId", messageId), ("status", status)]
+  | .updateMessageMetadata messageId run notes =>
+    Json.mkObj (fields [("_tag", "UpdateMessageMetadata"), ("messageId", messageId)]
+      ++ runJ run ++ notesJ notes)
 
 def eventJ : Event → Json
   | .planNodeCreated id parent title milestone sources assumptions dodFast order =>
@@ -118,10 +184,14 @@ def eventJ : Event → Json
     Json.mkObj [("_tag", "NodeStatusSet"), ("id", id), ("status", status)]
   | .artifactAttached id artifactId =>
     Json.mkObj [("_tag", "ArtifactAttached"), ("id", id), ("artifactId", artifactId)]
-  | .messagePosted id author body =>
-    Json.mkObj [("_tag", "MessagePosted"), ("id", id), ("author", author), ("body", body)]
+  | .messagePosted id author body origin run notes =>
+    Json.mkObj (fields [("_tag", "MessagePosted"), ("id", id), ("author", author), ("body", body)]
+      ++ originJ origin ++ runJ run ++ notesJ notes)
   | .messageStatusUpdated id status =>
     Json.mkObj [("_tag", "MessageStatusUpdated"), ("id", id), ("status", status)]
+  | .messageMetadataUpdated id run notes =>
+    Json.mkObj (fields [("_tag", "MessageMetadataUpdated"), ("id", id)]
+      ++ runJ run ++ notesJ notes)
 
 def nodeJ (n : PlanNode) : Json :=
   Json.mkObj [("id", n.id), ("parent", optStrJ n.parent), ("title", n.title),
@@ -135,8 +205,9 @@ def appStateJ (s : AppState) : Json :=
     ("plan", Json.mkObj [("revision", toJson s.plan.revision),
       ("nodes", Json.mkObj (s.plan.nodes.map (fun n => (n.id, nodeJ n))))]),
     ("chat", Json.mkObj [("messages", Json.arr (s.chat.messages.map (fun m =>
-      Json.mkObj [("id", m.id), ("author", m.author), ("body", m.body),
-        ("status", m.status), ("hubSeq", toJson m.hubSeq)])).toArray)])]
+      Json.mkObj (fields [("id", m.id), ("author", m.author), ("body", m.body),
+        ("status", m.status), ("hubSeq", toJson m.hubSeq)]
+        ++ originJ m.origin ++ runJ m.run ++ notesJ m.notes))).toArray)])]
 
 def commitJ (c : Commit) : Json :=
   Json.mkObj [("hubSeq", toJson c.hubSeq), ("epoch", toJson c.epoch), ("origin", c.origin),

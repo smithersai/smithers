@@ -14,8 +14,10 @@ def decide (s : AppState) : Command → Decision
   | .toggleAssumption id index exp => decideToggle s.plan id index exp
   | .setNodeStatus id status exp => decideStatus s.plan id status exp
   | .attachArtifact id artifactId exp => decideAttach s.plan id artifactId exp
-  | .postMessage id author body => decidePost s.chat id author body
+  | .postMessage id author body origin run notes =>
+    decidePost s.chat id author body origin run notes
   | .updateMessageStatus id status => decideMessageStatus s.chat id status
+  | .updateMessageMetadata id run notes => decideMessageMetadata s.chat id run notes
 
 def evolve (s : AppState) (c : Commit) : AppState :=
   { plan := evolvePlan s.plan c.event, chat := evolveChat s.chat c.hubSeq c.event }
@@ -70,7 +72,7 @@ theorem decide_valid {s : AppState} {c : Command} {evs : List Event}
   | toggleAssumption id index exp => exact decideToggle_valid h
   | setNodeStatus id status exp => exact decideStatus_valid h
   | attachArtifact id artifactId exp => exact decideAttach_valid h
-  | postMessage id author body =>
+  | postMessage id author body origin run notes =>
     simp only [decide, decidePost] at h
     split at h
     · split at h
@@ -79,6 +81,15 @@ theorem decide_valid {s : AppState} {c : Command} {evs : List Event}
     · injection h with h; subst h; exact Or.inr ⟨_, rfl, trivial⟩
   | updateMessageStatus id status =>
     simp only [decide, decideMessageStatus] at h
+    split at h
+    · cases h
+    · split at h
+      · injection h with h; subst h; exact Or.inl rfl
+      · split at h
+        · cases h
+        · injection h with h; subst h; exact Or.inr ⟨_, rfl, trivial⟩
+  | updateMessageMetadata id run notes =>
+    simp only [decide, decideMessageMetadata] at h
     split at h
     · cases h
     · split at h

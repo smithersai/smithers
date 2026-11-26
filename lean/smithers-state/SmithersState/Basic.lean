@@ -37,12 +37,49 @@ structure PlanTree where
   nodes : List PlanNode
   deriving DecidableEq, Repr
 
+/-- One step an answer took. TypeScript also stores the constant `kind = "step"`. -/
+structure MessagePart where
+  id : String
+  flow : String
+  status : String
+  deriving DecidableEq, Repr
+
+/-- What a post sets once. `none` is an absent field: it is left out of the canonical JSON. -/
+structure MessageOrigin where
+  role : Option String := none
+  questionId : Option String := none
+  position : Option Nat := none
+  createdAt : Option String := none
+  deriving DecidableEq, Repr
+
+/-- What a run writes while its message streams. Frozen once the status is terminal. -/
+structure MessageRun where
+  parts : Option (List MessagePart) := none
+  failure : Option String := none
+  modelId : Option String := none
+  stopReason : Option String := none
+  inputTokens : Option Nat := none
+  outputTokens : Option Nat := none
+  deriving DecidableEq, Repr
+
+/-- What anyone may still write once the message is terminal. -/
+structure MessageNotes where
+  summary : Option String := none
+  summaryRevision : Option String := none
+  phase : Option String := none
+  arc : Option String := none
+  updatedAt : Option String := none
+  deriving DecidableEq, Repr
+
 structure Message where
   id : Id
   author : String
   body : String
   status : String
   hubSeq : Nat
+  origin : MessageOrigin := {}
+  run : MessageRun := {}
+  notes : MessageNotes := {}
   deriving DecidableEq, Repr
 
 structure Chat where
@@ -64,8 +101,10 @@ inductive Command where
   | toggleAssumption (nodeId : Id) (index : Nat) (expectedRevision : Option Nat)
   | setNodeStatus (nodeId : Id) (status : String) (expectedRevision : Option Nat)
   | attachArtifact (nodeId : Id) (artifactId : String) (expectedRevision : Option Nat)
-  | postMessage (messageId : Id) (author body : String)
+  | postMessage (messageId : Id) (author body : String) (origin : MessageOrigin)
+      (run : MessageRun) (notes : MessageNotes)
   | updateMessageStatus (messageId : Id) (status : String)
+  | updateMessageMetadata (messageId : Id) (run : MessageRun) (notes : MessageNotes)
   deriving DecidableEq, Repr
 
 inductive Event where
@@ -77,8 +116,10 @@ inductive Event where
   | assumptionToggled (id : Id) (index : Nat)
   | nodeStatusSet (id : Id) (status : String)
   | artifactAttached (id : Id) (artifactId : String)
-  | messagePosted (id : Id) (author body : String)
+  | messagePosted (id : Id) (author body : String) (origin : MessageOrigin)
+      (run : MessageRun) (notes : MessageNotes)
   | messageStatusUpdated (id : Id) (status : String)
+  | messageMetadataUpdated (id : Id) (run : MessageRun) (notes : MessageNotes)
   deriving DecidableEq, Repr
 
 inductive Decision where

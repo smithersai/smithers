@@ -20,8 +20,17 @@ const ADA = personOwner("ada")
 
 const run = <A, E>(program: Effect.Effect<A, E, Scope.Scope>) => Effect.runPromise(Effect.scoped(program))
 
-const transportOf = (host: ShardHost, actor: Actor | null, within: Duration.Input = "2 seconds") =>
-  MessagesShardClient.make({ origin: ORIGIN, conversationId: conversation.toUpperCase(), within }).pipe(
+const transportOf = (
+  host: ShardHost,
+  actor: Actor | null,
+  within: Duration.Input = "2 seconds",
+  target: { readonly origin?: string; readonly conversationId?: string } = {},
+) =>
+  MessagesShardClient.make({
+    origin: target.origin ?? ORIGIN,
+    conversationId: target.conversationId ?? conversation.toUpperCase(),
+    within,
+  }).pipe(
     Effect.provide(Layer.provide(FetchHttpClient.layer, Layer.succeed(FetchHttpClient.Fetch, host.fetchAs(actor)))),
   )
 
@@ -42,8 +51,9 @@ test("the browser's names for a shard, an owner and the refusal header are ChatA
   expect(personOwner("ada/lovelace:1")).toBe(WorkerRoutes.personOwner("ada/lovelace:1"))
   expect(MessagesShardClient.MESSAGES_REFUSAL_HEADER).toBe(WorkerRoutes.refusalHeader)
   expect(WorkerShard.ownsOrigin(ADA, nodeOf(ADA, "laptop"))).toBe(true)
-  expect(WorkerRoutes.handles(new URL(MessagesShardClient.messagesRoute(ORIGIN, conversation.toUpperCase()) + "/pull").pathname))
-    .toBe(true)
+  const route = MessagesShardClient.messagesRoute(ORIGIN, conversation.toUpperCase())
+  expect(route).toBe(`${ORIGIN}/api/conversations/${conversation}/messages`)
+  expect(WorkerRoutes.handles(new URL(route + "/pull").pathname)).toBe(true)
 })
 
 test("submit, pull and snapshot carry protocol v2 to the real shard and decode its answers", () =>
@@ -146,4 +156,59 @@ test("a retry can fix everything but ChatApi's own decision against the person o
   expect([408, 429, 500, 502, 503].map((status) => isTransient(refused(status)))).toEqual([true, true, true, true, true])
   expect(isTransient(refused(401, "same_person"))).toBe(true)
   expect(isTransient(refused(403, "same_person"))).toBe(false)
+  // A target no request may be built from stays one however often it is asked.
+  expect(isTransient(new MessagesShardUnavailable({ request: "submit", reason: "invalid_target" }))).toBe(false)
 })
+
+test("a conversation id that is not a UUID, or an origin that is not an HTTP one, never becomes a signed-in request", () =>
+  run(Effect.gen(function* () {
+    const host = yield* shardHost()
+    const node = nodeOf(ADA, "laptop")
+    const targets: ReadonlyArray<{ readonly origin?: string; readonly conversationId?: string }> = [
+      // Path traversal, a second segment, a query, a fragment, their encodings, and near misses.
+      { conversationId: "../admin" },
+      { conversationId: `${conversation}/../../admin` },
+      { conversationId: `../../admin/${conversation}` },
+      { conversationId: `${conversation}?foo=bar` },
+      { conversationId: `${conversation}#messages` },
+      { conversationId: `${conversation}%2F..%2Fadmin` },
+      { conversationId: `${conversation}\\admin` },
+      { conversationId: `${conversation}\n` },
+      { conversationId: ` ${conversation}` },
+      { conversationId: conversation.replaceAll("-", "") },
+      { conversationId: conversation.replace("3", "g") },
+      { conversationId: "" },
+      // An origin that is no URL, or one of a scheme a signed-in request never goes to.
+      { origin: "" },
+      { origin: "not an origin" },
+      { origin: "//smithers.example" },
+      { origin: "/api" },
+      { origin: "javascript:alert(1)" },
+      { origin: "file:///etc/passwd" },
+      { origin: "ftp://smithers.example" },
+      { origin: "data:text/plain,hello" },
+    ]
+    for (const target of targets) {
+      const label = JSON.stringify(target)
+      expect(MessagesShardClient.messagesRoute(target.origin ?? ORIGIN, target.conversationId ?? conversation), label)
+        .toBeUndefined()
+      const transport = yield* transportOf(host, ada, "2 seconds", target)
+      const failed = (request: "submit" | "pull" | "snapshot") => new MessagesShardUnavailable({ request, reason: "invalid_target" })
+      expect(yield* Effect.flip(transport.submit(submitOf(node, "0", "m1"))), label).toEqual(failed("submit"))
+      expect(yield* Effect.flip(transport.pull(pullOf(0))), label).toEqual(failed("pull"))
+      expect(yield* Effect.flip(transport.snapshot(shard)), label).toEqual(failed("snapshot"))
+    }
+    // Nothing left the device, and the shard holds nothing.
+    expect(host.requests).toEqual([])
+    expect((yield* host.head(conversation)).seq).toBe(0)
+
+    // Of a valid origin only the origin is used: never its path, its query, its fragment or its credentials.
+    const route = `${ORIGIN}/api/conversations/${conversation}/messages`
+    expect(MessagesShardClient.messagesRoute("https://user:secret@smithers.example/base/path?token=1#frag", conversation)).toBe(route)
+    expect(MessagesShardClient.messagesRoute("HTTPS://SMITHERS.EXAMPLE/", conversation.toUpperCase())).toBe(route)
+    expect(MessagesShardClient.messagesRoute("http://localhost:8787", conversation))
+      .toBe(`http://localhost:8787/api/conversations/${conversation}/messages`)
+    const transport = yield* transportOf(host, ada, "2 seconds", { origin: "https://user:secret@smithers.example/base?token=1" })
+    expect(yield* transport.submit(submitOf(node, "0", "m1"))).toMatchObject({ _tag: "Accepted" })
+    expect(host.requests).toEqual([`POST /api/conversations/${conversation}/messages/submit`])
+  })))
