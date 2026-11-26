@@ -24,7 +24,7 @@ import { BranchScreen } from "../../screens/branch/BranchScreen"
 import { branchRenderer, renderNoticeHistory } from "../../screens/branch/offline-render"
 import { Todos } from "../todos/todos.vibe"
 import { Attention } from "./attention.vibe"
-import { Views } from "../views/views"
+import { Views } from "../views/views.vibe"
 import { PluginsUi } from "../../plugins/ui"
 
 test("a branch page renders the shared toast stack, anchored under its chrome, once", async () => {

@@ -3,7 +3,7 @@
 // issues and asks no other repository's role (decision 0152).
 import { Deferred, Effect, Fiber, Option, PubSub, Queue, Stream } from "effect"
 import { describe, expect, test } from "vitest"
-import { type Route, showsConversation, shownWhileRouted } from "./embeds"
+import { type Route, showsConversation, shownWhileRouted } from "./embeds.vibe"
 
 describe("a conversation's views load while the routed page may show it", () => {
   test.each([

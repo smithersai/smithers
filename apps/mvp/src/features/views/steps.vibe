@@ -1,3 +1,4 @@
+import { WebCrypto as WebCryptoReference } from "effect/crypto/WebCrypto"
 import { type FlowEngineLike, ModelStep } from "@smthrs/agent"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { type Model, ModelError, ModelEvent, ModelRequest } from "@smthrs/model"
@@ -5,8 +6,8 @@ import { Context, Effect, Layer, Metric } from "effect"
 import { codeOf } from "../../errorCode"
 import { requesterOf } from "../../flows/requests.vibe"
 import { clientSeat } from "../model/clientSeat.vibe"
-import { type ViewRefused, ViewsClient } from "./api"
-import { viewConversation } from "./conversation"
+import { type ViewRefused, ViewsClient } from "./api.vibe"
+import { viewConversation } from "./conversation.vibe"
 import { formRefusal } from "./form"
 import {
   AskWithForm,
@@ -92,60 +93,62 @@ const failureOf = (error: ViewRefused) =>
  * (`failure`: forbidden or unavailable).
  */
 const record = (counter: typeof shown, attributes: Record<string, string>, line: string, failure?: ViewRefused) =>
-  Effect.andThen(
-    Metric.update(Metric.withAttributes(counter, attributes), 1),
-    failure === undefined
-      ? Effect.logInfo(line).pipe(Effect.annotateLogs({ ...attributes, feature: "views" }))
-      : Effect.logWarning(line).pipe(Effect.annotateLogs({
+  effect {
+    try Metric.update(Metric.withAttributes(counter, attributes), 1)
+    if (failure === undefined) {
+      try Effect.logInfo(line).pipe(Effect.annotateLogs({ ...attributes, feature: "views" }))
+    } else {
+      try Effect.logWarning(line).pipe(Effect.annotateLogs({
         ...attributes,
         feature: "views",
-        errorCode: codeOf(failure),
+        errorCode: try sync(() => codeOf(failure)),
         ...(failure.status === undefined ? {} : { status: failure.status }),
-      })),
-  )
+      }))
+    }
+  }
 
 /** `ui/form/check`: the form's schema renders fields and asks for no secret; a fresh id for the view. */
 export const checkForm = (form: { readonly title: string; readonly schema: Readonly<Record<string, unknown>>; readonly submitLabel?: string | undefined }) =>
-  Effect.gen(function* () {
-    const refused = formRefusal(form.schema)
+  effect {
+    const refused = try sync(() => formRefusal(form.schema))
     if (refused !== undefined) {
-      yield* record(shown, { template: "form", outcome: "refused", reason: refused }, "views.form")
-      return yield* new FormRefused({ reason: refused })
+      try record(shown, { template: "form", outcome: "refused", reason: refused }, "views.form")
+      throw new FormRefused({ reason: refused })
     }
     return {
-      viewId: crypto.randomUUID(),
+      viewId: try sync(() => WebCryptoReference.defaultValue().randomUUID()),
       title: form.title,
       schema: form.schema,
       submitLabel: form.submitLabel ?? "Send",
     } satisfies CheckedForm
-  }).pipe(Effect.withSpan("views.form.check"))
+  }.pipe(Effect.withSpan("views.form.check"))
 
 /** `ui/form/show`: adds the form through ChatApi. */
 export const showForm = (form: CheckedForm) =>
-  Effect.gen(function* () {
-    const added = yield* (yield* ViewsClient).add({
+  effect {
+    const added = try (try ViewsClient).add({
       id: form.viewId,
       template: "form",
       props: { title: form.title, schema: form.schema, submitLabel: form.submitLabel },
-      ...(yield* placeOf),
+      ...(try placeOf),
     }).pipe(Effect.result)
     if (added._tag === "Failure") {
       if (added.failure.status === 400) {
-        yield* record(shown, { template: "form", outcome: "refused" }, "views.form")
-        return yield* new FormRefused({ reason: "no_fields" })
+        try record(shown, { template: "form", outcome: "refused" }, "views.form")
+        throw new FormRefused({ reason: "no_fields" })
       }
       const failed = failureOf(added.failure)
-      yield* record(shown, { template: "form", outcome: failed.outcome }, "views.form", added.failure)
-      return yield* Effect.fail(failed.error)
+      try record(shown, { template: "form", outcome: failed.outcome }, "views.form", added.failure)
+      throw failed.error
     }
-    yield* record(shown, { template: "form", outcome: "shown" }, "views.form")
+    try record(shown, { template: "form", outcome: "shown" }, "views.form")
     return { viewId: form.viewId, shown: "form" as const }
-  }).pipe(Effect.withSpan("views.form.show"))
+  }.pipe(Effect.withSpan("views.form.show"))
 
 /** `ui/render/plan`: a fresh id for the view, and where it shows first (`inline` unless asked). */
 export const planView = (task: { readonly description: string; readonly size?: "inline" | "full" | undefined; readonly data?: Readonly<Record<string, unknown>> | undefined }) =>
   Effect.succeed({
-    viewId: crypto.randomUUID(),
+    viewId: runSync(sync(() => WebCryptoReference.defaultValue().randomUUID())),
     description: task.description,
     size: task.size ?? "inline",
     ...(task.data === undefined ? {} : { data: task.data }),
@@ -163,34 +166,34 @@ const modelFailure = (error: unknown) =>
  * at most {@link MAX_CORRECTIONS} times; then the step fails `ViewNotRendered`.
  */
 export const writeView = (planned: PlannedView) =>
-  Effect.gen(function* () {
-    const seat = yield* RendererSeat
-    const client = yield* ViewsClient
-    const place = yield* placeOf
-    const messages: Array<ModelRequest.Message> = [ModelRequest.Message.user(rendererTask(planned))]
+  effect {
+    const seat = try RendererSeat
+    const client = try ViewsClient
+    const place = try placeOf
+    const messages: Array<ModelRequest.Message> = [try sync(() => ModelRequest.Message.user(rendererTask(planned)))]
     for (let attempt = 0; attempt <= MAX_CORRECTIONS; attempt++) {
-      const result = yield* ModelStep.run({
+      const result = try ModelStep.run({
         name: `ui/render/model/${attempt}`,
         ...seat,
-        request: ModelRequest.ModelRequest.make({
+        request: try sync(() => ModelRequest.ModelRequest.make({
           modelId: "renderer",
           tools: [],
           // The allowance includes reasoning: 4,096 tokens yielded empty replies in the live board eval.
           params: ModelRequest.GenerationParams.make({ maxTokens: seat.maxTokens }),
           system: [{ type: "text", text: RENDERER_SYSTEM }],
           messages: [...messages],
-        }),
+        })),
       }).pipe(Effect.mapError(modelFailure))
-      if (result.error) return yield* modelFailure(result.error)
-      const reply = ModelEvent.settledMessage(result.events).message.content
-        .filter((part) => part.type === "text").map((part) => part.text).join("")
-      messages.push(ModelRequest.Message.assistant(reply))
-      const written = readWritten(reply)
+      if (result.error) throw modelFailure(result.error)
+      const reply = try sync(() => ModelEvent.settledMessage(result.events).message.content
+        .filter((part) => part.type === "text").map((part) => part.text).join(""))
+      messages.push(try sync(() => ModelRequest.Message.assistant(reply)))
+      const written = try sync(() => readWritten(reply))
       // What went wrong, for the correction: the reply itself, or ChatApi's check or render of its module.
       let problem: string
       if (typeof written === "string") problem = written
       else {
-        const added = yield* client.add({
+        const added = try client.add({
           id: planned.viewId,
           template: "generated",
           title: written.title,
@@ -212,7 +215,7 @@ export const writeView = (planned: PlannedView) =>
           ),
         )
         if (added._tag === "Added") {
-          yield* record(shown, { template: "generated", outcome: "shown", corrections: String(attempt) }, "views.render")
+          try record(shown, { template: "generated", outcome: "shown", corrections: String(attempt) }, "views.render")
           return {
             viewId: planned.viewId,
             title: written.title,
@@ -224,13 +227,13 @@ export const writeView = (planned: PlannedView) =>
         problem = added.detail
       }
       if (attempt < MAX_CORRECTIONS) {
-        yield* Metric.update(corrections, 1)
-        messages.push(ModelRequest.Message.user(rendererCorrection(problem)))
+        try Metric.update(corrections, 1)
+        messages.push(try sync(() => ModelRequest.Message.user(rendererCorrection(problem))))
       }
     }
-    yield* record(shown, { template: "generated", outcome: "not_rendered" }, "views.render")
-    return yield* new ViewNotRendered({ reason: "invalid" })
-  }).pipe(Effect.withSpan("views.render.write", { attributes: { "smithers.view.size": planned.size } }))
+    try record(shown, { template: "generated", outcome: "not_rendered" }, "views.render")
+    throw new ViewNotRendered({ reason: "invalid" })
+  }.pipe(Effect.withSpan("views.render.write", { attributes: { "smithers.view.size": planned.size } }))
 
 /** `view/set-state/send`: ChatApi makes the move; the view's new revision. */
 export const sendState = (move: {
@@ -238,34 +241,34 @@ export const sendState = (move: {
   readonly revision: number
   readonly event: { readonly name: string; readonly arg?: string }
 }) =>
-  Effect.gen(function* () {
+  effect {
     // The move's id is its execution's, so every retry of it, after a crash too, is the same move to ChatApi.
-    const { executionId } = yield* FlowRuntime.FlowInstance
-    const changed = yield* (yield* ViewsClient).setState(move.viewId.toLowerCase(), {
+    const { executionId } = try FlowRuntime.FlowInstance
+    const changed = try (try ViewsClient).setState(move.viewId.toLowerCase(), {
       moveId: executionId,
       revision: move.revision,
       event: move.event,
     }).pipe(Effect.result)
     if (changed._tag === "Success") {
-      yield* record(moves, { outcome: "moved" }, "views.move")
+      try record(moves, { outcome: "moved" }, "views.move")
       return { viewId: move.viewId, revision: changed.success }
     }
     const error = changed.failure
     if (error.status === 409 && error.revision !== undefined) {
-      yield* record(moves, { outcome: "stale" }, "views.move")
-      return yield* new ViewStale({ revision: error.revision })
+      try record(moves, { outcome: "stale" }, "views.move")
+      throw new ViewStale({ revision: error.revision })
     }
     if (error.status === 400 || error.status === 404 || error.status === 422) {
-      yield* record(moves, { outcome: "refused" }, "views.move")
-      return yield* new MoveRefused()
+      try record(moves, { outcome: "refused" }, "views.move")
+      throw new MoveRefused()
     }
     const failed = failureOf(error)
-    yield* record(moves, { outcome: failed.outcome }, "views.move", error)
-    return yield* Effect.fail(failed.error)
-  }).pipe(Effect.withSpan("views.move"))
+    try record(moves, { outcome: failed.outcome }, "views.move", error)
+    throw failed.error
+  }.pipe(Effect.withSpan("views.move"))
 
 /** `ui/repo/plan` and `ui/issues/plan`: a fresh id for the view. */
-export const planTemplate = <A extends object>(input: A) => Effect.sync(() => ({ viewId: crypto.randomUUID(), ...input }))
+export const planTemplate = <A extends object>(input: A) => Effect.sync(() => ({ viewId: WebCryptoReference.defaultValue().randomUUID(), ...input }))
 
 /**
  * `ui/repo/show` and `ui/issues/show`: adds the view through ChatApi, to the conversation the running execution names
@@ -276,23 +279,23 @@ const showTemplate = (
   write: Pick<RepoWrite, "id" | "template" | "props"> | Pick<IssuesWrite, "id" | "template" | "props">,
   conversationId: string | undefined,
 ) =>
-  Effect.gen(function* () {
+  effect {
     const { id: viewId, template } = write
-    const added = yield* (yield* ViewsClient).add({ ...write, ...(yield* viewConversation(conversationId)) }).pipe(
+    const added = try (try ViewsClient).add({ ...write, ...(try viewConversation(conversationId)) }).pipe(
       Effect.result,
     )
     if (added._tag === "Failure") {
       if (added.failure.status === 400 || added.failure.status === 404 || added.failure.status === 409) {
-        yield* record(shown, { template, outcome: "refused" }, "views.template")
-        return yield* new TemplateRefused()
+        try record(shown, { template, outcome: "refused" }, "views.template")
+        throw new TemplateRefused()
       }
       const failed = failureOf(added.failure)
-      yield* record(shown, { template, outcome: failed.outcome }, "views.template", added.failure)
-      return yield* Effect.fail(failed.error)
+      try record(shown, { template, outcome: failed.outcome }, "views.template", added.failure)
+      throw failed.error
     }
-    yield* record(shown, { template, outcome: "shown" }, "views.template")
+    try record(shown, { template, outcome: "shown" }, "views.template")
     return { viewId, shown: template }
-  }).pipe(Effect.withSpan("views.template.show", { attributes: { template: write.template } }))
+  }.pipe(Effect.withSpan("views.template.show", { attributes: { template: write.template } }))
 
 /** `ui/repo/show`: the repository's view, with what it opens. */
 export const showRepo = ({ viewId, conversationId, ...props }: PlannedRepo) =>

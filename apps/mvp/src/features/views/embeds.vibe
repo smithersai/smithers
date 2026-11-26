@@ -53,34 +53,35 @@ export const shownWhileRouted = <A>(conversations: Stream.Stream<A>, route?: Rou
  * while the routed page may show a conversation (`showsConversation`): leaving an issues or pull requests page loads
  * what its conversation's views need then.
  */
-export const followEmbeds = (route?: Route) => Effect.gen(function* () {
-  const chat = yield* ChatStore
-  const views = yield* ViewsStore
-  const issues = yield* IssuesStore
+export effect function followEmbeds(route?: Route) {
+  const chat = try ChatStore
+  const views = try ViewsStore
+  const issues = try IssuesStore
   const conversations = chat.place.changes({ initial: true }).pipe(
     Stream.flatMap((changes) => Stream.fromIterable(changes)),
     Stream.map((change) => change.value.conversationId),
     Stream.changes,
   )
-  yield* shownWhileRouted(conversations, route).pipe(
+  try shownWhileRouted(conversations, route).pipe(
     // The home conversation's views, or a branch's, which chat opened before it showed it (src/features/chat/store.ts).
     Stream.switchMap(Option.match({
       onNone: () => Stream.empty,
-      onSome: (conversationId) => views.rowsIn(conversationId ?? undefined).rows,
+      onSome: (conversationId) => Stream.unwrap(sync(() => views.rowsIn(conversationId ?? undefined).rows)),
     })),
     Stream.runForEach((rows) =>
-      Effect.forEach(rows, (row) => {
-        const repo = repoOf(row)
-        if (repo !== undefined) return embed(row.id, repo)
-        const shown = issuesOf(row)
-        return shown === undefined
-          ? Effect.void
-          : Effect.asVoid(Effect.forkIn(issues.forRepo(repoIdOf(shown.repo)), views.scope))
+      Effect.forEach(rows, effect (row) => {
+        const repo = try sync(() => repoOf(row))
+        if (repo !== undefined) {
+          try embed(row.id, repo)
+          return
+        }
+        const shown = try sync(() => issuesOf(row))
+        if (shown !== undefined) fork.in(views.scope) issues.forRepo(repoIdOf(shown.repo))
       }, { discard: true })
     ),
     Effect.forkIn(views.scope),
   )
-})
+}
 
 /** The follower, for as long as the views' store lives; with `route`, only while the routed page may show a conversation. */
 export const embedsLayer = (route?: Route) => Layer.effectDiscard(followEmbeds(route))

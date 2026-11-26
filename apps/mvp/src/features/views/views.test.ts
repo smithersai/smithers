@@ -21,7 +21,7 @@ import { viewPath } from "./contract"
 import { TIC_TAC_TOE, TIC_TAC_TOE_STATE } from "./renderer"
 import { pageOf } from "./rows"
 import { ViewsStore } from "./store"
-import { Views } from "./views"
+import { Views } from "./views.vibe"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -221,6 +221,21 @@ describe("/web <url>", () => {
 })
 
 describe("a view's sizes", () => {
+  test("the full-screen query follows an opened conversation and falls back to home", async () => {
+    const tab = await open()
+    const store = await tab.runtime.runPromise(Effect.service(ViewsStore))
+    const branch = crypto.randomUUID()
+    const home = tab.views.queries.shown
+    expect(tab.views.queries.shownIn(undefined)).toBe(home)
+    expect(tab.views.queries.shownIn(branch)).toBe(home)
+
+    const viewId = crypto.randomUUID()
+    await tab.views.actions.show(viewId, branch)
+    const shown = tab.views.queries.shownIn(branch)
+    expect(shown).not.toBe(home)
+    expect(shown).toBe(store.shownIn(branch)?.tanstack)
+  }, WITHIN)
+
   test.each([false, true])("the full-screen route shows a webpage view, never a card (page first: %s)", async (pageFirst) => {
     const tab = await open({ answers: true })
     // Prove both receipt orders; independent commands need not finish in the order they were pressed.

@@ -25,7 +25,7 @@ import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands"
 import { replaceRole, RepoStore } from "../repo/store.vibe"
 import { ViewsStore } from "../views/store"
-import { Views } from "../views/views"
+import { Views } from "../views/views.vibe"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {

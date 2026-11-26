@@ -11,10 +11,10 @@ import { afterEach, describe, expect, test } from "vitest"
 import type { Actor } from "../../../worker/Actor.vibe"
 import { build } from "../../../worker/test/flowHost.ts"
 import { harness, stop, testFile, usage } from "../../../worker/test/harness.ts"
-import { ViewRefused, ViewsClient } from "./api"
+import { ViewRefused, ViewsClient } from "./api.vibe"
 import { AskWithForm, RenderView, SetViewState, ShowIssues, ShowRepo } from "./flows"
 import { TIC_TAC_TOE, TIC_TAC_TOE_STATE } from "./renderer"
-import { registration, RendererSeat, sendState, showForm, showRepo } from "./steps"
+import { registration, RendererSeat, sendState, showForm, showRepo } from "./steps.vibe"
 
 const runtime = testFile("views-steps")
 

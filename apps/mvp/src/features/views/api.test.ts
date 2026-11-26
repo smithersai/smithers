@@ -3,7 +3,7 @@
 import { Effect, Exit, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
-import { ViewsClient } from "./api"
+import { ViewsClient } from "./api.vibe"
 
 const clientOver = (fetch: typeof globalThis.fetch) =>
   ViewsClient.layer({ origin: "http://chat.test", within: "5 seconds" }).pipe(

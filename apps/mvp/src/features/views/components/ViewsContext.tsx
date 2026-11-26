@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { ViewsView } from "../views"
+import type { ViewsView } from "../views.vibe"
 
 // What React components get: the views layer's live query to render and plain action to call
 // (features/views/views.ts).

@@ -52,6 +52,17 @@ const host = async (renderer?: Model.Model) => {
 }
 
 describe("ui/form", () => {
+  test("a form from an agent call is added through its answer", async () => {
+    const { h, engine } = await host()
+    const answerId = crypto.randomUUID()
+    expect((await h.ask({ id: crypto.randomUUID(), answerId, text: "Show a form" })).status).toBe(202)
+    const result = await Effect.runPromise(engine.flows.execute(AskWithForm, {
+      executionId: `${answerId.toUpperCase()}/chat/Respond@1/call/0.0`,
+      payload: CLONE_FORM,
+    }))
+    expect(await views()).toEqual([expect.objectContaining({ id: result.viewId, template: "form", props: CLONE_FORM })])
+  }, WITHIN)
+
   test("adds a form and stores the person's submission as their next question", async () => {
     const { h, engine } = await host()
     const result = await Effect.runPromise(engine.flows.execute(AskWithForm, { executionId: crypto.randomUUID(), payload: CLONE_FORM }))

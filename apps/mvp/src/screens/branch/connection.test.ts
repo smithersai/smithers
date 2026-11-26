@@ -16,7 +16,7 @@ import { Chat } from "../../features/chat/chat"
 import { ChatStore } from "../../features/chat/store"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { Repo } from "../../features/repo/repo.vibe"
-import { Views } from "../../features/views/views"
+import { Views } from "../../features/views/views.vibe"
 import { PluginsUi } from "../../plugins/ui"
 import { nodeDevice, openTestApp, TestChatApi } from "../../test/chatApi"
 

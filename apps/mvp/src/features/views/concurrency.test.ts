@@ -5,7 +5,7 @@ import { expect, test } from "vitest"
 import { ConversationOwners } from "../conversations/owners"
 import { SHOWING } from "./schema"
 import { ViewsStore } from "./store"
-import { show } from "./views"
+import { show } from "./views.vibe"
 import { typeScriptOf } from "../../../../../packages/repo-targets/test-utils/source-readers.mjs"
 
 // Every conversation's rows show: what concerns these tests is opening, never the data gate (owners.ts).

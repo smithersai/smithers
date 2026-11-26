@@ -1,8 +1,8 @@
 import { WebCrypto as WebCryptoReference } from "effect/crypto/WebCrypto"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { requesterOf } from "../../flows/requests.vibe"
-import { ViewsClient } from "../views/api"
-import { viewConversation } from "../views/conversation"
+import { ViewsClient } from "../views/api.vibe"
+import { viewConversation } from "../views/conversation.vibe"
 import { PreviewClient } from "./api.vibe"
 import type { WebOutcome } from "./contract"
 import {

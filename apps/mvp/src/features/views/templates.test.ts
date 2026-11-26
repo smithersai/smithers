@@ -16,10 +16,10 @@ import { Commands } from "../commands/commands"
 import { IssuesStore } from "../issues/store.vibe"
 import { repoId } from "../repo/contract"
 import { Repo } from "../repo/repo.vibe"
-import { CHAT_PATH, minimize, minimized, sameTarget } from "./minimize"
+import { CHAT_PATH, minimize, minimized, sameTarget } from "./minimize.vibe"
 import { issuesOf, repoOf } from "./rows"
 import { ViewsStore } from "./store"
-import { Views } from "./views"
+import { Views } from "./views.vibe"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
