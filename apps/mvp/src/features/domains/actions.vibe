@@ -5,7 +5,7 @@ import { FlowDispatch } from "../../flows/dispatch"
 import { repoId } from "../repo/contract"
 import { normalizeHostname } from "./contract"
 import type { Domain, DomainOp } from "./schema"
-import { DomainsStore, PAGE } from "./store"
+import { DomainsStore, PAGE } from "./store.vibe"
 
 // What a Maintainer does on a repository's Settings page (docs/features/domains.md#the-settings-section): open it, add
 // a domain, check one again (Refresh), remove one, and copy a DNS record's value. Every write is a flow, `domain/add`

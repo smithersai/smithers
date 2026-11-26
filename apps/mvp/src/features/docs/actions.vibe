@@ -36,29 +36,29 @@ const load = <A, Row extends { readonly key: string; readonly state: string }>(
   done: (answer: A) => { readonly row: Row; readonly results?: number },
   refused: (code: string) => Row,
 ) =>
-  Effect.gen(function* () {
-    const collection = rows(yield* DocsStore)
-    const kept = yield* collection.get(key)
+  (effect {
+    const collection = rows(try DocsStore)
+    const kept = try collection.get(key)
     if (Option.isSome(kept) && kept.value.state !== "refused") return
     // Whose repository: every key starts `owner/name`. One that refused this person reads nothing more, and a read
     // already on its way when it did writes nothing after.
-    const repos = Option.getOrUndefined(yield* Effect.serviceOption(RepoStore))
+    const repos = Option.getOrUndefined(try Effect.serviceOption(RepoStore))
     const id = `github/${key.split(/[:?]/, 1)[0]}`
-    if (repos?.isRefused(id) === true) return
-    const fence = repos?.fenceOf(id) ?? 0
+    if ((try sync(() => repos?.isRefused(id))) === true) return
+    const fence = (try sync(() => repos?.fenceOf(id))) ?? 0
     const fenced = (write: Effect.Effect<void>) => repos === undefined ? write : repos.fenced(id, fence, write)
-    yield* put(collection, key, loading)
-    const startedAt = yield* Clock.currentTimeMillis
-    const result = yield* Effect.result(read)
-    const durationMs = (yield* Clock.currentTimeMillis) - startedAt
+    try put(collection, key, loading)
+    const startedAt = try Clock.currentTimeMillis
+    const result = try Effect.result(read)
+    const durationMs = (try Clock.currentTimeMillis) - startedAt
     if (result._tag === "Failure") {
       const code = codeOf(result.failure)
-      yield* fenced(put(collection, key, refused(code)))
-      return yield* recordLoad(kind, code, durationMs, { status: result.failure.status })
+      try fenced(put(collection, key, refused(code)))
+      return try recordLoad(kind, code, durationMs, { status: result.failure.status })
     }
     const answered = done(result.success)
-    yield* fenced(put(collection, key, answered.row))
-    yield* recordLoad(kind, "ok", durationMs, { results: answered.results })
+    try fenced(put(collection, key, answered.row))
+    try recordLoad(kind, "ok", durationMs, { results: answered.results })
   }).pipe(
     Effect.onInterrupt(() =>
       Effect.flatMap(DocsStore, (store) => Effect.ignore(rows(store).delete(key)))
@@ -68,10 +68,11 @@ const load = <A, Row extends { readonly key: string; readonly state: string }>(
 
 /** `owner/name`'s docs index. */
 const loadIndex = (owner: string, name: string) =>
-  Effect.flatMap(DocsClient, (client) => {
+  effect {
+    const client = try DocsClient
     const id = repoId(owner, name)
-    const key = repoKeyOf(owner, name)
-    return load(
+    const key = try sync(() => repoKeyOf(owner, name))
+    return try load(
       "index",
       (store) => store.indexes,
       key,
@@ -83,14 +84,15 @@ const loadIndex = (owner: string, name: string) =>
       }),
       (code) => ({ key, repoId: id, state: "refused" as const, title: "", summary: null, pages: [], code }),
     )
-  })
+  }
 
 /** One page of `owner/name`'s docs. */
 const loadPage = (owner: string, name: string, path: string) =>
-  Effect.flatMap(DocsClient, (client) => {
+  effect {
+    const client = try DocsClient
     const id = repoId(owner, name)
-    const key = pageKeyOf(repoKeyOf(owner, name), path)
-    return load(
+    const key = try sync(() => pageKeyOf(repoKeyOf(owner, name), path))
+    return try load(
       "page",
       (store) => store.pages,
       key,
@@ -99,14 +101,15 @@ const loadPage = (owner: string, name: string, path: string) =>
       (page) => ({ row: { key, repoId: id, state: "text" as const, title: page.title, url: page.url, text: page.text, code: null } }),
       (code) => ({ key, repoId: id, state: "refused" as const, title: "", url: "", text: "", code }),
     )
-  })
+  }
 
 /** A search of `owner/name`'s docs for `query`'s words. */
 const loadSearch = (owner: string, name: string, query: string) =>
-  Effect.flatMap(DocsClient, (client) => {
+  effect {
+    const client = try DocsClient
     const id = repoId(owner, name)
-    const key = searchKeyOf(repoKeyOf(owner, name), query)
-    return load(
+    const key = try sync(() => searchKeyOf(repoKeyOf(owner, name), query))
+    return try load(
       "search",
       (store) => store.searches,
       key,
@@ -115,63 +118,63 @@ const loadSearch = (owner: string, name: string, query: string) =>
       (listing) => ({ row: { key, repoId: id, state: "ready" as const, pages: listing.pages, code: null }, results: listing.pages.length }),
       (code) => ({ key, repoId: id, state: "refused" as const, pages: [], code }),
     )
-  })
+  }
 
 /** Starts the reads `owner/name`'s docs page needs in the store's scope: its index, and the page at `path`. */
 const start = (owner: string, name: string, path: string | undefined) =>
-  Effect.gen(function* () {
-    const { scope } = yield* DocsStore
-    const index = yield* Effect.forkIn(loadIndex(owner, name), scope)
-    const page = path === undefined ? undefined : yield* Effect.forkIn(loadPage(owner, name, path), scope)
+  effect {
+    const { scope } = try DocsStore
+    const index = fork.in(scope) loadIndex(owner, name)
+    const page = path === undefined ? undefined : fork.in(scope) loadPage(owner, name, path)
     return page === undefined ? [index] : [index, page]
-  })
+  }
 
 /**
  * A docs route, before it shows: reads `owner/name`'s index, and the page at `path`, into this tab without showing
  * them. Ends once read, or after {@link WARM_WITHIN}; the reads go on.
  */
 export const warm = (owner: string, name: string, path?: string) =>
-  Effect.gen(function* () {
-    const fibers = yield* start(owner, name, path)
-    yield* Effect.timeoutOption(Fiber.joinAll(fibers), WARM_WITHIN)
-  })
+  effect {
+    const fibers = try start(owner, name, path)
+    try Effect.timeoutOption(Fiber.joinAll(fibers), WARM_WITHIN)
+  }
 
 /**
  * A docs route, once warm: shows `owner/name`'s docs, at the page at `path` or its index, and reads what this tab
  * lacks. The searchbox keeps its words within one repository's docs and empties for another's.
  */
 export const open = (owner: string, name: string, path?: string) =>
-  Effect.gen(function* () {
-    const store = yield* DocsStore
-    const repoKey = repoKeyOf(owner, name)
-    const was = Option.getOrThrow(yield* store.current.get(CURRENT))
+  effect {
+    const store = try DocsStore
+    const repoKey = try sync(() => repoKeyOf(owner, name))
+    const was = Option.getOrThrow(try store.current.get(CURRENT))
     const same = was.repoKey === repoKey
-    if (!same) yield* FiberHandle.clear(store.searcher)
-    yield* setCurrent({
+    if (!same) try FiberHandle.clear(store.searcher)
+    try setCurrent({
       owner,
       name,
       repoKey,
       path: path ?? null,
-      pageKey: path === undefined ? null : pageKeyOf(repoKey, path),
+      pageKey: path === undefined ? null : try sync(() => pageKeyOf(repoKey, path)),
       query: same ? was.query : "",
       searchKey: same ? was.searchKey : null,
     })
-    yield* start(owner, name, path)
-  })
+    try start(owner, name, path)
+  }
 
 /**
  * The searchbox: holds `query` and searches the routed repository's docs for its words, interrupting the search
  * before; with no words, the index shows again.
  */
 export const search = (query: string) =>
-  Effect.gen(function* () {
-    const store = yield* DocsStore
-    const current = Option.getOrThrow(yield* store.current.get(CURRENT))
+  effect {
+    const store = try DocsStore
+    const current = Option.getOrThrow(try store.current.get(CURRENT))
     const words = query.trim() !== ""
-    const searchKey = words ? searchKeyOf(current.repoKey, query) : null
-    yield* setCurrent({ query, searchKey })
+    const searchKey = words ? try sync(() => searchKeyOf(current.repoKey, query)) : null
+    try setCurrent({ query, searchKey })
     // The same words with other spaces: the search on its way is this one.
     if (searchKey === current.searchKey) return
-    if (!words) return yield* FiberHandle.clear(store.searcher)
-    yield* FiberHandle.run(store.searcher, loadSearch(current.owner, current.name, query))
-  })
+    if (!words) return try FiberHandle.clear(store.searcher)
+    try FiberHandle.run(store.searcher, loadSearch(current.owner, current.name, query))
+  }

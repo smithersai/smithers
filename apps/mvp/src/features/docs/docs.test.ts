@@ -11,7 +11,7 @@ import { markdown, type Page } from "../../../worker/test/pages"
 import { type RepoHarness, repoHarness } from "../../../worker/test/repos"
 import { DocsClient, DocsRefused } from "./api.vibe"
 import { DOCS_UNREADABLE, NO_DOCS, NO_MATCHES, PAGE_UNREADABLE } from "./contract"
-import { Docs } from "./docs"
+import { Docs } from "./docs.vibe"
 import { loads } from "./records"
 import { DocsStore } from "./store"
 import { replaceRole, RepoStore } from "../repo/store"
@@ -279,7 +279,7 @@ describe("the Docs tab", () => {
 
 // The data gate (decision 0110, 2026-11-03): a repository's docs leave the page's query in the change that refuses it,
 // before any wipe runs, and show again when the mark goes.
-test("a refused repository's docs leave the page's query in the change that refuses it", async () => {
+const withRepoAuthority = async () => {
   const h = await harness()
   const runtime = ManagedRuntime.make(
     Docs.layer.pipe(
@@ -293,6 +293,11 @@ test("a refused repository's docs leave the page's query in the change that refu
     ),
   )
   tabs.push({ dispose: () => runtime.dispose() })
+  return runtime
+}
+
+test("a refused repository's docs leave the page's query in the change that refuses it", async () => {
+  const runtime = await withRepoAuthority()
   const docs = await runtime.runPromise(Effect.service(Docs))
   docs.queries.docs.startSyncImmediate()
   docs.actions.open("acme", "widgets", "/guide/retrying.md")
@@ -309,4 +314,15 @@ test("a refused repository's docs leave the page's query in the change that refu
     .toEqual({ index: undefined, page: undefined, search: undefined })
   const again = await shownAfter(Effect.orDie(repos.roles.delete(id)))
   expect(again).toMatchObject({ index: { state: "ready" }, page: { state: "text" } })
+})
+
+test("warming docs skips a repository refused on this tab", async () => {
+  const runtime = await withRepoAuthority()
+  const docs = await runtime.runPromise(Effect.service(Docs))
+  const store = await runtime.runPromise(Effect.service(DocsStore))
+  const repos = await runtime.runPromise(Effect.service(RepoStore))
+  await runtime.runPromise(repos.refuse("github/acme/widgets"))
+  await docs.actions.warm("acme", "widgets", "/guide/retrying.md")
+  expect(store.indexes.tanstack.get("acme/widgets")).toBeUndefined()
+  expect(store.pages.tanstack.get("acme/widgets:/guide/retrying.md")).toBeUndefined()
 })

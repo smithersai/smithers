@@ -44,53 +44,56 @@ export class DomainsStore extends Context.Service<
   static readonly layer = (config: DomainsConfig) =>
     Layer.effect(
       DomainsStore,
-      Effect.gen(function* () {
-        const scope = yield* Effect.scope
-        const page = yield* Collection.local<DomainsPage, string>({
+      effect {
+        const scope = try Effect.scope
+        const page = try Collection.local<DomainsPage, string>({
           id: "domains-page",
           schema: DomainsPage,
           getKey: (row) => row.id,
           initialData: [{ id: PAGE, owner: "", name: "" }],
         })
-        const list = yield* Collection.local<Domain, string>({
+        const list = try Collection.local<Domain, string>({
           id: "domains-list",
           schema: Domain,
           getKey: (row) => row.hostname,
         })
-        const saves = yield* Collection.local<DomainSave, string>({
+        const saves = try Collection.local<DomainSave, string>({
           id: "domain-saves",
           schema: DomainSave,
           getKey: (row) => row.hostname,
         })
         const opened = new Map<string, ElectricCollection.ElectricCollection<Domain>>()
-        const opening = yield* Semaphore.make(1)
-        const repos = yield* RepoStore
-        const source = yield* ShapeSource.ShapeSource
+        const opening = try Semaphore.make(1)
+        const repos = try RepoStore
+        const source = try ShapeSource.ShapeSource
         // A domains shape's 403 refuses the repository's domains, not the repository (ruling #3): they go from the list.
-        const narrow = yield* shapeRefusals(repos, scope)
+        const narrow = try shapeRefusals(repos, scope)
+        const evict = (id: string) => Effect.suspend(() => opened.get(id)?.evict ?? Effect.void)
         // Requests wait while the repository is refused, so an eviction doesn't sync rows back (decision 0110).
         const unrefused = (id: string) => {
           const marked = ShapeSource.gated(source,
             repos.rolesState.rows.pipe(Stream.map((rows) => rows.find((row) => row.id === id)?.refused !== "forbidden"), Stream.changes))
-          return narrow.source(marked, id, Effect.suspend(() => opened.get(id)?.evict ?? Effect.void))
+          return narrow.source(marked, id, evict(id))
         }
-        const open = (repoId: string) =>
-          ElectricCollection.make<Domain>({
+        const open = effect (repoId: string) => {
+          const columnMapper = try sync(ElectricCollection.snakeCamelMapper)
+          return try (ElectricCollection.make<Domain>({
             id: `domains:${repoId}`,
             schema: Domain,
             getKey: (row) => row.hostname,
             syncMode: "eager",
             shape: {
               url: `${config.origin}${DOMAINS_SHAPE_ROUTE}?repo=${encodeURIComponent(repoId)}`,
-              columnMapper: ElectricCollection.snakeCamelMapper(),
+              columnMapper,
               parser: { timestamptz: (value: string) => new Date(value).toISOString() },
             },
           }).pipe(
             Effect.provideService(ShapeSource.ShapeSource, unrefused(repoId)),
             Scope.provide(scope),
             Effect.tap((collection) => Effect.sync(() => opened.set(repoId, collection))),
-          )
-        yield* repos.registerCache(["domains"], (id) => Effect.suspend(() => opened.get(id)?.evict ?? Effect.void))
+          ))
+        }
+        try repos.registerCache(["domains"], evict)
         // One at a time, so two callers asking for one repository at once open it once.
         const domains = (repoId: string) =>
           Semaphore.withPermits(opening, 1)(
@@ -101,16 +104,16 @@ export class DomainsStore extends Context.Service<
           )
         return DomainsStore.of({
           page,
-          pageState: yield* pageQuery(page),
+          pageState: try pageQuery(page),
           list,
           // Only through the data gate (repo/gate.ts): a refused or unverified repository's domains never show.
-          listState: yield* listQuery(yield* repos.gate(list)),
+          listState: try listQuery(try repos.gate(list)),
           saves,
-          savesState: yield* savesQuery(saves),
+          savesState: try savesQuery(saves),
           domains,
-          follower: yield* FiberHandle.make<void, never>(),
+          follower: try FiberHandle.make<void, never>(),
           scope,
         })
-      }),
+      },
     )
 }

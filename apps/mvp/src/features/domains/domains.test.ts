@@ -20,7 +20,7 @@ import {
 import { EngineFaults } from "../../test/faults"
 import { read as readTelemetry } from "../../test/otlp"
 import { Domains } from "./domains.vibe"
-import { DomainsStore } from "./store"
+import { DomainsStore } from "./store.vibe"
 import { DOMAINS_SHAPE_ROUTE } from "./contract"
 import { AuthStore, SESSION } from "../auth/store"
 import { repoId } from "../repo/contract"
@@ -156,6 +156,30 @@ describe("a Maintainer's Settings page", () => {
     expect(repos.isRefused(id)).toBe(false)
     expect(Option.getOrUndefined(await tab.runtime.runPromise(repos.roles.get(id)))?.refused).toBeUndefined()
     expect(repos.visible.tanstack.get(id)?.show).toBe(true)
+  })
+
+  test("a repository refusal evicts opened domains and also handles an unopened repository", { timeout: BUDGET }, async () => {
+    const tab = await openSettings(maintainer)
+    tab.domains.actions.add("revoked.vibelang-e2e.example")
+    await until(() => expect(tab.list().map((row) => row.hostname)).toEqual(["revoked.vibelang-e2e.example"]))
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    const id = repoId(owner, name)
+    const opened = await tab.runtime.runPromise(tab.store.domains(id))
+    expect(opened.tanstack.toArray.map((row) => row.hostname)).toEqual(["revoked.vibelang-e2e.example"])
+    await tab.runtime.runPromise(replaceRole(repos, { id, role: "maintainer", own: true }))
+    await tab.runtime.runPromise(repos.rolesState.preload)
+    expect(repos.rolesState.tanstack.toArray).toContainEqual(expect.objectContaining({ id }))
+    const other = await tab.runtime.runPromise(tab.store.domains(repoId(owner, "other")))
+    await tab.runtime.runPromise(other.preload.pipe(Effect.timeout("30 seconds")))
+    expect(other.tanstack.toArray).toEqual([])
+    const unopened = repoId(owner, "unopened")
+    await tab.runtime.runPromise(repos.refuse(unopened))
+    await tab.runtime.runPromise(repos.wiped(unopened))
+    expect(repos.isRefused(unopened)).toBe(true)
+    await tab.runtime.runPromise(repos.refuse(id))
+    await tab.runtime.runPromise(repos.wiped(id))
+    expect(opened.tanstack.toArray).toEqual([])
+    expect(tab.list()).toEqual([])
   })
 
   test("a name that can't be a domain is refused on the tab, unsent", async () => {

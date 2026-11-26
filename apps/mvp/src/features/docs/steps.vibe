@@ -1,3 +1,4 @@
+import { WebCrypto as WebCryptoReference } from "effect/crypto/WebCrypto"
 import { Interpreter } from "@smthrs/flow"
 import { Effect, Layer } from "effect"
 import { isRepository } from "../repo/contract"
@@ -30,14 +31,14 @@ const doorOf = Effect.map(isAgentCall, (agent) => (agent ? "agent" as const : "p
 
 /** Records a failed step and fails with its error. */
 const failed = <E extends DocsSearchRefused | DocsForbidden | DocsUnavailable>(outcome: SearchOutcome, error: E) =>
-  Effect.gen(function* () {
-    yield* recordSearch({
-      door: yield* doorOf,
+  effect {
+    try recordSearch({
+      door: try doorOf,
       outcome,
       ...(error instanceof DocsSearchRefused ? { reason: error.reason } : {}),
     })
-    return yield* Effect.fail<E>(error)
-  })
+    throw error
+  }
 
 /** What a docs site that didn't answer as docs says when it may answer next time. */
 const PASSING: ReadonlyArray<string | undefined> = ["unreachable", "timeout", "busy"]
@@ -66,26 +67,26 @@ export const plan = (asked: {
   readonly pages?: number | undefined
   readonly conversationId?: string | undefined
 }) =>
-  Effect.gen(function* () {
+  (effect {
     const [owner, name, ...rest] = asked.repository.trim().split("/")
-    if (owner === undefined || name === undefined || rest.length > 0 || !isRepository(owner, name)) {
-      return yield* failed("refused", new DocsSearchRefused({ reason: "invalid" }))
+    if (owner === undefined || name === undefined || rest.length > 0 || !(try sync(() => isRepository(owner, name)))) {
+      return try failed("refused", new DocsSearchRefused({ reason: "invalid" }))
     }
     return {
       owner,
       name,
       query: asked.query,
-      viewIds: Array.from({ length: asked.pages ?? DEFAULT_SHOWN }, () => crypto.randomUUID()),
+      viewIds: Array.from({ length: asked.pages ?? DEFAULT_SHOWN }, () => WebCryptoReference.defaultValue().randomUUID()),
       ...(asked.conversationId === undefined ? {} : { conversationId: asked.conversationId.toLowerCase() }),
     } satisfies PlannedSearch
   }).pipe(withSearchSpan)
 
 /** `app/docs/find`: the best pages of the repository's docs for the query, at most one per view the plan picked. */
 export const find = (search: PlannedSearch) =>
-  Effect.gen(function* () {
-    const found = yield* (yield* DocsClient).search(search.owner, search.name, search.query).pipe(Effect.result)
-    if (found._tag === "Failure") return yield* docsFailure(found.failure)
-    yield* Effect.annotateCurrentSpan({ "smithers.docs.results": found.success.pages.length })
+  (effect {
+    const found = try Effect.result((try DocsClient).search(search.owner, search.name, search.query))
+    if (found._tag === "Failure") return try docsFailure(found.failure)
+    try Effect.annotateCurrentSpan({ "smithers.docs.results": found.success.pages.length })
     return found.success.pages.slice(0, search.viewIds.length)
   }).pipe(withSearchSpan)
 
@@ -96,40 +97,41 @@ export const find = (search: PlannedSearch) =>
  * and at most `AGENT_TEXT_BYTES` of each one's Markdown, for the agent to answer from.
  */
 export const show = ({ search, found }: FoundPages) =>
-  Effect.gen(function* () {
-    const docs = yield* DocsClient
-    const views = yield* ViewsClient
-    const conversation = yield* viewConversation(search.conversationId)
+  (effect {
+    const docs = try DocsClient
+    const views = try ViewsClient
+    const conversation = try viewConversation(search.conversationId)
     const shown: Array<ShownPage> = []
     const texts: Array<string> = []
     for (const [index, listed] of found.entries()) {
-      const read = yield* docs.page(search.owner, search.name, listed.path).pipe(Effect.result)
+      const read = try Effect.result(docs.page(search.owner, search.name, listed.path))
       if (read._tag === "Failure") {
         // A page the index no longer lists, or the site no longer serves, isn't shown.
         if (read.failure.code === "page_not_found" || unreadable(read.failure)) continue
-        return yield* docsFailure(read.failure)
+        return try docsFailure(read.failure)
       }
       const page = read.success
       const viewId = search.viewIds[index]!
-      const added = yield* views.add({
+      const added = try Effect.result(views.add({
         id: viewId,
         template: "docs",
         props: { url: page.url, title: page.title, repository: `${search.owner}/${search.name}`, path: page.path },
         ...conversation,
-      }).pipe(Effect.result)
+      }))
       if (added._tag === "Failure") {
         const status = added.failure.status
-        return yield* status === 401 || status === 403
+        return try (status === 401 || status === 403
           ? failed("forbidden", new DocsForbidden())
           : status === 400
           ? failed("refused", new DocsSearchRefused({ reason: "invalid" }))
-          : failed("unavailable", new DocsUnavailable())
+          : failed("unavailable", new DocsUnavailable()))
       }
       shown.push({ title: page.title, path: page.path, url: page.url, viewId })
-      texts.push(`# ${page.title}\n\n${cutText(page.text, AGENT_TEXT_BYTES).text}`)
+      const text = try sync(() => cutText(page.text, AGENT_TEXT_BYTES).text)
+      texts.push(`# ${page.title}\n\n${text}`)
     }
-    yield* recordSearch({
-      door: yield* doorOf,
+    try recordSearch({
+      door: try doorOf,
       outcome: shown.length > 0 ? "shown" : "none",
       results: found.length,
       shown: shown.length,

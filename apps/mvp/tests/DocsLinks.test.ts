@@ -9,7 +9,7 @@ import { expect, test, vi } from "vitest"
 import { DocsClient } from "../src/features/docs/api.vibe"
 import { DocsPage } from "../src/features/docs/components/DocsPage"
 import { DocsProvider } from "../src/features/docs/components/DocsContext"
-import { Docs } from "../src/features/docs/docs"
+import { Docs } from "../src/features/docs/docs.vibe"
 import { emptyCurrent } from "../src/features/docs/rows"
 import { DocsStore } from "../src/features/docs/store"
 

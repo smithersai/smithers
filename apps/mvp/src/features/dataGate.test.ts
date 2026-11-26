@@ -13,7 +13,7 @@ const source = `
   import { Plugins } from "../plugins/plugins"
   import { HomeStore } from "./home/store"
   import { FilesStore } from "./files/store"
-  import { DomainsStore } from "./domains/store"
+  import { DomainsStore } from "./domains/store.vibe"
   import { SecretsStore } from "./secrets/store"
   import { FleetStore } from "./fleet/store"
   import { RunsStore } from "./runs/store"
@@ -34,7 +34,7 @@ const source = `
 let probe: { readonly program: ts.Program; readonly file: ts.SourceFile }
 const compile = () => {
   if (probe !== undefined) return probe
-  const parsed = ts.getParsedCommandLineOfConfigFile(join(ROOT, "tsconfig.json"), {}, {
+  const parsed = ts.getParsedCommandLineOfConfigFile(join(ROOT, "tsconfig.json"), { allowArbitraryExtensions: true }, {
     ...ts.sys,
     onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
       throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"))

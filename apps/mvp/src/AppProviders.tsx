@@ -12,7 +12,7 @@ import { CodeIntelProvider } from "./features/code-intel/components/CodeIntelCon
 import type { CommandsView } from "./features/commands/commands"
 import { CommandsProvider } from "./features/commands/components/CommandsContext"
 import { DocsProvider } from "./features/docs/components/DocsContext"
-import type { DocsView } from "./features/docs/docs"
+import type { DocsView } from "./features/docs/docs.vibe"
 import { DomainsProvider } from "./features/domains/components/DomainsContext"
 import type { DomainsView } from "./features/domains/domains.vibe"
 import { FilesProvider } from "./features/files/components/FilesContext"

@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { DocsView } from "../docs"
+import type { DocsView } from "../docs.vibe"
 
 // What React components get: the docs layer's live query to render and its actions (features/docs/docs.ts).
 

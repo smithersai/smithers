@@ -3,7 +3,7 @@ import { runners } from "../../boundary.vibe"
 import type { Clipboard } from "../../clipboard.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { add, copy, open, refresh, remove } from "./actions.vibe"
-import { type DomainsConfig, DomainsStore } from "./store"
+import { type DomainsConfig, DomainsStore } from "./store.vibe"
 
 // Custom domains as a frontend sees them (docs/features/domains.md): live queries to read and plain functions to act,
 // with no Effect in sight.
