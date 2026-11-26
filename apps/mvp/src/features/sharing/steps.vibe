@@ -1,6 +1,5 @@
 import { Interpreter } from "@smthrs/flow"
-import { Clock, Effect, Layer, Metric } from "effect"
-import { ShareClient, type ShareRefused } from "./api"
+import { ShareClient, type ShareRefused } from "./api.vibe"
 import { BranchShare, BranchShareRefused, BranchShareUnavailable, RequestShare, type ShareFailure } from "./flows"
 import { shares } from "./metrics"
 import type { Change } from "./schema"
@@ -37,29 +36,29 @@ export const kindOf = (change: Change): string =>
  * with the change's kind, the outcome and ChatApi's status, and a count of `shares` by kind and outcome.
  */
 export const requestShare = ({ branchId, change }: typeof RequestShare.payloadSchema.Type) =>
-  Effect.gen(function* () {
-    const startedAt = yield* Clock.currentTimeMillis
-    const answer = yield* Effect.result((yield* ShareClient).change(branchId, change))
+  effect {
+    const startedAt = try Clock.currentTimeMillis
+    const answer = try result((try ShareClient).change(branchId, change))
     const failure = answer._tag === "Failure" ? shareFailure(answer.failure) : undefined
     const outcome = failure === undefined
       ? "shared"
       : failure._tag === "@smthrs/mvp/sharing/BranchShareRefused"
       ? failure.reason
       : "unavailable"
-    yield* Metric.update(Metric.withAttributes(shares, { change: kindOf(change), outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ outcome })
-    yield* Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("branch.share").pipe(
-      Effect.annotateLogs({
+    try Metric.update(Metric.withAttributes(shares, { change: kindOf(change), outcome }), 1)
+    try annotateCurrentSpan({ outcome })
+    try logWithLevel(failure === undefined ? "Info" : "Warn")("branch.share").pipe(
+      annotateLogs({
         outcome,
         change: kindOf(change),
         ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
-        durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+        durationMs: (try Clock.currentTimeMillis) - startedAt,
         feature: "sharing",
       }),
     )
     if (answer._tag === "Success") return answer.success
-    return yield* Effect.fail(failure!)
-  }).pipe(Effect.withSpan("branch.share"))
+    throw failure!
+  }.pipe(withSpan("branch.share"))
 
 /** Registers `branch/share` with its step, asking through the host's `ShareClient`. */
 export const registration = Interpreter.layerWithImplementations(BranchShare, RequestShare.toLayer(requestShare))
