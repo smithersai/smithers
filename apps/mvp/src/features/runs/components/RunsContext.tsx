@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { RunsView } from "../runs"
+import type { RunsView } from "../runs.vibe"
 
 // What React components get: the runs layer's live queries to render and plain actions to call (features/runs/runs.ts).
 

@@ -12,7 +12,7 @@ import { callFlow, publicError, source as catalogSource } from "../../flows/cata
 import { declarationOf } from "../../flows/declarations"
 import { entryOf, type FlowName } from "../../flows/registry"
 import { SandboxRun } from "../sandbox/flows"
-import { startRoot } from "../runs/start"
+import { startRoot } from "../runs/start.vibe"
 import { FlowsClient } from "./api.vibe"
 import { DRAFT_ID_NAMESPACE, FLOW_MODEL_ROLE, MAX_FLOW_FRAMES, MAX_REALM_CALLS } from "./contract"
 import { PROMPT_CALLABLE } from "./callable"

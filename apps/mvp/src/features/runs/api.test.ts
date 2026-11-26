@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net"
 import { Effect } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test } from "vitest"
-import { RemoteRunsClient } from "./api"
+import { RemoteRunsClient } from "./api.vibe"
 import type { Inspection } from "./schema"
 
 // The real remote runs client from the browser's side, against a local HTTP server that plays a gateway: real sockets,

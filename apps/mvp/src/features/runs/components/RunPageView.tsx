@@ -26,7 +26,7 @@ import { ANSWER, OPEN, REFUSAL_WORDS, RESUME, RETRY, RETRY_FAILED, RETRY_FROM, R
 import { actsOf, agentStopOf, journalOf, missingOf, placeOf, repoRunStateOf, retriesFrom, selectedStep } from "../page"
 import { headerStatusOf } from "../todoRun"
 import { graphOf, runTitle } from "../graph"
-import type { RunsActions } from "../runs"
+import type { RunsActions } from "../runs.vibe"
 import type { Inspection, RunTab, RunPage, RunView } from "../schema"
 import { actionRunPath } from "../../actions/contract"
 import { useRuns } from "./RunsContext"

@@ -9,7 +9,7 @@ import { nodeDevice, openFaultyApp, openFaultyTab, type TabOptions, TestChatApi 
 import { read } from "../../test/otlp"
 import { EngineFaults } from "../../test/faults"
 import { dispatches } from "../../flows/dispatch"
-import { Runs } from "../runs/runs"
+import { Runs } from "../runs/runs.vibe"
 import { codePath, draftPath, FLOWS_PATH, SAVE_REFUSALS } from "./contract"
 import { draftAgain } from "./actions.vibe"
 import { FlowsUiStore, SHOWN } from "./store.vibe"

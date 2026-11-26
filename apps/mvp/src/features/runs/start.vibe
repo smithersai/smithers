@@ -9,9 +9,10 @@ import { Context, Effect } from "effect"
 
 /** Starts `flow` with `payload` as the root run `executionId`, without waiting for it. */
 export const startRoot = (flow: Flow.Any, executionId: string, payload: unknown): Effect.Effect<void> =>
-  Effect.flatMap(FlowRuntime.FlowRuntime, (runtime) =>
-    runtime.execute(flow as never, { executionId, payload: payload as never, discard: true })).pipe(
-      Effect.updateContext(Context.omit(FlowRuntime.FlowInstance)),
-      Effect.asVoid,
-      Effect.orDie,
-    ) as Effect.Effect<void>
+  (effect {
+    const runtime = try FlowRuntime.FlowRuntime
+    try runtime.execute(flow as never, { executionId, payload: payload as never, discard: true })
+  }).pipe(
+    Effect.updateContext(Context.omit(FlowRuntime.FlowInstance)),
+    Effect.orDie,
+  ) as Effect.Effect<void>

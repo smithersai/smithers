@@ -1,6 +1,6 @@
 import { SteerWrites } from "./writes"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { RunSteers } from "./steers"
+import { RunSteers } from "./steers.vibe"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Effect, Metric, Option, Ref } from "effect"
 import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"

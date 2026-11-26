@@ -12,7 +12,7 @@ import {
   STEER_SENT,
 } from "../contract"
 import { type PageStep, responseStep, type SteerState, steerOpen, steersOf } from "../page"
-import type { RunsActions } from "../runs"
+import type { RunsActions } from "../runs.vibe"
 import type { Inspection, RunPage, RunView, SteerSending, SteerSent } from "../schema"
 import { useRuns } from "./RunsContext"
 

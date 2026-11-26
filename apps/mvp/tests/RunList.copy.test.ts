@@ -13,7 +13,7 @@ import { FlowSummaryView } from "../src/features/runs/components/FlowSummaryView
 import { RunListView } from "../src/features/runs/components/RunListView"
 import { runsSearch } from "../src/features/runs/page"
 import { RunsNavigation } from "../src/features/runs/actions"
-import { Runs } from "../src/features/runs/runs"
+import { Runs } from "../src/features/runs/runs.vibe"
 import { RunsStore } from "../src/features/runs/store"
 import { VIEW } from "../src/features/runs/schema"
 import { openTab, openTestApp, TestChatApi } from "../src/test/chatApi"

@@ -10,7 +10,7 @@ import { OP_ID_NAMESPACE } from "../todos/contract"
 import { QueuedOp } from "../todos/schema"
 import { TodosStore } from "../todos/store"
 import { STEER_ID_NAMESPACE } from "../runs/contract"
-import { RunSteers } from "../runs/steers"
+import { RunSteers } from "../runs/steers.vibe"
 
 const issueWrites = new Set<FlowName>(["issue/create", "issue/comment", "issue/triage", "issue/commitment", "triage/run", "triage/enable", "triage/pause"])
 const todoWrites = new Set<FlowName>(["todo/commit", "todo/drop", "todo/Retry", "todo/attach"])

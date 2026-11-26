@@ -30,7 +30,7 @@ const ACTS: Readonly<Record<string, string>> = {
   "src/features/chat/chat.ts": "Pin's action reads the person's pin state and the routed conversation's messages to name what it pins; every query it hands a page is the store's gated one",
   "src/features/chat/shortcuts.ts": "reads the composer's draft to act on a key; renders nothing",
   "src/features/views/embeds.ts": "follows which conversation is routed, to open its embeds; renders nothing",
-  "src/features/runs/steers.ts": "reads the person's own queued steers to send or drop one; renders nothing",
+  "src/features/runs/steers.vibe": "reads the person's own queued steers to send or drop one; renders nothing",
   "src/features/code-intel/codeIntel.vibe": "reads the editor's own hover state to answer a key; renders nothing",
 }
 

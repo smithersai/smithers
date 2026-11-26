@@ -41,12 +41,12 @@ import {
   Steer,
   SteerStepRefused,
 } from "./flows"
-import { RemoteRunsClient } from "./api"
+import { RemoteRunsClient } from "./api.vibe"
 import { steersQueued } from "./metrics"
 import { type RepoName, type RunsCall, SteerKept } from "./schema"
 import { RUNS_REFUSALS } from "../actions/contract"
 import { retryable } from "./retry"
-import { startRoot } from "./start"
+import { startRoot } from "./start.vibe"
 
 // What the acts on runs and the run reads do (decision 0014 §2 and §6, docs/features/runs.md#acts): each reads the run
 // through the engine's own `RunInspection` (`@smthrs/engine-store`, which the browser engine provides to every flow it

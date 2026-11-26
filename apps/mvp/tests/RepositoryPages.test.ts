@@ -26,7 +26,7 @@ import { RepoSettingsScreen } from "../src/screens/repo-settings/RepoSettingsScr
 import { ActionsScreen } from "../src/screens/actions/ActionsScreen"
 import { Home } from "../src/features/home/home.vibe"
 import { Issues } from "../src/features/issues/issues.vibe"
-import { Runs } from "../src/features/runs/runs"
+import { Runs } from "../src/features/runs/runs.vibe"
 import { Secrets } from "../src/features/secrets/secrets.vibe"
 
 /** What GitHub says of smithersai/vibelang, as an About read answers it. */

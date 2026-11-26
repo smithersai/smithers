@@ -15,7 +15,7 @@ import { type StackFilter, stackFilterOf, todoNumberOf } from "./features/todos/
 import type { TodosView } from "./features/todos/todos"
 import { canonicalRepoHref, lineSearch, staysInRepository } from "./features/repo/paths"
 import type { RepoView } from "./features/repo/repo"
-import type { RunsView } from "./features/runs/runs"
+import type { RunsView } from "./features/runs/runs.vibe"
 import type { SecretsLayer } from "./features/secrets/secrets.vibe"
 import type { McpView } from "./features/mcp/store.vibe"
 import type { WorkbenchView } from "./features/workbench/store.vibe"

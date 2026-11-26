@@ -5,7 +5,7 @@ import { Clock, Context, Duration, Effect, Exit, FiberHandle, Layer, Metric, Opt
 import { FlowDispatch } from "../../flows/dispatch"
 import { retryInput, settleFromRuns } from "../../resumeAdmissions"
 import { WriteIntents } from "../../writeAdmission"
-import { RunSteers } from "../runs/steers"
+import { RunSteers } from "../runs/steers.vibe"
 import { IssuesStore } from "../issues/store"
 import { TodosStore } from "../todos/store"
 import { signedInShapeSource } from "../auth/source"

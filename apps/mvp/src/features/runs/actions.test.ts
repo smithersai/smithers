@@ -5,7 +5,7 @@ import { Deferred, Effect, Fiber, Layer, Logger, ManagedRuntime, Option, Stream 
 import { afterEach, expect, test, vi } from "vitest"
 import { repoAuthority } from "../../test/repoAuthority"
 import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
-import { RemoteRunsClient, RepoRunsFailed } from "./api"
+import { RemoteRunsClient, RepoRunsFailed } from "./api.vibe"
 import * as actions from "./actions"
 import { REFUSAL_WORDS } from "./contract"
 import type { Inspection } from "./schema"

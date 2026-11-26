@@ -3,7 +3,7 @@ import { Cause, Effect, Exit, Logger } from "effect"
 import { expect, test } from "vitest"
 import { FLOW_CODE } from "../flows-ui/reference"
 import { list, retry, cancel } from "./steps"
-import { RemoteReadFailed, RemoteRunsClient, StopFailed, SteerFailed, RepoRunsFailed } from "./api"
+import { RemoteReadFailed, RemoteRunsClient, StopFailed, SteerFailed, RepoRunsFailed } from "./api.vibe"
 import { RunActRefused } from "./flows"
 
 test("a remote agent already stopped records settled and refuses cancellation as settled", async () => {

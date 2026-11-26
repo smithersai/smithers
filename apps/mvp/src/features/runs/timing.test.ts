@@ -1,7 +1,7 @@
 import { Effect, Logger, Metric } from "effect"
 import { expect, test } from "vitest"
 import { BROWSER_TELEMETRY } from "../../telemetry"
-import { routeTiming } from "./timing"
+import { routeTiming } from "./timing.vibe"
 
 test("route timing records content-free stages, keeps concurrent attempts separate and renders once", async () => {
   const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []

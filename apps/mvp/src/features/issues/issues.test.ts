@@ -1,5 +1,5 @@
 import { WriteIntents } from "../../writeAdmission"
-import { RunSteers } from "../runs/steers"
+import { RunSteers } from "../runs/steers.vibe"
 import { SteerWrites } from "../runs/writes"
 import { TodosStore } from "../todos/store"
 import { PendingSnapshot } from "@smthrs/platform-browser"

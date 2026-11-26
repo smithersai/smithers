@@ -4,7 +4,7 @@ import { ShapeSource } from "@smthrs/effect-electric"
 import { AuthStore, SESSION } from "../auth/store"
 import { RepoStore } from "../repo/store"
 import { Persistence } from "@smthrs/effect-tanstack-db"
-import { cloudRunList, memberRunSource } from "./source"
+import { cloudRunList, memberRunSource } from "./source.vibe"
 
 test("run authority follows the named repository, never a public receipt or a stale signed-in role", async () => {
   const runtime = ManagedRuntime.make(RepoStore.layer({ origin: "https://unused.test" }).pipe(
