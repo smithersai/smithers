@@ -13,7 +13,7 @@ import { runFlow } from "../test/flowHost.ts"
 import { type ScriptedGitHub, scriptedGitHub } from "../test/github.ts"
 import { testFile } from "../test/harness.ts"
 import { cookie, SECRET, signInHarness } from "../test/signIn.ts"
-import * as RevokeGitHubToken from "./RevokeGitHubToken.ts"
+import * as RevokeGitHubToken from "./RevokeGitHubToken.vibe"
 
 const runtime = testFile("revoke_token")
 

@@ -16,7 +16,7 @@ import { refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { FlowStarter } from "../Flows.ts"
-import { checkRunIdOf, ReviewRun } from "../flows/Checks.ts"
+import { checkRunIdOf, ReviewRun } from "../flows/Checks.vibe"
 import { type GitHubApp, type Repository, repositoryOf } from "./Config.ts"
 import * as RepoRoles from "./RepoRoles.ts"
 

@@ -2,11 +2,12 @@ import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Metric, Option, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
+import type { SqlError } from "effect/sql/SqlError"
 import { codeOf } from "../ErrorCode.ts"
 import { type GitHubAuth, GitHubRefused } from "../GitHubAuth.ts"
 import type { SessionKeys } from "../SessionKeys.vibe"
 import * as SessionStore from "../SessionStore.ts"
-import * as Cleanup from "./RevokeReplacedGitHubToken.ts"
+import * as Cleanup from "./RevokeReplacedGitHubToken.vibe"
 import { SqlClient as Sql } from "effect/sql"
 
 // Preserve this flow and its action names for existing durable histories. EndSession now moves credentials into
@@ -103,17 +104,19 @@ const outcome = (value: Revoked["outcome"]): Revoked => ({ outcome: value })
  * One revocation of session `sessionId`'s GitHub token, against the `SqlClient` in context. A live session is left
  * alone: the flow ends it first. Fails with GitHub's failure when GitHub was unavailable or refused the App, and with Postgres' failure.
  */
-export const revoke = (sessionId: string, services: Services) =>
-  Effect.gen(function* () {
-    const found = yield* SessionStore.held(sessionId)
-    if (Option.isSome(found) && found.value.live) return outcome("live")
-    // Old durable runs still call this action. Cleanup rows now own tokens even after retention removes the session.
-    yield* SessionStore.forgetTokens(sessionId)
-    const sql = yield* Sql.SqlClient
-    const rows = yield* sql<{ id: string }>`SELECT id FROM github_token_cleanups WHERE session_id = ${sessionId} AND finished_at IS NULL ORDER BY id`
-    for (const row of rows) yield* Cleanup.revoke(row.id, services)
-    return outcome(rows.length > 0 ? "revoked" : "none")
-  })
+export const revoke = effect (
+  sessionId: string,
+  services: Services,
+): Revoked!(Cleanup.CleanupFailed | GitHubRefused | SqlError)!SqlClient.SqlClient => {
+  const found = try SessionStore.held(sessionId)
+  if (Option.isSome(found) && found.value.live) return outcome("live")
+  // Old durable runs still call this action. Cleanup rows now own tokens even after retention removes the session.
+  try SessionStore.forgetTokens(sessionId)
+  const sql = try Sql.SqlClient
+  const rows = try sql<{ id: string }>`SELECT id FROM github_token_cleanups WHERE session_id = ${sessionId} AND finished_at IS NULL ORDER BY id`
+  for (const row of rows) try Cleanup.revoke(row.id, services)
+  return outcome(rows.length > 0 ? "revoked" : "none")
+}
 
 /** A failure as a step reports it, by reason only: GitHub's failure, or anything Postgres did. */
 const failed = (error: unknown) =>

@@ -12,7 +12,7 @@ import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
-import { type Outcome, SandboxCall, settle as settleCall } from "../../../worker/flows/SandboxCall.ts"
+import { type Outcome, SandboxCall, settle as settleCall } from "../../../worker/flows/SandboxCall.vibe"
 import { shaOf } from "../../../worker/test/branch.ts"
 import {
   asPerson,
@@ -676,7 +676,7 @@ describe("a shared file", () => {
     const retried = await call(opened, "write", 2)
     await opened.run(settle(retried, { status: "done", result: { tool: "write", path: "ok.txt", bytes: 2, sequence: 1 }, generation: 1 }))
     await retry
-    expect(fileOf(owner.texts(), conversation, "ok.txt")).toMatchObject({ saving: false, saveFailed: false, saved: true })
+    await until(() => expect(fileOf(owner.texts(), conversation, "ok.txt")).toMatchObject({ saving: false, saveFailed: false, saved: true }))
     expect(saveLabelOf(fileOf(owner.texts(), conversation, "ok.txt")!)).toBe("Saved")
   }, WITHIN)
 

@@ -28,7 +28,7 @@ import * as ExecutionHost from "../ExecutionHost.ts"
 import * as Box from "../test/box.ts"
 import { resetBranches, tracked } from "../test/branch.ts"
 import { testFile } from "../test/harness.ts"
-import * as SandboxCall from "./SandboxCall.ts"
+import * as SandboxCall from "./SandboxCall.vibe"
 import * as SandboxCommand from "./SandboxCommand.vibe"
 
 const runtime = testFile("sandbox_command")

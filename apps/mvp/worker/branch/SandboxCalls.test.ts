@@ -19,7 +19,7 @@ import {
 } from "../../src/features/sandbox/contract.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import * as Flows from "../Flows.ts"
-import { settle } from "../flows/SandboxCall.ts"
+import { settle } from "../flows/SandboxCall.vibe"
 import * as Messages from "../Messages.ts"
 import { branchHarness, type BranchHarness, resetBranches, shared, tracked } from "../test/branch.ts"
 import { recorded, testFile } from "../test/harness.ts"

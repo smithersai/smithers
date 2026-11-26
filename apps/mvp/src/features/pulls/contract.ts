@@ -183,12 +183,16 @@ export const CHECK_NAME = /^[A-Za-z0-9_-]{1,64}$/
 /** The review check: the judge reads the diff and posts one comment review as the App (decision 0016, simplified). */
 export const REVIEW_CHECK = "review"
 
-/** A check run's flow tag, as the Checks tab shows it: `checks/<name>`. */
+/**
+ * A check run's flow tag, as the Checks tab shows it: `checks/<name>`.
+ * @throws {never}
+ */
 export const checkFlowOf = (name: string): string => `checks/${name}`
 
 /**
  * A check's commit status context on GitHub (ruling GH-10): `smithers/<name>`, write-only, which a repository's branch
  * protection can require. The check itself stays a Smithers run; Smithers never reads statuses back.
+ * @throws {never}
  */
 export const statusContextOf = (name: string): string => `smithers/${name}`
 
@@ -242,7 +246,10 @@ export const REVIEW_REFUSAL_COPY: Readonly<Partial<Record<ReviewRefusal, string>
   checks_running: "Checks running",
 }
 
-/** A check's execution id: one per repository, commit and check, so a commit's check runs once. */
+/**
+ * A check's execution id: one per repository, commit and check, so a commit's check runs once.
+ * @throws {never}
+ */
 export const checkExecutionId = (repoId: string, sha: string, name: string): string => `check:${repoId}:${sha}:${name}`
 
 /** The namespace a check run's `runs` id is a version 5 UUID of its execution id in. */

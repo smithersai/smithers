@@ -8,7 +8,7 @@ import { type GitHubAuth, GitHubRefused, roleOf } from "../GitHubAuth.ts"
 import { digestEffect } from "../SessionCrypto.ts"
 import type { SessionKeys } from "../SessionKeys.vibe"
 import * as SessionStore from "../SessionStore.ts"
-import * as Cleanup from "./RevokeReplacedGitHubToken.ts"
+import * as Cleanup from "./RevokeReplacedGitHubToken.vibe"
 
 // `auth/RecheckRole { sessionId }` (docs/features/sign-in.md#role-checks): a session's role on the repository, checked
 // with GitHub again. Sign-in starts it when a session's role is over an hour old (mvp.md M-05). It first refreshes the

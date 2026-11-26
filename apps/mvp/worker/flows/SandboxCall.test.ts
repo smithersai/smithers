@@ -21,7 +21,7 @@ import { resetBranches, tracked } from "../test/branch.ts"
 import { instantCommands } from "../test/commands.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
-import * as SandboxCall from "./SandboxCall.ts"
+import * as SandboxCall from "./SandboxCall.vibe"
 import * as SandboxCommandJob from "./SandboxCommand.vibe"
 
 const runtime = testFile("sandbox_call")

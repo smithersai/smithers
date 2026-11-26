@@ -16,7 +16,7 @@ import { boundTo, canAsk, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
-import { SandboxCall } from "../flows/SandboxCall.ts"
+import { SandboxCall } from "../flows/SandboxCall.vibe"
 import { ToolCall } from "../flows/SandboxCommand.vibe"
 import { branchAccess, canEdit } from "./Access.ts"
 

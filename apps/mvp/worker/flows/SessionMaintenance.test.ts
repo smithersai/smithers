@@ -11,7 +11,7 @@ import * as Flows from "../Flows.ts"
 import * as Keys from "../SessionKeys.vibe"
 import { testFile } from "../test/harness.ts"
 import { cookie, SECRET, signInHarness } from "../test/signIn.ts"
-import * as Cleanup from "./RevokeReplacedGitHubToken.ts"
+import * as Cleanup from "./RevokeReplacedGitHubToken.vibe"
 import { sourceText } from "../../../../packages/repo-targets/test-utils/source-readers.mjs"
 
 const runtime = testFile("session_maintenance")

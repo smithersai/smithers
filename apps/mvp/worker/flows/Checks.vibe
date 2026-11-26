@@ -1,5 +1,5 @@
 import { Agent, AgentAction, Budget, QuotaPolicy, Seat as AgentSeat, SeatResolver } from "@smthrs/agent"
-import { digestSync, Uuid, WebCrypto } from "@smthrs/crypto"
+import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { GitHub } from "@smthrs/integrations"
 import type { Sandbox, Steering } from "@smthrs/harness"
@@ -30,7 +30,7 @@ import { type Repository, repositoryOf } from "../github/Config.ts"
 import { fetchPull, projectPull } from "../github/Pulls.ts"
 import { type GitHubTokens, TokenUnavailable } from "../github/Tokens.ts"
 import type { Seat } from "../ModelSeats.ts"
-import type { SandboxBranch } from "../branch/Sandboxes.ts"
+import { jobMachineOf as machineForChecks } from "./ChecksMachine.ts"
 import * as SandboxCommand from "./SandboxCommand.vibe"
 
 // A pull request's checks (decision 0012 decision 12, decision 0016's factory simplified): Smithers runs on its head
@@ -177,7 +177,7 @@ const reviewOf = (request: ChecksRequest) =>
   )
 
 /** The flows the review check runs as its child execution, which a host registers beside `checks/Run`. */
-export const reviewFlows = ReviewRounds.flows
+export const reviewFlows: typeof ReviewRounds.flows = ReviewRounds.flows
 
 /** `checks/Run`: a pull request head's checks, each a Smithers run on that commit, reported as a commit status. */
 export const ChecksRun = Flow.make("checks/Run", {
@@ -269,16 +269,7 @@ export interface Services<E, R> {
  * checking the head's branch out from GitHub, its tools running as the person who committed the TODO. Its box reaches
  * the package registry and nothing else; never the TODO's own machine, whose working copy the agent made.
  */
-export const jobMachineOf = (request: ChecksRequest): { readonly branch: SandboxBranch; readonly ownerId: string } => {
-  const [owner = "", name = ""] = request.repoId.replace(/^github\//, "").split("/")
-  // Named by a digest of the repository and the SHA together, so no two repositories' jobs share a machine, however
-  // their names split (`acme/tools-ui` and `acme-tools/ui`).
-  const job = digestSync(JSON.stringify([request.repoId, request.sha])).slice(0, 40)
-  return {
-    branch: { branchId: `job-${job}`, owner, name, branch: request.branch, forge: "github", kind: "job" },
-    ownerId: request.ownerId,
-  }
-}
+export const jobMachineOf = machineForChecks
 
 /** The check a head gets when its job machine couldn't check out exactly that commit: Failed, never a script's pass. */
 export const CHECKOUT_CHECK = "checkout"
@@ -327,7 +318,7 @@ export const reviewBodyOf = (
   const comments = [...findings].sort((left, right) =>
     SEVERITY_ORDER.indexOf(left.severity) - SEVERITY_ORDER.indexOf(right.severity))
   const shown = comments.slice(0, MAX_REVIEW_FINDINGS).map((comment) =>
-    `- **${comment.severity}** \`${comment.path}${comment.startLine > 0 ? `:${comment.startLine}` : ""}\`: ${inert(comment.content.trim().split("\n")[0] ?? "").slice(0, 500)}`)
+    `- **${comment.severity}** \`${comment.path}${comment.startLine > 0 ? `:${comment.startLine}` : ""}\`: ${inert(comment.content.trim().split("\n", 1)[0]!).slice(0, 500)}`)
   const listed = comments.length === 0
     ? "No findings."
     : [
@@ -409,33 +400,33 @@ export const steps = <E, R>(
    * `checks/Report` sends the result durably once the check ends.
    */
   const pending = (request: ChecksRequest, name: string) =>
-    Effect.gen(function* () {
+    effect {
       const repository = repositoryOfRequest(request)
-      const token = yield* services.tokens.forInstallation(repository, "status")
-      yield* sendStatus(repository, request, token, name, "pending")
-      yield* statusRecorded(request, name, "pending", "sent")
-    }).pipe(Effect.catch((error) => statusRecorded(request, name, "pending", "dropped", error)))
+      const token = try services.tokens.forInstallation(repository, "status")
+      try sendStatus(repository, request, token, name, "pending")
+      try statusRecorded(request, name, "pending", "sent")
+    }.pipe(Effect.catch((error) => statusRecorded(request, name, "pending", "dropped", error)))
 
   const scripts = ({ request }: typeof Scripts.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const machines = yield* Machines
-      const machine = jobMachineOf(request)
+    effect {
+      const machines = try Machines
+      const machine = try sync(() => jobMachineOf(request))
       // The machine generation the last tool ran on, which the checkout's success sets: the one put to sleep at the end.
       let generation = 0
-      const tool = (name: string, call: SandboxTools.Call) =>
-        Effect.gen(function* () {
-          const callId = yield* Uuid.v5(CHECK_RUN_NAMESPACE, `${request.attemptId}:${request.sha}:${name}`).pipe(
-            Effect.provide(WebCrypto.layer),
-          )
-          const ran = yield* machines.tool(machine.branch, machine.ownerId, callId, call)
-          generation = ran.generation
-          return ran.result
-        })
+      const tool = effect (name: string, call: SandboxTools.Call) => {
+        const callId = try Uuid.v5(CHECK_RUN_NAMESPACE, `${request.attemptId}:${request.sha}:${name}`).pipe(
+          Effect.provide(WebCrypto.layer),
+        )
+        const ran = try machines.tool(machine.branch, machine.ownerId, callId, call)
+        generation = ran.generation
+        return ran.result
+      }
       // The checkout at exactly the head: the machine fetches it from the forge. The branch passed git's ref rules and
       // the SHA is 40 hex digits, so neither can change the command. A checkout that isn't exactly the head runs no
       // script: the head gets a Failed `checkout` check, never a pass another commit earned. A machine that couldn't
       // start is tried again; a command the machine ran and failed isn't, since it runs once per call.
-      const synced = !(GitHub.Refs.isBranch(request.branch) && SHA.test(request.sha)) ? "refused" as const : yield* tool("sync", {
+      const validRef = try sync(() => GitHub.Refs.isBranch(request.branch) && SHA.test(request.sha))
+      const synced = !validRef ? "refused" as const : try tool("sync", {
         tool: "run",
         command: `git fetch --quiet origin '${request.branch}' && git reset --quiet --hard ${request.sha} && git clean -fdq`,
         timeoutSeconds: 120,
@@ -449,7 +440,7 @@ export const steps = <E, R>(
       // The head's scripts: only a checks directory that isn't there means a head with none. A machine that couldn't
       // answer the listing is tried again; a listing it refused or lost otherwise fails the checkout check too, never
       // passing a head whose scripts nobody read.
-      const listed = synced !== "synced" ? synced : yield* tool("list", { tool: "list", path: CHECKS_DIRECTORY }).pipe(
+      const listed = synced !== "synced" ? synced : try tool("list", { tool: "list", path: CHECKS_DIRECTORY }).pipe(
         // A tool answers its own call's result.
         Effect.map((result) => Option.some(result as typeof SandboxTools.ListResult.Type)),
         Effect.catch((error) =>
@@ -463,11 +454,11 @@ export const steps = <E, R>(
         ),
       )
       if (typeof listed === "string") {
-        yield* Effect.logWarning("checks.sync").pipe(Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, outcome: listed }))
-        const id = yield* checkRunIdOf(request, CHECKOUT_CHECK)
-        yield* started(request, id, CHECKOUT_CHECK)
-        yield* ended(id, "failed")
-        yield* Metric.update(Metric.withAttributes(checks, { check: "script", outcome: "failed" }), 1)
+        try Effect.logWarning("checks.sync").pipe(Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, outcome: listed }))
+        const id = try checkRunIdOf(request, CHECKOUT_CHECK)
+        try started(request, id, CHECKOUT_CHECK)
+        try ended(id, "failed")
+        try Metric.update(Metric.withAttributes(checks, { check: "script", outcome: "failed" }), 1)
         return { checks: [{ name: CHECKOUT_CHECK, status: "failed" as const }] } satisfies Checked
       }
       const found = Option.match(listed, {
@@ -478,48 +469,48 @@ export const steps = <E, R>(
       })
       const names = found.filter((name) => !BUILT_IN_CHECKS.has(name))
       for (const name of found.filter((name) => BUILT_IN_CHECKS.has(name))) {
-        yield* Effect.logWarning("checks.reserved").pipe(Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, check: name }))
+        try Effect.logWarning("checks.reserved").pipe(Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, check: name }))
       }
       // The scripts are a check suite of the checks this head turned out to have (`CheckSuite.runDiscovered`,
       // `@smthrs/patterns`), one at a time in name order. A script that fails is its check's answer, a failed row, so
       // the next still runs; a machine or Postgres that couldn't answer fails the suite, and this step for its retry
       // policy. A head with no scripts has none to fail.
-      const verdict = yield* CheckSuite.runDiscovered({ checks: names, input: request }, {
+      const verdict = try CheckSuite.runDiscovered({ checks: names, input: request }, {
         strategy: "all-pass",
         concurrency: 1,
         continueOnFail: false,
         onEmpty: "pass",
-        check: ({ check: name }) =>
-          Effect.gen(function* () {
-            const id = yield* checkRunIdOf(request, name)
+        check: effect ({ check: name }) => {
+            const id = try checkRunIdOf(request, name)
             // Each script runs as its own `sandbox/Command` (`SandboxCommand.run`): one that ends within the step's wait
             // answers here, and a longer one parks this step while its job runs, which then runs again from the top once
             // it ends: a check is announced, counted and logged only by the call that recorded its start or end.
-            if (yield* started(request, id, name)) yield* pending(request, name)
-            const callId = yield* Uuid.v5(CHECK_RUN_NAMESPACE, `${request.attemptId}:${request.sha}:check:${name}`).pipe(
+            if (try started(request, id, name)) try pending(request, name)
+            const callId = try Uuid.v5(CHECK_RUN_NAMESPACE, `${request.attemptId}:${request.sha}:check:${name}`).pipe(
               Effect.provide(WebCrypto.layer),
             )
             const script = { tool: "run" as const, command: `sh ${CHECKS_DIRECTORY}/${name}.sh`, timeoutSeconds: commandSeconds }
-            const ran = yield* SandboxCommand.run(machines, machine, callId, script, SandboxCommand.stepWait(script, stepWaitSeconds))
+            const wait = try sync(() => SandboxCommand.stepWait(script, stepWaitSeconds))
+            const ran = try SandboxCommand.run(machines, machine, callId, script, wait)
               .pipe(Effect.option)
             const status = Option.match(ran, {
               onNone: () => "failed" as const,
               onSome: (run) => (run.exitCode === 0 && !run.timedOut ? "done" as const : "failed" as const),
             })
-            if (yield* ended(id, status)) {
-              yield* Metric.update(Metric.withAttributes(checks, { check: "script", outcome: status }), 1)
-              yield* Effect.logInfo("checks.script").pipe(
+            if (try ended(id, status)) {
+              try Metric.update(Metric.withAttributes(checks, { check: "script", outcome: status }), 1)
+              try Effect.logInfo("checks.script").pipe(
                 Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, check: name, outcome: status }),
               )
             }
             return { passed: status === "done" }
-          }),
+          },
       })
       const done = names.map((name) => ({ name, status: verdict.failed.includes(name) ? "failed" as const : "done" as const }))
       // Done with the job: its machine sleeps now rather than idling until its keep-alive gives up. Best effort.
-      yield* machines.sleepIfIdle(machine.branch.branchId, generation, 0).pipe(Effect.ignore)
+      try machines.sleepIfIdle(machine.branch.branchId, generation, 0).pipe(Effect.ignore)
       return { checks: done } satisfies Checked
-    }).pipe(
+    }.pipe(
       Effect.provide(services.database),
       Effect.mapError(() => new ChecksUnavailable()),
       Effect.withSpan("checks.scripts", { attributes: { "smithers.checks.sha": request.sha } }),
@@ -532,17 +523,17 @@ export const steps = <E, R>(
       : classify(error).kind === "refused"
 
   const prepare = ({ request }: typeof ReviewPrepare.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const id = yield* checkRunIdOf(request, REVIEW_CHECK)
-      yield* started(request, id, REVIEW_CHECK)
-      yield* pending(request, REVIEW_CHECK)
+    effect {
+      const id = try checkRunIdOf(request, REVIEW_CHECK)
+      try started(request, id, REVIEW_CHECK)
+      try pending(request, REVIEW_CHECK)
       const repository = repositoryOfRequest(request)
-      const read = yield* Effect.gen(function* () {
-        const token = yield* services.tokens.forInstallation(repository, "review")
-        const compared = yield* GitHub.Commits.compare(repository.owner, repository.name, request.baseSha, request.sha)
+      const read = try effect {
+        const token = try services.tokens.forInstallation(repository, "review")
+        const compared = try GitHub.Commits.compare(repository.owner, repository.name, request.baseSha, request.sha)
           .pipe(withToken(token, services.apiBaseUrl))
         return { files: compared.files, refusal: null }
-      }).pipe(
+      }.pipe(
         Effect.catch((error) =>
           refused(error) ? Effect.succeed({ files: [], refusal: codeOf(error) }) : Effect.fail(new ChecksUnavailable())
         ),
@@ -555,15 +546,15 @@ export const steps = <E, R>(
         reviewSeat: `${REVIEW_SEAT_PREFIX}${request.ownerId}`,
         narrateSeat: `${REVIEW_SEAT_PREFIX}${request.ownerId}`,
       })
-      const snapshot = ReviewRounds.comparisonSnapshot({
+      const snapshot = try sync(() => ReviewRounds.comparisonSnapshot({
         input,
         repository: `${repository.owner}/${repository.name}`,
         base: request.baseSha,
         head: request.sha,
         files: read.files.slice(0, MAX_REVIEW_FILES),
         truncated: read.files.length >= GitHub.Commits.MAX_COMPARE_FILES,
-      })
-      const prepared = ReviewRounds.preparedReviewOf(snapshot)
+      }))
+      const prepared = try sync(() => ReviewRounds.preparedReviewOf(snapshot))
       return {
         rounds: { input, prepared, offset: 0, outcomes: [] },
         // The files the rounds don't read: those of the first `MAX_REVIEW_FILES` that aren't source, and the rest.
@@ -573,7 +564,7 @@ export const steps = <E, R>(
         ],
         refusal: read.refusal,
       } satisfies PreparedReview
-    }).pipe(
+    }.pipe(
       Effect.provideService(HttpClient.HttpClient, services.http),
       Effect.provide(services.database),
       Effect.mapError(() => new ChecksUnavailable()),
@@ -581,48 +572,45 @@ export const steps = <E, R>(
     )
 
   const review = ({ request, notReviewed, refusal, result }: typeof Review.payloadSchema.Type) =>
-    Effect.gen(function* () {
+    effect {
       const failure: { stage?: string; errorCode?: string } = {}
-      const id = yield* checkRunIdOf(request, REVIEW_CHECK)
+      const id = try checkRunIdOf(request, REVIEW_CHECK)
       const repository = repositoryOfRequest(request)
       const fail = (stage: string, errorCode: string) => Effect.as(Effect.sync(() => Object.assign(failure, { stage, errorCode })), "failed" as const)
       const reviewed = refusal !== null
-        ? yield* fail("github", refusal)
+        ? try fail("github", refusal)
         : result === null
-        ? yield* fail("rounds", "rounds_failed")
+        ? try fail("rounds", "rounds_failed")
         : result.review.status === "failed"
-        ? yield* fail("model", "review_failed")
-        : yield* Effect.gen(function* () {
-          const token = yield* services.tokens.forInstallation(repository, "review")
-          const login = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        ? try fail("model", "review_failed")
+        : try effect {
+          const token = try services.tokens.forInstallation(repository, "review")
+          const login = try Effect.flatMap(SqlClient.SqlClient, (sql) =>
             sql<{ readonly login: string }>`SELECT github_login AS login FROM people WHERE id::text = ${request.ownerId}`)
-          return yield* Effect.gen(function* () {
+          return try effect {
             // One review, keyed by this run's check: a step run again after a lost answer finds it by that key.
-            yield* Action.once(
-              "review",
-              GitHub.Once.review(repository.owner, repository.name, request.prNumber, {
-                commitId: request.sha,
-                event: "COMMENT",
-                body: reviewBodyOf(result.review.comments, notReviewed, login[0]?.login ?? "unknown"),
-              }),
-              { key: id },
-            )
+            const descriptor = try sync(() => GitHub.Once.review(repository.owner, repository.name, request.prNumber, {
+              commitId: request.sha,
+              event: "COMMENT",
+              body: reviewBodyOf(result.review.comments, notReviewed, login[0]?.login ?? "unknown"),
+            }))
+            try Action.once("review", descriptor, { key: id })
             // Read the pull request back, so its page shows the review before the webhook rings.
-            yield* projectPull(repository, request.prNumber, yield* fetchPull(repository, request.prNumber))
+            try projectPull(repository, request.prNumber, try fetchPull(repository, request.prNumber))
             return "done" as const
-          }).pipe(withToken(token, services.apiBaseUrl))
-        }).pipe(
+          }.pipe(withToken(token, services.apiBaseUrl))
+        }.pipe(
           // GitHub's refusal, or a token the App can't have, fails the check; a lost answer or an outage is tried again,
           // and the next attempt finds the review it posted by its key.
           Effect.catch((error) => refused(error) ? fail("github", codeOf(error)) : Effect.fail(new ChecksUnavailable())),
         )
-      yield* ended(id, reviewed)
-      yield* Metric.update(Metric.withAttributes(checks, { check: "review", outcome: reviewed }), 1)
-      yield* Effect.annotateCurrentSpan({
+      try ended(id, reviewed)
+      try Metric.update(Metric.withAttributes(checks, { check: "review", outcome: reviewed }), 1)
+      try Effect.annotateCurrentSpan({
         "smithers.review.outcome": reviewed,
         ...(failure.errorCode === undefined ? {} : { "smithers.review.error_code": failure.errorCode }),
       })
-      yield* Effect.logWithLevel(reviewed === "failed" ? "Warn" : "Info")("checks.review").pipe(
+      try Effect.logWithLevel(reviewed === "failed" ? "Warn" : "Info")("checks.review").pipe(
         Effect.annotateLogs({
           repoId: request.repoId,
           sha: request.sha,
@@ -634,7 +622,7 @@ export const steps = <E, R>(
         }),
       )
       return { checks: [{ name: REVIEW_CHECK, status: reviewed }] } satisfies Checked
-    }).pipe(
+    }.pipe(
       Effect.provideService(HttpClient.HttpClient, services.http),
       Effect.provide(services.database),
       Effect.mapError(() => new ChecksUnavailable()),
@@ -648,13 +636,13 @@ export const steps = <E, R>(
    * is recorded and ends the report; an outage or a lost answer is retried until GitHub takes it.
    */
   const report = ({ request }: typeof Report.payloadSchema.Type) =>
-    Effect.gen(function* () {
+    effect {
       // A report follows a step that finished or gave up, so a check of this head still Running never will: it failed.
-      yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      try Effect.flatMap(SqlClient.SqlClient, (sql) =>
         sql`
           UPDATE runs SET status = 'failed', updated_at = now()
           WHERE repo_id = ${request.repoId} AND sha = ${request.sha} AND flow LIKE 'checks/%' AND status = 'working'`)
-      const ended = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      const ended = try Effect.flatMap(SqlClient.SqlClient, (sql) =>
         sql<{ readonly flow: string; readonly status: "done" | "failed" }>`
           SELECT flow, status FROM runs
           WHERE repo_id = ${request.repoId} AND sha = ${request.sha} AND flow LIKE 'checks/%'
@@ -664,30 +652,31 @@ export const steps = <E, R>(
         .filter((run) => CHECK_NAME.test(run.name))
       if (ofHead.length === 0) return { statuses: [] } satisfies Reported
       const repository = repositoryOfRequest(request)
-      const refusedBy = (error: unknown) =>
-        Effect.gen(function* () {
-          for (const run of ofHead) yield* statusRecorded(request, run.name, run.state, "refused", error)
-          return { statuses: ofHead.map((run) => ({ ...run, outcome: "refused" as const })) } satisfies Reported
-        })
-      const token = yield* services.tokens.forInstallation(repository, "status").pipe(Effect.result)
+      const refusedBy = effect (error: unknown) => {
+        for (const run of ofHead) try statusRecorded(request, run.name, run.state, "refused", error)
+        return { statuses: ofHead.map((run) => ({ ...run, outcome: "refused" as const })) } satisfies Reported
+      }
+      const token = try services.tokens.forInstallation(repository, "status").pipe(Effect.result)
       if (token._tag === "Failure") {
-        return yield* token.failure.reason === "unavailable" ? Effect.fail(new ChecksUnavailable()) : refusedBy(token.failure)
+        if (token.failure.reason === "unavailable") throw new ChecksUnavailable()
+        return try refusedBy(token.failure)
       }
       const sent: Array<Reported["statuses"][number]> = []
       for (const run of ofHead) {
-        const outcome = yield* sendStatus(repository, request, token.success, run.name, run.state).pipe(
+        const outcome = try sendStatus(repository, request, token.success, run.name, run.state).pipe(
           Effect.as("sent" as const),
-          Effect.catch((error) =>
-            classify(error).kind === "refused"
-              ? Effect.as(statusRecorded(request, run.name, run.state, "refused", error), "refused" as const)
-              : Effect.fail(new ChecksUnavailable())
-          ),
+          Effect.catch(effect (error) => {
+            const classified = try sync(() => classify(error))
+            if (classified.kind !== "refused") throw new ChecksUnavailable()
+            try statusRecorded(request, run.name, run.state, "refused", error)
+            return "refused" as const
+          }),
         )
-        if (outcome === "sent") yield* statusRecorded(request, run.name, run.state, "sent")
+        if (outcome === "sent") try statusRecorded(request, run.name, run.state, "sent")
         sent.push({ ...run, outcome })
       }
       return { statuses: sent } satisfies Reported
-    }).pipe(
+    }.pipe(
       Effect.provide(services.database),
       Effect.mapError(() => new ChecksUnavailable()),
       Effect.withSpan("checks.report", { attributes: { "smithers.checks.sha": request.sha } }),

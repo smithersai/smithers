@@ -22,7 +22,7 @@ apps/mvp/worker/SessionKeys.vibe
 apps/mvp/worker/SessionStore.ts
 apps/mvp/worker/ShapeAccess.ts
 apps/mvp/worker/SignIn.ts
-apps/mvp/worker/flows/RevokeGitHubToken.ts
+apps/mvp/worker/flows/RevokeGitHubToken.vibe
 
 # Sockets and the hosts that hold them
 apps/mvp/worker/SocketAccess.ts

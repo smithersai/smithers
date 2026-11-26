@@ -2,6 +2,7 @@
 // file's schema of the compose Postgres, against the scripted GitHub. The branch's machine is a test `Machines` over an
 // in-memory checkout of the head, and the judge behind the review is a scripted model admitted and metered by the
 // model endpoint's own `ModelSeats.local`: the only stand-ins. Each check is a `runs` row on the head's SHA.
+import { SeatResolver } from "@smthrs/agent"
 import { Model, ModelError } from "@smthrs/model"
 import { SandboxTools } from "@smthrs/sandbox"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
@@ -21,12 +22,13 @@ import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { instantCommands, noCommands } from "../test/commands.ts"
 import { CheckoutFailed, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.ts"
+import { TokenUnavailable } from "../github/Tokens.ts"
 import { finding, judgeSeat, REPOSITORY, reset, reviewing, services as githubServices, signedIn, sql } from "../github/test/fixtures.ts"
 import { BOT_LOGIN, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as Box from "../test/box.ts"
 import { build, runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
-import * as Checks from "./Checks.ts"
+import * as Checks from "./Checks.vibe"
 import * as SandboxCommand from "./SandboxCommand.vibe"
 
 const runtime = testFile("checks_run")
@@ -736,6 +738,15 @@ describe("the review's text", () => {
     expect(Checks.reviewBodyOf([Schema.decodeUnknownSync(ReviewComment)(finding("a.md", 0, "x"))], [], "maya")).toContain("- **minor** `a.md`: x")
   })
 
+  test("lists two findings and only prints their first lines", () => {
+    const comments = ["first\nextra", "second"].map((text) =>
+      Schema.decodeUnknownSync(ReviewComment)(finding("a.ts", 1, text)))
+    const body = Checks.reviewBodyOf(comments, [], "maya")
+    expect(body).toContain("2 findings, the most severe first:")
+    expect(body).toContain("- **minor** `a.ts:1`: first\n- **minor** `a.ts:1`: second")
+    expect(body).not.toContain("extra")
+  })
+
   test("shows the ten most severe findings, then the files it didn't read", () => {
     const severities = ["info", "minor", "major", "critical"]
     const comments = Array.from({ length: 12 }, (_, index) =>
@@ -777,7 +788,6 @@ test.each(["token", "github", "database"] as const)("a review %s outage remains 
   const { seat } = await judgeSeat(runtime, judge("must not reach the judge"))
   const { services } = await githubServices(runtime, github, { judge: seat })
   const request = await opened(github, { personId: "p" })
-  const { TokenUnavailable } = await import("../github/Tokens")
   const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
   if (fault === "github") github.faults.push({ match: (method, path) => method === "GET" && path.includes("/compare/"), status: 503 })
   const steps = Checks.steps({ ...services, reviewerFor: () => seat,
@@ -793,5 +803,61 @@ test.each(["token", "github", "database"] as const)("a review %s outage remains 
   const result = await runFlow(flow, { request }, Interpreter.layerWithImplementations(flow, review.toLayer(steps.prepare)).pipe(Layer.provideMerge(Action.layerImplementations)))
   expect(Exit.isFailure(result.exit)).toBe(true)
   expect(JSON.stringify(result.exit)).toContain("ChecksUnavailable")
+  expect(github.pulls.get(request.prNumber)!.reviews).toEqual([])
+})
+
+test("a review seat refuses ids outside the review role", async () => {
+  const resolve = Effect.flatMap(SeatResolver.SeatResolver, (resolver) => resolver.resolve("foreign/seat"))
+  const exit = await Effect.runPromiseExit(resolve.pipe(Effect.provide(Checks.reviewSeats(() => {
+    throw new Error("an unrelated seat must never request an owner's model")
+  }))))
+  expect(Exit.isFailure(exit) && String(exit.cause)).toContain("SeatUnresolved")
+  expect(Exit.isFailure(exit) && String(exit.cause)).toContain("checks/review:<owner>")
+})
+
+test.each(["missing-rounds", "refused", "outage"] as const)("posting a review handles %s", async (fault) => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+  const { seat } = await judgeSeat(runtime, judge("must not reach the judge"))
+  const { services } = await githubServices(runtime, github, { judge: seat })
+  const request = await opened(github, maya)
+  const prepared = await Effect.runPromise(Checks.steps({ ...services, reviewerFor: () => seat }).prepare({ request }))
+  const result = fault === "missing-rounds" ? null : Schema.decodeUnknownSync(Checks.Review.payloadSchema.fields.result)({
+    target: prepared.rounds.prepared.target,
+    review: { status: "success", ok: true },
+    walkthrough: { path: "", bytes: 0, chapters: 0, files: 0, findings: 0 },
+    story: {},
+    ui: { kind: "html", title: "", html: "" },
+  })
+  const { review } = Checks.steps({
+    ...services,
+    reviewerFor: () => seat,
+    tokens: {
+      ...services.tokens,
+      forInstallation: () => Effect.fail(new TokenUnavailable({
+        reason: fault === "refused" ? "app_not_installed" : "unavailable",
+      })),
+    },
+  })
+  const post = Action.make("test/PostReview/step", {
+    payload: Checks.Review.payloadSchema,
+    success: Checks.Checked,
+    error: Checks.ChecksUnavailable,
+  })
+  const flow = Flow.make("test/PostReview", {
+    payload: Checks.Review.payloadSchema,
+    success: Checks.Checked,
+    error: Checks.ChecksUnavailable,
+    body: Node.capture({}, (payload) => post.call(payload)),
+  })
+  const ran = await runFlow(flow, { request, notReviewed: [], refusal: null, result },
+    Interpreter.layerWithImplementations(flow, post.toLayer(review)).pipe(Layer.provideMerge(Action.layerImplementations)))
+  if (fault === "outage") {
+    expect(Exit.isFailure(ran.exit) && String(ran.exit.cause)).toContain("ChecksUnavailable")
+    expect((await runs()).map(({ status }) => status)).toEqual(["working"])
+  } else {
+    expect(ran.exit).toEqual(Exit.succeed({ checks: [{ name: "review", status: "failed" }] }))
+    expect((await runs()).map(({ status }) => status)).toEqual(["failed"])
+  }
   expect(github.pulls.get(request.prNumber)!.reviews).toEqual([])
 })

@@ -2,8 +2,8 @@ import { Flow } from "@smthrs/flow"
 import { Context } from "effect"
 import { expect, test } from "vitest"
 import * as Recheck from "./RecheckRole.vibe"
-import * as Revoke from "./RevokeGitHubToken.ts"
-import * as Cleanup from "./RevokeReplacedGitHubToken.ts"
+import * as Revoke from "./RevokeGitHubToken.vibe"
+import * as Cleanup from "./RevokeReplacedGitHubToken.vibe"
 import * as Keys from "./SessionSigningKeys.vibe"
 
 const ending = ["db:write:sessions", "db:write:host_sessions", "db:write:github_token_cleanups", "db:write:session_end_receipts"]

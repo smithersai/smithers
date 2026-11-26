@@ -7,7 +7,7 @@ import * as Keys from "../SessionKeys.vibe"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import { SECRET, signInHarness } from "../test/signIn.ts"
-import * as Cleanup from "./RevokeReplacedGitHubToken.ts"
+import * as Cleanup from "./RevokeReplacedGitHubToken.vibe"
 
 const runtime = testFile("replaced_tokens")
 const query = <A extends object>(f: (sql: SqlClient.SqlClient) => Effect.Effect<ReadonlyArray<A>, unknown>) => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, f))
@@ -77,3 +77,49 @@ test("the durable sweeper restarts only aged unfinished rows under cleanup execu
   await runtime.runPromise(Cleanup.revoke(s.id, s.services))
   expect(await runtime.runPromise(Cleanup.sweep())).toEqual([])
 })
+
+test("rejects malformed ciphertext and finishes a cleanup with no access token", async () => {
+  const s = await setup()
+  const revokes = () => s.h.github.calls.filter(call => call === "revoke").length
+  const before = revokes()
+  await query(sql => sql`UPDATE github_token_cleanups SET sealed_access = '{}'::jsonb WHERE id = ${s.id}`)
+  const malformed = await runtime.runPromiseExit(Cleanup.revoke(s.id, s.services))
+  expect(Exit.isFailure(malformed) && Cause.squash(malformed.cause)).toMatchObject({ reason: "unreadable" })
+  expect(await query(sql => sql`SELECT id FROM github_token_cleanups WHERE id = ${s.id} AND finished_at IS NULL`)).toHaveLength(1)
+  await query(sql => sql`UPDATE github_token_cleanups SET sealed_access = NULL WHERE id = ${s.id}`)
+  expect(await runtime.runPromise(Cleanup.revoke(s.id, s.services))).toEqual({ outcome: "revoked" })
+  expect(await query(sql => sql`SELECT id FROM github_token_cleanups
+    WHERE id = ${s.id} AND finished_at IS NOT NULL AND sealed_refresh IS NULL`)).toHaveLength(1)
+  expect(revokes()).toBe(before)
+})
+
+test.each(["unavailable", "misconfigured", "unreadable", "database"] as const)(
+  "the registered cleanup retries a transient %s failure before clearing the receipt",
+  async (fault) => {
+    const s = await setup()
+    const wrongKeys = await runtime.runPromise(Keys.make(Redacted.make("other-secret".padEnd(64, "4"))))
+    let opens = 0
+    let databaseAttempts = 0
+    const keys = s.services.keys
+    const services = {
+      ...s.services,
+      keys: {
+        ...keys,
+        open: (...args: Parameters<typeof keys.open>) => Effect.suspend(() =>
+          (++opens === 1 && fault === "unreadable" ? wrongKeys : keys).open(...args)),
+      },
+    }
+    const database = Layer.unwrap(Effect.suspend(() =>
+      ++databaseAttempts === 1 && fault === "database" ? Effect.fail("database unavailable") : Effect.succeed(s.database)))
+    if (fault === "unavailable" || fault === "misconfigured") s.h.github.failOnce.revoke = fault
+    const before = s.h.github.calls.filter(call => call === "revoke").length
+    const ran = await runFlow(Cleanup.RevokeReplacedGitHubToken, { cleanupId: s.id }, Cleanup.registration(database, services))
+    expect(ran.exit).toEqual(Exit.succeed({ outcome: "revoked" }))
+    expect(databaseAttempts).toBe(2)
+    expect(opens).toBe(fault === "database" ? 1 : 2)
+    expect(s.h.github.calls.filter(call => call === "revoke").length - before)
+      .toBe(fault === "unavailable" || fault === "misconfigured" ? 2 : 1)
+    expect(await query(sql => sql`SELECT id FROM github_token_cleanups
+      WHERE id = ${s.id} AND finished_at IS NOT NULL AND sealed_access IS NULL AND sealed_refresh IS NULL`)).toHaveLength(1)
+  },
+)

@@ -12,7 +12,7 @@ import { reviewExecutionId, reviewRoute } from "../../src/features/pulls/contrac
 import * as Actor from "../Actor.ts"
 import { Machines } from "../branch/Machines.ts"
 import { FlowStarter, StartUnavailable } from "../Flows.ts"
-import * as Checks from "../flows/Checks.ts"
+import * as Checks from "../flows/Checks.vibe"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import { handles } from "./Api.ts"

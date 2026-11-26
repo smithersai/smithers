@@ -176,48 +176,51 @@ export const failureOf = (error: CallError): Outcome => ({
  * person who asked; nothing logs it. A Save publishes its numbered mark in the same transaction, keyed by this call,
  * so replay or a lost tab cannot leave a completed write without its mark.
  */
-export const settle = (callId: string, outcome: Outcome, saved?: typeof Saved.Type) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    return yield* sql.withTransaction(Effect.gen(function* () {
-      const rows = outcome.status === "done"
-        ? yield* sql<{ readonly branchId: string; readonly personId: string }>`
-          UPDATE sandbox_calls SET status = 'done', result = ${JSON.stringify(outcome.result)}::jsonb,
-            generation = ${outcome.generation ?? null}, settled_at = now()
-          WHERE id = ${callId} AND status = 'running'
-          RETURNING branch_id AS "branchId", person_id AS "personId"`
-        : yield* sql<{ readonly branchId: string; readonly personId: string }>`
-          UPDATE sandbox_calls SET status = 'failed', failure = ${outcome.failure}, settled_at = now()
-          WHERE id = ${callId} AND status = 'running'
-          RETURNING branch_id AS "branchId", person_id AS "personId"`
-      const row = rows[0]
-      if (row !== undefined && saved !== undefined && outcome.status === "done" &&
-        outcome.result.tool === "write" && outcome.result.sequence !== undefined) {
-        const sequence = outcome.result.sequence
-        const update = yield* Effect.scoped(Effect.gen(function* () {
-          const replica = yield* SharedText.make
-          return (yield* replica.mark(savedNameOf(sequence), saved.mark))!
-        }))
-        const id = yield* Uuid.v5(TEXT_NAMESPACE, `saved/${callId}`).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
-        yield* sql`
-          INSERT INTO text_updates (id, scope, text_id, data, seed, person_id)
-          VALUES (${id}, ${`branch:${row.branchId}`}, ${saved.textId}, ${Base64.encode(update)}, false, ${row.personId})`
-      }
-      return { settled: rows.length > 0 }
-    }))
+export const settle = effect (callId: string, outcome: Outcome, saved?: typeof Saved.Type) => {
+  const sql = try SqlClient.SqlClient
+  return try sql.withTransaction(effect {
+    const rows = outcome.status === "done"
+      ? try sql<{ readonly branchId: string; readonly personId: string }>`
+        UPDATE sandbox_calls SET status = 'done', result = ${JSON.stringify(outcome.result)}::jsonb,
+          generation = ${outcome.generation ?? null}, settled_at = now()
+        WHERE id = ${callId} AND status = 'running'
+        RETURNING branch_id AS "branchId", person_id AS "personId"`
+      : try sql<{ readonly branchId: string; readonly personId: string }>`
+        UPDATE sandbox_calls SET status = 'failed', failure = ${outcome.failure}, settled_at = now()
+        WHERE id = ${callId} AND status = 'running'
+        RETURNING branch_id AS "branchId", person_id AS "personId"`
+    const row = rows[0]
+    if (row !== undefined && saved !== undefined && outcome.status === "done" &&
+      outcome.result.tool === "write" && outcome.result.sequence !== undefined) {
+      const sequence = outcome.result.sequence
+      const update = try scoped(effect {
+        const replica = try SharedText.make
+        const name = try sync(() => savedNameOf(sequence))
+        return (try replica.mark(name, saved.mark))!
+      })
+      const id = try Uuid.v5(TEXT_NAMESPACE, `saved/${callId}`).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+      try sql`
+        INSERT INTO text_updates (id, scope, text_id, data, seed, person_id)
+        VALUES (${id}, ${`branch:${row.branchId}`}, ${saved.textId}, ${Base64.encode(update)}, false, ${row.personId})`
+    }
+    return { settled: rows.length > 0 }
   })
+}
 
 /** The steps over the host's `Machines` and `database`; each records ids, the tool and outcomes, never content. */
 export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
   const tool = ({ branch, ownerId, callId, call }: typeof Tool.payloadSchema.Type) =>
     Effect.flatMap(Machines, (machines) => machines.tool(branch, ownerId, callId, call)).pipe(
       Effect.map(({ result, generation }): Outcome => ({ status: "done", result, generation })),
-      Effect.tapError((error) =>
-        Effect.logWarning("sandbox.tool").pipe(
+      Effect.tapError(effect (error) => {
+        const details = error._tag === "@smthrs/mvp/branch/CheckoutFailed"
+          ? try sync(() => checkoutDetails(error))
+          : {}
+        try logWarning("sandbox.tool").pipe(
           Effect.annotateLogs({ callId, branchId: branch.branchId, tool: call.tool, errorCode: codeOf(error),
-            ...(error._tag === "@smthrs/mvp/branch/CheckoutFailed" ? checkoutDetails(error) : {}) }),
+            ...details }),
         )
-      ),
+      }),
       Effect.withSpan("sandbox.call.tool", {
         attributes: { "smithers.branch.id": branch.branchId, "smithers.sandbox.tool": call.tool },
       }),
