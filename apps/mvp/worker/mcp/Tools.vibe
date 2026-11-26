@@ -12,7 +12,7 @@ import {
 } from "../../src/features/issues/work.ts"
 import { MCP_BLOCKED_ACTS, mcpAgentLabel } from "../../src/features/mcp/contract.ts"
 import type { SqlClient } from "effect/sql"
-import { rankOf, type Role } from "../Actor.ts"
+import { rankOf, type Role } from "../Actor.vibe"
 import * as DeploymentPolicy from "../DeploymentPolicy.vibe"
 import * as FleetMcpTools from "../fleet/FleetMcpTools.vibe"
 import {

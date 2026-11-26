@@ -1,7 +1,7 @@
 import { Effect, Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { MCP_MAX_REQUEST_BYTES } from "../../src/features/mcp/contract.ts"
-import type { Actor } from "../Actor.ts"
+import type { Actor } from "../Actor.vibe"
 import {
   type AttachLimits,
   challengeFor,

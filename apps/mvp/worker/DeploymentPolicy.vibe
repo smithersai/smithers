@@ -10,7 +10,7 @@
  * and maintainers keep theirs.
  */
 
-import type { Actor } from "./Actor.ts"
+import type { Actor } from "./Actor.vibe"
 
 /** Nobody: the deployment admins of an installation that names none. */
 export const DEFAULT_ADMINS: ReadonlySet<string> = new Set()

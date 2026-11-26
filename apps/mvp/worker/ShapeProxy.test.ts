@@ -11,7 +11,7 @@ import { RUNS_SHAPE_ROUTE } from "../src/features/status/contract.ts"
 import { VIEWS_SHAPE_ROUTE } from "../src/features/views/contract.ts"
 import * as Conversations from "./branch/Conversations.vibe"
 import * as ChatMetrics from "./ChatMetrics.ts"
-import { type Actor, Sessions, SessionsUnavailable } from "./Actor.ts"
+import { type Actor, Sessions, SessionsUnavailable } from "./Actor.vibe"
 import { answers, eventually, harness, testFile } from "./test/harness.ts"
 
 /** The columns a device syncs: every column of `messages` but who asked (worker/Chat.ts). */

@@ -3,7 +3,7 @@ import { Arbitrary, Effect, Option, Schema } from "effect"
 import { HttpServerRequest } from "effect/http"
 import { expect, test } from "vitest"
 import { DEVICE_PERSON_HEADER, type SessionState } from "../src/features/auth/contract.ts"
-import { Sessions } from "./Actor.ts"
+import { Sessions } from "./Actor.vibe"
 import { testFile } from "./test/harness.ts"
 import { cookie, signInHarness } from "./test/signIn.ts"
 

@@ -11,7 +11,7 @@ import {
   parseAdminRoute,
   type Refusal,
 } from "../../src/features/runners/contract.ts"
-import { refusesPersonOnly, Sessions } from "../Actor.ts"
+import { refusesPersonOnly, Sessions } from "../Actor.vibe"
 import { readBounded } from "../Body.vibe"
 import { installedOn, repoRoleOn, roleOn } from "../branch/Access.vibe"
 import { codeOf } from "../ErrorCode.ts"

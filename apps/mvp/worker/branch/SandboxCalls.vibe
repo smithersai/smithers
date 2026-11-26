@@ -11,8 +11,8 @@ import {
   MAX_CALL_BODY_BYTES,
   SANDBOX_CALLS_ROUTE,
 } from "../../src/features/sandbox/contract.ts"
-import type { Actor } from "../Actor.ts"
-import { boundTo, canAsk, Sessions } from "../Actor.ts"
+import type { Actor } from "../Actor.vibe"
+import { boundTo, canAsk, Sessions } from "../Actor.vibe"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"

@@ -4,7 +4,7 @@ import { Arbitrary, ConfigProvider, Effect, Layer, Logger, Option, Schema } from
 import { HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { describe, expect, it } from "vitest"
-import type { Actor, Role } from "./Actor.ts"
+import type { Actor, Role } from "./Actor.vibe"
 import * as BranchAccess from "./branch/Access.vibe"
 import * as BranchBudget from "./branch/Budget.vibe"
 import * as BranchConversations from "./branch/Conversations.vibe"

@@ -1,5 +1,5 @@
 import { Effect, Exit, Result } from "effect"
-import type { Actor } from "../Actor.ts"
+import type { Actor } from "../Actor.vibe"
 import { timingSafeEqualString, validateCodeVerifier } from "../mcp/Pkce.ts"
 
 // BYOA attach (decision 0173, Gate 4): how a person's own agent (Claude Code, Codex, Cursor) gets a grant to act in one

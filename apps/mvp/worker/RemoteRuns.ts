@@ -24,7 +24,7 @@ import {
   stoppable,
   type StopRefusal,
 } from "../src/features/runs/contract.ts"
-import { type Actor, canAsk, Sessions } from "./Actor.ts"
+import { type Actor, canAsk, Sessions } from "./Actor.vibe"
 import { readBounded } from "./Body.vibe"
 import * as CloudRuns from "./CloudRuns.ts"
 import * as TodoSession from "./flows/TodoSession.vibe"

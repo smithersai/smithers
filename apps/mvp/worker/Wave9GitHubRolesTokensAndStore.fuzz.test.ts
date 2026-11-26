@@ -4,7 +4,7 @@ import { Arbitrary, ConfigProvider, Effect, Exit, Layer, Logger, Option, Redacte
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { describe, expect, it } from "vitest"
-import * as Actor from "./Actor.ts"
+import * as Actor from "./Actor.vibe"
 import * as Flows from "./Flows.ts"
 import * as GitHubAuth from "./GitHubAuth.ts"
 import * as SessionKeys from "./SessionKeys.vibe"

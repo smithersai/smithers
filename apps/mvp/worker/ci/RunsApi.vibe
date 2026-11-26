@@ -6,7 +6,7 @@ import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } fr
 import { SqlClient } from "effect/sql"
 import { manualExecutionId, MAX_INPUT_BYTES, type RunsRefusal } from "../../src/features/actions/contract.ts"
 import { settled } from "../../src/features/runs/contract.ts"
-import { type Actor, Sessions } from "../Actor.ts"
+import { type Actor, Sessions } from "../Actor.vibe"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { FlowStarter } from "../Flows.ts"

@@ -14,7 +14,7 @@ import {
   SESSION_ROUTE,
   SIGN_OUT_ROUTE,
 } from "../src/features/auth/contract.ts"
-import * as Actor from "./Actor.ts"
+import * as Actor from "./Actor.vibe"
 import * as Flows from "./Flows.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.vibe"
 import * as RevokeReplaced from "./flows/RevokeReplacedGitHubToken.vibe"

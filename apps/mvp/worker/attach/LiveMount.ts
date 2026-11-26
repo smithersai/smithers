@@ -17,7 +17,7 @@ import {
   MCP_MAX_REQUEST_BYTES,
 } from "../../src/features/mcp/contract.ts"
 import { isRepository, repoId } from "../../src/features/repo/contract.ts"
-import { type Actor, Sessions } from "../Actor.ts"
+import { type Actor, Sessions } from "../Actor.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as SessionStore from "../SessionStore.ts"
 import { askingOf, branchAccess, canView } from "../branch/Access.vibe"

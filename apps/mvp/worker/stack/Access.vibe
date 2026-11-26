@@ -1,6 +1,6 @@
 import type { Option } from "effect"
 import type { StackVia } from "../../src/features/todos/contract.ts"
-import { type Actor, canAsk } from "../Actor.ts"
+import { type Actor, canAsk } from "../Actor.vibe"
 
 // Who may read and change a repository's stack (decision 0016 §1 and its Consequences: 0007's catalog gains
 // `repo:todo-commit` and `repo:todo-drop`, Member; agent never). Every route of the stack asks these functions, so a

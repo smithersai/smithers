@@ -20,7 +20,7 @@ import {
   PULL_RECEIPT_HEADER,
   REVIEWS_SHAPE_ROUTE,
 } from "../../src/features/pulls/contract.ts"
-import * as Actor from "../Actor.ts"
+import * as Actor from "../Actor.vibe"
 import * as RepoRuns from "../RepoRuns.ts"
 import * as Database from "../../db/Database.ts"
 import { FlowStarter, StartUnavailable } from "../Flows.ts"

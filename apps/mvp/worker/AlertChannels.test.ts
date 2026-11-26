@@ -9,7 +9,7 @@ import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { ALERT_CHANNEL_COLUMNS, ALERT_DELIVERY_COLUMNS, MAX_ALERT_CHANNEL_BODY_BYTES } from "../src/features/spend/contract.ts"
-import { type Actor, Sessions } from "./Actor.ts"
+import { type Actor, Sessions } from "./Actor.vibe"
 import * as AlertChannels from "./AlertChannels.vibe"
 import { answers, harness, recorded, testFile } from "./test/harness.ts"
 

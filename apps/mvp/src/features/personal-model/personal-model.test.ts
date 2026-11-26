@@ -12,7 +12,7 @@ import { type Duration, Effect, Layer, Logger, type ManagedRuntime, Metric } fro
 import { SqlClient } from "effect/sql"
 import type { HttpClient } from "effect/http"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import { leaks } from "../../../worker/personal/test/harness.ts"
 import { ANTHROPIC_ORIGIN, OPENAI_ORIGIN, type Reply } from "../../../worker/personal/test/provider.ts"
 import { dispatches } from "../../flows/dispatch"

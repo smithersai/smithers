@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect"
 import { HttpEffect, HttpServerResponse } from "effect/http"
 import { expect, test } from "vitest"
-import { Sessions, SessionsUnavailable } from "./Actor.ts"
+import { Sessions, SessionsUnavailable } from "./Actor.vibe"
 import { guard, handles } from "./SshKeyAccess.vibe"
 
 test.each([

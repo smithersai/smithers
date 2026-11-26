@@ -1,4 +1,4 @@
-import { digestSync } from "@smthrs/crypto"
+import { digestSync, type Digest } from "@smthrs/crypto"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -38,8 +38,8 @@ const PATH = /^\/api\/repos\/([\w.-]+)\/([\w.-]+)\/asks(?:\/([^/]+))?$/
 
 /** `/api/repos/<owner>/<name>/asks[/<id>]` as its parts, or `undefined` for any other path. */
 export const parseAsksPath = (path: string) => {
-  const match = PATH.exec(path)
-  return match === null ? undefined : { owner: match[1]!, name: match[2]!, id: match[3] }
+  const matched = PATH.exec(path)
+  return matched === null ? undefined : { owner: matched[1]!, name: matched[2]!, id: matched[3] }
 }
 
 /** Whether a path is one of the asks routes. */
@@ -58,6 +58,10 @@ export const AskBody = Schema.Struct({
 const decodeBody = Schema.decodeUnknownEffect(Schema.fromJsonString(AskBody))
 const isAskId = Schema.is(AskId)
 
+// Configuration is hashed eagerly, and invalid text raises the same SHA-256 error as the caller's original hash.
+const digestToken = (token: string): Digest =>
+  Effect.runSync(Effect.orDie(Effect.try({ try: () => digestSync(token), catch: (cause) => cause })))
+
 const noStore = { "cache-control": "no-store" }
 
 type Fields = Record<string, string | number>
@@ -66,23 +70,22 @@ type Fields = Record<string, string | number>
 const askerOf = (machine: Machine) => `machine:${machine.agent}/${machine.lane}`
 
 /** An ask's state, read from its run's row: open until answered; closed when it ended without an answer. */
-const askOf = (rowId: string, asker: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{
-      readonly status: string
-      readonly answer: { readonly value: string } | null
-      readonly answeredAt: string | null
-    }>`
-      SELECT status, answer, to_char(answered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "answeredAt"
-      FROM runs WHERE id = ${rowId}::uuid AND flow = ${ASK_FLOW} AND launched_by = ${asker}`
-    return Option.map(Option.fromNullishOr(row), (found) =>
-      found.answer !== null
-        ? { status: "answered" as const, answer: found.answer.value, answeredAt: found.answeredAt! }
-        : found.status === "needs_you"
-        ? { status: "open" as const }
-        : { status: "closed" as const })
-  })
+effect function askOf(rowId: string, asker: string) {
+  const sql = try SqlClient.SqlClient
+  const [row] = try sql<{
+    readonly status: string
+    readonly answer: { readonly value: string } | null
+    readonly answeredAt: string | null
+  }>`
+    SELECT status, answer, to_char(answered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "answeredAt"
+    FROM runs WHERE id = ${rowId}::uuid AND flow = ${ASK_FLOW} AND launched_by = ${asker}`
+  return Option.map(Option.fromNullishOr(row), (found) =>
+    found.answer !== null
+      ? { status: "answered" as const, answer: found.answer.value, answeredAt: found.answeredAt! }
+      : found.status === "needs_you"
+      ? { status: "open" as const }
+      : { status: "closed" as const })
+}
 
 /** How the asks routes are built beyond their database. */
 export interface Options {
@@ -98,7 +101,7 @@ export interface Options {
  * the people who have signed in to this deployment.
  */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, options: Options = {}) => {
-  const development = options.developmentToken === undefined ? undefined : digestSync(options.developmentToken)
+  const development = options.developmentToken === undefined ? undefined : digestToken(options.developmentToken)
   /** The development token's machine, when `request` carries it. */
   const developmentOf = (request: HttpServerRequest.HttpServerRequest) =>
     Option.filter(
@@ -106,13 +109,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         agent: "development",
         lane: "local",
         scope: [ASK_SCOPE],
-        tokenSha256: digestSync(token),
+        tokenSha256: digestToken(token),
       })),
       (machine) => machine.tokenSha256 === development,
     )
-  const route = Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest
-    const startedAt = yield* Clock.currentTimeMillis
+  const route = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const startedAt = try Clock.currentTimeMillis
     const target = parseAsksPath(request.url.split("?")[0]!)!
     const op = target.id === undefined ? "create" : "read"
     const repo = repositoryOf(`${target.owner}/${target.name}`)
@@ -123,13 +126,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       fields.outcome = code
       return HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
     }
-    const response = yield* Effect.gen(function* () {
+    const response = try (effect {
       const method = op === "create" ? "POST" : "GET"
       if (request.method !== method) {
         fields.outcome = "method"
         return HttpServerResponse.empty({ status: 405, headers: { allow: method, ...noStore } })
       }
-      const machine = Option.orElse(yield* machineOf(request, repo.id).pipe(Effect.provide(database)), () => developmentOf(request))
+      const machine = Option.orElse(try Effect.provide(machineOf(request, repo.id), database), () => developmentOf(request))
       if (Option.isNone(machine)) return refuse(401, "authentication")
       fields.agent = machine.value.agent
       fields.lane = machine.value.lane
@@ -138,24 +141,24 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       if (target.id !== undefined) {
         if (!isAskId(target.id)) return refuse(404, "not_found")
         fields.askId = target.id
-        const found = yield* askOf(yield* rowIdOf(askExecutionId(full, target.id)), asker).pipe(Effect.provide(database))
+        const found = try Effect.provide(askOf(try rowIdOf(askExecutionId(full, target.id)), asker), database)
         if (Option.isNone(found)) return refuse(404, "not_found")
         fields.outcome = found.value.status
         return HttpServerResponse.jsonUnsafe(found.value, { status: 200, headers: noStore })
       }
-      const body = yield* readBounded(request, MAX_RUN_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(Effect.result)
+      const body = try readBounded(request, MAX_RUN_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(Effect.result)
       if (body._tag === "Failure") {
         return body.failure.reason === "too_large" ? refuse(413, "too_large") : refuse(400, "invalid")
       }
       // A decoding failure would quote the body: it is dropped whole.
-      const decoded = yield* decodeBody(body.success).pipe(Effect.option)
+      const decoded = try decodeBody(body.success).pipe(Effect.option)
       if (Option.isNone(decoded)) return refuse(400, "invalid")
       const ask = decoded.value
       fields.askId = ask.id
-      const person = yield* (yield* Directory).find(ask.to)
+      const person = try (try Directory).find(ask.to)
       if (Option.isNone(person)) return refuse(422, "unknown_person")
       const executionId = askExecutionId(full, ask.id)
-      const started = yield* (yield* FlowStarter).start(Ask, {
+      const started = try (try FlowStarter).start(Ask, {
         executionId,
         payload: {
           repo: full,
@@ -172,25 +175,25 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         return refuse(503, "unavailable")
       }
       fields.outcome = "started"
-      return HttpServerResponse.jsonUnsafe({ runId: yield* rowIdOf(executionId) }, { status: 202, headers: noStore })
-    }).pipe(
+      return HttpServerResponse.jsonUnsafe({ runId: try rowIdOf(executionId) }, { status: 202, headers: noStore })
+    }.pipe(
       Effect.catchCause((cause) =>
         Effect.sync(() => {
           fields.errorCode = codeOf(Cause.squash(cause))
           return refuse(503, "unavailable")
         })
       ),
-    )
+    ))
     fields.status = response.status
-    fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+    fields.durationMs = (try Clock.currentTimeMillis) - startedAt
     const outcome = String(fields.outcome)
-    yield* Metric.update(Metric.withAttributes(requests, { op, outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, op, outcome })
-    yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+    try Metric.update(Metric.withAttributes(requests, { op, outcome }), 1)
+    try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, op, outcome })
+    try Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
       op === "create" ? "queue.ask.request" : "queue.ask.read",
     ).pipe(Effect.annotateLogs(fields))
     return response
-  })
+  }
 
   return { fetch: route.pipe(Effect.withSpan("queue.ask.request", { kind: "server" })) }
 }

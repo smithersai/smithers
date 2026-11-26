@@ -1,14 +1,29 @@
 // Who may act (worker/Actor.ts): the roles that may ask Smithers, decision 0007 §2's `repo:ask`, and clone.
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Effect, Logger, Metric } from "effect"
+import { Effect, Logger, Metric, Option } from "effect"
+import { HttpServerRequest } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { ROLES } from "../src/features/auth/contract.ts"
-import { type Actor, boundTo, canAsk, canClone, PERSON_ONLY_FLOWS, refusesCredential, refusesPersonOnly, personOnlyRefusals } from "./Actor.ts"
+import { type Actor, Sessions, SessionsUnavailable, rankOf, signedOut, boundTo, canAsk, canClone, PERSON_ONLY_FLOWS, refusesCredential, refusesPersonOnly, personOnlyRefusals } from "./Actor.vibe"
 
 const person = (role: Actor["role"], act?: Actor["act"]): Actor => ({
   subject: { kind: "person", id: `person-${role ?? "none"}` },
   role,
   ...(act === undefined ? {} : { act }),
+})
+
+test("role rank increases with authority and signed-out sessions resolve no actor", async () => {
+  expect([...ROLES, null].map(rankOf)).toEqual([4, 3, 2, 1, 0])
+  expect(new SessionsUnavailable().errorCode).toBeUndefined()
+  expect(new SessionsUnavailable({ errorCode: "stale" }).errorCode).toBe("stale")
+  const session = Effect.gen(function* () {
+    const sessions = yield* Sessions
+    return yield* sessions.resolve
+  }).pipe(
+    Effect.provide(signedOut),
+    Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("https://smithers.test"))),
+  )
+  expect(await Effect.runPromise(session)).toEqual(Option.none())
 })
 
 describe("canAsk", () => {

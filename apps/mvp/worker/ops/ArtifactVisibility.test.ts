@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import type { Actor, ActKind } from "../Actor.ts"
+import type { Actor, ActKind } from "../Actor.vibe"
 import { parseAdminLogins } from "../DeploymentPolicy.vibe"
 import {
   type Artifact,
@@ -295,7 +295,7 @@ describe("Low 1 (approvals): a stored public approval needs a person's id and lo
 test("the Worker artifact handler returns the same 404 before storage for anonymous and non-owner requests", async () => {
   const { Effect, Option } = await import("effect")
   const { HttpEffect } = await import("effect/http")
-  const { Sessions } = await import("../Actor.ts")
+  const { Sessions } = await import("../Actor.vibe")
   const { repositoryOf } = await import("../github/Config.vibe")
   const routes = await import("./ArtifactRoutes.vibe")
   const repository = repositoryOf("smithersai/Smithers-Ops")
@@ -335,7 +335,7 @@ test("the Worker artifact handler returns the same 404 before storage for anonym
 test("the Worker artifact handler verifies membership, the run association, and storage", async () => {
   const { Effect, Option } = await import("effect")
   const { HttpEffect } = await import("effect/http")
-  const { Sessions } = await import("../Actor.ts")
+  const { Sessions } = await import("../Actor.vibe")
   const { repositoryOf } = await import("../github/Config.vibe")
   const routes = await import("./ArtifactRoutes.vibe")
   const repository = repositoryOf("acme/widgets")

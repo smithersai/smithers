@@ -13,7 +13,7 @@ import {
 import { FLEET_REPORT_MAX_BYTES, MIN_TRANSCRIPT_ENTRIES, planSessionsReport } from "../../src/features/fleet/snapshotBudget.ts"
 import { MCP_MAX_REQUEST_BYTES, MCP_ROUTE } from "../../src/features/mcp/contract.ts"
 import { testFile } from "../test/harness.ts"
-import * as Actor from "../Actor.ts"
+import * as Actor from "../Actor.vibe"
 import * as McpApi from "../mcp/Api.vibe"
 import { McpAuthService, type McpPrincipal, McpToolRegistry } from "../mcp/Contract.vibe"
 import { makeLiveToolDeps, makeMcpToolRegistry } from "../mcp/Tools.vibe"

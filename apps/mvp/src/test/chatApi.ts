@@ -55,7 +55,7 @@ import {
   ATTACH_INTENTS_ROUTE,
   ATTACH_TOKENS_ROUTE,
 } from "../features/mcp/contract"
-import * as Actor from "../../worker/Actor.ts"
+import * as Actor from "../../worker/Actor.vibe"
 import * as BranchApi from "../../worker/branch/BranchApi.vibe"
 import * as Conversations from "../../worker/branch/Conversations.vibe"
 import { Forge } from "../../worker/branch/Forge.vibe"
@@ -64,7 +64,7 @@ import { Rooms } from "../../worker/branch/Rooms.vibe"
 import { TerminalSockets } from "../../worker/branch/Sandboxes.vibe"
 import * as Chat from "../../worker/Chat.ts"
 import * as Flows from "../../worker/Flows.ts"
-import * as Asks from "../../worker/Asks.ts"
+import * as Asks from "../../worker/Asks.vibe"
 import * as ExecutionHost from "../../worker/ExecutionHost.ts"
 import { executions } from "../../worker/test/executions.ts"
 import * as TodoSession from "../../worker/flows/TodoSession.vibe"

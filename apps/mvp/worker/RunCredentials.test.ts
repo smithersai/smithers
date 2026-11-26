@@ -18,7 +18,7 @@ import {
   personOnlyRefusals,
   refusesCredential,
   Sessions,
-} from "./Actor.ts"
+} from "./Actor.vibe"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import * as Database from "../db/Database.ts"
 import * as RunCredentials from "./RunCredentials.ts"

@@ -26,7 +26,7 @@ import {
   stopRoute,
 } from "../src/features/runs/contract.ts"
 import { transcriptRoute } from "../src/features/transcript/contract.ts"
-import * as Actor from "./Actor.ts"
+import * as Actor from "./Actor.vibe"
 import * as CloudRuns from "./CloudRuns.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as RemoteRuns from "./RemoteRuns.ts"

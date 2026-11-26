@@ -4,7 +4,7 @@ import { expect, test } from "vitest"
 import { sourceText } from "../../../packages/repo-targets/test-utils/source-readers.mjs"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { AUTH_ROUTE } from "../src/features/auth/contract.ts"
-import * as Actor from "./Actor.ts"
+import * as Actor from "./Actor.vibe"
 import * as Page from "./GitHubConnectionsPage.vibe"
 import * as SessionStore from "./SessionStore.ts"
 

@@ -3,7 +3,7 @@
 // read from its own branch comes from the test's `x-scope` header.
 import { Effect, Option } from "effect"
 import { HttpEffect, HttpServerRequest } from "effect/http"
-import { Sessions } from "../../Actor.ts"
+import { Sessions } from "../../Actor.vibe"
 import { repositoryOf } from "../../github/Config.vibe"
 import * as ArtifactRoutes from "../../ops/ArtifactRoutes.vibe"
 import * as Artifacts from "../../branch/Artifacts.vibe"

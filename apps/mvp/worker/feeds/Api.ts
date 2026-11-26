@@ -24,7 +24,7 @@ import {
   type Refusal,
 } from "../../src/features/feeds/contract.ts"
 import { AnswerRequest, type FeedAnswer, IngestRequest } from "../../src/features/feeds/schema.ts"
-import { type Actor, refusesPersonOnly, Sessions } from "../Actor.ts"
+import { type Actor, refusesPersonOnly, Sessions } from "../Actor.vibe"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { repositoryOf } from "../github/Config.vibe"

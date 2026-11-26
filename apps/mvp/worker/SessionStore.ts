@@ -1,6 +1,6 @@
 import { Config, Context, Effect, Metric, Option, Redacted, Schema } from "effect"
 import { SqlClient, type Statement } from "effect/sql"
-import { SessionsUnavailable, type Actor, type Role } from "./Actor.ts"
+import { SessionsUnavailable, type Actor, type Role } from "./Actor.vibe"
 import * as SessionKeys from "./SessionKeys.vibe"
 import * as Ends from "./SessionEnds.vibe"
 export const sweepEnds = Ends.sweep

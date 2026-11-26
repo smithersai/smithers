@@ -4,7 +4,7 @@
 //
 // This file is the program boundary: it runs Effects with `Effect.runPromise`.
 import { Effect } from "effect"
-import * as AgentSandbox from "../../AgentSandbox.ts"
+import * as AgentSandbox from "../../AgentSandbox.vibe"
 import * as Realm from "../../ci/Realm.vibe"
 
 export default {

@@ -14,7 +14,7 @@ apps/mvp/worker/about/*
 packages/effect-electric/src/**
 
 # Sign-in, sessions and actors
-apps/mvp/worker/Actor.ts
+apps/mvp/worker/Actor.vibe
 apps/mvp/worker/GitHubAuth.ts
 apps/mvp/worker/RunCredentials.ts
 apps/mvp/worker/SessionCrypto.ts

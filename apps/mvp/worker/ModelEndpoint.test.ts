@@ -13,7 +13,7 @@ import type { AddressInfo } from "node:net"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import { type Actor, CurrentActor, Sessions, SessionsUnavailable } from "./Actor.ts"
+import { type Actor, CurrentActor, Sessions, SessionsUnavailable } from "./Actor.vibe"
 import * as Flows from "./Flows.ts"
 import * as HostedModel from "./HostedModel.ts"
 import * as ModelSeats from "./ModelSeats.ts"
@@ -886,7 +886,7 @@ describe("hosted inference", () => {
 
   test("HostedModel.route handles oversized bodies, bad UTF-8, and Postgres failures directly", async () => {
     const { HttpEffect } = await import("effect/http")
-    const { Sessions } = await import("./Actor.ts")
+    const { Sessions } = await import("./Actor.vibe")
     const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://nobody:nothing@127.0.0.1:1/none")))
     const sessions = Layer.succeed(Sessions, Sessions.of({
       resolve: Effect.succeed(Option.some(admin)),

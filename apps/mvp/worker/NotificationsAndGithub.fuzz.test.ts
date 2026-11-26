@@ -4,7 +4,7 @@ import { HttpClient, HttpClientResponse, HttpServerRequest, HttpServerResponse }
 import { SqlClient } from "effect/sql"
 import { describe, expect, it } from "vitest"
 import { ACK_ROUTE, WATCHES_ROUTE } from "../src/features/attention/contract.ts"
-import { type Actor, Sessions } from "./Actor.ts"
+import { type Actor, Sessions } from "./Actor.vibe"
 import { BranchRoles } from "./branch/Access.vibe"
 import type { Repository } from "./github/Config.vibe"
 import * as ReadToken from "./github/ReadToken.vibe"

@@ -9,7 +9,7 @@ import { MAX_LABEL_LENGTH, MAX_REF_LENGTH, MAX_URL_LENGTH, WORK_LINK_KINDS, WORK
 import { MCP_BLOCKED_ACTS, type McpScope } from "../src/features/mcp/contract.ts"
 import { STACK_BASES, type StackBase, type TodoState } from "../src/features/todos/contract.ts"
 import { apply as applyRules, type Op, type Result, type Stack as Rules, violations } from "../src/features/todos/stack.ts"
-import { type Actor, rankOf, type Role } from "./Actor.ts"
+import { type Actor, rankOf, type Role } from "./Actor.vibe"
 import { McpAuthService, type McpPrincipal, type McpToolContext, type McpToolError } from "./mcp/Contract.vibe"
 import { McpToolError as ToolError } from "./mcp/Contract.vibe"
 import {

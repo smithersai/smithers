@@ -1,4 +1,3 @@
-import { Effect } from "effect"
 import { MAX_QUESTION_BODY_BYTES } from "../src/features/chat/contract.ts"
 import { MAX_ATTENTION_BODY_BYTES } from "../src/features/attention/contract.ts"
 import { MAX_GENERATED_BODY_BYTES, MAX_VIEW_BODY_BYTES } from "../src/features/views/contract.ts"
@@ -32,10 +31,10 @@ import { WAITLIST_JOIN_ROUTE, WAITLIST_MAX_BODY_BYTES } from "../src/features/wa
 
 export const MAX_BODY_BYTES = 8 * 1024 * 1024
 /** Match the existing write-route contracts before consuming their streams. Unknown routes retain the aggregate cap. */
-export const forRequest = (url: string) => Effect.gen(function* () {
+export const forRequest = (url: string) => effect {
   const path = url.split("?")[0]!
   if (path.startsWith("/api/telemetry/")) return TELEMETRY_LIMITS.maxRequestBytes
-  if (parseAdminRoute(path) !== undefined) return MAX_ADMIN_BODY_BYTES
+  if ((try sync(() => parseAdminRoute(path))) !== undefined) return MAX_ADMIN_BODY_BYTES
   if (path.startsWith("/api/runners/")) return MAX_RUNNER_BODY_BYTES
   if (path === "/api/auth/arrive") return 1024
   if (path === "/api/auth/sign-out" || path === "/api/auth/handoff") return 4096
@@ -83,4 +82,4 @@ export const forRequest = (url: string) => Effect.gen(function* () {
   if (path.startsWith(ATTACH_ROUTE + "/")) return MCP_MAX_REQUEST_BYTES
   if (path.startsWith("/api/mcp/oauth/")) return 16 * 1024
   return MAX_BODY_BYTES
-})
+}

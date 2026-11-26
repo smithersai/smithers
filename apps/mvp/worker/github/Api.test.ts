@@ -28,7 +28,7 @@ import {
 } from "../../src/features/issues/contract.ts"
 import { firstPaintRoute, issuesRoute, ISSUE_EDGES_SHAPE_ROUTE, treeScopeRoute } from "../../src/features/issues/contract.ts"
 import { CHECKS_SHAPE_ROUTE, compareRoute, PULLS_SHAPE_ROUTE } from "../../src/features/pulls/contract.ts"
-import * as Actor from "../Actor.ts"
+import * as Actor from "../Actor.vibe"
 import { FlowStarter, StartConflict, StartUnavailable } from "../Flows.ts"
 import * as WriteAdmission from "../WriteAdmission.ts"
 import { testFile } from "../test/harness.ts"

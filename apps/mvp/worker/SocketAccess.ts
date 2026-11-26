@@ -2,7 +2,7 @@ import { Cause, Clock, Config, Context, Effect, Metric, Option, Schema } from "e
 import { Headers, type HttpServerRequest } from "effect/http"
 import { ACCESSES } from "../src/features/branch/contract.ts"
 import { ROLES } from "../src/features/auth/contract.ts"
-import type { Actor } from "./Actor.ts"
+import type { Actor } from "./Actor.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import * as SessionStore from "./SessionStore.ts"
 import { ROLE_RECHECK_MINUTES } from "./SignIn.ts"

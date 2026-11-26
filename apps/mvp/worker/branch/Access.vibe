@@ -8,7 +8,7 @@ import {
   SHARE_ACCESSES,
   type ShareAccess,
 } from "../../src/features/branch/contract.ts"
-import { type Actor, canAsk, type Role } from "../Actor.ts"
+import { type Actor, canAsk, type Role } from "../Actor.vibe"
 import { repositoryOf } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.vibe"
 

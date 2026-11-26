@@ -1,6 +1,6 @@
 import { Context, type Effect, type Option, Schema } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/http"
-import type { Actor, Role } from "../Actor.ts"
+import type { Actor, Role } from "../Actor.vibe"
 import type { McpScope, McpTokenSummary } from "../../src/features/mcp/contract.ts"
 
 // Shared backend contracts for worker/mcp/* so OAuth, Auth, Protocol, Tools, and Api build in parallel with zero drift.

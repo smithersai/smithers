@@ -4,7 +4,7 @@ import { Effect, Exit, Layer, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import { MCP_BLOCKED_ACTS, type McpScope } from "../../src/features/mcp/contract.ts"
-import { rankOf, type Role } from "../Actor.ts"
+import { rankOf, type Role } from "../Actor.vibe"
 import { McpAuthService, type McpPrincipal, type McpToolContext, McpToolError } from "./Contract.vibe"
 import {
   attributed,

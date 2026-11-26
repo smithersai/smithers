@@ -11,7 +11,7 @@ import {
 } from "../src/features/attention/contract.ts"
 import { AckRequest, WatchRequest } from "../src/features/attention/schema.ts"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
-import { type Actor, memberOrAbove, refusesPersonOnly, Sessions } from "./Actor.ts"
+import { type Actor, memberOrAbove, refusesPersonOnly, Sessions } from "./Actor.vibe"
 import { branchAccess, branchAccessAs, BranchRoles, canView, isMember, policyOf, underPolicy, roleOn as workRoleOn } from "./branch/Access.vibe"
 import * as Conversations from "./branch/Conversations.vibe"
 import { readBounded } from "./Body.vibe"

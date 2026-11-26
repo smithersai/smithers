@@ -29,7 +29,7 @@ import {
   TODOS_SHAPE_ROUTE,
   TODOS_TABLE,
 } from "../../src/features/todos/contract.ts"
-import { type Actor, canAsk, refusesPersonOnly, Sessions } from "../Actor.ts"
+import { type Actor, canAsk, refusesPersonOnly, Sessions } from "../Actor.vibe"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { repositoryOf as repositoryNamed } from "../github/Config.vibe"

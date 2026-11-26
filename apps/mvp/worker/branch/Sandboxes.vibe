@@ -2,7 +2,7 @@ import { Fault } from "@smthrs/flow"
 import { Context, Schema } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Admission } from "../SocketAccess.ts"
-import type { Role } from "../Actor.ts"
+import type { Role } from "../Actor.vibe"
 import type { Policy } from "./Access.vibe"
 
 // A branch's machine as the flows and routes reach it (decision 0013 §2-§3, decision 0005 §2): one sandbox per branch,

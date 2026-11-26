@@ -1,7 +1,7 @@
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
-import { Sessions } from "../Actor.ts"
+import { Sessions } from "../Actor.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as SocketAccess from "../SocketAccess.ts"
 import { branchAccess, canView } from "./Access.vibe"

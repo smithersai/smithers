@@ -24,7 +24,7 @@ import {
   TODO_REQUESTS_SHAPE_ROUTE,
   TODOS_SHAPE_ROUTE,
 } from "../../src/features/todos/contract.ts"
-import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
+import { type Actor, Sessions, SessionsUnavailable } from "../Actor.vibe"
 import * as SessionStore from "../SessionStore.ts"
 import { eventually, testFile, uuid } from "../test/harness.ts"
 import * as Api from "./Api.vibe"

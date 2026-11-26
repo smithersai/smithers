@@ -1,7 +1,7 @@
 import { ShardProtocol } from "@smthrs/sync"
 import { Cause, Data, Effect, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import { type Actor, refusesPersonOnly, Sessions } from "../Actor.ts"
+import { type Actor, refusesPersonOnly, Sessions } from "../Actor.vibe"
 import { MAX_MESSAGES_SHARD_BYTES, readBounded } from "../Body.vibe"
 import { askingOf, type BranchAccess, canView } from "../branch/Access.vibe"
 import * as MessagesShard from "./MessagesShard.ts"

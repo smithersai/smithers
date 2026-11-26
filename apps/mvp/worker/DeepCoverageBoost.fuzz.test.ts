@@ -1,7 +1,7 @@
 import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Clock, Effect, Option, Redacted, Schema } from "effect"
 import { expect, test } from "vitest"
-import type { Actor } from "./Actor.ts"
+import type { Actor } from "./Actor.vibe"
 import * as RunCredentials from "./RunCredentials.ts"
 import * as SessionKeys from "./SessionKeys.vibe"
 

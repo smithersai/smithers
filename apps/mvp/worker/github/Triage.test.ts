@@ -19,7 +19,7 @@ import {
   writesRoute,
 } from "../../src/features/issues/contract.ts"
 import { NEEDS_REPRO_COMMENT, NEEDS_REPRO_LABEL } from "../../src/features/issues/lifecycle.ts"
-import type * as Actor from "../Actor.ts"
+import type * as Actor from "../Actor.vibe"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as Metrics from "./Metrics.vibe"

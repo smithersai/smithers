@@ -1,6 +1,6 @@
 import { Effect, Metric } from "effect"
 import { SqlClient } from "effect/sql"
-import type { Role } from "./Actor.ts"
+import type { Role } from "./Actor.vibe"
 import * as WriteAuthority from "./WriteAuthority.ts"
 import * as RepoRoles from "./github/RepoRoles.vibe"
 import { latestRole, latestRoleVerifiedAt, RoleFreshMs } from "./SessionStore.ts"

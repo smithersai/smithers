@@ -1,7 +1,7 @@
 import { Effect, Option, Result } from "effect"
 import { HttpServerRequest } from "effect/http"
 import { expect, test } from "vitest"
-import { type Actor, Sessions, SessionsUnavailable } from "./Actor.ts"
+import { type Actor, Sessions, SessionsUnavailable } from "./Actor.vibe"
 import * as ShapeAccess from "./ShapeAccess.vibe"
 
 const request = HttpServerRequest.fromWeb(new Request("https://app.example/api/shapes/admin"))

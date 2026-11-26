@@ -1,5 +1,5 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
-import { Sessions } from "./Actor.ts"
+import { Sessions } from "./Actor.vibe"
 
 // What a shape route answers when it can't decide whose rows to serve. A device holds each shape's `handle` and
 // `offset`; serving another `where` under them makes Electric answer `409 must-refetch`, and the device empties its

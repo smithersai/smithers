@@ -4,7 +4,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { describe, expect, it } from "vitest"
 import { checkUrl, siteOf } from "../src/features/web/url.ts"
 import * as Body from "./Body.vibe"
-import * as BodyLimits from "./BodyLimits.ts"
+import * as BodyLimits from "./BodyLimits.vibe"
 import * as WriteAdmission from "./WriteAdmission.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "150"))

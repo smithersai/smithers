@@ -24,7 +24,7 @@ import {
   parsePublicRepoMcpPath,
 } from "../../src/features/mcp/contract.ts"
 import { isRepository, repoId } from "../../src/features/repo/contract.ts"
-import { type Actor, personOnlyRefusals, type Role, Sessions } from "../Actor.ts"
+import { type Actor, personOnlyRefusals, type Role, Sessions } from "../Actor.vibe"
 import { readBounded } from "../Body.vibe"
 import { networkOf } from "../Throttle.vibe"
 import { codeOf } from "../ErrorCode.ts"

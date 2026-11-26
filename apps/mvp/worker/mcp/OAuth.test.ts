@@ -25,7 +25,7 @@ import * as SessionKeys from "../SessionKeys.vibe"
 import * as RepoRoles from "../github/RepoRoles.vibe"
 import { repositoryOf } from "../github/Config.vibe"
 import { verifiedRedirect } from "../../src/features/mcp/view.ts"
-import { type Actor, type Role, Sessions, SessionsUnavailable } from "../Actor.ts"
+import { type Actor, type Role, Sessions, SessionsUnavailable } from "../Actor.vibe"
 import { makeMcpAuthService } from "./Auth.vibe"
 import {
   isValidRedirectUri,

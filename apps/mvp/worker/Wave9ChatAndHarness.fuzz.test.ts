@@ -22,7 +22,7 @@ import {
 import { RUNS_ROUTE, RUNS_SHAPE_ROUTE } from "../src/features/status/contract.ts"
 import { VIEWS_ROUTE, VIEWS_SHAPE_ROUTE } from "../src/features/views/contract.ts"
 import { WEB_PREVIEW_ROUTE } from "../src/features/web/contract.ts"
-import * as Actor from "./Actor.ts"
+import * as Actor from "./Actor.vibe"
 import * as BranchAccess from "./branch/Access.vibe"
 import * as Conversations from "./branch/Conversations.vibe"
 import * as ChatMetrics from "./ChatMetrics.ts"

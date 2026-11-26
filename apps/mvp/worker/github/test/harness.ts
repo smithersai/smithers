@@ -38,7 +38,7 @@ import {
 import { PULL_COMMITS_TABLE, PULLS_TABLE, REVIEWS_TABLE, RUNS_TABLE } from "../../../src/features/pulls/contract.ts"
 import { WORK_LINKS_TABLE } from "../../../src/features/issues/work.ts"
 import { TODO_LEAVES_TABLE } from "../../../src/features/todos/leaves.ts"
-import * as Actor from "../../Actor.ts"
+import * as Actor from "../../Actor.vibe"
 import * as ExecutionHost from "../../ExecutionHost.ts"
 import { FlowStarter, StartConflict } from "../../Flows.ts"
 import { build } from "../../test/flowHost.ts"

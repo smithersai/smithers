@@ -1,5 +1,5 @@
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import { refusesPersonOnly, Sessions } from "./Actor.ts"
+import { refusesPersonOnly, Sessions } from "./Actor.vibe"
 
 export const handles = (method: string, path: string): boolean =>
   (method === "POST" && path === "/api/user/keys") ||

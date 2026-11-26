@@ -18,7 +18,7 @@ import {
 import { HttpClient, HttpClientResponse, HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { describe, expect, it } from "vitest"
-import * as Actor from "./Actor.ts"
+import * as Actor from "./Actor.vibe"
 import * as BranchAccess from "./branch/Access.vibe"
 import * as BudgetApi from "./branch/BudgetApi.vibe"
 import * as ConversationApi from "./branch/ConversationApi.vibe"

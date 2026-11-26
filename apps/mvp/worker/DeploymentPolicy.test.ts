@@ -1,6 +1,6 @@
 import { ConfigProvider, Effect, Exit } from "effect"
 import { describe, expect, test } from "vitest"
-import type { Actor } from "./Actor.ts"
+import type { Actor } from "./Actor.vibe"
 import * as DeploymentPolicy from "./DeploymentPolicy.vibe"
 
 const configured = (env: Record<string, string>) =>

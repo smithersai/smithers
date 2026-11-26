@@ -2,7 +2,7 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Effect, Layer, Option } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerRequest } from "effect/http"
-import { Sessions } from "./Actor.ts"
+import { Sessions } from "./Actor.vibe"
 import { parseStackPath } from "./stack/Api.vibe"
 
 /** Explicit dev-host switches; production never installs these services. */

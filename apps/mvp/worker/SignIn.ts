@@ -22,7 +22,7 @@ import {
   SIGN_OUT_ROUTE,
 } from "../src/features/auth/contract.ts"
 import { installUrl } from "../src/features/repo/contract.ts"
-import * as Actor from "./Actor.ts"
+import * as Actor from "./Actor.vibe"
 import { DEFAULT_REPOSITORY } from "./defaultRepository.ts"
 import * as Conversations from "./branch/Conversations.vibe"
 import { readBounded } from "./Body.vibe"

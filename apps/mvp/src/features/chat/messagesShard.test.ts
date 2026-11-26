@@ -5,7 +5,7 @@ import { Context, Effect, Exit, Layer, Option, Schedule, Schema, Scope, Subscrip
 import { FetchHttpClient } from "effect/http"
 import { join } from "node:path"
 import { expect, test } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import * as WorkerShard from "../../../worker/chat/MessagesShard.ts"
 import { ada, bob, branchOf, type ShardHost, shardHost } from "../../test/messagesShardHost"
 import { tempDirectory } from "../../test/tempDirectory"

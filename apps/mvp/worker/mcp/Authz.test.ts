@@ -15,7 +15,7 @@ import {
   refusesPersonOnly,
   type Role,
   Sessions,
-} from "../Actor.ts"
+} from "../Actor.vibe"
 import { repositoryOf } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.vibe"
 import {

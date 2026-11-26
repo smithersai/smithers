@@ -4,7 +4,7 @@ import { Cause, Clock, Config, Effect, Layer, Metric, Option, Schema } from "eff
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { MAX_HOSTED_MODEL_BODY_BYTES } from "../src/features/auth/contract.ts"
-import { type Actor, CurrentActor, Sessions } from "./Actor.ts"
+import { type Actor, CurrentActor, Sessions } from "./Actor.vibe"
 import { readBounded } from "./Body.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import { NoInvocationKey, NotAllowed } from "./SetModel.vibe"

@@ -21,7 +21,7 @@ import { revisionOf, segmentRevision } from "../src/features/timeline/identity.t
 import * as Marks from "../src/features/timeline/marks.ts"
 import * as AboutGitHub from "./about/GitHubRead.ts"
 import * as AboutStore from "./about/Store.vibe"
-import * as Actor from "./Actor.ts"
+import * as Actor from "./Actor.vibe"
 import * as BranchAccess from "./branch/Access.vibe"
 import { repositoryOf } from "./github/Config.vibe"
 import * as RepoRoles from "./github/RepoRoles.vibe"

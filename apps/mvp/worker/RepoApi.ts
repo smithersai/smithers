@@ -27,7 +27,7 @@ import {
   SHA_PATTERN,
   textOf,
 } from "../src/features/repo/contract.ts"
-import { type Actor, canClone, Sessions } from "./Actor.ts"
+import { type Actor, canClone, Sessions } from "./Actor.vibe"
 import { readBounded } from "./Body.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import { FlowStarter } from "./Flows.ts"

@@ -1,10 +1,10 @@
 import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Effect, Logger, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Actor from "./Actor.ts"
+import * as Actor from "./Actor.vibe"
 import * as Aliases from "./aliases.ts"
 import { isAppRoute } from "./appRoute.ts"
-import * as BodyLimits from "./BodyLimits.ts"
+import * as BodyLimits from "./BodyLimits.vibe"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "1000" : "300"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261122")

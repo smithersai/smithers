@@ -13,7 +13,7 @@ import {
   MCP_TOKENS_ROUTE,
   type McpScope,
 } from "../src/features/mcp/contract.ts"
-import { type Actor, type Role, Sessions, SessionsUnavailable } from "./Actor.ts"
+import { type Actor, type Role, Sessions, SessionsUnavailable } from "./Actor.vibe"
 import * as FleetMcpTools from "./fleet/FleetMcpTools.vibe"
 import * as FleetStore from "./fleet/FleetStore.vibe"
 import { repositoryOf } from "./github/Config.vibe"

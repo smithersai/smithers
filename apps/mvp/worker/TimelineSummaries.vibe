@@ -4,7 +4,7 @@ import { SqlClient } from "effect/sql"
 import { MARK_SUMMARY_LENGTH, MOST_COVERED, PHASES_FLOW, SEGMENT_SPANS, SUMMARIZE_FLOW, SUMMARY_DAILY_CAP, SUMMARY_REASONS, TIMELINE_SUMMARIES_ROUTE, TITLE_LENGTH } from "../src/features/timeline/contract.ts"
 import { revisionOf, segmentRevision } from "../src/features/timeline/identity.ts"
 import { checkPlan, exchangeUnits, phaseUnits, type PhaseRow, sealSpans } from "../src/features/timeline/marks.ts"
-import { Sessions } from "./Actor.ts"
+import { Sessions } from "./Actor.vibe"
 import { branchAccess, canView } from "./branch/Access.vibe"
 import { readBounded } from "./Body.vibe"
 

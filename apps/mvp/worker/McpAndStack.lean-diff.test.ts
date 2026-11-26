@@ -31,7 +31,7 @@ import {
   type Stack as Rules,
   violations
 } from "../src/features/todos/stack.ts"
-import { type Actor, memberOrAbove, rankOf, type Role } from "./Actor.ts"
+import { type Actor, memberOrAbove, rankOf, type Role } from "./Actor.vibe"
 import { isBlockedMcpAct, isValidMcpTokenFormat, makeMcpAuthService, parseMcpBearer } from "./mcp/Auth.vibe"
 import { McpAuthService, type McpPrincipal, type McpToolContext, type McpToolError } from "./mcp/Contract.vibe"
 import { isBlockedName, makeMcpToolRegistry, type McpToolDeps, TOOL_SPECS } from "./mcp/Tools.vibe"

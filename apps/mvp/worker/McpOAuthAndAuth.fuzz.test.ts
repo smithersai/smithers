@@ -13,7 +13,7 @@ import {
   MCP_ROUTE,
   MCP_TOKENS_ROUTE
 } from "../src/features/mcp/contract.ts"
-import { type Actor, type Role, Sessions } from "./Actor.ts"
+import { type Actor, type Role, Sessions } from "./Actor.vibe"
 import { makeMcpAuthService } from "./mcp/Auth.vibe"
 import * as OAuth from "./mcp/OAuth.vibe"
 

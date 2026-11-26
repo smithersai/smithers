@@ -18,7 +18,7 @@ import {
   textRoute,
   TEXTS_SHAPE_ROUTE,
 } from "../../src/features/coedit/contract.ts"
-import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
+import { type Actor, Sessions, SessionsUnavailable } from "../Actor.vibe"
 import { branchHarness, type BranchHarness, resetBranches, shared, tracked } from "../test/branch.ts"
 import { eventually, recorded, testFile } from "../test/harness.ts"
 import * as Texts from "./Texts.vibe"

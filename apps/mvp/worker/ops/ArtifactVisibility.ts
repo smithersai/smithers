@@ -1,5 +1,5 @@
-import type { Actor, Role } from "../Actor.ts"
-import { rankOf } from "../Actor.ts"
+import type { Actor, Role } from "../Actor.vibe"
+import { rankOf } from "../Actor.vibe"
 import { holdsDeploymentAuthority } from "../DeploymentPolicy.vibe"
 
 // Who may read a repository's notes and artifacts, and who may change who may (plan tree M0, private Smithers-Ops).

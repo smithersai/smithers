@@ -30,7 +30,7 @@ import {
   ViewWrite,
 } from "../src/features/views/schema.ts"
 import { checkUrl } from "../src/features/web/url.ts"
-import { Sessions } from "./Actor.ts"
+import { Sessions } from "./Actor.vibe"
 import { askingOf, branchAccess, canView } from "./branch/Access.vibe"
 import * as Conversations from "./branch/Conversations.vibe"
 import { readBounded } from "./Body.vibe"

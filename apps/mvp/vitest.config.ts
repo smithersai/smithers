@@ -76,7 +76,9 @@ export default defineConfig({
         "worker/TimelineSummaries.vibe",
         "db/migrations/0066_timeline_summaries.ts",
         "db/migrations/0075_timeline_phases.ts",
-        "worker/Actor.ts",
+        "worker/Actor.vibe",
+        "worker/AgentSandbox.vibe",
+        "worker/BodyLimits.vibe",
         "worker/ErrorCode.ts",
         "worker/ModelSeats.ts",
         "worker/ModelRefusal.ts",
@@ -177,7 +179,7 @@ export default defineConfig({
         "worker/Runs.ts",
         "db/migrations/0013_runs.ts",
         // An agent's question to one person and its addressed wait (docs/features/agent-status.md#addressed-waits).
-        "worker/Asks.ts",
+        "worker/Asks.vibe",
         "db/migrations/0117_wait_address.ts",
         // Notifications: the feed's fold, routes and shape, and the run index's scope (docs/features/notifications.md).
         "worker/FeedLocks.vibe",

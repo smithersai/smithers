@@ -6,7 +6,7 @@
 import { ShapeSource } from "@smthrs/effect-electric"
 import { Effect, Layer, type ManagedRuntime, Option } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import {
   member,
   nodeDevice,

@@ -1,5 +1,5 @@
 import { Data, Duration, Effect, Metric, Option, Stream } from "effect"
-import * as BodyLimits from "./BodyLimits.ts"
+import * as BodyLimits from "./BodyLimits.vibe"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 
 /**
@@ -9,7 +9,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
  */
 export const BODY_READ_MILLIS = 60_000
 /** Aggregate ceiling; each route is capped while reading. */
-export { MAX_BODY_BYTES } from "./BodyLimits.ts"
+export { MAX_BODY_BYTES } from "./BodyLimits.vibe"
 const methods = new Set(["POST", "PUT", "PATCH", "DELETE"])
 class Refused extends Data.TaggedError("WriteBodyRefused")<{ readonly status: number }> {}
 export const bodies = Metric.counter("smithers_write_bodies", { incremental: true,

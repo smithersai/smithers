@@ -26,7 +26,7 @@ import {
   type TestResult,
   writeExecutionId,
 } from "../../src/features/personal-model/contract.ts"
-import { refusesPersonOnly, Sessions } from "../Actor.ts"
+import { refusesPersonOnly, Sessions } from "../Actor.vibe"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"

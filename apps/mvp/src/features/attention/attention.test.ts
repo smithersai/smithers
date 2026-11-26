@@ -10,7 +10,7 @@ import { type Clock, Deferred, Effect, Exit, Layer, Logger, ManagedRuntime, Metr
 import { SqlClient } from "effect/sql"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import { DispatchFailed, FlowDispatch, dispatches } from "../../flows/dispatch"
 import { finishRun, latestAnswerFor, recordedModelFailure, reportRun, waitOnPerson } from "../../test/attachedRun"
 import { asPerson, displayClock, nodeDevice, type NodeDevice, openFaultyTab, openTab, openTestApi, tabLayer, TestChatApi } from "../../test/chatApi"

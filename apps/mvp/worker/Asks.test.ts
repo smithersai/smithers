@@ -3,7 +3,7 @@
 // on the Durable Object's handlers (worker/test/executions.ts) over a fresh engine schema, all on this file's schema of
 // the compose Postgres. Roles come from the real `RepoRoles` as local development builds it, so the session's role
 // holds; a role that can't be read, a host that can't take an answer and Postgres down are injected faulty services.
-import { digestSync } from "@smthrs/crypto"
+import { digestSync, Sha256Error } from "@smthrs/crypto"
 import { FlowRuntime } from "@smthrs/flow"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Effect, Layer, Logger, Metric, Stream } from "effect"
@@ -11,8 +11,8 @@ import { HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import type { Actor } from "./Actor.ts"
-import * as Asks from "./Asks.ts"
+import type { Actor } from "./Actor.vibe"
+import * as Asks from "./Asks.vibe"
 import { DEV_ASK_TOKEN } from "./AsksDev.ts"
 import { BranchRoles } from "./branch/Access.vibe"
 import { Directory } from "./branch/People.vibe"
@@ -23,6 +23,11 @@ import { rowIdOf } from "./RepoRuns.ts"
 import * as Runs from "./Runs.ts"
 import { engineSchema, executions } from "./test/executions.ts"
 import { eventually, harness, signedIn, testFile } from "./test/harness.ts"
+
+test("a malformed UTF-8 development token fails when the routes are configured", () => {
+  const database = Layer.effect(SqlClient.SqlClient, Effect.die("the database must stay cold"))
+  expect(() => Asks.make(database, { developmentToken: "\uD800" })).toThrow(Sha256Error)
+})
 
 const runtime = testFile("asks")
 

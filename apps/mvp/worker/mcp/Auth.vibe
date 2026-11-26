@@ -9,7 +9,7 @@ import {
   type McpScope,
 } from "../../src/features/mcp/contract.ts"
 import { isRepository, repoId } from "../../src/features/repo/contract.ts"
-import { type Actor, rankOf, type Role, Sessions } from "../Actor.ts"
+import { type Actor, rankOf, type Role, Sessions } from "../Actor.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { type Repository, repositoryOf } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.vibe"

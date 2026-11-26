@@ -6,7 +6,7 @@
 import { Effect } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { BugsTab, Report } from "../../../plugins/bugs/src/tab"
-import type * as Actor from "../../../worker/Actor.ts"
+import type * as Actor from "../../../worker/Actor.vibe"
 import { FlowDispatch } from "../../flows/dispatch"
 import { PluginsUi } from "../../plugins/ui"
 import { asPerson, type DeviceOptions, nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"

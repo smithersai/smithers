@@ -21,7 +21,7 @@ import {
   MCP_OAUTH_AUTH_SERVER_ROUTE,
   MCP_OAUTH_PROTECTED_RESOURCE_ROUTE,
 } from "../src/features/mcp/contract.ts"
-import * as Actor from "./Actor.ts"
+import * as Actor from "./Actor.vibe"
 import * as Flows from "./Flows.ts"
 import * as GitHubAuth from "./GitHubAuth.ts"
 import * as SessionKeys from "./SessionKeys.vibe"

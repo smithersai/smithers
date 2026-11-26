@@ -1,6 +1,6 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { GitHub } from "@smthrs/integrations"
-import type * as Actor from "./Actor.ts"
+import type * as Actor from "./Actor.vibe"
 import { program, props } from "./ChatApi.ts"
 import * as DevFaults from "./DevFaults.ts"
 import { DEV_ASK_TOKEN } from "./AsksDev.ts"

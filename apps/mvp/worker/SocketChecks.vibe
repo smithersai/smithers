@@ -1,7 +1,7 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
-import { type Actor, canAsk } from "./Actor.ts"
+import { type Actor, canAsk } from "./Actor.vibe"
 import { branchAccess, BranchRoles, canEdit, canView } from "./branch/Access.vibe"
 import * as Conversations from "./branch/Conversations.vibe"
 import { scopeAccess } from "./branch/Texts.vibe"

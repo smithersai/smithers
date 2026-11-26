@@ -8,7 +8,7 @@ import { ConfigProvider, Effect, type Layer, Logger, Metric, Option, Tracer } fr
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
-import type * as Actor from "../../Actor.ts"
+import type * as Actor from "../../Actor.vibe"
 import { repositoryOf } from "../../github/Config.vibe"
 import * as RepoRoles from "../../github/RepoRoles.vibe"
 import { signedIn, signedOut, type testFile } from "../../test/harness.ts"
