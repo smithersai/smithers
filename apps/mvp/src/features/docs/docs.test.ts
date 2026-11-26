@@ -12,8 +12,9 @@ import { type RepoHarness, repoHarness } from "../../../worker/test/repos"
 import { DocsClient, DocsRefused } from "./api.vibe"
 import { DOCS_UNREADABLE, NO_DOCS, NO_MATCHES, PAGE_UNREADABLE } from "./contract"
 import { Docs } from "./docs.vibe"
-import { loads } from "./records"
-import { DocsStore } from "./store"
+import { loads } from "./records.vibe"
+import { pageKeyOf, searchKeyOf } from "./rows"
+import { DocsStore } from "./store.vibe"
 import { replaceRole, RepoStore } from "../repo/store"
 import { docsPageOf } from "./view"
 
@@ -314,6 +315,31 @@ test("a refused repository's docs leave the page's query in the change that refu
     .toEqual({ index: undefined, page: undefined, search: undefined })
   const again = await shownAfter(Effect.orDie(repos.roles.delete(id)))
   expect(again).toMatchObject({ index: { state: "ready" }, page: { state: "text" } })
+
+  docs.actions.search("retry")
+  await waitFor(() => expect(docs.queries.docs.toArray[0]).toMatchObject({ search: { state: "ready" } }))
+  const store = await runtime.runPromise(Effect.service(DocsStore))
+  const other = "acme/widgets-extra"
+  const otherId = `github/${other}`
+  const otherPage = pageKeyOf(other, "/guide/retrying.md")
+  const otherSearch = searchKeyOf(other, "retry")
+  await runtime.runPromise(Effect.all([
+    store.indexes.insert({ key: other, repoId: otherId, state: "ready", title: "Other", summary: null, pages: [], code: null }),
+    store.pages.insert({ key: otherPage, repoId: otherId, state: "text", title: "Other", url: "", text: "", code: null }),
+    store.searches.insert({ key: otherSearch, repoId: otherId, state: "ready", pages: [], code: null }),
+  ]))
+
+  // A durable refusal also evicts the cached rows, including pages and searches with the repository's key prefix.
+  await runtime.runPromise(repos.refuse(id))
+  await runtime.runPromise(repos.wiped(id))
+  const remaining = await runtime.runPromise(Effect.all({
+    indexes: store.indexes.toArray,
+    pages: store.pages.toArray,
+    searches: store.searches.toArray,
+  }))
+  expect(remaining.indexes.map((row) => row.key)).toEqual([other])
+  expect(remaining.pages.map((row) => row.key)).toEqual([otherPage])
+  expect(remaining.searches.map((row) => row.key)).toEqual([otherSearch])
 })
 
 test("warming docs skips a repository refused on this tab", async () => {

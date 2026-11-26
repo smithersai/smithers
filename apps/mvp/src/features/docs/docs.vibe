@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
 import { open, search, warm } from "./actions.vibe"
 import type { DocsClient } from "./api.vibe"
-import { DocsStore } from "./store"
+import { DocsStore } from "./store.vibe"
 
 // A repository's docs as a frontend sees them: one live query to read and plain functions to act, with no Effect in
 // sight. React renders the query with `useLiveQuery`; the docs routes' `beforeLoad` calls `warm` and `open`.

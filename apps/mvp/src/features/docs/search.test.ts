@@ -20,7 +20,7 @@ import { ViewRefused, ViewsClient } from "../views/api"
 import { DocsClient, DocsRefused } from "./api.vibe"
 import { AGENT_TEXT_BYTES, DOCS_TELEMETRY } from "./contract"
 import { DocsForbidden, DocsSearchRefused, SearchDocs } from "./flows"
-import { searches, shown } from "./metrics"
+import { searches, shown } from "./metrics.vibe"
 import { registration } from "./steps.vibe"
 
 /** A failed call's error. The engine annotates an action's failed cause with its FailureSite, which the outcome doesn't depend on. */

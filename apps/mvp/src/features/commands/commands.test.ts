@@ -34,7 +34,7 @@ import { RepoStore } from "../repo/store"
 import { repoId } from "../repo/contract"
 import { Commands } from "./commands"
 import { choices, submits } from "./metrics"
-import { CommandsStore } from "./store"
+import { CommandsStore } from "./store.vibe"
 
 // Slash commands (docs/features/slash-commands.md): the catalog and role filter as pure functions, then the menu and
 // the submit driven as the composer drives them, through the commands layer's plain actions, on the browser's own

@@ -27,30 +27,32 @@ export const docsQuery = (
       .findOne()
   )
 
-const make = Effect.gen(function* () {
-  const current = yield* Collection.local<CurrentRow, string>({
+const make = effect {
+  const current = try Collection.local<CurrentRow, string>({
     id: "docs-current",
     schema: CurrentRow,
     getKey: (row) => row.id,
     initialData: [emptyCurrent],
   })
-  const indexes = yield* Collection.local<IndexRow, string>({ id: "docs-indexes", schema: IndexRow, getKey: (row) => row.key })
-  const pages = yield* Collection.local<PageRow, string>({ id: "docs-pages", schema: PageRow, getKey: (row) => row.key })
-  const searches = yield* Collection.local<SearchRow, string>({
+  const indexes = try Collection.local<IndexRow, string>({ id: "docs-indexes", schema: IndexRow, getKey: (row) => row.key })
+  const pages = try Collection.local<PageRow, string>({ id: "docs-pages", schema: PageRow, getKey: (row) => row.key })
+  const searches = try Collection.local<SearchRow, string>({
     id: "docs-searches",
     schema: SearchRow,
     getKey: (row) => row.key,
   })
   // A refused repository's docs leave this tab: its index, pages and searches, keyed by `owner/name` first.
-  const repos = yield* Effect.serviceOption(RepoStore)
+  const repos = try serviceOption(RepoStore)
   if (Option.isSome(repos)) {
-    yield* repos.value.registerCache(["docs-indexes", "docs-pages", "docs-searches"], (id) => {
+    try repos.value.registerCache(["docs-indexes", "docs-pages", "docs-searches"], effect (id) => {
       const repoKey = id.slice("github/".length)
       const mine = (key: string) => key === repoKey || key.startsWith(`${repoKey}:`) || key.startsWith(`${repoKey}?`)
-      return Effect.forEach([indexes, pages, searches] as const, (rows) =>
-        Effect.flatMap(rows.toArray, (all: ReadonlyArray<{ readonly key: string }>) =>
-          Effect.forEach(all.filter((row) => mine(row.key)), (row) => Effect.ignore(rows.delete(row.key)), { discard: true })),
-      { discard: true })
+      for (const rows of [indexes, pages, searches] as const) {
+        const all = try rows.toArray
+        for (const row of all.filter((row) => mine(row.key))) {
+          try ignore(rows.delete(row.key))
+        }
+      }
     })
   }
   return {
@@ -61,14 +63,14 @@ const make = Effect.gen(function* () {
     // Each repository's docs show only while it may (repo/gate.ts). A tab with no repository store has no refusal to
     // hide them by.
     docs: Option.isSome(repos)
-      ? yield* docsQuery(current, yield* repos.value.gate(indexes), yield* repos.value.gate(pages), yield* repos.value.gate(searches))
-      : yield* docsQuery(current, indexes, pages, searches),
+      ? try docsQuery(current, try repos.value.gate(indexes), try repos.value.gate(pages), try repos.value.gate(searches))
+      : try docsQuery(current, indexes, pages, searches),
     /** The searchbox's search: typing again interrupts it. */
-    searcher: yield* FiberHandle.make<void, never>(),
+    searcher: try FiberHandle.make<void, never>(),
     /** Where loads run, closed with the store. */
-    scope: yield* Effect.scope,
+    scope: try scope,
   }
-})
+}
 
 /**
  * The Docs tab's state:

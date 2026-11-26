@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { runners } from "../../boundary.vibe"
 import { togglePalette } from "./actions.vibe"
-import type { CommandsStore } from "./store"
+import type { CommandsStore } from "./store.vibe"
 
 // `⌘P` / `Ctrl+P` (and `⌘⇧P` / `Ctrl+Shift+P`) toggles the global Command Palette & Go-to-File dialog from anywhere
 // on `target`, stopping the browser's print dialog inside the capture phase.

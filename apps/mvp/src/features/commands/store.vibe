@@ -1,5 +1,6 @@
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Layer, Ref, type Scope } from "effect"
+import { WebCrypto as WebCryptoReference } from "effect/crypto/WebCrypto"
 import { ChatStore } from "../chat/store"
 import { menuQuery, paletteQuery } from "./queries"
 import { Menu, MENU, Palette, PALETTE } from "./schema"
@@ -31,22 +32,30 @@ export class CommandsStore extends Context.Service<
   /** The store over chat's composer; its collection cleaned up when the scope closes. */
   static readonly layer = Layer.effect(
     CommandsStore,
-    Effect.gen(function* () {
-      const { composer } = yield* ChatStore
-      const menu = yield* Collection.local<Menu, string>({
+    effect {
+      const { composer } = try ChatStore
+      const menu = try Collection.local<Menu, string>({
         id: "commands-menu",
         schema: Menu,
         getKey: (row) => row.id,
         initialData: [CLOSED],
       })
-      const palette = yield* Collection.local<Palette, string>({
+      const palette = try Collection.local<Palette, string>({
         id: "commands-palette",
         schema: Palette,
         getKey: (row) => row.id,
         initialData: [PALETTE_CLOSED],
       })
-      const paletteState = yield* paletteQuery(palette)
-      return { menu, menuState: yield* menuQuery(menu, composer), palette, paletteState, revision: yield* Ref.make(0), requestNamespace: crypto.randomUUID(), scope: yield* Effect.scope }
-    }),
+      const paletteState = try paletteQuery(palette)
+      return {
+        menu,
+        menuState: try menuQuery(menu, composer),
+        palette,
+        paletteState,
+        revision: try Ref.make(0),
+        requestNamespace: try sync(() => WebCryptoReference.defaultValue().randomUUID()),
+        scope: try scope,
+      }
+    },
   )
 }

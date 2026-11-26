@@ -1,4 +1,4 @@
-import { Effect, Metric } from "effect"
+import { Metric } from "effect"
 
 // What `app/docs/search` counts and logs (docs/features/docs.md#observability): one count and one log line per search
 // its steps settle, by who asked (`door`: the agent's call or a person's), outcome, and how many pages it found and
@@ -29,27 +29,24 @@ export interface Search {
 }
 
 /** Records a search: a count, the log line `docs.search` (Warn when it failed) and its outcome on the current span. */
-export const recordSearch = (search: Search) =>
-  Effect.gen(function* () {
-    const { door, outcome, reason, results, shown: count } = search
-    yield* Metric.update(Metric.withAttributes(searches, { door, outcome }), 1)
-    if (count !== undefined && count > 0) yield* Metric.update(Metric.withAttributes(shown, { door }), count)
-    yield* Effect.annotateCurrentSpan({
-      "smithers.docs.outcome": outcome,
-      ...(results === undefined ? {} : { "smithers.docs.results": results }),
-      ...(count === undefined ? {} : { "smithers.docs.shown": count }),
-    })
-    yield* Effect.logWithLevel(outcome === "shown" || outcome === "none" ? "Info" : "Warn")("docs.search").pipe(
-      Effect.annotateLogs({
-        door,
-        outcome,
-        ...(reason === undefined ? {} : { reason }),
-        ...(results === undefined ? {} : { results }),
-        ...(count === undefined ? {} : { shown: count }),
-        feature: "docs",
-      }),
-    )
+export const recordSearch = effect (search: Search) => {
+  const { door, outcome, reason, results, shown: count } = search
+  try Metric.update(Metric.withAttributes(searches, { door, outcome }), 1)
+  if (count !== undefined && count > 0) try Metric.update(Metric.withAttributes(shown, { door }), count)
+  try annotateCurrentSpan({
+    "smithers.docs.outcome": outcome,
+    ...(results === undefined ? {} : { "smithers.docs.results": results }),
+    ...(count === undefined ? {} : { "smithers.docs.shown": count }),
   })
+  try annotateLogs(logWithLevel(outcome === "shown" || outcome === "none" ? "Info" : "Warn")("docs.search"), {
+    door,
+    outcome,
+    ...(reason === undefined ? {} : { reason }),
+    ...(results === undefined ? {} : { results }),
+    ...(count === undefined ? {} : { shown: count }),
+    feature: "docs",
+  })
+}
 
 /** Runs a step inside the span `docs.search`. */
-export const withSearchSpan = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.withSpan(effect, "docs.search")
+export const withSearchSpan = <A, E, R>(effect: A!E!R) => withSpan(effect, "docs.search")

@@ -3,7 +3,7 @@ import { Effect, Exit, Layer, Option, Ref, Scope } from "effect"
 import { describe, expect, test } from "vitest"
 import { paletteShortcuts } from "./paletteShortcuts"
 import { PALETTE, Palette } from "./schema"
-import { CommandsStore, PALETTE_CLOSED } from "./store"
+import { CommandsStore, PALETTE_CLOSED } from "./store.vibe"
 
 const keydown = (init: { key?: string; metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean }) =>
   Object.assign(new Event("keydown", { cancelable: true }), { metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...init })

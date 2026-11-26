@@ -11,7 +11,7 @@ import { DocsPage } from "../src/features/docs/components/DocsPage"
 import { DocsProvider } from "../src/features/docs/components/DocsContext"
 import { Docs } from "../src/features/docs/docs.vibe"
 import { emptyCurrent } from "../src/features/docs/rows"
-import { DocsStore } from "../src/features/docs/store"
+import { DocsStore } from "../src/features/docs/store.vibe"
 
 test("ordinary and modified section links open their original destination; whole pages stay in the app", async () => {
   const site = createServer((_request, response) => {
