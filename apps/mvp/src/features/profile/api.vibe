@@ -1,0 +1,77 @@
+import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
+import { profileRoute } from "./contract"
+import { Profile } from "./schema"
+
+/** Profile API didn't answer with a valid profile: network/timeout (`status` absent), HTTP refusal, or malformed JSON. */
+export error ProfileRefused {
+  status?: number
+  code?: string
+  retryAfterMillis?: number
+}
+
+/** Default per-request deadline covering the full exchange. */
+export const PROFILE_REQUEST_WITHIN = "15 seconds"
+
+schema RefusalBody {
+  readonly code: string
+}
+
+const decodeRefusal = Schema.decodeUnknownOption(Schema.fromJsonString(RefusalBody))
+const decodeProfile = Schema.decodeUnknownEffect(Profile)
+
+const retryAfter = (value: string | undefined): { readonly retryAfterMillis?: number } =>
+  value !== undefined && /^\d+$/.test(value.trim()) ? { retryAfterMillis: Number(value.trim()) * 1000 } : {}
+
+const refusedBy = (response: HttpClientResponse.HttpClientResponse) =>
+  effect {
+    try annotateCurrentSpan({ "http.response.status_code": response.status })
+    const body = decodeRefusal(response.text catch () => "")
+    throw new ProfileRefused({
+      status: response.status,
+      ...retryAfter(response.headers["retry-after"]),
+      ...(Option.isSome(body) ? { code: body.value.code } : {}),
+    })
+  }
+
+/** `GET /api/profiles/<owner>`: fetches a user or organization profile from ChatApi. */
+export const getProfile = Effect.fn("profile.get")(function* (
+  origin: string,
+  owner: string,
+  within: Duration.Input,
+) {
+  return yield* effect {
+    const client = try HttpClient.HttpClient
+    const route = try sync(() => profileRoute(owner))
+    const response = client.execute(HttpClientRequest.get(`${origin}${route}`)) catch effect () => {
+      throw new ProfileRefused({})
+    }
+    if (response.status !== 200) return try refusedBy(response)
+    try annotateCurrentSpan({ "http.response.status_code": response.status })
+    const body = response.json catch effect () => {
+      throw new ProfileRefused({ status: response.status })
+    }
+    return decodeProfile(body) catch effect () => {
+      throw new ProfileRefused({ status: response.status })
+    }
+  }
+}, (effect, _origin, _owner, within) =>
+  timeoutOrElse(effect, { duration: within, orElse: () => fail(new ProfileRefused({})) }),
+)
+
+/** ChatApi's profile client as an injected Effect service. */
+export class ProfileClient extends Context.Service<
+  ProfileClient,
+  { readonly get: (owner: string) => Profile!ProfileRefused }
+>()("@smthrs/mvp/profile/ProfileClient") {
+  static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
+    Layer.effect(
+      ProfileClient,
+      effect {
+        const client = try HttpClient.HttpClient
+        const within = options.within ?? PROFILE_REQUEST_WITHIN
+        return ProfileClient.of({
+          get: (owner) => provideService(getProfile(options.origin, owner, within), HttpClient.HttpClient, client),
+        })
+      },
+    )
+}

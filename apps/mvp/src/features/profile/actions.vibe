@@ -1,6 +1,5 @@
-import { Clock, Duration, Effect, FiberHandle, Metric } from "effect"
 import { put } from "../repo/actions"
-import { ProfileClient, type ProfileRefused } from "./api"
+import { ProfileClient, type ProfileRefused } from "./api.vibe"
 import {
   isProfileOwner,
   PROFILE_NOT_FOUND,
@@ -13,7 +12,7 @@ import {
 } from "./contract"
 import { profileLoadMs, profileOpens } from "./metrics"
 import type { ProfileRow } from "./schema"
-import { ProfileStore } from "./store"
+import { ProfileStore } from "./store.vibe"
 
 /** How long a tab reuses a ready profile before re-fetching on a new navigation. */
 export const TAB_FRESH_MS = 60_000
@@ -35,19 +34,19 @@ const refusalMessage = (error: ProfileRefused): string => {
 }
 
 const upsert = (entries: ProfileStore["Service"]["entries"], row: ProfileRow) =>
-  put<ProfileRow>(entries, row.key, row).pipe(Effect.ignore)
+  ignore(put<ProfileRow>(entries, row.key, row))
 
 /** Fetches `owner` into `ProfileStore.entries` if not fresh (or when `force` is true). */
-export const load = (owner: string, force = false): Effect.Effect<string | undefined, never, ProfileStore | ProfileClient> =>
-  Effect.gen(function* () {
-    const store = yield* ProfileStore
-    const client = yield* ProfileClient
+export const load = (owner: string, force = false): (string | undefined)!!(ProfileStore | ProfileClient) =>
+  withSpan(effect {
+    const store = try ProfileStore
+    const client = try ProfileClient
     const key = profileKey(owner)
-    const now = yield* Clock.currentTimeMillis
+    const now = try Clock.currentTimeMillis
     const existing = store.entries.tanstack.get(key)
 
     if (!isProfileOwner(owner)) {
-      yield* upsert(store.entries, {
+      try upsert(store.entries, {
         key,
         state: "missing",
         profile: null,
@@ -64,7 +63,7 @@ export const load = (owner: string, force = false): Effect.Effect<string | undef
 
     // Preserve a previously loaded profile while revalidating; only set loading when no ready data exists.
     if (existing === undefined || existing.state !== "ready") {
-      yield* upsert(store.entries, {
+      try upsert(store.entries, {
         key,
         state: "loading",
         profile: null,
@@ -73,93 +72,88 @@ export const load = (owner: string, force = false): Effect.Effect<string | undef
       })
     }
 
-    const startedAt = yield* Clock.currentTimeMillis
-    const result = yield* Effect.result(client.get(owner))
-    const durationMs = (yield* Clock.currentTimeMillis) - startedAt
-    const settledAt = yield* Clock.currentTimeMillis
+    const startedAt = try Clock.currentTimeMillis
+    const settled = try result(client.get(owner))
+    const durationMs = (try Clock.currentTimeMillis) - startedAt
+    const settledAt = try Clock.currentTimeMillis
 
-    if (result._tag === "Success") {
-      yield* upsert(store.entries, {
+    if (settled._tag === "Success") {
+      try upsert(store.entries, {
         key,
         state: "ready",
-        profile: result.success,
+        profile: settled.success,
         message: null,
         fetchedAt: settledAt,
       })
-      yield* Metric.update(Metric.withAttributes(profileLoadMs, { outcome: "ready" }), durationMs)
-      yield* Effect.logInfo("profile.load").pipe(Effect.annotateLogs({ outcome: "ready", durationMs }))
-      return result.success.login
+      try Metric.update(Metric.withAttributes(profileLoadMs, { outcome: "ready" }), durationMs)
+      try annotateLogs(logInfo("profile.load"), { outcome: "ready", durationMs })
+      return settled.success.login
     }
 
-    const error = result.failure
+    const error = settled.failure
     const missing = error.status === 404 || error.code === "not_found"
     const outcome = missing ? "missing" : error.code === "rate_limited" ? "rate_limited" : "failed"
-    yield* upsert(store.entries, {
+    try upsert(store.entries, {
       key,
       state: missing ? "missing" : "failed",
       profile: null,
       message: refusalMessage(error),
       fetchedAt: settledAt,
     })
-    yield* Metric.update(Metric.withAttributes(profileLoadMs, { outcome }), durationMs)
-    yield* Effect.logWarning("profile.load").pipe(
-      Effect.annotateLogs({
-        outcome,
-        durationMs,
-        ...(error.status === undefined ? {} : { status: error.status }),
-        ...(error.code === undefined ? {} : { errorCode: error.code }),
-      }),
-    )
+    try Metric.update(Metric.withAttributes(profileLoadMs, { outcome }), durationMs)
+    try annotateLogs(logWarning("profile.load"), {
+      outcome,
+      durationMs,
+      ...(error.status === undefined ? {} : { status: error.status }),
+      ...(error.code === undefined ? {} : { errorCode: error.code }),
+    })
     return undefined
-  }).pipe(Effect.withSpan("profile.load"))
+  }, "profile.load")
 
 /** Warms `owner`'s profile on link hover/focus or before route open, bounded by `WARM_WAIT`. */
-export const warm = (owner: string): Effect.Effect<void, never, ProfileStore | ProfileClient> =>
-  load(owner, false).pipe(
-    Effect.asVoid,
-    Effect.timeoutOrElse({ duration: WARM_WAIT, orElse: () => Effect.void }),
-  )
+export const warm = (owner: string): void!!(ProfileStore | ProfileClient) =>
+  timeoutOrElse(asVoid(load(owner, false)), { duration: WARM_WAIT, orElse: () => Effect.void })
 
 /** Opens `owner`'s profile route with its URL-synced view state and loads if not fresh. */
-export const open = (owner: string, search: ProfileSearch): Effect.Effect<void, never, ProfileStore | ProfileClient> =>
-  Effect.gen(function* () {
-    const store = yield* ProfileStore
+export const open = (owner: string, search: ProfileSearch): void!!(ProfileStore | ProfileClient) =>
+  withSpan(effect {
+    const store = try ProfileStore
     const key = profileKey(owner)
     const previous = store.view.tanstack.get("view")
     const changedOwner = previous?.key !== key
-    yield* store.view.update("view", (row) => {
+    try ignore(store.view.update("view", (row) => {
       row.key = key
       row.owner = owner
       row.tab = search.tab
       row.search = search.search
       row.sort = search.sort
       row.filter = search.filter
-    }).pipe(Effect.ignore)
+    }))
 
     if (changedOwner) {
-      yield* Metric.update(Metric.withAttributes(profileOpens, { tab: search.tab }), 1)
-      yield* Effect.logInfo("profile.open").pipe(Effect.annotateLogs({ tab: search.tab }))
+      try Metric.update(Metric.withAttributes(profileOpens, { tab: search.tab }), 1)
+      try annotateLogs(logInfo("profile.open"), { tab: search.tab })
     }
 
     const existing = store.entries.tanstack.get(key)
-    const now = yield* Clock.currentTimeMillis
+    const now = try Clock.currentTimeMillis
     const fresh = existing?.state === "ready" && now - existing.fetchedAt < TAB_FRESH_MS
     if (!fresh && existing?.state !== "loading") {
-      yield* FiberHandle.run(store.loader, load(owner, false).pipe(Effect.asVoid))
+      try FiberHandle.run(store.loader, asVoid(load(owner, false)))
     }
-  }).pipe(Effect.withSpan("profile.open"))
+  }, "profile.open")
 
 /** Retries a failed profile read for `owner`. */
-export const retry = (owner: string): Effect.Effect<void, never, ProfileStore | ProfileClient> =>
-  Effect.gen(function* () {
-    const store = yield* ProfileStore
-    yield* FiberHandle.run(store.loader, load(owner, true).pipe(Effect.asVoid))
-  })
+export const retry = (owner: string): void!!(ProfileStore | ProfileClient) =>
+  effect {
+    const store = try ProfileStore
+    try FiberHandle.run(store.loader, asVoid(load(owner, true)))
+  }
 
 /** Returns GitHub's canonical casing for `owner` if already loaded in this tab. */
-export const knownLogin = (owner: string): Effect.Effect<string | undefined, never, ProfileStore> =>
-  Effect.gen(function* () {
-    const store = yield* ProfileStore
+export const knownLogin = (owner: string): (string | undefined)!!ProfileStore =>
+  effect {
+    const store = try ProfileStore
     const row = store.entries.tanstack.get(profileKey(owner))
     return row?.state === "ready" ? row.profile?.login : undefined
-  })
+  }

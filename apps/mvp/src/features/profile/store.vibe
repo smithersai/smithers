@@ -1,5 +1,4 @@
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, FiberHandle, Layer, Option } from "effect"
 import { Repository } from "../repo/schema"
 import { RepoStore } from "../repo/store"
 import { emptyProfileView, ProfileRow, ProfileViewRow } from "./schema"
@@ -20,39 +19,39 @@ const viewQuery = (
       .findOne()
   )
 
-const make = Effect.gen(function* () {
-  const entries = yield* Collection.local<ProfileRow, string>({
+const byId = (row: { readonly id: string }) => row.id
+
+const make = effect {
+  const entries = try Collection.local<ProfileRow, string>({
     id: "profile-entries",
     schema: ProfileRow,
     getKey: (row) => row.key,
   })
-  const view = yield* Collection.local<ProfileViewRow, string>({
+  const view = try Collection.local<ProfileViewRow, string>({
     id: "profile-view",
     schema: ProfileViewRow,
-    getKey: (row) => row.id,
+    getKey: byId,
     initialData: [emptyProfileView],
   })
-  const repoStore = yield* Effect.serviceOption(RepoStore)
-  const fallbackRepos = Option.isSome(repoStore)
-    ? undefined
-    : yield* Collection.local<Repository, string>({
+  const repoStore = try serviceOption(RepoStore)
+  const source = Option.isSome(repoStore)
+    ? repoStore.value.repositories
+    : try Collection.local<Repository, string>({
       id: "profile-no-repositories",
       schema: Repository,
-      getKey: (row) => row.id,
+      getKey: byId,
     })
-  const repositories = yield* LiveQuery.make((q) =>
-    q.from({ repo: Option.isSome(repoStore) ? repoStore.value.repositories.tanstack : fallbackRepos!.tanstack })
-  )
+  const repositories = try LiveQuery.make((q) => q.from({ repo: source.tanstack }))
   return {
     entries,
     view,
-    viewState: yield* viewQuery(view, entries),
+    viewState: try viewQuery(view, entries),
     repositories,
     inFlight: new Map<string, Promise<string | undefined>>(),
-    loader: yield* FiberHandle.make<void, never>(),
-    scope: yield* Effect.scope,
+    loader: try FiberHandle.make<void, never>(),
+    scope: try scope,
   }
-})
+}
 
 export class ProfileStore extends Context.Service<ProfileStore, Effect.Success<typeof make>>()("@smthrs/mvp/profile/ProfileStore") {
   static readonly layer = Layer.effect(ProfileStore, make)

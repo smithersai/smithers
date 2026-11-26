@@ -28,7 +28,7 @@ import { Views } from "../features/views/views"
 import { Web } from "../features/web/web"
 import { PluginsUi } from "../plugins/ui"
 import { Mcp } from "../features/mcp/store"
-import { Profile } from "../features/profile/profile"
+import { Profile } from "../features/profile/profile.vibe"
 
 /** Every view of a test app, as `AppProviders` takes them. */
 export const appViews = Effect.all({

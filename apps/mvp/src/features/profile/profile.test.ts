@@ -1,10 +1,10 @@
 import { LiveQuery } from "@smthrs/effect-tanstack-db"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { ProfileClient, ProfileRefused } from "./api"
-import { Profile } from "./profile"
+import { ProfileClient, ProfileRefused } from "./api.vibe"
+import { Profile } from "./profile.vibe"
 import type { Profile as ProfileData } from "./schema"
-import { ProfileStore } from "./store"
+import { ProfileStore } from "./store.vibe"
 
 const sampleProfile = (login = "roninjin10"): ProfileData => ({
   kind: "User",
@@ -77,6 +77,7 @@ describe("features/profile state machine", () => {
     })
     expect(calls).toBe(2)
     expect(profile.actions.knownLogin("RONINJIN10")).toBe("roninjin10")
+    expect(await profile.actions.canonicalLogin("RONINJIN10")).toBe("roninjin10")
 
     // Re-opening within TAB_FRESH_MS reuses cached data without another API call.
     profile.actions.open("roninjin10", { tab: "repositories", search: "vibe", sort: "stars", filter: "sources" })

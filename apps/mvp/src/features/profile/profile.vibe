@@ -1,8 +1,7 @@
-import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
-import { knownLogin, load, open, type ProfileSearch, retry, warm } from "./actions"
-import type { ProfileClient } from "./api"
-import { ProfileStore } from "./store"
+import { knownLogin, load, open, type ProfileSearch, retry, warm } from "./actions.vibe"
+import type { ProfileClient } from "./api.vibe"
+import { ProfileStore } from "./store.vibe"
 
 type Store = ProfileStore["Service"]
 
@@ -25,10 +24,10 @@ export class Profile extends Context.Service<
 >()("@smthrs/mvp/profile/Profile") {
   static readonly layer = Layer.effect(
     Profile,
-    Effect.gen(function* () {
-      const store = yield* ProfileStore
-      const context = yield* Effect.context<ProfileStore | ProfileClient>()
-      const { runSync: run, runPromise: promise } = runners(context, "profile")
+    effect {
+      const store = try ProfileStore
+      const services = try context<ProfileStore | ProfileClient>()
+      const { runSync: run, runPromise: promise } = runners(services, "profile")
       return Profile.of({
         queries: {
           view: store.viewState.tanstack,
@@ -42,7 +41,7 @@ export class Profile extends Context.Service<
           canonicalLogin: (owner) => promise(load(owner, false)),
         },
       })
-    }),
+    },
   )
 }
 
