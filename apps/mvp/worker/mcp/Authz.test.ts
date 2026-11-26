@@ -17,7 +17,7 @@ import {
   Sessions,
 } from "../Actor.ts"
 import { repositoryOf } from "../github/Config.vibe"
-import * as RepoRoles from "../github/RepoRoles.ts"
+import * as RepoRoles from "../github/RepoRoles.vibe"
 import {
   assertNotBlockedAct,
   isBlockedMcpAct,

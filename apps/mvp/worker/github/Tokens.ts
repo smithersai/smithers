@@ -130,7 +130,9 @@ const counted = (kind: "user" | "app", outcome: string, fields: Record<string, s
     ),
   )
 
-/** The two tokens over `services`, each reading Postgres through the `SqlClient` in context. */
+/** The two tokens over `services`, each reading Postgres through the `SqlClient` in context.
+ * @throws {never}
+ */
 export const make = (services: Services) => {
   /** Session `sessionId`'s GitHub user token. */
   const forSession = (sessionId: string): Effect.Effect<Redacted.Redacted<string>, TokenUnavailable, SqlClient.SqlClient> =>

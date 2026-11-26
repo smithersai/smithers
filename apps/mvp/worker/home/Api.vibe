@@ -8,7 +8,7 @@ import type { HomeAnswer } from "../../src/features/home/schema.ts"
 import { isRepository, REPOS_ROUTE } from "../../src/features/repo/contract.ts"
 import { type Actor, type Role, Sessions } from "../Actor.ts"
 import { repositoryOf } from "../github/Config.vibe"
-import * as RepoRoles from "../github/RepoRoles.ts"
+import * as RepoRoles from "../github/RepoRoles.vibe"
 import { withRequestRay } from "../RequestRay.vibe"
 import * as Curated from "./Curated.ts"
 

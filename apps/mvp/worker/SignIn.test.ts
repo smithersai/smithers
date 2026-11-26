@@ -24,7 +24,7 @@ import { scriptedGitHub as scriptedRepository } from "./github/test/scriptedGitH
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Sessions as ActorSessions, SessionsUnavailable as ActorSessionsUnavailable } from "./Actor.ts"
 import * as SessionStore from "./SessionStore.ts"
-import * as RepoRoles from "./github/RepoRoles.ts"
+import * as RepoRoles from "./github/RepoRoles.vibe"
 import { branchAccess, BranchRoles } from "./branch/Access.vibe"
 import * as Audit from "./runners/Audit.vibe"
 import { HttpEffect } from "effect/http"

@@ -3,7 +3,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Sessions } from "../Actor.ts"
 import * as Artifacts from "../branch/Artifacts.vibe"
 import { repositoryOf } from "../github/Config.vibe"
-import type { RepoRoles } from "../github/RepoRoles.ts"
+import type { RepoRoles } from "../github/RepoRoles.vibe"
 import type { Admitted } from "../RepoRuns.ts"
 import * as Visibility from "./ArtifactVisibility.ts"
 

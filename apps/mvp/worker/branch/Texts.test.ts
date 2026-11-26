@@ -23,7 +23,7 @@ import { branchHarness, type BranchHarness, resetBranches, shared, tracked } fro
 import { eventually, recorded, testFile } from "../test/harness.ts"
 import * as Texts from "./Texts.vibe"
 import { BranchRoles } from "./Access.vibe"
-import * as RepoRoles from "../github/RepoRoles.ts"
+import * as RepoRoles from "../github/RepoRoles.vibe"
 import { repositoryOf } from "../github/Config.vibe"
 import { confirmedSession } from "../github/test/fixtures.ts"
 import { app } from "../github/test/harness.ts"

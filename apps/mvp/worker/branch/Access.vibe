@@ -10,7 +10,7 @@ import {
 } from "../../src/features/branch/contract.ts"
 import { type Actor, canAsk, type Role } from "../Actor.ts"
 import { repositoryOf } from "../github/Config.vibe"
-import * as RepoRoles from "../github/RepoRoles.ts"
+import * as RepoRoles from "../github/RepoRoles.vibe"
 
 // Who may do what on a branch's live workspace (decision 0013 §2 and §4, docs/features/branch-workspace.md#sharing):
 // its conversation, its terminals, its room. A live branch is private to its creator until they share it, Google Docs

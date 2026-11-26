@@ -1,8 +1,9 @@
 // The issue tree on the server (decision 0153, steps 3): GitHub's relations into server-only tables, in order, by the walk
 // that works with no webhook; a tree's scope through authorized edges only; and what a reader receives, over the compose
 // Postgres and Electric and the scripted GitHub. Only who has which role is scripted where a test says so.
-import { Effect, Exit, Layer, Logger, Metric, Option } from "effect"
+import { Cause, Effect, Exit, Layer, Logger, Metric, Option, Redacted } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
+import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import { GitHub } from "@smthrs/integrations"
 import { digestSync } from "@smthrs/crypto"
@@ -20,9 +21,10 @@ import { testFile } from "../test/harness.ts"
 import * as Apply from "./Apply.vibe"
 import * as Metrics from "./Metrics.vibe"
 import * as MachineWrite from "./MachineWrite.vibe"
-import * as Relations from "./Relations.ts"
-import * as RepoRoles from "./RepoRoles.ts"
+import * as Relations from "./Relations.vibe"
+import * as RepoRoles from "./RepoRoles.vibe"
 import * as Store from "./Store.ts"
+import { TokenUnavailable } from "./Tokens.ts"
 import { reset, services, sql } from "./test/fixtures.ts"
 import { delivery, githubHarness, member } from "./test/harness.ts"
 import { type ScriptedGitHub, scriptedGitHub } from "./test/scriptedGitHub.ts"
@@ -152,6 +154,55 @@ describe("github/Relations", () => {
     expect(await run(step({ repo: "acme/widgets", requestedAtMs: Date.now() }))).toEqual({ outcome: "complete", pages: 1, skipped: 0 })
     expect(await syncRow()).toEqual({ complete: true, cursored: false })
     expect(await edges()).toEqual([{ child: `${REPO}#101`, parent: `${REPO}#1` }])
+  })
+
+  test("a denied token records an incomplete walk; a transient token failure retains its wait", async () => {
+    const github = scriptedGitHub()
+    const { services: value } = await services(runtime, github)
+    const request = { repo: "acme/widgets", requestedAtMs: Date.now() }
+    for (const reason of ["app_not_installed", "not_allowed"] as const) {
+      const tokens = { ...value.tokens, forInstallation: () => Effect.fail(new TokenUnavailable({ reason })) }
+      expect(await run(Relations.walk({ ...value, tokens })(request))).toEqual({ outcome: "not_installed", pages: 0, skipped: 0 })
+      expect(await sql(runtime, "SELECT complete, failure FROM github_sync")).toEqual([{ complete: false, failure: reason }])
+    }
+    for (const retryAfterMillis of [undefined, 4000]) {
+      const wait = retryAfterMillis === undefined ? {} : { retryAfterMillis }
+      const tokens = { ...value.tokens, forInstallation: () => Effect.fail(new TokenUnavailable({ reason: "unavailable", ...wait })) }
+      const walked = await Effect.runPromiseExit(Relations.walk({ ...value, tokens })(request))
+      expect(Exit.isFailure(walked) && Cause.squash(walked.cause)).toEqual(new Relations.RelationsUnavailable(wait))
+    }
+    expect(github.calls).toEqual([])
+  })
+
+  test("a refused page clears its cursor and the next walk starts over", async () => {
+    const github = scriptedGitHub()
+    for (let n = 0; n < 101; n++) github.open(`Issue ${n}`, null)
+    const { services: value } = await services(runtime, github)
+    const walk = () => run(Relations.walk(value, 1)({ repo: "acme/widgets", requestedAtMs: Date.now() }))
+    expect(await walk()).toEqual({ outcome: "partial", pages: 1, skipped: 0 })
+    expect(await syncRow()).toEqual({ complete: false, cursored: true })
+    github.faults.push({ match: (method, path) => method === "GET" && path.endsWith("/issues"), status: 404 })
+    expect(await walk()).toEqual({ outcome: "refused", pages: 0, skipped: 0 })
+    expect(await syncRow()).toEqual({ complete: false, cursored: false })
+    expect(await sql(runtime, "SELECT failure FROM github_sync")).toEqual([{ failure: "github_404" }])
+    expect(await walk()).toEqual({ outcome: "partial", pages: 1, skipped: 0 })
+  })
+
+  test("a malformed issue is skipped, and an upstream outage preserves the retry delay", async () => {
+    const github = scriptedGitHub()
+    github.open("Malformed", null).malformed = true
+    const { services: value } = await services(runtime, github)
+    const request = { repo: "acme/widgets", requestedAtMs: Date.now() }
+    expect(await run(Relations.walk(value)(request))).toEqual({ outcome: "complete", pages: 1, skipped: 1 })
+    expect(await edges()).toEqual([])
+    for (const [status, headers, wait] of [
+      [500, {}, {}],
+      [429, { "retry-after": "4" }, { retryAfterMillis: 4000 }],
+    ] as const) {
+      github.faults.push({ match: (method, path) => method === "GET" && path.endsWith("/issues"), status, headers })
+      const walked = await Effect.runPromiseExit(Relations.walk(value)(request))
+      expect(Exit.isFailure(walked) && Cause.squash(walked.cause)).toEqual(new Relations.RelationsUnavailable(wait))
+    }
   })
 
   test("a request from a bucket long gone settles superseded, calling nothing", async () => {
@@ -711,6 +762,122 @@ describe("review regressions", () => {
     return { github, value }
   }
 
+  test("a broken database remains a typed synchronization failure", async () => {
+    const github = scriptedGitHub()
+    const database = Layer.effect(SqlClient.SqlClient, Effect.fail(new Error("database unavailable")))
+    const { services: value } = await services(runtime, github)
+    const broken = { ...value, database }
+    const syncEffects: ReadonlyArray<Effect.Effect<unknown, Relations.RelationsUnavailable>> = [
+      Relations.walk(broken)(request()),
+      Relations.verify(broken)(request()),
+    ]
+    for (const synchronize of syncEffects) {
+      const result = await Effect.runPromiseExit(synchronize)
+      expect(Exit.isFailure(result) && Cause.squash(result.cause)).toEqual(new Relations.RelationsUnavailable({}))
+    }
+    expect(github.calls).toEqual([])
+  })
+
+  test("peer token refusals skip missing peers but stop verification on a provider limit", async () => {
+    const { github, value } = await twoParents(404)
+    const peer = "github/acme/peer"
+    await sql(runtime, "INSERT INTO github_repositories (repo_id, private) VALUES ('github/acme/peer', false)")
+    const verify = async (error: TokenUnavailable) => {
+      const tokens = { ...value.tokens,
+        forInstallation: (...args: Parameters<typeof value.tokens.forInstallation>) =>
+          args[0].id === peer ? Effect.fail(error) : value.tokens.forInstallation(...args),
+      }
+      return Effect.runPromiseExit(Relations.verify({ ...value, tokens })(request()))
+    }
+    const limited = await verify(new TokenUnavailable({ reason: "not_allowed", rateLimited: true, retryAfterMillis: 5000 }))
+    expect(Exit.isFailure(limited) && Cause.squash(limited.cause)).toEqual(new Relations.RelationsUnavailable({ retryAfterMillis: 5000 }))
+    expect(github.seen("GET", /sub_issues$/)).toEqual([])
+    expect(Exit.isSuccess(await verify(new TokenUnavailable({ reason: "not_allowed" })))).toBe(true)
+    expect(await edges()).toContainEqual({ child: REPO + "#3", parent: REPO + "#2" })
+  })
+
+  test("a peer token from a different installation cannot expand the parent's scope", async () => {
+    const { github, value } = await twoParents(404)
+    const peer = "github/acme/peer"
+    await run(Store.rememberInstallation(peer, 78).pipe(Effect.provide(value.database)))
+    const tokens = { ...value.tokens,
+      forInstallation: (...args: Parameters<typeof value.tokens.forInstallation>) =>
+        args[0].id === peer ? Effect.succeed(Redacted.make("peer-token")) : value.tokens.forInstallation(...args),
+    }
+    expect(await run(Relations.verify({ ...value, tokens })(request()))).toEqual({ compared: 2, skipped: 0 })
+    expect(github.minted.every((entry) => !(entry.body as { repositories?: string[] }).repositories?.includes("peer"))).toBe(true)
+    expect(await edges()).toContainEqual({ child: REPO + "#3", parent: REPO + "#2" })
+  })
+
+  test("a lost parent response logs failure without inventing an HTTP status", async () => {
+    const { github, value } = await twoParents(404)
+    github.faults.splice(0, 1, { match: (_, path) => path.endsWith("/issues/1/sub_issues"), lost: true })
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const result = await Effect.runPromiseExit(Relations.verify(value)(request()).pipe(
+      Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))])),
+    ))
+    expect(Exit.isFailure(result) && Cause.squash(result.cause)).toEqual(new Relations.RelationsUnavailable({}))
+    const failure = logs.find((log) => log.message === "github.relations.verify.parent")
+    expect(failure?.annotations).toMatchObject({ outcome: "failed", number: 1 })
+    expect(failure?.annotations).not.toHaveProperty("status")
+    expect(await edges()).toContainEqual({ child: REPO + "#3", parent: REPO + "#2" })
+  })
+
+  test("a token without a recorded root installation cannot verify relationships", async () => {
+    const { github, value } = await twoParents(404)
+    const tokens = { ...value.tokens, forInstallation: () => Effect.succeed(Redacted.make("root-token")) }
+    const result = await Effect.runPromiseExit(Relations.verify({ ...value, tokens })(request()))
+    expect(Exit.isFailure(result) && Cause.squash(result.cause)).toEqual(new Relations.RelationsUnavailable({}))
+    expect(github.calls).toEqual([])
+  })
+
+  test("a vanished parent is retried if its known child's direct read fails", async () => {
+    const { github, value } = await twoParents(404)
+    await run(Store.upsertRelation(REPO, issue(3, { parent: API + "/acme/widgets/issues/1" }), Date.now()).pipe(Effect.provide(value.database)))
+    github.faults.push({ match: (_, path) => path.endsWith("/issues/3"), status: 503, headers: { "retry-after": "2" } })
+    const result = await Effect.runPromiseExit(Relations.verify(value)(request()))
+    expect(Exit.isFailure(result) && Cause.squash(result.cause)).toEqual(new Relations.RelationsUnavailable({ retryAfterMillis: 2000 }))
+  })
+
+  test.each([[403, {}, {}], [503, { "retry-after": "3" }, { retryAfterMillis: 3000 }]] as const)(
+    "parent failure %i retains any retry delay while repairing the next parent", async (status, headers, wait) => {
+      const { value } = await twoParents(status, { ...headers })
+      const result = await Effect.runPromiseExit(Relations.verify(value)(request()))
+      expect(Exit.isFailure(result) && Cause.squash(result.cause)).toEqual(new Relations.RelationsUnavailable(wait))
+      expect(await edges()).toContainEqual({ child: REPO + "#3", parent: REPO + "#2" })
+    },
+  )
+
+  test("verification preserves token retry hints and caps a header-only delay", async () => {
+    const { github, value } = await twoParents(500)
+    const cases = [
+      [{ reason: "not_allowed" }, {}],
+      [{ reason: "unavailable", retryAfterMillis: 3000 }, { retryAfterMillis: 3000 }],
+      [{ reason: "not_allowed", headerLimited: true }, {}],
+      [{ reason: "not_allowed", headerLimited: true, fullWaitMillis: 100_000 }, { retryAfterMillis: 60_000 }],
+    ] as const
+    for (const [fields, wait] of cases) {
+      const tokens = { ...value.tokens, forInstallation: () => Effect.fail(new TokenUnavailable(fields)) }
+      const verified = await Effect.runPromiseExit(Relations.verify({ ...value, tokens })(request()))
+      expect(Exit.isFailure(verified) && Cause.squash(verified.cause)).toEqual(new Relations.RelationsUnavailable(wait))
+    }
+    expect(github.seen("GET", /sub_issues$/)).toEqual([])
+  })
+
+  test("verification skips malformed children and deduplicates valid children without repository URLs", async () => {
+    const github = scriptedGitHub()
+    github.open("Parent", null)
+    const child = issue(2, { parent: API + "/acme/widgets/issues/1" })
+    const { services: value } = await services(runtime, github)
+    expect((await run(Relations.walk(value)(request()))).outcome).toBe("complete")
+    await sql(runtime, "UPDATE issue_child_counts SET sub_total = 4 WHERE parent_id = 'github/acme/widgets#1'")
+    const http = HttpClient.make((call) => new URL(call.url).pathname.endsWith("/issues/1/sub_issues")
+      ? Effect.succeed(HttpClientResponse.fromWeb(call, Response.json([{}, { ...child, repository_url: "invalid" }, child, child])))
+      : github.http.execute(call))
+    expect(await run(Relations.verify({ ...value, http })(request()))).toEqual({ compared: 1, skipped: 2 })
+    expect(await edges()).toEqual([{ child: REPO + "#2", parent: REPO + "#1" }])
+  })
+
   test.each([404, 410])("a missing parent (%i) is retired and the next parent is repaired", async (status) => {
     const { value } = await twoParents(status)
     const result = await Effect.runPromiseExit(Relations.verify(value)(request()))
@@ -838,6 +1005,9 @@ describe("review round 2 regressions", () => {
 })
 
 describe("hidden-parent refresh independence", () => {
+  // A fresh schema keeps the baseline shape independent of the preceding test’s Electric stream.
+  const hiddenRuntime = testFile("github_hidden_parent")
+
   test("executing a hidden parent refresh cannot register a candidate or change authorization and answers", async () => {
     const own = scriptedGitHub()
     const hidden = scriptedGitHub("acme", "hidden-parent")
@@ -847,7 +1017,7 @@ describe("hidden-parent refresh independence", () => {
     const http = HttpClient.make((request) =>
       (new URL(request.url).pathname.startsWith("/repos/acme/hidden-parent") ? hidden : own).http.execute(request))
     const combined = { ...own, http, layer: Layer.succeed(HttpClient.HttpClient, http) } as ScriptedGitHub
-    const { services: value } = await services(runtime, combined)
+    const { services: value } = await services(hiddenRuntime, combined)
     const starts: Array<string> = []
     const apply = (deliveryId: string) => Apply.read({ ...value, startApply: (request) => Effect.gen(function* () {
       starts.push(request.repo)
@@ -864,12 +1034,12 @@ describe("hidden-parent refresh independence", () => {
           : Effect.succeed({ role: "member" as const, held: Option.some({ repoId: target.id, personId: actor.subject.id, role: "member" as const }) })
       }),
     }
-    const h = await githubHarness(runtime, { github: combined, roles })
+    const h = await githubHarness(hiddenRuntime, { github: combined, roles })
     const beforeScope = await h.fetch(treeScopeRoute("acme", "widgets"))
     const beforeBody = await beforeScope.json()
     const beforeEdges = await shapeRows(h, edgesOf("widgets"))
     const beforeCalls = [...authCalls]
-    const beforeCandidates = await sql(runtime, `SELECT repo_id FROM github_repositories ORDER BY repo_id`)
+    const beforeCandidates = await sql(hiddenRuntime, `SELECT repo_id FROM github_repositories ORDER BY repo_id`)
     authCalls.length = 0
     own.setParent(1, { owner: "acme", name: "hidden-parent", number: 1 })
     await run(apply("hidden-change"))
@@ -881,7 +1051,7 @@ describe("hidden-parent refresh independence", () => {
     expect(afterEdges.status).toBe(beforeEdges.status)
     expect(afterEdges.rows).toEqual(beforeEdges.rows)
     expect(authCalls).toEqual(beforeCalls)
-    expect(await sql(runtime, `SELECT repo_id FROM github_repositories ORDER BY repo_id`)).toEqual(beforeCandidates)
+    expect(await sql(hiddenRuntime, `SELECT repo_id FROM github_repositories ORDER BY repo_id`)).toEqual(beforeCandidates)
     expect(starts).toEqual([])
   })
 

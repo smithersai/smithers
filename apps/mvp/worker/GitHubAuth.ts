@@ -14,6 +14,7 @@ export type Tokens = GitHub.Auth.Tokens
  * A person's role from their GitHub permission (decision 0007 §1 and §9), never with more power over the repository
  * than GitHub gives: admin is Admin, maintain is Maintainer, write is Member, triage and read are Guest, and no
  * permission is no role.
+ * @throws {never}
  */
 export const roleOf = (permission: Permission): Role | null => {
   switch (permission) {

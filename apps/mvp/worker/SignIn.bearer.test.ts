@@ -7,7 +7,7 @@ import { DEVICE_PERSON_HEADER, type SessionState } from "../src/features/auth/co
 import { credentialRoute } from "../src/flows/contract.ts"
 import * as RecheckRole from "./flows/RecheckRole.vibe"
 import { repositoryOf } from "./github/Config.vibe"
-import * as RepoRoles from "./github/RepoRoles.ts"
+import * as RepoRoles from "./github/RepoRoles.vibe"
 import * as HomeApi from "./home/Api.vibe"
 import { harness, testFile } from "./test/harness.ts"
 import { cookie, signInHarness } from "./test/signIn.ts"

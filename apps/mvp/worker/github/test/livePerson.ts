@@ -6,7 +6,7 @@ import { roleOf } from "../../GitHubAuth.ts"
 import type { Services } from "../Apply.vibe"
 import { withToken } from "../Calls.ts"
 import type { Repository } from "../Config.vibe"
-import { permissionOf } from "../RepoRoles.ts"
+import { permissionOf } from "../RepoRoles.vibe"
 
 /** Record the live test's acting person with the identity and permission GitHub actually reports. */
 export const livePerson = (services: Services, repository: Repository, login: string) =>

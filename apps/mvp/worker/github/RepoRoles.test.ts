@@ -12,7 +12,7 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import type { Actor } from "../Actor.ts"
 import { testFile } from "../test/harness.ts"
 import { type Repository, repositoryOf } from "./Config.vibe"
-import * as RepoRoles from "./RepoRoles.ts"
+import * as RepoRoles from "./RepoRoles.vibe"
 import * as Store from "./Store.ts"
 import { reset, sql } from "./test/fixtures.ts"
 import { app } from "./test/harness.ts"
@@ -1223,3 +1223,179 @@ test.each([[502, "unavailable", 10, false], [429, "rate_limited", 7, false], [42
     expect(github.seen("GET", /^\/repos\/acme\/widgets$/)).toHaveLength(2)
   },
 )
+
+describe("repository role failure and fallback boundaries", () => {
+  test("work basis follows deployment ownership, installation, and the allowed repositories", async () => {
+    const github = scriptedGitHub()
+    for (const local of [false, true]) {
+      const fallback = local ? "local" : "public"
+      const withoutApp = await roles(github, { app: Option.none(), local })
+      const excluded = await roles(github, { local, allowed: Option.some(new Set([OWN.id])) })
+      const allowed = await roles(github, { local, allowed: Option.some(new Set([OTHER.id])) })
+      expect(withoutApp.workBasis!(OTHER, true)).toBe(fallback)
+      expect(excluded.workBasis!(OTHER, true)).toBe(fallback)
+      expect(allowed.workBasis!(OTHER, false)).toBe(fallback)
+      expect(allowed.workBasis!(OTHER, true)).toBe("repository")
+      expect(allowed.workBasis!(OWN, false)).toBe("deployment")
+      if (local) {
+        expect(await Effect.runPromise(withoutApp.publicCopy!(OTHER))).toBe(true)
+        expect(await Effect.runPromise(RepoRoles.workUninstalled(withoutApp, maya, OTHER))).toBe("admin")
+      }
+    }
+    const resolver = { repository: OWN, resolve: () => Effect.succeed({ role: null, held: Option.none() }) }
+    expect(await Effect.runPromise(RepoRoles.workUninstalled(resolver, maya, OTHER))).toBeNull()
+    expect(github.calls).toEqual([])
+  })
+
+  test("the observation carries its configured freshness and a disallowed current role is denied", async () => {
+    const github = scriptedGitHub()
+    github.roles.set("maya", "write")
+    const made = await roles(github, { freshSeconds: 47 })
+    const result = await resolve(made)
+    expect(result).toMatchObject({ _tag: "Success", success: { role: "member", held: { value: { freshSeconds: 47 } } } })
+    const held = { repoId: OTHER.id, personId: MAYA, role: "member", freshSeconds: 47 } as const
+    expect(await runtime.runPromise(RepoRoles.checkHeld(held, ["maintainer"]))).toBe("denied")
+    expect(await runtime.runPromise(RepoRoles.checkHeld(held, ["member"]))).toBe("held")
+  })
+
+  test("an invalid App key refuses the read at authentication, before contacting GitHub", async () => {
+    const github = scriptedGitHub()
+    const made = await roles(github, { app: Option.some(app({ privateKey: Redacted.make("invalid PEM") })) })
+    expect(await resolve(made)).toMatchObject({ _tag: "Failure", failure: { code: "github_unavailable", stage: "app_auth" } })
+    expect(github.calls).toEqual([])
+  })
+
+  test("failure to record an absent installation or its cooldown returns the read's refusal", async () => {
+    const github = scriptedGitHub()
+    github.installed = false
+    await sql(runtime, "ALTER TABLE repo_about ADD CONSTRAINT role_test_absence CHECK (app_absent_until IS NULL)")
+    await sql(runtime, "ALTER TABLE github_repo_roles ADD CONSTRAINT role_test_cooldown CHECK (NOT read_failed)")
+    try {
+      const made = await roles(github)
+      expect(await resolve(made)).toMatchObject({ _tag: "Failure", failure: { code: "unavailable", stage: "role_record" } })
+      expect(await sql(runtime, "SELECT app_absent_until FROM repo_about WHERE app_absent_until IS NOT NULL")).toEqual([])
+      expect(await sql(runtime, "SELECT read_failed FROM github_repo_roles")).toEqual([{ read_failed: false }])
+    } finally {
+      await sql(runtime, "ALTER TABLE github_repo_roles DROP CONSTRAINT role_test_cooldown")
+      await sql(runtime, "ALTER TABLE repo_about DROP CONSTRAINT role_test_absence")
+    }
+  })
+
+  test("even a successful upstream read refuses an observation that expired before recording", async () => {
+    const github = scriptedGitHub()
+    github.roles.set("maya", "write")
+    github.faults.push({
+      match: (_, path) => path.endsWith("/permission"),
+      hold: () => Effect.runPromise(Effect.sleep("50 millis")),
+    })
+    const made = await roles(github, { freshSeconds: 0.001 })
+    expect(await resolve(made)).toMatchObject({ _tag: "Failure", failure: { code: "unavailable", stage: "role_record" } })
+    expect(await sql(runtime, "SELECT role FROM github_repo_roles")).toEqual([{ role: "member" }])
+  })
+
+  test("public-copy lookup keeps its role refusal when GitHub does not answer", async () => {
+    const github = scriptedGitHub()
+    github.faults.push({ match: (_, path) => path.endsWith("/widgets"), status: 502 })
+    const made = await roles(github)
+    const result = await Effect.runPromise(Effect.result(made.publicCopy!(OTHER)))
+    expect(result).toMatchObject({ _tag: "Failure", failure: { code: "unavailable", stage: "metadata" } })
+  })
+})
+
+test("a future-dated winning visibility receipt cannot authorize an older read", async () => {
+  const github = scriptedGitHub()
+  github.faults.push({
+    match: (_, path) => path === "/repos/acme/widgets",
+    hold: () => sql(runtime, "UPDATE github_repositories SET private = false, " +
+      "visibility_verified_at = clock_timestamp() + interval '5 minutes' WHERE repo_id = 'github/acme/widgets'").then(() => {}),
+  })
+  const made = await roles(github)
+  const result = await Effect.runPromise(Effect.result(made.publicCopy!(OTHER)))
+  expect(result).toMatchObject({ _tag: "Failure", failure: { code: "unavailable", stage: "visibility_record" } })
+})
+
+test("a database refusing to record metadata cannot authorize a public copy", async () => {
+  const github = scriptedGitHub()
+  await sql(runtime, "ALTER TABLE github_repositories ADD CONSTRAINT role_test_receipt CHECK (visibility_verified_at IS NULL)")
+  try {
+    const made = await roles(github)
+    const result = await Effect.runPromise(Effect.result(made.publicCopy!(OTHER)))
+    expect(result).toMatchObject({ _tag: "Failure", failure: { code: "unavailable" } })
+    expect(await sql(runtime, "SELECT visibility_verified_at FROM github_repositories")).toEqual([{ visibility_verified_at: null }])
+  } finally {
+    await sql(runtime, "ALTER TABLE github_repositories DROP CONSTRAINT role_test_receipt")
+  }
+})
+
+test("a missing role row after recording is rejected as a transaction defect", async () => {
+  await sql(runtime, "CREATE FUNCTION role_test_drop_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$")
+  await sql(runtime, "CREATE TRIGGER role_test_drop_insert BEFORE INSERT ON github_repo_roles " +
+    "FOR EACH ROW EXECUTE FUNCTION role_test_drop_insert()")
+  try {
+    const recorded = await runtime.runPromise(Effect.exit(RepoRoles.remember(OTHER.id, MAYA, "member", new Date().toISOString())))
+    expect(Exit.isFailure(recorded)).toBe(true)
+    expect(await sql(runtime, "SELECT role FROM github_repo_roles")).toEqual([])
+  } finally {
+    await sql(runtime, "DROP TRIGGER role_test_drop_insert ON github_repo_roles")
+    await sql(runtime, "DROP FUNCTION role_test_drop_insert()")
+  }
+})
+
+test.each([false, true])("an expired read budget refuses before a new provider call (claimed: %s)", async (claimed) => {
+  const github = scriptedGitHub()
+  const made = await roles(github, { refreshDeadline: "1 second" })
+  if (claimed) {
+    await sql(runtime, "INSERT INTO github_repo_roles (repo_id, person_id, checked_at, read_until) " +
+      "VALUES ('github/acme/widgets', '" + MAYA + "', now() - interval '1 hour', now() + interval '1 minute')")
+  }
+  const held: RepoRoles.Held = { repoId: OTHER.id, personId: MAYA, role: "member" }
+  const startedAt = Date.now()
+  let timeReads = 0
+  const result = await Effect.runPromise(Effect.result(made.refresh!(maya, OTHER, held).pipe(
+    Effect.updateService(Clock.Clock, (clock): Clock.Clock => Object.assign(Object.create(clock), {
+      // The fourth wall-clock read follows the state query. Leave less than the cleanup budget, or
+      // jump past the deadline if another request already owns the claim.
+      currentTimeMillis: Effect.sync(() => startedAt + (++timeReads < 4 ? 0 : claimed ? 1001 : 950)),
+    })),
+  )))
+  expect(result).toMatchObject({ _tag: "Failure", failure: { code: "unavailable", stage: "deadline", retryAfterSeconds: 1 } })
+  expect(github.calls).toEqual([])
+})
+
+test("a rate limit without Retry-After uses the configured cooldown", async () => {
+  const github = scriptedGitHub()
+  github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429 })
+  const made = await roles(github, { refreshCooldownSeconds: 11 })
+  expect(await resolve(made)).toMatchObject({ _tag: "Failure", failure: { code: "rate_limited", retryAfterSeconds: 11 } })
+  expect(await resolve(made)).toMatchObject({ _tag: "Failure", failure: { code: "rate_limited", stage: "cooldown" } })
+  expect(github.seen("GET", /\/permission$/)).toHaveLength(1)
+})
+
+test("a non-finite cooldown cannot create an infinite role or visibility receipt", async () => {
+  const github = scriptedGitHub()
+  const made = await roles(github, { refreshCooldownSeconds: Infinity })
+  github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502 })
+  expect(await resolve(made)).toMatchObject({ _tag: "Failure", failure: { code: "github_unavailable", retryAfterSeconds: 1 } })
+  github.faults.push({ match: (_, path) => path.endsWith("/widgets"), status: 502 })
+  const publicCopy = await Effect.runPromise(Effect.result(made.publicCopy!(OTHER)))
+  expect(publicCopy).toMatchObject({ _tag: "Failure", failure: { code: "unavailable", retryAfterSeconds: 1 } })
+  expect(await sql(runtime, "SELECT isfinite(read_until) AS finite FROM github_repo_roles")).toEqual([{ finite: true }])
+  expect(await sql(runtime, "SELECT isfinite(visibility_read_until) AS finite FROM github_repositories")).toEqual([{ finite: true }])
+})
+
+test("database acquisition failure refuses uninstalled work and public-copy lookup", async () => {
+  const github = scriptedGitHub()
+  const broken = Layer.effect(SqlClient.SqlClient, Effect.fail(new Error("database unavailable")))
+  const made = await runtime.runPromise(RepoRoles.make(broken, {
+    repository: OWN, app: Option.none(), http: github.http,
+  }))
+  const reads: ReadonlyArray<Effect.Effect<unknown, RepoRoles.RoleRefused>> = [
+    RepoRoles.workUninstalled(made, maya, OTHER),
+    made.publicCopy(OTHER),
+  ]
+  for (const read of reads) {
+    const result = await Effect.runPromise(Effect.result(read))
+    expect(result).toMatchObject({ _tag: "Failure", failure: { code: "unavailable" } })
+  }
+  expect(github.calls).toEqual([])
+})

@@ -14,7 +14,7 @@ import { signedIn } from "../../test/harness.ts"
 import * as Api from "../Api.vibe"
 import * as Stack from "../Stack.vibe"
 import { type Repository, repositoryOf } from "../../github/Config.vibe"
-import * as RepoRoles from "../../github/RepoRoles.ts"
+import * as RepoRoles from "../../github/RepoRoles.vibe"
 
 type Runtime = ReturnType<typeof testFile>
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>

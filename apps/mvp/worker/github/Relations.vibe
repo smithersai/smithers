@@ -90,74 +90,74 @@ const REPOSITORY_URL = /\/repos\/([^/?#]+)\/([^/?#]+)$/
 /** What `walk` does, with its records: never a title, a body or a login. */
 export const walk = <E, R>(services: Services<E, R>, pagesPerWalk: number = PAGES_PER_WALK) =>
 (request: typeof Walk.payloadSchema.Type) =>
-  Effect.gen(function* () {
+  effect {
     const repository = repositoryOf(request.repo)
-    const now = yield* Clock.currentTimeMillis
-    const finished = (walked: Walked, failure: string | null) =>
-      Effect.gen(function* () {
-        yield* Metric.update(Metric.withAttributes(Metrics.relationWalks, { outcome: walked.outcome }), 1)
-        yield* Effect.logInfo("github.relations").pipe(Effect.annotateLogs({ repoId: repository.id, ...walked }))
-        if (walked.outcome !== "superseded") {
-          yield* Store.finishSync(repository.id, RELATIONS_STREAM, { complete: walked.outcome === "complete", failure })
-        }
-        return walked
-      })
-    if (now - request.requestedAtMs >= 2 * SYNC_STALE_MS) return yield* finished({ outcome: "superseded", pages: 0, skipped: 0 }, null)
-    const token = yield* services.tokens.forInstallation(repository, "read").pipe(Effect.result)
+    const now = try Clock.currentTimeMillis
+    const finished = effect (walked: Walked, failure: string | null) => {
+      try Metric.update(Metric.withAttributes(Metrics.relationWalks, { outcome: walked.outcome }), 1)
+      try (Effect.logInfo("github.relations").pipe(Effect.annotateLogs({ repoId: repository.id, ...walked })))
+      if (walked.outcome !== "superseded") {
+        try Store.finishSync(repository.id, RELATIONS_STREAM, { complete: walked.outcome === "complete", failure })
+      }
+      return walked
+    }
+    if (now - request.requestedAtMs >= 2 * SYNC_STALE_MS) return try finished({ outcome: "superseded", pages: 0, skipped: 0 }, null)
+    const token = try (services.tokens.forInstallation(repository, "read").pipe(Effect.result))
     if (token._tag === "Failure") {
       if (token.failure.reason === "app_not_installed" || token.failure.reason === "not_allowed") {
-        return yield* finished({ outcome: "not_installed", pages: 0, skipped: 0 }, token.failure.reason)
+        return try finished({ outcome: "not_installed", pages: 0, skipped: 0 }, token.failure.reason)
       }
-      return yield* new RelationsUnavailable(
+      throw new RelationsUnavailable(
         token.failure.retryAfterMillis === undefined ? {} : { retryAfterMillis: token.failure.retryAfterMillis },
       )
     }
-    const before = yield* Store.syncState(repository.id, RELATIONS_STREAM)
+    const before = try Store.syncState(repository.id, RELATIONS_STREAM)
     const counts = { pages: 0, skipped: 0 }
-    const walked = yield* Effect.gen(function* () {
-      const client = yield* GitHub.GitHubClient.GitHubClient
-      const observedAt = yield* Store.repositoryObservation
+    const walked = try (effect {
+      const client = try GitHub.GitHubClient.GitHubClient
+      const observedAt = try Store.repositoryObservation
       // A repository a walk reached is one tree reads may name (worker/github/TreeScope.ts).
-      const facts = yield* client.request(
+      const path = try Effect.sync(() => GitHub.Repository.repositoryPath(repository.owner, repository.name))
+      const facts = try client.request(
         "GET",
-        `/repos/${GitHub.Repository.repositoryPath(repository.owner, repository.name)}`,
+        `/repos/${path}`,
         undefined,
         { schema: REPOSITORY_FACTS },
       )
-      yield* Store.recordRepository(repository.id, { githubId: facts.id, private: facts.private }, observedAt)
+      try Store.recordRepository(repository.id, { githubId: facts.id, private: facts.private }, observedAt)
       let cursor = before.cursor
       while (counts.pages < pagesPerWalk) {
         // Before the read: a read this old can't overwrite what a newer one said.
-        const fetchedAt = yield* Clock.currentTimeMillis
-        const page = yield* GitHub.Issues.listAllIssuesPage(repository.owner, repository.name, { cursor })
+        const fetchedAt = try Clock.currentTimeMillis
+        const page = try GitHub.Issues.listAllIssuesPage(repository.owner, repository.name, { cursor })
         counts.pages += 1
         for (const raw of page.items) {
           const issue = decodeIssue(raw)
           if (Option.isNone(issue)) counts.skipped += 1
-          else yield* Store.upsertRelation(repository.id, issue.value, fetchedAt)
+          else try Store.upsertRelation(repository.id, issue.value, fetchedAt)
         }
         cursor = page.next
-        yield* Store.commitCursor(repository.id, RELATIONS_STREAM, cursor)
+        try Store.commitCursor(repository.id, RELATIONS_STREAM, cursor)
         if (cursor === null) return "complete" as const
       }
       return "partial" as const
-    }).pipe(withToken(token.success, services.apiBaseUrl), Effect.result)
-    if (walked._tag === "Success") return yield* finished({ outcome: walked.success, ...counts }, null)
+    }.pipe(withToken(token.success, services.apiBaseUrl), Effect.result))
+    if (walked._tag === "Success") return try finished({ outcome: walked.success, ...counts }, null)
     const classified = classify(walked.failure)
     if (classified.kind === "refused") {
       // A cursor GitHub no longer takes must not stop every later walk: the next one starts over.
-      yield* Store.commitCursor(repository.id, RELATIONS_STREAM, null)
-      return yield* finished({ outcome: "refused", ...counts }, `github_${classified.status}`)
+      try Store.commitCursor(repository.id, RELATIONS_STREAM, null)
+      return try finished({ outcome: "refused", ...counts }, `github_${classified.status}`)
     }
-    yield* Effect.logWarning("github.relations").pipe(
+    try (Effect.logWarning("github.relations").pipe(
       Effect.annotateLogs({ repoId: repository.id, outcome: "failed", errorCode: codeOf(walked.failure), ...counts }),
-    )
-    return yield* new RelationsUnavailable(
+    ))
+    throw new RelationsUnavailable(
       classified.kind === "retry" && classified.retryAfterMillis !== undefined
         ? { retryAfterMillis: classified.retryAfterMillis }
         : {},
     )
-  }).pipe(
+  }.pipe(
     Effect.provideService(HttpClient.HttpClient, services.http),
     Effect.provide(services.database),
     Effect.mapError((error) => (error instanceof RelationsUnavailable ? error : new RelationsUnavailable({}))),
@@ -174,24 +174,23 @@ const childRepositoryOf = <E, R>(services: Services<E, R>, url: string | undefin
 }
 
 /** Explicit, currently mintable read scopes within the parent's installation; no unrestricted token is requested. */
-const verificationReads = <E, R>(services: Services<E, R>, repository: Repository) =>
-  Effect.gen(function* () {
-    const root = yield* services.tokens.forInstallation(repository, "read")
-    const installation = yield* Store.installationOf(repository.id)
-    if (Option.isNone(installation)) return yield* new RelationsUnavailable({})
+const verificationReads = <E, R>(services: Services<E, R>, repository: Repository) => effect {
+    const root = try services.tokens.forInstallation(repository, "read")
+    const installation = try Store.installationOf(repository.id)
+    if (Option.isNone(installation)) throw new RelationsUnavailable({})
     const byRepository = new Map([[repository.id, root]])
     const peers: Array<Repository> = []
-    for (const id of yield* candidates(repository.owner, [])) {
+    for (const id of try candidates(repository.owner, [])) {
       if (id === repository.id || !services.mayAct(id)) continue
       const peer = repositoryOf(id.replace(/^github\//, ""))
       // Validate selection before grouping, so a remembered but removed repository cannot poison every group.
-      const permitted = yield* services.tokens.forInstallation(peer, "read").pipe(Effect.result)
+      const permitted = try (services.tokens.forInstallation(peer, "read").pipe(Effect.result))
       if (permitted._tag === "Failure") {
         if ((permitted.failure.reason === "app_not_installed" || permitted.failure.reason === "not_allowed") &&
           permitted.failure.rateLimited !== true && permitted.failure.headerLimited !== true) continue
-        return yield* Effect.fail(permitted.failure)
+        throw permitted.failure
       }
-      const other = yield* Store.installationOf(id)
+      const other = try Store.installationOf(id)
       if (Option.isSome(other) && other.value === installation.value) peers.push(peer)
     }
     const groups: Array<typeof root> = []
@@ -199,108 +198,107 @@ const verificationReads = <E, R>(services: Services<E, R>, repository: Repositor
     const width = GitHub.AppAuth.MAX_TOKEN_REPOSITORIES - 1
     for (let offset = 0; offset < peers.length; offset += width) {
       const selected = peers.slice(offset, offset + width)
-      const token = yield* services.tokens.forInstallation(repository, "read", selected)
+      const token = try services.tokens.forInstallation(repository, "read", selected)
       groups.push(token)
       for (const peer of selected) byRepository.set(peer.id, token)
     }
     if (groups.length === 0) groups.push(root)
-    yield* Effect.logInfo("github.relations.read_scope").pipe(
+    try (Effect.logInfo("github.relations.read_scope").pipe(
       Effect.annotateLogs({ repoId: repository.id, repositories: byRepository.size, groups: groups.length }),
-    )
+    ))
     return { root, groups, byRepository }
-  }).pipe(Effect.withSpan("github.relations.read_scope"))
+  }.pipe(Effect.withSpan("github.relations.read_scope"))
 
 /** What `verify` does: after a complete walk only, and it can't undo the walk's `complete`. */
 export const verify = <E, R>(services: Services<E, R>, parentsPerVerify: number = PARENTS_PER_VERIFY) =>
 (request: typeof Verify.payloadSchema.Type) =>
-  Effect.gen(function* () {
+  effect {
     const repository = repositoryOf(request.repo)
-    const state = yield* Store.syncState(repository.id, RELATIONS_STREAM)
+    const state = try Store.syncState(repository.id, RELATIONS_STREAM)
     if (!state.complete) return NOTHING
-    const parents = yield* Store.parentsToVerify(repository.id, parentsPerVerify)
+    const parents = try Store.parentsToVerify(repository.id, parentsPerVerify)
     if (parents.length === 0) return NOTHING
-    const reads = yield* verificationReads(services, repository)
+    const reads = try verificationReads(services, repository)
     const token = reads.root
     let skipped = 0
     let failed = 0
     let missing = 0
     let retryAfterMillis = 0
-    const refreshChildren = (parentId: string, seen: ReadonlySet<string>) => Effect.gen(function* () {
-      for (const { childId, childRepoId } of yield* Store.childrenOf(parentId)) {
+    const refreshChildren = effect (parentId: string, seen: ReadonlySet<string>) => {
+      for (const { childId, childRepoId } of try Store.childrenOf(parentId)) {
         if (seen.has(childId)) continue
         // Unknown or no-longer-selected repositories stay unread; resolving an edge never creates a candidate.
         const childToken = reads.byRepository.get(childRepoId)
         if (childToken === undefined) continue
         const childNumber = Number(childId.slice(childId.lastIndexOf("#") + 1))
         const childRepository = repositoryOf(childRepoId.replace(/^github\//, ""))
-        const at = yield* Clock.currentTimeMillis
-        const read = yield* GitHub.Issues.getIssue(childRepository.owner, childRepository.name, childNumber).pipe(
+        const at = try Clock.currentTimeMillis
+        const read = try (GitHub.Issues.getIssue(childRepository.owner, childRepository.name, childNumber).pipe(
           withToken(childToken, services.apiBaseUrl), Effect.result,
-        )
-        if (read._tag === "Success") yield* Store.upsertRelation(childRepoId, read.success, at)
-        else if (statusOf(read.failure) === 404 || statusOf(read.failure) === 410) yield* Store.tombstoneIssue(childRepoId, childNumber, at)
-        else return yield* Effect.fail(read.failure)
+        ))
+        if (read._tag === "Success") try Store.upsertRelation(childRepoId, read.success, at)
+        else if (statusOf(read.failure) === 404 || statusOf(read.failure) === 410) try Store.tombstoneIssue(childRepoId, childNumber, at)
+        else throw read.failure
       }
-    })
-    yield* Effect.forEach(parents, ({ parentId }) =>
-      Effect.gen(function* () {
-        const number = Number(parentId.slice(parentId.lastIndexOf("#") + 1))
-        // Fence scheduling before the network request, including cancellation or a lost response.
-        yield* Store.markVerificationAttempt(repository.id, parentId)
-        const fetchedAt = yield* Clock.currentTimeMillis
-        const checked = yield* Effect.gen(function* () {
-          const seen = new Set<string>()
-          const listed = (yield* Effect.forEach(reads.groups, (token) =>
-            GitHub.Issues.listSubIssues(repository.owner, repository.name, number).pipe(withToken(token, services.apiBaseUrl))))
-            .flat()
-          for (const raw of listed) {
-            const issue = decodeIssue(raw)
-            const child = Option.isNone(issue) ? undefined : childRepositoryOf(services, issue.value.repository_url, repository)
-            if (Option.isNone(issue) || child === undefined) {
-              skipped += 1
-              continue
-            }
-            const childId = `${child.id}#${issue.value.number}`
-            if (seen.has(childId)) continue
-            seen.add(childId)
-            yield* Store.upsertRelation(child.id, issue.value, fetchedAt)
+    }
+    try (Effect.forEach(parents, effect ({ parentId }) => {
+      const number = Number(parentId.slice(parentId.lastIndexOf("#") + 1))
+      // Fence scheduling before the network request, including cancellation or a lost response.
+      try Store.markVerificationAttempt(repository.id, parentId)
+      const fetchedAt = try Clock.currentTimeMillis
+      const checked = try (effect {
+        const seen = new Set<string>()
+        const listed = (try Effect.forEach(reads.groups, (token) =>
+          GitHub.Issues.listSubIssues(repository.owner, repository.name, number).pipe(withToken(token, services.apiBaseUrl))))
+          .flat()
+        for (const raw of listed) {
+          const issue = decodeIssue(raw)
+          const child = Option.isNone(issue) ? undefined : childRepositoryOf(services, issue.value.repository_url, repository)
+          if (Option.isNone(issue) || child === undefined) {
+            skipped += 1
+            continue
           }
-          yield* refreshChildren(parentId, seen)
-          yield* Store.markVerified(parentId)
-        }).pipe(
-          Effect.result,
-          Effect.tap((result) => Effect.annotateCurrentSpan({ "smithers.github.outcome": result._tag === "Success" ? "verified" : "failed" })),
-          Effect.withSpan("github.relations.verify.parent", { attributes: { "smithers.github.repo": repository.id, "smithers.github.number": number } }),
-        )
-        const status = checked._tag === "Failure" ? statusOf(checked.failure) : undefined
-        const absent = status === 404 || status === 410
-        const outcome = checked._tag === "Success" ? "verified" : absent ? "missing" : "failed"
-        yield* Metric.update(Metric.withAttributes(Metrics.relationParentChecks, { outcome }), 1)
-        if (checked._tag === "Success") return
-        yield* Effect.logWarning("github.relations.verify.parent").pipe(
-          Effect.annotateLogs({ repoId: repository.id, number, outcome, errorCode: codeOf(checked.failure), ...(status === undefined ? {} : { status }) }),
-        )
-        if (absent) {
-          // Keep its verification work while incoming children are unknown or cannot be revalidated.
-          const refreshed = yield* refreshChildren(parentId, new Set()).pipe(Effect.result)
-          yield* Store.tombstoneIssue(repository.id, number, fetchedAt)
-          if (refreshed._tag === "Failure") return yield* Effect.fail(refreshed.failure)
-          missing += 1
-          return
+          const childId = `${child.id}#${issue.value.number}`
+          if (seen.has(childId)) continue
+          seen.add(childId)
+          try Store.upsertRelation(child.id, issue.value, fetchedAt)
         }
-        failed += 1
-        const classified = classify(checked.failure)
-        if (classified.kind === "retry") retryAfterMillis = Math.max(retryAfterMillis, classified.retryAfterMillis ?? 0)
-        // A provider-wide rate limit stops requests now; the durable retry honors its Retry-After.
-        if (isRateLimited(checked.failure)) return yield* Effect.fail(checked.failure)
-      }), { discard: true }).pipe(withToken(token, services.apiBaseUrl))
-    yield* Effect.logInfo("github.relations.verify").pipe(
+        try refreshChildren(parentId, seen)
+        try Store.markVerified(parentId)
+      }.pipe(
+        Effect.result,
+        Effect.tap((result) => Effect.annotateCurrentSpan({ "smithers.github.outcome": result._tag === "Success" ? "verified" : "failed" })),
+        Effect.withSpan("github.relations.verify.parent", { attributes: { "smithers.github.repo": repository.id, "smithers.github.number": number } }),
+      ))
+      const status = checked._tag === "Failure" ? statusOf(checked.failure) : undefined
+      const absent = status === 404 || status === 410
+      const outcome = checked._tag === "Success" ? "verified" : absent ? "missing" : "failed"
+      try Metric.update(Metric.withAttributes(Metrics.relationParentChecks, { outcome }), 1)
+      if (checked._tag === "Success") return
+      try (Effect.logWarning("github.relations.verify.parent").pipe(
+        Effect.annotateLogs({ repoId: repository.id, number, outcome, errorCode: codeOf(checked.failure), ...(status === undefined ? {} : { status }) }),
+      ))
+      if (absent) {
+        // Keep its verification work while incoming children are unknown or cannot be revalidated.
+        const refreshed = try (refreshChildren(parentId, new Set()).pipe(Effect.result))
+        try Store.tombstoneIssue(repository.id, number, fetchedAt)
+        if (refreshed._tag === "Failure") throw refreshed.failure
+        missing += 1
+        return
+      }
+      failed += 1
+      const classified = classify(checked.failure)
+      if (classified.kind === "retry") retryAfterMillis = Math.max(retryAfterMillis, classified.retryAfterMillis ?? 0)
+      // A provider-wide rate limit stops requests now; the durable retry honors its Retry-After.
+      if (isRateLimited(checked.failure)) throw checked.failure
+    }, { discard: true }).pipe(withToken(token, services.apiBaseUrl)))
+    try (Effect.logInfo("github.relations.verify").pipe(
       Effect.annotateLogs({ repoId: repository.id, compared: parents.length, skipped, missing, failed }),
-    )
+    ))
     // Retain progress on other parents before asking the engine to retry recoverable failures.
-    if (failed > 0) return yield* new RelationsUnavailable(retryAfterMillis === 0 ? {} : { retryAfterMillis })
+    if (failed > 0) throw new RelationsUnavailable(retryAfterMillis === 0 ? {} : { retryAfterMillis })
     return { compared: parents.length, skipped }
-  }).pipe(
+  }.pipe(
     Effect.provideService(HttpClient.HttpClient, services.http),
     Effect.provide(services.database),
     Effect.mapError((error) => {

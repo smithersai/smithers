@@ -2,7 +2,7 @@ import { Duration, Effect, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import type { Actor } from "./Actor.ts"
 import { ROLES } from "../src/features/auth/contract.ts"
-import type * as RepoRoles from "./github/RepoRoles.ts"
+import type * as RepoRoles from "./github/RepoRoles.vibe"
 import { sessionDeadline, sessionLive } from "./SessionStore.ts"
 
 /** The sign-in authority retained by a write, including an alias when it came through one. */

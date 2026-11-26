@@ -6,7 +6,7 @@ import * as DevFaults from "./DevFaults.ts"
 import { DEV_ASK_TOKEN } from "./AsksDev.ts"
 import { DEV_FEED_KEY } from "./feeds/dev.ts"
 import { repositoryOf } from "./github/Config.vibe"
-import type * as RepoRoles from "./github/RepoRoles.ts"
+import type * as RepoRoles from "./github/RepoRoles.vibe"
 import type { Signed } from "./SignIn.ts"
 
 // ChatApi under `alchemy dev` (alchemy.run.ts picks it only then): the same program with real sign-in once the GitHub

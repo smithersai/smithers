@@ -41,7 +41,9 @@ export const classify = (error: unknown): Classified => {
   return status === undefined ? { kind: "retry" } : { kind: "refused", status }
 }
 
-/** Whether GitHub refused a call for its rate limit, primary or secondary (`@smthrs/integrations`' `rateLimited`). */
+/** Whether GitHub refused a call for its rate limit, primary or secondary (`@smthrs/integrations`' `rateLimited`).
+ * @throws {never}
+ */
 export const isRateLimited = (error: unknown): boolean =>
   Core.IntegrationError.isIntegrationError(error) && error.details?.["rateLimited"] === true
 

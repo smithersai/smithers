@@ -4,7 +4,7 @@ import { HttpServerRequest } from "effect/http"
 import { describe, expect, it } from "vitest"
 import * as Actor from "./Actor.ts"
 import * as appRoute from "./appRoute.ts"
-import * as RepoRoles from "./github/RepoRoles.ts"
+import * as RepoRoles from "./github/RepoRoles.vibe"
 import * as RunCredentials from "./RunCredentials.ts"
 import * as SessionKeys from "./SessionKeys.vibe"
 

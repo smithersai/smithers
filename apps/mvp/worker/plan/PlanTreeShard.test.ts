@@ -17,7 +17,7 @@ import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../../src/features/auth/co
 import { type Actor, Sessions } from "../Actor.ts"
 import { MAX_PLAN_MCP_BYTES } from "../Body.vibe"
 import { repositoryOf } from "../github/Config.vibe"
-import * as RepoRoles from "../github/RepoRoles.ts"
+import * as RepoRoles from "../github/RepoRoles.vibe"
 import { signedIn } from "../test/harness.ts"
 import * as Plan from "./PlanTreeShard.vibe"
 import * as Routes from "./PlanTreeRoutes.vibe"

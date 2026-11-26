@@ -13,7 +13,7 @@ import { CONVERSATION_NAMESPACE, MAX_TRACK_BODY_BYTES } from "../../src/features
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import { branchHarness, type BranchHarness, gitHost, resetBranches, shaOf, shared, tracked } from "../test/branch.ts"
 import { recorded, testFile } from "../test/harness.ts"
-import * as RepoRoles from "../github/RepoRoles.ts"
+import * as RepoRoles from "../github/RepoRoles.vibe"
 import { BranchRoles } from "./Access.vibe"
 import * as Branches from "./Branches.vibe"
 import * as Conversations from "./Conversations.vibe"

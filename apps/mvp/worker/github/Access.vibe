@@ -19,7 +19,7 @@ import type { SqlClient } from "effect/sql"
 import type { Role } from "../../src/features/auth/contract.ts"
 import { type Actor, Sessions } from "../Actor.ts"
 import type { Repository } from "./Config.vibe"
-import * as RepoRoles from "./RepoRoles.ts"
+import * as RepoRoles from "./RepoRoles.vibe"
 import * as Store from "./Store.ts"
 import * as WorkLinks from "./WorkLinks.vibe"
 

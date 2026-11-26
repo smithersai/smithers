@@ -7,7 +7,7 @@ import { resetBranches } from "../test/branch.ts"
 import { branchRoles, testFile } from "../test/harness.ts"
 import { BranchRoles } from "./Access.vibe"
 import * as Conversations from "./Conversations.vibe"
-import { RoleRefused } from "../github/RepoRoles.ts"
+import { RoleRefused } from "../github/RepoRoles.vibe"
 import { visible as visibleIn } from "./RefReads.vibe"
 
 const runtime = testFile("branch_ref_reads")

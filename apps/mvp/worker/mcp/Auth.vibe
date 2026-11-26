@@ -12,7 +12,7 @@ import { isRepository, repoId } from "../../src/features/repo/contract.ts"
 import { type Actor, rankOf, type Role, Sessions } from "../Actor.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { type Repository, repositoryOf } from "../github/Config.vibe"
-import * as RepoRoles from "../github/RepoRoles.ts"
+import * as RepoRoles from "../github/RepoRoles.vibe"
 import * as GitHubStore from "../github/Store.ts"
 import * as SessionStore from "../SessionStore.ts"
 import {

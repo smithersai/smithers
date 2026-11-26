@@ -20,7 +20,7 @@ import { SecretKeys } from "../secrets/Keys.vibe"
 import { digestToken, executionNonce, mintToken } from "./AdminCrypto.ts"
 import * as AdminFlows from "./AdminFlows.vibe"
 import * as Overflow from "./Overflow.vibe"
-import type * as RepoRoles from "../github/RepoRoles.ts"
+import type * as RepoRoles from "../github/RepoRoles.vibe"
 import * as Fence from "./Fence.vibe"
 import * as Store from "./Store.vibe"
 

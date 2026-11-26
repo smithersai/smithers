@@ -15,8 +15,8 @@ import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as Apply from "./Apply.vibe"
 import * as Metrics from "./Metrics.vibe"
-import * as Reconcile from "./Reconcile.ts"
-import * as RepoRoles from "./RepoRoles.ts"
+import * as Reconcile from "./Reconcile.vibe"
+import * as RepoRoles from "./RepoRoles.vibe"
 import { repositoryOf } from "./Config.vibe"
 import * as Store from "./Store.ts"
 import { admit, comments, database, items, keys, REPOSITORY, reset, services, signedIn, sql, writeRow } from "./test/fixtures.ts"
@@ -865,6 +865,9 @@ describe("github/Reconcile", () => {
     expect((await reconcile(value)).exit).toEqual(Exit.succeed({ outcome: "not_installed", pages: 0, issues: 0, comments: 0, skipped: 0 }))
     expect(await syncRow()).toMatchObject({ complete: false, failure: "app_not_installed" })
     github.installed = true
+    github.faults.push({ match: (_, path) => path.endsWith("/access_tokens"), status: 403 })
+    expect((await reconcile(value)).exit).toEqual(Exit.succeed({ outcome: "not_installed", pages: 0, issues: 0, comments: 0, skipped: 0 }))
+    expect(await syncRow()).toMatchObject({ complete: false, failure: "not_allowed" })
     github.faults.push({ match: (method, path) => method === "GET" && path === "/repos/acme/widgets", status: 403 })
     expect((await reconcile(value)).exit).toEqual(Exit.succeed({ outcome: "refused", pages: 0, issues: 0, comments: 0, skipped: 0 }))
     expect(await syncRow()).toMatchObject({ complete: false, failure: "github_403" })

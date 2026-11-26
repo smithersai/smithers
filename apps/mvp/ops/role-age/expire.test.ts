@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
 import { testFile } from "../../worker/test/harness.ts"
-import { FRESH_SECONDS } from "../../worker/github/RepoRoles.ts"
+import { FRESH_SECONDS } from "../../worker/github/RepoRoles.vibe"
 import { expire, run } from "./expire.ts"
 
 const runtime = testFile("role_age_script")

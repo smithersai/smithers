@@ -16,7 +16,7 @@ import * as Checks from "../flows/Checks.vibe"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import { handles } from "./Api.vibe"
-import { parseReviewPath, requests } from "./Review.ts"
+import { parseReviewPath, requests } from "./Review.vibe"
 import { judgeSeat, REPOSITORY, reset, reviewing, services as githubServices, signedIn, sql } from "./test/fixtures.ts"
 import { delivery, githubHarness, member } from "./test/harness.ts"
 import { BOT_LOGIN, type ScriptedGitHub, scriptedGitHub } from "./test/scriptedGitHub.ts"
@@ -250,6 +250,16 @@ describe("what the route refuses", { timeout: 60_000 }, () => {
     expect(h.starts).toEqual([])
   })
 
+  test("an agent acting for a Maintainer cannot ask for review", async () => {
+    const actor: Actor.Actor = { ...member(), role: "maintainer", act: { kind: "agent", id: "review-agent" } }
+    const h = await githubHarness(runtime, { actor })
+    const response = await h.fetch(reviewRoute(REPOSITORY.owner, REPOSITORY.name, 1), post({}))
+    expect([response.status, await response.json()]).toEqual([403, { code: "person_only" }])
+    expect(h.count(requests, { outcome: "person_only" })).toBe(1)
+    expect(h.github.calls).toEqual([])
+    expect(h.starts).toEqual([])
+  })
+
   test("a path that names no repository: 404, before GitHub is asked", async () => {
     const h = await githubHarness(runtime, { actor: { ...member(), role: "maintainer" } })
     const response = await h.fetch("/api/repos/-bad-/widgets/pulls/1/review", post({}))
@@ -307,6 +317,8 @@ describe("what the route refuses", { timeout: 60_000 }, () => {
       const response = await h.fetch(route, post(body))
       expect([response.status, await response.json()]).toEqual([400, { code: "invalid" }])
     }
+    const brokenUtf8 = await h.fetch(route, { ...post({}), body: new Uint8Array([0xff]) })
+    expect([brokenUtf8.status, await brokenUtf8.json()]).toEqual([400, { code: "invalid" }])
     const oversized = await h.fetch(route, post(JSON.stringify({ headSha: "a".repeat(40), pad: "x".repeat(2000) })))
     expect([oversized.status, await oversized.json()]).toEqual([413, { code: "too_large" }])
     expect((await h.fetch(route, { method: "GET" })).headers.get("allow")).toBe("POST")

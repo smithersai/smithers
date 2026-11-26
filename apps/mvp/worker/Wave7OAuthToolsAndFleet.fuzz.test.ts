@@ -17,7 +17,7 @@ import { type Actor, type Role, Sessions, SessionsUnavailable } from "./Actor.ts
 import * as FleetMcpTools from "./fleet/FleetMcpTools.vibe"
 import * as FleetStore from "./fleet/FleetStore.vibe"
 import { repositoryOf } from "./github/Config.vibe"
-import * as RepoRoles from "./github/RepoRoles.ts"
+import * as RepoRoles from "./github/RepoRoles.vibe"
 import { agentActor, makeMcpAuthService, McpAuthServiceLive } from "./mcp/Auth.vibe"
 import { McpAuthService, type McpPrincipal, type McpRepoAccess, type McpToolContext, McpToolError } from "./mcp/Contract.vibe"
 import * as OAuth from "./mcp/OAuth.vibe"

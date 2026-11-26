@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import type { Actor } from "./Actor.ts"
-import * as RepoRoles from "./github/RepoRoles.ts"
+import * as RepoRoles from "./github/RepoRoles.vibe"
 import { authority, roleFresh, RoleFreshMs } from "./SessionStore.ts"
 import { mayRead } from "./stack/Access.vibe"
 

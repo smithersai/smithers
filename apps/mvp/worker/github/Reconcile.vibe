@@ -119,76 +119,76 @@ const commentOf = (payload: unknown) =>
 /** What `github/Reconcile/walk` does, with its records: never a title, a body or a login. */
 export const walk = <E, R>(services: Services<E, R>, pagesPerWalk: number = PAGES_PER_WALK) =>
 (request: typeof Walk.payloadSchema.Type) =>
-  Effect.gen(function* () {
+  effect {
     const repository = repositoryOf(request.repo)
-    const now = yield* Clock.currentTimeMillis
+    const now = try Clock.currentTimeMillis
     if (request.requestedAtMs === undefined || now - request.requestedAtMs >= 2 * SYNC_STALE_MS) {
-      yield* Metric.update(Metric.withAttributes(Metrics.reconciles, { outcome: SUPERSEDED.outcome }), 1)
-      yield* Effect.logInfo("github.reconcile").pipe(Effect.annotateLogs({ repoId: repository.id, ...SUPERSEDED }))
+      try Metric.update(Metric.withAttributes(Metrics.reconciles, { outcome: SUPERSEDED.outcome }), 1)
+      try (Effect.logInfo("github.reconcile").pipe(Effect.annotateLogs({ repoId: repository.id, ...SUPERSEDED })))
       return SUPERSEDED
     }
-    const finished = (reconciled: Reconciled, failure: string | null) =>
-      Effect.gen(function* () {
-        yield* Store.finishSync(repository.id, ISSUES_STREAM, { complete: reconciled.outcome === "complete", failure })
-        yield* Metric.update(Metric.withAttributes(Metrics.reconciles, { outcome: reconciled.outcome }), 1)
-        yield* Effect.logWithLevel(reconciled.outcome === "complete" || reconciled.outcome === "partial" ? "Info" : "Warn")(
-          "github.reconcile",
-        ).pipe(Effect.annotateLogs({ repoId: repository.id, ...reconciled, ...(failure === null ? {} : { failure }) }))
-        return reconciled
-      })
-    const token = yield* services.tokens.forInstallation(repository, "pulls").pipe(Effect.result)
+    const finished = effect (reconciled: Reconciled, failure: string | null) => {
+      try Store.finishSync(repository.id, ISSUES_STREAM, { complete: reconciled.outcome === "complete", failure })
+      try Metric.update(Metric.withAttributes(Metrics.reconciles, { outcome: reconciled.outcome }), 1)
+      try (Effect.logWithLevel(reconciled.outcome === "complete" || reconciled.outcome === "partial" ? "Info" : "Warn")(
+        "github.reconcile",
+      ).pipe(Effect.annotateLogs({ repoId: repository.id, ...reconciled, ...(failure === null ? {} : { failure }) })))
+      return reconciled
+    }
+    const token = try (services.tokens.forInstallation(repository, "pulls").pipe(Effect.result))
     if (token._tag === "Failure") {
       if (token.failure.reason === "app_not_installed" || token.failure.reason === "not_allowed") {
-        return yield* finished({ outcome: "not_installed", pages: 0, issues: 0, comments: 0, skipped: 0 }, token.failure.reason)
+        return try finished({ outcome: "not_installed", pages: 0, issues: 0, comments: 0, skipped: 0 }, token.failure.reason)
       }
-      return yield* new ReconcileUnavailable(
+      throw new ReconcileUnavailable(
         token.failure.retryAfterMillis === undefined ? {} : { retryAfterMillis: token.failure.retryAfterMillis },
       )
     }
-    const before = yield* Store.syncState(repository.id, ISSUES_STREAM)
+    const before = try Store.syncState(repository.id, ISSUES_STREAM)
     const counts = {
       pages: request.previousPages ?? 0, issues: request.previousIssues ?? 0,
       comments: request.previousComments ?? 0, skipped: request.previousSkipped ?? 0,
     }
     const firstPage = counts.pages
     let reviewsPending = false
-    const walked = yield* Effect.gen(function* () {
-      const client = yield* GitHub.GitHubClient.GitHubClient
+    const walked = try (effect {
+      const client = try GitHub.GitHubClient.GitHubClient
       // Whether the repository is public decides who may read its rows without signing in (worker/github/Api.ts).
-      const observedAt = yield* Store.repositoryObservation
-      const facts = yield* client.request(
+      const observedAt = try Store.repositoryObservation
+      const path = try Effect.sync(() => GitHub.Repository.repositoryPath(repository.owner, repository.name))
+      const facts = try client.request(
         "GET",
-        `/repos/${GitHub.Repository.repositoryPath(repository.owner, repository.name)}`,
+        `/repos/${path}`,
         undefined,
         { schema: RepositoryFacts },
       )
-      yield* Store.recordRepository(repository.id, { githubId: facts.id, private: facts.private }, observedAt)
-      const adapter = GitHub.Sync.make({
+      try Store.recordRepository(repository.id, { githubId: facts.id, private: facts.private }, observedAt)
+      const adapter = try Effect.sync(() => GitHub.Sync.make({
         connectionId: repository.id,
         owner: repository.owner,
         repo: repository.name,
         client,
         stream: ISSUES_STREAM,
-      })
+      }))
       let cursor = before.cursor
       while (counts.pages - firstPage < pagesPerWalk) {
-        const page = yield* adapter.changes(cursor)
+        const page = try adapter.changes(cursor)
         counts.pages += 1
         for (const record of page.records) {
           if (record.kind === "issue-comment") {
             const read = commentOf(record.payload)
             if (Option.isNone(read)) counts.skipped += 1
-            else if (yield* Store.upsertComment(repository.id, read.value.number, read.value.comment, record.retrievedAtMs)) {
+            else if (try Store.upsertComment(repository.id, read.value.number, read.value.comment, record.retrievedAtMs)) {
               counts.comments += 1
             }
           } else {
             const issue = decodeIssue(record.payload)
             if (Option.isNone(issue)) counts.skipped += 1
             else {
-              if (yield* Store.upsertIssue(repository.id, issue.value, record.retrievedAtMs)) counts.issues += 1
-              if (record.kind === "pull-request" && !(yield* pullCurrent(repository.id, issue.value))) {
-                yield* readPull(repository, issue.value.number)
-                if ((yield* Store.syncState(repository.id, reviewStream(issue.value.number))).cursor !== null) {
+              if (try Store.upsertIssue(repository.id, issue.value, record.retrievedAtMs)) counts.issues += 1
+              if (record.kind === "pull-request" && !(try pullCurrent(repository.id, issue.value))) {
+                try readPull(repository, issue.value.number)
+                if ((try Store.syncState(repository.id, reviewStream(issue.value.number))).cursor !== null) {
                   // Keep this listing page until the pull's durable review walk finishes.
                   reviewsPending = true
                   return "partial" as const
@@ -198,33 +198,33 @@ export const walk = <E, R>(services: Services<E, R>, pagesPerWalk: number = PAGE
           }
         }
         cursor = page.cursor
-        yield* Store.commitCursor(repository.id, ISSUES_STREAM, cursor)
+        try Store.commitCursor(repository.id, ISSUES_STREAM, cursor)
         if (page.done) return "complete" as const
       }
       return "partial" as const
-    }).pipe(withToken(token.success, services.apiBaseUrl), Effect.result)
+    }.pipe(withToken(token.success, services.apiBaseUrl), Effect.result))
     // After the first walk, a row a reconcile had to change is one a webhook should have delivered.
     if (before.syncedAt !== null) {
-      yield* Metric.update(Metric.withAttributes(Metrics.reconcileChanged, { kind: "issue" }), counts.issues - (request.previousIssues ?? 0))
-      yield* Metric.update(Metric.withAttributes(Metrics.reconcileChanged, { kind: "comment" }), counts.comments - (request.previousComments ?? 0))
+      try Metric.update(Metric.withAttributes(Metrics.reconcileChanged, { kind: "issue" }), counts.issues - (request.previousIssues ?? 0))
+      try Metric.update(Metric.withAttributes(Metrics.reconcileChanged, { kind: "comment" }), counts.comments - (request.previousComments ?? 0))
     }
     if (walked._tag === "Success") return {
-      ...yield* finished({ outcome: walked.success, ...counts }, null),
+      ...(try finished({ outcome: walked.success, ...counts }, null)),
       ...(reviewsPending ? { reviewsPending: true } : {}),
     }
     const classified = classify(walked.failure)
     if (classified.kind === "refused") {
-      return yield* finished({ outcome: "refused", ...counts }, `github_${classified.status}`)
+      return try finished({ outcome: "refused", ...counts }, `github_${classified.status}`)
     }
-    yield* Effect.logWarning("github.reconcile").pipe(
+    try (Effect.logWarning("github.reconcile").pipe(
       Effect.annotateLogs({ repoId: repository.id, outcome: "failed", errorCode: codeOf(walked.failure), ...counts }),
-    )
-    return yield* new ReconcileUnavailable(
+    ))
+    throw new ReconcileUnavailable(
       classified.kind === "retry" && classified.retryAfterMillis !== undefined
         ? { retryAfterMillis: classified.retryAfterMillis }
         : {},
     )
-  }).pipe(
+  }.pipe(
     Effect.provideService(HttpClient.HttpClient, services.http),
     Effect.provide(services.database),
     Effect.mapError((error) => (error instanceof ReconcileUnavailable ? error : new ReconcileUnavailable({}))),

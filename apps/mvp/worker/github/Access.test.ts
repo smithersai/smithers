@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import * as Access from "./Access.vibe"
-import type { RepoRoles } from "./RepoRoles.ts"
+import type { RepoRoles } from "./RepoRoles.vibe"
 
 const OWN = { owner: "acme", name: "own", id: "github/acme/own" } as const
 const person: Actor = { subject: { kind: "person", id: "person-cookie" }, role: "member" }

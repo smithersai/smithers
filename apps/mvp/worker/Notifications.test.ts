@@ -15,7 +15,7 @@ import { REPOSITORY } from "./github/test/fixtures.ts"
 import { delivery, githubHarness } from "./github/test/harness.ts"
 import * as FeedLocks from "./FeedLocks.vibe"
 import * as Notifications from "./Notifications.ts"
-import * as RepoRoles from "./github/RepoRoles.ts"
+import * as RepoRoles from "./github/RepoRoles.vibe"
 import { eventually, harness, recorded, testFile } from "./test/harness.ts"
 
 const runtime = testFile("notifications")
@@ -852,7 +852,9 @@ describe("a run on a repository's branch quotes its question only to its launche
       for (const runId of runIds) yield* Notifications.foldRun(runId, undefined, held)
     })))
   const deny = (person: string) =>
-    RepoRoles.remember("github/acme/gizmos", person, null, new Date().toISOString())
+    Effect.flatMap(SqlClient.SqlClient, (client) =>
+      Effect.flatMap(client<{ readonly observedAt: string }>`SELECT clock_timestamp()::text AS "observedAt"`, ([row]) =>
+        RepoRoles.remember("github/acme/gizmos", person, null, row!.observedAt)))
 
   test("a denial recorded while the real fold settles the launcher's existing notice: no deadlock, and the row goes", async () => {
     await sql(`INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('github/acme/gizmos', 'person-dex', 'member')

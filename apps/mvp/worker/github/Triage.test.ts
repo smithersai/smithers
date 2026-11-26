@@ -23,8 +23,8 @@ import type * as Actor from "../Actor.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as Metrics from "./Metrics.vibe"
-import * as Reconcile from "./Reconcile.ts"
-import { FRESH_SECONDS } from "./RepoRoles.ts"
+import * as Reconcile from "./Reconcile.vibe"
+import { FRESH_SECONDS } from "./RepoRoles.vibe"
 import {
   admit,
   items,

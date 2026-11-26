@@ -23,7 +23,7 @@ import * as ShapeAccess from "./ShapeAccess.vibe"
 import { FRESH_SECONDS } from "./github/RoleAge.ts"
 import { TTL_MS } from "./github/Visibility.vibe"
 import * as FleetAudience from "./runners/FleetAudience.vibe"
-import { pruned as repositoryPruned } from "./github/RepoRoles.ts"
+import { pruned as repositoryPruned } from "./github/RepoRoles.vibe"
 
 // The personal feed on the server (decision 0009, docs/features/notifications.md): one `notifications` row per person
 // per subject, written in the same transaction as the fact it comes from, so a replay writes nothing twice.

@@ -12,7 +12,7 @@ import { fetchPull, projectPull } from "./Pulls.vibe"
 import * as Store from "./Store.ts"
 import { candidates } from "./TreeScope.ts"
 import type { GitHubTokens } from "./Tokens.ts"
-import type { RepoRoles } from "./RepoRoles.ts"
+import type { RepoRoles } from "./RepoRoles.vibe"
 
 // `github/Apply { deliveryId, repo, number, event }` (decision 0012 §2, docs/features/issues.md#the-webhook):
 // a webhook rang the bell for issue `number`; this reads the issue and its comments from GitHub with an installation
