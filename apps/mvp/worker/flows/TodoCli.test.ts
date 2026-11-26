@@ -9,7 +9,7 @@ import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import { beforeEach, expect, test } from "vitest"
-import { mkdtempSync, realpathSync, rmSync } from "node:fs"
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as TestDatabase from "../../db/TestDatabase.ts"
@@ -24,7 +24,7 @@ import { build, runFlow } from "../test/flowHost.ts"
 import { eventually, testFile } from "../test/harness.ts"
 import * as Box from "../test/box.ts"
 import * as SandboxCommand from "./SandboxCommand.vibe"
-import * as TodoCli from "./TodoCli.ts"
+import * as TodoCli from "./TodoCli.vibe"
 
 const runtime = testFile("todo_cli_edges")
 beforeEach(() => runtime.runPromise(Effect.gen(function* () {
@@ -165,4 +165,47 @@ test("a machine whose CLI process exceeds its command budget records timeout fro
     const ran = await runFlow(Implement, a.payload, registration(await database(), true, globalThis.fetch, slow), { executionId: a.executionId })
     expect(reason(ran.exit)).toEqual(new TodoCli.AgentCliFailed({ reason: "timeout" }))
   } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test("a route with no configured seat check uses Smithers when no subscription is active", async () => {
+  const ran = await runFlow(Route, { ownerId }, registration(await database()))
+  expect(ran.exit).toEqual(Exit.succeed({ agent: "smithers" }))
+})
+
+test.each([
+  { agent: "claude-code", executable: "claude", output: '{"result":"Checked","usage":{"input_tokens":3,"output_tokens":1}}' },
+  { agent: "codex", executable: "codex", output: "Checked" },
+] as const)("a successful $agent process reads the prompt and returns its summary", async ({ agent, executable, output }) => {
+  const a = await attempt()
+  if (agent === "codex") {
+    await seedKeys(runtime, ownerId, [{ kind: "codex_subscription", key: JSON.stringify({
+      accessToken: "access-sentinel", refreshToken: "refresh-sentinel", idToken: "id-sentinel",
+      accountId: "account", planType: "plus", expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+    }) }])
+  }
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "todo-cli-success-")))
+  try {
+    writeFileSync(join(directory, executable), `#!/bin/sh
+cat > "$HOME/prompt" || exit 1
+printf '%s\\n' '${output}'
+`, { mode: 0o700 })
+    const { box } = Box.boxAt({ workdir: directory, homes: directory })
+    const host = Box.machinesOn({
+      ...box,
+      sessionAs: (user) => Effect.map(box.sessionAs(user), (session) => ({
+        ...session,
+        spawn: (command, options) => session.spawn(
+          `export HOME='${directory}' PATH='${directory}':"$PATH"; ${command}`,
+          options,
+        ),
+      })),
+    })
+    const fetch: typeof globalThis.fetch = async () => { throw new Error("unexpected credential refresh") }
+    const ran = await runFlow(Implement, { ...a.payload, agent },
+      registration(await database(), true, fetch, Layer.succeed(Machines, host)), { executionId: a.executionId })
+    expect(ran.exit).toEqual(Exit.succeed({ summary: "Checked" }))
+    expect(readFileSync(join(directory, "prompt"), "utf8")).toBe(TodoCli.promptFor(a.payload))
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 })

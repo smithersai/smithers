@@ -50,7 +50,7 @@ import * as SandboxCommand from "./SandboxCommand.vibe"
 import * as Todo from "./Todo.ts"
 import * as TodoBaseClosed from "./TodoBaseClosed.ts"
 import * as TodoAgent from "./TodoAgent.ts"
-import * as TodoMachine from "./TodoMachine.ts"
+import * as TodoMachine from "./TodoMachine.vibe"
 
 const runtime = testFile("todo_run")
 const boxes = realpathSync(mkdtempSync(join(tmpdir(), "smthrs-todo-box-")))

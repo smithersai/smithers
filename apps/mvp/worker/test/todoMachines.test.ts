@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { Effect } from "effect"
 import { describe, expect, test } from "vitest"
 import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
-import * as TodoMachine from "../flows/TodoMachine.ts"
+import * as TodoMachine from "../flows/TodoMachine.vibe"
 import { machines } from "./todoMachines.ts"
 
 const branch = (attemptId = "attempt-one", checkout: string) =>

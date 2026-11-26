@@ -2,7 +2,7 @@ import { Budget } from "@smthrs/agent"
 import { HarnessError, Sandbox } from "@smthrs/harness"
 import { Evaluator, ModelError } from "@smthrs/model"
 import { expect, test } from "vitest"
-import { agentFailureCodes } from "./TodoDiagnostic.ts"
+import { agentFailureCodes } from "./TodoDiagnostic.vibe"
 
 test("TODO failure diagnostics keep typed agent and model codes without messages", () => {
   const privateText = "private repository content and provider message"
@@ -71,4 +71,29 @@ test("TODO diagnostics retain only finite evaluator, sandbox, and repeated-failu
     .toMatchObject({ causeCode: "none" })
   expect(agentFailureCodes(harness({ _tag: privateText, code: "runtime_failed" })))
     .toMatchObject({ causeCode: "none" })
+})
+
+const noCodes = { harnessCode: "none", modelCode: "none", budgetScope: "none", causeCode: "none" }
+
+test.each([undefined, null, "private text", {}, { _tag: "/harness/HarnessError" }])(
+  "diagnostics discard unrecognized or incomplete failures (%j)", (failure) => {
+    expect(agentFailureCodes(failure)).toEqual(noCodes)
+  },
+)
+
+test.each([
+  null,
+  {},
+  { _tag: "flows/model/ModelError" },
+  { _tag: "flows/model/EvaluatorError" },
+  { _tag: "flows/model/EvaluatorError", code: "private text" },
+  { _tag: "flows/harness/SandboxError" },
+  { _tag: "flows/agent/BudgetExceeded" },
+  { _tag: Budget.skippedTag },
+  { _tag: Budget.skippedTag, budget: null },
+  { _tag: Budget.skippedTag, budget: "private text" },
+  { _tag: Budget.skippedTag, budget: {} },
+])("diagnostics keep the harness code while discarding an incomplete or invalid cause (%j)", (cause) => {
+  expect(agentFailureCodes({ _tag: "/harness/HarnessError", code: "engine_failed", cause }))
+    .toEqual({ ...noCodes, harnessCode: "engine_failed" })
 })

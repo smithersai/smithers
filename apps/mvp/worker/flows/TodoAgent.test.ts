@@ -13,7 +13,7 @@ import { Machines } from "../branch/Machines.ts"
 import { noCommands } from "../test/commands.ts"
 import type { Seat } from "../ModelSeats.ts"
 import * as TodoAgent from "./TodoAgent.ts"
-import * as TodoMachine from "./TodoMachine.ts"
+import * as TodoMachine from "./TodoMachine.vibe"
 
 const ATTEMPT = "6f0e2b9c-1d4a-4c3b-9e8f-7a6b5c4d3e2f"
 

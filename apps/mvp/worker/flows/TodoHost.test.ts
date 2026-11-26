@@ -18,7 +18,7 @@ import { testFile } from "../test/harness.ts"
 import * as Checks from "./Checks.vibe"
 import * as Todo from "./Todo.ts"
 import * as TodoBaseClosed from "./TodoBaseClosed.ts"
-import * as TodoDrop from "./TodoDrop.ts"
+import * as TodoDrop from "./TodoDrop.vibe"
 import * as TodoAgent from "./TodoAgent.ts"
 import * as TodoSession from "./TodoSession.ts"
 

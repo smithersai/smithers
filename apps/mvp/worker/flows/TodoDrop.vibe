@@ -43,9 +43,9 @@ export const Drop = Flow.make("todo/Drop", {
 
 /** The close step over the app's real database and GitHub services. */
 export const cleanup = <E, R>(services: Todo.Services<E, R>) => (stop: Stack.AttemptStop) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<Todo.TodoRequest & {
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [row] = try sql<Todo.TodoRequest & {
       readonly state: string
       readonly attempt: number
       readonly prNumber: number | null
@@ -63,16 +63,18 @@ export const cleanup = <E, R>(services: Todo.Services<E, R>) => (stop: Stack.Att
       attemptId: row.attemptId, todoId: row.todoId, repoId: row.repoId,
       number: row.number, ordinal: row.ordinal, revision: row.revision,
     }
-    const steps = Todo.steps(services)
+    const steps = try sync(() => Todo.steps(services))
     // An attempt whose branch report never committed never reached Publish: that report was stale.
     const published = row.prNumber !== null
       ? Option.some({ headSha: row.headSha ?? "", prNumber: row.prNumber })
-      : row.branch === null ? Option.none() : yield* steps.unreported(request, row.branch)
-    return yield* Option.match(published, {
-      onNone: () => Effect.succeed({ outcome: "skipped" } as const),
-      onSome: (found) => steps.await({ request, published: found }).pipe(Effect.as({ outcome: "closed" } as const)),
-    })
-  }).pipe(
+      : row.branch === null ? Option.none() : try steps.unreported(request, row.branch)
+    if (Option.isNone(published)) {
+      return { outcome: "skipped" } as const
+    } else {
+      try steps.await({ request, published: published.value })
+      return { outcome: "closed" } as const
+    }
+  }.pipe(
     Effect.provide(services.database),
     Effect.mapError((error) => error instanceof Todo.TodoFailed || error instanceof Todo.TodoUnavailable
       ? error
@@ -83,10 +85,10 @@ export const cleanup = <E, R>(services: Todo.Services<E, R>) => (stop: Stack.Att
   )
 
 const record = (stop: Stack.AttemptStop, outcome: "closed" | "skipped" | "refused" | "retry") =>
-  Effect.gen(function* () {
-    yield* Metric.update(Metric.withAttributes(cleanups, { outcome }), 1)
-    yield* Effect.logInfo("todo.drop").pipe(Effect.annotateLogs({ ...stop, outcome }))
-  })
+  effect {
+    try Metric.update(Metric.withAttributes(cleanups, { outcome }), 1)
+    try (logInfo("todo.drop").pipe(Effect.annotateLogs({ ...stop, outcome })))
+  }
 
 const ENDED = ["completed", "failed", "cancelled"]
 
@@ -95,11 +97,11 @@ const ENDED = ["completed", "failed", "cancelled"]
  * dropped TODO's run is never admitted later (`TodoRuns.canStart`).
  */
 export const runEnded = <E, R>(engine: Layer.Layer<SqlClient.SqlClient, E, R>) => (executionId: string) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql<{ readonly status: string }>`SELECT status FROM flows_runs WHERE run_id = ${executionId}`).pipe(
-      Effect.provide(engine),
-      Effect.map(([run]) => run === undefined || ENDED.includes(run.status)),
-    )
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [run] = try sql<{ readonly status: string }>`SELECT status FROM flows_runs WHERE run_id = ${executionId}`
+    return run === undefined || ENDED.includes(run.status)
+  }.pipe(Effect.provide(engine))
 
 export const registration = <E, R>(services: Todo.Services<E, R>) =>
   Interpreter.layerWithImplementations(Drop, Close.toLayer(cleanup(services), {

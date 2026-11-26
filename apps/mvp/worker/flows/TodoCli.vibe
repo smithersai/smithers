@@ -11,7 +11,7 @@ import * as Subscriptions from "../personal/Subscriptions.vibe"
 import { SecretKeys } from "../secrets/Keys.vibe"
 import * as SandboxCommand from "./SandboxCommand.vibe"
 import { Implemented, ImplementPayload, promptOf, SYSTEM, TOOL_CALL_NAMESPACE } from "./TodoAgent.ts"
-import * as Machine from "./TodoMachine.ts"
+import * as Machine from "./TodoMachine.vibe"
 
 // `todo/Route` and `todo/ImplementCli` (decision 0132, ruling AUTH-10, docs/features/personal-model.md#subscriptions).
 // A person whose list puts a Claude or Codex subscription first has their change written by the vendor's own agent, the
@@ -83,7 +83,7 @@ export type Credentials = Layer.Layer<SecretKeys | Codex.CodexAuth>
 const noCredentials: Credentials = Layer.merge(SecretKeys.off, Layer.succeed(Codex.CodexAuth, { origin: "", clientId: "" }))
 
 /** The host's check for an available personal or deployment coding seat. */
-export type RequireCodingSeat = (ownerId: string) => Effect.Effect<void, unknown>
+export type RequireCodingSeat = (ownerId: string) => void!unknown
 
 /** `todo/Route` and `todo/ImplementCli` over `database`, the host's `Machines` and `credentials`. */
 export const registration = <E, R>(
@@ -95,63 +95,64 @@ export const registration = <E, R>(
 ) =>
   Layer.mergeAll(
     Route.toLayer(({ ownerId }) =>
-      Subscriptions.agentOf(ownerId).pipe(
-        Effect.provide(database),
-        Effect.tap((agent) => agent === "smithers" && requireCodingSeat !== undefined
-          ? requireCodingSeat(ownerId)
-          : Effect.void),
-        Effect.map((agent) => ({ agent })),
-        Effect.mapError((error) => error instanceof NoSeat ? error : new RouteUnavailable()),
-      )
+      effect {
+        let agent: typeof Routed.Type.agent
+        provide database {
+          agent = try Subscriptions.agentOf(ownerId)
+        }
+        if (agent === "smithers" && requireCodingSeat !== undefined) try requireCodingSeat(ownerId)
+        return { agent }
+      }.pipe(Effect.mapError((error) => error instanceof NoSeat ? error : new RouteUnavailable()))
     ),
-    Layer.unwrap(Effect.gen(function* () {
-      const machines = yield* Machines
-      const keys = yield* SecretKeys
-      const codexAuth = yield* Codex.CodexAuth
-      const context = yield* Effect.context<R>()
-      const inDatabase = <A, E2>(effect: Effect.Effect<A, E2, SqlClient.SqlClient>) =>
-        effect.pipe(Effect.provide(database), Effect.provideContext(context))
+    Layer.unwrap(effect {
+      const machines = try Machines
+      const keys = try SecretKeys
+      const codexAuth = try Codex.CodexAuth
+      const databaseContext = try context<R>()
+      const inDatabase = <A, E2>(operation: A!E2!SqlClient.SqlClient) =>
+        operation.pipe(Effect.provide(database), Effect.provideContext(databaseContext))
       const seconds = Math.min(AGENT_SECONDS, commandSeconds)
       return ImplementCli.toLayer(({ agent, ...payload }) =>
-        Effect.gen(function* () {
-          const instance = yield* FlowRuntime.FlowInstance
-          const machine = yield* inDatabase(Machine.ofExecution(instance.executionId)).pipe(
+        effect {
+          const instance = try FlowRuntime.FlowInstance
+          const machine = try (inDatabase(Machine.ofExecution(instance.executionId)).pipe(
             Effect.mapError(() => new RouteUnavailable()),
-          )
-          if (Option.isNone(machine)) return yield* new AgentCliFailed({ reason: "no_machine" })
-          if (Option.isNone(keys)) return yield* new AgentCliFailed({ reason: "no_credential" })
+          ))
+          if (Option.isNone(machine)) throw new AgentCliFailed({ reason: "no_machine" })
+          if (Option.isNone(keys)) throw new AgentCliFailed({ reason: "no_credential" })
           const { branch, ownerId } = machine.value
           // Only Codex's token: a Claude run doesn't depend on a Codex connection further down the list.
           if (agent === "codex") {
-            yield* inDatabase(Subscriptions.fresh(ownerId, keys.value).pipe(Effect.provideService(Codex.CodexAuth, codexAuth))).pipe(
+            try (inDatabase(Subscriptions.fresh(ownerId, keys.value).pipe(Effect.provideService(Codex.CodexAuth, codexAuth))).pipe(
               Effect.mapError((failure): AgentCliFailed | RouteUnavailable =>
                 failure instanceof Codex.CodexAuthFailed && failure.reason === "refused"
                   ? new AgentCliFailed({ reason: "no_credential" })
                   : new RouteUnavailable()
               ),
-            )
+            ))
           }
-          const callId = yield* Uuid.v5(TOOL_CALL_NAMESPACE, `${payload.attemptId}:${agent}`).pipe(
+          const callId = try (Uuid.v5(TOOL_CALL_NAMESPACE, `${payload.attemptId}:${agent}`).pipe(
             Effect.provide(WebCrypto.layer),
             Effect.orDie,
-          )
+          ))
+          const command = try sync(() => Agents.commandOf(agent, promptFor(payload), undefined))
           const call = {
             tool: "run" as const,
-            command: Agents.commandOf(agent, promptFor(payload), undefined),
+            command,
             timeoutSeconds: seconds,
           }
-          const startedAt = yield* Clock.currentTimeMillis
-          const ran = yield* SandboxCommand.run(
+          const startedAt = try Clock.currentTimeMillis
+          const ran = try (SandboxCommand.run(
             machines,
             { branch, ownerId },
             callId,
             call,
             Duration.seconds(Math.min(seconds + 15, stepWaitSeconds)),
-          ).pipe(Effect.mapError(() => new AgentCliFailed({ reason: "lost" })))
-          const durationMs = (yield* Clock.currentTimeMillis) - startedAt
+          ).pipe(Effect.mapError(() => new AgentCliFailed({ reason: "lost" }))))
+          const durationMs = (try Clock.currentTimeMillis) - startedAt
           const failed = ran.timedOut ? "timeout" : ran.exitCode === 0 ? undefined : "exit"
-          const report = Agents.reportOf(agent, ran.stdout)
-          yield* Effect.logWithLevel(failed === undefined ? "Info" : "Warn")("todo.agent_cli").pipe(
+          const report = try sync(() => Agents.reportOf(agent, ran.stdout))
+          try (logWithLevel(failed === undefined ? "Info" : "Warn")("todo.agent_cli").pipe(
             Effect.annotateLogs({
               agent,
               outcome: failed ?? "done",
@@ -160,10 +161,10 @@ export const registration = <E, R>(
               inputTokens: report.inputTokens ?? 0,
               outputTokens: report.outputTokens ?? 0,
             }),
-          )
-          if (failed !== undefined) return yield* new AgentCliFailed({ reason: failed })
+          ))
+          if (failed !== undefined) throw new AgentCliFailed({ reason: failed })
           return { summary: report.summary }
-        }).pipe(
+        }.pipe(
           // What didn't reach the box: `no_machine`, `no_credential`, `lost`. Its code only.
           Effect.tapError((failure) =>
             failure instanceof AgentCliFailed && (failure.reason === "exit" || failure.reason === "timeout")
@@ -176,6 +177,5 @@ export const registration = <E, R>(
           Effect.withSpan("todo.agent_cli", { attributes: { "smithers.agent": agent } }),
         )
       )
-    })),
+    }),
   ).pipe(Layer.provide(credentials))
-
