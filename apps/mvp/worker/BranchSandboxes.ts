@@ -17,8 +17,8 @@ import * as Artifacts from "./branch/Artifacts.vibe"
 import * as Budget from "./branch/Budget.vibe"
 import { CHECKOUT_FAILURES, checkoutArgv, forgeRemote } from "./branch/Checkout.ts"
 import { Forge, proxy } from "./branch/Forge.vibe"
-import * as JobMachines from "./branch/JobMachines.ts"
-import * as Machine from "./branch/Machine.ts"
+import * as JobMachines from "./branch/JobMachines.vibe"
+import * as Machine from "./branch/Machine.vibe"
 import {
   type CommandOutcome,
   type CommandRequest,
@@ -27,7 +27,7 @@ import {
   routed,
   type SleepOutcome,
   type ToolOutcome
-} from "./branch/Machines.ts"
+} from "./branch/Machines.vibe"
 import * as RegistryEgress from "./branch/RegistryEgress.ts"
 import {
   type Attachment,

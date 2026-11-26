@@ -23,7 +23,7 @@ import {
   statusContextOf,
 } from "../../src/features/pulls/contract.ts"
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
-import { Machines } from "../branch/Machines.ts"
+import { Machines } from "../branch/Machines.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { classify, withToken } from "../github/Calls.ts"
 import { type Repository, repositoryOf } from "../github/Config.ts"

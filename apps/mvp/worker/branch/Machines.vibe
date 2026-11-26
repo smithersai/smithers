@@ -1,5 +1,5 @@
 import { type SandboxCommand, SandboxTools } from "@smthrs/sandbox"
-import { Context, Effect, Schema } from "effect"
+import { Context, Schema } from "effect"
 import { ToolResult } from "../../src/features/sandbox/results.ts"
 import { checkoutDetails, CheckoutFailed, CheckoutOutcome, type SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "./Sandboxes.ts"
 
@@ -91,10 +91,7 @@ export class Machines extends Context.Service<
       ownerId: string,
       callId: string,
       call: SandboxTools.Call,
-    ) => Effect.Effect<
-      Ran,
-      SandboxTools.ToolRefused | SandboxTools.ToolLost | SandboxUnavailable | SandboxStartTimedOut | CheckoutFailed
-    >
+    ) => Ran!(SandboxTools.ToolRefused | SandboxTools.ToolLost | SandboxUnavailable | SandboxStartTimedOut | CheckoutFailed)
     /**
      * The commands person `ownerId` starts detached in the branch's machine, as their own user
      * (`SandboxCommand.Commands`): what a `sandbox/Command` job runs a command with (worker/flows/SandboxCommand.ts).
@@ -117,49 +114,41 @@ export class Machines extends Context.Service<
       generation: number,
       idleMs: number,
       machine?: string,
-    ) => Effect.Effect<SleepOutcome, SandboxUnavailable>
+    ) => SleepOutcome!SandboxUnavailable
   }
 >()("@smthrs/mvp/branch/Machines") {}
 
 
 /** A tool call's outcome on the machine as the tool's success, or its typed failure (`Machines.tool`). */
-export const ranOf = (
+export const ranOf = effect (
   outcome: ToolOutcome,
-): Effect.Effect<
-  Ran,
-  SandboxTools.ToolRefused | SandboxTools.ToolLost | SandboxUnavailable | SandboxStartTimedOut | CheckoutFailed
-> =>
-  outcome._tag === "Done"
-    ? Effect.succeed<Ran>({ result: outcome.result, generation: outcome.generation })
-    : outcome._tag === "Refused"
-    ? Effect.fail(new SandboxTools.ToolRefused({ reason: outcome.reason }))
-    : outcome._tag === "Lost"
-    ? Effect.fail(new SandboxTools.ToolLost())
-    : outcome._tag === "CheckoutFailed"
-    ? Effect.fail(new CheckoutFailed(checkoutDetails(outcome)))
-    : outcome._tag === "Waiting"
-    ? Effect.fail(new SandboxUnavailable({ reason: "waiting" }))
-    : Effect.fail(outcome.reason === "start_timeout" ? new SandboxStartTimedOut() : new SandboxUnavailable({ reason: "exec" }))
+): Ran!(SandboxTools.ToolRefused | SandboxTools.ToolLost | SandboxUnavailable | SandboxStartTimedOut | CheckoutFailed) => {
+  if (outcome._tag === "Done") return { result: outcome.result, generation: outcome.generation }
+  if (outcome._tag === "Refused") throw new SandboxTools.ToolRefused({ reason: outcome.reason })
+  if (outcome._tag === "Lost") throw new SandboxTools.ToolLost()
+  if (outcome._tag === "CheckoutFailed") throw new CheckoutFailed(try sync(() => checkoutDetails(outcome)))
+  if (outcome._tag === "Waiting") throw new SandboxUnavailable({ reason: "waiting" })
+  if (outcome.reason === "start_timeout") throw new SandboxStartTimedOut()
+  throw new SandboxUnavailable({ reason: "exec" })
+}
 
 /**
  * A command operation's answer that isn't the one it asked for, as the typed failure `SandboxCommand.Commands`
  * answers: a refusal, a lost command, a refused checkout, a start that timed out, else a machine that couldn't answer.
  */
-const commandFailure = (outcome: CommandOutcome) =>
-  outcome._tag === "Refused"
-    ? new SandboxTools.ToolRefused({ reason: outcome.reason })
-    : outcome._tag === "Lost"
-    ? new SandboxTools.ToolLost()
-    : outcome._tag === "CheckoutFailed"
-    ? new CheckoutFailed(checkoutDetails(outcome))
-    : outcome._tag === "ToolUnavailable"
-    ? new SandboxTools.ToolUnavailable({
+const failCommand = effect (outcome: CommandOutcome) => {
+  if (outcome._tag === "Refused") throw new SandboxTools.ToolRefused({ reason: outcome.reason })
+  if (outcome._tag === "Lost") throw new SandboxTools.ToolLost()
+  if (outcome._tag === "CheckoutFailed") throw new CheckoutFailed(try sync(() => checkoutDetails(outcome)))
+  if (outcome._tag === "ToolUnavailable") {
+    throw new SandboxTools.ToolUnavailable({
       code: outcome.code,
       ...(outcome.exitCode === undefined ? {} : { exitCode: outcome.exitCode }),
     })
-    : outcome._tag === "Unavailable" && outcome.reason === "start_timeout"
-    ? new SandboxStartTimedOut()
-    : new SandboxUnavailable({ reason: outcome._tag === "Waiting" ? "waiting" : "exec" })
+  }
+  if (outcome._tag === "Unavailable" && outcome.reason === "start_timeout") throw new SandboxStartTimedOut()
+  throw new SandboxUnavailable({ reason: outcome._tag === "Waiting" ? "waiting" : "exec" })
+}
 
 /**
  * The commands (`SandboxCommand.Commands`) over `ask`, which runs one operation on a branch's machine and answers its
@@ -167,29 +156,29 @@ const commandFailure = (outcome: CommandOutcome) =>
  * generation's `sandbox/Keep`. `callId` is the tool call the commands are for, which each start names.
  */
 export const commandsOver = <R>(
-  ask: (request: CommandRequest) => Effect.Effect<CommandOutcome, never, R>,
-  woken: (generation: number) => Effect.Effect<void, never, R>,
+  ask: (request: CommandRequest) => CommandOutcome!never!R,
+  woken: (generation: number) => void!never!R,
   callId?: string,
 ): SandboxCommand.Commands<MachineFailure, R> => {
   const answer = <A>(request: CommandRequest, pick: (outcome: CommandOutcome) => A | undefined) =>
-    Effect.flatMap(ask(request), (outcome) => {
+    flatMap(ask(request), effect (outcome) => {
       const picked = pick(outcome)
-      return picked === undefined ? Effect.fail(commandFailure(outcome)) : Effect.succeed(picked)
+      if (picked === undefined) return try failCommand(outcome)
+      return picked
     })
   return {
     start: (call, key) =>
       answer({ op: "start", key, call, ...(callId === undefined ? {} : { callId }) }, (outcome) =>
-        outcome._tag === "Started" ? outcome : undefined).pipe(
-        Effect.tap((outcome) => woken(outcome.generation)),
-        Effect.map((outcome) => outcome.started),
-      ),
+        outcome._tag === "Started" ? outcome : undefined)
+        |> tap(%, (outcome) => woken(outcome.generation))
+        |> map(%, (outcome) => outcome.started),
     observe: (key, options) =>
       answer(
         { op: "observe", key, ...(options?.waitMs === undefined ? {} : { waitMs: options.waitMs }) },
         (outcome) => (outcome._tag === "Observed" ? outcome.observed : undefined),
       ),
     collect: (key) => answer({ op: "collect", key }, (outcome) => (outcome._tag === "Collected" ? outcome.result : undefined)),
-    cancel: (key) => Effect.asVoid(answer({ op: "cancel", key }, (outcome) => (outcome._tag === "Cancelled" ? outcome : undefined))),
+    cancel: (key) => asVoid(answer({ op: "cancel", key }, (outcome) => (outcome._tag === "Cancelled" ? outcome : undefined))),
   }
 }
 
@@ -198,23 +187,22 @@ export const commandsOver = <R>(
  * worker/BranchSandboxes.ts): its answers as plain data, an object it couldn't reach already answered `Unavailable`.
  */
 export interface MachineObject {
-  readonly tool: (branch: SandboxBranch, ownerId: string, callId: string, call: SandboxTools.Call) => Effect.Effect<ToolOutcome>
-  readonly command: (branch: SandboxBranch, ownerId: string, request: CommandRequest) => Effect.Effect<CommandOutcome>
-  readonly sleepIfIdle: (generation: number, idleMs: number) => Effect.Effect<SleepOutcome | "unavailable">
+  readonly tool: (branch: SandboxBranch, ownerId: string, callId: string, call: SandboxTools.Call) => ToolOutcome!!
+  readonly command: (branch: SandboxBranch, ownerId: string, request: CommandRequest) => CommandOutcome!!
+  readonly sleepIfIdle: (generation: number, idleMs: number) => (SleepOutcome | "unavailable")!!
 }
 
 /**
  * Starts generation `generation`'s `sandbox/Keep` for the branch's machine (`machine` its `SandboxBranch.machine`), so
  * the keep asks the same machine; the same generation again is a no-op.
  */
-export type Keep = (branchId: string, generation: number, machine?: string) => Effect.Effect<void>
+export type Keep = (branchId: string, generation: number, machine?: string) => void!!
 
 /** The failure of every call on a machine the deployment didn't declare: nothing is woken. */
-const undeclared = (branchId: string, machine: string | undefined) =>
-  Effect.andThen(
-    Effect.logWarning("sandbox.machine").pipe(Effect.annotateLogs({ branchId, machine, outcome: "undeclared" })),
-    Effect.fail(new SandboxUnavailable({ reason: "undeclared" })),
-  )
+const undeclared = effect (branchId: string, machine: string | undefined) => {
+  try annotateLogs(logWarning("sandbox.machine"), { branchId, machine, outcome: "undeclared" })
+  throw new SandboxUnavailable({ reason: "undeclared" })
+}
 
 /**
  * `Machines` over the deployment's machines (docs/features/ci.md#machines): each call goes to the object of the
@@ -238,21 +226,18 @@ export const routed = (
       callId,
     )
   },
-  tool: (branch, ownerId, callId, call) =>
-    Effect.suspend(() => {
-      const object = objectOf(branch.branchId, branch.machine)
-      if (object === undefined) return undeclared(branch.branchId, branch.machine)
-      return Effect.flatMap(object.tool(branch, ownerId, callId, call), (outcome) =>
-        Effect.andThen(
-          outcome._tag === "Done" ? keep(branch.branchId, outcome.generation, branch.machine) : Effect.void,
-          ranOf(outcome),
-        ))
-    }),
-  sleepIfIdle: (branchId, generation, idleMs, machine) =>
-    Effect.suspend(() => {
-      const object = objectOf(branchId, machine)
-      if (object === undefined) return undeclared(branchId, machine)
-      return Effect.flatMap(object.sleepIfIdle(generation, idleMs), (outcome) =>
-        outcome === "unavailable" ? Effect.fail(new SandboxUnavailable({ reason: "exec" })) : Effect.succeed(outcome))
-    }),
+  tool: effect (branch, ownerId, callId, call) => {
+    const object = objectOf(branch.branchId, branch.machine)
+    if (object === undefined) return try undeclared(branch.branchId, branch.machine)
+    const outcome = try object.tool(branch, ownerId, callId, call)
+    if (outcome._tag === "Done") try keep(branch.branchId, outcome.generation, branch.machine)
+    return try ranOf(outcome)
+  },
+  sleepIfIdle: effect (branchId, generation, idleMs, machine) => {
+    const object = objectOf(branchId, machine)
+    if (object === undefined) return try undeclared(branchId, machine)
+    const outcome = try object.sleepIfIdle(generation, idleMs)
+    if (outcome === "unavailable") throw new SandboxUnavailable({ reason: "exec" })
+    return outcome
+  },
 })

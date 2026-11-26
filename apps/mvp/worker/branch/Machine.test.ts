@@ -15,7 +15,7 @@ import { join } from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
 import { SANDBOX_USER } from "../../src/features/terminal/contract.ts"
 import * as Box from "../test/box.ts"
-import * as Machine from "./Machine.ts"
+import * as Machine from "./Machine.vibe"
 import { provisionArgv, userOf } from "./Users.ts"
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "smthrs-machine-")))

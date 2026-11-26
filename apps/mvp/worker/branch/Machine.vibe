@@ -1,8 +1,8 @@
 import { type Sandbox, SandboxTools } from "@smthrs/sandbox"
-import { Cause, Clock, Duration, Effect, Metric, Ref } from "effect"
+import { Cause, Clock, Duration, Metric, Ref } from "effect"
 import { SANDBOX_USER } from "../../src/features/terminal/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
-import type { CommandOutcome, CommandRequest, SleepOutcome, ToolOutcome } from "./Machines.ts"
+import type { CommandOutcome, CommandRequest, SleepOutcome, ToolOutcome } from "./Machines.vibe"
 import { provisionArgv, userOf } from "./Users.ts"
 
 // What a branch's machine does for its tools and its lifecycle, over any host (decision 0005 §2-§3,
@@ -25,11 +25,11 @@ import { provisionArgv, userOf } from "./Users.ts"
 
 /** The object's durable storage, as the machine uses it. */
 export interface Store<R> {
-  readonly get: <A>(key: string) => Effect.Effect<A | undefined, never, R>
-  readonly put: (key: string, value: unknown) => Effect.Effect<void, never, R>
-  readonly delete: (key: string) => Effect.Effect<unknown, never, R>
+  readonly get: <A>(key: string) => (A | undefined)!!R
+  readonly put: (key: string, value: unknown) => void!!R
+  readonly delete: (key: string) => unknown!!R
   /** Every entry whose key starts with `prefix`. */
-  readonly list: <A>(prefix: string) => Effect.Effect<ReadonlyMap<string, A>, never, R>
+  readonly list: <A>(prefix: string) => ReadonlyMap<string, A>!!R
 }
 
 /** One branch's machine as its object holds it. */
@@ -39,12 +39,12 @@ export interface Box<R> {
   /** The work the machine admitted that hasn't answered yet, and whether a sleep is stopping it (`admit`). */
   readonly uses: Ref.Ref<Uses>
   /** A session on the running container as `user`, in /workspace. */
-  readonly sessionAs: (user: string) => Effect.Effect<Sandbox.Session, never, R>
+  readonly sessionAs: (user: string) => Sandbox.Session!!R
   /** Runs `argv` as `user`: its exit code. */
-  readonly run: (argv: Array<string>, user: string) => Effect.Effect<number, unknown, R>
-  readonly running: Effect.Effect<boolean, unknown, R>
+  readonly run: (argv: Array<string>, user: string) => number!unknown!R
+  readonly running: boolean!unknown!R
   /** Stops the container; its disk goes with it. */
-  readonly destroy: Effect.Effect<void, unknown, R>
+  readonly destroy: void!unknown!R
   readonly storage: Store<R>
 }
 
@@ -61,17 +61,13 @@ export const unused: Uses = { open: 0, stopping: false }
  * Runs `work` as use of the machine, so a sleep never stops the machine under it (`sleepIfIdle`). Work that comes
  * while a sleep is stopping the machine doesn't run: it answers `stopped`, and its caller asks again.
  */
-export const admit = <A, E, R>(box: Box<R>, work: Effect.Effect<A, E, R>, stopped: A): Effect.Effect<A, E, R> =>
-  Effect.uninterruptibleMask((restore) =>
-    Effect.flatMap(
-      Ref.modify(box.uses, (uses): [boolean, Uses] =>
-        uses.stopping ? [false, uses] : [true, { ...uses, open: uses.open + 1 }]),
-      (admitted) =>
-        admitted
-          ? restore(work).pipe(Effect.ensuring(Ref.update(box.uses, (uses) => ({ ...uses, open: uses.open - 1 }))))
-          : Effect.succeed(stopped),
-    )
-  )
+export const admit = <A, E, R>(box: Box<R>, work: A!E!R, stopped: A): A!E!R =>
+  uninterruptibleMask((restoreWork) => effect {
+    const admitted = try Ref.modify(box.uses, (uses): [boolean, Uses] =>
+      uses.stopping ? [false, uses] : [true, { ...uses, open: uses.open + 1 }])
+    if (!admitted) return stopped
+    return try ensuring(restoreWork(work), Ref.update(box.uses, (uses) => ({ ...uses, open: uses.open - 1 })))
+  })
 
 /**
  * How long the object remembers which generation started a command (`run:<call id>`): far past `sandbox/Call`'s
@@ -90,12 +86,11 @@ const startedOf = (value: RunStarted | number | undefined): RunStarted | undefin
   typeof value === "number" ? { generation: value, at: 0 } : value
 
 /** Drops every command record older than `RUN_RECORD_MS`, as a new command is recorded. */
-const dropOldRuns = <R>(box: Box<R>, now: number) =>
-  Effect.gen(function* () {
-    for (const [key, value] of yield* box.storage.list<RunStarted | number>("run:")) {
-      if (now - (typeof value === "number" ? 0 : value.at) > RUN_RECORD_MS) yield* box.storage.delete(key)
-    }
-  })
+const dropOldRuns = effect <R>(box: Box<R>, now: number) => {
+  for (const [key, value] of try box.storage.list<RunStarted | number>("run:")) {
+    if (now - (typeof value === "number" ? 0 : value.at) > RUN_RECORD_MS) try box.storage.delete(key)
+  }
+}
 
 /** Where a person's commands keep their fences and results: in their own home, outside the checkout. */
 export const callsDirectory = (user: string): string => `/home/${user}/.smithers/calls`
@@ -127,13 +122,15 @@ export const checkpoints = Metric.counter("smithers_sandbox_checkpoints", {
   incremental: true,
 })
 
-const counted = (op: "save" | "restore", outcome: string, failure?: SandboxTools.ToolRefused | SandboxTools.ToolUnavailable) =>
-  Effect.andThen(
-    Metric.update(Metric.withAttributes(checkpoints, { op, outcome }), 1),
-    Effect.logWithLevel(outcome === "saved" || outcome === "restored" || outcome === "none" || outcome === "job" ? "Info" : "Warn")(
-      `sandbox.checkpoint.${op}`,
-    ).pipe(Effect.annotateLogs({ outcome, ...failureOf(failure) })),
-  )
+const counted = effect (
+  op: "save" | "restore",
+  outcome: string,
+  failure?: SandboxTools.ToolRefused | SandboxTools.ToolUnavailable,
+) => {
+  try Metric.update(Metric.withAttributes(checkpoints, { op, outcome }), 1)
+  const level = outcome === "saved" || outcome === "restored" || outcome === "none" || outcome === "job" ? "Info" : "Warn"
+  try annotateLogs(logWithLevel(level)(`sandbox.checkpoint.${op}`), { outcome, ...failureOf(failure) })
+}
 
 /** What a log line says about a checkpoint's failure: the provider's code, and the script step's exit code. */
 const failureOf = (failure: SandboxTools.ToolRefused | SandboxTools.ToolUnavailable | undefined) =>
@@ -145,11 +142,13 @@ const failureOf = (failure: SandboxTools.ToolRefused | SandboxTools.ToolUnavaila
  * Records that the machine was used and its working copy should be saved at the next ask (`sleepIfIdle`), as a
  * terminal comes or goes: the save runs in the ask's own request, never the closing socket's.
  */
-export const saveLater = <R>(box: Box<R>) => Effect.andThen(touch(box), box.storage.put("saveDue", true))
+export const saveLater = <R>(box: Box<R>) => andThen(touch(box), box.storage.put("saveDue", true))
 
 /** Records that the machine was used now: a call, or a terminal coming or going. */
-export const touch = <R>(box: Box<R>) =>
-  Effect.flatMap(Clock.currentTimeMillis, (now) => box.storage.put("activeAt", now))
+export const touch = effect <R>(box: Box<R>) => {
+  const now = try Clock.currentTimeMillis
+  try box.storage.put("activeAt", now)
+}
 
 /**
  * Saves the working copy of generation `generation` in the object's storage, once that generation's restore has run,
@@ -157,32 +156,32 @@ export const touch = <R>(box: Box<R>) =>
  * (not restored yet, or no checkout), `too_large` or `failed`.
  */
 export const save = <R>(box: Box<R>, generation: number) =>
-  Effect.gen(function* () {
-    if ((yield* box.storage.get<number>("restored")) !== generation) return "skipped" as const
-    if ((yield* box.storage.get<{ readonly kind?: string }>("branch"))?.kind === "job") return "skipped" as const
-    const session = yield* box.sessionAs(SANDBOX_USER)
-    const captured = yield* Effect.result(SandboxTools.checkpoint(session))
+  effect {
+    if ((try box.storage.get<number>("restored")) !== generation) return "skipped" as const
+    if ((try box.storage.get<{ readonly kind?: string }>("branch"))?.kind === "job") return "skipped" as const
+    const session = try box.sessionAs(SANDBOX_USER)
+    const captured = try result(SandboxTools.checkpoint(session))
     if (captured._tag === "Failure") {
       const error = captured.failure
       const outcome = error._tag === "@smthrs/sandbox/SandboxTools/ToolRefused"
         ? error.reason === "too_large" ? "too_large" as const : "skipped" as const
         : "failed" as const
-      yield* counted("save", outcome, error)
+      try counted("save", outcome, error)
       return outcome
     }
     const { bundle, head, patch } = captured.success
     const blob = new Uint8Array(patch.byteLength + bundle.byteLength)
     blob.set(patch)
     blob.set(bundle, patch.byteLength)
-    const before = yield* box.storage.get<Saved>("checkpoint")
-    const seq = Math.max(before?.seq ?? 0, (yield* box.storage.get<number>("seq")) ?? 0) + 1
-    yield* box.storage.put("seq", seq)
+    const before = try box.storage.get<Saved>("checkpoint")
+    const seq = Math.max(before?.seq ?? 0, (try box.storage.get<number>("seq")) ?? 0) + 1
+    try box.storage.put("seq", seq)
     const pieces = Math.ceil(blob.byteLength / CHUNK_BYTES)
     // The new pieces first, then the record: until it switches, the record names the previous checkpoint's pieces.
     for (let index = 0; index < pieces; index++) {
-      yield* box.storage.put(pieceKey(seq, index), blob.slice(index * CHUNK_BYTES, (index + 1) * CHUNK_BYTES))
+      try box.storage.put(pieceKey(seq, index), blob.slice(index * CHUNK_BYTES, (index + 1) * CHUNK_BYTES))
     }
-    yield* box.storage.put("checkpoint", {
+    try box.storage.put("checkpoint", {
       generation,
       head,
       seq,
@@ -193,14 +192,14 @@ export const save = <R>(box: Box<R>, generation: number) =>
     // Keep the active checkpoint and quarantined checkpoints; reclaim pieces from interrupted saves too.
     // Repeating this after a crash is safe, including a crash during cleanup itself.
     const retained = new Set([seq])
-    for (const record of (yield* box.storage.list<Saved>("stranded:")).values()) retained.add(record.seq)
-    for (const key of (yield* box.storage.list<Uint8Array>("checkpoint:")).keys()) {
+    for (const record of (try box.storage.list<Saved>("stranded:")).values()) retained.add(record.seq)
+    for (const key of (try box.storage.list<Uint8Array>("checkpoint:")).keys()) {
       const sequence = Number(key.split(":")[1])
-      if (!retained.has(sequence)) yield* box.storage.delete(key)
+      if (!retained.has(sequence)) try box.storage.delete(key)
     }
-    yield* counted("save", "saved")
+    try counted("save", "saved")
     return "saved" as const
-  }).pipe(Effect.withSpan("sandbox.checkpoint.save", { attributes: { "smithers.sandbox.generation": generation } }))
+  } |> withSpan(%, "sandbox.checkpoint.save", { attributes: { "smithers.sandbox.generation": generation } })
 
 /**
  * Whether a restore's failure is the machine not answering, which a later wake retries, rather than a checkpoint that
@@ -219,30 +218,30 @@ const isTransient = (failure: SandboxTools.ToolRefused | SandboxTools.ToolUnavai
  *   `stranded:<seq>`, pieces and all, so no later save overwrites it, and the machine stays usable.
  */
 export const restore = <R>(box: Box<R>, generation: number) =>
-  Effect.gen(function* () {
-    if ((yield* box.storage.get<number>("restored")) === generation) return "done" as const
+  effect {
+    if ((try box.storage.get<number>("restored")) === generation) return "done" as const
     // A job's machine is throwaway (docs/features/ci.md#jobs): nothing is restored into it and, never marked restored,
     // nothing is saved from it, so its release never waits on a checkpoint of a checkout nobody will open again.
-    if ((yield* box.storage.get<{ readonly kind?: string }>("branch"))?.kind === "job") {
-      yield* counted("restore", "job")
+    if ((try box.storage.get<{ readonly kind?: string }>("branch"))?.kind === "job") {
+      try counted("restore", "job")
       return "job" as const
     }
-    const saved = yield* box.storage.get<Saved>("checkpoint")
+    const saved = try box.storage.get<Saved>("checkpoint")
     let outcome: string = "none"
     let failure: SandboxTools.ToolRefused | SandboxTools.ToolUnavailable | undefined
     if (saved !== undefined && saved.generation < generation) {
       const blob = new Uint8Array(saved.bytes)
       for (let index = 0; index < saved.pieces; index++) {
-        blob.set((yield* box.storage.get<Uint8Array>(pieceKey(saved.seq, index))) ?? new Uint8Array(), index * CHUNK_BYTES)
+        blob.set((try box.storage.get<Uint8Array>(pieceKey(saved.seq, index))) ?? new Uint8Array(), index * CHUNK_BYTES)
       }
       const patchBytes = saved.bytes - (saved.bundleBytes ?? 0)
-      const session = yield* box.sessionAs(SANDBOX_USER)
-      const restored = yield* Effect.result(
+      const session = try box.sessionAs(SANDBOX_USER)
+      const restored = try result(
         SandboxTools.restore(session, { head: saved.head, patch: blob.subarray(0, patchBytes), bundle: blob.subarray(patchBytes) }),
       )
       if (restored._tag === "Failure" && isTransient(restored.failure)) {
-        yield* counted("restore", "unavailable", restored.failure)
-        return yield* Effect.fail(restored.failure)
+        try counted("restore", "unavailable", restored.failure)
+        throw restored.failure
       }
       outcome = restored._tag === "Success"
         ? "restored"
@@ -251,32 +250,30 @@ export const restore = <R>(box: Box<R>, generation: number) =>
         : "failed"
       if (restored._tag === "Failure") {
         failure = restored.failure
-        yield* box.storage.put(`stranded:${saved.seq}`, saved)
-        yield* box.storage.put("seq", Math.max((yield* box.storage.get<number>("seq")) ?? 0, saved.seq))
-        yield* box.storage.delete("checkpoint")
+        try box.storage.put(`stranded:${saved.seq}`, saved)
+        try box.storage.put("seq", Math.max((try box.storage.get<number>("seq")) ?? 0, saved.seq))
+        try box.storage.delete("checkpoint")
       }
     }
-    yield* box.storage.put("restored", generation)
-    yield* counted("restore", outcome, failure)
+    try box.storage.put("restored", generation)
+    try counted("restore", outcome, failure)
     return outcome
-  }).pipe(Effect.withSpan("sandbox.checkpoint.restore", { attributes: { "smithers.sandbox.generation": generation } }))
+  } |> withSpan(%, "sandbox.checkpoint.restore", { attributes: { "smithers.sandbox.generation": generation } })
 
 /** The next write's number: one more than the last write's, kept in the object's storage across generations. */
-const numbered = <R>(box: Box<R>) =>
-  Effect.gen(function* () {
-    const sequence = ((yield* box.storage.get<number>("writeSequence")) ?? 0) + 1
-    yield* box.storage.put("writeSequence", sequence)
-    return sequence
-  })
+const numbered = effect <R>(box: Box<R>) => {
+  const sequence = ((try box.storage.get<number>("writeSequence")) ?? 0) + 1
+  try box.storage.put("writeSequence", sequence)
+  return sequence
+}
 
 /** Runs the write `run` unless another is running, which leaves it unavailable to try again. */
-const oneWriteAtATime = <R>(box: Box<R>, run: Effect.Effect<ToolOutcome, never, R>) =>
-  Effect.uninterruptibleMask((restore) =>
-    Effect.flatMap(Ref.getAndSet(box.writing, true), (busy) =>
-      busy
-        ? Effect.succeed<ToolOutcome>({ _tag: "Unavailable" })
-        : restore(run).pipe(Effect.ensuring(Ref.set(box.writing, false))))
-  )
+const oneWriteAtATime = <R>(box: Box<R>, run: ToolOutcome!!R) =>
+  uninterruptibleMask((restoreRun) => effect {
+    const busy = try Ref.getAndSet(box.writing, true)
+    if (busy) return { _tag: "Unavailable" } as const
+    return try ensuring(restoreRun(run), Ref.set(box.writing, false))
+  })
 
 /**
  * Runs `call` on generation `generation` as person `ownerId`'s own user, made on first use, then saves the working
@@ -290,28 +287,29 @@ export const tool = <R>(
     readonly call: SandboxTools.Call
     readonly generation: number
   },
-): Effect.Effect<ToolOutcome, never, R> =>
-  Effect.gen(function* () {
-    const user = userOf(options.ownerId)
-    if ((yield* box.run(provisionArgv(user), "root")) !== 0) return { _tag: "Unavailable" } as const
-    const session = yield* box.sessionAs(user)
+): ToolOutcome!!R =>
+  effect {
+    const user = try sync(() => userOf(options.ownerId))
+    const provision = try sync(() => provisionArgv(user))
+    if ((try box.run(provision, "root")) !== 0) return { _tag: "Unavailable" } as const
+    const session = try box.sessionAs(user)
     // A command's fence lives on the machine's own disk, which a restart loses. The object remembers the generation it
     // started each command on, for RUN_RECORD_MS, so a command an earlier generation started settles lost and never
     // runs again (0005's MachineLost): its effects went with that machine, and its result may have too.
     if (options.call.tool === "run") {
-      const started = startedOf(yield* box.storage.get<RunStarted | number>(`run:${options.callId}`))
+      const started = startedOf(try box.storage.get<RunStarted | number>(`run:${options.callId}`))
       if (started !== undefined && started.generation !== options.generation) return { _tag: "Lost" } as const
       if (started === undefined) {
-        const now = yield* Clock.currentTimeMillis
-        yield* dropOldRuns(box, now)
-        yield* box.storage.put(`run:${options.callId}`, { generation: options.generation, at: now } satisfies RunStarted)
+        const now = try Clock.currentTimeMillis
+        try dropOldRuns(box, now)
+        try box.storage.put(`run:${options.callId}`, { generation: options.generation, at: now } satisfies RunStarted)
       }
     }
-    yield* touch(box)
-    const ran = yield* Effect.result(
+    try touch(box)
+    const ran = try result(
       SandboxTools.execute(session, options.call, { callId: options.callId, callsDirectory: callsDirectory(user) }),
     )
-    yield* touch(box)
+    try touch(box)
     if (ran._tag === "Failure") {
       const error = ran.failure
       return error._tag === "@smthrs/sandbox/SandboxTools/ToolRefused"
@@ -320,20 +318,17 @@ export const tool = <R>(
         ? { _tag: "Lost" } as const
         : { _tag: "Unavailable" } as const
     }
-    const result = ran.success.tool === "write" ? { ...ran.success, sequence: yield* numbered(box) } : ran.success
-    if (SandboxTools.mutates(options.call.tool)) yield* save(box, options.generation)
-    return { _tag: "Done", result, generation: options.generation } as const
-  }).pipe(
-    Effect.catchCause((cause) =>
-      Effect.as(
-        Effect.logWarning("sandbox.object.tool").pipe(Effect.annotateLogs({ errorCode: codeOf(Cause.squash(cause)) })),
-        { _tag: "Unavailable" } as const,
-      )
-    ),
-    (run: Effect.Effect<ToolOutcome, never, R>) => options.call.tool === "write" ? oneWriteAtATime(box, run) : run,
-    (run) => admit(box, run, { _tag: "Unavailable" } as const),
-    Effect.withSpan("sandbox.object.tool", { attributes: { "smithers.sandbox.tool": options.call.tool } }),
-  )
+    const value = ran.success.tool === "write" ? { ...ran.success, sequence: try numbered(box) } : ran.success
+    if (try sync(() => SandboxTools.mutates(options.call.tool))) try save(box, options.generation)
+    return { _tag: "Done", result: value, generation: options.generation } as const
+  }
+  |> catchCause(%, (cause) =>
+    logWarning("sandbox.object.tool")
+    |> annotateLogs(%, { errorCode: codeOf(Cause.squash(cause)) })
+    |> as(%, { _tag: "Unavailable" } as const))
+  |> (options.call.tool === "write" ? oneWriteAtATime(box, %) : %)
+  |> admit<ToolOutcome, never, R>(box, %, { _tag: "Unavailable" })
+  |> withSpan(%, "sandbox.object.tool", { attributes: { "smithers.sandbox.tool": options.call.tool } })
 
 /** A tool's failure as the plain data a command operation answers. */
 const failedCommand = (error: SandboxTools.ToolFailure): CommandOutcome =>
@@ -361,36 +356,39 @@ const failedCommand = (error: SandboxTools.ToolFailure): CommandOutcome =>
 export const command = <R>(
   box: Box<R>,
   options: { readonly ownerId: string; readonly request: CommandRequest; readonly generation: number | undefined },
-): Effect.Effect<CommandOutcome, never, R> =>
-  Effect.suspend(() => {
+): CommandOutcome!!R =>
+  suspend(() => {
     // Where the operation is, so the line of one that failed or hung says where.
     let stage: CommandStage = "provision"
-    return Effect.gen(function* () {
+    const run = effect {
       const { generation, request } = options
-      const user = userOf(options.ownerId)
+      const user = try sync(() => userOf(options.ownerId))
       const starting = request.op === "start" && generation !== undefined
-      if (starting && (yield* bounded(box.run(provisionArgv(user), "root"))) !== 0) return { _tag: "Unavailable" } as const
+      if (starting) {
+        const provision = try sync(() => provisionArgv(user))
+        if ((try bounded(box.run(provision, "root"))) !== 0) return { _tag: "Unavailable" } as const
+      }
       stage = "record"
       // Read after the provisioning's exec, during which the object takes other requests: a cancel that came then is
       // seen.
-      let started = startedOf(yield* box.storage.get<RunStarted | number>(`run:${request.key}`))
+      let started = startedOf(try box.storage.get<RunStarted | number>(`run:${request.key}`))
       if (starting) {
         if (
           started === undefined && request.callId !== undefined &&
-          (yield* box.storage.get<RunStarted | number>(`run:${request.callId}`)) !== undefined
+          (try box.storage.get<RunStarted | number>(`run:${request.callId}`)) !== undefined
         ) {
           return { _tag: "Lost" } as const
         }
         if (started === undefined) {
-          started = { generation, at: yield* Clock.currentTimeMillis }
-          yield* dropOldRuns(box, started.at)
-          yield* box.storage.put(`run:${request.key}`, started)
+          started = { generation, at: try Clock.currentTimeMillis }
+          try dropOldRuns(box, started.at)
+          try box.storage.put(`run:${request.key}`, started)
         }
       }
       if (generation === undefined || started?.generation !== generation) {
         // Generation 0 is none: a key cancelled before it started stays gone.
         if (request.op === "cancel" && started === undefined) {
-          yield* box.storage.put(`run:${request.key}`, { generation: 0, at: yield* Clock.currentTimeMillis } satisfies RunStarted)
+          try box.storage.put(`run:${request.key}`, { generation: 0, at: try Clock.currentTimeMillis } satisfies RunStarted)
         }
         return request.op === "observe"
           ? { _tag: "Observed", observed: { state: "lost" } } as const
@@ -399,58 +397,53 @@ export const command = <R>(
           : { _tag: "Lost" } as const
       }
       stage = "session"
-      const session = yield* bounded(box.sessionAs(user))
+      const session = try bounded(box.sessionAs(user))
       const at = { key: request.key, callsDirectory: callsDirectory(user) }
-      yield* touch(box)
+      try touch(box)
       stage = "script"
-      const ran = yield* bounded(Effect.result(
+      const ran = try bounded(result(
         request.op === "start"
-          ? Effect.map(SandboxTools.start(session, request.call, at), (value): CommandOutcome => ({
+          ? map(SandboxTools.start(session, request.call, at), (value): CommandOutcome => ({
             _tag: "Started",
             started: value,
             generation,
           }))
           : request.op === "observe"
-          ? Effect.map(
+          ? map(
             SandboxTools.observe(session, { ...at, waitMs: request.waitMs }),
             (observed): CommandOutcome => ({ _tag: "Observed", observed }),
           )
           : request.op === "collect"
-          ? Effect.map(SandboxTools.collect(session, at), (result): CommandOutcome => ({ _tag: "Collected", result }))
-          : Effect.as(SandboxTools.cancel(session, at), { _tag: "Cancelled" } as const),
+          ? map(SandboxTools.collect(session, at), (result): CommandOutcome => ({ _tag: "Collected", result }))
+          : as(SandboxTools.cancel(session, at), { _tag: "Cancelled" } as const),
       ))
       if (ran._tag === "Failure") return failedCommand(ran.failure)
       if (request.op === "collect") {
         stage = "save"
-        yield* save(box, generation)
+        try save(box, generation)
       }
       return ran.success
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.as(
-          Effect.logWarning("sandbox.object.command").pipe(Effect.annotateLogs({
+    }
+    return effect {
+      const guarded = catchCause(run, (cause) => {
+        const error = Cause.squash(cause)
+        return logWarning("sandbox.object.command")
+          |> annotateLogs(%, {
             op: options.request.op,
             stage,
-            errorCode: Cause.isTimeoutError(Cause.squash(cause)) ? "timeout" : codeOf(Cause.squash(cause)),
-          })),
-          { _tag: "Unavailable" } as const,
-        )
-      ),
-      (run) => admit(box, run, { _tag: "Unavailable" } as const),
+            errorCode: Cause.isTimeoutError(error) ? "timeout" : codeOf(error),
+          })
+          |> as(%, { _tag: "Unavailable" } as const)
+      })
       // Each operation's line says what it answered and how long the box took, so a slow start or probe shows which.
-      Effect.timed,
-      Effect.flatMap(([took, outcome]) =>
-        Effect.as(
-          Effect.logInfo("sandbox.object.command").pipe(Effect.annotateLogs({
-            op: options.request.op,
-            outcome: outcome._tag === "Observed" ? outcome.observed.state : outcome._tag,
-            durationMs: Duration.toMillis(took),
-          })),
-          outcome,
-        )
-      ),
-      Effect.withSpan("sandbox.object.command", { attributes: { "smithers.sandbox.command.op": options.request.op } }),
-    )
+      const [took, outcome] = try timed(admit(box, guarded, { _tag: "Unavailable" } as const))
+      try annotateLogs(logInfo("sandbox.object.command"), {
+        op: options.request.op,
+        outcome: outcome._tag === "Observed" ? outcome.observed.state : outcome._tag,
+        durationMs: Duration.toMillis(took),
+      })
+      return outcome
+    } |> withSpan(%, "sandbox.object.command", { attributes: { "smithers.sandbox.command.op": options.request.op } })
   })
 
 /** Where a command operation is: provisioning the person's user, reading its record, opening a session, its script. */
@@ -464,7 +457,7 @@ type CommandStage = "provision" | "record" | "session" | "script" | "save"
  */
 export const COMMAND_EXEC_MS = 2 * 60_000
 
-const bounded = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.timeout(effect, COMMAND_EXEC_MS)
+const bounded = <A, E, R>(run: A!E!R) => timeout(run, COMMAND_EXEC_MS)
 
 /**
  * What a person's processes are doing: exit 3 when a terminal had input within `$1` seconds, exit 4 when a non-root process
@@ -504,43 +497,43 @@ export const sleepDecisions = Metric.counter("smithers_sandbox_sleep_decisions",
  * `busy` too, so the machine never stops under new work: after saving it reads `activeAt` and probes again, and after
  * that probe it stops only when no admitted work runs (`admit`) and `activeAt` still hasn't moved.
  */
-export const sleepIfIdle = <R>(box: Box<R>, generation: number, idleMs: number): Effect.Effect<SleepOutcome, unknown, R> =>
-  Effect.gen(function* () {
-    const decision = (outcome: SleepOutcome, reason: string, fields: Record<string, number | string> = {}) =>
-      Effect.as(Effect.andThen(
-        Metric.update(Metric.withAttributes(sleepDecisions, { outcome, reason }), 1),
-        Effect.logInfo("sandbox.object.sleep").pipe(Effect.annotateLogs({ generation, idleMs, outcome, reason, ...fields })),
-      ), outcome)
-    if ((yield* box.storage.get<number>("generation")) !== generation || !(yield* box.running)) {
-      return yield* decision("gone", "generation_gone")
+export const sleepIfIdle = <R>(box: Box<R>, generation: number, idleMs: number): SleepOutcome!unknown!R =>
+  effect {
+    const decision = effect (outcome: SleepOutcome, reason: string, fields: Record<string, number | string> = {}) => {
+      try Metric.update(Metric.withAttributes(sleepDecisions, { outcome, reason }), 1)
+      try annotateLogs(logInfo("sandbox.object.sleep"), { generation, idleMs, outcome, reason, ...fields })
+      return outcome
+    }
+    if ((try box.storage.get<number>("generation")) !== generation || !(try box.running)) {
+      return try decision("gone", "generation_gone")
     }
     // A save a closed terminal left due runs now, whether or not the machine then sleeps.
-    if ((yield* box.storage.get<boolean>("saveDue")) === true) {
-      yield* box.storage.delete("saveDue")
-      yield* save(box, generation)
+    if ((try box.storage.get<boolean>("saveDue")) === true) {
+      try box.storage.delete("saveDue")
+      try save(box, generation)
     }
-    const now = yield* Clock.currentTimeMillis
-    const activeAt = yield* box.storage.get<number>("activeAt")
+    const now = try Clock.currentTimeMillis
+    const activeAt = try box.storage.get<number>("activeAt")
     const inactiveMs = now - (activeAt ?? 0)
-    if (inactiveMs < idleMs) return yield* decision("busy", "recent_use", { inactiveMs })
+    if (inactiveMs < idleMs) return try decision("busy", "recent_use", { inactiveMs })
     const probe = ["sh", "-c", PROBE, "probe", String(Math.ceil(idleMs / 1000))]
     const probed = (exitCode: number, phase: string) => decision("busy",
       exitCode === 3 ? "terminal_input" : exitCode === 4 ? "process" : "probe_failed", { exitCode, phase })
-    const before = yield* box.run(probe, "root")
-    if (before !== 0) return yield* probed(before, "before_save")
-    const saved = yield* save(box, generation)
-    if (saved !== "saved" && saved !== "skipped") return yield* decision("busy", "checkpoint", { checkpoint: saved })
-    if ((yield* box.storage.get<number>("activeAt")) !== activeAt) return yield* decision("busy", "use_during_save")
-    const after = yield* box.run(probe, "root")
-    if (after !== 0) return yield* probed(after, "after_save")
+    const before = try box.run(probe, "root")
+    if (before !== 0) return try probed(before, "before_save")
+    const saved = try save(box, generation)
+    if (saved !== "saved" && saved !== "skipped") return try decision("busy", "checkpoint", { checkpoint: saved })
+    if ((try box.storage.get<number>("activeAt")) !== activeAt) return try decision("busy", "use_during_save")
+    const after = try box.run(probe, "root")
+    if (after !== 0) return try probed(after, "after_save")
     // The probe can't see work that came while it ran. Work still running, or work that came and answered since the
     // probe before it, keeps the machine awake; from here until it stops, no new work is admitted (`admit`).
-    const stopping = yield* Ref.modify(box.uses, (uses): [boolean, Uses] =>
+    const stopping = try Ref.modify(box.uses, (uses): [boolean, Uses] =>
       uses.open === 0 && !uses.stopping ? [true, { ...uses, stopping: true }] : [false, uses])
-    if (!stopping) return yield* decision("busy", "use_during_probe")
-    return yield* Effect.gen(function* () {
-      if ((yield* box.storage.get<number>("activeAt")) !== activeAt) return yield* decision("busy", "use_during_probe")
-      yield* box.destroy
-      return yield* decision("slept", "idle", { inactiveMs })
-    }).pipe(Effect.ensuring(Ref.update(box.uses, (uses) => ({ ...uses, stopping: false }))))
-  }).pipe(Effect.withSpan("sandbox.object.sleep", { attributes: { "smithers.sandbox.generation": generation } }))
+    if (!stopping) return try decision("busy", "use_during_probe")
+    return try ensuring(effect {
+      if ((try box.storage.get<number>("activeAt")) !== activeAt) return try decision("busy", "use_during_probe")
+      try box.destroy
+      return try decision("slept", "idle", { inactiveMs })
+    }, Ref.update(box.uses, (uses) => ({ ...uses, stopping: false })))
+  } |> withSpan(%, "sandbox.object.sleep", { attributes: { "smithers.sandbox.generation": generation } })

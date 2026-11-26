@@ -4,7 +4,7 @@ import { Cause, Config, Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { DEFAULT_IDLE_SECONDS, KEEP_EVERY_SECONDS } from "../../src/features/sandbox/contract.ts"
 import * as Budget from "../branch/Budget.vibe"
-import { Machines } from "../branch/Machines.ts"
+import { Machines } from "../branch/Machines.vibe"
 import { codeOf } from "../ErrorCode.ts"
 
 // `sandbox/Keep { branchId, generation }` (decision 0005 §2, docs/features/sandbox-tools.md#sleep-and-wake): keeps one

@@ -8,8 +8,8 @@ import { RemoteChildProcessSpawner, type Sandbox } from "@smthrs/sandbox"
 import { Effect, Ref, Stream } from "effect"
 import { spawn } from "node:child_process"
 import type { Readable } from "node:stream"
-import * as Machine from "../branch/Machine.ts"
-import { commandsOver, Machines, ranOf } from "../branch/Machines.ts"
+import * as Machine from "../branch/Machine.vibe"
+import { commandsOver, Machines, ranOf } from "../branch/Machines.vibe"
 
 const { ProviderError } = RemoteChildProcessSpawner
 

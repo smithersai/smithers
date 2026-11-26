@@ -2,7 +2,7 @@
 // configuration as ChatApi and the flow host read them.
 import { ConfigProvider, Effect, Exit } from "effect"
 import { describe, expect, test } from "vitest"
-import * as JobMachines from "./JobMachines.ts"
+import * as JobMachines from "./JobMachines.vibe"
 
 const read = <A, E>(effect: Effect.Effect<A, E>, env: Record<string, string>) =>
   Effect.runPromiseExit(effect.pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(env))))

@@ -1,4 +1,4 @@
-import { Config, Effect, Option, Schema } from "effect"
+import { Config, Option } from "effect"
 
 // The job machines a deployment declares beside its default one (decision 0145 (c), docs/features/ci.md#machines): each
 // is its own container class, with its own image and instance type, and its own Durable Object class
@@ -10,8 +10,7 @@ import { Config, Effect, Option, Schema } from "effect"
 export const GATE = "gate"
 
 /** Cloudflare Containers' named instance types, as `SANDBOX_INSTANCE` and `GATE_INSTANCE` take them. */
-export const Instance = Schema.Literals(["lite", "basic", "standard-1", "standard-2", "standard-3", "standard-4"])
-export type Instance = typeof Instance.Type
+export schema Instance = "lite" | "basic" | "standard-1" | "standard-2" | "standard-3" | "standard-4"
 
 /**
  * `GATE_IMAGE`: the gate machine's prebuilt image, a registry reference by digest
@@ -28,10 +27,10 @@ export const gateInstance = Config.schema(Instance, "GATE_INSTANCE").pipe(Config
  * The job machines this deployment declared, by name: `["gate"]` with GATE_IMAGE, else `[]`. A plan that names any
  * other machine is refused before it runs.
  */
-export const declared: Effect.Effect<ReadonlyArray<string>, Config.ConfigError> = Effect.map(
-  gateImage,
-  Option.match({ onNone: () => [], onSome: () => [GATE] }),
-)
+export const declared: ReadonlyArray<string>!Config.ConfigError = effect {
+  const image = try gateImage
+  return Option.isSome(image) ? [GATE] : []
+}
 
 /** Whether `machine` is the default machine (none named) or one the deployment declared. */
 export const isDeclared = (machines: ReadonlyArray<string>, machine: string | undefined): boolean =>

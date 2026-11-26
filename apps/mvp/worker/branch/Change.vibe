@@ -1,6 +1,6 @@
 import { SandboxTools } from "@smthrs/sandbox"
 import { Schema } from "effect"
-import { Machines } from "./Machines.ts"
+import { Machines } from "./Machines.vibe"
 import type { SandboxBranch } from "./Sandboxes.ts"
 
 // A working copy's change, read whole from its branch's machine (docs/features/branch-publish.md#publish,

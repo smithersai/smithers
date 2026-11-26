@@ -9,7 +9,7 @@ import { savedMarkOf, savedOf } from "../../src/features/coedit/saved.ts"
 import { codeOf } from "../ErrorCode.ts"
 import type { Repository } from "../github/Config.ts"
 import { Forge } from "./Forge.vibe"
-import { Machines } from "./Machines.ts"
+import { Machines } from "./Machines.vibe"
 import type { BranchRow, Publication } from "./Publish.vibe"
 import type { SandboxBranch } from "./Sandboxes.ts"
 

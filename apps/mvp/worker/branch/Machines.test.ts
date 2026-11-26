@@ -12,7 +12,7 @@ import {
   routed,
   type SleepOutcome,
   ToolOutcome,
-} from "./Machines.ts"
+} from "./Machines.vibe"
 import { CheckoutFailed, SandboxStartTimedOut, SandboxUnavailable } from "./Sandboxes.ts"
 
 const result = { tool: "read", path: "a", content: "a", bytes: 1, truncated: false } as const
@@ -93,6 +93,19 @@ describe("commandsOver", () => {
     const cancel = over({ _tag: "Cancelled" })
     expect(Exit.isSuccess(await Effect.runPromiseExit(cancel.commands.cancel("k")))).toBe(true)
     expect(cancel.requests).toEqual([{ op: "cancel", key: "k" }])
+  })
+
+  test("observe forwards the requested wait including zero, and omits an unspecified wait", async () => {
+    const waiting = over({ _tag: "Observed", observed: { state: "running", pid: 9 } })
+    for (const options of [{}, { waitMs: 0 }, { waitMs: 250 }]) {
+      expect(await Effect.runPromise(waiting.commands.observe("k", options))).toEqual({ state: "running", pid: 9 })
+    }
+    expect(waiting.requests).toEqual([
+      { op: "observe", key: "k" },
+      { op: "observe", key: "k", waitMs: 0 },
+      { op: "observe", key: "k", waitMs: 250 },
+    ])
+    expect(waiting.woken).toEqual([])
   })
 
   test("an outcome that isn't the operation's own is its typed failure, and wakes nothing", async () => {

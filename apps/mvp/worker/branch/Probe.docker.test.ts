@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from "node:child_process"
 import { sandboxImage } from "../test/sandboxImage.globalSetup.ts"
 import { asPerson } from "../test/sandboxPersons.ts"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
-import { PROBE } from "./Machine.ts"
+import { PROBE } from "./Machine.vibe"
 
 const image = sandboxImage
 

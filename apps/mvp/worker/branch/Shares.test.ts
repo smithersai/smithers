@@ -18,7 +18,7 @@ import {
   tracked,
 } from "../test/branch.ts"
 import { eventually, recorded, testFile } from "../test/harness.ts"
-import { Directory, DirectoryUnavailable } from "./People.ts"
+import { Directory, DirectoryUnavailable } from "./People.vibe"
 import * as Shares from "./Shares.ts"
 import * as Conversations from "./Conversations.vibe"
 

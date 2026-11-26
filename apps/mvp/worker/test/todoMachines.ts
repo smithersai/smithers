@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { onTestFinished } from "vitest"
-import { Machines } from "../branch/Machines.ts"
+import { Machines } from "../branch/Machines.vibe"
 import type { SandboxBranch } from "../branch/Sandboxes.ts"
 import type { ScriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as Box from "./box.ts"

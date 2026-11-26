@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Layer, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 
 // The people a branch can be shared with, by the GitHub login its owner types (docs/features/branch-workspace.md#sharing):
@@ -21,7 +21,7 @@ export class DirectoryUnavailable extends Schema.TaggedError<DirectoryUnavailabl
 /** Finds people by login, ignoring case as GitHub does. */
 export class Directory extends Context.Service<
   Directory,
-  { readonly find: (login: string) => Effect.Effect<Option.Option<Person>, DirectoryUnavailable> }
+  { readonly find: (login: string) => Option.Option<Person>!DirectoryUnavailable }
 >()("@smthrs/mvp/branch/Directory") {
   /**
    * The people who signed in to this deployment, over `database`, after `known`: local development's people, who have
@@ -31,25 +31,23 @@ export class Directory extends Context.Service<
     database: Layer.Layer<SqlClient.SqlClient, E, R>,
     known: ReadonlyArray<Person> = [],
   ) =>
-    Layer.effect(
-      Directory,
-      Effect.map(Effect.context<R>(), (context) =>
-        Directory.of({
-          find: (login) => {
-            const wanted = login.toLowerCase()
-            const local = known.find((person) => person.login.toLowerCase() === wanted)
-            if (local !== undefined) return Effect.succeed(Option.some(local))
-            return Effect.gen(function* () {
-              const sql = yield* SqlClient.SqlClient
-              const [row] = yield* sql<Person>`
-                SELECT id::text AS id, github_login AS login FROM people WHERE lower(github_login) = ${wanted}`
-              return Option.fromNullishOr(row)
-            }).pipe(
-              Effect.provide(database),
-              Effect.provide(context),
-              Effect.mapError(() => new DirectoryUnavailable()),
-            )
-          },
-        })),
-    )
+    Layer.effect(Directory, effect {
+      const services = try context<R>()
+      return Directory.of({
+        find: effect (login) => {
+          const wanted = login.toLowerCase()
+          const local = known.find((person) => person.login.toLowerCase() === wanted)
+          if (local !== undefined) return Option.some(local)
+          const read = effect {
+            const sql = try SqlClient.SqlClient
+            const [row] = try sql<Person>`
+              SELECT id::text AS id, github_login AS login FROM people WHERE lower(github_login) = ${wanted}`
+            return Option.fromNullishOr(row)
+          }
+          return (read |> Effect.provide(%, database) |> Effect.provide(%, services)) catch effect () => {
+            throw new DirectoryUnavailable()
+          }
+        },
+      })
+    })
 }

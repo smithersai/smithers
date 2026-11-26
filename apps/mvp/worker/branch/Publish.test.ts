@@ -25,7 +25,7 @@ import { testFile } from "../test/harness.ts"
 import { machines as todoMachines } from "../test/todoMachines.ts"
 import * as Conversations from "./Conversations.vibe"
 import { Forge } from "./Forge.vibe"
-import { Machines } from "./Machines.ts"
+import { Machines } from "./Machines.vibe"
 import * as Publish from "./Publish.vibe"
 
 const runtime = testFile("branch_publish")

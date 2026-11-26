@@ -2,7 +2,7 @@ import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Action, Interpreter } from "@smthrs/flow"
 import { CiJob, type SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer, Metric } from "effect"
-import { Machines } from "../branch/Machines.ts"
+import { Machines } from "../branch/Machines.vibe"
 import { machineOf } from "./CiJobIdentity.ts"
 
 // A CI job's machine (docs/features/ci.md#jobs): `@smthrs/sandbox`'s `ci/job` runs on one throwaway branch machine per

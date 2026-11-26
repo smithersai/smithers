@@ -5,7 +5,7 @@ import { Cause, Effect, Exit, Layer } from "effect"
 import { Base64 } from "effect/encoding"
 import { describe, expect, test } from "vitest"
 import { ChangeRefused, ChangeUnavailable, collect } from "./Change.vibe"
-import { Machines } from "./Machines.ts"
+import { Machines } from "./Machines.vibe"
 
 const BASE = "a".repeat(40)
 
