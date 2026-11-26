@@ -10,7 +10,8 @@
 // It exits 0 when every step passes and 1 otherwise, and prints one line per step. medium-check.ts and full-check.ts
 // beside it are tiers 2 and 3.
 import { spawnSync } from "node:child_process"
-import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync, statSync } from "node:fs"
+import { closeSync, constants, fstatSync, lstatSync, mkdtempSync, openSync, readFileSync, readSync, realpathSync, rmSync, statSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { isAbsolute, join, relative, resolve } from "node:path"
 
 // The real checkout: every file this tier reads must resolve under it, symlinks followed, even under `--dry-run`.
@@ -114,10 +115,34 @@ interface Step {
   readonly run: () => { readonly ok: boolean; readonly detail: string }
 }
 
+// Stream subprocess output to a temp log file so wide fan-out Vitest runs (>64 MiB stdout) never hit ENOBUFS.
+const tail = (file: string, lines: number) => {
+  const size = statSync(file).size
+  const buffer = Buffer.alloc(Math.min(size, 256 * 1024))
+  const fd = openSync(file, "r")
+  try {
+    readSync(fd, buffer, 0, buffer.length, size - buffer.length)
+  } finally {
+    closeSync(fd)
+  }
+  return buffer.toString("utf8").split("\n").slice(-lines).join("\n")
+}
+
 const command = (cmd: string, args: ReadonlyArray<string>) => () => {
-  const result = spawnSync(cmd, args, { cwd: mvp, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
-  const output = `${result.stdout}${result.stderr}`
-  return { ok: result.status === 0, detail: result.status === 0 ? "" : output.split("\n").slice(-40).join("\n") }
+  const dir = mkdtempSync(join(tmpdir(), "fast-check-"))
+  const log = join(dir, "step.log")
+  const out = openSync(log, "w")
+  let closed = false
+  try {
+    const result = spawnSync(cmd, args, { cwd: mvp, stdio: ["ignore", out, out] })
+    closeSync(out)
+    closed = true
+    if (result.error) return { ok: false, detail: String(result.error) }
+    return { ok: result.status === 0, detail: result.status === 0 ? "" : tail(log, 40) }
+  } finally {
+    if (!closed) closeSync(out)
+    rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 const steps: Array<Step> = [
