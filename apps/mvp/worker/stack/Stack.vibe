@@ -1,5 +1,5 @@
 import * as ProtectedAuthority from "../ProtectedAuthority.vibe"
-import * as WriteAuthority from "../WriteAuthority.ts"
+import * as WriteAuthority from "../WriteAuthority.vibe"
 import { Clock, Context, Effect, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { foldCommit } from "./StackFeed.vibe"

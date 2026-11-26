@@ -115,6 +115,9 @@ export default defineConfig({
         "db/migrations/0005_sign_in.ts",
         // Remote flow starts and request admission (docs/features/remote-flows.md).
         "worker/Body.vibe",
+        "worker/WriteAdmission.vibe",
+        "worker/WriteAdmissionRequest.ts",
+        "worker/WriteAuthority.vibe",
         "worker/Flows.vibe",
         "db/migrations/0006_answer_parts.ts",
         // ChatApi stops answering: the browser's agent answers (docs/features/agent.md).
@@ -253,7 +256,7 @@ export default defineConfig({
         "db/migrations/0067_bug_report_errors.ts",
         // Repository feeds: the collector's writes and answers, a Maintainer's answer and the feeds' shape
         // (docs/features/feeds.md).
-        "worker/feeds/*.ts",
+        "worker/feeds/*.{ts,vibe}",
         "db/migrations/0073_feeds.ts",
         // Co-editing: the texts people edit together (docs/features/coedit.md).
         "db/migrations/0026_text_updates.ts",

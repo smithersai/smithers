@@ -1,4 +1,4 @@
-import { afterBody } from "../WriteAdmission.ts"
+import { afterBody } from "../WriteAdmission.vibe"
 import { MessagesShardBridge } from "../chat/MessagesShardBridge.ts"
 import * as ModelEndpoint from "./modelEndpoint.ts"
 import { MODEL_ROLES, type ModelRole } from "../../src/features/model/contract.ts"

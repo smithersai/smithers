@@ -7,7 +7,7 @@ import { testFile } from "../test/harness.ts"
 import { stackHarness, runs } from "./test/stack.ts"
 import * as Stack from "./Stack.vibe"
 import * as SessionStore from "../SessionStore.vibe"
-import * as WriteAuthority from "../WriteAuthority.ts"
+import * as WriteAuthority from "../WriteAuthority.vibe"
 
 const runtime = testFile("stack_commit_authority")
 const query = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(effect)

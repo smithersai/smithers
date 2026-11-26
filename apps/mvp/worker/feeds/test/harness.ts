@@ -1,4 +1,4 @@
-// Repository feeds' routes (worker/feeds/Api.ts) for the worker tests, on a test file's own schema of the compose
+// Repository feeds' routes (worker/feeds/Api.vibe) for the worker tests, on a test file's own schema of the compose
 // Postgres and through the compose Electric (`pnpm db:up`, db/TestDatabase.ts). Roles come from the real `RepoRoles` as
 // local development builds it, with each test's people's roles on each repository; a role GitHub couldn't give is an
 // injected `RepoRoles` that refuses. Every log line, span, metric and Electric request is kept.
@@ -12,7 +12,7 @@ import type * as Actor from "../../Actor.vibe"
 import { repositoryOf } from "../../github/Config.vibe"
 import * as RepoRoles from "../../github/RepoRoles.vibe"
 import { signedIn, signedOut, type testFile } from "../../test/harness.ts"
-import * as FeedsApi from "../Api.ts"
+import * as FeedsApi from "../Api.vibe"
 
 type Runtime = ReturnType<typeof testFile>
 

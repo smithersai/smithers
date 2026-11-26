@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { ROLES } from "../../src/features/auth/contract.ts"
 import * as RepoRoles from "../github/RepoRoles.vibe"
-import * as WriteAuthority from "../WriteAuthority.ts"
+import * as WriteAuthority from "../WriteAuthority.vibe"
 import { latestRole } from "../SessionStore.vibe"
 
 // The fence every Admin action on a repository's runners, agents and overflow carries (decision 0148,

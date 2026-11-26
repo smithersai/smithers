@@ -1,4 +1,4 @@
-import * as WriteAuthority from "../WriteAuthority.ts"
+import * as WriteAuthority from "../WriteAuthority.vibe"
 import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import type { ModelTier } from "../../src/features/model/contract.ts"

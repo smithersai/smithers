@@ -1,4 +1,3 @@
-import { Duration, Effect, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import type { Actor } from "./Actor.vibe"
 import { ROLES } from "../src/features/auth/contract.ts"
@@ -29,43 +28,43 @@ export const sessionOf = (actor: Actor): Session | undefined => actor.session ==
   cookieKey: actor.cookieKey ?? "legacy",
 }
 
-const checked = (live: boolean, alias: boolean) => Effect.gen(function* () {
-  yield* Effect.annotateCurrentSpan({ "write.authority.live": live, "write.authority.alias": alias })
-  if (!live) yield* Effect.logWarning("write.authority_unavailable").pipe(Effect.annotateLogs({ reason: "session_authority" }))
+const checked = effect (live: boolean, alias: boolean) => {
+  try annotateCurrentSpan({ "write.authority.live": live, "write.authority.alias": alias })
+  if (!live) try annotateLogs(logWarning("write.authority_unavailable"), { reason: "session_authority" })
   return live
-})
+}
 
 /**
  * In the writing transaction, lock the session and alias before judging either by the database's current clock.
  * Revocation then serializes with the write. A read never calls this seam; a local write makes no query.
  */
-export const holds = (session: Session | undefined) => Effect.gen(function* () {
+export const holds = (session: Session | undefined) => withSpan(effect {
   if (session === undefined) return true
-  const sql = yield* SqlClient.SqlClient
-  const [locked] = yield* sql`
+  const sql = try SqlClient.SqlClient
+  const [locked] = try sql`
     SELECT 1 FROM sessions WHERE id::text = ${session.sessionId} AND person_id::text = ${session.personId} FOR SHARE`
-  if (locked === undefined) return yield* checked(false, session.alias !== undefined)
+  if (locked === undefined) return try checked(false, session.alias !== undefined)
   if (session.alias !== undefined) {
-    const [alias] = yield* sql`
+    const [alias] = try sql`
       SELECT 1 FROM host_sessions WHERE id::text = ${session.alias} AND parent_id::text = ${session.sessionId} FOR SHARE`
-    if (alias === undefined) return yield* checked(false, true)
+    if (alias === undefined) return try checked(false, true)
   }
-  return yield* live(session)
-}).pipe(Effect.withSpan("write.authority"))
+  return try live(session)
+}, "write.authority")
 
 /** A single MVCC read for coedit; revocation can race the subsequent commit (decision 0151). */
-export const live = (session: Session | undefined) => Effect.gen(function* () {
+export const live = (session: Session | undefined) => withSpan(effect {
   if (session === undefined) return true
   const cookieKey = session.cookieKey ?? "legacy"
-  const sql = yield* SqlClient.SqlClient
-  const [row] = yield* sql<{ readonly live: boolean }>`
-    SELECT ${yield* sessionLive(sql, sql`s`, undefined, session.alias === undefined ? cookieKey : undefined)}
+  const sql = try SqlClient.SqlClient
+  const [row] = try sql<{ readonly live: boolean }>`
+    SELECT ${try sessionLive(sql, sql`s`, undefined, session.alias === undefined ? cookieKey : undefined)}
       AND (${session.alias ?? null}::text IS NULL OR (h.id IS NOT NULL
-        AND ${yield* sessionLive(sql, sql`s`, sql`h`, cookieKey)})) AS live
+        AND ${try sessionLive(sql, sql`s`, sql`h`, cookieKey)})) AS live
     FROM sessions s LEFT JOIN host_sessions h ON h.id::text = ${session.alias ?? null} AND h.parent_id = s.id
     WHERE s.id::text = ${session.sessionId} AND s.person_id::text = ${session.personId}`
-  return yield* checked(row?.live === true, session.alias !== undefined)
-}).pipe(Effect.withSpan("write.authority"))
+  return try checked(row?.live === true, session.alias !== undefined)
+}, "write.authority")
 
 /** The earliest session deadline, read under the authority locks held by this transaction. */
 export const deadline = (sql: SqlClient.SqlClient, session: Session | undefined) => session === undefined
@@ -79,16 +78,16 @@ export const deadline = (sql: SqlClient.SqlClient, session: Session | undefined)
 export class Expired extends Schema.TaggedError<Expired>()("WriteAuthorityExpired", {}) {}
 
 /** Last check after all potentially blocking writes; session/key changes serialize on the already-held locks. */
-export const requireAtCommit = (session: Session | undefined) => Effect.gen(function* () {
+export const requireAtCommit = (session: Session | undefined) => withSpan(effect {
   if (session === undefined) return
-  const sql = yield* SqlClient.SqlClient
-  const [row] = yield* sql<{ live: boolean }>`SELECT clock_timestamp() < ${deadline(sql, session)} AS live`
-  yield* Effect.annotateCurrentSpan({ "write.authority.stage": "commit" })
-  if (!(yield* checked(row?.live === true, session.alias !== undefined))) return yield* new Expired({})
-}).pipe(Effect.withSpan("write.authority"))
+  const sql = try SqlClient.SqlClient
+  const [row] = try sql<{ live: boolean }>`SELECT clock_timestamp() < ${deadline(sql, session)} AS live`
+  try annotateCurrentSpan({ "write.authority.stage": "commit" })
+  if (!(try checked(row?.live === true, session.alias !== undefined))) throw new Expired({})
+}, "write.authority")
 
 /** Fixed database bounds for a short write transaction, installed before its first lock. Postgres 17 owns the cap. */
-export const bound = Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+export const bound = flatMap(SqlClient.SqlClient, (sql) => sql`
   SELECT set_config('lock_timeout', '1s', true), set_config('statement_timeout', '2s', true),
     CASE WHEN current_setting('transaction_timeout')::interval > interval '0s'
       AND current_setting('transaction_timeout')::interval <= interval '5s'
@@ -97,7 +96,7 @@ export const bound = Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
 /** Explicit local authority is null; a missing legacy authority fails closed at delayed step execution. */
 export const Admission = Schema.optional(Schema.NullOr(Session))
 export const admitted = (authority: Session | null | undefined) =>
-  authority === undefined ? Effect.succeed(false) : holds(authority ?? undefined)
+  authority === undefined ? succeed(false) : holds(authority ?? undefined)
 
 /** Retain the scope that supplied a protected write's role, alongside its sign-in identity. */
 export const protectedOf = (actor: Actor, held: Option.Option<RepoRoles.Held> = Option.none()): Session | null => {
@@ -121,9 +120,9 @@ export const waitTimeouts = Metric.counter("smithers_write_wait_timeouts", { inc
   description: "Bounded synchronous write waits that expired, by stage" })
 
 /** One bounded wait, with no detached work or renewed timer. Interruption cancels the underlying operation. */
-export const wait = <A, E, R>(stage: keyof typeof WAIT_MILLIS, effect: Effect.Effect<A, E, R>) =>
-  effect.pipe(Effect.timeoutOrElse({ duration: Duration.millis(WAIT_MILLIS[stage]), orElse: () => Effect.gen(function* () {
-    yield* Metric.update(Metric.withAttributes(waitTimeouts, { stage }), 1)
-    yield* Effect.logWarning("write.wait").pipe(Effect.annotateLogs({ stage, outcome: "timeout", budgetMs: WAIT_MILLIS[stage] }))
-    return yield* new WaitExpired({ stage, code: "unavailable", retryAfterSeconds: 1 })
-  }) }))
+export const wait = <A, E, R>(stage: keyof typeof WAIT_MILLIS, effect: A!E!R) =>
+  timeoutOrElse(effect, { duration: Duration.millis(WAIT_MILLIS[stage]), orElse: effect () => {
+    try Metric.update(Metric.withAttributes(waitTimeouts, { stage }), 1)
+    try annotateLogs(logWarning("write.wait"), { stage, outcome: "timeout", budgetMs: WAIT_MILLIS[stage] })
+    throw new WaitExpired({ stage, code: "unavailable", retryAfterSeconds: 1 })
+  } })

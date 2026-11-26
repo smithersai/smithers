@@ -18,7 +18,7 @@ import {
   workStatusOf,
   type WorkStatus,
 } from "../../src/features/issues/work.ts"
-import * as WriteAuthority from "../WriteAuthority.ts"
+import * as WriteAuthority from "../WriteAuthority.vibe"
 import { bearerOf } from "../RunCredentials.vibe"
 
 // Work links' server side (decision 0147, docs/features/work-links.md): decoding a post, who may post (a Member or

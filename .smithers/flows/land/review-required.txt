@@ -36,7 +36,7 @@ apps/mvp/worker/BranchSandboxes.vibe
 # Access checks outside those areas, and what they guard
 apps/mvp/worker/*Authority.ts
 apps/mvp/worker/ProtectedAuthority.vibe
-apps/mvp/worker/WriteAuthority.ts
+apps/mvp/worker/WriteAuthority.vibe
 apps/mvp/worker/Chat.ts
 apps/mvp/worker/ModelEndpoint.ts
 apps/mvp/worker/Notifications.vibe
@@ -49,7 +49,7 @@ apps/mvp/worker/Views.vibe
 apps/mvp/worker/WebPreview.ts
 apps/mvp/worker/bugs/Api.ts
 apps/mvp/worker/domains/Api.ts
-apps/mvp/worker/feeds/Api.ts
+apps/mvp/worker/feeds/Api.vibe
 apps/mvp/worker/flows/BugReport.vibe
 apps/mvp/worker/flows/FleetAlert.ts
 apps/mvp/worker/flows/RecheckRole.vibe

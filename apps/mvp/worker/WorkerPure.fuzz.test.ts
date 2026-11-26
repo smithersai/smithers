@@ -24,7 +24,7 @@ import * as ShapeAccess from "./ShapeAccess.vibe"
 import * as SocketAccess from "./SocketAccess.vibe"
 import * as StackAccess from "./stack/Access.vibe"
 import * as Throttle from "./Throttle.vibe"
-import * as WriteAuthority from "./WriteAuthority.ts"
+import * as WriteAuthority from "./WriteAuthority.vibe"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "1000" : "300"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261122")

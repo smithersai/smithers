@@ -41,19 +41,28 @@ export const MAX_FEED_NAME_LENGTH = 200
  */
 const FEED_NAME = /^[a-z0-9_.-]+(\/[A-Za-z0-9_.:-]+)*$/
 
-/** Whether `name` is a document name. */
+/**
+ * Whether `name` is a document name.
+ * @throws {never}
+ */
 export const isFeedName = (name: string): boolean => name.length <= MAX_FEED_NAME_LENGTH && FEED_NAME.test(name)
 
 /** Whether a document is in its repository's index, which syncs eagerly: its name has no `/` (decision 0128 §5). */
 export const isIndexName = (name: string): boolean => !name.includes("/")
 
-/** A repository as feeds key it: `owner/name`, lowercased. */
+/**
+ * A repository as feeds key it: `owner/name`, lowercased.
+ * @throws {never}
+ */
 export const feedRepo = (owner: string, name: string): string => `${owner}/${name}`.toLowerCase()
 
 /** A document's id, its Electric key: `<repo>:<name>`. A repository has no `:`, so it is unique. */
 export const feedDocumentId = (repo: string, name: string): string => `${repo}:${name}`
 
-/** `repo` (`owner/name`) as a repository feeds key, or `undefined` when it isn't one. */
+/**
+ * `repo` (`owner/name`) as a repository feeds key, or `undefined` when it isn't one.
+ * @throws {never}
+ */
 export const parseFeedRepo = (repo: string): string | undefined => {
   const [owner = "", name = "", ...rest] = repo.split("/")
   return rest.length === 0 && isRepository(owner, name) ? feedRepo(owner, name) : undefined
@@ -66,7 +75,10 @@ export const feedsRoute = (owner: string, name: string) =>
 /** `GET` (the collector, by key) and `POST` (a Maintainer in person): a repository's answers. */
 export const feedAnswersRoute = (owner: string, name: string) => `${feedsRoute(owner, name)}/${ANSWERS_SEGMENT}`
 
-/** A feeds route's repository and which route it is; `undefined` for any other path. */
+/**
+ * A feeds route's repository and which route it is; `undefined` for any other path.
+ * @throws {never}
+ */
 export const parseFeedRoute = (
   path: string,
 ): { readonly owner: string; readonly name: string; readonly route: "documents" | "answers" } | undefined => {

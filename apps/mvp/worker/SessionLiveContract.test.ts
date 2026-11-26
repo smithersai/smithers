@@ -45,7 +45,7 @@ test("every SessionStore table reader is classified, and live readers use sessio
 
 // These authority paths consume session rows outside SessionStore, so the export inventory alone cannot see them.
 test("token use and notification audiences share the absolute session bound", () => {
-  for (const path of ["./github/Store.vibe", "./Notifications.vibe", "./flows/SandboxSpend.vibe", "./WriteAuthority.ts"]) {
+  for (const path of ["./github/Store.vibe", "./Notifications.vibe", "./flows/SandboxSpend.vibe", "./WriteAuthority.vibe"]) {
     const source = sourceText(new URL(path, import.meta.url))
     expect(source, path).toContain("sessionLive(")
     expect(source, path).not.toMatch(/revoked_at IS NULL AND (?:live\.)?expires_at > now\(\)/)
@@ -53,7 +53,7 @@ test("token use and notification audiences share the absolute session bound", ()
 })
 
 test("the final write checks use the shared absolute deadline", () => {
-  expect(sourceText(new URL("./WriteAuthority.ts", import.meta.url))).toContain("sessionDeadline(")
+  expect(sourceText(new URL("./WriteAuthority.vibe", import.meta.url))).toContain("sessionDeadline(")
   expect(sourceText(new URL("./runners/Fence.vibe", import.meta.url))).toContain("WriteAuthority.deadline(")
   expect(sourceText(new URL("./stack/Stack.vibe", import.meta.url))).toContain("WriteAuthority.requireAtCommit(")
  expect(sourceText(new URL("./runners/Fence.vibe", import.meta.url))).toContain("WriteAuthority.deadline(")

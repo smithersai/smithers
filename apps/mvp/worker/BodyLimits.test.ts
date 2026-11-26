@@ -31,7 +31,7 @@ import { ATTACH_ROUTE, MCP_MAX_REQUEST_BYTES, MCP_ROUTE } from "../src/features/
 import { TELEMETRY_LIMITS } from "../src/telemetry.ts"
 import { WAITLIST_JOIN_ROUTE, WAITLIST_MAX_BODY_BYTES } from "../src/features/waitlist/contract.ts"
 import * as BodyLimits from "./BodyLimits.vibe"
-import { afterBody } from "./WriteAdmission.ts"
+import { afterBody } from "./WriteAdmission.vibe"
 
 test.each(["/api/auth/handoff", "/api/auth/handoff?return=%2Fapp"])("%s has the handoff handler's 4 KiB contract", async (path) => {
   expect(await Effect.runPromise(BodyLimits.forRequest(path))).toBe(4096)

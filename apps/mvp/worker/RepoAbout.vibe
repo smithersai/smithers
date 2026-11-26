@@ -4,7 +4,7 @@ import { Clock, Config, Duration, Effect, Function, type Layer, Metric, Option, 
 import { HttpClient } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { repoId } from "../src/features/repo/contract.ts"
-import { AboutRefused, type AboutStage, graphql, rest } from "./about/GitHubRead.ts"
+import { AboutRefused, type AboutStage, graphql, rest } from "./about/GitHubRead.vibe"
 import type { AboutStore, KeptAnswer, KeptRefusal, Via } from "./about/Store.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import { appSlug, GITHUB_WEB } from "./GitHubAuth.ts"
@@ -32,12 +32,12 @@ import * as RepoMetrics from "./RepoMetrics.vibe"
 //   anonymous, so naming arbitrary repositories can't spend the App's quota. Curated public homes use the
 //   deployment read token over REST, avoiding Cloudflare's exhausted shared anonymous quota.
 // - **Few calls**: with a token, one GraphQL query and the contributors; anonymously, a slimmer REST read
-//   (worker/about/GitHubRead.ts).
+//   (worker/about/GitHubRead.vibe).
 //
 // Every read of GitHub logs `repo.about.read` and counts `repo_about_reads`: the token it used, its outcome, the
 // stage and status GitHub refused at, the rate limit left, and the parts GitHub left out. Never a token or the answer.
 
-export { AboutRefused, type AboutStage } from "./about/GitHubRead.ts"
+export { AboutRefused, type AboutStage } from "./about/GitHubRead.vibe"
 export type { Via } from "./about/Store.vibe"
 
 /**

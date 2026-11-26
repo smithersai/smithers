@@ -1,4 +1,4 @@
-import * as WriteAuthority from "../WriteAuthority.ts"
+import * as WriteAuthority from "../WriteAuthority.vibe"
 import { AgentRunner } from "@smthrs/agent"
 import { Cause, Clock, Context, Effect, type Layer, Metric, Option, Redacted, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"

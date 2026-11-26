@@ -1,4 +1,4 @@
-import * as WriteAdmission from "./WriteAdmission.ts"
+import * as WriteAdmission from "./WriteAdmission.vibe"
 // ChatApi's routes (worker/Chat.ts) as the browser calls them, against the compose Postgres in this file's own schema
 // (worker/test/harness.ts). ChatApi persists questions for attached agents to answer over MCP.
 import { Metric as OtlpMetric } from "@smthrs/observability"

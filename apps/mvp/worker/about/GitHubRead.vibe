@@ -1,6 +1,5 @@
 import { type Core, GitHub } from "@smthrs/integrations"
 import { Home } from "@smthrs/views"
-import { Data, Effect, Option, Schema } from "effect"
 import {
   ABOUT_CONTRIBUTORS,
   ABOUT_ROOT_ENTRIES,
@@ -46,13 +45,13 @@ export type AboutStage =
  * Why GitHub gave no answer: it has no such public repository (`not_found`), it rate limited the read
  * (`rate_limited`, with its wait and, uncapped, when the limit resets), or it didn't answer (`github_unavailable`).
  */
-export class AboutRefused extends Data.TaggedError("AboutRefused")<{
-  readonly code: "not_found" | "rate_limited" | "github_unavailable"
-  readonly stage: AboutStage
-  readonly upstreamStatus?: number
-  readonly retryAfterMillis?: number
-  readonly resetAtMillis?: number
-}> {}
+export error AboutRefused {
+  code: "not_found" | "rate_limited" | "github_unavailable"
+  stage: AboutStage
+  upstreamStatus?: number
+  retryAfterMillis?: number
+  resetAtMillis?: number
+}
 
 /** One read's answer, and the parts GitHub couldn't give now. */
 export interface Read {
@@ -98,11 +97,10 @@ interface Part<A> {
   readonly missing: boolean
 }
 
-const part = <A>(stage: AboutStage, effect: Effect.Effect<A, Failure>): Effect.Effect<Part<A>> =>
-  effect.pipe(
-    Effect.map((value): Part<A> => ({ stage, value, missing: false })),
-    Effect.catch((error) => Effect.succeed<Part<A>>({ stage, value: null, missing: isTransient(error) })),
-  )
+const part = effect <A>(stage: AboutStage, read: A!Failure): Part<A>!! => {
+  return map(read, (value): Part<A> => ({ stage, value, missing: false }))
+    catch (error) => ({ stage, value: null, missing: isTransient(error) })
+}
 
 /** A part not asked for, because another part's answer settled it. */
 const settled = <A>(stage: AboutStage, value: A | null): Part<A> => ({ stage, value, missing: false })
@@ -160,17 +158,17 @@ const contributorsOf = (people: typeof ContributorsJson.Type) =>
 
 /** The first page of contributors and how many there are: the page's length when it isn't full, else a count. */
 const contributors = (client: GitHub.GitHubClient.GitHubClient, base: string) =>
-  Effect.gen(function* () {
-    const list = yield* part(
+  effect {
+    const list = try part(
       "contributors",
       client.request("GET", `${base}/contributors`, undefined, { schema: ContributorsJson, query: { per_page: ABOUT_CONTRIBUTORS } }),
     )
     // A page that isn't full is the whole list, so its length is the count; GitHub counts the same people either way.
     const count = list.value !== null && list.value.length < ABOUT_CONTRIBUTORS
       ? settled("contributor_count", { total: list.value.length })
-      : yield* part("contributor_count", client.count(`${base}/contributors`))
+      : try part("contributor_count", client.count(`${base}/contributors`))
     return { list, count }
-  })
+  }
 
 const decodeCommit = Schema.decodeUnknownOption(Schema.Struct({
   sha: Schema.String,
@@ -182,16 +180,17 @@ const decodeCommit = Schema.decodeUnknownOption(Schema.Struct({
 }))
 
 /** The newest commit, from a `count` of the commits' first item. */
-const headOf = (first: unknown): AboutCommit | null =>
-  Option.match(decodeCommit(first), {
-    onNone: () => null,
-    onSome: (commit) => ({
-      sha: commit.sha,
-      message: commit.commit.message,
-      author: commit.author?.login ?? commit.commit.author?.name ?? "",
-      at: commit.commit.author?.date ?? "",
-    }),
-  })
+const headOf = (first: unknown): AboutCommit | null => {
+  const decoded = decodeCommit(first)
+  if (Option.isNone(decoded)) return null
+  const commit = decoded.value
+  return {
+    sha: commit.sha,
+    message: commit.commit.message,
+    author: commit.author?.login ?? commit.commit.author?.name ?? "",
+    at: commit.commit.author?.date ?? "",
+  }
+}
 
 /** A top folder entry as the page shows it: a folder or a file; a type GitHub may add later isn't shown. */
 const entryOf = (name: string, kind: "dir" | "file" | undefined): ReadonlyArray<AboutEntry> =>
@@ -243,16 +242,18 @@ const releaseOf = (release: typeof ReleaseJson.Type | null) =>
  * App whose installation page the answer carries.
  */
 export const rest = (client: GitHub.GitHubClient.GitHubClient, owner: string, name: string, appSlug: string) =>
-  Effect.gen(function* () {
-    const path = yield* GitHub.Repository.requireRepositoryPath(owner, name).pipe(
-      Effect.mapError(() => new AboutRefused({ code: "not_found", stage: "repository" })),
+  withSpan(effect {
+    const path = try mapError(
+      GitHub.Repository.requireRepositoryPath(owner, name),
+      () => new AboutRefused({ code: "not_found", stage: "repository" }),
     )
     const base = `/repos/${path}`
-    const repository = yield* client.request("GET", base, undefined, { schema: RepositoryJson }).pipe(
-      Effect.mapError((error) => refusalOf(error, "repository")),
+    const repository = try mapError(
+      client.request("GET", base, undefined, { schema: RepositoryJson }),
+      (error) => refusalOf(error, "repository"),
     )
-    if (repository.private === true) return yield* new AboutRefused({ code: "not_found", stage: "repository" })
-    const [languages, releases, people, readme, root, commits, branches, tags] = yield* Effect.all(
+    if (repository.private === true) throw new AboutRefused({ code: "not_found", stage: "repository" })
+    const [languages, releases, people, readme, root, commits, branches, tags] = try all(
       [
         part("languages", client.request("GET", `${base}/languages`, undefined, { schema: LanguagesJson })),
         part("releases", client.count(`${base}/releases`)),
@@ -268,13 +269,13 @@ export const rest = (client: GitHub.GitHubClient.GitHubClient, owner: string, na
     const head = commits.value === null ? null : headOf(commits.value.first)
     const rootEntries = root.value?.flatMap((entry) => entryOf(entry.name, REST_KINDS.get(entry.type))) ?? null
     // The latest release only when there are releases, and the home only when the top folder may hold it.
-    const [release, home] = yield* Effect.all(
+    const [release, home] = try all(
       [
         releases.value?.total === 0
-          ? Effect.succeed(settled<typeof ReleaseJson.Type>("release", null))
+          ? succeed(settled<typeof ReleaseJson.Type>("release", null))
           : part("release", client.request("GET", `${base}/releases/latest`, undefined, { schema: ReleaseJson })),
         head === null || (root.value !== null && !root.value.some((entry) => entry.name === ".smithers"))
-          ? Effect.succeed(settled<typeof ReadmeJson.Type>("home", null))
+          ? succeed(settled<typeof ReadmeJson.Type>("home", null))
           : part(
             "home",
             client.request("GET", `${base}/contents/${Home.path}`, undefined, { schema: ReadmeJson, query: { ref: head.sha } }),
@@ -313,7 +314,7 @@ export const rest = (client: GitHub.GitHubClient.GitHubClient, owner: string, na
       } satisfies About,
       missing: missingOf([languages, releases, people.list, people.count, readme, root, commits, branches, tags, release, home]),
     } satisfies Read
-  }).pipe(Effect.withSpan("repo.about.rest"))
+  }, "repo.about.rest")
 
 // --- GraphQL: with a token ---
 
@@ -366,7 +367,7 @@ const GraphAnswer = Schema.Struct({
   errors: Schema.optional(Schema.Array(Schema.Struct({ type: Schema.optional(Schema.String) }))),
 })
 
-const Count = Schema.Struct({ totalCount: Schema.Number })
+schema Count { readonly totalCount: number }
 
 const GraphRepository = Schema.Struct({
   nameWithOwner: Schema.String,
@@ -412,14 +413,14 @@ const decodeBlob = Schema.decodeUnknownOption(Schema.Struct({
 }))
 
 /** A blob's text as the page shows it: none when GitHub has no blob there, it is over the limit or isn't text. */
-const blobText = (raw: unknown): string | null =>
-  Option.match(decodeBlob(raw), {
-    onNone: () => null,
-    onSome: (blob) =>
-      blob.text === undefined || blob.text === null || blob.isTruncated === true || blob.byteSize > MAX_BLOB_BYTES
-        ? null
-        : textOf(new TextEncoder().encode(blob.text)) ?? null,
-  })
+const blobText = (raw: unknown): string | null => {
+  const decoded = decodeBlob(raw)
+  if (Option.isNone(decoded)) return null
+  const blob = decoded.value
+  return blob.text === undefined || blob.text === null || blob.isTruncated === true || blob.byteSize > MAX_BLOB_BYTES
+    ? null
+    : textOf(new TextEncoder().encode(blob.text)) ?? null
+}
 
 /** Git's entry types: a tree is a folder, a commit a submodule, a blob a file (a symlink included). */
 const GRAPH_KINDS = new Map<string, "dir" | "file">([["tree", "dir"], ["commit", "dir"], ["blob", "file"]])
@@ -429,25 +430,27 @@ const GRAPH_KINDS = new Map<string, "dir" | "file">([["tree", "dir"], ["commit",
  * only to one. The contributors come over REST.
  */
 export const graphql = (client: GitHub.GitHubClient.GitHubClient, owner: string, name: string, appSlug: string) =>
-  Effect.gen(function* () {
-    const path = yield* GitHub.Repository.requireRepositoryPath(owner, name).pipe(
-      Effect.mapError(() => new AboutRefused({ code: "not_found", stage: "graphql" })),
+  withSpan(effect {
+    const path = try mapError(
+      GitHub.Repository.requireRepositoryPath(owner, name),
+      () => new AboutRefused({ code: "not_found", stage: "graphql" }),
     )
-    const answer = yield* client.request("POST", "/graphql", { query: QUERY, variables: { owner, name } }, { schema: GraphAnswer })
-      .pipe(Effect.mapError((error) => refusalOf(error, "graphql")))
+    const answer = try mapError(
+      client.request("POST", "/graphql", { query: QUERY, variables: { owner, name } }, { schema: GraphAnswer }),
+      (error) => refusalOf(error, "graphql"),
+    )
     const raw = answer.data?.repository
     if (raw === null || raw === undefined) {
-      return yield* new AboutRefused(
+      throw new AboutRefused(
         answer.errors?.some((error) => error.type === "NOT_FOUND") === true
           ? { code: "not_found", stage: "graphql" }
           : { code: "github_unavailable", stage: "graphql" },
       )
     }
-    const repository = yield* Option.match(decodeGraphRepository(raw), {
-      onNone: () => Effect.fail(new AboutRefused({ code: "github_unavailable", stage: "graphql" })),
-      onSome: Effect.succeed,
-    })
-    if (repository.isPrivate) return yield* new AboutRefused({ code: "not_found", stage: "graphql" })
+    const decoded = decodeGraphRepository(raw)
+    if (Option.isNone(decoded)) throw new AboutRefused({ code: "github_unavailable", stage: "graphql" })
+    const repository = decoded.value
+    if (repository.isPrivate) throw new AboutRefused({ code: "not_found", stage: "graphql" })
     const fields = raw as Readonly<Record<string, unknown>>
     const base = `/repos/${path}`
     const entries = repository.root?.entries ?? null
@@ -455,14 +458,15 @@ export const graphql = (client: GitHub.GitHubClient.GitHubClient, owner: string,
     const found = README_PATHS.find((candidate) => Option.isSome(decodeBlob(fields[readmeAlias(candidate)])))
     const named = entries?.find((entry) => entry.type === "blob" && isReadme(entry.name))?.name
     const unread = found !== ".github/README.md" && named !== undefined && !README_PATHS.includes(named as never)
-    const [people, readme] = yield* Effect.all(
+    const [people, readme] = try all(
       [
         contributors(client, base),
         unread
-          ? part("readme", client.request("GET", `${base}/readme`, undefined, { schema: ReadmeJson })).pipe(
-            Effect.map((read) => ({ ...read, value: read.value === null ? null : { path: read.value.path, text: base64Text(read.value) } })),
+          ? map(
+            part("readme", client.request("GET", `${base}/readme`, undefined, { schema: ReadmeJson })),
+            (read) => ({ ...read, value: read.value === null ? null : { path: read.value.path, text: base64Text(read.value) } }),
           )
-          : Effect.succeed(settled("readme", found === undefined ? null : { path: found, text: blobText(fields[readmeAlias(found)]) })),
+          : succeed(settled("readme", found === undefined ? null : { path: found, text: blobText(fields[readmeAlias(found)]) })),
       ] as const,
       { concurrency: "unbounded" },
     )
@@ -514,4 +518,4 @@ export const graphql = (client: GitHub.GitHubClient.GitHubClient, owner: string,
       } satisfies About,
       missing: missingOf([people.list, people.count, readme]),
     } satisfies Read
-  }).pipe(Effect.withSpan("repo.about.graphql"))
+  }, "repo.about.graphql")

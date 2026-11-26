@@ -1,4 +1,4 @@
-import { afterBody } from "../../WriteAdmission.ts"
+import { afterBody } from "../../WriteAdmission.vibe"
 import * as GitHubCreation from "../../branch/GitHubCreation.vibe"
 import { BranchRoles } from "../../branch/Access.vibe"
 // The git loop's routes (worker/github/Api.ts) for the tests, on a test file's own schema of the compose Postgres and

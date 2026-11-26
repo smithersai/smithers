@@ -1,4 +1,4 @@
-import * as WriteAuthority from "../WriteAuthority.ts"
+import * as WriteAuthority from "../WriteAuthority.vibe"
 import { itemShape } from "./ItemShape.ts"
 import * as MirrorRefresh from "../MirrorRefresh.vibe"
 import { COMMITMENTS } from "../../src/features/issues/lifecycle.ts"

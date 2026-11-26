@@ -1,7 +1,5 @@
 import { digestSync } from "@smthrs/crypto"
 import { ShapeProxy } from "@smthrs/effect-electric"
-import { Core } from "@smthrs/integrations"
-import { Cause, Clock, Config, Effect, type Layer, Metric, Option, Schema } from "effect"
 import * as SchemaIssue from "effect/SchemaIssue"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -27,6 +25,7 @@ import { AnswerRequest, type FeedAnswer, IngestRequest } from "../../src/feature
 import { type Actor, refusesPersonOnly, Sessions } from "../Actor.vibe"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
+import { keyMatches } from "./KeyMatch.ts"
 import { repositoryOf } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.vibe"
 import * as ShapeAccess from "../ShapeAccess.vibe"
@@ -75,30 +74,28 @@ const KEY_PAIR = /^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)=([0-9A-Fa-f]{64})$/
  * `FEED_KEYS` (`owner/name=<sha256 hex>,...`) as each repository's digest; `None` when unset or blank, which turns the
  * collector's routes off. A malformed list fails the deployment's config, never a request.
  */
-export const feedKeys = Effect.gen(function* () {
-  const text = yield* Config.option(Config.String(FEED_KEYS_VARIABLE))
+export const feedKeys = effect {
+  const text = try Config.option(Config.String(FEED_KEYS_VARIABLE))
   if (Option.isNone(text) || text.value.trim() === "") return Option.none<FeedKeys>()
   const keys = new Map<string, string>()
   for (const pair of text.value.split(",")) {
-    const match = KEY_PAIR.exec(pair.trim())
-    const repo = match === null ? undefined : parseFeedRepo(match[1]!)
-    if (match === null || repo === undefined) {
-      return yield* Effect.fail(new Config.ConfigError(
+    const found = KEY_PAIR.exec(pair.trim())
+    const repo = found === null ? undefined : parseFeedRepo(found[1]!)
+    if (found === null || repo === undefined) {
+      throw new Config.ConfigError(
         new Schema.SchemaError(
           new SchemaIssue.InvalidValue({ message: `${FEED_KEYS_VARIABLE} is not a comma-separated list of owner/name=<sha256 hex>` }),
         ),
-      ))
+      )
     }
-    keys.set(repo, match[2]!.toLowerCase())
+    keys.set(repo, found[2]!.toLowerCase())
   }
   return Option.some<FeedKeys>(keys)
-})
+}
 
 const encoder = new TextEncoder()
 
-/** Whether `presented`'s SHA-256 is `digest`, compared in constant time. */
-export const keyMatches = (presented: string, digest: string): boolean =>
-  Core.Signature.constantTimeEqual(encoder.encode(digestSync(presented)), encoder.encode(digest))
+export { keyMatches } from "./KeyMatch.ts"
 
 /** Whether `actor` may read a repository's `maintainers` documents and answer for it: Maintainer or Admin, in person. */
 export const mayMaintain = (actor: Actor, role: Actor["role"]): boolean =>
@@ -134,37 +131,37 @@ export const checkSet = (set: IngestRequest["set"]): Refusal | undefined => {
  * visibility equal the stored ones is left alone, so Electric sends nothing for it.
  */
 export const ingest = (repo: string, set: IngestRequest["set"]) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
+  effect {
+    const sql = try SqlClient.SqlClient
     const upserts = Object.entries(set).flatMap(([name, document]) =>
       document === null ? [] : [{ id: feedDocumentId(repo, name), name, visibility: document.visibility, body: document.body }]
     )
     const deletes = Object.entries(set).flatMap(([name, document]) => (document === null ? [name] : []))
-    return yield* sql.withTransaction(Effect.gen(function* () {
-      const written = upserts.length === 0 ? [] : yield* sql<{ readonly id: string }>`
+    return try sql.withTransaction(effect {
+      const written = upserts.length === 0 ? [] : try sql<{ readonly id: string }>`
         INSERT INTO feed_documents (id, repo, name, visibility, body, updated_at)
         SELECT input.id, ${repo}, input.name, input.visibility, COALESCE(input.body, 'null'::jsonb), now()
-        FROM jsonb_to_recordset(${JSON.stringify(upserts)}::jsonb) AS input(id text, name text, visibility text, body jsonb)
+        FROM jsonb_to_recordset(${try sync(() => JSON.stringify(upserts))}::jsonb) AS input(id text, name text, visibility text, body jsonb)
         ON CONFLICT (id) DO UPDATE SET visibility = EXCLUDED.visibility, body = EXCLUDED.body, updated_at = now()
         WHERE feed_documents.body IS DISTINCT FROM EXCLUDED.body
           OR feed_documents.visibility IS DISTINCT FROM EXCLUDED.visibility
         RETURNING id`
-      const deleted = deletes.length === 0 ? [] : yield* sql<{ readonly id: string }>`
+      const deleted = deletes.length === 0 ? [] : try sql<{ readonly id: string }>`
         DELETE FROM feed_documents
-        WHERE repo = ${repo} AND name IN (SELECT jsonb_array_elements_text(${JSON.stringify(deletes)}::jsonb))
+        WHERE repo = ${repo} AND name IN (SELECT jsonb_array_elements_text(${try sync(() => JSON.stringify(deletes))}::jsonb))
         RETURNING id`
       return { written: written.length, unchanged: upserts.length - written.length, deleted: deleted.length }
-    }))
-  })
+    })
+  }
 
 /** `repo`'s answers after `after`, oldest first, at most `ANSWERS_MAX`, against the `SqlClient` in context. */
 export const answersAfter = (repo: string, after: number) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+  flatMap(SqlClient.SqlClient, (sql) =>
     sql<{ readonly seq: string } & Omit<FeedAnswer, "seq">>`
       SELECT seq::text AS seq, id::text AS id, item, choice, text, login,
         to_char(at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS at
       FROM feed_answers WHERE repo = ${repo} AND feed_answers.seq > ${after} ORDER BY feed_answers.seq LIMIT ${ANSWERS_MAX}`.pipe(
-      Effect.map((rows) => rows.map((row): FeedAnswer => ({ ...row, seq: Number(row.seq) }))),
+      map((rows) => rows.map((row): FeedAnswer => ({ ...row, seq: Number(row.seq) }))),
     ))
 
 /**
@@ -176,20 +173,20 @@ export const answersAfter = (repo: string, after: number) =>
  * commits later.
  */
 export const record = (repo: string, answer: AnswerRequest, actor: Actor) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+  flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(effect {
     const person = actor.subject.id
-    yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${`feed-answers:${repo}`}, 0))`
-    const written = yield* sql<{ readonly seq: string }>`
+    try sql`SELECT pg_advisory_xact_lock(hashtextextended(${`feed-answers:${repo}`}, 0))`
+    const written = try sql<{ readonly seq: string }>`
       INSERT INTO feed_answers (id, repo, item, choice, text, person_id, login)
       VALUES (${answer.id}, ${repo}, ${answer.item}, ${answer.choice ?? null}, ${answer.text ?? null}, ${person},
         ${actor.login ?? null})
       ON CONFLICT (id) DO NOTHING
       RETURNING seq::text AS seq`
     if (written[0] !== undefined) return Number(written[0].seq)
-    const [held] = yield* sql<{ readonly seq: string; readonly mine: boolean }>`
+    const [held] = try sql<{ readonly seq: string; readonly mine: boolean }>`
       SELECT seq::text AS seq, person_id = ${person} AND repo = ${repo} AS mine FROM feed_answers WHERE id = ${answer.id}`
     return held!.mine ? Number(held!.seq) : "conflict" as const
-  })))
+  }))
 
 const decodeIngest = Schema.decodeUnknownEffect(Schema.fromJsonString(IngestRequest))
 const decodeAnswer = Schema.decodeUnknownEffect(Schema.fromJsonString(AnswerRequest))
@@ -219,10 +216,11 @@ export const make = <E, R, X>(
   roles: RepoRoles.RepoRoles<X>,
   options: Options = {},
 ) =>
-  Effect.gen(function* () {
-    const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
-    const listed = yield* feedKeys
-    const development = options.developmentKey === undefined ? undefined : digestSync(options.developmentKey)
+  effect {
+    const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+    const listed = try feedKeys
+    const developmentKey = options.developmentKey
+    const development = developmentKey === undefined ? undefined : try orDie(Effect.try(() => digestSync(developmentKey)))
     /** Repository `repo`'s key's digest, `undefined` when it has none; `None` when the collector's routes are off. */
     const keys = Option.isSome(listed) || development === undefined
       ? Option.map(listed, (map) => (repo: string) => map.get(repo))
@@ -230,27 +228,27 @@ export const make = <E, R, X>(
 
     /** Whether `actor` is a Maintainer or Admin of `repo` in person; any role `roles` can't give now is no. */
     const maintains = (actor: Actor, repo: string) =>
-      actor.act !== undefined ? Effect.succeed(false) : roles.resolve(actor, repositoryOf(repo)).pipe(
-        Effect.map((resolved) => mayMaintain(actor, resolved.role)),
-        Effect.orElseSucceed(() => false),
+      actor.act !== undefined ? succeed(false) : roles.resolve(actor, repositoryOf(repo)).pipe(
+        map((resolved) => mayMaintain(actor, resolved.role)),
+        orElseSucceed(() => false),
       )
 
     /** `GET /api/shapes/feeds?repo=<owner>/<name>[&name=<document>]`. */
     const shape = ShapeProxy.make({
       ...connection,
-      shape: Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
+      shape: effect {
+        const request = try HttpServerRequest.HttpServerRequest
         const query = new URL(request.url, "http://localhost").searchParams
         const named = query.get("name")
         const repo = parseFeedRepo(query.get("repo") ?? "")
         const valid = repo !== undefined && (named === null || isFeedName(named))
-        const actor = yield* ShapeAccess.actor
+        const actor = try ShapeAccess.actor
         // The role is decided once per request, failing closed to the public documents.
-        const audience = valid && Option.isSome(actor) && (yield* maintains(actor.value, repo))
+        const audience = valid && Option.isSome(actor) && (try maintains(actor.value, repo))
           ? "maintainers"
           : "public"
-        yield* Metric.update(Metric.withAttributes(audiences, { audience, single: String(named !== null) }), 1)
-        yield* Effect.annotateCurrentSpan({ "feed.audience": audience, "feed.single": named !== null })
+        try Metric.update(Metric.withAttributes(audiences, { audience, single: String(named !== null) }), 1)
+        try annotateCurrentSpan({ "feed.audience": audience, "feed.single": named !== null })
         const visible = audience === "maintainers" ? "" : " AND visibility = 'public'"
         const params: Record<string, string> = { "1": valid ? repo : NO_REPO }
         if (named !== null) params["2"] = named
@@ -260,15 +258,15 @@ export const make = <E, R, X>(
           params,
           columns: [...FEED_DOCUMENT_COLUMNS],
         }
-      }),
+      },
       name: "feed.shape",
       metric: shapes,
     })
 
     /** The three routes under `/api/repos/<owner>/<name>/feeds`. */
-    const route = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      const startedAt = yield* Clock.currentTimeMillis
+    const route = effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      const startedAt = try Clock.currentTimeMillis
       const target = parseFeedRoute(request.url.split("?")[0]!)!
       const repo = feedRepo(target.owner, target.name)
       const op = target.route === "documents" ? "ingest" : request.method === "GET" ? "answers" : "answer"
@@ -278,54 +276,56 @@ export const make = <E, R, X>(
         return HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
       }
       /** Whether the request carries `repo`'s feed key: `undefined` when the collector's routes are off. */
-      const keyed = () => {
+      const keyed = effect () => {
         if (Option.isNone(keys)) return undefined
         const digest = keys.value(repo)
         const header = request.headers["authorization"]
         const presented = header?.startsWith("Bearer ") === true ? header.slice("Bearer ".length).trim() : ""
-        return digest !== undefined && presented !== "" && keyMatches(presented, digest)
+        return digest !== undefined && presented !== "" && (try orDie(Effect.try(() => keyMatches(presented, digest))))
       }
-      const response = yield* Effect.gen(function* () {
+      const respond = effect {
         const allowed = target.route === "documents" ? "POST" : "GET, POST"
         if (request.method !== "POST" && !(target.route === "answers" && request.method === "GET")) {
           return HttpServerResponse.empty({ status: 405, headers: { allow: allowed, ...noStore } })
         }
         if (op === "ingest") {
-          const holds = keyed()
+          const holds = try keyed()
           if (holds === undefined) return refuse(503, "off")
           if (!holds) return refuse(401, "authentication")
-          const body = yield* readBounded(request, MAX_FEED_REQUEST_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
-            Effect.result,
-          )
+          const body = try result(readBounded(request, MAX_FEED_REQUEST_BYTES, (bytes) => (fields.bytes = bytes)))
           if (body._tag === "Failure") {
             return body.failure.reason === "too_large" ? refuse(413, "too_large") : refuse(400, "invalid")
           }
           // A decoding failure would quote the body: it is dropped whole.
-          const decoded = yield* decodeIngest(body.success).pipe(Effect.option)
+          const decoded = try option(decodeIngest(body.success))
           if (Option.isNone(decoded)) return refuse(400, "invalid")
           const refused = checkSet(decoded.value.set)
           fields.documents = Object.keys(decoded.value.set).length
           if (refused !== undefined) return refuse(refused === "too_large" ? 413 : 400, refused)
-          const done = yield* ingest(repo, decoded.value.set).pipe(Effect.provide(database))
-          Object.assign(fields, done, { outcome: "ingested" })
-          return HttpServerResponse.jsonUnsafe(done, { status: 200, headers: noStore })
+          provide database {
+            const done = try ingest(repo, decoded.value.set)
+            Object.assign(fields, done, { outcome: "ingested" })
+            return HttpServerResponse.jsonUnsafe(done, { status: 200, headers: noStore })
+          }
         }
         if (op === "answers") {
-          const holds = keyed()
+          const holds = try keyed()
           if (holds === undefined) return refuse(503, "off")
           if (!holds) return refuse(401, "authentication")
           const after = afterOf(new URL(request.url, "http://chat.invalid").searchParams.get("after"))
           if (after === undefined) return refuse(400, "invalid")
-          const answers = yield* answersAfter(repo, after).pipe(Effect.provide(database))
-          const next = answers.at(-1)?.seq ?? after
-          Object.assign(fields, { outcome: "listed", count: answers.length })
-          return HttpServerResponse.jsonUnsafe({ answers, next }, { status: 200, headers: noStore })
+          provide database {
+            const answers = try answersAfter(repo, after)
+            const next = answers.at(-1)?.seq ?? after
+            Object.assign(fields, { outcome: "listed", count: answers.length })
+            return HttpServerResponse.jsonUnsafe({ answers, next }, { status: 200, headers: noStore })
+          }
         }
-        const actor = yield* (yield* Sessions).resolve
+        const actor = try (try Sessions).resolve
         if (Option.isNone(actor)) return refuse(401, "authentication")
         // An answer is the person's own (decision 0128 §6): anyone acting for them is refused.
-        if (yield* refusesPersonOnly(actor.value, "feed/answer")) return refuse(403, "person_only")
-        const resolved = yield* roles.resolve(actor.value, repositoryOf(repo)).pipe(Effect.result)
+        if (try refusesPersonOnly(actor.value, "feed/answer")) return refuse(403, "person_only")
+        const resolved = try result(roles.resolve(actor.value, repositoryOf(repo)))
         if (resolved._tag === "Failure") {
           fields.roleCode = resolved.failure.code
           if (!RepoRoles.CANT_ACT.has(resolved.failure.code)) return refuse(503, "unavailable")
@@ -333,13 +333,11 @@ export const make = <E, R, X>(
         if (resolved._tag === "Failure" || !mayMaintain(actor.value, resolved.success.role)) {
           return refuse(403, "forbidden")
         }
-        const body = yield* readBounded(request, MAX_ANSWER_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
-          Effect.result,
-        )
+        const body = try result(readBounded(request, MAX_ANSWER_BODY_BYTES, (bytes) => (fields.bytes = bytes)))
         if (body._tag === "Failure") {
           return body.failure.reason === "too_large" ? refuse(413, "too_large") : refuse(400, "invalid")
         }
-        const decoded = yield* decodeAnswer(body.success).pipe(Effect.option)
+        const decoded = try option(decodeAnswer(body.success))
         if (Option.isNone(decoded)) return refuse(400, "invalid")
         const answer = decoded.value
         const words = [answer.item, answer.choice ?? "", answer.text ?? ""]
@@ -348,37 +346,39 @@ export const make = <E, R, X>(
           return refuse(400, "invalid")
         }
         fields.answerId = answer.id
-        const seq = yield* record(repo, answer, actor.value).pipe(Effect.provide(database))
-        if (seq === "conflict") return refuse(409, "conflict")
-        fields.outcome = "recorded"
-        return HttpServerResponse.jsonUnsafe({ id: answer.id, seq }, { status: 200, headers: noStore })
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.sync(() => {
-            fields.errorCode = codeOf(Cause.squash(cause))
-            return refuse(503, "unavailable")
-          })
-        ),
-      )
+        provide database {
+          const seq = try record(repo, answer, actor.value)
+          if (seq === "conflict") return refuse(409, "conflict")
+          fields.outcome = "recorded"
+          return HttpServerResponse.jsonUnsafe({ id: answer.id, seq }, { status: 200, headers: noStore })
+        }
+      }
+      const response = try catchCause(respond, (cause) =>
+        sync(() => {
+          fields.errorCode = codeOf(Cause.squash(cause))
+          return refuse(503, "unavailable")
+        }))
       fields.status = response.status
-      fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+      fields.durationMs = (try Clock.currentTimeMillis) - startedAt
       const outcome = String(fields.outcome ?? fields.code ?? "refused")
       const message = op === "ingest" ? "feed.ingest" : op === "answers" ? "feed.answers" : "feed.answer"
-      yield* Metric.update(Metric.withAttributes(requests, { op, outcome }), 1)
-      yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, op, outcome })
-      yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(message)
-        .pipe(Effect.annotateLogs({ ...fields, outcome }))
+      try Metric.update(Metric.withAttributes(requests, { op, outcome }), 1)
+      try annotateCurrentSpan({ "http.response.status_code": response.status, op, outcome })
+      try annotateLogs(
+        logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(message),
+        { ...fields, outcome },
+      )
       return response
-    })
+    }
 
-    const fetch = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
+    const fetch = effect {
+      const request = try HttpServerRequest.HttpServerRequest
       const path = request.url.split("?")[0]!
-      if (path === FEEDS_SHAPE_ROUTE) return yield* shape
+      if (path === FEEDS_SHAPE_ROUTE) return try shape
       const target = parseFeedRoute(path)!
       const span = target.route === "documents" ? "feed.ingest" : request.method === "GET" ? "feed.answers" : "feed.answer"
-      return yield* route.pipe(Effect.withSpan(span, { kind: "server" }))
-    })
+      return try withSpan(route, span, { kind: "server" })
+    }
 
     return { fetch }
-  })
+  }

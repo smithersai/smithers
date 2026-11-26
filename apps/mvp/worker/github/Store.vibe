@@ -1,4 +1,4 @@
-import * as WriteAuthority from "../WriteAuthority.ts"
+import * as WriteAuthority from "../WriteAuthority.vibe"
 import * as ProtectedAuthority from "../ProtectedAuthority.vibe"
 import { fold as foldWriteNotice } from "./WriteFeed.vibe"
 import { COMMITMENTS, commitmentOf } from "../../src/features/issues/lifecycle.ts"

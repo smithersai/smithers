@@ -91,7 +91,7 @@ import * as RepoApi from "../../worker/RepoApi.vibe"
 import * as RunCredentials from "../../worker/RunCredentials.vibe"
 import * as PersonalApi from "../../worker/personal/Api.vibe"
 import * as BugsApi from "../../worker/bugs/Api.vibe"
-import * as FeedsApi from "../../worker/feeds/Api.ts"
+import * as FeedsApi from "../../worker/feeds/Api.vibe"
 import * as FleetShapes from "../../worker/fleet/FleetShapes.vibe"
 import * as FleetApi from "../../worker/runners/FleetApi.vibe"
 import { FEED_DOCUMENTS_TABLE } from "../features/feeds/contract"
@@ -601,7 +601,7 @@ export class TestChatApi extends Context.Service<
         )
         // The stack's routes, as ChatApi routes them (worker/ChatApi.ts): no host runs a TODO, so every TODO stays Queued.
         const stack = yield* StackApi.make(database, roles).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
-        // Repository feeds (worker/feeds/Api.ts), as ChatApi routes them, under `TEST_FEED_KEY` for the test repository.
+        // Repository feeds (worker/feeds/Api.vibe), as ChatApi routes them, under `TEST_FEED_KEY` for the test repository.
         const feeds = yield* FeedsApi.make(database, roles).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         const fleet = yield* FleetApi.make(roles).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         const fleetShapes = yield* FleetShapes.make().pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))

@@ -1,4 +1,4 @@
-import * as WriteAuthority from "../WriteAuthority.ts"
+import * as WriteAuthority from "../WriteAuthority.vibe"
 import { AgentRunner } from "@smthrs/agent"
 import { SqlClient } from "effect/sql"
 import * as Fence from "./Fence.vibe"

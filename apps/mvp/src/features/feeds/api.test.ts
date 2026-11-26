@@ -1,4 +1,4 @@
-// `FeedsClient` against every answer ChatApi's answer route gives (worker/feeds/Api.ts), through the host's `fetch`: the
+// `FeedsClient` against every answer ChatApi's answer route gives (worker/feeds/Api.vibe), through the host's `fetch`: the
 // browser's own capability, given here as a function answering the request it is handed. The step that calls it
 // (`feed/answer/request`) is driven over a client that answers as told, and the contract's helpers are checked here too.
 import { Cause, Effect, Exit, Layer, Metric } from "effect"

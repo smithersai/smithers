@@ -1,4 +1,4 @@
-// What GitHub says of a repository (worker/about/GitHubRead.ts), read through `@smthrs/integrations`' real client over a
+// What GitHub says of a repository (worker/about/GitHubRead.vibe), read through `@smthrs/integrations`' real client over a
 // scripted GitHub (worker/test/githubRest.ts): the anonymous REST read and its call budget, the GraphQL read with a
 // token and that it answers what REST answers, GitHub's odd shapes, the parts GitHub leaves out, and every refusal.
 // The about read that keeps the answer is worker/RepoAbout.test.ts; RepoApi's route is worker/RepoApi.test.ts.
@@ -8,7 +8,7 @@ import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { ABOUT_CONTRIBUTORS, MAX_BLOB_BYTES } from "../../src/features/repo/contract.ts"
 import { GITHUB_API, type ScriptedGitHub, scriptedGitHub, spoonKnife } from "../test/githubRest.ts"
-import * as GitHubRead from "./GitHubRead.ts"
+import * as GitHubRead from "./GitHubRead.vibe"
 
 const SLUG = "smithers"
 
@@ -109,7 +109,7 @@ describe("GitHubRead.rest: anonymous", () => {
     expect(read.about.contributors).toHaveLength(ABOUT_CONTRIBUTORS)
   })
 
-  test("GitHub's odd shapes: a commit by an email, a README not in base64 or not base64, an unreadable newest commit", async () => {
+  test("GitHub's odd shapes: a commit by an email, a README not in base64, not base64 or not text, an unreadable newest commit", async () => {
     const github = scriptedGitHub()
     github.publish("octocat", "Spoon-Knife", spoonKnife({
       commits: [{ sha: "a".repeat(40), message: "m", name: "Mona", date: null, login: null }],
@@ -126,6 +126,9 @@ describe("GitHubRead.rest: anonymous", () => {
     github.answer("/readme", { path: "README.md", size: 3, encoding: "utf-8", content: "abc" })
     expect((await ok(github, GitHubRead.rest)).about.readme).toBeNull()
     github.answer("/readme", { path: "README.md", size: 3, encoding: "base64", content: "@@@not base64@@@" })
+    expect((await ok(github, GitHubRead.rest)).about.readme).toBeNull()
+    // Base64 that decodes to bytes that aren't text: a NUL byte marks a binary file.
+    github.answer("/readme", { path: "README.md", size: 3, encoding: "base64", content: btoa("a\u0000b") })
     expect((await ok(github, GitHubRead.rest)).about.readme).toBeNull()
     github.answer("/readme", { path: "README.md", size: 3, encoding: "base64" })
     expect((await ok(github, GitHubRead.rest)).about.readme).toBeNull()

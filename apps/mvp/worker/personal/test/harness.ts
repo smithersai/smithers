@@ -1,4 +1,4 @@
-import { afterBody } from "../../WriteAdmission.ts"
+import { afterBody } from "../../WriteAdmission.vibe"
 // A person's own model's routes (worker/personal/) for the worker tests, on a test file's own schema of the compose
 // Postgres and through the compose Electric (`pnpm db:up`, db/TestDatabase.ts). `model/Put` and `model/Delete` run for
 // real on the Node host's durable engine (worker/test/flowHost.ts), so a write is in Postgres when its request answers;

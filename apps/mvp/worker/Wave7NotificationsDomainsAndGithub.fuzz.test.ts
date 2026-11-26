@@ -18,7 +18,7 @@ import * as HostedModel from "./HostedModel.vibe"
 import * as ModelRoles from "./ModelRoles.vibe"
 import * as Notifications from "./Notifications.vibe"
 import * as SetModel from "./SetModel.vibe"
-import * as WriteAuthority from "./WriteAuthority.ts"
+import * as WriteAuthority from "./WriteAuthority.vibe"
 
 const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")
 const execs = Math.max(15, Math.min(Math.ceil(baseExecs / 4), 40))

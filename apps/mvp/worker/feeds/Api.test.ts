@@ -1,4 +1,4 @@
-// Repository feeds' routes (worker/feeds/Api.ts, docs/features/feeds.md) through their real handler, over this file's
+// Repository feeds' routes (worker/feeds/Api.vibe, docs/features/feeds.md) through their real handler, over this file's
 // schema of the compose Postgres and through the compose Electric. Roles come from the real `RepoRoles` as local
 // development builds it; a role that can't be read, sessions and Postgres fail only through injected faulty services.
 // Every test that writes searches what was recorded for the key, the bodies, the private names and the answers' words.
@@ -19,7 +19,7 @@ import {
 import { FeedAnswers, Ingested } from "../../src/features/feeds/schema.ts"
 import * as Actor from "../Actor.vibe"
 import { eventually, recorded, testFile } from "../test/harness.ts"
-import * as FeedsApi from "./Api.ts"
+import * as FeedsApi from "./Api.vibe"
 import { DEV_FEED_KEY } from "./dev.ts"
 import {
   admin,

@@ -7,7 +7,7 @@ import { expect, test } from "vitest"
 import { Sessions } from "./Actor.vibe"
 import { readBounded } from "./Body.vibe"
 import * as Throttle from "./Throttle.vibe"
-import { afterBody } from "./WriteAdmission.ts"
+import { afterBody } from "./WriteAdmission.vibe"
 import { testFile } from "./test/harness.ts"
 import { cookie, signInHarness } from "./test/signIn.ts"
 

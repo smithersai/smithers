@@ -317,7 +317,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           fields.errorCode = "not_addressee"
           return refusal(403, "forbidden")
         }
-        // The role is GitHub's on the row's repository, read now, as a feed's answer reads it (worker/feeds/Api.ts).
+        // The role is GitHub's on the row's repository, read now, as a feed's answer reads it (worker/feeds/Api.vibe).
         const roles = try BranchRoles
         const role = try Effect.result(
           roles.repoRoleOn === undefined

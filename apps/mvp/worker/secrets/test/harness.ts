@@ -1,4 +1,4 @@
-import { afterBody } from "../../WriteAdmission.ts"
+import { afterBody } from "../../WriteAdmission.vibe"
 // The secrets routes and the sandbox egress (worker/secrets/) for the worker tests, on a test file's own schema of the
 // compose Postgres and through the compose Electric (`pnpm db:up`, db/TestDatabase.ts). `secret/Put` and
 // `secret/Delete` run for real on the Node host's durable engine (worker/test/flowHost.ts), so a write is in Postgres

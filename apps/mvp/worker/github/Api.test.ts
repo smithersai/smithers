@@ -30,7 +30,7 @@ import { firstPaintRoute, issuesRoute, ISSUE_EDGES_SHAPE_ROUTE, treeScopeRoute }
 import { CHECKS_SHAPE_ROUTE, compareRoute, PULLS_SHAPE_ROUTE } from "../../src/features/pulls/contract.ts"
 import * as Actor from "../Actor.vibe"
 import { FlowStarter, StartConflict, StartUnavailable } from "../Flows.vibe"
-import * as WriteAdmission from "../WriteAdmission.ts"
+import * as WriteAdmission from "../WriteAdmission.vibe"
 import { testFile } from "../test/harness.ts"
 import { EndGitHubConnection, handles, make, parseMachineWritePath, parseWritesPath, RECONCILE_START_TIMEOUT } from "./Api.vibe"
 import * as Metrics from "./Metrics.vibe"

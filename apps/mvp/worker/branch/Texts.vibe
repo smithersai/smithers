@@ -25,7 +25,7 @@ import * as Conversations from "./Conversations.vibe"
 import { Rooms } from "./Rooms.vibe"
 import { isUpgrade, sameOrigin } from "./Upgrade.ts"
 import * as SocketAccess from "../SocketAccess.vibe"
-import * as WriteAuthority from "../WriteAuthority.ts"
+import * as WriteAuthority from "../WriteAuthority.vibe"
 
 // Co-editing's routes (decision 0013 §4, docs/features/coedit.md): every input two people see at once is a text they
 // edit together (`@smthrs/sync`'s `SharedText`), with each other's cursors.

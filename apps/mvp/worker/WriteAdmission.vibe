@@ -1,0 +1,58 @@
+import * as BodyLimits from "./BodyLimits.vibe"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { bodyless, replay } from "./WriteAdmissionRequest.ts"
+
+/**
+ * Fixed from dispatch, never renewed by a chunk. A 1 MiB coedit seed is ~1.33 MiB as base64 JSON and takes
+ * over 10 s at 1 Mbit/s; long issue bodies also need time on slow phones. Authority is resolved after EOF,
+ * so allowing 60 s retains no earlier authorization. Route byte caps still bound memory.
+ */
+export const BODY_READ_MILLIS = 60_000
+/** Aggregate ceiling; each route is capped while reading. */
+export { MAX_BODY_BYTES } from "./BodyLimits.vibe"
+const methods = new Set(["POST", "PUT", "PATCH", "DELETE"])
+error WriteBodyRefused { status: number }
+export const bodies = Metric.counter("smithers_write_bodies", { incremental: true,
+  description: "Write bodies buffered before authentication, by status" })
+
+/** The cheap throttle runs first, then route-capped buffering. No authority lookup is added here. */
+export const afterBody = <E, R>(handler: HttpServerResponse.HttpServerResponse!E!R,
+  preflight: Option.Option<HttpServerResponse.HttpServerResponse>!!HttpServerRequest.HttpServerRequest = succeed(Option.none())) =>
+  effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const limited = try preflight
+    if (Option.isSome(limited)) return limited.value
+    if (!methods.has(request.method) || bodyless(request.source)) return try handler
+    const maxBytes = try orDie(BodyLimits.forRequest(request.url))
+    const read = effect {
+      if (Number(request.headers["content-length"]) > maxBytes) throw new WriteBodyRefused({ status: 413 })
+      const chunks: Array<Uint8Array> = []
+      let length = 0
+      const drained = effect {
+        for try (const chunk of request.stream) {
+          length += chunk.byteLength
+          if (length > maxBytes) throw new WriteBodyRefused({ status: 413 })
+          chunks.push(chunk)
+        }
+      }
+      try mapError(drained, (error) => error instanceof WriteBodyRefused ? error : new WriteBodyRefused({ status: 400 }))
+      const bytes = new Uint8Array(length)
+      let offset = 0
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+      return bytes
+    }
+    const outcome = try (read
+      |> timeoutOrElse(%, { duration: Duration.millis(BODY_READ_MILLIS), orElse: () => fail(new WriteBodyRefused({ status: 408 })) })
+      |> withSpan(%, "write.admission")
+      |> result(%))
+    const status = outcome._tag === "Failure" ? outcome.failure.status : 200
+    try Metric.update(Metric.withAttributes(bodies, { status: String(status) }), 1)
+    if (outcome._tag === "Failure") {
+      try annotateLogs(logWarning("write.body"), { status })
+      return HttpServerResponse.jsonUnsafe({ code: status === 408 ? "body_timeout" : status === 413 ? "too_large" : "invalid" },
+        { status, headers: { "cache-control": "no-store" } })
+    }
+    // Rebuild all body accessors, including stream: handlers continue to enforce their byte and UTF-8 contracts.
+    const replayed = try sync(() => replay(request, outcome.success))
+    return try Effect.provideService(handler, HttpServerRequest.HttpServerRequest, replayed)
+  }

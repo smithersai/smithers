@@ -36,7 +36,7 @@ import * as RunCredentials from "./RunCredentials.vibe"
 import * as SessionKeys from "./SessionKeys.vibe"
 import * as SessionStore from "./SessionStore.vibe"
 import * as SessionPrior from "./SessionPrior.vibe"
-import * as WriteAdmission from "./WriteAdmission.ts"
+import * as WriteAdmission from "./WriteAdmission.vibe"
 import { randomUUID, scriptDigest } from "./SignInPlatform.ts"
 
 // Sign-in (docs/features/sign-in.md, decision 0008 phase 1): the Smithers GitHub App's user authorization, with PKCE

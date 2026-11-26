@@ -1,4 +1,4 @@
-import * as WriteAuthority from "../WriteAuthority.ts"
+import * as WriteAuthority from "../WriteAuthority.vibe"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Classifier, Evaluator, ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
 import { Cause, Clock, Duration, Effect, Exit, Layer, Metric, Option, Redacted, Schema, Stream } from "effect"

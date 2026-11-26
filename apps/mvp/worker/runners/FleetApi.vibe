@@ -10,7 +10,7 @@ import {
 } from "../../src/features/fleet/contract.ts"
 import { isRepository } from "../../src/features/repo/contract.ts"
 import { canAsk } from "../Actor.vibe"
-import { mayMaintain } from "../feeds/Api.ts"
+import { mayMaintain } from "../feeds/Api.vibe"
 import { repositoryOf as repositoryNamed } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.vibe"
 import * as ShapeAccess from "../ShapeAccess.vibe"
