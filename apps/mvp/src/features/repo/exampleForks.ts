@@ -6,12 +6,12 @@ export type ExampleForkMeta = {
 
 const SMITHERSAI_EXAMPLE_FORKS: Readonly<Record<string, Omit<ExampleForkMeta, "forkOrg">>> = {
   effect: { upstreamRepo: "Effect-TS/effect", upstreamHref: "https://github.com/Effect-TS/effect" },
-  alchemy: { upstreamRepo: "sam-goodwin/alchemy", upstreamHref: "https://github.com/sam-goodwin/alchemy" },
-  foldkit: { upstreamRepo: "devinjameson/foldkit", upstreamHref: "https://github.com/devinjameson/foldkit" },
+  alchemy: { upstreamRepo: "alchemy-run/alchemy", upstreamHref: "https://github.com/alchemy-run/alchemy" },
+  foldkit: { upstreamRepo: "foldkit/foldkit", upstreamHref: "https://github.com/foldkit/foldkit" },
   t3code: { upstreamRepo: "pingdotgg/t3code", upstreamHref: "https://github.com/pingdotgg/t3code" },
   opencode: { upstreamRepo: "anomalyco/opencode", upstreamHref: "https://github.com/anomalyco/opencode" },
   eliza: { upstreamRepo: "elizaOS/eliza", upstreamHref: "https://github.com/elizaOS/eliza" },
-  needlefish: { upstreamRepo: "base/needlefish", upstreamHref: "https://github.com/base/needlefish" },
+  needlefish: { upstreamRepo: "refcell/needlefish", upstreamHref: "https://github.com/refcell/needlefish" },
 }
 
 /**

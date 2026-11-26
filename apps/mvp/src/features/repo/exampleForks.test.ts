@@ -2,18 +2,20 @@ import { describe, expect, test } from "vitest"
 import { exampleForkOf } from "./exampleForks.ts"
 
 describe("exampleForkOf", () => {
-  test("identifies all known smithersai example forks case-insensitively", () => {
-    expect(exampleForkOf("smithersai", "effect")).toEqual({
+  test.each([
+    ["Effect", "Effect-TS/effect"],
+    ["Alchemy", "alchemy-run/alchemy"],
+    ["Foldkit", "foldkit/foldkit"],
+    ["T3Code", "pingdotgg/t3code"],
+    ["OpenCode", "anomalyco/opencode"],
+    ["Needlefish", "refcell/needlefish"],
+    ["Eliza", "elizaOS/eliza"],
+  ])("attributes smithersai/%s to %s case-insensitively", (name, upstreamRepo) => {
+    expect(exampleForkOf("SmithersAI", name)).toEqual({
       forkOrg: "smithersai",
-      upstreamRepo: "Effect-TS/effect",
-      upstreamHref: "https://github.com/Effect-TS/effect",
+      upstreamRepo,
+      upstreamHref: `https://github.com/${upstreamRepo}`,
     })
-    expect(exampleForkOf("SmithersAI", "Eliza")).toEqual({
-      forkOrg: "smithersai",
-      upstreamRepo: "elizaOS/eliza",
-      upstreamHref: "https://github.com/elizaOS/eliza",
-    })
-    expect(exampleForkOf("smithersai", "t3code")?.upstreamRepo).toBe("pingdotgg/t3code")
   })
 
   test("returns undefined for first-party repos, unknown repos, and prototype keys", () => {
