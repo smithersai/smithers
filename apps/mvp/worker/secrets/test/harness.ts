@@ -16,10 +16,10 @@ import * as Actor from "../../Actor.ts"
 import * as Flows from "../../Flows.ts"
 import * as FlowHost from "../../test/flowHost.ts"
 import { signedIn, type testFile } from "../../test/harness.ts"
-import * as SecretsApi from "../Api.ts"
+import * as SecretsApi from "../Api.vibe"
 import { SecretKeys } from "../Keys.vibe"
-import * as SandboxEgress from "../SandboxEgress.ts"
-import * as SecretFlows from "../SecretFlows.ts"
+import * as SandboxEgress from "../SandboxEgress.vibe"
+import * as SecretFlows from "../SecretFlows.vibe"
 
 type Runtime = ReturnType<typeof testFile>
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>

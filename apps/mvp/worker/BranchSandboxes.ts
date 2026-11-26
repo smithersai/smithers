@@ -46,7 +46,7 @@ import * as Agents from "./personal/Agents.ts"
 import * as Subscriptions from "./personal/Subscriptions.vibe"
 import * as Overflow from "./runners/Overflow.ts"
 import { SecretKeys } from "./secrets/Keys.vibe"
-import * as SandboxEgress from "./secrets/SandboxEgress.ts"
+import * as SandboxEgress from "./secrets/SandboxEgress.vibe"
 import * as SocketAccess from "./SocketAccess.ts"
 import * as SocketHost from "./durable/SocketHost.ts"
 import * as SocketPumps from "./durable/SocketPumps.ts"
@@ -103,7 +103,7 @@ const ROLE_HEADER = "x-smithers-role"
 const TICKET_HEADER = "x-smithers-ticket"
 
 /**
- * `SANDBOX_SECRETS`: whether the box's outbound HTTP and HTTPS reach the secrets egress (worker/secrets/SandboxEgress.ts,
+ * `SANDBOX_SECRETS`: whether the box's outbound HTTP and HTTPS reach the secrets egress (worker/secrets/SandboxEgress.vibe,
  * docs/features/secrets.md#the-egress), and the box gets its placeholders. Off unless set: it stays off until an e2e
  * proves a box gets a bound host's answer and never sees a value.
  */

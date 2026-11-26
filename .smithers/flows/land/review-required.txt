@@ -53,6 +53,7 @@ apps/mvp/worker/flows/RedactFeed.ts
 
 # Stored credentials
 apps/mvp/worker/secrets/*.ts
+apps/mvp/worker/secrets/*.vibe
 
 # Migrations for the above, by name
 apps/mvp/db/migrations/*access*

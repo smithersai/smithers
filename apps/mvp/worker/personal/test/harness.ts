@@ -16,7 +16,7 @@ import { type ConnectionKind, keyTail, PERSONAL_MODELS_TABLE, type Protocol } fr
 import * as Actor from "../../Actor.ts"
 import * as Flows from "../../Flows.ts"
 import { SecretKeys } from "../../secrets/Keys.vibe"
-import * as SandboxEgress from "../../secrets/SandboxEgress.ts"
+import * as SandboxEgress from "../../secrets/SandboxEgress.vibe"
 import * as FlowHost from "../../test/flowHost.ts"
 import { signedIn, type testFile } from "../../test/harness.ts"
 import * as PersonalApi from "../Api.ts"

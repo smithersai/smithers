@@ -3,7 +3,7 @@ import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
 import { testFile } from "./test/harness.ts"
 import * as Personal from "./personal/Store.ts"
-import * as Secrets from "./secrets/Store.ts"
+import * as Secrets from "./secrets/Store.vibe"
 import * as WriteAuthority from "./WriteAuthority.ts"
 import { SigningKeyIds } from "./SessionStore.ts"
 

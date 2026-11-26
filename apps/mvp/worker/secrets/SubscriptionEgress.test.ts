@@ -1,4 +1,4 @@
-// A `todo` box's agent reaching its vendor (decision 0132, worker/secrets/SandboxEgress.ts `forwardSubscription`): the box
+// A `todo` box's agent reaching its vendor (decision 0132, worker/secrets/SandboxEgress.vibe `forwardSubscription`): the box
 // holds a placeholder, and the egress swaps it for the person's credential on the bound host only, scrubs echoes, and
 // keeps the connection's refusal up to date. Postgres is the compose one; the vendor is scripted at the network.
 import { Effect, Option, Redacted } from "effect"
@@ -9,12 +9,12 @@ import * as Database from "../../db/Database.ts"
 import * as Agents from "../personal/Agents.ts"
 import type * as Codex from "../personal/Codex.ts"
 import * as Subscriptions from "../personal/Subscriptions.vibe"
-import * as SecretsStore from "./Store.ts"
+import * as SecretsStore from "./Store.vibe"
 import { dump, engine, KEY, leaks, personalHarness, resetModels, rows, seedKeys } from "../personal/test/harness.ts"
 import { CODEX_ACCESS, CODEX_REFRESH } from "../personal/test/provider.ts"
 import { testFile } from "../test/harness.ts"
 import { SecretKeys } from "./Keys.vibe"
-import * as SandboxEgress from "./SandboxEgress.ts"
+import * as SandboxEgress from "./SandboxEgress.vibe"
 
 const runtime = testFile("subscription_egress")
 let host: Awaited<ReturnType<typeof engine>>

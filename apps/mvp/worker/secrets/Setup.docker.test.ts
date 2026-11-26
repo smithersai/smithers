@@ -12,7 +12,7 @@ import { join } from "node:path"
 import { sandboxImage } from "../test/sandboxImage.globalSetup.ts"
 import { asPerson } from "../test/sandboxPersons.ts"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
-import { CONTAINER_CA, SETUP, TRUST } from "./SandboxEgress.ts"
+import { CONTAINER_CA, SETUP, TRUST } from "./SandboxEgress.vibe"
 
 const image = sandboxImage
 const PLACEHOLDER = `smthrs-secret-${"ab".repeat(32)}`

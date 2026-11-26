@@ -14,11 +14,11 @@ import * as Actor from "../Actor.ts"
 import * as RegistryEgress from "../branch/RegistryEgress.ts"
 import * as Flows from "../Flows.ts"
 import { eventually, testFile } from "../test/harness.ts"
-import * as SecretsApi from "./Api.ts"
+import * as SecretsApi from "./Api.vibe"
 import * as Keys from "./Keys.vibe"
-import * as SandboxEgress from "./SandboxEgress.ts"
-import * as SecretFlows from "./SecretFlows.ts"
-import * as Store from "./Store.ts"
+import * as SandboxEgress from "./SandboxEgress.vibe"
+import * as SecretFlows from "./SecretFlows.vibe"
+import * as Store from "./Store.vibe"
 import {
   admin,
   agent,

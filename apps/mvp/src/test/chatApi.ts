@@ -106,9 +106,9 @@ import {
   scriptedProvider,
   type Seen as ProviderSeen,
 } from "../../worker/personal/test/provider.ts"
-import * as SecretsApi from "../../worker/secrets/Api.ts"
+import * as SecretsApi from "../../worker/secrets/Api.vibe"
 import { SecretKeys } from "../../worker/secrets/Keys.vibe"
-import * as SecretFlows from "../../worker/secrets/SecretFlows.ts"
+import * as SecretFlows from "../../worker/secrets/SecretFlows.vibe"
 import * as SignIn from "../../worker/SignIn.ts"
 import * as SessionKeys from "../../worker/SessionKeys.vibe"
 import * as SessionStore from "../../worker/SessionStore.ts"

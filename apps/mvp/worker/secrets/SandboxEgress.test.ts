@@ -1,4 +1,4 @@
-// An overflow box's egress when a stored credential URL names no host (worker/secrets/SandboxEgress.ts
+// An overflow box's egress when a stored credential URL names no host (worker/secrets/SandboxEgress.vibe
 // `forwardOverflow`): refused with a record before any credential is derived, opened or sent. The real egress runs over
 // Effect's real fetch client; the network and Postgres are watched and never reached.
 import { Logger as StructuredLogger } from "@smthrs/observability"
@@ -7,7 +7,7 @@ import { FetchHttpClient, HttpEffect } from "effect/http"
 import { describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import { SecretKeys } from "./Keys.vibe"
-import * as SandboxEgress from "./SandboxEgress.ts"
+import * as SandboxEgress from "./SandboxEgress.vibe"
 
 const KEY = Redacted.make("0123456789abcdef".repeat(4))
 const guest: SandboxEgress.BranchGuest = { kind: "branch", repoId: "github/acme/widgets", branchId: "overflow-box", generation: 1 }
