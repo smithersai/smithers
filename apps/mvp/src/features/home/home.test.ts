@@ -13,7 +13,7 @@ import { repoId } from "../repo/contract"
 import { HomeClient, HomeRefused } from "./api.vibe"
 import { HomeStore } from "./store.vibe"
 import { HOME_FILE, HOME_INVALID, HOME_UNREADABLE } from "./contract"
-import { answers, resolves } from "./metrics"
+import { answers, resolves } from "./metrics.vibe"
 import { homePageOf, tabsOf } from "./view"
 
 // A repository's home on a tab, driven as React drives it, with no React: the route's loader calls `open`, and the

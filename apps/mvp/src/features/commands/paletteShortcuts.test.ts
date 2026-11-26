@@ -1,7 +1,7 @@
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Effect, Exit, Layer, Option, Ref, Scope } from "effect"
 import { describe, expect, test } from "vitest"
-import { paletteShortcuts } from "./paletteShortcuts"
+import { paletteShortcuts } from "./paletteShortcuts.vibe"
 import { PALETTE, Palette } from "./schema"
 import { CommandsStore, PALETTE_CLOSED } from "./store.vibe"
 

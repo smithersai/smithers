@@ -69,7 +69,7 @@ import { WorkbenchScreen } from "./screens/workbench/WorkbenchScreen"
 import { ProfileScreen } from "./screens/profile/ProfileScreen"
 import { PluginScreen } from "./screens/plugin/PluginScreen"
 import { RepoPluginScreen } from "./screens/plugin/RepoPluginScreen"
-import type { PluginsView } from "./plugins/ui"
+import type { PluginsView } from "./plugins/ui.vibe"
 import { ViewScreen } from "./screens/view/ViewScreen"
 
 // The app's routes. A repository's are GitHub's paths (decision 0006 §2): swapping github.com for the app's domain

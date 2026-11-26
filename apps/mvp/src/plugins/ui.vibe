@@ -1,5 +1,4 @@
 import { type Contribution, Host } from "@smthrs/plugin"
-import { Context, Effect, Layer, Scope } from "effect"
 import { runners } from "../boundary.vibe"
 import { codeOf } from "../errorCode"
 import { FlowDispatch } from "../flows/dispatch.vibe"
@@ -63,24 +62,24 @@ const RANKS = { anyone: 0, guest: 1, member: 2, maintainer: 3, admin: 4 } as con
 
 /** Builds plugin `plugin`'s tab from its built-in entry, with `PluginHost` for that plugin, in the host's scope. */
 export const buildTab = (plugin: string) =>
-  Effect.gen(function* () {
-    const plugins = yield* Plugins
+  effect {
+    const plugins = try Plugins
     const entry = plugins.built.get(plugin)
-    if (entry === undefined) return yield* Effect.die(new Error(`no active plugin ${plugin}`))
-    const module = yield* Effect.promise(entry.tab)
-    const host = yield* hostFor(plugin)
+    if (entry === undefined) return try die(new Error(`no active plugin ${plugin}`))
+    const module = try promise(entry.tab)
+    const host = try hostFor(plugin)
     const tab = module.tab as Effect.Effect<unknown, unknown, Host.PluginHost | Scope.Scope>
-    return yield* tab.pipe(Effect.provideService(Host.PluginHost, host), Scope.provide(plugins.scope))
-  })
+    return try Scope.provide(provideService(tab, Host.PluginHost, host), plugins.scope)
+  }
 
 export class PluginsUi extends Context.Service<PluginsUi, PluginsView>()("@smthrs/mvp/plugins/PluginsUi") {
   /** Binds the host for frontends, run with the services this layer was built with. */
   static readonly layer = Layer.effect(
     PluginsUi,
-    Effect.gen(function* () {
-      const plugins = yield* Plugins
-      const context = yield* Effect.context<Plugins | FlowDispatch>()
-      const { runSync: run, runPromise } = runners(context, "plugins")
+    effect {
+      const plugins = try Plugins
+      const services = try context<Plugins | FlowDispatch>()
+      const { runSync: run, runPromise } = runners(services, "plugins")
       const tabs = new Map<string, Promise<unknown>>()
       const chunks = new Map<string, Promise<Readonly<Record<string, unknown>>>>()
       return PluginsUi.of({
@@ -99,11 +98,11 @@ export class PluginsUi extends Context.Service<PluginsUi, PluginsView>()("@smthr
             // expected: a tab that can't be built rejects to its Boundary, which records it once (`failed`)
             const known = tabs.get(plugin)
             if (known !== undefined) return known
-            const built = runPromise(Effect.catchDefect(buildTab(plugin), Effect.fail))
+            const built = runPromise(catchDefect(buildTab(plugin), fail))
             tabs.set(plugin, built)
             // A failed build is never kept: a chunk that didn't load offline loads on the next ask (Fable-D4-049).
             // recorded: plugin.failed, by the Boundary this same promise rejects to (`failed`)
-            built.catch(() => { if (tabs.get(plugin) === built) tabs.delete(plugin) })
+            built.catch(() => { tabs.delete(plugin) })
             return built
           },
           // Cached, as the tab is: React's `use` reads one promise per chunk, never a new one per render.
@@ -115,16 +114,14 @@ export class PluginsUi extends Context.Service<PluginsUi, PluginsView>()("@smthr
             chunks.set(plugin, loaded)
             // As the tab: a rejected chunk is dropped, so its Boundary's retry asks the network again.
             // recorded: plugin.failed, by the Boundary this same promise rejects to (`failed`)
-            loaded.catch(() => { if (chunks.get(plugin) === loaded) chunks.delete(plugin) })
+            loaded.catch(() => { chunks.delete(plugin) })
             return loaded
           },
           allows: (minimum, viewer) => rankOf(viewer) >= RANKS[minimum],
           failed: (plugin, error) =>
-            run(Effect.logError("plugin.failed").pipe(
-              Effect.annotateLogs({ feature: "plugins", plugin, outcome: "failed", errorCode: codeOf(error) }),
-            )),
+            run(annotateLogs(logError("plugin.failed"), { feature: "plugins", plugin, outcome: "failed", errorCode: codeOf(error) })),
         },
       })
-    }),
+    },
   )
 }

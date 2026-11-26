@@ -10,7 +10,7 @@ import queue from "../../../plugins/queue/plugin.json" with { type: "json" }
 import { FlowDispatch } from "../../flows/dispatch.vibe"
 import type { BuiltIn } from "../../plugins/builtin"
 import { hostFor, Plugins, queryOf, readable, selectedOf, stateOf } from "../../plugins/plugins"
-import { PluginsUi } from "../../plugins/ui"
+import { PluginsUi } from "../../plugins/ui.vibe"
 import { member, nodeDevice, openTab, openTestApi, openTestApp, TEST_FEED_KEY, TestChatApi } from "../../test/chatApi"
 import { FEEDS_SHAPE_ROUTE, feedAnswersRoute, feedsRoute } from "./contract"
 import type { FeedDocument, FeedItem } from "./schema"

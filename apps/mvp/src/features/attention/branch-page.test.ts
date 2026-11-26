@@ -13,7 +13,7 @@ import { Auth } from "../auth/auth.vibe"
 import { Branch } from "../branch/branch.vibe"
 import { Chat } from "../chat/chat"
 import { CodeIntel } from "../code-intel/codeIntel.vibe"
-import { Commands } from "../commands/commands"
+import { Commands } from "../commands/commands.vibe"
 import { PersonalModel } from "../personal-model/personalModel.vibe"
 import { Repo } from "../repo/repo.vibe"
 import { Spend } from "../spend/spend.vibe"
@@ -25,7 +25,7 @@ import { branchRenderer, renderNoticeHistory } from "../../screens/branch/offlin
 import { Todos } from "../todos/todos.vibe"
 import { Attention } from "./attention.vibe"
 import { Views } from "../views/views.vibe"
-import { PluginsUi } from "../../plugins/ui"
+import { PluginsUi } from "../../plugins/ui.vibe"
 
 test("a branch page renders the shared toast stack, anchored under its chrome, once", async () => {
   const runtime = openTestApp({ answers: false }, { actor: { subject: { kind: "person", id: "person-member" }, role: "admin" } })

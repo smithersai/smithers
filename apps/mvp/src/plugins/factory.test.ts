@@ -8,9 +8,9 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type { FactoryTab } from "../../plugins/factory/src/tab"
 import { feedAnswersRoute, feedsRoute } from "../features/feeds/contract"
 import { member, nodeDevice, openTab, openTestApp, TEST_FEED_KEY, TestChatApi } from "../test/chatApi"
-import { pluginKeys } from "./keymap"
+import { pluginKeys } from "./keymap.vibe"
 import { presses, viewById } from "./plugins"
-import { PluginsUi } from "./ui"
+import { PluginsUi } from "./ui.vibe"
 
 const WITHIN = 90_000
 const VIEW = "factory/for-you"

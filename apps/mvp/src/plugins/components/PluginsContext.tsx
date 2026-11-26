@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { PluginsView } from "../ui"
+import type { PluginsView } from "../ui.vibe"
 
 // What React components get: the plugin host's contributions and state to render, and plain actions (src/plugins/ui.ts).
 

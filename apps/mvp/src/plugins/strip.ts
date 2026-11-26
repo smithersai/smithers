@@ -42,7 +42,11 @@ export const keyLabel = (key: string): string =>
 /** An event's name as a button reads: `changes` as `Changes`. */
 const titled = (name: string) => name.charAt(0).toUpperCase() + name.slice(1)
 
-/** Whether `event` dispatches a person-only flow, as the loader marked it from the catalog: only the strip sends it. */
+/**
+ * Whether `event` dispatches a person-only flow, as the loader marked it from the catalog: only the strip sends it.
+ *
+ * @throws {never}
+ */
 export const personOnly = (event: Contribution.Event): boolean => "flow" in event && event.personOnly
 
 /** The text fields of an event's payload: what the strip's text box fills. */

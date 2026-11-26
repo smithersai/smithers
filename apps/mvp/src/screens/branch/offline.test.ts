@@ -16,7 +16,7 @@ import { Chat } from "../../features/chat/chat"
 import { ChatStore } from "../../features/chat/store"
 import { CodeIntel } from "../../features/code-intel/codeIntel.vibe"
 import { FlowsUi } from "../../features/flows-ui/flowsUi.vibe"
-import { Commands } from "../../features/commands/commands"
+import { Commands } from "../../features/commands/commands.vibe"
 import { Domains } from "../../features/domains/domains.vibe"
 import { Home } from "../../features/home/home.vibe"
 import { Issues } from "../../features/issues/issues.vibe"
@@ -38,7 +38,7 @@ import { openFaultyApp, TestChatApi } from "../../test/chatApi"
 import { EngineFaults } from "../../test/faults"
 import { dialing, roomHost } from "../../test/rooms"
 import { read } from "../../test/otlp"
-import { PluginsUi } from "../../plugins/ui"
+import { PluginsUi } from "../../plugins/ui.vibe"
 
 const disposables: Array<() => Promise<void>> = []
 afterEach(async () => {

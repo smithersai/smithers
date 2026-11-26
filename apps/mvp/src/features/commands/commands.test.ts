@@ -33,7 +33,7 @@ import { BranchStore } from "../branch/store.vibe"
 import { CURRENT } from "../branch/schema"
 import { RepoStore } from "../repo/store.vibe"
 import { repoId } from "../repo/contract"
-import { Commands } from "./commands"
+import { Commands } from "./commands.vibe"
 import { choices, submits } from "./metrics"
 import { CommandsStore } from "./store.vibe"
 

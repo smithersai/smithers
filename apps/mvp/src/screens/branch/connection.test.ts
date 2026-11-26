@@ -17,7 +17,7 @@ import { ChatStore } from "../../features/chat/store"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { Repo } from "../../features/repo/repo.vibe"
 import { Views } from "../../features/views/views.vibe"
-import { PluginsUi } from "../../plugins/ui"
+import { PluginsUi } from "../../plugins/ui.vibe"
 import { nodeDevice, openTestApp, TestChatApi } from "../../test/chatApi"
 
 const disposables: Array<() => Promise<void>> = []

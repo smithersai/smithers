@@ -23,7 +23,11 @@ export const OUTCOMES = ["opened", "closed", "absent", "no_repository", "gone"] 
 /** One of {@link OUTCOMES}. */
 export type Outcome = (typeof OUTCOMES)[number]
 
-/** The `BroadcastChannel` the engine worker asks the tabs of engine `name` on. */
+/**
+ * The `BroadcastChannel` the engine worker asks the tabs of engine `name` on.
+ *
+ * @throws {never}
+ */
 export const filesChannel = (name: string): string => `${name}/files`
 
 /**

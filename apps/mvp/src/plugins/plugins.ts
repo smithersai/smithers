@@ -384,7 +384,11 @@ export const viewAt = (
   scope: View["scope"] = "app",
 ): View | undefined => contributions.views.find((view) => view.plugin === plugin && view.scope === scope && view.path === path)
 
-/** Where a view shows; a `repository` view shows on `repository` and has no path without one. */
+/**
+ * Where a view shows; a `repository` view shows on `repository` and has no path without one.
+ *
+ * @throws {never}
+ */
 export const pathOf = (view: View, repository?: Host.Repository): string | undefined => Host.pathOf(view, repository)
 
 /** Every query `plugin`'s contributions declare in `reads`. */

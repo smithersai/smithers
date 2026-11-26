@@ -5,7 +5,7 @@ import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
 import { AuthStore, SESSION } from "../../../src/features/auth/store.vibe"
 import { FleetStore } from "../../../src/features/fleet/store.vibe"
-import { PluginsUi } from "../../../src/plugins/ui"
+import { PluginsUi } from "../../../src/plugins/ui.vibe"
 import { member, openFaultyApp, openTestApp, TestChatApi } from "../../../src/test/chatApi"
 import type { FleetTab, Watched } from "./tab"
 

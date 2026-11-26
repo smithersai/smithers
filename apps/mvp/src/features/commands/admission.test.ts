@@ -13,7 +13,7 @@ import { COMPOSER } from "../chat/schema"
 import { IssuesStore } from "../issues/store.vibe"
 import { TodosStore } from "../todos/store.vibe"
 import { SteerWrites } from "../runs/writes.vibe"
-import { Commands } from "./commands"
+import { Commands } from "./commands.vibe"
 import { admitCommand } from "./admission.vibe"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []

@@ -45,7 +45,7 @@ import { repoVisibility } from "../repo/visibility"
 import { Auth } from "../auth/auth.vibe"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
-import { Commands } from "../commands/commands"
+import { Commands } from "../commands/commands.vibe"
 import { repoId } from "../repo/contract"
 import { IssuesClient, SearchNotAnswered, WriteNotTaken } from "./api.vibe"
 import {

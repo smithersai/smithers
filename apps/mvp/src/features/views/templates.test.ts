@@ -12,7 +12,7 @@ import { failingWorker, member, nodeDevice, openTab, openTestApi, openTestApp, t
 import { AuthStore, SESSION } from "../auth/store.vibe"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
-import { Commands } from "../commands/commands"
+import { Commands } from "../commands/commands.vibe"
 import { IssuesStore } from "../issues/store.vibe"
 import { repoId } from "../repo/contract"
 import { Repo } from "../repo/repo.vibe"

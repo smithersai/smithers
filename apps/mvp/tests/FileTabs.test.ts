@@ -9,7 +9,7 @@ import { Branch } from "../src/features/branch/branch.vibe"
 import { BranchProvider } from "../src/features/branch/components/BranchContext"
 import { Chat } from "../src/features/chat/chat"
 import { Composer } from "../src/features/chat/components/Composer"
-import { Commands } from "../src/features/commands/commands"
+import { Commands } from "../src/features/commands/commands.vibe"
 import { CommandsProvider } from "../src/features/commands/components/CommandsContext"
 import { openTestApp } from "../src/test/chatApi"
 

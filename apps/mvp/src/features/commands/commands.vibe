@@ -1,4 +1,3 @@
-import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch.vibe"
 import type { AuthStore } from "../auth/store.vibe"
@@ -57,9 +56,9 @@ export class Commands extends Context.Service<
    */
   static readonly layer = Layer.effect(
     Commands,
-    Effect.gen(function* () {
-      const store = yield* CommandsStore
-      const { runSync: run, runPromise: promise } = runners(yield* Effect.context<CommandsStore | ChatStore | AuthStore | FlowDispatch | Plugins | IssuesStore | TodosStore | RunSteers | SteerWrites | BranchStore | RepoStore>(), "commands")
+    effect {
+      const store = try CommandsStore
+      const { runSync: run, runPromise: promise } = runners(try context<CommandsStore | ChatStore | AuthStore | FlowDispatch | Plugins | IssuesStore | TodosStore | RunSteers | SteerWrites | BranchStore | RepoStore>(), "commands")
       return Commands.of({
         queries: { menu: store.menuState.tanstack, palette: store.paletteState.tanstack },
         actions: {
@@ -76,7 +75,7 @@ export class Commands extends Context.Service<
           choosePalette: (entry) => run(choosePalette(entry)),
         },
       })
-    }),
+    },
   )
 }
 

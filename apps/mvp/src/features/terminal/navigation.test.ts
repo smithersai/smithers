@@ -17,7 +17,7 @@ import { Auth } from "../auth/auth.vibe"
 import { AuthStore, SESSION } from "../auth/store.vibe"
 import { Branch } from "../branch/branch.vibe"
 import { Chat } from "../chat/chat"
-import { Commands } from "../commands/commands"
+import { Commands } from "../commands/commands.vibe"
 import { Domains } from "../domains/domains.vibe"
 import { FlowsUi } from "../flows-ui/flowsUi.vibe"
 import { Home } from "../home/home.vibe"
@@ -38,7 +38,7 @@ import { Views } from "../views/views.vibe"
 import { Terminal } from "./terminal.vibe"
 import { TerminalStore } from "./store.vibe"
 import { show } from "./actions.vibe"
-import { PluginsUi } from "../../plugins/ui"
+import { PluginsUi } from "../../plugins/ui.vibe"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {

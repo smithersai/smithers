@@ -5,7 +5,7 @@ import { expect, test } from "vitest"
 import { select } from "../../worker/branch/Creation"
 import { AuthStore, SESSION } from "../features/auth/store.vibe"
 import { COMMANDS, commandsFor, pluginCommands } from "../features/commands/catalog"
-import { Commands } from "../features/commands/commands"
+import { Commands } from "../features/commands/commands.vibe"
 import { agentFlows, catalogDescription } from "../flows/catalog.vibe"
 import { declarationOf, modelInvocable } from "../flows/declarations.vibe"
 import { names } from "../flows/registry.vibe"
@@ -13,7 +13,7 @@ import { member, openTestApp } from "../test/chatApi"
 import { BUILTIN, type BuiltIn } from "./builtin"
 import { BRANCH_FLOWS } from "./builtinFlows"
 import { Plugins } from "./plugins"
-import { PluginsUi } from "./ui"
+import { PluginsUi } from "./ui.vibe"
 
 const idOf = ({ manifest }: BuiltIn) => (manifest as { readonly id: string }).id
 const tabIds = BUILTIN.map(idOf).sort()

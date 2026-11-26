@@ -20,10 +20,10 @@ import { nodeDevice, openTab, openTestApp, TestChatApi } from "../test/chatApi"
 import { shaOf } from "../../worker/test/branch"
 import { read as readTelemetry } from "../test/otlp"
 import type { BuiltIn } from "./builtin"
-import { pluginKeys } from "./keymap"
+import { pluginKeys } from "./keymap.vibe"
 import { hostFor, loads, pathOf, Plugins, presses, settledOf, shownView, viewAt, viewById } from "./plugins"
 import { draftKey } from "./schema"
-import { PluginsUi } from "./ui"
+import { PluginsUi } from "./ui.vibe"
 
 const ENGINE_WITHIN = 90_000
 const VIEW = "queue/queue"
