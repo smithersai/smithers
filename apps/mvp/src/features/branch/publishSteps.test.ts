@@ -19,7 +19,7 @@ import type { CreationSelection } from "./creation"
 import type { RealmRequest } from "./creationFlows"
 import { BranchTrackRefused, BranchTrackUnavailable } from "./flows"
 import { BranchPublish, BranchResync, BranchUpdate, type OperationRequest } from "./publishFlows"
-import { call, evaluate, registrationAt, run, select, writeFailure } from "./publishSteps"
+import { call, evaluate, registrationAt, run, select, writeFailure } from "./publishSteps.vibe"
 
 const BRANCH = "6b9f3e2a-1c4d-4e5f-8a7b-9c0d1e2f3a4b"
 const WRITE = "0e1d2c3b-4a59-4687-9a8b-7c6d5e4f3a2b"

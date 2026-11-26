@@ -3,8 +3,8 @@ import type { AttentionStore } from "../attention/store"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { IssuesStore } from "../issues/store"
 import type { PullsClient } from "../pulls/api"
-import { closeForm, openForm, publish, resync, show, update } from "./publishActions"
-import { type PublishConfig, PublishStore } from "./publishStore"
+import { closeForm, openForm, publish, resync, show, update } from "./publishActions.vibe"
+import { type PublishConfig, PublishStore } from "./publishStore.vibe"
 import type { BranchStore } from "./store.vibe"
 
 // Publish, Update branch and Compare as a frontend sees them (docs/features/branch-publish.md#the-branch-page): live
@@ -47,9 +47,9 @@ export class Publishing extends Context.Service<
   static readonly layer = (config: PublishConfig) =>
     Layer.effect(
       Publishing,
-      Effect.gen(function* () {
-        const store = yield* PublishStore
-        const run = Effect.runPromiseWith(yield* Effect.context<AttentionStore | PublishStore | BranchStore | FlowDispatch | PullsClient | IssuesStore>())
+      effect {
+        const store = try PublishStore
+        const run = Effect.runPromiseWith(try Effect.context<AttentionStore | PublishStore | BranchStore | FlowDispatch | PullsClient | IssuesStore>())
         return Publishing.of({
           queries: {
             publication: store.publication.tanstack,
@@ -67,7 +67,7 @@ export class Publishing extends Context.Service<
             resync: () => run(resync),
           },
         })
-      }),
+      },
     ).pipe(Layer.provideMerge(PublishStore.layer(config)))
 }
 

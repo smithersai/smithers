@@ -106,7 +106,7 @@ export class PublishStore extends Context.Service<
   PublishStore,
   {
     /** A branch's publication, synced while this tab has opened it, for as long as the store lives. */
-    readonly publications: (branchId: string) => Effect.Effect<ElectricCollection.ElectricCollection<PublicationRow>>
+    readonly publications: (branchId: string) => ElectricCollection.ElectricCollection<PublicationRow>!!
     /** The shown branch's publication, as the page renders it. */
     readonly shown: Collection.Collection<PublicationRow, string>
     readonly presses: Collection.Collection<PublishPress, string>
@@ -127,51 +127,53 @@ export class PublishStore extends Context.Service<
   static readonly layer = (config: PublishConfig) =>
     Layer.effect(
       PublishStore,
-      Effect.gen(function* () {
-        const scope = yield* Effect.scope
-        const { current } = yield* BranchStore
-        const { writeRows } = yield* IssuesStore
-        const repos = yield* RepoStore
-        const shown = yield* Collection.local<PublicationRow, string>({
+      effect {
+        const scope = try Effect.scope
+        const { current } = try BranchStore
+        const { writeRows } = try IssuesStore
+        const repos = try RepoStore
+        const shown = try Collection.local<PublicationRow, string>({
           id: "branch-publication",
           schema: PublicationRow,
           getKey: (row) => row.branchId,
         })
-        const presses = yield* Collection.local<PublishPress, string>({
+        const presses = try Collection.local<PublishPress, string>({
           id: "branch-publish",
           schema: PublishPress,
           getKey: (row) => row.branchId,
         })
-        const titles = yield* Collection.local<PullTitle, string>({
+        const titles = try Collection.local<PullTitle, string>({
           id: "branch-pull-title",
           schema: PullTitle,
           getKey: (row) => row.branchId,
         })
-        const comparisons = yield* Collection.local<FilesRow, string>({
+        const comparisons = try Collection.local<FilesRow, string>({
           id: "branch-compare",
           schema: FilesRow,
           getKey: (row) => row.id,
         })
-        yield* repos.registerCache(["branch-compare"], (repoId) => Effect.flatMap(comparisons.toArray, (rows) => {
+        try repos.registerCache(["branch-compare"], (repoId) => Effect.flatMap(comparisons.toArray, (rows) => {
           const keys = rows.filter((row) => row.repoId === repoId).map((row) => row.id)
           return keys.length === 0 ? Effect.void : Effect.asVoid(comparisons.delete(keys))
         }))
         const opened = new Map<string, ElectricCollection.ElectricCollection<PublicationRow>>()
-        const opening = yield* Semaphore.make(1)
-        const open = (branchId: string) =>
-          ElectricCollection.make<PublicationRow>({
+        const opening = try Semaphore.make(1)
+        const open = (branchId: string) => effect {
+          const columnMapper = try Effect.sync(() => ElectricCollection.snakeCamelMapper())
+          return try ElectricCollection.make<PublicationRow>({
             id: `publications:${branchId}`,
             schema: PublicationRow,
             getKey: (row) => row.branchId,
             syncMode: "eager",
             shape: {
               url: `${config.origin}${PUBLICATIONS_SHAPE_ROUTE}?branch=${encodeURIComponent(branchId)}`,
-              columnMapper: ElectricCollection.snakeCamelMapper(),
+              columnMapper,
             },
           }).pipe(
             Scope.provide(scope),
             Effect.tap((collection) => Effect.sync(() => opened.set(branchId, collection))),
           )
+        }
         // One at a time, so two callers asking for one branch at once open it once.
         const publications = (branchId: string) =>
           Semaphore.withPermits(opening, 1)(
@@ -187,14 +189,14 @@ export class PublishStore extends Context.Service<
           titles,
           comparisons,
           // What shows of a branch's repository goes through the data gate (repo/gate.ts).
-          publication: yield* publicationQuery(current, yield* repos.gate(shown)),
-          pullTitle: yield* pullTitleQuery(current, yield* repos.gate(titles)),
-          press: yield* pressQuery(current, presses),
-          writes: yield* writesQuery(current, writeRows),
-          comparisonList: yield* comparisonsQuery(yield* repos.gate(comparisons)),
-          follower: yield* FiberHandle.make<void, never>(),
+          publication: try publicationQuery(current, try repos.gate(shown)),
+          pullTitle: try pullTitleQuery(current, try repos.gate(titles)),
+          press: try pressQuery(current, presses),
+          writes: try writesQuery(current, writeRows),
+          comparisonList: try comparisonsQuery(try repos.gate(comparisons)),
+          follower: try FiberHandle.make<void, never>(),
           scope,
         })
-      }),
+      },
     )
 }

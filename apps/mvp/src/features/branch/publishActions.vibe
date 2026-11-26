@@ -2,13 +2,14 @@ import { WebCrypto } from "@smthrs/crypto"
 import { failWriteNotice, requestWriteNotice } from "../attention/writeNotices"
 import { operationWriteId } from "./writeIdentity"
 import { Effect, FiberHandle, Metric, Option, type Result, Stream } from "effect"
+import { WebCrypto as WebCryptoReference } from "effect/crypto/WebCrypto"
 import { type DispatchFailed, type Dispatched, FlowDispatch } from "../../flows/dispatch"
 import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from "../issues/contract"
 import { IssuesStore } from "../issues/store"
 import { readComparison } from "../pulls/comparison"
 import { publishes, resyncs, updates } from "./metrics"
 import type { PressRefusal, PublicationRow, PublishPress } from "./publishSchema"
-import { PublishStore } from "./publishStore"
+import { PublishStore } from "./publishStore.vibe"
 import { CURRENT } from "./schema"
 import { BranchStore } from "./store.vibe"
 
@@ -33,58 +34,61 @@ const EMPTY: Omit<PublishPress, "branchId"> = {
 }
 
 /** The branch this tab shows, once it is ready. */
-const shownBranch = Effect.gen(function* () {
-  const row = Option.getOrThrow(yield* (yield* BranchStore).current.get(CURRENT))
+const shownBranch = effect {
+  const row = Option.getOrThrow(try (try BranchStore).current.get(CURRENT))
   return row.status === "ready" && row.branchId !== null
     ? Option.some({ branchId: row.branchId, owner: row.owner, repo: row.repo, name: row.name })
     : Option.none()
-})
+}
 
 const pressOf = (branchId: string) =>
-  Effect.flatMap(PublishStore, ({ presses }) => Effect.map(presses.get(branchId), Option.getOrUndefined))
+  effect {
+    const { presses } = try PublishStore
+    return Option.getOrUndefined(try presses.get(branchId))
+  }
 
 const setPress = (branchId: string, fields: Partial<Omit<PublishPress, "branchId">>) =>
-  Effect.gen(function* () {
-    const { presses } = yield* PublishStore
-    const held = yield* presses.get(branchId)
-    yield* Effect.orDie(
+  effect {
+    const { presses } = try PublishStore
+    const held = try presses.get(branchId)
+    try Effect.orDie(
       Option.isSome(held)
         ? presses.update(branchId, (row) => void Object.assign(row, fields))
         : presses.insert({ branchId, ...EMPTY, ...fields }),
     )
-  })
+  }
 
 /** Makes `shown` equal to `rows`, one branch's publication. */
 const mirror = (rows: ReadonlyArray<PublicationRow>) =>
-  Effect.gen(function* () {
-    const { shown } = yield* PublishStore
+  effect {
+    const { shown } = try PublishStore
     const keep = new Set(rows.map((row) => row.branchId))
-    const gone = (yield* shown.toArray).filter((row) => !keep.has(row.branchId)).map((row) => row.branchId)
-    if (gone.length > 0) yield* Effect.orDie(shown.delete(gone))
+    const gone = (try shown.toArray).filter((row) => !keep.has(row.branchId)).map((row) => row.branchId)
+    if (gone.length > 0) try Effect.orDie(shown.delete(gone))
     for (const row of rows) {
-      yield* Effect.orDie(
-        Option.isSome(yield* shown.get(row.branchId))
+      try Effect.orDie(
+        Option.isSome(try shown.get(row.branchId))
           ? shown.update(row.branchId, (draft) => void Object.assign(draft, row))
           : shown.insert(row),
       )
     }
-  })
+  }
 
 /** Keeps branch `branchId`'s pull request title equal to `found`'s, with its repository, or none. */
 const keepTitle = (branchId: string, found: { readonly repoId: string; readonly title: string } | undefined) =>
-  Effect.gen(function* () {
-    const { titles } = yield* PublishStore
-    const kept = yield* titles.get(branchId)
+  effect {
+    const { titles } = try PublishStore
+    const kept = try titles.get(branchId)
     if (found === undefined) {
-      if (Option.isSome(kept)) yield* Effect.orDie(titles.delete(branchId))
+      if (Option.isSome(kept)) try Effect.orDie(titles.delete(branchId))
       return
     }
-    yield* Effect.orDie(
+    try Effect.orDie(
       Option.isSome(kept)
         ? titles.update(branchId, (draft) => void Object.assign(draft, found))
         : titles.insert({ branchId, ...found }),
     )
-  })
+  }
 
 /**
  * The title of `publication`'s pull request as its repository's issues have it, each time they change, none once
@@ -93,8 +97,8 @@ const keepTitle = (branchId: string, found: { readonly repoId: string; readonly 
 const pullTitles = (publication: PublicationRow | undefined) =>
   publication === undefined || publication.prNumber === null
     ? Stream.make(undefined)
-    : Stream.unwrap(Effect.gen(function* () {
-      const { items } = yield* (yield* IssuesStore).forRepo(publication.repoId)
+    : Stream.unwrap(effect {
+      const { items } = try (try IssuesStore).forRepo(publication.repoId)
       return items.changes({ initial: true }).pipe(
         Stream.mapEffect(() => items.toArray),
         Stream.map((rows) =>
@@ -102,15 +106,15 @@ const pullTitles = (publication: PublicationRow | undefined) =>
         ),
         Stream.map((title) => title === undefined ? undefined : { repoId: publication.repoId, title }),
       )
-    }))
+    })
 
 /** Reads the publication's base and head into the Compare's comparisons, once per pair. */
 const compare = (publication: PublicationRow) =>
-  Effect.gen(function* () {
-    const store = yield* PublishStore
-    const { owner, repo } = Option.getOrThrow(yield* (yield* BranchStore).current.get(CURRENT))
-    yield* readComparison(store.comparisons, store.scope, owner, repo, publication.baseSha, publication.headSha)
-  })
+  effect {
+    const store = try PublishStore
+    const { owner, repo } = Option.getOrThrow(try (try BranchStore).current.get(CURRENT))
+    try readComparison(store.comparisons, store.scope, owner, repo, publication.baseSha, publication.headSha)
+  }
 
 /**
  * What the branch page's route calls once the branch is open: shows branch `branchId`'s publication, kept equal to
@@ -118,20 +122,20 @@ const compare = (publication: PublicationRow) =>
  * change; `null` shows none. Only the latest page's follower runs.
  */
 export const show = (branchId: string | null, compareShown = false) =>
-  Effect.gen(function* () {
-    const store = yield* PublishStore
-    yield* FiberHandle.clear(store.follower)
+  (effect {
+    const store = try PublishStore
+    try FiberHandle.clear(store.follower)
     // Another branch's publication goes at once; this branch's stays until its shape answers, so nothing flickers.
-    yield* mirror((yield* store.shown.toArray).filter((row) => row.branchId === branchId))
+    try mirror((try store.shown.toArray).filter((row) => row.branchId === branchId))
     if (branchId === null) return
-    const shape = yield* store.publications(branchId)
+    const shape = try store.publications(branchId)
     const publications = shape.changes({ initial: true }).pipe(
       Stream.runForEach(() =>
-        Effect.gen(function* () {
-          const rows = yield* shape.toArray
-          yield* mirror(rows)
-          if (compareShown) yield* Effect.forEach(rows, compare, { discard: true })
-        })
+        effect {
+          const rows = try shape.toArray
+          try mirror(rows)
+          if (compareShown) try Effect.forEach(rows, compare, { discard: true })
+        }
       ),
     )
     const titles = shape.changes({ initial: true }).pipe(
@@ -140,20 +144,20 @@ export const show = (branchId: string | null, compareShown = false) =>
       Stream.switchMap(pullTitles),
       Stream.runForEach((title) => keepTitle(branchId, title)),
     )
-    yield* FiberHandle.run(store.follower, Effect.all([publications, titles], { concurrency: 2, discard: true }))
+    try FiberHandle.run(store.follower, Effect.all([publications, titles], { concurrency: 2, discard: true }))
   }).pipe(Effect.annotateLogs({ feature: "branch" }))
 
 /** Opens Publish's form on the shown branch. */
-export const openForm = Effect.gen(function* () {
-  const branch = yield* shownBranch
-  if (Option.isSome(branch)) yield* setPress(branch.value.branchId, { form: true })
-})
+export const openForm = effect {
+  const branch = try shownBranch
+  if (Option.isSome(branch)) try setPress(branch.value.branchId, { form: true })
+}
 
 /** Closes Publish's form: Esc. */
-export const closeForm = Effect.gen(function* () {
-  const branch = yield* shownBranch
-  if (Option.isSome(branch)) yield* setPress(branch.value.branchId, { form: false })
-})
+export const closeForm = effect {
+  const branch = try shownBranch
+  if (Option.isSome(branch)) try setPress(branch.value.branchId, { form: false })
+}
 
 /** What a press's dispatch answered: the write it started, or why not. */
 const settled = (dispatched: Result.Result<Dispatched<"branch/publish">, DispatchFailed>): {
@@ -173,11 +177,11 @@ const record = (
   name: "branch.publish.press" | "branch.update.press" | "branch.resync.press",
   outcome: string,
 ) =>
-  Effect.gen(function* () {
-    yield* Metric.update(Metric.withAttributes(counter, { outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ outcome })
-    yield* Effect.logWithLevel(outcome === "sent" ? "Info" : "Warn")(name).pipe(Effect.annotateLogs({ outcome }))
-  })
+  effect {
+    try Metric.update(Metric.withAttributes(counter, { outcome }), 1)
+    try Effect.annotateCurrentSpan({ outcome })
+    try Effect.logWithLevel(outcome === "sent" ? "Info" : "Warn")(name).pipe(Effect.annotateLogs({ outcome }))
+  }
 
 /**
  * Publish on the shown branch: `branch/publish` with the person's title, trimmed, and description. The form closes,
@@ -185,28 +189,28 @@ const record = (
  * GitHub's limits, or a Publish this tab is still running, presses nothing. Answers whether it pressed.
  */
 export const publish = (title: string, body: string) =>
-  Effect.gen(function* () {
-    const branch = yield* shownBranch
+  (effect {
+    const branch = try shownBranch
     if (Option.isNone(branch)) return false
     const { branchId, owner, repo, name } = branch.value
     const trimmed = title.trim()
     if (trimmed.length === 0 || trimmed.length > MAX_TITLE_LENGTH || body.length > MAX_BODY_LENGTH) return false
-    if ((yield* pressOf(branchId))?.publishing === true) return false
-    yield* setPress(branchId, { form: false, publishing: true, publishWriteId: null, publishRefused: null })
-    const executionId = crypto.randomUUID()
-    const expectedWriteId = yield* operationWriteId("publish", executionId).pipe(Effect.provide(WebCrypto.layer))
-    yield* requestWriteNotice({ writeId: expectedWriteId, repoId: `github/${owner}/${repo}`, branch: name, operation: "publish" })
-    const dispatched = yield* Effect.result(
-      (yield* FlowDispatch).dispatch(
+    if ((try pressOf(branchId))?.publishing === true) return false
+    try setPress(branchId, { form: false, publishing: true, publishWriteId: null, publishRefused: null })
+    const executionId = try Effect.sync(() => WebCryptoReference.defaultValue().randomUUID())
+    const expectedWriteId = try operationWriteId("publish", executionId).pipe(Effect.provide(WebCrypto.layer))
+    try requestWriteNotice({ writeId: expectedWriteId, repoId: `github/${owner}/${repo}`, branch: name, operation: "publish" })
+    const dispatched = try Effect.result(
+      (try FlowDispatch).dispatch(
         "branch/publish",
         { repo: `${owner}/${repo}`, branch: name, title: trimmed, body },
         { door: "button", executionId },
       ),
     )
     const { writeId, refused } = settled(dispatched)
-    if (refused !== null) yield* failWriteNotice(expectedWriteId)
-    yield* setPress(branchId, { publishing: false, publishWriteId: writeId, publishRefused: refused })
-    yield* record(publishes, "branch.publish.press", refused ?? "sent")
+    if (refused !== null) try failWriteNotice(expectedWriteId)
+    try setPress(branchId, { publishing: false, publishWriteId: writeId, publishRefused: refused })
+    try record(publishes, "branch.publish.press", refused ?? "sent")
     return true
   }).pipe(Effect.withSpan("branch.publish.press"), Effect.annotateLogs({ feature: "branch" }))
 
@@ -214,22 +218,22 @@ export const publish = (title: string, body: string) =>
  * Update branch on the shown branch: `branch/update`. The page says Updating… until the write settles, then how it
  * ended, or why not. An Update this tab is still running presses nothing. Answers whether it pressed.
  */
-export const update = Effect.gen(function* () {
-  const branch = yield* shownBranch
+export const update = (effect {
+  const branch = try shownBranch
   if (Option.isNone(branch)) return false
   const { branchId, owner, repo, name } = branch.value
-  if ((yield* pressOf(branchId))?.updating === true) return false
-  yield* setPress(branchId, { updating: true, updateWriteId: null, updateRefused: null })
-  const executionId = crypto.randomUUID()
-  const expectedWriteId = yield* operationWriteId("update", executionId).pipe(Effect.provide(WebCrypto.layer))
-  yield* requestWriteNotice({ writeId: expectedWriteId, repoId: `github/${owner}/${repo}`, branch: name, operation: "update" })
-  const dispatched = yield* Effect.result(
-    (yield* FlowDispatch).dispatch("branch/update", { repo: `${owner}/${repo}`, branch: name }, { door: "button", executionId }),
+  if ((try pressOf(branchId))?.updating === true) return false
+  try setPress(branchId, { updating: true, updateWriteId: null, updateRefused: null })
+  const executionId = try Effect.sync(() => WebCryptoReference.defaultValue().randomUUID())
+  const expectedWriteId = try operationWriteId("update", executionId).pipe(Effect.provide(WebCrypto.layer))
+  try requestWriteNotice({ writeId: expectedWriteId, repoId: `github/${owner}/${repo}`, branch: name, operation: "update" })
+  const dispatched = try Effect.result(
+    (try FlowDispatch).dispatch("branch/update", { repo: `${owner}/${repo}`, branch: name }, { door: "button", executionId }),
   )
   const { writeId, refused } = settled(dispatched)
-  if (refused !== null) yield* failWriteNotice(expectedWriteId)
-  yield* setPress(branchId, { updating: false, updateWriteId: writeId, updateRefused: refused })
-  yield* record(updates, "branch.update.press", refused ?? "sent")
+  if (refused !== null) try failWriteNotice(expectedWriteId)
+  try setPress(branchId, { updating: false, updateWriteId: writeId, updateRefused: refused })
+  try record(updates, "branch.update.press", refused ?? "sent")
   return true
 }).pipe(Effect.withSpan("branch.update.press"), Effect.annotateLogs({ feature: "branch" }))
 
@@ -237,17 +241,17 @@ export const update = Effect.gen(function* () {
  * Resync on the shown branch: `branch/resync`. The page says Resyncing… until the write settles, then the files a
  * conflict listed, or why not. A Resync this tab is still running presses nothing. Answers whether it pressed.
  */
-export const resync = Effect.gen(function* () {
-  const branch = yield* shownBranch
+export const resync = (effect {
+  const branch = try shownBranch
   if (Option.isNone(branch)) return false
   const { branchId, owner, repo, name } = branch.value
-  if ((yield* pressOf(branchId))?.resyncing === true) return false
-  yield* setPress(branchId, { resyncing: true, resyncWriteId: null, resyncRefused: null })
-  const dispatched = yield* Effect.result(
-    (yield* FlowDispatch).dispatch("branch/resync", { repo: `${owner}/${repo}`, branch: name }, { door: "button" }),
+  if ((try pressOf(branchId))?.resyncing === true) return false
+  try setPress(branchId, { resyncing: true, resyncWriteId: null, resyncRefused: null })
+  const dispatched = try Effect.result(
+    (try FlowDispatch).dispatch("branch/resync", { repo: `${owner}/${repo}`, branch: name }, { door: "button" }),
   )
   const { writeId, refused } = settled(dispatched)
-  yield* setPress(branchId, { resyncing: false, resyncWriteId: writeId, resyncRefused: refused })
-  yield* record(resyncs, "branch.resync.press", refused ?? "sent")
+  try setPress(branchId, { resyncing: false, resyncWriteId: writeId, resyncRefused: refused })
+  try record(resyncs, "branch.resync.press", refused ?? "sent")
   return true
 }).pipe(Effect.withSpan("branch.resync.press"), Effect.annotateLogs({ feature: "branch" }))

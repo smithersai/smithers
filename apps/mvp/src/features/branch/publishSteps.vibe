@@ -66,66 +66,66 @@ const UpdateCall = Schema.Struct({ method: Schema.Literals(["merge", "rebase"]) 
 
 /** No output is accepted as an admitted write without a matching host receipt. */
 export const evaluate = (state: typeof EvaluateOperation.payloadSchema.Type) =>
-  Effect.gen(function* () {
+  (effect {
     const { selection, request } = state
-    if (selection.runtime !== RealmFlow.version || digestSync(selection.source) !== selection.digest || state.receipts.length > 1) {
-      return yield* invalid()
+    if (selection.runtime !== RealmFlow.version || (try Effect.orDie(Effect.try({ try: () => digestSync(selection.source), catch: (error) => error }))) !== selection.digest || state.receipts.length > 1) {
+      throw invalid()
     }
-    const result = yield* RealmFlow.step({
+    const result = try RealmFlow.step({
       source: selection.source,
       expectedTag: selection.tag,
       payload: request.operation === "publish" ? { title: request.title ?? "", body: request.body ?? "" } : {},
       allowedActions: selection.allowed,
       receipts: state.receipts,
     }).pipe(Effect.mapError(invalid))
-    yield* Metric.update(Metric.withAttributes(steps, { operation: request.operation, outcome: result._tag }), 1)
-    yield* Effect.logInfo("branch.operation.evaluate").pipe(Effect.annotateLogs({ operation: request.operation, outcome: result._tag }))
+    try Metric.update(Metric.withAttributes(steps, { operation: request.operation, outcome: result._tag }), 1)
+    try Effect.logInfo("branch.operation.evaluate").pipe(Effect.annotateLogs({ operation: request.operation, outcome: result._tag }))
     if (result._tag === "Action") {
-      if (state.receipts.length !== 0) return yield* invalid()
+      if (state.receipts.length !== 0) throw invalid()
       return result
     }
     const receipt = state.receipts[0]
-    if (receipt?.outcome._tag !== "Success") return yield* invalid()
-    const recorded = yield* Schema.decodeUnknownEffect(Submitted)(receipt.outcome.value).pipe(Effect.mapError(invalid))
-    if (recorded.writeId !== request.request || recorded.branchId !== request.branchId) return yield* invalid()
-    const value = yield* Schema.decodeUnknownEffect(Submitted)(result.value).pipe(Effect.mapError(invalid))
-    if (value.writeId !== recorded.writeId || value.branchId !== recorded.branchId) return yield* invalid()
+    if (receipt?.outcome._tag !== "Success") throw invalid()
+    const recorded = try Schema.decodeUnknownEffect(Submitted)(receipt.outcome.value).pipe(Effect.mapError(invalid))
+    if (recorded.writeId !== request.request || recorded.branchId !== request.branchId) throw invalid()
+    const value = try Schema.decodeUnknownEffect(Submitted)(result.value).pipe(Effect.mapError(invalid))
+    if (value.writeId !== recorded.writeId || value.branchId !== recorded.branchId) throw invalid()
     return { _tag: "Complete" as const, value }
   }).pipe(Effect.withSpan("branch.operation.evaluate"))
 
 /** The flow supplies the title and body, or the method; the host fixes the branch, the write's id and the session. */
 export const call = ({ state, call }: typeof CallOperation.payloadSchema.Type) =>
-  Effect.gen(function* () {
+  (effect {
     const { request, selection } = state
     if (!selection.allowed.includes(call.name) || !OPERATION_ACTIONS[request.operation].includes(call.name as never)) {
-      return yield* invalid()
+      throw invalid()
     }
     const write: BranchWrite = request.operation === "publish"
-      ? yield* Schema.decodeUnknownEffect(PublishCall)(call.payload).pipe(
+      ? try Schema.decodeUnknownEffect(PublishCall)(call.payload).pipe(
         Effect.mapError(invalid),
         Effect.map((asked) => ({ writeId: request.request, op: "branch/publish" as const, branchId: request.branchId, title: asked.title, body: asked.body })),
       )
-      : yield* Schema.decodeUnknownEffect(UpdateCall)(call.payload).pipe(
+      : try Schema.decodeUnknownEffect(UpdateCall)(call.payload).pipe(
         Effect.mapError(invalid),
         Effect.map((asked) => ({ writeId: request.request, op: "branch/update" as const, branchId: request.branchId, method: asked.method })),
       )
-    const sent = yield* Effect.result((yield* BranchWrites).send(request.owner, request.name, write))
+    const sent = try Effect.result((try BranchWrites).send(request.owner, request.name, write))
     const outcome = sent._tag === "Success" ? "sent" : (() => {
       const failure = writeFailure(sent.failure)
       return failure._tag === "@smthrs/mvp/branch/BranchTrackRefused" ? failure.reason : "unavailable"
     })()
-    yield* Metric.update(Metric.withAttributes(steps, { operation: request.operation, outcome }), 1)
-    yield* Effect.logWithLevel(sent._tag === "Success" ? "Info" : "Warn")("branch.operation.call").pipe(
+    try Metric.update(Metric.withAttributes(steps, { operation: request.operation, outcome }), 1)
+    try Effect.logWithLevel(sent._tag === "Success" ? "Info" : "Warn")("branch.operation.call").pipe(
       Effect.annotateLogs({ operation: request.operation, outcome }),
     )
-    if (sent._tag === "Failure") return yield* writeFailure(sent.failure)
+    if (sent._tag === "Failure") throw writeFailure(sent.failure)
     return { ...call, outcome: { _tag: "Success" as const, value: { writeId: request.request, branchId: request.branchId } } }
   }).pipe(Effect.withSpan("branch.operation.call"))
 
 /** Runs the operation as a child of the caller's durable step, under an identity every retry of the step shares. */
 export const run = (request: OperationRequest) =>
-  Effect.gen(function* () {
-    return yield* (yield* FlowRuntime.FlowRuntime).execute(OperationStart, {
+  effect {
+    return try (try FlowRuntime.FlowRuntime).execute(OperationStart, {
       executionId: `branch-operation:${request.request}`,
       payload: request,
     }).pipe(
@@ -134,7 +134,7 @@ export const run = (request: OperationRequest) =>
         error instanceof BranchTrackRefused || error instanceof BranchTrackUnavailable ? error : new BranchTrackUnavailable()
       ),
     )
-  })
+  }
 
 /**
  * The registry step: the write's id (version 5 of the run's execution in the conversation namespace, as `/new` derives
@@ -144,12 +144,12 @@ const operate = (
   operation: "publish" | "update",
   request: { readonly repo: string; readonly branch: string; readonly title?: string; readonly body?: string | undefined },
 ) =>
-  Effect.gen(function* () {
-    const { executionId } = yield* FlowRuntime.FlowInstance
-    const writeId = yield* operationWriteId(operation, executionId)
-    const tracked = yield* requestTrack({ repo: request.repo, branch: request.branch })
-    const [owner, name] = parts(request.repo)
-    return yield* run({
+  (effect {
+    const { executionId } = try FlowRuntime.FlowInstance
+    const writeId = try operationWriteId(operation, executionId)
+    const tracked = try requestTrack({ repo: request.repo, branch: request.branch })
+    const [owner, name] = try Effect.sync(() => parts(request.repo))
+    return try run({
       owner,
       name,
       branchId: tracked.branchId,
@@ -172,23 +172,23 @@ export const requestUpdate = (request: typeof UpdateRequest.payloadSchema.Type) 
  * sent under that id so every retry sends the same one.
  */
 export const requestResync = (request: typeof ResyncRequest.payloadSchema.Type) =>
-  Effect.gen(function* () {
-    const { executionId } = yield* FlowRuntime.FlowInstance
-    const writeId = yield* Uuid.v5(CONVERSATION_NAMESPACE, `resync:${executionId}`).pipe(Effect.orDie)
-    const tracked = yield* requestTrack({ repo: request.repo, branch: request.branch })
-    const [owner, name] = parts(request.repo)
-    const sent = yield* Effect.result(
-      (yield* BranchWrites).send(owner, name, { writeId, op: "branch/resync", branchId: tracked.branchId }),
+  (effect {
+    const { executionId } = try FlowRuntime.FlowInstance
+    const writeId = try Uuid.v5(CONVERSATION_NAMESPACE, `resync:${executionId}`).pipe(Effect.orDie)
+    const tracked = try requestTrack({ repo: request.repo, branch: request.branch })
+    const [owner, name] = try Effect.sync(() => parts(request.repo))
+    const sent = try Effect.result(
+      (try BranchWrites).send(owner, name, { writeId, op: "branch/resync", branchId: tracked.branchId }),
     )
     const outcome = sent._tag === "Success" ? "sent" : (() => {
       const failure = writeFailure(sent.failure)
       return failure._tag === "@smthrs/mvp/branch/BranchTrackRefused" ? failure.reason : "unavailable"
     })()
-    yield* Metric.update(Metric.withAttributes(steps, { operation: "resync", outcome }), 1)
-    yield* Effect.logWithLevel(sent._tag === "Success" ? "Info" : "Warn")("branch.operation.call").pipe(
+    try Metric.update(Metric.withAttributes(steps, { operation: "resync", outcome }), 1)
+    try Effect.logWithLevel(sent._tag === "Success" ? "Info" : "Warn")("branch.operation.call").pipe(
       Effect.annotateLogs({ operation: "resync", outcome }),
     )
-    if (sent._tag === "Failure") return yield* writeFailure(sent.failure)
+    if (sent._tag === "Failure") throw writeFailure(sent.failure)
     return { writeId, branchId: tracked.branchId }
   }).pipe(Effect.withSpan("branch.resync"))
 

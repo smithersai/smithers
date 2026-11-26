@@ -8,7 +8,7 @@ import { Presence, type PresenceView } from "../presence/presence"
 import { Sharing, type SharingView } from "../sharing/sharing"
 import { SharingStore } from "../sharing/store"
 import { leave, open, writable } from "./actions.vibe"
-import { Publishing, type PublishingView } from "./publishing"
+import { Publishing, type PublishingView } from "./publishing.vibe"
 import { BranchRoute, BranchStore } from "./store.vibe"
 
 // The branch workspace as a frontend sees it (docs/features/branch-workspace.md#the-page): a live query to read and
