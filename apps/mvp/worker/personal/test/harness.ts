@@ -21,9 +21,9 @@ import * as FlowHost from "../../test/flowHost.ts"
 import { signedIn, type testFile } from "../../test/harness.ts"
 import * as PersonalApi from "../Api.ts"
 import * as ModelFlows from "../ModelFlows.ts"
-import { PersonalModels, sealContext } from "../Models.ts"
+import { PersonalModels, sealContext } from "../Models.vibe"
 import * as Store from "../Store.ts"
-import type * as Subscriptions from "../Subscriptions.ts"
+import type * as Subscriptions from "../Subscriptions.vibe"
 import { OPENAI_ORIGIN } from "./provider.ts"
 
 type Runtime = ReturnType<typeof testFile>

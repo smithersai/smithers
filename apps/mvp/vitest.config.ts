@@ -193,7 +193,7 @@ export default defineConfig({
         "worker/secrets/*.{ts,vibe}",
         "db/migrations/0021_secrets.ts",
         // A person's own model: the routes, the flows, the shape, opening it and its ledger (docs/features/personal-model.md).
-        "worker/personal/*.ts",
+        "worker/personal/*.{ts,vibe}",
         "db/migrations/0056_personal_models.ts",
         "db/migrations/0065_model_tiers.ts",
         // Custom domains: the provider adapters, the flows, the routes and the shape (docs/features/domains.md).

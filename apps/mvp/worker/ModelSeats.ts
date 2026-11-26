@@ -13,8 +13,8 @@ import * as ModelRoles from "./ModelRoles.vibe"
 import * as ModelSpend from "./ModelSpend.vibe"
 import * as ModelTiers from "./ModelTiers.vibe"
 import * as ModelUsage from "./ModelUsage.vibe"
-import { PersonalModels, PersonalModelUnusable } from "./personal/Models.ts"
-import * as PersonalUsage from "./personal/Usage.ts"
+import { PersonalModels, PersonalModelUnusable } from "./personal/Models.vibe"
+import * as PersonalUsage from "./personal/Usage.vibe"
 
 // In-process model seats for durable server flows. Admission opens a person's own model when available. Otherwise
 // an eligible call uses the deployment's configured model and reserves its worst-case cost from the daily budget.

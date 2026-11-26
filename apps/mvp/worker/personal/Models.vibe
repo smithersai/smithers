@@ -94,68 +94,66 @@ export class PersonalModels extends Context.Service<
   ): Layer.Layer<PersonalModels, never, SecretKeys | R> =>
     Layer.effect(
       PersonalModels,
-      Effect.gen(function* () {
-        const keys = yield* SecretKeys
+      effect {
+        const keys = try SecretKeys
         // What the database layer needs, captured here, so opening a model needs nothing of its caller.
-        const context = yield* Effect.context<R>()
-        const savedOf = (personId: string) =>
-          Store.saved(personId).pipe(
-            Effect.provide(database),
-            Effect.provideContext(context),
-            Effect.mapError((error) => new PersonalModelsUnavailable({ errorCode: codeOf(error) })),
-          )
+        const context = try Effect.context<R>()
+        const savedOf = effect (personId: string) =>
+          Store.saved(personId).pipe(Effect.provide(database), Effect.provideContext(context)) catch effect (error) => {
+            throw new PersonalModelsUnavailable({ errorCode: try Effect.sync(() => codeOf(error)) })
+          }
         /** `row`'s credential opened and pinned to its base URL, as `modelId` for `tier`. */
         const openOn = (personId: string, row: Store.Saved, modelId: string, tier: ModelTier) =>
-          Effect.gen(function* () {
+          effect {
             const protocol = row.protocol!
             const baseUrl = row.baseUrl!
-            const host = hostOf(baseUrl)
-            if (Option.isNone(keys)) return yield* new PersonalModelUnusable({ reason: "off", host })
-            const key = yield* keys.value.cipher.open(row, sealContext(personId, row.keyVersion)).pipe(
+            const host = try Effect.sync(() => hostOf(baseUrl))
+            if (Option.isNone(keys)) throw new PersonalModelUnusable({ reason: "off", host })
+            const key = try keys.value.cipher.open(row, sealContext(personId, row.keyVersion)).pipe(
               Effect.mapError(() => new PersonalModelUnusable({ reason: "key", host })),
             )
-            const planned = ConfiguredModel.planModelBinding(
+            const planned = try Effect.sync(() => ConfiguredModel.planModelBinding(
               { protocol: wireOf(protocol, host, modelId), baseUrl, modelId, credential: CREDENTIAL },
               [{ name: CREDENTIAL, present: true, origins: [new URL(baseUrl).origin] }],
               { kind: "generation" },
-            )
-            if (!planned.ok) return yield* new PersonalModelUnusable({ reason: planned.failure.code, host })
+            ))
+            if (!planned.ok) throw new PersonalModelUnusable({ reason: planned.failure.code, host })
             // A plan from planModelBinding always routes, so a refusal here is a defect.
-            const built = yield* Effect.orDie(toModel(planned.plan, key))
+            const built = try Effect.orDie(toModel(planned.plan, key))
             const model: Model.Model = {
               ...built.model,
               stream: (request) => built.model.stream(request).pipe(Stream.mapError(finalFailure)),
             }
             return { modelId: planned.plan.modelId, model, host, protocol, connectionId: row.id, credentialNonce: row.nonce, tier } satisfies Opened
-          })
+          }
         const open = (personId: string, tier: ModelTier) =>
-          Effect.gen(function* () {
-            const saved = yield* savedOf(personId)
+          effect {
+            const saved = try savedOf(personId)
             // A subscription or Jev alone serves no model call: such a person has no model of their own to answer one.
             if (!saved.some((connection) => connection.active && connection.protocol !== null)) {
               return Option.none<Opened>()
             }
-            const resolved = resolveTier(saved, tier)
+            const resolved = try Effect.sync(() => resolveTier(saved, tier))
             // A list with no model named anywhere and no preset's host has no model for any tier.
             if (resolved === undefined) {
               const named = saved.find((connection) => connection.active && connection.protocol !== null)
-              return yield* new PersonalModelUnusable({ reason: "no_model", host: hostOf(named!.baseUrl!) })
+              throw new PersonalModelUnusable({ reason: "no_model", host: try Effect.sync(() => hostOf(named!.baseUrl!)) })
             }
             const row = saved.find((each) => each.id === resolved.connectionId)!
-            return Option.some(yield* openOn(personId, row, resolved.modelId, resolved.tier))
-          })
+            return Option.some(try openOn(personId, row, resolved.modelId, resolved.tier))
+          }
         const openConnection = (personId: string, connectionId: string) =>
-          Effect.gen(function* () {
-            const row = (yield* savedOf(personId)).find((connection) => connection.id === connectionId)
+          effect {
+            const row = (try savedOf(personId)).find((connection) => connection.id === connectionId)
             if (row === undefined || row.protocol === null) return Option.none<Opened>()
             // Whatever routing makes of the list, Check Access tries this connection with the first model it serves.
-            const resolved = resolveTier([{ ...row, active: true }], "fast")
+            const resolved = try Effect.sync(() => resolveTier([{ ...row, active: true }], "fast"))
             if (resolved === undefined) {
-              return yield* new PersonalModelUnusable({ reason: "no_model", host: hostOf(row.baseUrl!) })
+              throw new PersonalModelUnusable({ reason: "no_model", host: try Effect.sync(() => hostOf(row.baseUrl!)) })
             }
-            return Option.some(yield* openOn(personId, row, resolved.modelId, resolved.tier))
-          })
+            return Option.some(try openOn(personId, row, resolved.modelId, resolved.tier))
+          }
         return PersonalModels.of({ open, openConnection })
-      }),
+      },
     )
 }

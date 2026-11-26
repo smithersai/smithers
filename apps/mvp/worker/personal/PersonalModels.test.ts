@@ -31,9 +31,9 @@ import { SecretKeys } from "../secrets/Keys.vibe"
 import { eventually, harness, PERSONAL_KEYS, recorded, testFile } from "../test/harness.ts"
 import * as PersonalApi from "./Api.ts"
 import * as ModelFlows from "./ModelFlows.ts"
-import { PersonalModels, PersonalModelsUnavailable, PersonalModelUnusable } from "./Models.ts"
+import { PersonalModels, PersonalModelsUnavailable, PersonalModelUnusable } from "./Models.vibe"
 import * as Store from "./Store.ts"
-import * as PersonalUsage from "./Usage.ts"
+import * as PersonalUsage from "./Usage.vibe"
 import {
   admin,
   agent,

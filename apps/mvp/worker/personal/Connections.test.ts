@@ -28,10 +28,10 @@ import * as Agents from "./Agents.ts"
 import * as PersonalApi from "./Api.ts"
 import * as Codex from "./Codex.ts"
 import * as ModelFlows from "./ModelFlows.ts"
-import { PersonalModels, sealContext } from "./Models.ts"
+import { PersonalModels, sealContext } from "./Models.vibe"
 import * as Store from "./Store.ts"
-import * as Subscriptions from "./Subscriptions.ts"
-import * as PersonalUsage from "./Usage.ts"
+import * as Subscriptions from "./Subscriptions.vibe"
+import * as PersonalUsage from "./Usage.vibe"
 import {
   agent,
   dump,

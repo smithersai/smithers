@@ -36,11 +36,11 @@ import { SecretKeys } from "../secrets/Keys.vibe"
 import * as ShapeAccess from "../ShapeAccess.vibe"
 import * as Codex from "./Codex.ts"
 import * as ModelFlows from "./ModelFlows.ts"
-import { type Opened, PersonalModels, PersonalModelUnusable, sealContext } from "./Models.ts"
-import { connectionDefaults } from "./Defaults.ts"
-import * as Subscriptions from "./Subscriptions.ts"
+import { type Opened, PersonalModels, PersonalModelUnusable, sealContext } from "./Models.vibe"
+import { connectionDefaults } from "./Defaults.vibe"
+import * as Subscriptions from "./Subscriptions.vibe"
 import * as Store from "./Store.ts"
-import * as PersonalUsage from "./Usage.ts"
+import * as PersonalUsage from "./Usage.vibe"
 
 // A person's own connections' routes (decisions 0096, 0107 and 0132, docs/features/personal-model.md). Credentials are
 // write-only: no route answers one.

@@ -23,7 +23,7 @@ import { MAX_VIEW_HTML_BYTES, MAX_VIEW_JSON_BYTES, SUBMIT_EVENT } from "../src/f
 import * as Actor from "./Actor.ts"
 import * as BranchAccess from "./branch/Access.ts"
 import { DocsSource } from "./docs/Source.vibe"
-import * as PersonalModels from "./personal/Models.ts"
+import * as PersonalModels from "./personal/Models.vibe"
 import * as PersonalFlows from "./PersonalFlows.ts"
 import { SecretKeys } from "./secrets/Keys.vibe"
 import * as Views from "./Views.ts"

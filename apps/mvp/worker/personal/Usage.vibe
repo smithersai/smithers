@@ -63,14 +63,14 @@ export const end = <E, R>(
   call: Call,
   ended: End,
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
-): Effect.Effect<void, never, R> => {
+): void!never!R => {
   const { inputTokens, outputTokens } = ended.usage
   const failure = {
     ...(ended.errorCode === undefined ? {} : { errorCode: ended.errorCode }),
     ...(ended.httpStatus === undefined ? {} : { httpStatus: ended.httpStatus }),
   }
-  return Effect.gen(function* () {
-    const settled = yield* Store.settle({
+  return effect {
+    const settled = try Store.settle({
       invocationId: call.invocationId,
       outcome: ended.outcome,
       inputTokens,
@@ -80,29 +80,28 @@ export const end = <E, R>(
     })
     // Settled already: whatever ended it first recorded it.
     if (Option.isNone(settled)) return
-    if (refusedKey(ended)) yield* Store.mark(call.invocationId, ended.httpStatus)
-    else if (ended.outcome === "success") yield* Store.mark(call.invocationId, undefined)
-    yield* Metric.update(Metric.withAttributes(calls, { role: call.role, outcome: ended.outcome }), 1)
+    if (refusedKey(ended)) try Store.mark(call.invocationId, ended.httpStatus)
+    else if (ended.outcome === "success") try Store.mark(call.invocationId, undefined)
+    try Metric.update(Metric.withAttributes(calls, { role: call.role, outcome: ended.outcome }), 1)
     if (inputTokens !== undefined) {
-      yield* Metric.update(Metric.withAttributes(tokens, { role: call.role, type: "input" }), inputTokens)
+      try Metric.update(Metric.withAttributes(tokens, { role: call.role, type: "input" }), inputTokens)
     }
     if (outputTokens !== undefined) {
-      yield* Metric.update(Metric.withAttributes(tokens, { role: call.role, type: "output" }), outputTokens)
+      try Metric.update(Metric.withAttributes(tokens, { role: call.role, type: "output" }), outputTokens)
     }
     if (ended.outcome !== "success") {
-      yield* Effect.logWithLevel(refusedKey(ended) ? "Warn" : "Info")("personal_model.call").pipe(
+      try Effect.logWithLevel(refusedKey(ended) ? "Warn" : "Info")("personal_model.call").pipe(
         Effect.annotateLogs({ role: call.role, invocationId: call.invocationId, outcome: ended.outcome, ...failure }),
       )
     }
-  }).pipe(
+  }.pipe(
     Effect.provide(database),
-    Effect.catchCause((cause) =>
-      Effect.andThen(
-        Metric.update(Metric.withAttributes(errors, { op: "end" }), 1),
-        Effect.logError("personal_model.usage").pipe(
-          Effect.annotateLogs({ invocationId: call.invocationId, errorCode: codeOf(Cause.squash(cause)) }),
-        ),
+    Effect.catchCause(effect (cause) => {
+      const errorCode = try Effect.sync(() => codeOf(Cause.squash(cause)))
+      try Metric.update(Metric.withAttributes(errors, { op: "end" }), 1)
+      try Effect.logError("personal_model.usage").pipe(
+        Effect.annotateLogs({ invocationId: call.invocationId, errorCode }),
       )
-    ),
+    }),
   )
 }

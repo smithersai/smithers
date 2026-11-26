@@ -43,7 +43,7 @@ import {
 import { asUser, configuredSessionOn, failureFields, runOn, stageTimer, type UserOptions } from "./branch/Session.ts"
 import { userOf } from "./branch/Users.ts"
 import * as Agents from "./personal/Agents.ts"
-import * as Subscriptions from "./personal/Subscriptions.ts"
+import * as Subscriptions from "./personal/Subscriptions.vibe"
 import * as Overflow from "./runners/Overflow.ts"
 import { SecretKeys } from "./secrets/Keys.vibe"
 import * as SandboxEgress from "./secrets/SandboxEgress.ts"

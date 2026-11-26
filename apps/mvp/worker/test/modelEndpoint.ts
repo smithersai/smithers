@@ -7,7 +7,7 @@ import { canAsk, Sessions } from "../Actor.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as ModelSeats from "../ModelSeats.ts"
 import * as ModelSpend from "../ModelSpend.vibe"
-import type * as PersonalUsage from "../personal/Usage.ts"
+import type * as PersonalUsage from "../personal/Usage.vibe"
 
 /**
  * The model endpoint's handler for one role, `POST /api/model/<role>`: it refuses a signed-out request, then admits and

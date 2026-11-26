@@ -98,7 +98,7 @@ import { FEED_DOCUMENTS_TABLE } from "../features/feeds/contract"
 import { digestSync } from "@smthrs/crypto"
 import { BUG_REPORTS_TABLE } from "../features/bugs/contract"
 import * as ModelFlows from "../../worker/personal/ModelFlows.ts"
-import { PersonalModels } from "../../worker/personal/Models.ts"
+import { PersonalModels } from "../../worker/personal/Models.vibe"
 import {
   ANTHROPIC_ORIGIN,
   OPENAI_ORIGIN,

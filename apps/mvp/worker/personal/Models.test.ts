@@ -4,7 +4,7 @@ import { expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { SecretKeys } from "../secrets/Keys.vibe"
 import { testFile } from "../test/harness.ts"
-import { PersonalModels } from "./Models.ts"
+import { PersonalModels } from "./Models.vibe"
 import { KEY, seedKeys } from "./test/harness.ts"
 
 const runtime = testFile("optional_models")
