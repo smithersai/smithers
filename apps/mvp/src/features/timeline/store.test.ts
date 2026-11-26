@@ -1,4 +1,4 @@
-import { FlowRegistry } from "../../flows/registry"
+import { FlowRegistry } from "../../flows/registry.vibe"
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { ModelStep } from "@smthrs/agent"
 import { Action, RetryPolicy } from "@smthrs/flow"

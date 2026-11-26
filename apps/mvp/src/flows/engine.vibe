@@ -1,14 +1,13 @@
-import { telemetryExport } from "../telemetryExport"
-import { FetchFailures, LogFailures, Otlp } from "@smthrs/observability"
+import { FetchFailures, LogFailures } from "@smthrs/observability"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Context, Deferred, Effect, Fiber, Layer } from "effect"
 import { TELEMETRY_ROUTE } from "../features/chat/contract"
 import { tabHandlers } from "../features/theme/store.vibe"
 import { apiRoute } from "../apiRoutes"
 import { BROWSER_TELEMETRY, ENGINE_SERVICE, EXPORTED_SPANS, FAILURE_CODES, TELEMETRY_LIMITS } from "../telemetry"
 import { ENGINE_NAME } from "./contract"
 import { ClientEngine } from "./dispatch.vibe"
+import { engineOtlp, persistenceOptionsOnFailure } from "./engineHost"
 import { answer, type Endpoint } from "./tabPort.vibe"
 
 // This device's engine as the tab sees it (docs/features/flows.md#the-engine-and-the-tab-port): the tab's view of the
@@ -25,11 +24,10 @@ import { answer, type Endpoint } from "./tabPort.vibe"
 export const engineTelemetry = (origin: string) =>
   LogFailures.layer({ records: BROWSER_TELEMETRY.records, codes: FAILURE_CODES }).pipe(
     Layer.provideMerge(
-      Otlp.layerFetch({
+      engineOtlp({
         baseUrl: `${origin}${TELEMETRY_ROUTE}`,
         serviceName: ENGINE_SERVICE,
         spans: EXPORTED_SPANS,
-                transform: telemetryExport,
         ...TELEMETRY_LIMITS,
       }),
     ),
@@ -44,7 +42,9 @@ export const engineTelemetry = (origin: string) =>
 export const engineRequests = (origin: string) => FetchFailures.layer({ route: apiRoute(origin) })
 
 /** The engine worker this tab started: the other end of its tab port, which `tabAnswers` answers. */
-export class TabWorker extends Context.Service<TabWorker, Endpoint>()("@smthrs/mvp/flows/TabWorker") {}
+export service TabWorker: Endpoint {
+  static readonly key = "@smthrs/mvp/flows/TabWorker"
+}
 
 /**
  * The tab's engine: starts this tab's engine worker with `worker`, gives dispatch the engine of whichever tab leads
@@ -55,20 +55,20 @@ export class TabWorker extends Context.Service<TabWorker, Endpoint>()("@smthrs/m
  */
 export const tabEngine = (worker: () => BrowserEngine.WorkerLike & Endpoint, name: string = ENGINE_NAME) =>
   Layer.unwrap(
-    Effect.gen(function* () {
-      const started = yield* Deferred.make<Endpoint>()
+    effect {
+      const started = try Deferred.make<Endpoint>()
       const engine = BrowserEngine.layer({
         name,
         worker: () => {
           const running = worker()
-          Deferred.doneUnsafe(started, Effect.succeed(running))
+          Deferred.doneUnsafe(started, succeed(running))
           return running
         },
       })
       return Layer.merge(ClientEngine.layerBrowser, Layer.effect(TabWorker, Deferred.await(started))).pipe(
         Layer.provideMerge(engine),
       )
-    }),
+    },
   )
 
 /**
@@ -77,17 +77,12 @@ export const tabEngine = (worker: () => BrowserEngine.WorkerLike & Endpoint, nam
  * unavailable` and keeps the rows in memory. The race's promise bridges `unavailable` for the host's `open`, which
  * TanStack DB calls, and ends with the layer.
  */
-export const failFastOnEngine = <D extends Persistence.Database>(options: Persistence.Options<D>) =>
-  Effect.gen(function* () {
-    const engine = yield* BrowserEngine.BrowserEngine
-    const watching = yield* Effect.forkScoped(engine.unavailable)
-    const failed = Effect.runPromiseWith(yield* Effect.context<never>())(Fiber.join(watching)).then(() => {
-      throw new EngineFailed()
-    })
-    // expected: the race below handles this rejection; until `open` runs, nothing else would
-    failed.catch(() => {})
-    return { ...options, open: () => Promise.race([Promise.resolve(options.open()), failed]) } satisfies Persistence.Options<D>
-  })
+export const failFastOnEngine = effect <D extends Persistence.Database>(options: Persistence.Options<D>) => {
+  const engine = try BrowserEngine.BrowserEngine
+  const watching = fork.scoped engine.unavailable
+  const services = try context<never>()
+  return try sync(() => persistenceOptionsOnFailure(services, watching, EngineFailed, options))
+}
 
 /** This tab's engine is unavailable, so no leader will serve the device store. */
 export class EngineFailed extends Error {
@@ -102,8 +97,8 @@ export class EngineFailed extends Error {
  * setter, so running one again is harmless.
  */
 export const tabAnswers = Layer.effectDiscard(
-  Effect.gen(function* () {
-    const stop = yield* answer(yield* TabWorker, yield* tabHandlers)
-    yield* Effect.addFinalizer(() => Effect.sync(stop))
-  }),
+  effect {
+    const stop = try answer(try TabWorker, try tabHandlers)
+    try addFinalizer(() => sync(stop))
+  },
 )

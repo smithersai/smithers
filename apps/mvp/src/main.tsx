@@ -558,7 +558,7 @@ const host: Omit<Host, "editorTabId" | "editorTabPersistent" | "editorTabRefusal
     const search = new URLSearchParams(window.location.search)
     const dev = new URLSearchParams([...search].filter(([key]) => key === "faults"))
     // Vite reads the worker's `type` statically, so it comes after the spread.
-    const worker = new Worker(new URL("./flows/engine.worker.ts", import.meta.url), {
+    const worker = new Worker(new URL("./flows/engine.worker.vibe", import.meta.url), {
       ...(import.meta.env.DEV && dev.toString() !== "" ? { name: `dev:${dev}` } : {}),
       type: "module",
     })

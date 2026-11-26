@@ -318,15 +318,12 @@ export default await WebAssembly.compile(await readFile(new URL(${url})))`
         // The dev server over HTTPS and HTTP/2, as production serves the app (docs/infrastructure.md#https-and-http2).
         "dev/https.ts"
       ],
-      // src/flows/engine.worker.ts is a program boundary, like src/main.tsx: src/flows/engine.test.ts proves what it
-      // registers, and a browser proves the rest.
       // src/features/code-intel/language.worker.ts is one too: src/test/languageServer.ts runs the same server in Node.
       exclude: [
         "src/**/*.test.{ts,vibe}",
         "plugins/**/*.test.{ts,vibe}",
         "src/test/**",
         "worker/**/*.test.{ts,vibe}",
-        "src/flows/engine.worker.ts",
         // The worker's first import, which starts its first session read off the worker's global; src/flows/sessionRead.ts
         // is what reads it, tested.
         "src/flows/sessionStart.worker.ts",

@@ -10,7 +10,7 @@ import { describe, expect, test } from "vitest"
 import ts from "typescript"
 import { agentFlows, catalogDescription, childExecutionId, publicError } from "./catalog.vibe"
 import { clientFlows, declarationOf, declarations, modelInvocable } from "./declarations.vibe"
-import { entryOf, FlowRegistry, names, registry } from "./registry"
+import { entryOf, FlowRegistry, names, registry } from "./registry.vibe"
 import { requesterOf } from "./requests.vibe"
 import { AGENT_FLOWS, PERSON_ONLY_FLOWS } from "../../worker/Actor.vibe"
 
@@ -66,7 +66,8 @@ describe("the parity law", () => {
     const paths = sources(join(import.meta.dirname, ".."))
     const config = ts.readConfigFile(join(import.meta.dirname, "../../tsconfig.json"), ts.sys.readFile)
     const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, join(import.meta.dirname, "../.."))
-    const program = ts.createProgram(paths, parsed.options)
+    // The TypeScript checker reads the VibeLang compiler's declarations for explicit .vibe imports.
+    const program = ts.createProgram(paths, { ...parsed.options, allowArbitraryExtensions: true })
     const checker = program.getTypeChecker()
     const dispatched: string[] = []
     for (const path of paths) {

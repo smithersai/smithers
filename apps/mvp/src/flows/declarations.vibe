@@ -49,7 +49,7 @@ import { AskWithForm, RenderView, SetViewState, ShowIssues, ShowRepo } from "../
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
 import { ListBugs, ReportBug } from "../features/bugs/flows.vibe"
-import { type FlowName, type FlowOf, names } from "./registry"
+import { type FlowName, type FlowOf, names } from "./registry.vibe"
 
 // Every registered flow's declaration, its body and steps included (docs/features/flows.md#the-registry): what an engine
 // runs and the agent's catalog binds. Only what runs flows imports this module (the engine worker and the Node host),

@@ -4,7 +4,7 @@ import { runners } from "../boundary.vibe"
 import { codeOf } from "../errorCode"
 import { FlowDispatch } from "../flows/dispatch.vibe"
 import { rankOf, type Viewer } from "../features/commands/catalog"
-import type { Minimum } from "../flows/registry"
+import type { Minimum } from "../flows/registry.vibe"
 import { hide, hostFor, pathOf, Plugins, press, readable, setDraft, show, viewAt } from "./plugins"
 import { type Button, type Strip, stripOf } from "./strip"
 

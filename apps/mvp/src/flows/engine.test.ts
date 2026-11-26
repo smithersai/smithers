@@ -18,7 +18,7 @@ import { WriteTheme } from "../features/theme/flows.vibe"
 import { ThemeStore } from "../features/theme/store.vibe"
 import { openFlowHost } from "../test/flowHost"
 import { openDevice } from "../test/device"
-import { EngineFailed, engineRequests, failFastOnEngine, tabAnswers, tabEngine, TabWorker } from "./engine"
+import { EngineFailed, engineRequests, failFastOnEngine, tabAnswers, tabEngine, TabWorker } from "./engine.vibe"
 import { ClientEngine } from "./dispatch.vibe"
 import { type Endpoint, TabCallFailed, TabPort } from "./tabPort.vibe"
 

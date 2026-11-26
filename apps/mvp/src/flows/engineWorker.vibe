@@ -1,0 +1,117 @@
+import { Migrations } from "@smthrs/effect-tanstack-db"
+import { BrowserCache, BrowserRuntime, type SharedSqlite } from "@smthrs/platform-browser"
+import { FetchHttpClient } from "effect/http"
+import { answer, authorizeDevice, IDENTITY_MESSAGE, type Receipt, VISITOR } from "../device/identity"
+import { deviceRegistry } from "../device/registry"
+import { getSession } from "../features/auth/api"
+import { NO_DEVICE_DATA } from "../features/auth/contract"
+import { ENGINE_NAME } from "./contract"
+import { firstReadFrom } from "./sessionRead"
+import { clientFlows } from "./declarations.vibe"
+import { engineRequests, engineTelemetry } from "./engine.vibe"
+import { workerRegistrations } from "./registrations.vibe"
+import { loadSessionFaults, sqliteModule, type EngineWorkerHost } from "./engineHost.worker"
+
+/** The engine worker's program, with the dedicated worker's capabilities supplied by its entry. */
+export const engineWorker = (host: EngineWorkerHost, development: boolean, started: Promise<Response>, wasmUrl: string) => {
+  // Whose data the device holds (src/device/identity.ts): checked before the engine starts and sent to this worker's tab
+  // and every waiting tab. While this worker leads, a tab about to follow it asks, and gets the receipt checked against
+  // the browser's session now. A refused check stops the engine, so this worker never leads and answers no one. Every
+  // request this worker makes to ChatApi carries the owner.
+  let activation: { readonly receipt: Receipt; readonly database: SharedSqlite.Service } | undefined
+  // Under the dev server, the end-to-end tests' parameters, which main.tsx names this worker with (`dev:<parameters>`).
+  const dev = development && host.name.startsWith("dev:") ? new URLSearchParams(host.name.slice("dev:".length)) : undefined
+  const loadFaults = dev?.get("faults") === "session-503" ? loadSessionFaults : undefined
+  // Who the browser is signed in as, read for the device's owner check; behind the page's switch under
+  // `?faults=session-503` (src/test/authFaults.ts). The first read takes the one the worker started as it loaded
+  // (src/flows/sessionRead.ts), except behind that switch, whose refused reads never reach it.
+  let session = getSession(host.origin, "10 seconds").pipe(
+    Effect.provide(FetchHttpClient.layer),
+    Effect.provideService(
+      FetchHttpClient.Fetch,
+      firstReadFrom(host.unbound, host.sessionAddress, loadFaults === undefined ? started : undefined),
+    ),
+  )
+  const report = (database: SharedSqlite.Service) =>
+    (owner: string | undefined, outcome: string, continuous: boolean, sessionTag?: string) => {
+      // An adopted visitor's data never grants authority over earlier outbox writes.
+      const receipt: Receipt = {
+        _tag: IDENTITY_MESSAGE,
+        owner,
+        outcome,
+        ...(continuous ? { continuous: true } : {}),
+        ...(sessionTag === undefined ? {} : { sessionTag }),
+      }
+      activation = { receipt, database }
+      host.report(receipt)
+    }
+  // A page saw the session name a person on the visitor's data this worker opened (decision 0023, "Adopting in
+  // place"): the owner check again, which claims the data for them, and its receipt to every tab, which takes the owner
+  // with no reload. Not now (ChatApi couldn't say), the visitor's receipt again; anything else, the receipt as it is.
+  const adopt = effect (opened: NonNullable<typeof activation>) => {
+    const { receipt, database } = opened
+    if (receipt.owner !== VISITOR) return try host.broadcast(receipt)
+    const checked = try exit(authorizeDevice({ database, session, report: report(database) }))
+    if (checked._tag === "Failure" && activation === opened) try host.broadcast({ ...receipt, outcome: "unavailable" })
+  }
+  // This listener belongs to the existing BrowserRuntime program, including its scope and telemetry. Requests are
+  // handled in order; adopting never starts a second runtime from a BroadcastChannel callback.
+  const identityRequests = Layer.effectDiscard(
+    host.requests.pipe(
+      Stream.runForEach(effect (event) => {
+        const opened = activation
+        if (opened?.receipt.owner === undefined) return
+        if (event.data?.request === "adopt") return try adopt(opened)
+        if (event.data?.request !== true) return
+        const current = try host.sessionNow
+        const response = try sync(() => answer(opened.receipt, current))
+        try host.broadcast(response)
+      }),
+      forkScoped({ startImmediately: true }),
+    ),
+  )
+  host.bindFetch({
+    principal: () => activation?.receipt.owner ?? NO_DEVICE_DATA,
+    sessionTag: () => activation?.receipt.sessionTag,
+  })
+
+  const options = {
+    name: ENGINE_NAME,
+    // The SQLite build loads only once this worker leads, and only in this worker's bundle.
+    sqlite: {
+      module: sqliteModule,
+      wasm: BrowserCache.readAsset(wasmUrl).pipe(Effect.provide(BrowserCache.layerAssets())),
+    },
+    flows: clientFlows,
+    // Before it serves the device store to any tab, the leader brings it to this build's versions, once per epoch, as
+    // the durable flow `device/prepare` (decision 0021).
+    prepare: Migrations.prepare(deviceRegistry),
+    // Before the engine exists, every time this worker is about to lead, whose data the device holds.
+    authorize: (opened: SharedSqlite.Service) =>
+      authorizeDevice({
+        database: opened,
+        session,
+        report: report(opened),
+      }),
+    // `http:` pages on this machine open only under the dev server (src/features/web/url.ts).
+    registerFlows: workerRegistrations(host.scope, {
+      origin: host.origin,
+      name: ENGINE_NAME,
+      localHttp: development,
+    }),
+    telemetry: identityRequests.pipe(
+      Layer.provideMerge(engineRequests(host.origin)),
+      Layer.provideMerge(engineTelemetry(host.origin)),
+    ),
+  }
+  return {
+    options,
+    start: () => {
+      if (loadFaults === undefined) return BrowserRuntime.run(options)
+      return loadFaults().then((faults) => {
+        session = faults.faultySession(session, true)
+        return BrowserRuntime.run(options)
+      })
+    },
+  }
+}

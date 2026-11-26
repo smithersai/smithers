@@ -1,4 +1,4 @@
-import { entryOf, type FlowName, names } from "../../flows/registry"
+import { entryOf, type FlowName, names } from "../../flows/registry.vibe"
 
 // Which runs Retry runs again (decision 0014 §2, docs/features/runs.md#acts): a run of a flow the agent may run, its
 // own payload again. A flow only a person or the app starts is never retried with its own payload: an answer is retried

@@ -8,7 +8,7 @@ import { COMMANDS, commandsFor, pluginCommands } from "../features/commands/cata
 import { Commands } from "../features/commands/commands"
 import { agentFlows, catalogDescription } from "../flows/catalog.vibe"
 import { declarationOf, modelInvocable } from "../flows/declarations.vibe"
-import { names } from "../flows/registry"
+import { names } from "../flows/registry.vibe"
 import { member, openTestApp } from "../test/chatApi"
 import { BUILTIN, type BuiltIn } from "./builtin"
 import { BRANCH_FLOWS } from "./builtinFlows"

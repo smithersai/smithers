@@ -1,7 +1,7 @@
 import { FlowRuntime } from "@smthrs/flow"
 import type { EngineStore } from "@smthrs/flows"
 import { codeOf } from "../errorCode"
-import { entryOf, names } from "./registry"
+import { entryOf, names } from "./registry.vibe"
 
 // What the person already refused in one answer (the agent evals' `flow-delete-denied`, 2026-10-22: denied, the agent
 // asked again in other words). Each approval is an `app/agent/ask` child of the answer's run, the agent's own or the

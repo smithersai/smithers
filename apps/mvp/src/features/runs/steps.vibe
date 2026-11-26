@@ -7,7 +7,7 @@ import { asker } from "../../flows/askingTab"
 import { RunCredentials } from "../../flows/credentials.vibe"
 import { declarationOf as declared } from "../../flows/declarations.vibe"
 import type { Door } from "../../flows/dispatch.vibe"
-import { type FlowName, names } from "../../flows/registry"
+import { type FlowName, names } from "../../flows/registry.vibe"
 import { FLOW_CODE } from "../flows-ui/reference"
 import { requesterOf } from "../../flows/requests.vibe"
 import {

@@ -8,7 +8,7 @@ import { DispatchFailed, FlowDispatch, dispatches } from "../../flows/dispatch.v
 import { WriteIntents } from "../../writeAdmission"
 import { NavigationRefused } from "../navigation/flows.vibe"
 import { choose as chooseCommand, submit as submitCommand, type as typeCommand } from "./actions.vibe"
-import { entryOf, names } from "../../flows/registry"
+import { entryOf, names } from "../../flows/registry.vibe"
 import type { Actor } from "../../../worker/Actor.vibe"
 import { nodeDevice, openTab, openTestApi, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { AuthStore, SESSION } from "../auth/store"

@@ -9,7 +9,7 @@ import { FlowPromptReference, FlowNewReference } from "../features/flows-ui/refe
 import { Ask } from "../features/status/flows"
 import { declarationOf, modelInvocable } from "./declarations.vibe"
 import { asksApproval, deniedHere } from "./approvals"
-import { entryOf, FlowRegistry, type FlowName, names } from "./registry"
+import { entryOf, FlowRegistry, type FlowName, names } from "./registry.vibe"
 
 // The agent's catalog (decision 0003 §1, docs/features/flows.md#the-agents-catalog): the registry's model-invocable
 // flows, which all run on this device, bound so a cell's `ctx.call("app/theme/set", { mode })` runs the very declaration a

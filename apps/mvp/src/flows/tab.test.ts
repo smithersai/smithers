@@ -85,7 +85,7 @@ describe("the tab's modules", () => {
   })
 
   test("the engine worker imports the agent for prompt flows", async () => {
-    expect(await reached("src/flows/registrations.ts")).toContainEqual(
+    expect(await reached("src/flows/registrations.vibe")).toContainEqual(
       "@smthrs/agent <- src/features/flows-ui/steps.vibe",
     )
   })

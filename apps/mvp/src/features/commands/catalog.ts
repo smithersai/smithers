@@ -1,5 +1,5 @@
 import { formFieldsFor, type SlashCommand } from "@smthrs/ui"
-import { type Entry, entryOf, type FlowName, type Minimum, names } from "../../flows/registry"
+import { type Entry, entryOf, type FlowName, type Minimum, names } from "../../flows/registry.vibe"
 import type { Viewer } from "../auth/viewer"
 
 export { viewerOf } from "../auth/viewer"

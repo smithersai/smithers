@@ -1,4 +1,4 @@
-import { FlowRegistry } from "../../flows/registry"
+import { FlowRegistry } from "../../flows/registry.vibe"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { Action, type FlowRuntime } from "@smthrs/flow"
 import { Logger as StructuredLogger } from "@smthrs/observability"

@@ -11,7 +11,7 @@ import { AuthClient } from "./features/auth/api"
 import { DeviceWipe } from "./features/auth/device"
 import { AuthStore, SESSION } from "./features/auth/store"
 import { afterEach, expect, test, vi } from "vitest"
-import { tabEngine } from "./flows/engine"
+import { tabEngine } from "./flows/engine.vibe"
 import { nodeDevice } from "./test/chatApi"
 import { DATA_LOCK, ENGINES_DIRECTORY, inMemory, leaveReason, memoryStorage, pageWipe, unwiped, WIPE, SIGN_OUT_LOCK, type WipeHost, WipeUnfinished } from "./wipe"
 

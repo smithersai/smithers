@@ -16,7 +16,7 @@ import { FlowPromptReference } from "../features/flows-ui/reference"
 import { PROMPT_CATALOG } from "../features/flows-ui/callable"
 import { AUTHOR_TOOLS } from "../features/flows-ui/contract"
 import { agentFlows, callFlow, catalogDescription, NotApproved, publicError, scopeFor, scopeOf, source } from "./catalog.vibe"
-import { entryOf, FlowRegistry } from "./registry"
+import { entryOf, FlowRegistry } from "./registry.vibe"
 
 test("approval-bearing catalog entries tell the agent the call asks the person itself", () => {
   expect(catalogDescription("flow/save")).toContain("Do not call app/agent/ask separately")

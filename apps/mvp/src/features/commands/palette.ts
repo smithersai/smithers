@@ -1,4 +1,4 @@
-import type { FlowName, Minimum } from "../../flows/registry"
+import type { FlowName, Minimum } from "../../flows/registry.vibe"
 import { rankOf, type Viewer } from "./catalog"
 
 // Global Command Palette & Go-to-File model (docs/features/repo.md, docs/features/factory.md):

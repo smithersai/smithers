@@ -1,4 +1,4 @@
-import { FlowRegistry, registry as flowEntries } from "../../flows/registry"
+import { FlowRegistry, registry as flowEntries } from "../../flows/registry.vibe"
 // Your own flows on this device's engine (decision 0014 §2, docs/features/flows.md#your-own-flows): every `flow/*` flow
 // runs as the browser's engine worker registers it (src/flows/registrations.ts), on the Node host over the compose
 // Postgres, against ChatApi's real handler on this file's schema. The model is the only scripted seam: the endpoint's

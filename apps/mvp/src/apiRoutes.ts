@@ -59,8 +59,11 @@ export const routeTemplate = (pathname: string): string => {
 /**
  * The route `FetchFailures` records a request by (`@smthrs/observability`): its template when it goes to the app's own
  * `/api/` on `origin`, other than the telemetry export; `undefined` for anything else.
+ * @throws {never}
  */
-export const apiRoute = (origin: string) => (url: URL): string | undefined =>
-  url.origin !== origin || !url.pathname.startsWith("/api/") || url.pathname.startsWith(TELEMETRY_PREFIX)
-    ? undefined
-    : routeTemplate(url.pathname)
+export const apiRoute = (origin: string) =>
+  /** @throws {never} */
+  (url: URL): string | undefined =>
+    url.origin !== origin || !url.pathname.startsWith("/api/") || url.pathname.startsWith(TELEMETRY_PREFIX)
+      ? undefined
+      : routeTemplate(url.pathname)

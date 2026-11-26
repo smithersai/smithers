@@ -1,0 +1,13 @@
+// First: the worker's first session read starts before the rest of its bundle evaluates
+// (src/flows/sessionStart.worker.ts).
+import { started as sessionStarted } from "./sessionStart.worker"
+import wasmUrl from "@journeyapps/wa-sqlite/dist/wa-sqlite.wasm?url"
+import { workerHost } from "./engineHost.worker"
+import { engineWorker } from "./engineWorker.vibe"
+
+// The engine worker each tab starts (src/flows/engine.vibe `tabEngine`): a program boundary, like src/main.tsx, which
+// hands the host's capabilities to the program. The worker whose tab holds the engine's Web Lock runs client flows
+// over SQLite in OPFS (decision 0011). The others wait their turn. It reaches ChatApi on the page's origin, and this device's collections
+// through its own tab. Its logs, spans and metrics go to ChatApi's relay, as the tab's do.
+
+void engineWorker(workerHost(), import.meta.env.DEV, sessionStarted, wasmUrl).start()

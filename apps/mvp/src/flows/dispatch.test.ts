@@ -1,4 +1,4 @@
-import { FlowRegistry } from "./registry"
+import { FlowRegistry } from "./registry.vibe"
 // Dispatch (src/flows/dispatch.ts): a flow on the Node host's engine over the compose Postgres (`pnpm db:up`), and
 // every dispatch's records, read back without the flow's input. Unhappy paths inject the faulty service: an engine
 // that refuses or dies, `Preferences` that can't be written.
@@ -13,7 +13,7 @@ import { Preferences, PreferencesUnavailable, registration as themeRegistration,
 import { tabPreferences, ThemeStore } from "../features/theme/store.vibe"
 import { clientFlows } from "./declarations.vibe"
 import { ClientEngine, dispatches, DispatchFailed, FlowDispatch, makeDispatch } from "./dispatch.vibe"
-import { registry } from "./registry"
+import { registry } from "./registry.vibe"
 import { KEPT, TabHistory } from "./history"
 import { TabRequests } from "./requests.vibe"
 

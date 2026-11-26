@@ -2,7 +2,7 @@ import { Context, Effect, Layer, Metric, type Option, Schema } from "effect"
 import type { HttpServerRequest } from "effect/http"
 import type { Role } from "../src/features/auth/contract.ts"
 import type { PersonOnlyFlow } from "../src/flows/personOnly.ts"
-import type { registry } from "../src/flows/registry.ts"
+import type { registry } from "../src/flows/registry.vibe"
 
 export { PERSON_ONLY_FLOWS, type PersonOnlyEnforcement, type PersonOnlyFlow, refusesCredential } from "../src/flows/personOnly.ts"
 

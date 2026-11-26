@@ -1,4 +1,4 @@
-import { entryOf, names } from "../src/flows/registry"
+import { entryOf, names } from "../src/flows/registry.vibe"
 
 /**
  * The person's own acts, from the registry (src/flows/registry.ts): every flow a person runs that the agent may not

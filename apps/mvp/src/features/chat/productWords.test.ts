@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { internalNames } from "./productWords"
-import { names } from "../../flows/registry"
+import { names } from "../../flows/registry.vibe"
 
 describe("internalNames", () => {
   test("reads past a fenced code block the person asked to see: their own code may name a flow", () => {

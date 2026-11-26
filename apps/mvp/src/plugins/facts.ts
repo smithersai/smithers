@@ -4,7 +4,7 @@ import { FEED_ITEM_ROW, FEED_ROW } from "../features/feeds/contract"
 import { AGENT_RUN_ROW, MACHINE_ROW } from "../features/fleet/schema"
 import { HOST_NODE_ROW, OBSERVED_SESSION_ROW, PROVIDER_ACCOUNT_ROW } from "../features/fleet/globalSchema"
 import { WAITS_ROW } from "../features/status/contract"
-import { type Entry, registry } from "../flows/registry"
+import { type Entry, registry } from "../flows/registry.vibe"
 import { POINTS } from "./contract"
 
 // What the loader checks a manifest against (decision 0017, "Checks beyond the schema"): the app's one flow catalog,

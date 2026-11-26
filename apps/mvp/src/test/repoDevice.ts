@@ -1,4 +1,4 @@
-import { FlowRegistry } from "../flows/registry"
+import { FlowRegistry } from "../flows/registry.vibe"
 // A browser tab's repository feature in Node, as React drives it: the `Repo` layer's plain actions, lookups and live
 // queries, and the repository's home (the `Home` layer), over the real store and client, and dispatch over this device's engine: the Node host running the
 // repository flows and `app/navigate` (src/features/repo/steps.ts), as the engine worker registers them. The tab answers

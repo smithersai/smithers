@@ -1,5 +1,5 @@
 import { TestSchemas } from "@smthrs/database"
-import { FlowRegistry } from "../flows/registry"
+import { FlowRegistry } from "../flows/registry.vibe"
 // A device in Node, as the browser builds it (decision 0011 §4): a tab with its own `ThemeStore`, `BrowserEngine`,
 // dispatch and navigation answers (src/flows/engine.ts `tabEngine` and `tabAnswers`, src/features/navigation/tab.ts), and the leader its engine worker runs (`BrowserRuntime.serve` over every
 // client flow, src/flows/registrations.ts), over Node's own Web Locks and `BroadcastChannel`. The worker is a
@@ -18,14 +18,14 @@ import { ThemeStore } from "../features/theme/store.vibe"
 import { Theme } from "../features/theme/theme.vibe"
 import { FlowDispatch } from "../flows/dispatch.vibe"
 import { clientFlows } from "../flows/declarations.vibe"
-import { tabAnswers, tabEngine } from "../flows/engine"
+import { tabAnswers, tabEngine } from "../flows/engine.vibe"
 import { tabNavigation } from "../features/navigation/tab.vibe"
 import { tabDoors } from "../flows/doors"
 import { FilesPage } from "../features/files/actions.vibe"
 import type { Here } from "../features/files/schema"
 import { FilesStore } from "../features/files/store.vibe"
 import { tabFiles } from "../features/files/tab"
-import { workerRegistrations } from "../flows/registrations"
+import { workerRegistrations } from "../flows/registrations.vibe"
 import type { Endpoint } from "../flows/tabPort.vibe"
 import { ORIGIN } from "./flowHost"
 import { repoAuthority } from "./repoAuthority"

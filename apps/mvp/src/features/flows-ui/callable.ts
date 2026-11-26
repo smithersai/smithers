@@ -1,4 +1,4 @@
-import { entryOf, type FlowName, names } from "../../flows/registry"
+import { entryOf, type FlowName, names } from "../../flows/registry.vibe"
 import { FORBIDDEN_CALLS } from "./contract"
 import type { CatalogEntry } from "./instructions"
 

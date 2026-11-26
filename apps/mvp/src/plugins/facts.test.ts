@@ -7,7 +7,7 @@ import { Effect } from "effect"
 import { describe, expect, test } from "vitest"
 import factory from "../../plugins/factory/plugin.json" with { type: "json" }
 import queue from "../../plugins/queue/plugin.json" with { type: "json" }
-import { registry } from "../flows/registry"
+import { registry } from "../flows/registry.vibe"
 import { POINTS } from "./contract"
 import { factsOf, hostFacts, ungranted } from "./facts"
 

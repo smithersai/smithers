@@ -8,7 +8,7 @@ import { Cause, Clock, Context, Deferred, Exit, Layer, Metric, Option, Result, S
 import { type DOORS, PERSON_DOORS } from "./contract"
 import { codeOfFailure, TabHistory } from "./history"
 import { refusesCredential } from "./personOnly"
-import { type Entry, type FlowName, type FlowOf, FlowRegistry } from "./registry"
+import { type Entry, type FlowName, type FlowOf, FlowRegistry } from "./registry.vibe"
 import { TabRequests } from "./requests.vibe"
 
 // Dispatch (docs/features/flows.md#dispatch): the one way the UI runs a flow. A button, a slash command, a view and

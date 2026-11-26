@@ -1,4 +1,4 @@
-import type { registry } from "./registry"
+import type { registry } from "./registry.vibe"
 
 // Person-only acts (decision 0017, slice 0, docs/features/sign-in.md#run-credentials): what only the person's own press
 // does. The list is the registry's: every flow with a `userOnlyReason` (src/flows/registry.ts) is a key below, and the

@@ -1,4 +1,4 @@
-import { names } from "../../flows/registry"
+import { names } from "../../flows/registry.vibe"
 
 // Portable output-quality check for recorded and attached agent output.
 

@@ -1,4 +1,4 @@
-import { FlowRegistry } from "./registry"
+import { FlowRegistry } from "./registry.vibe"
 // Run credentials on the device (src/flows/credentials.ts, decision 0017 slice 0), on the Node host's durable engine
 // over the compose Postgres (`pnpm db:up`), against ChatApi's real runs routes: the person's own press goes in their
 // session; an agent's run and every run nested in it, a run nobody pressed and a run whose tab is gone each go with a
