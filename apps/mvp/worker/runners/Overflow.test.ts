@@ -452,6 +452,88 @@ describe("the overflow wake", () => {
     await Effect.runPromise(jobs.status("todo:2#g2"))
     expect(woken).toEqual([REPO])
   })
+
+  // M1 Track C: a self-hosted node's runner is the baseline. The overflow box takes only what the baseline left queued
+  // past the setting's wait, and a job neither can take yet stays queued: none is dropped.
+  test("self-hosted runners take the baseline first, the overflow takes only the spill, and nothing is dropped", async () => {
+    const woken: Array<string> = []
+    const jobs = Jobs.make(await database(), undefined, (due) => Effect.sync(() => void woken.push(due.repoId)))
+    const local = "test-only-mac-mini-runner-token-never-deployed"
+    await runtime.runPromise(Store.addRunner({
+      repoId: REPO, name: "mac-mini", tokenSha256: digestSync(local), labels: ["linux"], capacity: 2, repoAuthorized: true,
+    }, { actorId: "person-admin", invocationKey: crypto.randomUUID() }))
+    const connectionId = await seedKey()
+    const asAdmin = await adminRoutes(admin)
+    await asAdmin.send("overflow/cloudflare", "PUT", { ...setting(connectionId), minQueuedSeconds: 30, capacity: 2 })
+    await asAdmin.close()
+    const overflow = await tokenNow()
+    // The box's runner claims with the wait its own plan configures, not one this test restates.
+    const saved = Option.getOrThrow(await runtime.runPromise(Overflow.read(REPO)))
+    const boxConfig = JSON.parse(Overflow.boxPlan(saved, { token: "t", key: "k" }, { protocol: PROTOCOLS[1], baseUrl: MODEL }, "m").config) as {
+      readonly minQueuedSeconds: number
+      readonly capacity: number
+    }
+    expect(boxConfig).toMatchObject({ minQueuedSeconds: 30, capacity: 2 })
+    const routes = HttpEffect.toWebHandler(
+      RunnersApi.make(await database(), { pollMillis: 50, runOf: () => undefined }).fetch.pipe(
+        Effect.provide(RunContentTest.transcripts().layer),
+      ),
+    )
+    // Each runner reports the jobs it holds, as `smthrs runner serve` does: a held job it omits is reclaimed.
+    const held: Record<string, Array<string>> = {}
+    const claim = async (bearer: string, minQueuedSeconds?: number) => {
+      const response = await routes(new Request(`${ORIGIN}${AgentRunner.ROUTES.claim}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          profiles: ["coder-profile"], free: 1, running: held[bearer] ?? [], waitSeconds: 0,
+          ...(minQueuedSeconds === undefined ? {} : { minQueuedSeconds }),
+        }),
+      }))
+      expect(response.status).toBe(200)
+      const key = ((await response.json()) as { job: { key: string } | null }).job?.key ?? null
+      if (key !== null) held[bearer] = [...(held[bearer] ?? []), key]
+      return key
+    }
+    const box = () => claim(overflow, boxConfig.minQueuedSeconds)
+    const probeAll = async () => {
+      for (const key of jobKeys) await Effect.runPromise(jobs.status(key))
+    }
+    const jobKeys = ["todo:s1#g1", "todo:s2#g1", "todo:s3#g1", "todo:s4#g1", "todo:s5#g1"]
+    for (const key of jobKeys) {
+      await Effect.runPromise(jobs.start(task, key))
+      await sql(`UPDATE agent_jobs SET created_at = now() - interval '1 second' * ${jobKeys.length - jobKeys.indexOf(key)} WHERE key = '${key}'`)
+    }
+
+    // Fresh work: the box takes nothing and isn't woken, while the self-hosted node fills its two slots, oldest first.
+    expect(await box()).toBeNull()
+    // Its box then sleeps: fresh work still wakes nothing.
+    await sql(`UPDATE runners SET seen_at = now() - interval '1 hour' WHERE name = 'cloudflare-overflow'`)
+    await probeAll()
+    expect(woken).toEqual([])
+    expect([await claim(local), await claim(local), await claim(local)]).toEqual(["todo:s1#g1", "todo:s2#g1", null])
+
+    // The baseline is saturated and the rest waited past the setting: one wake, and the box takes the spill in order.
+    await sql(`UPDATE runners SET seen_at = now() - interval '1 hour' WHERE name = 'cloudflare-overflow'`)
+    await sql(`UPDATE agent_jobs SET created_at = created_at - interval '31 seconds'`)
+    await Effect.runPromise(jobs.status("todo:s1#g1"))
+    expect(woken).toEqual([])
+    await Effect.runPromise(jobs.status("todo:s3#g1"))
+    expect(woken).toEqual([REPO])
+    expect([await box(), await box(), await box()]).toEqual(["todo:s3#g1", "todo:s4#g1", null])
+    expect(await claim(local)).toBeNull()
+
+    // Both saturated: the box is awake, so no second wake, and the last job waits queued for the next free slot.
+    await probeAll()
+    expect(woken).toEqual([REPO])
+    expect(await sql(`SELECT j.key, j.status, r.name AS runner FROM agent_jobs j LEFT JOIN runners r ON r.id = j.runner_id ORDER BY j.key`)).toEqual([
+      { key: "todo:s1#g1", status: "claimed", runner: "mac-mini" },
+      { key: "todo:s2#g1", status: "claimed", runner: "mac-mini" },
+      { key: "todo:s3#g1", status: "claimed", runner: "cloudflare-overflow" },
+      { key: "todo:s4#g1", status: "claimed", runner: "cloudflare-overflow" },
+      { key: "todo:s5#g1", status: "queued", runner: null },
+    ])
+  })
 })
 
 
