@@ -7,11 +7,11 @@ import { Cause, Effect, Exit, Layer, Logger, Metric } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { runFlow } from "../../../worker/test/flowHost"
-import { BugsClient, BugsNotTaken } from "./api"
-import { BugRefused, BugTabs, BugUnsent, ListBugs, READ_RETRY, ReportBug, SEND_RETRY } from "./flows"
+import { BugsClient, BugsNotTaken } from "./api.vibe"
+import { BugRefused, BugTabs, BugUnsent, ListBugs, READ_RETRY, ReportBug, SEND_RETRY } from "./flows.vibe"
 import type { BugReport, ReportRequest } from "./schema"
 import { UNANSWERED } from "./context"
-import { capture, contexts, failureOf, list, lists, registration, reports, send } from "./steps"
+import { capture, contexts, failureOf, list, lists, registration, reports, send } from "./steps.vibe"
 
 /** The client over a `fetch` that answers with `respond`, recording each request it was handed. */
 const client = (respond: (request: Request, index: number) => Promise<Response>, within?: `${number} millis`) => {

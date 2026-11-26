@@ -48,7 +48,7 @@ import { TodoAttach, TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, To
 import { AskWithForm, RenderView, SetViewState, ShowIssues, ShowRepo } from "../features/views/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
-import { ListBugs, ReportBug } from "../features/bugs/flows"
+import { ListBugs, ReportBug } from "../features/bugs/flows.vibe"
 import { type FlowName, type FlowOf, names } from "./registry"
 
 // Every registered flow's declaration, its body and steps included (docs/features/flows.md#the-registry): what an engine

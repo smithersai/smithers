@@ -1,0 +1,75 @@
+import type { Duration } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { BUG_REPORTS_ROUTE, BUGS_WITHIN } from "./contract"
+import { Filed, Listed, Refused, type ReportRequest } from "./schema"
+
+// ChatApi's bug report routes as the flows' steps call them (docs/features/bugs.md#the-routes), through Effect's
+// HttpClient, with one deadline covering each whole exchange.
+
+/**
+ * ChatApi didn't take the request: no whole answer within the deadline, or no network (`status` absent), or a refusal
+ * (`status`, with ChatApi's `code` when its body had one).
+ */
+export error BugsNotTaken {
+  status?: number
+  code?: string
+}
+
+const decodeRefused = Schema.decodeUnknownEffect(Refused)
+const decodeFiled = Schema.decodeUnknownEffect(Filed)
+const decodeListed = Schema.decodeUnknownEffect(Listed)
+
+/** The bug report routes on ChatApi at `origin`. */
+export class BugsClient extends Context.Service<
+  BugsClient,
+  {
+    /** `POST /api/bugs`: files one report; filing it again answers the same id. */
+    readonly file: (report: ReportRequest) => Filed!BugsNotTaken
+    /** `GET /api/bugs?limit=`: the latest reports, newest first, for an Admin. */
+    readonly list: (limit: number | undefined) => Listed!BugsNotTaken
+  }
+>()("@smthrs/mvp/bugs/BugsClient") {
+  /** The client over the host's `HttpClient`: a `200` with its body took the request; anything else is refused. */
+  static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
+    Layer.effect(
+      BugsClient,
+      effect {
+        const client = try HttpClient.HttpClient
+        const exchange = <A>(
+          request: HttpClientRequest.HttpClientRequest,
+          decode: (body: unknown) => A!unknown,
+        ) => timeoutOrElse(effect {
+          const response = client.execute(request) catch effect () => {
+            throw new BugsNotTaken({})
+          }
+          try annotateCurrentSpan({ "http.response.status_code": response.status })
+          if (response.status !== 200) {
+            const refusal = try (response.json |> flatMap(%, decodeRefused) |> option(%))
+            throw new BugsNotTaken({
+              status: response.status,
+              ...(Option.isSome(refusal) ? { code: refusal.value.code } : {}),
+            })
+          }
+          return (response.json |> flatMap(%, decode)) catch effect () => {
+            throw new BugsNotTaken({ status: response.status })
+          }
+        }, {
+          // Interrupting the request aborts its fetch, so a stalled body stops too.
+          duration: options.within ?? BUGS_WITHIN,
+          orElse: effect () => { throw new BugsNotTaken({}) },
+        })
+        return BugsClient.of({
+          file: (report) =>
+            exchange(
+              HttpClientRequest.post(`${options.origin}${BUG_REPORTS_ROUTE}`) |> HttpClientRequest.bodyJsonUnsafe(%, report),
+              decodeFiled,
+            ) |> withSpan(%, "bug.file", { kind: "client" }),
+          list: (limit) =>
+            exchange(
+              HttpClientRequest.get(`${options.origin}${BUG_REPORTS_ROUTE}${limit === undefined ? "" : `?limit=${limit}`}`),
+              decodeListed,
+            ) |> withSpan(%, "bug.read", { kind: "client" }),
+        })
+      },
+    )
+}

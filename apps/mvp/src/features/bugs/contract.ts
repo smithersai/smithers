@@ -79,6 +79,8 @@ export const bugContextChannel = (engine: string) => `${engine}/bug-context`
 /** How long the step waits for the tab that asked to say what it shows. */
 export const CONTEXT_WITHIN = "3 seconds"
 
+export const randomReportId = () => crypto.randomUUID()
+
 /** How long one ChatApi exchange may take, the whole of it. */
 export const BUGS_WITHIN = "15 seconds"
 

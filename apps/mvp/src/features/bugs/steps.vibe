@@ -1,8 +1,8 @@
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
-import { Effect, Layer, Metric, Option } from "effect"
 import { requesterOf } from "../../flows/requests"
-import { BugsClient, type BugsNotTaken } from "./api"
+import { BugsClient, type BugsNotTaken } from "./api.vibe"
 import { UNANSWERED } from "./context"
+import { randomReportId } from "./contract"
 import {
   type BugFailure,
   BugRefused,
@@ -13,7 +13,7 @@ import {
   ListStep,
   ReportBug,
   SendStep,
-} from "./flows"
+} from "./flows.vibe"
 import { issueUrl } from "./github"
 import type { ReportRequest } from "./schema"
 
@@ -58,65 +58,61 @@ const doorOf = (executionId: string) => (executionId === requesterOf(executionId
  * door chose none. A `bug.context` line and a count, with how many ids it found.
  */
 export const capture = (payload: { readonly what: string; readonly id?: string | undefined }) =>
-  Effect.gen(function* () {
-    const { executionId } = yield* FlowRuntime.FlowInstance
-    const answered = yield* (yield* BugTabs).ask(requesterOf(executionId))
+  withSpan(effect {
+    const { executionId } = try FlowRuntime.FlowInstance
+    const requester = try sync(() => requesterOf(executionId))
+    const answered = try (try BugTabs).ask(requester)
     const context = Option.getOrElse(answered, () => UNANSWERED)
     const outcome = Option.isSome(answered) ? "answered" : "gone"
-    yield* Metric.update(Metric.withAttributes(contexts, { outcome }), 1)
-    yield* Effect.logWithLevel(outcome === "gone" ? "Warn" : "Info")("bug.context").pipe(
-      Effect.annotateLogs({
-        outcome,
-        door: doorOf(executionId),
-        traces: context.traces.length,
-        runs: context.runs.length,
-        failures: context.failures.length,
-      }),
-    )
-    return { id: payload.id ?? crypto.randomUUID(), what: payload.what, ...context } satisfies ReportRequest
-  }).pipe(Effect.withSpan("bug.context"))
+    try Metric.update(Metric.withAttributes(contexts, { outcome }), 1)
+    try (logWithLevel(outcome === "gone" ? "Warn" : "Info")("bug.context") |> annotateLogs(%, {
+      outcome,
+      door: doorOf(executionId),
+      traces: context.traces.length,
+      runs: context.runs.length,
+      failures: context.failures.length,
+    }))
+    return { id: payload.id ?? (try sync(randomReportId)), what: payload.what, ...context } satisfies ReportRequest
+  }, "bug.context")
 
 /**
  * `app/bug/report/send`: one `POST /api/bugs`, answered with the report's id and GitHub's prefilled form for it. A
  * `bug.report` line and a count by door and outcome, with ChatApi's status and code when it refused.
  */
 export const send = (report: ReportRequest) =>
-  Effect.gen(function* () {
-    const { executionId } = yield* FlowRuntime.FlowInstance
-    const answer = yield* Effect.result((yield* BugsClient).file(report))
+  withSpan(effect {
+    const { executionId } = try FlowRuntime.FlowInstance
+    const answer = try result((try BugsClient).file(report))
     const failure = answer._tag === "Failure" ? failureOf(answer.failure) : undefined
     const outcome = outcomeOf(failure, "filed")
     const door = doorOf(executionId)
-    yield* Metric.update(Metric.withAttributes(reports, { door, outcome }), 1)
-    yield* Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("bug.report").pipe(
-      Effect.annotateLogs({
-        outcome,
-        door,
-        ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
-        ...(answer._tag === "Failure" && answer.failure.code !== undefined ? { code: answer.failure.code } : {}),
-      }),
-    )
-    if (failure !== undefined) return yield* Effect.fail(failure)
-    return { id: report.id, github: issueUrl(report) }
-  }).pipe(Effect.withSpan("bug.report"))
+    try Metric.update(Metric.withAttributes(reports, { door, outcome }), 1)
+    try (logWithLevel(failure === undefined ? "Info" : "Warn")("bug.report") |> annotateLogs(%, {
+      outcome,
+      door,
+      ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
+      ...(answer._tag === "Failure" && answer.failure.code !== undefined ? { code: answer.failure.code } : {}),
+    }))
+    if (failure !== undefined) throw failure
+    const github = try sync(() => issueUrl(report))
+    return { id: report.id, github }
+  }, "bug.report")
 
 /** `app/bug/list/read`: one `GET /api/bugs`. A `bug.list` line and a count by outcome, with how many reports came. */
 export const list = (payload: { readonly limit?: number | undefined }) =>
-  Effect.gen(function* () {
-    const answer = yield* Effect.result((yield* BugsClient).list(payload.limit))
+  withSpan(effect {
+    const answer = try result((try BugsClient).list(payload.limit))
     const failure = answer._tag === "Failure" ? failureOf(answer.failure) : undefined
     const outcome = outcomeOf(failure, "read")
-    yield* Metric.update(Metric.withAttributes(lists, { outcome }), 1)
-    yield* Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("bug.list").pipe(
-      Effect.annotateLogs({
-        outcome,
-        ...(answer._tag === "Success" ? { count: answer.success.reports.length } : {}),
-        ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
-      }),
-    )
-    if (answer._tag === "Failure") return yield* Effect.fail(failureOf(answer.failure))
+    try Metric.update(Metric.withAttributes(lists, { outcome }), 1)
+    try (logWithLevel(failure === undefined ? "Info" : "Warn")("bug.list") |> annotateLogs(%, {
+      outcome,
+      ...(answer._tag === "Success" ? { count: answer.success.reports.length } : {}),
+      ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
+    }))
+    if (answer._tag === "Failure") throw failureOf(answer.failure)
     return answer.success
-  }).pipe(Effect.withSpan("bug.list"))
+  }, "bug.list")
 
 /** Registers `app/bug/report` and `app/bug/list` with their steps, asking through the host's `BugsClient` and `BugTabs`. */
 export const registration = Layer.mergeAll(

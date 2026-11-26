@@ -11,7 +11,7 @@ import { FlowDispatch } from "../../flows/dispatch"
 import { PluginsUi } from "../../plugins/ui"
 import { asPerson, type DeviceOptions, nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"
 import { bugAlertId } from "./contract"
-import { BugRefused } from "./flows"
+import { BugRefused } from "./flows.vibe"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {

@@ -48,7 +48,7 @@ import { TodoAttach, TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, To
 import { AskWithForm, RenderView, SetViewState, ShowIssues, ShowRepo } from "../features/views/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
-import { ListBugs, ReportBug } from "../features/bugs/flows"
+import { ListBugs, ReportBug } from "../features/bugs/flows.vibe"
 import { FeedAnswer } from "../features/feeds/flows"
 
 // The app's flows (docs/features/flows.md#the-registry): every action a person or the agent takes is one `Flow.make`
