@@ -181,8 +181,14 @@ export default Flow.make("ci", { body: (run) => Node.all({ ${jobs} }) })`
   })
 })
 
+// Discovery reads .smithers/workflows/gate.vibe before .smithers/flows/gate/flow.ts, so the .vibe file is the gate
+// every runner plans. The flow.ts copy stays for FACTORY.ts's trigger bindings and the factory projection, which read
+// flows only from .smithers/flows; the drift test below holds the two to one plan.
+const GATE = new URL("../../../../.smithers/workflows/gate.vibe", import.meta.url)
+const LEGACY_GATE = new URL("../../../../.smithers/flows/gate/flow.ts", import.meta.url)
+
 test("plans this repository's own gate: 16 shards on the gate machine, then the coverage job that needs them all", async () => {
-  const source = sourceText(new URL("../../../../.smithers/flows/gate/flow.ts", import.meta.url))
+  const source = sourceText(GATE)
   const planned = await plan(source, "gate")
   expect(planned._tag).toBe("planned")
   if (planned._tag !== "planned") return
@@ -197,6 +203,14 @@ const describeFlow = (source: string, name = "release") =>
   Effect.runPromise(
     Realm.describe(name, source).pipe(Effect.provide(QuickJSVariant.layerVariant(wasmfile as unknown as QuickJSSyncVariant))),
   )
+
+test("the gate's .vibe and its older flow.ts copy plan and describe the same", async () => {
+  const [vibe, legacy] = [sourceText(GATE), sourceText(LEGACY_GATE)]
+  expect(await plan(vibe, "gate")).toEqual(await plan(legacy, "gate"))
+  const described = await describeFlow(vibe, "gate")
+  expect(described).toMatchObject({ _tag: "described", tag: "gate" })
+  expect(described).toEqual(await describeFlow(legacy, "gate"))
+})
 
 /** A flow a person runs by hand: inputs beside the run's own fields, typed, optional, defaulted and chosen. */
 const RELEASE = `

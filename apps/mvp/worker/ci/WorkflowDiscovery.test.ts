@@ -121,6 +121,26 @@ describe("listWorkflows", () => {
   })
 })
 
+describe("this repository's own checkout", () => {
+  // The Smithers checkout itself, as a runner reads it: no fixture stands in for the files.
+  const repo = realpathSync(new URL("../../../../", import.meta.url))
+
+  test("discovers the gate from .smithers/workflows/gate.vibe, ahead of the older flow.ts", () => {
+    const gate = successOf(discoverWorkflow(repo, "gate", nodeFiles))
+    expect(gate).toMatchObject({ name: "gate", source: "workflows", path: "./.smithers/workflows/gate.vibe" })
+    expect(gate.file).toBe(join(repo, ".smithers/workflows/gate.vibe"))
+    expect(gate.text).toBe(fs.readFileSync(gate.file, "utf8"))
+    expect(gate.text).toContain('Flow.make("gate", {')
+  })
+
+  test("lists the gate once, from the workflows layout", () => {
+    const listed = successOf(listWorkflows(repo, nodeFiles))
+    const gates = listed.filter((workflow) => workflow.name === "gate")
+    expect(gates).toHaveLength(1)
+    expect(gates[0]).toMatchObject({ source: "workflows", path: "./.smithers/workflows/gate.vibe" })
+  })
+})
+
 const config = (decision: Record<string, unknown> = {}) => JSON.stringify({
   seats: {},
   decisions: {

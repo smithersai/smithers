@@ -111,6 +111,9 @@ importers:
       '@smthrs/run-store':
         specifier: workspace:*
         version: link:packages/smithers/flows/run-store
+      '@smthrs/sandbox':
+        specifier: workspace:*
+        version: link:packages/smithers/flows/sandbox
       '@smthrs/targets':
         specifier: workspace:*
         version: link:packages/smithers/build/targets

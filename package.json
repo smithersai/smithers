@@ -80,6 +80,7 @@
     "@smthrs/repo-targets": "workspace:*",
     "@smthrs/rpc": "workspace:*",
     "@smthrs/run-store": "workspace:*",
+    "@smthrs/sandbox": "workspace:*",
     "@smthrs/targets": "workspace:*",
     "@smthrs/triggers": "workspace:*",
     "@smthrs/ui": "workspace:*",
