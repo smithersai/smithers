@@ -1,4 +1,4 @@
-import { Deferred, Effect, Metric, Option } from "effect"
+import { Deferred, Effect, Layer, Metric, Option } from "effect"
 import { shardHost } from "../../src/test/messagesShardHost.ts"
 import { MAX_BODY_LENGTH } from "@smthrs/app-state"
 import { type Answered, answerOwner, MessagesShardBridge, writes as bridgeWrites } from "../chat/MessagesShardBridge.ts"
@@ -15,6 +15,7 @@ import {
   ATTACH_REVOCATIONS_ROUTE,
   ATTACH_TOKENS_ROUTE,
   attachMcpRoute,
+  MCP_MAX_REQUEST_BYTES,
 } from "../../src/features/mcp/contract.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { Sessions } from "../Actor.vibe"
@@ -23,11 +24,14 @@ import * as Conversations from "../branch/Conversations.vibe"
 import { repositoryOf } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.vibe"
 import * as Messages from "../Messages.ts"
+import * as SessionStore from "../SessionStore.vibe"
+import * as Throttle from "../Throttle.vibe"
+import { afterBody } from "../WriteAdmission.vibe"
 import { RunCredentials } from "../RunCredentials.vibe"
 import { testFile } from "../test/harness.ts"
 import { cookie, signInHarness } from "../test/signIn.ts"
-import { challengeFor } from "./Attach.vibe"
-import * as LiveMount from "./LiveMount.ts"
+import { ATTACH_LIMITS, challengeFor } from "./Attach.vibe"
+import * as LiveMount from "./LiveMount.vibe"
 
 const runtime = testFile("attach_live")
 const origin = "http://smithers.test"
@@ -68,39 +72,41 @@ const setup = async (bridge?: MessagesShardBridge["Service"]) => {
   const target = { repo: repo.owner + "/" + repo.name, branch: branch.name, conversation: branch.conversationId }
 
   // Build a fresh handler on every request. The intent, claim and grant must survive independently of the host instance.
-  const post = (path: string, data: unknown, headers: Record<string, string> = {}) => {
+  const request = (path: string, init: RequestInit, mountOnly = false) => {
     const attach = LiveMount.make(database)
-    const handler = HttpEffect.toWebHandler(auth.signIn.admit(
-      (LiveMount.handles(path) ? attach.fetch : Effect.succeed(HttpServerResponse.empty({ status: 404 }))).pipe(
-        Effect.provide(auth.sessions),
-        Effect.provide(BranchRoles.layer(roles)),
-        (routed) => bridge === undefined ? routed : Effect.provideService(routed, MessagesShardBridge, bridge),
-      ),
-    ).pipe(Effect.provide(auth.services)))
-    return handler(new Request(origin + path, {
-      method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify(data),
-    }))
+    const fetch = mountOnly || LiveMount.handles(path)
+      ? attach.fetch
+      : Effect.succeed(HttpServerResponse.empty({ status: 404 }))
+    const routed = fetch.pipe(
+      Effect.provide(auth.sessions),
+      Effect.provide(BranchRoles.layer(roles)),
+      (routed) => bridge === undefined ? routed : Effect.provideService(routed, MessagesShardBridge, bridge),
+    )
+    const handler = HttpEffect.toWebHandler((mountOnly ? routed : auth.signIn.admit(routed)).pipe(Effect.provide(auth.services)))
+    return handler(new Request(origin + path, init))
   }
+  const post = (path: string, data: unknown, headers: Record<string, string> = {}) =>
+    request(path, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify(data) })
   const mint = (scope: Partial<typeof target> = {}) =>
     post(ATTACH_INTENTS_ROUTE, { ...target, ...scope, ceiling: ATTACH_CAPABILITIES }, browser)
-  const claim = async () => {
+  const claim = async (path: string = ATTACH_CLAIMS_ROUTE) => {
     const minted = await mint()
     expect(minted.status).toBe(201)
     const { reference } = await minted.json() as { reference: string }
-    const claimed = await post(ATTACH_CLAIMS_ROUTE, { reference, client: "Codex", challenge: await challengeFor(verifier) })
+    const claimed = await post(path, { reference, client: "Codex", challenge: await challengeFor(verifier) })
     expect(claimed.status).toBe(201)
     const { claim, pairing } = await claimed.json() as { claim: string; pairing: string }
     return { reference, claim, pairing }
   }
-  const attach = async () => {
-    const claimed = await claim()
+  const attach = async (claimPath?: string, tokenPath: string = ATTACH_TOKENS_ROUTE) => {
+    const claimed = await claim(claimPath)
     const consent = await post(ATTACH_CONSENT_ROUTE, { reference: claimed.reference }, browser)
     expect(consent.status).toBe(200)
     expect(await consent.json()).toMatchObject({ ...target, claim: claimed.claim, ceiling: ATTACH_CAPABILITIES })
     const approved = await post(ATTACH_APPROVALS_ROUTE, { claim: claimed.claim, pairing: claimed.pairing }, browser)
     expect(approved.status).toBe(200)
     const { code, grant } = await approved.json() as { code: string; grant: string }
-    const redeemed = await post(ATTACH_TOKENS_ROUTE, { claim: claimed.claim, code, verifier })
+    const redeemed = await post(tokenPath, { claim: claimed.claim, code, verifier })
     expect(redeemed.status).toBe(200)
     const receipt = await redeemed.json() as { token: string; mcpPath: string; grant: { id: string } }
     expect(receipt.grant.id).toBe(grant)
@@ -115,7 +121,7 @@ const setup = async (bridge?: MessagesShardBridge["Service"]) => {
     }))
     return { id, answerId }
   }
-  return { person, branch, elsewhere, browser, target, post, mint, claim, attach, ask, credential }
+  return { database, roles, person, branch, elsewhere, browser, target, request, post, mint, claim, attach, ask, credential }
 }
 
 const rpc = (method: string, params?: unknown) => ({ jsonrpc: "2.0", id: 1, method, params })
@@ -160,6 +166,231 @@ test("mounted routes grant only the bound conversation, run real tools and revok
   const revoked = await h.post(mcp, rpc("initialize"), headers)
   expect(revoked.status).toBe(401)
   expect(await revoked.json()).toMatchObject({ error: { data: { reason: "revoked" } } })
+})
+
+test("legacy claim and redeem aliases issue a usable token", async () => {
+  const h = await setup()
+  const { token } = await h.attach("/api/attach/claim", "/api/attach/redeem")
+  expect((await h.post(mcp, rpc("initialize"), bearer(token))).status).toBe(200)
+})
+
+test.each([ATTACH_CLAIMS_ROUTE, "/api/attach/claim"])(
+  "write admission exhausts the allowance through %s before reading another body or acquiring Postgres",
+  async (firstPath) => {
+    const h = await setup()
+    const auth = await signInHarness(runtime)
+    let databaseAcquisitions = 0
+    const database = Layer.unwrap(Effect.sync(() => {
+      databaseAcquisitions++
+      return h.database
+    }))
+    const seen = new Set<string>()
+    const attach: Throttle.Limiter = {
+      limit: ({ key }) => Effect.sync(() => {
+        if (seen.has(key)) return { success: false }
+        seen.add(key)
+        return { success: true }
+      }),
+    }
+    const open: Throttle.Limiter = { limit: () => Effect.succeed({ success: true }) }
+    const throttle = Effect.flatMap(HttpServerRequest.HttpServerRequest,
+      Throttle.make({ shape: open, telemetry: open, broker: open, attach, "attach-mcp": open, waitlist: open }))
+    const mount = LiveMount.make(database)
+    const handler = HttpEffect.toWebHandler(afterBody(mount.fetch, throttle).pipe(
+      Effect.provide(auth.sessions),
+      Effect.provide(BranchRoles.layer(h.roles)),
+      Effect.provide(auth.services),
+    ))
+    const minted = await h.mint()
+    expect(minted.status).toBe(201)
+    const { reference } = await minted.json() as { reference: string }
+    const claimBody = JSON.stringify({ reference, client: "Codex", challenge: await challengeFor(verifier) })
+    const admitted = await handler(new Request(origin + firstPath, { method: "POST", body: claimBody }))
+    expect(admitted.status).toBe(201)
+    expect(databaseAcquisitions).toBe(1)
+
+    for (const path of [ATTACH_CLAIMS_ROUTE, "/api/attach/claim", ATTACH_TOKENS_ROUTE, "/api/attach/redeem"]) {
+      let pulls = 0
+      const payload = path === ATTACH_TOKENS_ROUTE || path.endsWith("/redeem")
+        ? JSON.stringify({ claim: "unused", code: "unused", verifier })
+        : claimBody
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulls++
+          controller.enqueue(new TextEncoder().encode(payload))
+          controller.close()
+        },
+      }, { highWaterMark: 0 })
+      const request = new Request(origin + path + "?ignored=1", { method: "POST", body, duplex: "half" } as RequestInit)
+      const refused = await handler(request)
+      expect(refused.status).toBe(429)
+      expect(await refused.json()).toEqual({ code: "rate_limited" })
+      expect(request.bodyUsed).toBe(false)
+      expect(pulls).toBe(0)
+      expect(databaseAcquisitions).toBe(1)
+    }
+  },
+)
+
+test("the mount allows only POST and forbids caching its method refusal", async () => {
+  const h = await setup()
+  const response = await h.request(ATTACH_INTENTS_ROUTE, { method: "GET", headers: h.browser })
+  expect(response.status).toBe(405)
+  expect(response.headers.get("allow")).toBe("POST")
+  expect(response.headers.get("cache-control")).toBe("no-store")
+})
+
+test("the next intent is refused when the person reaches their limit", async () => {
+  const h = await setup()
+  for (let i = 0; i < ATTACH_LIMITS.intentsPerPerson; i++) {
+    expect((await h.mint()).status).toBe(201)
+  }
+  const refused = await h.mint()
+  expect(refused.status).toBe(429)
+  expect(await refused.json()).toEqual({ code: "too_many" })
+})
+
+test("a person below their own limit cannot mint when the deployment is full", async () => {
+  const h = await setup()
+  const { reference } = await h.claim()
+  await runtime.runPromise(Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`
+      INSERT INTO attach_grants (origin, reference, person_id, expires_at, state)
+      SELECT origin, 'capacity-' || slot, 'other-' || slot, expires_at, state
+      FROM attach_grants CROSS JOIN generate_series(1, ${ATTACH_LIMITS.intents - 1}::int) AS slot
+      WHERE origin = ${origin} AND reference = ${reference}`
+  }))
+  const refused = await h.mint()
+  expect(refused.status).toBe(429)
+  expect(await refused.json()).toEqual({ code: "too_many" })
+})
+
+test("local sign-in can mint for its developer without a persisted session", async () => {
+  const h = await setup()
+  const auth = await signInHarness(runtime, {
+    config: {},
+    fallback: { actor: { subject: { kind: "person", id: h.person }, role: "admin" }, login: "local-developer" },
+  })
+  const handler = HttpEffect.toWebHandler(auth.signIn.admit(LiveMount.make(h.database).fetch).pipe(
+    Effect.provide(auth.sessions),
+    Effect.provide(BranchRoles.layer(h.roles)),
+    Effect.provide(auth.services),
+  ))
+  const response = await handler(new Request(origin + ATTACH_INTENTS_ROUTE, {
+    method: "POST",
+    headers: { origin, "content-type": "application/json" },
+    body: JSON.stringify({ ...h.target, ceiling: ATTACH_CAPABILITIES }),
+  }))
+  expect(response.status).toBe(201)
+  expect(await response.json()).toMatchObject({ ceiling: ATTACH_CAPABILITIES })
+})
+
+test("an intent reference collision cannot replace the existing row", async () => {
+  const h = await setup()
+  const ddl = (statement: string) =>
+    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe(statement)))
+  // Reserve the random reference just before the mount's insert reaches Postgres's unique index.
+  await ddl(`CREATE FUNCTION reserve_attach_reference() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF pg_trigger_depth() = 1 THEN
+        INSERT INTO attach_grants (origin, reference, person_id, expires_at, state)
+        VALUES (NEW.origin, NEW.reference, 'existing-person', NEW.expires_at, NEW.state);
+      END IF;
+      RETURN NEW;
+    END
+  $$`)
+  try {
+    await ddl(`CREATE TRIGGER reserve_attach_reference BEFORE INSERT ON attach_grants
+      FOR EACH ROW EXECUTE FUNCTION reserve_attach_reference()`)
+    const response = await h.mint()
+    expect(response.status).toBe(429)
+    expect(await response.json()).toEqual({ code: "too_many" })
+    const rows = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      SELECT person_id FROM attach_grants WHERE origin = ${origin}`))
+    expect(rows).toEqual([{ person_id: "existing-person" }])
+  } finally {
+    await ddl("DROP TRIGGER IF EXISTS reserve_attach_reference ON attach_grants")
+    await ddl("DROP FUNCTION reserve_attach_reference()")
+  }
+})
+
+test("the mount refuses unknown routes, foreign or missing origins, and unreadable bodies", async () => {
+  const h = await setup()
+  const cases = [
+    ["/api/attach/unknown", {}, "{}", 404, "not_found"],
+    [ATTACH_INTENTS_ROUTE, { ...h.browser, origin: "https://elsewhere.test" }, "{}", 403, "wrong_origin"],
+    [ATTACH_INTENTS_ROUTE, { cookie: h.browser.cookie, [DEVICE_PERSON_HEADER]: NO_DEVICE_DATA }, "{}", 403, "wrong_origin"],
+    [ATTACH_CLAIMS_ROUTE, { "content-length": String(MCP_MAX_REQUEST_BYTES + 1) }, "", 413, "invalid"],
+    [ATTACH_CLAIMS_ROUTE, {}, new Uint8Array([0xff]), 400, "invalid"],
+  ] as const
+  for (const [path, headers, body, status, code] of cases) {
+    const response = await h.request(path, { method: "POST", headers: { ...headers }, body }, true)
+    expect(response.status).toBe(status)
+    expect(response.headers.get("cache-control")).toBe("no-store")
+    expect(await response.json()).toEqual({ code })
+  }
+})
+
+test("every attach route rejects an invalid payload", async () => {
+  const h = await setup()
+  for (const path of [
+    ATTACH_CONSENT_ROUTE, ATTACH_APPROVALS_ROUTE, ATTACH_REVOCATIONS_ROUTE, ATTACH_CLAIMS_ROUTE, ATTACH_TOKENS_ROUTE,
+  ]) {
+    const response = await h.post(path, {}, h.browser)
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ code: "invalid" })
+  }
+})
+
+test("MCP refuses missing credentials and binds explicit reads to the grant's conversation", async () => {
+  const h = await setup()
+  const unauthenticated = await h.post(mcp, rpc("initialize"))
+  expect(unauthenticated.status).toBe(401)
+  const { token } = await h.attach()
+  const headers = bearer(token)
+  const allowed = await h.post(mcp, tool("conversation_read", { conversation: h.target.conversation }), headers)
+  expect(allowed.status).toBe(200)
+  expect(await allowed.json()).toMatchObject({ result: { structuredContent: { messages: [] } } })
+  const refused = await h.post(mcp, tool("conversation_read", { conversation: h.elsewhere.conversationId }), headers)
+  expect(refused.status).toBe(403)
+})
+
+test("ending the issuing session immediately removes MCP access", async () => {
+  const h = await setup()
+  const { token } = await h.attach()
+  const headers = bearer(token)
+  expect((await h.post(mcp, rpc("initialize"), headers)).status).toBe(200)
+  await runtime.runPromise(SessionStore.revoke({ id: h.credential.actor.session! }, "sign_out"))
+  const refused = await h.post(mcp, rpc("initialize"), headers)
+  expect(refused.status).toBe(403)
+  expect(await refused.json()).toMatchObject({ error: { data: { reason: "forbidden" } } })
+})
+
+test("approval refuses a stored intent with an incomplete repository", async () => {
+  const h = await setup()
+  const { reference, claim, pairing } = await h.claim()
+  expect((await h.post(ATTACH_CONSENT_ROUTE, { reference }, h.browser)).status).toBe(200)
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+    UPDATE attach_grants SET state = jsonb_set(state, '{intents,0,1,repo}', '"incomplete"')
+    WHERE origin = ${origin} AND reference = ${reference}`))
+  const refused = await h.post(ATTACH_APPROVALS_ROUTE, { claim, pairing }, h.browser)
+  expect(refused.status).toBe(403)
+  expect(await refused.json()).toEqual({ code: "forbidden" })
+})
+
+test("approval refuses to reserve a grant when the deployment is at capacity", async () => {
+  const h = await setup()
+  const { reference, claim, pairing } = await h.claim()
+  expect((await h.post(ATTACH_CONSENT_ROUTE, { reference }, h.browser)).status).toBe(200)
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+    INSERT INTO attach_grants (origin, reference, person_id, expires_at, state, grant_id, token_hash)
+    SELECT origin, 'capacity-' || slot, person_id, expires_at, state, 'grant-' || slot, 'token-' || slot
+    FROM attach_grants CROSS JOIN generate_series(1, ${ATTACH_LIMITS.tokens}::int) AS slot
+    WHERE origin = ${origin} AND reference = ${reference}`))
+  const refused = await h.post(ATTACH_APPROVALS_ROUTE, { claim, pairing }, h.browser)
+  expect(refused.status).toBe(429)
+  expect(await refused.json()).toEqual({ code: "too_many" })
 })
 
 test("all person routes reject delegated Sessions and caller-supplied identity", async () => {

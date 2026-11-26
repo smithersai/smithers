@@ -60,6 +60,13 @@ const run = (check: ReturnType<typeof Throttle.make>, path: string, headers: Rec
   return { result, count, logs }
 }
 
+const attachPaths = [
+  ATTACH_CLAIMS_ROUTE,
+  ATTACH_TOKENS_ROUTE,
+  "/api/attach/claim",
+  "/api/attach/redeem",
+].flatMap((path) => [path, path + "?ignored=1"])
+
 describe("routeOf", () => {
   test("the hosted-site broker's four routes are throttled before its one object; smithers.sh's own callback isn't", () => {
     const brokerState = "broker_" + "a".repeat(43)
@@ -73,6 +80,20 @@ describe("routeOf", () => {
     ].map(Throttle.routeOf)).toEqual(["broker", "broker", "broker", "broker", undefined, undefined])
   })
 
+  test.each(attachPaths)("%s shares one anonymous attach allowance", (first) => {
+    const open = counting(0).limiter
+    const attach = counting(1)
+    const check = Throttle.make({ shape: open, telemetry: open, broker: open, attach: attach.limiter, "attach-mcp": open, waitlist: open })
+    const headers = { "cf-connecting-ip": "203.0.113.5" }
+
+    expect(Throttle.routeOf(first)).toBe("attach")
+    expect(Option.isNone(run(check, first, headers).result)).toBe(true)
+    for (const path of attachPaths) {
+      expect(Option.getOrThrow(run(check, path, headers).result).status).toBe(429)
+    }
+    expect(attach.seen).toEqual(Array<string>(1 + attachPaths.length).fill("203.0.113.0/24"))
+  })
+
   test("anonymous attach traffic has a budget separate from MCP and cannot throttle revocation", () => {
     const open = counting(1).limiter
     const attach = counting(1).limiter
@@ -81,6 +102,8 @@ describe("routeOf", () => {
     const tool = ATTACH_MCP_ROUTE + "/owner/repo/main"
     expect(run(check, ATTACH_CLAIMS_ROUTE + "?ignored=1").result._tag).toBe("None")
     expect(run(check, ATTACH_TOKENS_ROUTE).result._tag).toBe("Some")
+    expect(Throttle.routeOf(tool)).toBe("attach-mcp")
+    expect(Throttle.routeOf(ATTACH_REVOCATIONS_ROUTE)).toBeUndefined()
     expect(run(check, tool).result._tag).toBe("None")
     expect(run(check, tool).result._tag).toBe("Some")
     expect(run(check, ATTACH_REVOCATIONS_ROUTE).result._tag).toBe("None")

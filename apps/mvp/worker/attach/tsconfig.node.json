@@ -14,5 +14,5 @@
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true
   },
-  "include": ["NodeServeAndAttach.test.ts"]
+  "include": ["NodeServeAndAttach.test.ts", "LiveMount.vibe"]
 }

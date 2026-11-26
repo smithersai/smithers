@@ -248,6 +248,17 @@ export const ATTACH_APPROVALS_ROUTE = `${ATTACH_ROUTE}/approvals`
 /** `POST`, the agent: redeems an approval's code and its PKCE verifier for the grant's bearer token. */
 export const ATTACH_TOKENS_ROUTE = `${ATTACH_ROUTE}/tokens`
 
+/** Maps legacy anonymous attach paths to the routes used by admission and dispatch.
+ * @throws {never}
+ */
+export const canonicalAttachPath = (path: string): string => {
+  switch (path) {
+    case "/api/attach/claim": return ATTACH_CLAIMS_ROUTE
+    case "/api/attach/redeem": return ATTACH_TOKENS_ROUTE
+    default: return path
+  }
+}
+
 /** `POST`, the person's own session: revokes one of their grants. */
 export const ATTACH_REVOCATIONS_ROUTE = `${ATTACH_ROUTE}/revocations`
 

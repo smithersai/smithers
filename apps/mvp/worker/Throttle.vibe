@@ -1,7 +1,7 @@
 import { type HttpServerRequest, HttpServerResponse } from "effect/http"
 import { GitHub } from "@smthrs/integrations"
 import { TELEMETRY_ROUTE } from "../src/features/chat/contract.ts"
-import { ATTACH_CLAIMS_ROUTE, ATTACH_MCP_ROUTE, ATTACH_TOKENS_ROUTE } from "../src/features/mcp/contract.ts"
+import { ATTACH_CLAIMS_ROUTE, ATTACH_MCP_ROUTE, ATTACH_TOKENS_ROUTE, canonicalAttachPath } from "../src/features/mcp/contract.ts"
 import { WAITLIST_JOIN_ROUTE } from "../src/features/waitlist/contract.ts"
 
 // The edge throttle on ChatApi's open routes (docs/features/chat.md#throttling, decision 0008 §7.3): every Electric
@@ -40,7 +40,8 @@ export const routeOf = (url: string): Route | undefined => {
   if (GitHub.Auth.Broker.handles(url)) return "broker"
   const path = url.split("?")[0]!
   if (path === WAITLIST_JOIN_ROUTE) return "waitlist"
-  if (path === ATTACH_CLAIMS_ROUTE || path === ATTACH_TOKENS_ROUTE) return "attach"
+  const canonical = canonicalAttachPath(path)
+  if (canonical === ATTACH_CLAIMS_ROUTE || canonical === ATTACH_TOKENS_ROUTE) return "attach"
   if (path.startsWith(ATTACH_MCP_ROUTE + "/")) return "attach-mcp"
   return path.startsWith(SHAPES) && path.length > SHAPES.length
     ? "shape"

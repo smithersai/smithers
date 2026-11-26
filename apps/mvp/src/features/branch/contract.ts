@@ -80,6 +80,7 @@ export const MAX_TRACK_BODY_BYTES = 2 * 1024
  * Whether `name` is a branch name git accepts (`git check-ref-format --branch`), within the app's length: no control
  * characters, spaces or `~^:?*[\`, no `..`, `@{` or `//`, no segment starting with `.` or ending in `.lock`, and not
  * starting with `-`, starting or ending with `/`, or ending with `.`.
+ * @throws {never}
  */
 export const isBranchName = (name: string): boolean =>
   name.length > 0 &&
