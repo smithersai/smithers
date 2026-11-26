@@ -195,7 +195,9 @@ export const make = (options: {
     if (prior !== undefined) {
       const position = prior.seq === null ? null : at(prior.epoch, prior.seq)
       if (prior.hash !== hash) return { _tag: "IdempotencyConflict", key, shard, position }
-      return position === null ? { _tag: "Refused", key, shard, reason: prior.reason! } : { _tag: "Duplicate", key, position }
+      return position === null
+        ? { _tag: "Refused", key, shard, reason: prior.reason! }
+        : { _tag: "Duplicate", key, position }
     }
     const decision = decide(request.command)
     if (decision._tag === "Refused") {

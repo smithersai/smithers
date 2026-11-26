@@ -5,6 +5,7 @@
  * cursor.
  */
 import { describe, expect, it } from "@effect/vitest"
+import * as Data from "effect/Data"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -382,8 +383,10 @@ describe("ShardClient review regressions", () => {
       const store: ShardClient.ClientStore = {
         load: disk.load,
         modify: (f) =>
-          Effect.tap(disk.modify(f), () =>
-            slow ? Effect.andThen(Deferred.succeed(written, void 0), Deferred.await(acknowledge)) : Effect.void)
+          Effect.tap(
+            disk.modify(f),
+            () => slow ? Effect.andThen(Deferred.succeed(written, void 0), Deferred.await(acknowledge)) : Effect.void
+          )
       }
       const server = ShardServer.make({ shard })
       const node = yield* ShardClient.make({ shard, node: "a", transport: server, store, apply: () => Effect.void })
@@ -445,6 +448,42 @@ describe("ShardClient review regressions", () => {
       })
     }))
 
+  it.effect("hands a transport's own failure to the caller, typed, and resumes from the outbox and cursor", () =>
+    Effect.gen(function*() {
+      class Offline extends Data.TaggedError("Offline")<{}> {}
+      const server = ShardServer.make({ shard, decide: () => ({ _tag: "Accepted", events: [1] }) })
+      let online = false
+      const reach = <A, E>(answer: Effect.Effect<A, E>): Effect.Effect<A, E | Offline> =>
+        Effect.suspend((): Effect.Effect<A, E | Offline> => online ? answer : Effect.fail(new Offline()))
+      // HTTP's shape: every call may fail as the network does, beside what the shard itself refuses.
+      const transport: ShardClient.Transport<Offline> = {
+        submit: (request) => reach(server.submit(request)),
+        pull: (request) => reach(server.pull(request)),
+        snapshot: (id) => reach(server.snapshot(id))
+      }
+      const store = ShardClient.memoryStore()
+      const applied: Array<number> = []
+      const node = yield* ShardClient.make({
+        shard,
+        node: "a",
+        transport,
+        store,
+        apply: (delivery) =>
+          Effect.sync(() => {
+            if (delivery._tag === "Entries") applied.push(...delivery.entries.map((entry) => entry.seq))
+          })
+      })
+      yield* node.enqueue(stream, "one")
+      expect(yield* Effect.flip(node.push)).toBeInstanceOf(Offline)
+      expect(yield* Effect.flip(node.pull)).toBeInstanceOf(Offline)
+      expect(yield* Effect.flip(node.sync)).toBeInstanceOf(Offline)
+      expect(yield* store.load).toMatchObject({ applied: 0, outbox: [{ key: ["a", "0"] }] })
+      online = true
+      expect(yield* node.sync).toEqual({ shard, epoch: 0, seq: 1 })
+      expect(applied).toEqual([1])
+      expect((yield* store.load).outbox).toEqual([])
+    }))
+
   it.effect("keeps a pending command when the reply names a different command", () =>
     Effect.gen(function*() {
       const server = ShardServer.make({ shard })
@@ -453,7 +492,11 @@ describe("ShardClient review regressions", () => {
         submit: () => Effect.succeed({ _tag: "Refused", shard, key: ["other", "0"], reason: "no" })
       }
       const node = yield* ShardClient.make({
-        shard, node: "a", transport, store: ShardClient.memoryStore(), apply: () => Effect.void
+        shard,
+        node: "a",
+        transport,
+        store: ShardClient.memoryStore(),
+        apply: () => Effect.void
       })
       const pending = yield* node.enqueue(stream, "pending")
       expect(Exit.isFailure(yield* Effect.exit(node.push))).toBe(true)
@@ -481,7 +524,10 @@ describe("ShardClient review regressions", () => {
       for (const reply of replies) {
         const store = ShardClient.memoryStore()
         const node = yield* ShardClient.make({
-          shard, node: "a", store, apply: () => Effect.void,
+          shard,
+          node: "a",
+          store,
+          apply: () => Effect.void,
           transport: { ...server, submit: () => Effect.succeed(reply) }
         })
         yield* node.enqueue(stream, "pending")
@@ -500,13 +546,19 @@ describe("ShardClient review regressions", () => {
       const view = projection()
       const store = ShardClient.memoryStore()
       let reads = 0
-      const snapshot = () => Effect.suspend(() => {
-        reads += 1
-        return remote.snapshot(other)
-      })
-      const open = (pull: ShardClient.Transport["pull"]) => ShardClient.make({
-        shard, node: "a", store, apply: view.apply, transport: { ...local, pull, snapshot }
-      })
+      const snapshot = () =>
+        Effect.suspend(() => {
+          reads += 1
+          return remote.snapshot(other)
+        })
+      const open = (pull: ShardClient.Transport["pull"]) =>
+        ShardClient.make({
+          shard,
+          node: "a",
+          store,
+          apply: view.apply,
+          transport: { ...local, pull, snapshot }
+        })
       const foreignPull: ShardClient.Transport["pull"] = (request) => remote.pull({ ...request, shard: other })
       const foreign = yield* open(foreignPull)
       expect(yield* Effect.flip(foreign.pull)).toMatchObject({ reason: "wrong_shard" })
@@ -529,7 +581,14 @@ describe("ShardClient review regressions", () => {
       yield* submit(server, command("w", "1", 1))
       for (const limit of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
         const made = yield* Effect.exit(
-          ShardClient.make({ shard, node: "a", transport: server, store: ShardClient.memoryStore(), apply: () => Effect.void, limit })
+          ShardClient.make({
+            shard,
+            node: "a",
+            transport: server,
+            store: ShardClient.memoryStore(),
+            apply: () => Effect.void,
+            limit
+          })
         )
         expect(Exit.isFailure(made)).toBe(true)
         expect(String(Exit.isFailure(made) && made.cause)).toContain("positive safe integer")
@@ -573,7 +632,12 @@ describe("ShardServer review regressions", () => {
     Effect.gen(function*() {
       const server = ShardServer.make({ shard })
       const err = yield* Effect.flip(
-        server.submit({ shard, command: { origin: "", commandId: "", type: "", payload: null } } as unknown as ShardProtocol.SubmitRequest)
+        server.submit(
+          {
+            shard,
+            command: { origin: "", commandId: "", type: "", payload: null }
+          } as unknown as ShardProtocol.SubmitRequest
+        )
       )
       expect(err).toMatchObject({ reason: "out_of_range" })
     }))

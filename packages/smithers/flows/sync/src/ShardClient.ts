@@ -88,13 +88,18 @@ export interface ClientStore {
 /**
  * How a client reaches the shard: a `ShardServer` in process, or HTTP.
  *
+ * `TE` is how the transport itself fails, such as a request that got no
+ * answer. An in-process transport has none. A client hands the failure to the
+ * caller of `push`, `pull` or `sync` and keeps its outbox and cursor, so the
+ * next call resumes.
+ *
  * @category models
  * @since 1.0.0-rc.18
  */
-export interface Transport {
-  readonly submit: (request: SubmitRequest) => Effect.Effect<SubmitResponse, ShardError>
-  readonly pull: (request: PullRequest) => Effect.Effect<PullResponse, ShardError>
-  readonly snapshot: (shard: ShardId) => Effect.Effect<SnapshotResponse, ShardError>
+export interface Transport<TE = never> {
+  readonly submit: (request: SubmitRequest) => Effect.Effect<SubmitResponse, ShardError | TE>
+  readonly pull: (request: PullRequest) => Effect.Effect<PullResponse, ShardError | TE>
+  readonly snapshot: (shard: ShardId) => Effect.Effect<SnapshotResponse, ShardError | TE>
 }
 
 /**
@@ -114,15 +119,15 @@ export type Delivery =
  * @category models
  * @since 1.0.0-rc.18
  */
-export interface ShardClient<E = never> {
+export interface ShardClient<E = never, TE = never> {
   /** Adds a command to the outbox, saved before it returns. */
   readonly enqueue: (stream: StreamId, payload: Schema.Json) => Effect.Effect<Command>
   /** Submits every outbox command and returns each one's final answer, in order. */
-  readonly push: Effect.Effect<ReadonlyArray<SubmitResponse>, ShardError>
+  readonly push: Effect.Effect<ReadonlyArray<SubmitResponse>, ShardError | TE>
   /** Applies every entry after the cursor, through the shard's head, and returns the new cursor. */
-  readonly pull: Effect.Effect<ShardPosition, ShardError | E>
+  readonly pull: Effect.Effect<ShardPosition, ShardError | E | TE>
   /** `push`, then `pull`. */
-  readonly sync: Effect.Effect<ShardPosition, ShardError | E>
+  readonly sync: Effect.Effect<ShardPosition, ShardError | E | TE>
   readonly state: Effect.Effect<ClientState>
 }
 
@@ -164,14 +169,14 @@ const keyText = (message: Pick<Command, "key">) => JSON.stringify(message.key)
  * @category constructors
  * @since 1.0.0-rc.18
  */
-export const make = <E = never>(options: {
+export const make = <E = never, TE = never>(options: {
   readonly shard: ShardId
   readonly node: string
-  readonly transport: Transport
+  readonly transport: Transport<TE>
   readonly store: ClientStore
   readonly apply: (delivery: Delivery) => Effect.Effect<void, E>
   readonly limit?: number
-}): Effect.Effect<ShardClient<E>> =>
+}): Effect.Effect<ShardClient<E, TE>> =>
   Effect.gen(function*() {
     const { shard, transport, store } = options
     const limit = options.limit ?? 256
@@ -197,22 +202,24 @@ export const make = <E = never>(options: {
       }
     }
 
-    const submit = (command: Command, epoch: number): Effect.Effect<SubmitResponse, ShardError> =>
+    const submit = (command: Command, epoch: number): Effect.Effect<SubmitResponse, ShardError | TE> =>
       transport.submit({ version: protocolVersion, shard, epoch, command }).pipe(
         // The shard names its epoch; the command is idempotent, so resubmitting under it is safe.
         Effect.flatMap((response) => {
           if (!matchesShard(response)) return Effect.fail(wrongShard())
           if (keyText(response) !== keyText(command)) {
-            return Effect.fail(new ShardError({
-              reason: "out_of_range",
-              message: "Submit response names a different command"
-            }))
+            return Effect.fail(
+              new ShardError({
+                reason: "out_of_range",
+                message: "Submit response names a different command"
+              })
+            )
           }
           return response._tag === "StaleEpoch" ? submit(command, response.epoch) : Effect.succeed(response)
         })
       )
 
-    const push = Effect.gen(function*() {
+    const push: Effect.Effect<ReadonlyArray<SubmitResponse>, ShardError | TE> = Effect.gen(function*() {
       const { epoch, outbox } = yield* store.load
       const answers: Array<SubmitResponse> = []
       for (const command of outbox) answers.push(yield* submit(command, epoch))
@@ -233,10 +240,10 @@ export const make = <E = never>(options: {
           ...(failures.length === 0 ? {} : { terminalFailures: [...(state.terminalFailures ?? []), ...failures] })
         }
       })
-      return answers as ReadonlyArray<SubmitResponse>
+      return answers
     })
 
-    const pull: Effect.Effect<ShardPosition, ShardError | E> = Effect.gen(function*() {
+    const pull: Effect.Effect<ShardPosition, ShardError | E | TE> = Effect.gen(function*() {
       while (true) {
         const { applied, epoch } = yield* store.load
         const response = yield* transport.pull({ version: protocolVersion, shard, epoch, after: applied, limit })
@@ -259,7 +266,11 @@ export const make = <E = never>(options: {
       enqueue: (stream, payload) =>
         lock.withPermit(modify((state) => {
           const command: Command = { key: [options.node, String(state.nextCommand)], stream, payload }
-          return [command, { ...state, nextCommand: state.nextCommand + 1, outbox: [...state.outbox, command] }] as const
+          return [command, {
+            ...state,
+            nextCommand: state.nextCommand + 1,
+            outbox: [...state.outbox, command]
+          }] as const
         })),
       push: lock.withPermit(push),
       pull: lock.withPermit(pull),
