@@ -6,7 +6,7 @@ import { HttpClient } from "effect/http"
 import { parts } from "../repo/flows"
 import { BranchClient, type BranchWrite, BranchWrites, type TrackRefused } from "./api.vibe"
 import { CONVERSATION_NAMESPACE } from "./contract"
-import { operationWriteId } from "./writeIdentity"
+import { operationWriteId } from "./writeIdentity.vibe"
 import { OPERATION_ACTIONS } from "./creation"
 import { selection } from "./creationSteps.vibe"
 import { BranchTrackRefused, BranchTrackUnavailable } from "./flows"
@@ -27,7 +27,7 @@ import {
   Body,
   UpdateRequest,
 } from "./publishFlows"
-import { requestTrack } from "./steps"
+import { requestTrack } from "./steps.vibe"
 
 // Publish's and Update branch's steps on this device's engine (docs/features/branch-publish.md): the branch found as
 // `branch/track` finds it, the repository's flow for the operation selected and run in the realm (branch creation's

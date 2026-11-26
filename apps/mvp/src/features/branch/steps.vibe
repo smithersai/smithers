@@ -1,0 +1,95 @@
+import * as Creation from "./creationSteps.vibe"
+import { Interpreter } from "@smthrs/flow"
+import { BranchClient, type TrackRefused } from "./api.vibe"
+import {
+  BranchCreate,
+  BranchTrack,
+  BranchTrackRefused,
+  BranchTrackUnavailable,
+  CreateBranch,
+  type TrackFailure,
+  TrackBranch,
+  TrackStamp,
+} from "./flows"
+import { tracks } from "./metrics"
+import { parts } from "../repo/flows"
+
+// `branch/track`'s and `branch/create`'s steps (docs/features/branch-workspace.md#tracking-a-branch): one
+// `POST /api/branches` through `BranchClient`, `create: true` for a new branch. A person opening a branch's page, a
+// home's New branch and the agent's call run them on this device's engine.
+
+/** What ChatApi's refusal means to the flow. */
+export const trackFailure = (refused: TrackRefused): TrackFailure => {
+  if (refused.status === 404) return new BranchTrackRefused({ reason: "not_found" })
+  if (refused.status === 401) return new BranchTrackRefused({ reason: "sign_in" })
+  if (refused.status === 403) return new BranchTrackRefused({ reason: "forbidden" })
+  if (refused.status === 400 || refused.status === 413) return new BranchTrackRefused({ reason: "invalid" })
+  if (refused.code === "not_configured") return new BranchTrackRefused({ reason: "not_configured" })
+  if (refused.status === 409 && refused.code === "exists") return new BranchTrackRefused({ reason: "exists" })
+  return new BranchTrackUnavailable()
+}
+
+/**
+ * What `branch/track/request` does: one `POST /api/branches`. Records it as a span `branch.track`, a log line with the
+ * outcome and ChatApi's status, and a count of `tracks` by outcome: `tracked`, the refusal's reason, or `unavailable`.
+ * Never the branch's name.
+ */
+export const requestTrack = (
+  { repo, branch, openedAt }: { readonly repo: string; readonly branch: string; readonly openedAt?: number | undefined },
+  create = false,
+) => withSpan(effect {
+  const startedAt = try Clock.currentTimeMillis
+  const [owner, name] = try sync(() => parts(repo))
+  const client = try BranchClient
+  const answer = try result(client.track({
+    owner,
+    name,
+    ref: branch,
+    ...(create ? { create: true as const } : {}),
+    ...(openedAt === undefined ? {} : { openedAt }),
+  }))
+  const outcome = answer._tag === "Success"
+    ? "tracked"
+    : (() => {
+      const failure = trackFailure(answer.failure)
+      return failure._tag === "@smthrs/mvp/branch/BranchTrackRefused" ? failure.reason : "unavailable"
+    })()
+  try Metric.update(Metric.withAttributes(tracks, { outcome }), 1)
+  try annotateCurrentSpan({ outcome })
+  try logWithLevel(answer._tag === "Success" ? "Info" : "Warn")("branch.track").pipe(
+    annotateLogs({
+      outcome,
+      ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
+      durationMs: (try Clock.currentTimeMillis) - startedAt,
+      feature: "branch",
+      ...(create ? { create } : {}),
+    }),
+  )
+  if (answer._tag === "Success") return answer.success
+  throw trackFailure(answer.failure)
+}, "branch.track")
+
+/** `branch/track/stamp`: the open's `openedAt`, or now. */
+export const stampOpen = <P extends object>(open: P & { readonly openedAt?: number | undefined }) =>
+  map(Clock.currentTimeMillis, (now) => ({ ...open, openedAt: open.openedAt ?? now }))
+
+/** `branch/create/request`: the same request, making the branch first. */
+export const requestCreate = (request: { readonly repo: string; readonly branch: string }) => {
+  const { repo, branch } = request
+  return effect {
+    const [owner, name] = try sync(() => parts(repo))
+    return try Creation.run({ owner, name, ref: branch })
+  }
+}
+
+/** Registers `branch/track` and `branch/create` with their steps, asking through the host's `BranchClient`. */
+export const registration = Layer.merge(
+  Interpreter.layerWithImplementations(
+    BranchTrack,
+    Layer.merge(TrackStamp.toLayer(stampOpen), TrackBranch.toLayer((request) => requestTrack(request))),
+  ),
+  Interpreter.layerWithImplementations(BranchCreate, CreateBranch.toLayer(requestCreate)),
+)
+
+/** `branch/track` and `branch/create`, asking ChatApi on `origin`. Needs the host's `HttpClient`. */
+export const registrationAt = (origin: string) => registration.pipe(Layer.provide(BranchClient.layer({ origin })))

@@ -1,6 +1,6 @@
 import { Interpreter } from "@smthrs/flow"
 import { Clock, Effect, Layer, Metric } from "effect"
-import { type OpenRefused, TerminalClient } from "./api"
+import { type OpenRefused, TerminalClient } from "./api.vibe"
 import { type OpenFailure, RequestOpen, TerminalOpenRefused, TerminalOpenRequest, TerminalOpenUnavailable } from "./flows"
 import { opens } from "./metrics"
 

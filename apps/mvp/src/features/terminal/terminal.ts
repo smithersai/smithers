@@ -4,7 +4,7 @@ import { codeOf } from "../../errorCode"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { AuthStore } from "../auth/store"
 import { attach, detach, input, open, resize, show, type Sink } from "./actions"
-import { TerminalStore } from "./store"
+import { TerminalStore } from "./store.vibe"
 
 // The branch terminal as a frontend sees it (docs/features/branch-workspace.md#the-terminal): a live query to read and
 // plain functions to act. React renders the panel and hands the frame's output seam to `attach`.

@@ -36,7 +36,7 @@ import { Theme } from "../theme/theme"
 import { Todos } from "../todos/todos"
 import { Views } from "../views/views"
 import { Terminal } from "./terminal"
-import { TerminalStore } from "./store"
+import { TerminalStore } from "./store.vibe"
 import { show } from "./actions"
 import { PluginsUi } from "../../plugins/ui"
 

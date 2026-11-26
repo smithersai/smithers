@@ -8,7 +8,7 @@ import { AuthStore, SESSION } from "../auth/store"
 import { ADMIT_WAIT_SECONDS, DEFAULT_COLS, DEFAULT_ROWS, OPEN_DEADLINE_SECONDS, terminalSocketRoute } from "./contract"
 import { bytes, ended, openMs, reconnects } from "./metrics"
 import { PANEL, type Panel, type Tab, type TerminalRow } from "./schema"
-import { TerminalStore } from "./store"
+import { TerminalStore } from "./store.vibe"
 
 // What a person does with a branch's terminal (decision 0013 §3, docs/features/branch-workspace.md#the-terminal), and
 // what the tab does for them. Opening is the flow `terminal/open`; the terminal's row says when its shell is up. The

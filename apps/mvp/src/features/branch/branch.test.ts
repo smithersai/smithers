@@ -32,7 +32,7 @@ import { Branch } from "./branch.vibe"
 import { BranchStore } from "./store.vibe"
 import { openBranchPage } from "./navigation"
 import { Terminal } from "../terminal/terminal"
-import { TerminalStore } from "../terminal/store"
+import { TerminalStore } from "../terminal/store.vibe"
 import { Coedit } from "../coedit/coedit.vibe"
 import { CoeditStore } from "../coedit/store.vibe"
 import { Presence } from "../presence/presence"
@@ -40,7 +40,7 @@ import { PresenceStore } from "../presence/store"
 import { CONVERSATION_NAMESPACE } from "./contract"
 import { BranchTrackRefused, BranchTrackUnavailable } from "./flows"
 import { opens, reopens, tracks } from "./metrics"
-import { requestTrack, stampOpen } from "./steps"
+import { requestTrack, stampOpen } from "./steps.vibe"
 
 /** The home conversation's branch: the deployment repository's `main`, locked, which 0014_branch_workspace records. */
 const HOME = { name: "main", mode: "locked" }
@@ -520,12 +520,12 @@ describe("the branch client", () => {
 
 describe("the step", () => {
   /** `branch/track/request` over a client that answers `answer`: how it ended, and every record it left. */
-  const step = async (answer: typeof globalThis.fetch, branch = "feature/one", create = false) => {
+  const step = async (answer: typeof globalThis.fetch, branch = "feature/one", create = false, openedAt?: number) => {
     const registry: Metric.MetricRegistry = new Map()
     const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
     const logger = Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))
     const exit = await Effect.runPromise(
-      requestTrack({ repo: "octo/hello", branch }, create).pipe(
+      requestTrack({ repo: "octo/hello", branch, openedAt }, create).pipe(
         Effect.match({ onSuccess: (tracked) => ({ tracked }), onFailure: (failed) => ({ failed }) }),
         Effect.provide(
           BranchClient.layer({ origin: "http://chat.test", within: "50 millis" }).pipe(
@@ -556,8 +556,8 @@ describe("the step", () => {
     const result = await step(async (input, init) => {
       posted.push(await new Request(input, init).json())
       return Response.json(trackedBody, { status: 201 })
-    }, "private-create", true)
-    expect(posted).toEqual([{ owner: "octo", name: "hello", ref: "private-create", create: true }])
+    }, "private-create", true, 42)
+    expect(posted).toEqual([{ owner: "octo", name: "hello", ref: "private-create", create: true, openedAt: 42 }])
     expect(result.exit).toEqual({ tracked: trackedBody })
     expect(result.count("tracked")).toBe(1)
     expect(result.logs[0]).toMatchObject({ level: "INFO", annotations: { create: true, outcome: "tracked" } })

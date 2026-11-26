@@ -12,7 +12,8 @@ import { CREATION } from "../../plugins/builtinFlows"
 import { BranchClient } from "./api.vibe"
 import { CreationStart } from "./creationFlows"
 import { registration, run } from "./creationSteps.vibe"
-import { TrackFailure } from "./flows"
+import { BranchCreate, TrackFailure } from "./flows"
+import { registrationAt } from "./steps.vibe"
 import { Tracked } from "./schema"
 
 const runtime = testFile("creation-flow")
@@ -48,7 +49,7 @@ const open = async (custom: boolean) => {
   const registrations = Layer.merge(registration("http://chat.test"), Interpreter.layerWithImplementations(Caller,
     New.toLayer(({ explicit }) => run({ owner: "octo", name: "hello", ref: "topic", ...(explicit ? { request: request.request } : {}) })),
   )).pipe(Layer.provide(BranchClient.layer({ origin: "http://chat.test" }).pipe(Layer.provide(http))), Layer.provide(http), Layer.provide(WebCrypto.layer))
-  return { h, registrations, requests }
+  return { h, http, registrations, requests }
 }
 
 describe("repository branch creation on the durable engine", () => {
@@ -74,5 +75,16 @@ describe("repository branch creation on the durable engine", () => {
     const ran = await runFlow(Caller, { explicit }, registrations)
     expect(ran.exit).toMatchObject({ _tag: "Success" })
     if (Exit.isSuccess(ran.exit)) expect(ran.exit.value).toMatchObject({ name: "topic", access: "owner" })
+  }, 120_000)
+  test("branch/create runs its registered child for the requested repository and branch", async () => {
+    const { http, registrations, requests } = await open(false)
+    const steps = registrationAt("http://chat.test").pipe(Layer.provide(http), Layer.provide(WebCrypto.layer))
+    const ran = await runFlow(BranchCreate, { repo: "octo/hello", branch: "new-topic" }, Layer.merge(registrations, steps))
+
+    expect(ran.exit).toMatchObject({
+      _tag: "Success",
+      value: { name: "new-topic", repoId: "github/octo/hello", access: "owner" },
+    })
+    expect(requests).toEqual({ selections: 1, writes: 1 })
   }, 120_000)
 })
