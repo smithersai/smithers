@@ -3,7 +3,7 @@ import { Effect, Layer, ManagedRuntime, Option, Redacted, Result, Stream } from 
 import { FetchHttpClient } from "effect/http"
 import { expect, test } from "vitest"
 import * as RunCredentials from "../../../worker/RunCredentials"
-import * as SessionKeys from "../../../worker/SessionKeys"
+import * as SessionKeys from "../../../worker/SessionKeys.vibe"
 import { harness, RUN_CREDENTIAL_SECRET, signedIn, testFile } from "../../../worker/test/harness"
 import { githubHarness } from "../../../worker/github/test/harness"
 import { confirmedSession, sql } from "../../../worker/github/test/fixtures"

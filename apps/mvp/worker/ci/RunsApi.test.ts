@@ -24,7 +24,7 @@ import { REPOSITORY, reset, services as githubServices } from "../github/test/fi
 import { app } from "../github/test/harness.ts"
 import { accountIdOf, appKey, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { configured, cookie, SECRET, signInHarness } from "../test/signIn.ts"
-import * as SessionKeys from "../SessionKeys.ts"
+import * as SessionKeys from "../SessionKeys.vibe"
 import * as SessionStore from "../SessionStore.ts"
 import * as RepoRuns from "../RepoRuns.ts"
 import * as RemoteRuns from "../RemoteRuns.ts"

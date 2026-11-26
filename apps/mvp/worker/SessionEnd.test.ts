@@ -1,6 +1,8 @@
-import { Effect, Option } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
+import * as Ends from "./SessionEnds.vibe"
+import * as TestDatabase from "../db/TestDatabase.ts"
 import * as Store from "./SessionStore.ts"
 import { testFile } from "./test/harness.ts"
 import { signInHarness } from "./test/signIn.ts"
@@ -96,4 +98,43 @@ test("repeated sweeps do not rewrite unchanged ended home or alias rows", async 
   expect(await versions()).toEqual(ended)
   expect(await query(sql => sql`SELECT id FROM github_token_cleanups WHERE session_id = ${f.id}`)).toHaveLength(1)
   expect(await query(sql => sql`SELECT reason FROM session_end_receipts WHERE session_tag = ${f.tag}`)).toEqual([{ reason: "sign_out" }])
+})
+
+test("a missing alias has no end to record", async () => {
+  expect(await runtime.runPromise(Ends.endAlias(crypto.randomUUID(), "sign_out"))).toEqual(Option.none())
+})
+
+test("ending a legacy session queues its remaining refresh token without an access token", async () => {
+  const f = await fixture()
+  const [original] = await query(sql => sql<{ refresh: unknown }>`SELECT github_refresh AS refresh FROM sessions WHERE id = ${f.id}`)
+  expect(original?.refresh).not.toBeNull()
+  await query(sql => sql`UPDATE sessions SET github_access = NULL, github_pair_digest = NULL WHERE id = ${f.id}`)
+  expect(await runtime.runPromise(Ends.endSession(f.id, "sign_out"))).toEqual(Option.some(f.id))
+  expect(await query(sql => sql`SELECT sealed_access, sealed_refresh FROM github_token_cleanups WHERE session_id = ${f.id}`))
+    .toEqual([{ sealed_access: null, sealed_refresh: original!.refresh }])
+})
+
+test.each(["home", "alias"] as const)("the sweeper skips a %s whose deadline moves before its locks", async kind => {
+  const f = await fixture()
+  const scratch = await runtime.runPromise(TestDatabase.Scratch)
+  if (kind === "home") await query(sql => sql`UPDATE sessions SET expires_at = now() - interval '31 days' WHERE id = ${f.id}`)
+  else await query(sql => sql`UPDATE host_sessions SET started_at = now() - interval '401 days' WHERE id = ${f.alias}`)
+
+  const lock = kind === "home" ? "SELECT id FROM people" : "SELECT id FROM sessions"
+  const refresh = () => kind === "home"
+    ? query(sql => sql`UPDATE sessions SET expires_at = now() + interval '1 day' WHERE id = ${f.id}`)
+    : query(sql => sql`UPDATE host_sessions SET started_at = now() WHERE id = ${f.alias}`)
+  const database = Layer.effect(SqlClient.SqlClient, Effect.map(SqlClient.SqlClient, real => new Proxy(real, {
+    apply(target, receiver, args) {
+      const statement = Reflect.apply(target, receiver, args)
+      return String(args[0]).startsWith(lock) && String(args[0]).includes("FOR UPDATE")
+        ? Effect.andThen(Effect.promise(refresh), statement)
+        : statement
+    },
+  }))).pipe(Layer.provide(scratch.database))
+
+  await runtime.runPromise(Ends.sweep().pipe(Effect.provide(database)))
+  expect(await query(sql => sql`SELECT id FROM sessions WHERE id = ${f.id} AND revoked_at IS NULL`)).toEqual([{ id: f.id }])
+  expect(await query(sql => sql`SELECT id FROM host_sessions WHERE id = ${f.alias} AND revoked_at IS NULL`)).toEqual([{ id: f.alias }])
+  expect(await query(sql => sql`SELECT session_tag FROM session_end_receipts WHERE session_tag = ${f.tag}`)).toEqual([])
 })

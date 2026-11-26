@@ -1,6 +1,6 @@
 import { Effect, Option, Redacted } from "effect"
 import { expect, test } from "vitest"
-import * as Keys from "./SessionKeys.ts"
+import * as Keys from "./SessionKeys.vibe"
 
 const SECRET = "legacy-test-signing-secret-".padEnd(64, "7")
 const NEXT = "new-test-signing-secret-".padEnd(64, "9")
@@ -23,4 +23,8 @@ test("key ids cannot share a secret because verification must identify exactly o
   expect(Keys.decodeSecrets(Redacted.make(JSON.stringify({ legacy: SECRET, next: SECRET })))).toEqual(Option.none())
   expect(Keys.decodeSecrets(Redacted.make("not json"))).toEqual(Option.none())
   expect(Keys.decodeSecrets(Redacted.make(JSON.stringify({ legacy: "short" })))).toEqual(Option.none())
+})
+
+test.each(["42", "null", "[]"])("secret maps reject JSON that is not an object: %s", encoded => {
+  expect(Keys.decodeSecrets(Redacted.make(encoded))).toEqual(Option.none())
 })

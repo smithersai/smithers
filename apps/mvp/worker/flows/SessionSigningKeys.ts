@@ -2,7 +2,7 @@ import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
-import * as Keys from "../SessionSigningKeys.ts"
+import * as Keys from "../SessionSigningKeys.vibe"
 
 const payload = { keyId: Schema.String }
 const bounded = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000, maxAttempts: 5 })

@@ -2,7 +2,7 @@ import { TestSchemas } from "@smthrs/database"
 import { Effect, Redacted } from "effect"
 import { Migrator, SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
-import * as Rotation from "../worker/SessionSigningKeys.ts"
+import * as Rotation from "../worker/SessionSigningKeys.vibe"
 import * as Database from "./Database.ts"
 import * as TestDatabase from "./TestDatabase.ts"
 

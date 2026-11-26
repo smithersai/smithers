@@ -14,7 +14,7 @@ import * as Actor from "./Actor.ts"
 import * as Flows from "./Flows.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
 import type { RoleChecks } from "./SignIn.ts"
-import * as SessionKeys from "./SessionKeys.ts"
+import * as SessionKeys from "./SessionKeys.vibe"
 import { ARRIVE_HEADERS, CONFIRM_HEADERS, HANDOFF_CODE_TTL_SECONDS, SIGN_IN_TTL_SECONDS } from "./SignIn.ts"
 import { testFile } from "./test/harness.ts"
 import { configured, cookie, SECRET, setCookies, signInHarness } from "./test/signIn.ts"
@@ -875,7 +875,7 @@ describe("alias in-place reauthentication", () => {
     const origin = location === "home" ? HOME : ALIAS
     const held = location === "home" ? first.home : first.cookies
     const person = personOf(await h.sessionAt(origin, held))
-    const rotation = await import("./SessionSigningKeys.ts")
+    const rotation = await import("./SessionSigningKeys.vibe")
     await runtime.runPromise(rotation.stage("next", Redacted.make(NEXT)))
     await runtime.runPromise(rotation.promote("next"))
     let fresh: Record<string, string>
@@ -932,7 +932,7 @@ describe("alias in-place reauthentication", () => {
     const h = await harness(config)
     const first = await h.signInAt()
     const before = await h.sessionAt(ALIAS, first.cookies)
-    const rotation = await import("./SessionSigningKeys.ts")
+    const rotation = await import("./SessionSigningKeys.vibe")
     await runtime.runPromise(rotation.stage("next", Redacted.make(NEXT)))
     await runtime.runPromise(rotation.promote("next"))
     const firstHand = await h.handedOff(ALIAS, first.home)
@@ -950,7 +950,7 @@ describe("alias in-place reauthentication", () => {
   test("a lost home callback cookie makes handoff reauthenticate the configured stale cookie", async () => {
     const h = await harness(config)
     const first = await h.signInAt()
-    const rotation = await import("./SessionSigningKeys.ts")
+    const rotation = await import("./SessionSigningKeys.vibe")
     await runtime.runPromise(rotation.stage("next", Redacted.make(NEXT)))
     await runtime.runPromise(rotation.promote("next"))
     const started = await h.start()

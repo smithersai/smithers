@@ -12,7 +12,7 @@ import {
 } from "./Actor.ts"
 import { ANONYMOUS_DEVICE_PERSON, DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../src/features/auth/contract.ts"
 import { CREDENTIAL_TTL_MS } from "../src/flows/contract.ts"
-import type { SessionKeys } from "./SessionKeys.ts"
+import type { SessionKeys } from "./SessionKeys.vibe"
 
 // Run credentials (decision 0017 slice 0, docs/features/sign-in.md#run-credentials): how the server tells a person from
 // the agent, a flow or a plugin acting for them. Every run but a person's own press of a person's flow asks

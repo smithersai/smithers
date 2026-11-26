@@ -1,6 +1,7 @@
 import { Effect, Layer, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
+import * as Prior from "./SessionPrior.vibe"
 import * as Store from "./SessionStore.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { testFile } from "./test/harness.ts"
@@ -69,7 +70,7 @@ test("a failed primary query answers failed, never absent, with no cookie", asyn
 })
 
 test("the confirming statement never shares the authority predicate", () => {
-  const source = sourceText(new URL("./SessionPrior.ts", import.meta.url))
+  const source = sourceText(new URL("./SessionPrior.vibe", import.meta.url))
   expect(source).not.toContain("sessionLive")
   expect(source).toContain("FOR UPDATE")
   expect(source).toContain("clock_timestamp()")
@@ -118,4 +119,32 @@ for (const first of ["confirmation", "renewal"] as const) test(`alias without co
   expect(await renewal).toBe(first === "renewal")
   expect(await confirmation).toMatchObject({ prior: first === "renewal" ? "live" : "ended" })
   expect(await prior(f.h, f.aliasTag)).toMatchObject({ prior: first === "renewal" ? "live" : "ended" })
+})
+
+test("an already recorded end remains authoritative even if the retained row appears live", async () => {
+  const f = await fixture()
+  await query(sql => sql`INSERT INTO session_end_receipts (session_tag, ended_at, reason)
+    VALUES (${f.tag}, now(), 'sign_out')`)
+  expect(await runtime.runPromise(Prior.read(f.tag))).toBe("ended")
+})
+
+test.each([false, true])("prior rechecks the receipt when an alias disappears before locking (receipt: %s)", async recorded => {
+  const f = await fixture()
+  const scratch = await runtime.runPromise(TestDatabase.Scratch)
+  const erase = () => query(sql => sql.withTransaction(Effect.gen(function* () {
+    yield* sql`DELETE FROM host_sessions WHERE id = ${f.alias}`
+    if (recorded) yield* sql`INSERT INTO session_end_receipts (session_tag, ended_at, reason)
+      VALUES (${f.aliasTag}, now(), 'sign_out')`
+    return []
+  })))
+  // Start erasure only after the read has seen the alias, immediately before it acquires the parent lock.
+  const database = Layer.effect(SqlClient.SqlClient, Effect.map(SqlClient.SqlClient, real => new Proxy(real, {
+    apply(target, receiver, args) {
+      const statement = Reflect.apply(target, receiver, args)
+      return String(args[0]).startsWith("SELECT id FROM sessions WHERE id = ") && String(args[0]).includes("FOR UPDATE")
+        ? Effect.andThen(Effect.promise(erase), statement)
+        : statement
+    },
+  }))).pipe(Layer.provide(scratch.database))
+  expect(await runtime.runPromise(Prior.read(f.aliasTag).pipe(Effect.provide(database)))).toBe(recorded ? "ended" : "absent")
 })

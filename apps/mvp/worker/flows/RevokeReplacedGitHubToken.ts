@@ -7,7 +7,7 @@ import * as Flows from "../Flows.ts"
 import { GitHubRefused } from "../GitHubAuth.ts"
 import type { Services } from "./RevokeGitHubToken.ts"
 import * as SessionStore from "../SessionStore.ts"
-import * as SessionEnds from "../SessionEnds.ts"
+import * as SessionEnds from "../SessionEnds.vibe"
 
 // Replacement cleanup owns only cleanup rows. It must never end or read a session.
 const Result = Schema.Struct({ outcome: Schema.Literals(["revoked", "none"]) })

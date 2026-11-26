@@ -5,7 +5,7 @@ import { SqlClient } from "effect/sql"
 import { ROLES } from "../../src/features/auth/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { type GitHubAuth, GitHubRefused, roleOf } from "../GitHubAuth.ts"
-import { digest, type SessionKeys } from "../SessionKeys.ts"
+import { digest, type SessionKeys } from "../SessionKeys.vibe"
 import * as SessionStore from "../SessionStore.ts"
 import * as Cleanup from "./RevokeReplacedGitHubToken.ts"
 

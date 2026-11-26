@@ -12,7 +12,7 @@ import {
   SIGN_OUT_ROUTE
 } from "../src/features/auth/contract.ts"
 import * as Flows from "./Flows.ts"
-import * as SessionEnds from "./SessionEnds.ts"
+import * as SessionEnds from "./SessionEnds.vibe"
 import * as SessionStore from "./SessionStore.ts"
 import * as SignIn from "./SignIn.ts"
 import { scriptedGitHub } from "./test/github.ts"

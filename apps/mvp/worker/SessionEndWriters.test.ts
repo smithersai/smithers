@@ -8,9 +8,9 @@ import { beforeEach, expect, test } from "vitest"
 import { isSource, typeScriptOf } from "../../../packages/repo-targets/test-utils/source-readers.mjs"
 import * as Database from "../db/Database.ts"
 import * as Store from "./SessionStore.ts"
-import * as Prior from "./SessionPrior.ts"
-import * as Rotation from "./SessionSigningKeys.ts"
-import * as Keys from "./SessionKeys.ts"
+import * as Prior from "./SessionPrior.vibe"
+import * as Rotation from "./SessionSigningKeys.vibe"
+import * as Keys from "./SessionKeys.vibe"
 import { testFile } from "./test/harness.ts"
 import { configured, cookie, SECRET, signInHarness } from "./test/signIn.ts"
 import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract.ts"
@@ -60,11 +60,11 @@ const allowed: Readonly<Record<string, string>> = {
   "db/migrations/0109_session_deadlines.ts#default:ALTER_TABLE:sessions:2": "Give old Worker inserts a start default and require the backfilled value.",
   "db/migrations/0109_session_deadlines.ts#default:UPDATE:host_sessions:1": "Backfill alias starts from their original creation time without ending a live row.",
   "db/migrations/0109_session_deadlines.ts#default:UPDATE:sessions:1": "Backfill home starts from their original creation time without ending a live row.",
-  "worker/SessionEnds.ts#endAlias:UPDATE:host_sessions:1": "Record an alias end under its parent lock and commit its anonymous receipt.",
-  "worker/SessionEnds.ts#endSession:UPDATE:sessions:1": "Record the home end and clear tokens only after their cleanup request is inserted.",
-  "worker/SessionEnds.ts#sweep:DELETE_FROM:host_sessions:1": "Erase aliases of a home ended over thirty days ago, after their receipts exist.",
-  "worker/SessionEnds.ts#sweep:DELETE_FROM:host_sessions:2": "Erase an independently ended alias only after its thirty-day row retention.",
-  "worker/SessionEnds.ts#sweep:DELETE_FROM:sessions:1": "Erase an ended home after thirty days and after preserving its newest role receipt.",
+  "worker/SessionEnds.vibe#endAlias:UPDATE:host_sessions:1": "Record an alias end under its parent lock and commit its anonymous receipt.",
+  "worker/SessionEnds.vibe#endSession:UPDATE:sessions:1": "Record the home end and clear tokens only after their cleanup request is inserted.",
+  "worker/SessionEnds.vibe#sweep:DELETE_FROM:host_sessions:1": "Erase aliases of a home ended over thirty days ago, after their receipts exist.",
+  "worker/SessionEnds.vibe#sweep:DELETE_FROM:host_sessions:2": "Erase an independently ended alias only after its thirty-day row retention.",
+  "worker/SessionEnds.vibe#sweep:DELETE_FROM:sessions:1": "Erase an ended home after thirty days and after preserving its newest role receipt.",
   "worker/SessionStore.ts#createHostSession:INSERT_INTO:host_sessions:1": "Insert a fresh alias only under a locked live parent, with its own start and issuer.",
   "worker/SessionStore.ts#createSession:INSERT_INTO:sessions:1": "Insert a new home with bounded sliding expiry and an absolute start under its issuer.",
   "worker/SessionStore.ts#reauthenticate:UPDATE:sessions:1": "Restart the locked eligible home in place while explicitly refusing revoked or expired rows.",

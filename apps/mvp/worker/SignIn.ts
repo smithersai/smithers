@@ -35,9 +35,9 @@ import { RevokeGitHubToken, revokeExecutionId } from "./flows/RevokeGitHubToken.
 import { appSlug, GitHubAuth, type GitHubRefused, roleOf } from "./GitHubAuth.ts"
 import * as HostedModel from "./HostedModel.ts"
 import * as RunCredentials from "./RunCredentials.ts"
-import * as SessionKeys from "./SessionKeys.ts"
+import * as SessionKeys from "./SessionKeys.vibe"
 import * as SessionStore from "./SessionStore.ts"
-import * as SessionPrior from "./SessionPrior.ts"
+import * as SessionPrior from "./SessionPrior.vibe"
 import * as WriteAdmission from "./WriteAdmission.ts"
 
 // Sign-in (docs/features/sign-in.md, decision 0008 phase 1): the Smithers GitHub App's user authorization, with PKCE

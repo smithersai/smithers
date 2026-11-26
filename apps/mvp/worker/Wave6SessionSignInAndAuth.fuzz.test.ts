@@ -12,7 +12,7 @@ import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA, type SessionState } from "../src/
 import type { Actor } from "./Actor.ts"
 import * as Flows from "./Flows.ts"
 import * as Cleanup from "./flows/RevokeReplacedGitHubToken.ts"
-import * as SessionKeys from "./SessionKeys.ts"
+import * as SessionKeys from "./SessionKeys.vibe"
 import * as SessionStore from "./SessionStore.ts"
 import * as SignIn from "./SignIn.ts"
 import { scriptedGitHub } from "./test/github.ts"

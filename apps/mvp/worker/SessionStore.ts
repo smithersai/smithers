@@ -1,8 +1,8 @@
 import { Config, Context, Effect, Metric, Option, Redacted, Schema } from "effect"
 import { SqlClient, type Statement } from "effect/sql"
 import { SessionsUnavailable, type Actor, type Role } from "./Actor.ts"
-import * as SessionKeys from "./SessionKeys.ts"
-import * as Ends from "./SessionEnds.ts"
+import * as SessionKeys from "./SessionKeys.vibe"
+import * as Ends from "./SessionEnds.vibe"
 export const sweepEnds = Ends.sweep
 
 // Sign-in's rows in Postgres (docs/features/sign-in.md#postgres): people, sign-ins in progress and sessions. Postgres'

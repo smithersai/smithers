@@ -1,7 +1,7 @@
 import { CredentialCipher, WebCryptoCipher } from "@smthrs/control"
-import { digestSync } from "@smthrs/crypto"
 import { Core } from "@smthrs/integrations"
 import { Effect, Option, Redacted } from "effect"
+import { digestEffect, digestSessionValue } from "./SessionCrypto.ts"
 
 export const MIN_SECRET_LENGTH = 32
 export const LEGACY_KEY = "legacy"
@@ -13,32 +13,32 @@ export interface Verified {
 }
 export interface SessionKeys {
   readonly keyIds: ReadonlyArray<string>
-  readonly token: Effect.Effect<string>
-  readonly sign: (purpose: Purpose, value: string, keyId?: string) => Effect.Effect<string>
-  readonly verify: (purpose: Purpose, signed: string | undefined) => Effect.Effect<Option.Option<Verified>>
-  readonly seal: (plaintext: Redacted.Redacted<string>, context: SealContext) => Effect.Effect<CredentialCipher.Sealed>
+  readonly token: string!!
+  readonly sign: (purpose: Purpose, value: string, keyId?: string) => string!!
+  readonly verify: (purpose: Purpose, signed: string | undefined) => Option.Option<Verified>!!
+  readonly seal: (plaintext: Redacted.Redacted<string>, context: SealContext) => CredentialCipher.Sealed!!
   readonly open: CredentialCipher.Service["open"]
 }
-export const digest = (value: string): string => digestSync(value)
+export const digest = digestSessionValue
 const hexToBase64 = (hex: string) => btoa(String.fromCharCode(...hex.match(/../g)!.map(pair => parseInt(pair, 16))))
 
 /** The legacy secret remains the seal fallback, so deploying signing rotation never changes ciphertext keys. */
-export const make = (secret: Redacted.Redacted<string>, options: {
+export const make = effect (secret: Redacted.Redacted<string>, options: {
   readonly sealSecret?: Redacted.Redacted<string>
   readonly secrets?: Readonly<Record<string, Redacted.Redacted<string>>>
-} = {}) => Effect.gen(function* () {
+} = {}) => {
   const secrets = options.secrets ?? { [LEGACY_KEY]: secret }
-  const keyIds = Object.keys(secrets).sort()
-  const cipher = yield* WebCryptoCipher.make({
-    key: Redacted.make(hexToBase64(digest(`smithers-seal:${Redacted.value(options.sealSecret ?? secret)}`))),
-  }).pipe(Effect.orDie)
-  const cookies = yield* Core.CookieKeys.make(secrets, LEGACY_KEY)
+  const sealDigest = try digestEffect(`smithers-seal:${Redacted.value(options.sealSecret ?? secret)}`)
+  const cipher = try (WebCryptoCipher.make({
+    key: Redacted.make(hexToBase64(sealDigest)),
+  }).pipe(Effect.orDie))
+  const cookies = try Core.CookieKeys.make(secrets, LEGACY_KEY)
   return {
     ...cookies,
     seal: (plaintext, context) => cipher.seal(plaintext, context).pipe(Effect.orDie),
     open: cipher.open,
   } satisfies SessionKeys
-})
+}
 
 /** A configuration error returns no values, so invalid secret maps never enter logs or Config error text. */
 export const decodeSecrets = (encoded: Redacted.Redacted<string>): Option.Option<Readonly<Record<string, Redacted.Redacted<string>>>> => {

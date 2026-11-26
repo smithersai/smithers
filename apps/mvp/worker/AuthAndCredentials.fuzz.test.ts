@@ -6,7 +6,7 @@ import * as Actor from "./Actor.ts"
 import * as appRoute from "./appRoute.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import * as RunCredentials from "./RunCredentials.ts"
-import * as SessionKeys from "./SessionKeys.ts"
+import * as SessionKeys from "./SessionKeys.vibe"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "120"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261123")

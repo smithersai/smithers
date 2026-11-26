@@ -1,7 +1,7 @@
 import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
-import * as Keys from "./SessionKeys.ts"
+import * as Keys from "./SessionKeys.vibe"
 import * as Store from "./SessionStore.ts"
 import { testFile } from "./test/harness.ts"
 import { configured, cookie, signInHarness } from "./test/signIn.ts"

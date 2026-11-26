@@ -90,7 +90,10 @@ export default defineConfig({
         "db/migrations/0055_branch_ref_namespace.ts",
         // Sign-in (docs/features/sign-in.md).
         "worker/GitHubAuth.ts",
-        "worker/SessionKeys.ts",
+        "worker/SessionKeys.vibe",
+        "worker/SessionEnds.vibe",
+        "worker/SessionPrior.vibe",
+        "worker/SessionSigningKeys.vibe",
         "worker/SessionStore.ts",
         "worker/RunCredentials.ts",
         "worker/SignIn.ts",

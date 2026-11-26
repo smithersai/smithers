@@ -21,7 +21,7 @@ import {
 import { testFile } from "../test/harness.ts"
 import { Scratch } from "../../db/TestDatabase.ts"
 import { SECRET, signInHarness } from "../test/signIn.ts"
-import * as SessionKeys from "../SessionKeys.ts"
+import * as SessionKeys from "../SessionKeys.vibe"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import { repositoryOf } from "../github/Config.ts"
 import { verifiedRedirect } from "../../src/features/mcp/view.ts"

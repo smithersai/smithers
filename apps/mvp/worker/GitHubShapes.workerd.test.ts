@@ -22,7 +22,7 @@ import {
   REVIEWS_SHAPE_ROUTE,
 } from "../src/features/pulls/contract.ts"
 import { repoId } from "../src/features/repo/contract.ts"
-import * as SessionKeys from "./SessionKeys.ts"
+import * as SessionKeys from "./SessionKeys.vibe"
 import * as SessionStore from "./SessionStore.ts"
 import { testFile } from "./test/harness.ts"
 import { answer, assertBodiesConsumed, bundle, COMPATIBILITY } from "./test/workerd/bundle.ts"

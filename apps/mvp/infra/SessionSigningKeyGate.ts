@@ -1,8 +1,8 @@
 import * as Alchemy from "alchemy"
 import { Effect, Redacted } from "effect"
 import * as Database from "../db/Database.ts"
-import * as SessionKeys from "../worker/SessionKeys.ts"
-import * as SigningKeys from "../worker/SessionSigningKeys.ts"
+import * as SessionKeys from "../worker/SessionKeys.vibe"
+import * as SigningKeys from "../worker/SessionSigningKeys.vibe"
 
 /** Every publication depends on a fresh database-time check, including keys already labelled retired. */
 export const SessionSigningKeyGate = Alchemy.Action("SessionSigningKeyGate", (input: {

@@ -3,7 +3,7 @@ import { Arbitrary, Clock, Effect, Option, Redacted, Schema } from "effect"
 import { expect, test } from "vitest"
 import type { Actor } from "./Actor.ts"
 import * as RunCredentials from "./RunCredentials.ts"
-import * as SessionKeys from "./SessionKeys.ts"
+import * as SessionKeys from "./SessionKeys.vibe"
 
 test("signed run credentials preserve the principal and renew only for the issuing person, session and run", async () => {
   const keys = await Effect.runPromise(SessionKeys.make(Redacted.make(crypto.randomUUID())))

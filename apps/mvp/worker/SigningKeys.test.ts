@@ -4,9 +4,9 @@ import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
 import { ACCEPTS_HEADER, ACCEPTS_CREDENTIAL_STALE } from "../src/features/auth/contract.ts"
 import { Sessions } from "./Actor.ts"
-import * as Keys from "./SessionKeys.ts"
+import * as Keys from "./SessionKeys.vibe"
 import * as Store from "./SessionStore.ts"
-import * as Rotation from "./SessionSigningKeys.ts"
+import * as Rotation from "./SessionSigningKeys.vibe"
 import * as SignIn from "./SignIn.ts"
 import { testFile } from "./test/harness.ts"
 import { configured, cookie, SECRET, setCookies, signInHarness } from "./test/signIn.ts"
@@ -426,4 +426,30 @@ test.each(["discovery", "protected request"] as const)("an alias %s refuses an u
   const recovered = await read(dropped)
   if (route === "discovery") expect(await recovered.json()).toMatchObject({ signedIn: true })
   else expect(await recovered.json()).toEqual({ private: true })
+})
+
+test("rotation reports missing authority and refuses to cease the current issuer", async () => {
+  const secret = Redacted.make(SECRET)
+  const refusal = <A, E>(program: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.flip(program))
+
+  expect(await runtime.runPromise(Rotation.promote("legacy"))).toEqual([])
+  expect(await refusal(Rotation.cease("legacy"))).toMatchObject({ reason: "cessation_missing" })
+  expect(await refusal(Rotation.gate({ legacy: secret }, Redacted.make("short")))).toMatchObject({ reason: "seal_fingerprint" })
+  expect(await refusal(Rotation.prepareEmergency("legacy", "legacy", secret))).toMatchObject({ reason: "already_issued" })
+  expect(await refusal(Rotation.compromise("missing"))).toMatchObject({ reason: "unknown_key" })
+
+  await query(sql => sql`UPDATE session_signing_keys SET state = 'verifier' WHERE key_id = 'legacy'`)
+  expect(await refusal(Rotation.promote("legacy"))).toMatchObject({ reason: "no_issuer" })
+  expect(await refusal(Rotation.gate({ legacy: secret }, secret))).toMatchObject({ reason: "no_issuer" })
+})
+
+test("emergency preparation stages a replacement while reporting a verifier still awaiting cessation", async () => {
+  const next = Redacted.make(NEXT)
+  const replacement = Redacted.make("replacement-signing-secret".padEnd(64, "r"))
+  await runtime.runPromise(Rotation.stage("next", next))
+  await runtime.runPromise(Rotation.promote("next"))
+  expect(await runtime.runPromise(Rotation.prepareEmergency("legacy", "replacement", replacement))).toEqual(["legacy"])
+  expect(await query(sql => sql`SELECT state FROM session_signing_keys WHERE key_id = 'replacement'`)).toEqual([{ state: "verifier" }])
+  await runtime.runPromise(Rotation.cease("legacy"))
+  expect(await runtime.runPromise(Rotation.prepareEmergency("legacy", "replacement", replacement))).toEqual([])
 })

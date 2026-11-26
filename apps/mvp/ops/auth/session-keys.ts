@@ -7,7 +7,7 @@ import { Config, Effect, Layer, Metric, Option, Redacted } from "effect"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as Database from "../../db/Database.ts"
-import * as Keys from "../../worker/SessionKeys.ts"
+import * as Keys from "../../worker/SessionKeys.vibe"
 import * as Rotation from "../../worker/flows/SessionSigningKeys.ts"
 import { refuseUncheckedTls } from "../tls.mjs"
 
