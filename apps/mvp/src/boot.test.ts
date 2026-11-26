@@ -46,7 +46,7 @@ import { inProcessWorker } from "./test/languageServer"
 import { faultyServices } from "./test/faults"
 import { read } from "./test/otlp"
 import { PluginsUi } from "./plugins/ui"
-import { Secrets } from "./features/secrets/secrets"
+import { Secrets } from "./features/secrets/secrets.vibe"
 
 // The browser program and its boundary, on the app's own layer over a Node device, against ChatApi's real handler.
 // Records are read back from the OTLP exports the browser sent.

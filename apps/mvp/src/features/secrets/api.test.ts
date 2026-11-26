@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net"
 import { Effect, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, expect, test } from "vitest"
-import { SecretsClient } from "./api"
+import { SecretsClient } from "./api.vibe"
 import { FAILURE_COPY } from "./copy"
 
 // The real secrets client from the browser's side, against a local HTTP server that plays a gateway: real sockets, so a

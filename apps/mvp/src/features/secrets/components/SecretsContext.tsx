@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { SecretsLayer } from "../secrets"
+import type { SecretsLayer } from "../secrets.vibe"
 
 // What React components get: the secrets layer's live queries to render and plain actions to call
 // (features/secrets/secrets.ts).

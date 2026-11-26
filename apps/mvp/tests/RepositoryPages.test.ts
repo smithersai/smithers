@@ -27,7 +27,7 @@ import { ActionsScreen } from "../src/screens/actions/ActionsScreen"
 import { Home } from "../src/features/home/home.vibe"
 import { Issues } from "../src/features/issues/issues"
 import { Runs } from "../src/features/runs/runs"
-import { Secrets } from "../src/features/secrets/secrets"
+import { Secrets } from "../src/features/secrets/secrets.vibe"
 
 /** What GitHub says of smithersai/vibelang, as an About read answers it. */
 const vibelangAbout: About = {
