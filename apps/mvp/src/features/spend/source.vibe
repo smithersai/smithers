@@ -15,12 +15,12 @@ export const adminShapeSource = (
   )
   return ShapeSource.ShapeSource.of({
     cacheNamespace: source.cacheNamespace,
-    request: (url, init) => Effect.gen(function* () {
-      yield* allowed
-      const confirmation = yield* auth.confirmation
-      const response = yield* source.request(url, init)
+    request: effect (url, init) => {
+      try allowed
+      const confirmation = try auth.confirmation
+      const response = try source.request(url, init)
       if (response.status === 403) deniedAt.set(new URL(url).pathname, confirmation)
       return response
-    }),
+    },
   })
 }

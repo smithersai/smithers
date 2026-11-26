@@ -9,7 +9,7 @@ import { AlertSettings } from "../src/features/spend/components/AlertSettings"
 import { SpendProvider } from "../src/features/spend/components/SpendContext"
 import { channelsQuery, deliveriesQuery, openQuery, savesQuery } from "../src/features/spend/queries"
 import { AlertChannel, AlertDelivery, ChannelSave, Seen, SpendAlert } from "../src/features/spend/schema"
-import type { SpendView } from "../src/features/spend/spend"
+import type { SpendView } from "../src/features/spend/spend.vibe"
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 

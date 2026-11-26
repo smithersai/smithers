@@ -28,36 +28,36 @@ export class AlertsClient extends Context.Service<
   AlertsClient,
   {
     /** `POST /api/alert-channels`: set one channel's destinations; none turns it off. */
-    readonly set: (request: SetChannelRequest) => Effect.Effect<void, ChannelNotTaken>
+    readonly set: (request: SetChannelRequest) => void!ChannelNotTaken
     /** `POST /api/sandbox-limits`: set the sandbox limits. */
-    readonly setLimits: (request: SandboxLimitsRequest) => Effect.Effect<void, ChannelNotTaken>
+    readonly setLimits: (request: SandboxLimitsRequest) => void!ChannelNotTaken
   }
 >()("@smthrs/mvp/spend/AlertsClient") {
   /** The client over the host's `HttpClient`: a `200` took the setting; anything else is refused. */
   static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
     Layer.effect(
       AlertsClient,
-      Effect.gen(function* () {
-        const client = yield* HttpClient.HttpClient
+      effect {
+        const client = try HttpClient.HttpClient
         /** One `POST` of `body` to `route`: a `200` with a transaction took it; anything else is refused. */
         const post = (route: string, body: unknown) =>
-          Effect.gen(function* () {
-            const response = yield* client.execute(
+          effect {
+            const response = try client.execute(
               HttpClientRequest.post(`${options.origin}${route}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
             ).pipe(Effect.mapError(() => new ChannelNotTaken({})))
-            yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+            try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
             if (response.status !== 200) {
-              const refusal = yield* response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option)
-              return yield* new ChannelNotTaken({
+              const refusal = try response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option)
+              throw new ChannelNotTaken({
                 status: response.status,
                 ...Option.match(refusal, { onNone: () => ({}), onSome: ({ code }) => ({ code }) }),
               })
             }
-            yield* response.json.pipe(
+            try response.json.pipe(
               Effect.flatMap(decodeTaken),
               Effect.mapError(() => new ChannelNotTaken({ status: response.status })),
             )
-          }).pipe((effect) =>
+          }.pipe((effect) =>
             // Interrupting the request aborts its fetch, so a stalled body stops too.
             Effect.timeoutOrElse(effect, {
               duration: options.within ?? CHANNEL_WITHIN,
@@ -71,6 +71,6 @@ export class AlertsClient extends Context.Service<
         const setLimits = (request: SandboxLimitsRequest) =>
           post(SANDBOX_LIMITS_ROUTE, request).pipe(Effect.withSpan("sandbox.limits.set", { kind: "client" }))
         return AlertsClient.of({ set, setLimits })
-      }),
+      },
     )
 }

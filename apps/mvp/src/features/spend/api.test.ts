@@ -5,9 +5,9 @@ import { RetryPolicy } from "@smthrs/flow"
 import { Cause, Effect, Exit, Layer, Metric } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
-import { AlertsClient, ChannelNotTaken } from "./api"
+import { AlertsClient, ChannelNotTaken } from "./api.vibe"
 import { CHANNEL_RETRY, ChannelRefused, ChannelUnsent } from "./flows"
-import { failureOf, limitSets, requestChannel, requestLimits, sets } from "./steps"
+import { failureOf, limitSets, requestChannel, requestLimits, sets } from "./steps.vibe"
 
 /** The client over a `fetch` that answers with `respond`, recording each request it was handed. */
 const client = (respond: (request: Request) => Promise<Response>, within?: `${number} millis`) => {

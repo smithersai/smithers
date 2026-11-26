@@ -14,13 +14,13 @@ import { asPerson, member, nodeDevice, type NodeDevice, openTab, openTestApp, ty
 import { splitDestinations } from "./contract"
 import { ALERT_WORD, alertDetail, receiptText } from "./copy"
 import { RECEIPTS_SHOWN } from "./queries"
-import { Spend } from "./spend"
-import { setChannel } from "./actions"
+import { Spend } from "./spend.vibe"
+import { setChannel } from "./actions.vibe"
 import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
 import { check } from "../auth/actions"
 import type { AuthClient } from "../auth/api"
-import { hidden, shown, SpendStore } from "./store"
+import { hidden, shown, SpendStore } from "./store.vibe"
 
 const admin: Actor = { subject: { kind: "person", id: "person-admin" }, role: "admin" }
 

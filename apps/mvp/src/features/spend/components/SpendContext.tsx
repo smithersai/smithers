@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { SpendView } from "../spend"
+import type { SpendView } from "../spend.vibe"
 
 // What React components get: spend alerts' live query to render and a plain action to call (features/spend/spend.ts).
 

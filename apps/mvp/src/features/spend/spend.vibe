@@ -1,9 +1,9 @@
 import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
-import { hide, setChannel, setLimits } from "./actions"
+import { hide, setChannel, setLimits } from "./actions.vibe"
 import type { AlertChannelName, SandboxLimitsRequest } from "./schema"
 import { FlowDispatch } from "../../flows/dispatch"
-import { SpendStore } from "./store"
+import { SpendStore } from "./store.vibe"
 
 // Spend alerts as a frontend sees them (docs/features/spend-alerts.md): a live query to read and a plain function to
 // act, with no Effect in sight. The bell and notifications panel read `open`.
@@ -41,9 +41,9 @@ export class Spend extends Context.Service<Spend, { readonly queries: SpendQueri
   /** Binds the store's query and the action for frontends, run with the services this layer was built with. */
   static readonly layer = Layer.effect(
     Spend,
-    Effect.gen(function* () {
-      const store = yield* SpendStore
-      const { runSync: run } = runners(yield* Effect.context<SpendStore | FlowDispatch>(), "spend")
+    effect {
+      const store = try SpendStore
+      const { runSync: run } = runners(try Effect.context<SpendStore | FlowDispatch>(), "spend")
       return Spend.of({
         queries: {
           open: store.open.tanstack,
@@ -59,7 +59,7 @@ export class Spend extends Context.Service<Spend, { readonly queries: SpendQueri
           setLimits: (limits) => run(setLimits(limits)),
         },
       })
-    }),
+    },
   )
 }
 

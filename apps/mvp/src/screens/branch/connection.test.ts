@@ -1,7 +1,7 @@
 import * as ConversationPeople from "../../../worker/branch/ConversationPeople"
 import { ConversationOwners } from "../../features/conversations/owners"
 import { member } from "../../test/chatApi"
-import { Spend } from "../../features/spend/spend"
+import { Spend } from "../../features/spend/spend.vibe"
 import { renderConnection } from "./connection-render"
 // The repository header on the branch page, rendered with the real app layers over the compose Postgres/Electric.
 // The host reports offline, as navigator.onLine does; the collections, queries and components remain real.
