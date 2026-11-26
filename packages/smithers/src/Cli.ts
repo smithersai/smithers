@@ -350,7 +350,7 @@ export const makeCli = (
     .command(createRunnerCli(config))
     .command(createNodeCli())
     .command(registerAttach({ ...config.mcpStdio, approve: config.attachApproval, signal: config.signal }))
-    .command(registerNode(environment))
+    .command(registerNode(environment, { ...config.mcpStdio, signal: config.signal }))
     .command(alerts)
     .command(createTriggersCli(config))
     .command(createIntegrationsCli())

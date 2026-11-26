@@ -1,5 +1,5 @@
 import { Data, Result } from "effect"
-import { decodeJevConfig, isRepoPath, type JevConfig, type JevConfigError } from "../../src/features/jev/config.ts"
+import { decodeJevConfig, isRepoPath, type JevConfig, type JevConfigError, resolveRepoPath } from "../../src/features/jev/config.ts"
 import { FLOW_NAME, flowPath, workflowPaths } from "./RepoFlow.ts"
 
 // A repository's workflows and Jev config in a checkout on disk (docs/features/ci.md#repository-flows).
@@ -343,7 +343,8 @@ export const jevPaths = (config: JevConfig): ReadonlyArray<string> => {
  * refuses, so a broken `.json` never falls through to an executable `.ts`. JSON parses directly. A `.ts` config goes
  * only through `evaluate`, which a caller provides from its sandboxed realm and which receives the source text read
  * here, never a path to reopen. The result is decoded by `decodeJevConfig`, and only then is each file it names read
- * the same bound way. `undefined` when the repository declares none.
+ * the same bound way, after `resolveRepoPath` confirms it lies under the real checkout. `undefined` when the
+ * repository declares none.
  */
 export const loadJevConfig = (
   checkout: string,
@@ -378,6 +379,11 @@ export const loadJevConfig = (
   if (Result.isFailure(decoded)) return Result.fail(decoded.failure)
   const texts: Record<string, string> = {}
   for (const named of jevPaths(decoded.success)) {
+    // resolveRepoPath (decision 0173) refuses a path whose real file, symlinks followed, lies outside the real checkout
+    // with a typed JevConfigError path_escape. A path that does not resolve falls through to the bound read, which
+    // tells a missing file (not_found) from a dangling or escaping link (path_escape).
+    const resolved = resolveRepoPath({ checkout: root, path: named, realpath: files.realpathSync })
+    if (Result.isFailure(resolved) && resolved.failure.detail !== "does not resolve") return Result.fail(resolved.failure)
     const read = readFile(root, named, files)
     if (Result.isFailure(read)) return Result.fail(read.failure)
     if (read.success === undefined) return refuse("not_found", named, "a file the config names does not exist")

@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { Result } from "effect"
 import { describe, expect, test } from "vitest"
 import { decodeJevConfig, Jev, JevConfigError, type JevConfigErrorCode, resolveRepoPath } from "./config"
@@ -231,6 +234,28 @@ describe("Jev.config", () => {
     for (const path of ["./jev/leak.sh", "./jev/sibling.sh", "./jev/missing.sh", "./jev/../../x.sh", "jev/kind.sh"]) {
       const refused = resolve(path)
       expect(Result.isFailure(refused) && refused.failure.code).toBe("path_escape")
+    }
+  })
+
+  test("resolveRepoPath refuses a real symlink escape and a .. traversal on disk", () => {
+    const base = mkdtempSync(join(tmpdir(), "jev-resolve-"))
+    try {
+      const checkout = join(base, "checkout")
+      const outside = join(base, "outside")
+      mkdirSync(join(checkout, "jev"), { recursive: true })
+      mkdirSync(outside)
+      writeFileSync(join(checkout, "jev/kind.sh"), "echo bug")
+      writeFileSync(join(outside, "secret.sh"), "curl attacker")
+      symlinkSync(join(outside, "secret.sh"), join(checkout, "jev/leak.sh"))
+      symlinkSync(outside, join(checkout, "data"))
+      const resolve = (path: string) => resolveRepoPath({ checkout, path, realpath: realpathSync })
+      expect(resolve("./jev/kind.sh")).toEqual(Result.succeed(join(realpathSync(checkout), "jev/kind.sh")))
+      for (const path of ["./jev/leak.sh", "./data/secret.sh", "./../outside/secret.sh", "./jev/../../outside/secret.sh"]) {
+        const refused = resolve(path)
+        expect(Result.isFailure(refused) && refused.failure).toMatchObject({ code: "path_escape", path })
+      }
+    } finally {
+      rmSync(base, { recursive: true, force: true })
     }
   })
 })

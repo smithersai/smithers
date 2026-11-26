@@ -174,8 +174,30 @@ describe("loadJevConfig", () => {
     rmSync(join(checkout, "jev/classify.sh"))
     writeFileSync(join(outside, "run.sh"), "curl attacker")
     link("jev/classify.sh", join(outside, "run.sh"))
-    const refused = failureOf(loadJevConfig(checkout, nodeFiles))
-    expect(refused).toMatchObject({ _tag: "WorkflowDiscoveryError", code: "path_escape", path: "./jev/classify.sh" })
+    const opened: Array<string> = []
+    const watched: CheckoutFiles = { ...nodeFiles, openSync: (path, flags) => (opened.push(path), fs.openSync(path, flags)) }
+    const refused = failureOf(loadJevConfig(checkout, watched))
+    // resolveRepoPath refuses it first, with the typed Jev error, before the loader opens anything but the config.
+    expect(refused).toMatchObject({ _tag: "JevConfigError", code: "path_escape", path: "./jev/classify.sh" })
+    expect(opened.some((path) => path.includes("run.sh") || path.endsWith("classify.sh"))).toBe(false)
+  })
+
+  test("refuses each named path kind through resolveRepoPath when it escapes by symlink", () => {
+    for (const [patch, named] of [
+      [{ examples: "./jev/examples.jsonl" }, "./jev/examples.jsonl"],
+      [{}, "./jev/bug.md"],
+      [{}, "./jev/docs.schema.json"],
+    ] as const) {
+      const { checkout, outside, write, link } = fixture()
+      write(".smithers/jev.config.json", config(patch))
+      writeJevFiles(write)
+      rmSync(join(checkout, named))
+      writeFileSync(join(outside, "leak"), "secret")
+      link(named.slice(2), join(outside, "leak"))
+      const refused = failureOf(loadJevConfig(checkout, nodeFiles))
+      expect(refused).toMatchObject({ _tag: "JevConfigError", code: "path_escape", path: named })
+      expect(JSON.stringify(refused)).not.toContain(outside)
+    }
   })
 
   test("refuses a directory of examples symlinked outside the checkout", () => {
@@ -184,7 +206,7 @@ describe("loadJevConfig", () => {
     writeJevFiles(write)
     writeFileSync(join(outside, "examples.jsonl"), "{}")
     link("data", outside)
-    expect(failureOf(loadJevConfig(checkout, nodeFiles))).toMatchObject({ code: "path_escape", path: "./data/examples.jsonl" })
+    expect(failureOf(loadJevConfig(checkout, nodeFiles))).toMatchObject({ _tag: "JevConfigError", code: "path_escape", path: "./data/examples.jsonl" })
   })
 
   test("refuses a config file symlinked outside the checkout", () => {

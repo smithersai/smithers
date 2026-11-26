@@ -46,9 +46,9 @@ deletes 33 files (5,141 lines), refactors 317 and keeps 1,826. No attach endpoin
 | -------------------------------------- | --------------------------------------------------------------------------------------- |
 | Attach intent, consent, grant, revoke  | Mounted in `worker/attach/LiveMount.ts` using `Sessions` and `BranchRoles`. State is stored in Postgres. |
 | Streamable HTTP attach handler         | `/api/attach/mcp/<owner>/<repo>/<branch>` exposes conversation reads and replies with an attenuated grant. |
-| `Jev.config` validator                 | Built: `src/features/jev/config.ts`, compile time and run time. No executor calls `resolveRepoPath` yet. |
+| `Jev.config` validator and loader      | Built: `src/features/jev/config.ts` validates at compile time and run time. `loadJevConfig` (`worker/ci/WorkflowDiscovery.ts`) calls `resolveRepoPath` on every path the config names and refuses a symlink escape with `JevConfigError` `path_escape`. The decoder refuses a `..` segment as `invalid_shape`. No live Jev runtime calls `loadJevConfig` yet. |
 | Browser agent removal                  | The browser chat agent and its public model proxy have been removed. Server-side flows use internal model seats. |
-| Local `smthrs --mcp` over stdio        | Not built.                                                                              |
+| Local stdio MCP: `smthrs node serve`   | Built: `packages/smithers/src/commands/NodeServe.ts` serves MCP over stdio from the node's SQLite shard, through `McpStdio` framing and `McpAdapter` with `act: "agent"` evidence, so person-only flows are hidden and refused. An oversized frame gets a JSON-RPC `mcp_input_too_large` error, a stderr line, and exit 0. `smthrs --mcp` still serves the CLI tool tree. |
 
 ## Rejected
 

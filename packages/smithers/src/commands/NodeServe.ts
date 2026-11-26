@@ -2,9 +2,13 @@ import { Core, McpAdapter, Principal } from "@smthrs/app-core"
 import { ShardClient, ShardProtocol, ShardServer } from "@smthrs/sync"
 import { Effect, Schema } from "effect"
 import { Cli, z } from "incur"
+import { once } from "node:events"
 import { createServer, type IncomingMessage } from "node:http"
 import { DatabaseSync } from "node:sqlite"
-import { normalizeOrigin, serveMcpStdioBridge } from "../cli/McpRemote.ts"
+import type { Readable, Writable } from "node:stream"
+import * as CliError from "../CliError.ts"
+import { normalizeOrigin } from "../cli/McpRemote.ts"
+import * as McpStdio from "../cli/McpStdio.ts"
 
 const appendCapability = "shard:append"
 const scopedCapability = (operation: "read" | "sync" | "replicate", shard: string) => `shard:${operation}:${shard}`
@@ -82,7 +86,20 @@ export interface NodeOptions {
   readonly hub?: NodeHub
   readonly commandId?: Effect.Effect<string>
   readonly port?: number
+  /** Flows the node hosts beside `shard/append`. A person-only flow is absent from `tools/list` and refused on call. */
+  readonly flows?: ReadonlyArray<Core.Flow>
 }
+
+/** The streams one local agent speaks MCP over. `maxBytes` bounds an unterminated frame (McpStdio's default). */
+export interface NodeStdio {
+  readonly input: Readable
+  readonly output: Writable
+  readonly signal?: AbortSignal | undefined
+  readonly maxBytes?: number | undefined
+}
+
+/** How a stdio session ended: the agent closed its input, or a frame passed the bound and the session was refused. */
+export type StdioEnd = "closed" | "mcp_input_too_large"
 
 export const startNode = async (options: NodeOptions) => {
   if (options.token.length < 24) throw new Error("Node requires an agent token of at least 24 characters")
@@ -228,8 +245,56 @@ export const startNode = async (options: NodeOptions) => {
         capabilities: [appendCapability],
         payload: { type: "object", properties: {}, additionalProperties: true },
         run: (payload) => payload
-      }]
+      }, ...(options.flows ?? [])]
     }))
+    // Decision 0173 §1: a local agent speaks MCP over stdio straight to this engine. MCP evidence always mints an
+    // `act: "agent"` principal, so person-only flows are left out of `tools/list` and refused on `tools/call`.
+    const serveStdio = async (io: NodeStdio): Promise<StdioEnd> => {
+      const opened = await Effect.runPromise(Effect.result(McpAdapter.make({
+        engine, evidence: { kind: "mcp", transport: "stdio", tokenRef: options.token }, name: "smithers-node"
+      })))
+      if (opened._tag === "Failure") throw new Error("The node refused its own agent token")
+      const server = opened.success
+      const write = async (line: string) => {
+        if (!io.output.write(`${line}\n`)) await once(io.output, "drain")
+      }
+      // McpStdio answers syntax errors itself and forwards only complete, parseable lines.
+      const framed = McpStdio.input(io.output, io.maxBytes)
+      const onError = (cause: Error) => framed.destroy(cause)
+      const stop = () => {
+        io.input.unpipe(framed)
+        framed.end()
+      }
+      io.input.on("error", onError)
+      io.signal?.addEventListener("abort", stop, { once: true })
+      if (io.signal?.aborted) stop()
+      else io.input.pipe(framed)
+      let pending = Buffer.alloc(0)
+      try {
+        for await (const chunk of framed) {
+          pending = Buffer.concat([pending, chunk as Buffer])
+          for (let end = pending.indexOf(10); end >= 0; end = pending.indexOf(10)) {
+            const line = pending.subarray(0, end).toString("utf8")
+            pending = pending.subarray(end + 1)
+            const reply = await Effect.runPromise(server.handle(line))
+            if (reply !== undefined) await write(reply)
+          }
+        }
+        return "closed"
+      } catch (error) {
+        if (!(error instanceof CliError.Refused) || error.code !== "mcp_input_too_large") throw error
+        await write(JSON.stringify({
+          jsonrpc: "2.0", id: null,
+          error: { code: -32600, message: error.message, data: { code: error.code } }
+        }))
+        return "mcp_input_too_large"
+      } finally {
+        io.input.unpipe(framed)
+        io.input.off("error", onError)
+        io.signal?.removeEventListener("abort", stop)
+        framed.destroy()
+      }
+    }
     const server = createServer(async (request, response) => {
       try {
         const host = request.headers.host?.toLowerCase()
@@ -305,6 +370,7 @@ export const startNode = async (options: NodeOptions) => {
     return {
       origin: `http://127.0.0.1:${address.port}`,
       sync: () => Effect.runPromise(sync),
+      serveStdio,
       close: () => new Promise<void>((resolve, reject) => server.close((error) => {
         db.close()
         if (error === undefined) resolve()
@@ -317,7 +383,10 @@ export const startNode = async (options: NodeOptions) => {
   }
 }
 
-export const registerNode = (environment: Record<string, string | undefined> = process.env) => Cli.create("node", { description: "Local Smithers node" }).command("serve", {
+export const registerNode = (
+  environment: Record<string, string | undefined> = process.env,
+  host: Partial<Pick<NodeStdio, "input" | "output" | "signal">> = {}
+) => Cli.create("node", { description: "Local Smithers node" }).command("serve", {
   description: "Serve a local SQLite shard and stdio MCP",
   options: z.object({
     file: z.string(), shard: z.string(), node: z.string(), port: z.coerce.number().int().min(0).max(65_535).default(0),
@@ -370,15 +439,26 @@ export const registerNode = (environment: Record<string, string | undefined> = p
     const stop = () => abort.abort()
     process.once("SIGINT", stop)
     process.once("SIGTERM", stop)
+    host.signal?.addEventListener("abort", stop, { once: true })
+    if (host.signal?.aborted) stop()
     const stopped = new Promise<void>((resolve) => abort.signal.addEventListener("abort", () => resolve(), { once: true }))
+    const input = host.input ?? process.stdin
     try {
       process.stderr.write(`Smithers node listening on ${node.origin}\n`)
-      await serveMcpStdioBridge({ agentGrant: { token, endpoint: new URL("/mcp", node.origin) }, signal: abort.signal })
+      const ended = await node.serveStdio({ input, output: host.output ?? process.stdout, signal: abort.signal })
+      if (ended === "mcp_input_too_large") {
+        // The agent already holds the typed JSON-RPC refusal on its channel, so the session ends cleanly (exit 0).
+        // stdout carries only MCP frames, so the diagnostic goes to stderr and the CLI envelope stays off stdout.
+        process.stderr.write("MCP stdio input exceeds its buffer limit (mcp_input_too_large)\n")
+        return
+      }
+      // The agent closed stdio. The loopback HTTP listener keeps serving replication until a signal stops it.
       await stopped
     } finally {
-      process.stdin.pause()
+      input.pause()
       process.off("SIGINT", stop)
       process.off("SIGTERM", stop)
+      host.signal?.removeEventListener("abort", stop)
       await node.close()
     }
   }
