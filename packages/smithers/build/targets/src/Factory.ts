@@ -72,6 +72,15 @@ export const projectionPath = ".smithers/factory.json"
 export const homePath = ".smithers/home.json"
 
 /**
+ * Where a repository keeps its workflows (decision 0171): discovery reads
+ * `<name>.vibe`, then `<name>.ts`, before `.smithers/flows/<name>/flow.ts`.
+ *
+ * @category constants
+ * @since 1.1.0
+ */
+export const workflowsPath = ".smithers/workflows"
+
+/**
  * Maximum length of the factory's one-line summary.
  *
  * @category constants
@@ -599,12 +608,6 @@ export const TriggerId = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-
  */
 export const maximumTriggers = 64
 
-/**
- * The name a repository flow has: its directory under the flows root, one
- * segment, as the host that starts it on an event requires.
- */
-const repositoryFlowName = /^[a-z0-9][a-z0-9_-]{0,63}$/
-
 const decodeTriggers = (value: unknown): Readonly<Record<string, Trigger.Binding>> => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError("Factory triggers must be a record of ids to Trigger.bind values")
@@ -1016,18 +1019,19 @@ const checkSchedulePayloads = (declaration: Declaration, catalog: ReadonlyArray<
 }
 
 /**
- * Refuses a binding whose flow is not a discovered TypeScript flow one
- * directory under the flows root: the host plans a bound flow from its
- * `flow.ts` at the event's commit, and reads no other entry.
+ * Refuses a binding whose flow is not a discovered module workflow with a
+ * one-segment name: the host plans a bound flow at the event's commit from
+ * `.smithers/workflows/<name>.vibe`, `<name>.ts`, or
+ * `.smithers/flows/<name>/flow.ts`, and reads no other entry.
  */
 const checkTriggerFlows = (declaration: Declaration, catalog: ReadonlyArray<FlowCatalog.Row>) => {
   for (const [id, binding] of Object.entries(declaration.triggers ?? {})) {
     const found = catalog.find((flow) => flow.id === binding.flow)
-    if (found === undefined || found.kind !== "ts" || !repositoryFlowName.test(binding.flow)) {
+    if (found === undefined || found.kind !== "ts" || !FlowCatalog.workflowName.test(binding.flow)) {
       throw new FlowCatalog.FlowCatalogError({
         message: `Factory triggers[${JSON.stringify(id)}] binds the flow ${
           JSON.stringify(binding.flow)
-        }, which is no discovered flow.ts one directory under the flows root`
+        }, which is no discovered module workflow: .smithers/workflows/<name>.vibe or <name>.ts, or .smithers/flows/<name>/flow.ts`
       })
     }
   }
@@ -1086,7 +1090,8 @@ export const Mode = Schema.Literals(["write", "check"]).pipe(
 export type Mode = typeof Mode.Type
 
 /**
- * Payload for one projection: where discovery walks, where the two files go,
+ * Payload for one projection: where discovery walks and where it reads
+ * workflows, where the two files go,
  * whether to write or check, and the loaded declarations. `factory` is null
  * when the workspace has no `FACTORY.ts`; `home` is null when the file
  * exports none.
@@ -1096,6 +1101,7 @@ export type Mode = typeof Mode.Type
  */
 export const Payload = Schema.Struct({
   root: Schema.NonEmptyString,
+  workflows: Schema.NonEmptyString,
   output: Schema.NonEmptyString,
   homeOutput: Schema.NonEmptyString,
   mode: Schema.Literals(["write", "check"]),
@@ -1112,7 +1118,8 @@ export const Payload = Schema.Struct({
 export type Payload = typeof Payload.Type
 
 /**
- * Discovers the flows under `root`, joins the factory's declarations, and
+ * Discovers the flows under `root` and the workflows under `workflows`, a
+ * workflow replacing the flow of its id, joins the factory's declarations, and
  * writes or checks both projection files. Implemented by the executor, which
  * owns the registry's discovery.
  *
@@ -1139,6 +1146,12 @@ export const Attrs = Schema.Struct({
    * pin the two equal. @default ".smithers/flows"
    */
   root: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed(".smithers/flows"))),
+  /**
+   * The workspace-relative directory holding `<name>.vibe` and `<name>.ts`
+   * workflows. A workflow there replaces the flow of the same id under
+   * `root` (decision 0171). @default ".smithers/workflows"
+   */
+  workflows: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed(workflowsPath))),
   /** Explicit entry files when discovery spans packages; otherwise entries are package-scoped globs. */
   entries: Schema.optional(Schema.Array(Input.File)),
   /** The workspace-relative declaration file the check is keyed on. @default ".smithers/FACTORY.ts" */
@@ -1163,8 +1176,10 @@ export const Attrs = Schema.Struct({
  */
 export type Attrs = typeof Attrs.Type
 
-const entryGlobs = (root: string): ReadonlyArray<Input.Declared> =>
-  ["flow.ts", "flow.mdx", "SKILL.md"].map((entry) => Input.glob(`//${resolveOutputPath(root)}/**/${entry}`))
+const entryGlobs = (root: string, workflows: string): ReadonlyArray<Input.Declared> => [
+  ...["flow.ts", "flow.mdx", "SKILL.md"].map((entry) => Input.glob(`//${resolveOutputPath(root)}/**/${entry}`)),
+  ...["*.vibe", "*.ts"].map((entry) => Input.glob(`//${resolveOutputPath(workflows)}/${entry}`))
+]
 
 /**
  * The factory projection target.
@@ -1195,7 +1210,7 @@ export const FactoryProjection = Target.make("FactoryProjection", {
   error: Schema.Union([WriteFileError, DriftError, FlowCatalog.FlowCatalogError, FactoryProjectionError]),
   cache: (attrs) => attrs.mode !== "write",
   inputs: (attrs) => [
-    ...(attrs.entries ?? entryGlobs(attrs.root)),
+    ...(attrs.entries ?? entryGlobs(attrs.root, attrs.workflows)),
     Input.file(`//${resolveOutputPath(attrs.declaration)}`),
     ...(attrs.mode === "write"
       ? []
@@ -1219,6 +1234,7 @@ export const FactoryProjection = Target.make("FactoryProjection", {
   > =>
     FactoryProjectionAction.call({
       root: resolveOutputPath(attrs.root),
+      workflows: resolveOutputPath(attrs.workflows),
       output: resolveOutputPath(attrs.output),
       homeOutput: resolveOutputPath(attrs.homeOutput),
       mode: attrs.mode,

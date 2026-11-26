@@ -9,7 +9,7 @@
  */
 import { Smithers as S } from "@smthrs/targets"
 import { On, Trigger } from "@smthrs/triggers"
-import Gate from "./flows/gate/flow.ts"
+import Gate from "./workflows/gate.vibe"
 
 // --- featured flows --------------------------------------------------------
 // The flows this repository recommends first, and the one line each shows

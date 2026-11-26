@@ -55,11 +55,18 @@ describe("Smithers.Factory triggers", () => {
     }
   })
 
-  it("refuses a binding whose flow is no flow.ts one directory under the flows root", () => {
+  it("binds a workflow from .smithers/workflows/<name>.vibe as it binds a flow.ts", () => {
+    const vibe = { ...row("gate", "ts"), path: ".smithers/workflows/gate.vibe" }
+    const json = JSON.parse(Factory.renderProjection(Factory.Factory({ summary: "S.", triggers }), [vibe]))
+    expect(json.flows[0]).toMatchObject({ id: "gate", kind: "ts", path: ".smithers/workflows/gate.vibe" })
+    expect(json.contributes.triggers.map((trigger: { flow: string }) => trigger.flow)).toEqual(["gate", "gate"])
+  })
+
+  it("refuses a binding whose flow is no discovered module workflow with a one-segment name", () => {
     const render = (flows: Record<string, Trigger.Binding>, catalog: ReadonlyArray<FlowCatalog.Row>) => () =>
       Factory.renderProjection(Factory.Factory({ summary: "S.", triggers: flows }), catalog)
     expect(render(triggers, [])).toThrow(
-      /triggers\["gate-main"\] binds the flow "gate", which is no discovered flow.ts/
+      /triggers\["gate-main"\] binds the flow "gate", which is no discovered module workflow/
     )
     expect(render(triggers, [row("gate", "mdx")])).toThrow(/binds the flow "gate"/)
     expect(render({ nested: Trigger.bind({ flow: Nested, on: On.manual() }) }, [row("bench/gate", "ts")])).toThrow(

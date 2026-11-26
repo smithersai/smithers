@@ -22,8 +22,10 @@ import type * as Flow from "./Flow.ts"
 import * as Home from "./Home.ts"
 
 /**
- * The entry file a flow was discovered from: a `flow.ts` module, a
- * `flow.mdx` prompt, or a foreign `SKILL.md`.
+ * The entry file a flow was discovered from: a module (`ts`), a `flow.mdx`
+ * prompt, or a foreign `SKILL.md`. A module is a `.smithers/flows/<id>/flow.ts`
+ * or a `.smithers/workflows/<name>.vibe` or `<name>.ts`; the row's `path`
+ * names which.
  *
  * @category schemas
  * @since 1.0.0
@@ -200,4 +202,70 @@ export const rows = (
     .sort((left, right) => Number(left.id > right.id) - Number(left.id < right.id))
     .map((flow) => row(flow, undefined))
   return [...featured, ...declaredOnly, ...rest]
+}
+
+/**
+ * The name a repository workflow has: one segment, as the host that starts
+ * it on an event requires (apps/mvp `worker/ci/RepoFlow.ts` `FLOW_NAME`).
+ *
+ * @category constants
+ * @since 1.1.0
+ */
+export const workflowName = /^[a-z0-9][a-z0-9_-]{0,63}$/
+
+/**
+ * One workflow file in `.smithers/workflows/`: its name and its entry name.
+ *
+ * @category models
+ * @since 1.1.0
+ */
+export interface WorkflowFile {
+  readonly name: string
+  readonly entry: string
+}
+
+const workflowEntry = /^(.+)\.(vibe|ts)$/
+
+/**
+ * Selects the workflow files from the entry names of `.smithers/workflows/`
+ * (decision 0171): `<name>.vibe` before `<name>.ts`, the order apps/mvp
+ * `worker/ci/WorkflowDiscovery.ts` reads them in. An entry whose name is no
+ * {@link workflowName}, such as `gate.d.ts` or `gate.test.ts`, is no
+ * workflow. Sorted by name.
+ *
+ * @category constructors
+ * @since 1.1.0
+ */
+export const workflowFiles = (entries: ReadonlyArray<string>): ReadonlyArray<WorkflowFile> => {
+  const byName = new Map<string, WorkflowFile>()
+  for (const entry of entries) {
+    const match = workflowEntry.exec(entry)
+    if (match === null || !workflowName.test(match[1]!)) continue
+    const name = match[1]!
+    if (match[2] === "vibe" || !byName.has(name)) byName.set(name, { name, entry })
+  }
+  return [...byName.values()].sort((left, right) => Number(left.name > right.name) - Number(left.name < right.name))
+}
+
+/**
+ * Joins the workflows from `.smithers/workflows/` with the flows discovered
+ * under `.smithers/flows/`: a workflow replaces the flow of the same id,
+ * because every runner plans the workflow (decision 0171). Two workflows of
+ * one id are a failure carrying the id.
+ *
+ * @category constructors
+ * @since 1.1.0
+ */
+export const preferWorkflows = (
+  flows: ReadonlyArray<DiscoveredFlow>,
+  workflows: ReadonlyArray<DiscoveredFlow>
+): ReadonlyArray<DiscoveredFlow> => {
+  const ids = new Set<string>()
+  for (const workflow of workflows) {
+    if (ids.has(workflow.id)) {
+      throw new FlowCatalogError({ message: `discovery reported the workflow ${JSON.stringify(workflow.id)} twice` })
+    }
+    ids.add(workflow.id)
+  }
+  return [...flows.filter((flow) => !ids.has(flow.id)), ...workflows]
 }

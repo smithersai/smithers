@@ -620,6 +620,7 @@ describe("FactoryProjection target", () => {
     const metadata = Target.metadata(checking)
     expect(metadata.attrs).toEqual({
       root: ".smithers/flows",
+      workflows: ".smithers/workflows",
       declaration: ".smithers/FACTORY.ts",
       output: ".smithers/factory.json",
       homeOutput: ".smithers/home.json",
@@ -631,6 +632,8 @@ describe("FactoryProjection target", () => {
       "//.smithers/flows/**/flow.ts",
       "//.smithers/flows/**/flow.mdx",
       "//.smithers/flows/**/SKILL.md",
+      "//.smithers/workflows/*.vibe",
+      "//.smithers/workflows/*.ts",
       "//.smithers/FACTORY.ts",
       "//.smithers/factory.json",
       "//.smithers/home.json"
@@ -639,6 +642,7 @@ describe("FactoryProjection target", () => {
       action: "smithers-build/factory-projection",
       payload: {
         root: ".smithers/flows",
+        workflows: ".smithers/workflows",
         output: ".smithers/factory.json",
         homeOutput: ".smithers/home.json",
         mode: "check",
@@ -652,6 +656,7 @@ describe("FactoryProjection target", () => {
     const writing = Factory.FactoryProjection({
       mode: "write",
       root: "//recipes",
+      workflows: "//recipes/workflows",
       declaration: "FACTORY.ts",
       output: "//meta/factory.json",
       homeOutput: "//meta/home.json",
@@ -665,12 +670,15 @@ describe("FactoryProjection target", () => {
       "//recipes/**/flow.ts",
       "//recipes/**/flow.mdx",
       "//recipes/**/SKILL.md",
+      "//recipes/workflows/*.vibe",
+      "//recipes/workflows/*.ts",
       "//FACTORY.ts"
     ])
     expect(plannedCalls(writing)).toEqual([{
       action: "smithers-build/factory-projection",
       payload: {
         root: "recipes",
+        workflows: "recipes/workflows",
         output: "meta/factory.json",
         homeOutput: "meta/home.json",
         mode: "write",

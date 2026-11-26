@@ -1200,7 +1200,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": ".smithers/flows/gate/flow.ts",
+      "path": ".smithers/workflows/gate.vibe",
       "capabilities": [],
       "model": null,
       "modelInvocable": false,

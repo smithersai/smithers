@@ -8,15 +8,18 @@
  * `@smthrs/targets/FlowCatalog`, which own the projection shape and the row
  * ordering. This module only supplies what a pure module cannot: the
  * discovery walk, which is the same code path `smthrs ls` runs, so the
- * projection can never list a flow the CLI would not, and the publication
- * of the two files.
+ * projection can never list a flow the CLI would not; the read of
+ * `.smithers/workflows/<name>.vibe` and `<name>.ts`, through the same module
+ * reader, a workflow replacing the flow of its id (decision 0171); and the
+ * publication of the two files.
  *
  * @since 1.0.0
  */
 
 import type { Action, FlowRuntime } from "@smthrs/flow"
-import { inputDocument } from "@smthrs/registry/Descriptor"
+import { type FlowDescriptor, inputDocument, Provenance } from "@smthrs/registry/Descriptor"
 import * as Discovery from "@smthrs/registry/Discovery"
+import * as ModuleFlow from "@smthrs/registry/ModuleFlow"
 import * as Factory from "@smthrs/targets/Factory"
 import * as FlowCatalog from "@smthrs/targets/FlowCatalog"
 import * as GeneratedFile from "@smthrs/targets/GeneratedFile"
@@ -80,27 +83,109 @@ export const discoverFlows = (
           }`
         })
       }
-      flows.push({
-        id: descriptor.name,
-        description: descriptor.description,
-        kind,
-        path: posix(NodePath.relative(workspaceRoot, descriptor.body.path)),
-        capabilities: descriptor.capabilities,
-        flows: descriptor.flows,
-        ...(descriptor.budget === undefined ? {} : {
-          budget: {
-            ...(descriptor.budget.tokens === undefined ? {} : { tokens: descriptor.budget.tokens }),
-            ...(descriptor.budget.milliseconds === undefined ? {} : { milliseconds: descriptor.budget.milliseconds }),
-            ...(descriptor.budget.usd === undefined ? {} : { usd: descriptor.budget.usd }),
-            ...(descriptor.budget.onExceeded === undefined ? {} : { onExceeded: descriptor.budget.onExceeded })
-          }
-        }),
-        model: Option.getOrNull(descriptor.model),
-        modelInvocable: descriptor.modelInvocable,
-        ...(inputDocument(descriptor.input) === undefined ? {} : { inputSchema: inputDocument(descriptor.input)! })
-      })
+      flows.push(catalogFlow(workspaceRoot, descriptor, kind))
     }
     return flows
+  })
+
+/** One descriptor reduced to the fields the projection carries. */
+const catalogFlow = (
+  workspaceRoot: string,
+  descriptor: FlowDescriptor,
+  kind: FlowCatalog.Kind
+): FlowCatalog.DiscoveredFlow => ({
+  id: descriptor.name,
+  description: descriptor.description,
+  kind,
+  path: posix(NodePath.relative(workspaceRoot, descriptor.body.path)),
+  capabilities: descriptor.capabilities,
+  flows: descriptor.flows,
+  ...(descriptor.budget === undefined ? {} : {
+    budget: {
+      ...(descriptor.budget.tokens === undefined ? {} : { tokens: descriptor.budget.tokens }),
+      ...(descriptor.budget.milliseconds === undefined ? {} : { milliseconds: descriptor.budget.milliseconds }),
+      ...(descriptor.budget.usd === undefined ? {} : { usd: descriptor.budget.usd }),
+      ...(descriptor.budget.onExceeded === undefined ? {} : { onExceeded: descriptor.budget.onExceeded })
+    }
+  }),
+  model: Option.getOrNull(descriptor.model),
+  modelInvocable: descriptor.modelInvocable,
+  ...(inputDocument(descriptor.input) === undefined ? {} : { inputSchema: inputDocument(descriptor.input)! })
+})
+
+/**
+ * Reads the workflows in one workspace-relative directory: per name,
+ * `<name>.vibe` before `<name>.ts` (`FlowCatalog.workflowFiles`), each read
+ * from its source text by the registry's module reader without importing it.
+ * A missing directory holds none. A file that declares no `Flow.make`, such
+ * as a check script run with plain Node, is no workflow. A workflow the
+ * reader refuses, whose tag is not its file name, or that is not a regular
+ * file within the discovery ceiling fails by path, never dropped quietly.
+ *
+ * @category effects
+ * @since 1.1.0
+ */
+export const discoverWorkflows = (
+  workspaceRoot: string,
+  directory: string
+): Effect.Effect<
+  ReadonlyArray<FlowCatalog.DiscoveredFlow>,
+  FlowCatalog.FlowCatalogError,
+  FileSystem.FileSystem
+> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const absolute = NodePath.join(workspaceRoot, ...directory.split("/"))
+    const refuse = (path: string, reason: string) =>
+      new FlowCatalog.FlowCatalogError({ message: `the workflow ${path} ${reason}` })
+    const entries = yield* fs.readDirectory(absolute).pipe(
+      Effect.catchTag("PlatformError", (cause) =>
+        cause.reason._tag === "NotFound"
+          ? Effect.succeed([])
+          : Effect.fail(
+            new FlowCatalog.FlowCatalogError({
+              message: `could not list the workflows under ${directory}: ${cause.message}`
+            })
+          ))
+    )
+    const provenance = new Provenance({ source: "project", root: absolute })
+    const workflows: Array<FlowCatalog.DiscoveredFlow> = []
+    for (const file of FlowCatalog.workflowFiles(entries)) {
+      const location = NodePath.join(absolute, file.entry)
+      const path = `${directory}/${file.entry}`
+      const info = yield* fs.stat(location).pipe(
+        Effect.mapError((cause) => refuse(path, `could not be read: ${cause.message}`))
+      )
+      if (info.type !== "File") return yield* refuse(path, "is not a regular file")
+      if (info.size > BigInt(Discovery.entrySizeLimit)) {
+        return yield* refuse(path, `exceeds the ${Discovery.entrySizeLimit}-byte discovery input ceiling`)
+      }
+      const text = yield* fs.readFileString(location).pipe(
+        Effect.mapError((cause) => refuse(path, `could not be read: ${cause.message}`))
+      )
+      const read = ModuleFlow.fromModule({
+        text,
+        path: location,
+        naming: "path",
+        name: Option.some(file.name),
+        dirBasename: file.name,
+        provenance
+      })
+      if (Option.isNone(read.descriptor) && Option.isNone(read.tag)) continue
+      if (Option.isNone(read.descriptor)) {
+        return yield* refuse(path, `could not be read: ${read.warnings.map((item) => item.message).join("; ")}`)
+      }
+      if (Option.isSome(read.tag) && read.tag.value !== file.name) {
+        return yield* refuse(
+          path,
+          `declares Flow.make(${JSON.stringify(read.tag.value)}); a workflow's tag is its file name, ${
+            JSON.stringify(file.name)
+          }`
+        )
+      }
+      workflows.push(catalogFlow(workspaceRoot, read.descriptor.value, "ts"))
+    }
+    return workflows
   })
 
 type ProjectionError =
@@ -176,9 +261,14 @@ export const renderProjection = (
           `the workspace declares no factory: create ${Factory.declarationPath} beside WORKSPACE.ts and export const factory = S.Factory({ ... })`
       })
     }
-    const discovered = yield* discoverFlows(workspaceRoot, payload.root)
+    const flows = yield* discoverFlows(workspaceRoot, payload.root)
+    const workflows = yield* discoverWorkflows(workspaceRoot, payload.workflows)
     const contents = yield* Effect.try({
-      try: () => Factory.renderProjection(factory, FlowCatalog.rows(discovered, factory.flows)),
+      try: () =>
+        Factory.renderProjection(
+          factory,
+          FlowCatalog.rows(FlowCatalog.preferWorkflows(flows, workflows), factory.flows)
+        ),
       catch: (cause) =>
         cause instanceof FlowCatalog.FlowCatalogError
           ? cause

@@ -25,6 +25,7 @@ const workspaceReadmes = await workspaceFiles([
   "packages/*/README.md", "packages/*/*/README.md", "packages/*/*/*/README.md"
 ])
 const flowEntries = await workspaceFiles([".smithers/flows/**/flow.ts", ".smithers/flows/**/flow.mdx", ".smithers/flows/**/SKILL.md"])
+const workflowEntries = await workspaceFiles([".smithers/workflows/*.vibe", ".smithers/workflows/*.ts"])
 
 export const cacheToken = Smithers.Secret("SMITHERS_CACHE_READ_TOKEN")
 export const cacheWriteToken = Smithers.Secret("SMITHERS_CACHE_WRITE_TOKEN")
@@ -264,7 +265,7 @@ const commit = Smithers.ToolRun({
 // evaluates FACTORY.ts for a card. The planner fills the declaration from the
 // loaded file; nothing here restates it.
 const factoryProjection = Smithers.FactoryProjection({
-  entries: flowEntries,
+  entries: [...flowEntries, ...workflowEntries],
   summary: "Regenerate and drift-check .smithers/factory.json and .smithers/home.json from .smithers/FACTORY.ts.",
   featured: true
 })

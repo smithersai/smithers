@@ -14,7 +14,7 @@ import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { layerNonInteractiveNodeServices } from "../src/engine.ts"
-import { discoverFlows, renderProjection } from "../src/FactoryProjectionExec.ts"
+import { discoverFlows, discoverWorkflows, renderProjection } from "../src/FactoryProjectionExec.ts"
 
 let root: string
 beforeEach(async () => {
@@ -41,6 +41,7 @@ const skill = "---\nname: deploy\ndescription: Deploys the service.\n---\n\n# De
 
 const payload = (overrides: Partial<Factory.Payload>): Factory.Payload => ({
   root: "flows",
+  workflows: "workflows",
   output: "out/factory.json",
   homeOutput: "pane/home.json",
   mode: "write",
@@ -80,7 +81,113 @@ describe("discoverFlows", () => {
   })
 })
 
+const gateFlow = (description: string) =>
+  `import { Flow } from "@smthrs/flow"\nimport { Schema } from "effect"\nexport default Flow.make("gate", { description: ${
+    JSON.stringify(description)
+  }, modelInvocable: false, payload: { sha: Schema.String }, body: () => undefined })\n`
+
+describe("discoverWorkflows", () => {
+  it("reads <name>.vibe as a module workflow with its declared metadata", async () => {
+    await write("workflows/gate.vibe", gateFlow("Runs the gate."))
+    const result = await run(discoverWorkflows(root, "workflows"))
+    if (result._tag === "Failure") throw new Error(String(result.failure))
+    expect(result.success).toHaveLength(1)
+    expect(result.success[0]).toMatchObject({
+      id: "gate",
+      kind: "ts",
+      path: "workflows/gate.vibe",
+      description: "Runs the gate.",
+      modelInvocable: false
+    })
+    expect(result.success[0]!.inputSchema).toBeDefined()
+  })
+
+  it("reads <name>.vibe before <name>.ts and keeps a .ts with no .vibe", async () => {
+    await write("workflows/gate.vibe", gateFlow("From vibe."))
+    await write("workflows/gate.ts", gateFlow("From ts."))
+    await write("workflows/typed.ts", moduleFlow("typed"))
+    const result = await run(discoverWorkflows(root, "workflows"))
+    if (result._tag === "Failure") throw new Error(String(result.failure))
+    expect(result.success.map((flow) => [flow.id, flow.path, flow.description])).toEqual([
+      ["gate", "workflows/gate.vibe", "From vibe."],
+      ["typed", "workflows/typed.ts", "Runs typed."]
+    ])
+  })
+
+  it("skips declarations, tests, invalid names, and a script that declares no Flow.make", async () => {
+    await write("workflows/gate.d.ts", "export default {}\n")
+    await write("workflows/gate.test.ts", moduleFlow("gate"))
+    await write("workflows/Bad.vibe", moduleFlow("Bad"))
+    await write("workflows/ci.tsx", moduleFlow("ci"))
+    await write("workflows/fast-check.ts", "import { spawnSync } from \"node:child_process\"\nspawnSync(\"true\")\n")
+    const result = await run(discoverWorkflows(root, "workflows"))
+    if (result._tag === "Failure") throw new Error(String(result.failure))
+    expect(result.success).toEqual([])
+  })
+
+  it("holds no workflows when the directory is missing", async () => {
+    const result = await run(discoverWorkflows(root, "workflows"))
+    expect(result).toMatchObject({ _tag: "Success", success: [] })
+  })
+
+  it("refuses a workflow whose Flow.make tag is not its file name, by path", async () => {
+    await write("workflows/gate.vibe", moduleFlow("other"))
+    const result = await run(discoverWorkflows(root, "workflows"))
+    expect(result._tag).toBe("Failure")
+    if (result._tag === "Failure") {
+      expect(result.failure.message).toMatch(
+        /^the workflow workflows\/gate\.vibe declares Flow\.make\("other"\); a workflow's tag is its file name, "gate"/
+      )
+    }
+  })
+
+  it("refuses a declared workflow the module reader cannot read rather than dropping it", async () => {
+    await write("workflows/gate.vibe", "export default Flow.make(\"gate\", { capabilities: [] })\n")
+    const result = await run(discoverWorkflows(root, "workflows"))
+    expect(result._tag).toBe("Failure")
+    if (result._tag === "Failure") {
+      expect(result.failure.message).toMatch(/^the workflow workflows\/gate\.vibe could not be read: .*description/)
+    }
+  })
+
+  it("refuses a workflow entry that is not a regular file", async () => {
+    await Fs.mkdir(NodePath.join(root, "workflows", "gate.vibe"), { recursive: true })
+    const result = await run(discoverWorkflows(root, "workflows"))
+    expect(result._tag).toBe("Failure")
+    if (result._tag === "Failure") {
+      expect(result.failure.message).toBe("the workflow workflows/gate.vibe is not a regular file")
+    }
+  })
+
+  it("refuses a workflows path that is a file, not a directory", async () => {
+    await write("workflows", "not a directory\n")
+    const result = await run(discoverWorkflows(root, "workflows"))
+    expect(result._tag).toBe("Failure")
+    if (result._tag === "Failure") {
+      expect(result.failure.message).toMatch(/^could not list the workflows under workflows: /)
+    }
+  })
+})
+
 describe("renderProjection", () => {
+  it("projects the workflow in place of the flows/<name>/flow.ts of the same id", async () => {
+    await write("flows/gate/flow.ts", gateFlow("From the older layout."))
+    await write("flows/review/flow.mdx", "---\ndescription: Reviews the change.\n---\n\n# Review\n")
+    await write("workflows/gate.vibe", gateFlow("From the workflows directory."))
+    const result = await run(renderProjection(root, payload({})))
+    if (result._tag === "Failure") throw new Error(String(result.failure))
+    const projected = JSON.parse(await Fs.readFile(NodePath.join(root, "out", "factory.json"), "utf8"))
+    expect(
+      projected.flows.map((
+        flow: { id: string; path: string; description: string }
+      ) => [flow.id, flow.path, flow.description])
+    )
+      .toEqual([
+        ["gate", "workflows/gate.vibe", "From the workflows directory."],
+        ["review", "flows/review/flow.mdx", "Reviews the change."]
+      ])
+  })
+
   it("reports a render failure that is not a catalog error as a catalog error and writes nothing", async () => {
     await write("flows/review/flow.mdx", "---\ndescription: Reviews the change.\n---\n\n# Review\n")
     // A declaration that bypassed its constructor: the projection schema, not the catalog, rejects it.

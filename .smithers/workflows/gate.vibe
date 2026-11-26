@@ -3,8 +3,8 @@
 // machine at exactly the commit, then one job that merges their coverage under the suite's 100% thresholds. The steps
 // are apps/mvp/ci/gate.sh's.
 //
-// Discovery reads this file before .smithers/flows/gate/flow.ts (apps/mvp/worker/ci/WorkflowDiscovery.ts), and the
-// realm (apps/mvp/worker/ci/Realm.ts) plans it from its text: sucrase strips the types and the realm supplies the four
+// Discovery reads this file (apps/mvp/worker/ci/WorkflowDiscovery.ts, and the factory projection that FACTORY.ts's
+// trigger bindings name it in), and the realm (apps/mvp/worker/ci/Realm.ts) plans it from its text: sucrase strips the types and the realm supplies the four
 // modules imported here and nothing else. So the flow is declarative, holds no Effect code, and imports `Schema`
 // explicitly, since the realm has no VibeLang globals.
 import { Flow } from "@smthrs/flow"

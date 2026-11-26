@@ -390,6 +390,7 @@ describe("@smthrs/build-cli AgentSession, ServiceSupervisor, Fetch, Docker, Nix,
         factory: factoryDecl,
         home: null,
         root: ".smithers/flows",
+        workflows: ".smithers/workflows",
         mode: "write",
         output: ".smithers/factory.json",
         homeOutput: ".smithers/home.json"

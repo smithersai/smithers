@@ -711,6 +711,7 @@ describe("@smthrs/build-cli Wave-8I: 22-module deep pure & small-fixture fuzz sw
                       "//:fac",
                       {
                         root: fpWs,
+                        workflows: fpWs,
                         output: "FACTORY.md",
                         homeOutput: "HOME.md",
                         mode: "write",

@@ -15,6 +15,7 @@
   },
   "include": [
     "PACKAGE.ts",
+    ".smithers/workflows/*.vibe",
     "apps/*/PACKAGE.ts",
     "evals/*/PACKAGE.ts",
     "packages/smithers/agent/harness/benchmarks/*/PACKAGE.ts",

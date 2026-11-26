@@ -512,6 +512,7 @@ exit 0
                     FactoryProjectionExec.renderProjection(projWs, {
                       mode: factoryMode,
                       root: ".smithers/flows",
+                      workflows: ".smithers/workflows",
                       output: "catalog.json",
                       homeOutput: "stale-home.json",
                       home: null,
