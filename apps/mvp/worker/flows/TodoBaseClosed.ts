@@ -6,7 +6,7 @@ import { HttpClient } from "effect/http"
 import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import { classify, withToken } from "../github/Calls.ts"
 import { repositoryOf } from "../github/Config.ts"
-import * as Stack from "../stack/Stack.ts"
+import * as Stack from "../stack/Stack.vibe"
 import * as Todo from "./Todo.ts"
 
 export const cancellations = Metric.counter("smithers_todo_base_closed", { incremental: true })

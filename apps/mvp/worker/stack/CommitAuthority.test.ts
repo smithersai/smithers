@@ -5,7 +5,7 @@ import { stackRoute, todoStatusRoute } from "../../src/features/todos/contract.t
 import type { Actor } from "../Actor.ts"
 import { testFile } from "../test/harness.ts"
 import { stackHarness, runs } from "./test/stack.ts"
-import * as Stack from "./Stack.ts"
+import * as Stack from "./Stack.vibe"
 import * as SessionStore from "../SessionStore.ts"
 import * as WriteAuthority from "../WriteAuthority.ts"
 

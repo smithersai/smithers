@@ -5,7 +5,7 @@ import { stackRoute, todoStatusRoute } from "../../src/features/todos/contract.t
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import { repositoryOf } from "../github/Config.ts"
 import { testFile, uuid } from "../test/harness.ts"
-import * as Api from "./Api.ts"
+import * as Api from "./Api.vibe"
 import { OWN_REPOSITORY, stackHarness } from "./test/stack.ts"
 
 // A current TODO read through the real route and compose Postgres. The test's Sessions layer injects access failures.

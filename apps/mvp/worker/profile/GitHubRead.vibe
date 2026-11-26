@@ -1,5 +1,5 @@
 import { type Core, GitHub } from "@smthrs/integrations"
-import { Data, Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import {
   isProfileOwner,
   PROFILE_ORGANIZATIONS_LIMIT,
@@ -29,13 +29,13 @@ import { MAX_BLOB_BYTES, textOf } from "../../src/features/repo/contract.ts"
 export type ProfileStage = "owner" | "web" | "graphql" | "repositories" | "organizations" | "readme"
 
 /** Why GitHub gave no profile answer. */
-export class ProfileRefused extends Data.TaggedError("ProfileRefused")<{
-  readonly code: "not_found" | "rate_limited" | "github_unavailable"
-  readonly stage: ProfileStage
-  readonly upstreamStatus?: number
-  readonly retryAfterMillis?: number
-  readonly resetAtMillis?: number
-}> {}
+export error ProfileRefused {
+  code: "not_found" | "rate_limited" | "github_unavailable"
+  stage: ProfileStage
+  upstreamStatus?: number
+  retryAfterMillis?: number
+  resetAtMillis?: number
+}
 
 /** One read's profile answer, plus any optional parts GitHub transiently failed to return. */
 export interface Read {
@@ -77,11 +77,10 @@ interface Part<A> {
   readonly missing: boolean
 }
 
-const part = <A>(stage: ProfileStage, effect: Effect.Effect<A, Failure>): Effect.Effect<Part<A>> =>
-  effect.pipe(
-    Effect.map((value): Part<A> => ({ stage, value, missing: false })),
-    Effect.catch((error) => Effect.succeed<Part<A>>({ stage, value: null, missing: isTransient(error) })),
-  )
+const part = effect <A>(stage: ProfileStage, read: A!Failure): Part<A>!! => {
+  return map(read, (value): Part<A> => ({ stage, value, missing: false }))
+    catch (error) => ({ stage, value: null, missing: isTransient(error) })
+}
 
 const settled = <A>(stage: ProfileStage, value: A | null): Part<A> => ({ stage, value, missing: false })
 
@@ -169,11 +168,11 @@ const RestOrgJson = Schema.Struct({
 const RestOrgsJson = Schema.Array(RestOrgJson)
 
 /** Anonymous REST profile read for `owner`. */
-export const rest = (client: GitHub.GitHubClient.GitHubClient, owner: string): Effect.Effect<Read, ProfileRefused> =>
-  Effect.gen(function* () {
-    if (!isProfileOwner(owner)) return yield* new ProfileRefused({ code: "not_found", stage: "owner" })
+export const rest = (client: GitHub.GitHubClient.GitHubClient, owner: string): Read!ProfileRefused =>
+  withSpan(effect {
+    if (!isProfileOwner(owner)) throw new ProfileRefused({ code: "not_found", stage: "owner" })
     const encoded = encodeURIComponent(owner)
-    const user = yield* client.request("GET", `/users/${encoded}`, undefined, { schema: RestOwnerJson }).pipe(
+    const user = try client.request("GET", `/users/${encoded}`, undefined, { schema: RestOwnerJson }).pipe(
       Effect.mapError((error) => refusalOf(error, "owner")),
     )
     const kind: Profile["kind"] = user.type === "Organization" ? "Organization" : "User"
@@ -184,7 +183,7 @@ export const rest = (client: GitHub.GitHubClient.GitHubClient, owner: string): E
       ? `/repos/${loginEncoded}/.github/contents/profile/README.md`
       : `/repos/${loginEncoded}/${loginEncoded}/readme`
 
-    const [repos, orgs, readme] = yield* Effect.all(
+    const [repos, orgs, readme] = try all(
       [
         part(
           "repositories",
@@ -194,7 +193,7 @@ export const rest = (client: GitHub.GitHubClient.GitHubClient, owner: string): E
           }),
         ),
         kind === "Organization"
-          ? Effect.succeed(settled<ReadonlyArray<typeof RestOrgJson.Type>>("organizations", []))
+          ? succeed(settled<ReadonlyArray<typeof RestOrgJson.Type>>("organizations", []))
           : part(
             "organizations",
             client.request("GET", `/users/${loginEncoded}/orgs`, undefined, {
@@ -264,7 +263,7 @@ export const rest = (client: GitHub.GitHubClient.GitHubClient, owner: string): E
       } satisfies Profile,
       missing: missingOf([repos, orgs, readme]),
     } satisfies Read
-  }).pipe(Effect.withSpan("profile.read.rest"))
+  }, "profile.read.rest")
 
 // --- GraphQL: with a token ---
 
@@ -363,16 +362,15 @@ const GraphBlob = Schema.Struct({
 })
 const decodeGraphBlob = Schema.decodeUnknownOption(GraphBlob)
 
-const blobText = (raw: unknown): string | null =>
-  Option.match(decodeGraphBlob(raw), {
-    onNone: () => null,
-    onSome: (blob) =>
-      blob.text === undefined || blob.text === null || blob.isBinary === true || blob.isTruncated === true || blob.byteSize > MAX_BLOB_BYTES
-        ? null
-        : blob.text.includes("\0")
-        ? null
-        : blob.text,
-  })
+const blobText = (raw: unknown): string | null => {
+  const decoded = decodeGraphBlob(raw)
+  if (Option.isNone(decoded)) return null
+  const { text, isBinary, isTruncated, byteSize } = decoded.value
+  if (text === undefined || text === null || isBinary === true || isTruncated === true || byteSize > MAX_BLOB_BYTES) {
+    return null
+  }
+  return text.includes("\0") ? null : text
+}
 
 const GraphRepo = Schema.Struct({
   name: Schema.String,
@@ -392,30 +390,30 @@ const GraphRepo = Schema.Struct({
 })
 const decodeGraphRepo = Schema.decodeUnknownOption(GraphRepo)
 
-const mapGraphRepo = (raw: unknown): ProfileRepository | null =>
-  Option.match(decodeGraphRepo(raw), {
-    onNone: () => null,
-    onSome: (repo) => repo.isPrivate
-      ? null
-      : {
-        owner: repo.owner.login,
-        name: repo.name,
-        description: trimOrNull(repo.description),
-        language: trimOrNull(repo.primaryLanguage?.name),
-        languageColor: trimOrNull(repo.primaryLanguage?.color),
-        stars: repo.stargazerCount,
-        forks: repo.forkCount,
-        fork: repo.isFork,
-        archived: repo.isArchived,
-        license: licenseOf(
-          repo.licenseInfo === null || repo.licenseInfo === undefined
-            ? null
-            : { spdx: repo.licenseInfo.spdxId, name: repo.licenseInfo.name },
-        ),
-        topics: (repo.repositoryTopics?.nodes ?? []).flatMap((node) => node ? [node.topic.name] : []).slice(0, 5),
-        pushedAt: trimOrNull(repo.pushedAt),
-      },
-  })
+const mapGraphRepo = (raw: unknown): ProfileRepository | null => {
+  const decoded = decodeGraphRepo(raw)
+  if (Option.isNone(decoded)) return null
+  const repo = decoded.value
+  if (repo.isPrivate) return null
+  return {
+    owner: repo.owner.login,
+    name: repo.name,
+    description: trimOrNull(repo.description),
+    language: trimOrNull(repo.primaryLanguage?.name),
+    languageColor: trimOrNull(repo.primaryLanguage?.color),
+    stars: repo.stargazerCount,
+    forks: repo.forkCount,
+    fork: repo.isFork,
+    archived: repo.isArchived,
+    license: licenseOf(
+      repo.licenseInfo === null || repo.licenseInfo === undefined
+        ? null
+        : { spdx: repo.licenseInfo.spdxId, name: repo.licenseInfo.name },
+    ),
+    topics: (repo.repositoryTopics?.nodes ?? []).flatMap((node) => node ? [node.topic.name] : []).slice(0, 5),
+    pushedAt: trimOrNull(repo.pushedAt),
+  }
+}
 
 const CONTRIBUTION_LEVELS: Readonly<Record<string, 0 | 1 | 2 | 3 | 4>> = {
   NONE: 0,
@@ -528,30 +526,30 @@ const pickReadme = (owner: typeof GraphOwner.Type): ProfileReadme | null => {
 }
 
 /** Authenticated GraphQL profile read for `owner` (User or Organization). */
-export const graphql = (client: GitHub.GitHubClient.GitHubClient, owner: string): Effect.Effect<Read, ProfileRefused> =>
-  Effect.gen(function* () {
-    if (!isProfileOwner(owner)) return yield* new ProfileRefused({ code: "not_found", stage: "graphql" })
-    const answer = yield* client
+export const graphql = (client: GitHub.GitHubClient.GitHubClient, owner: string): Read!ProfileRefused =>
+  withSpan(effect {
+    if (!isProfileOwner(owner)) throw new ProfileRefused({ code: "not_found", stage: "graphql" })
+    const answer = try client
       .request("POST", "/graphql", { query: QUERY, variables: { login: owner } }, { schema: GraphAnswer })
-      .pipe(Effect.mapError((error) => refusalOf(error, "graphql")))
+      .pipe(mapError((error) => refusalOf(error, "graphql")))
 
     const errorTypes = new Set((answer.errors ?? []).flatMap((error) => (error.type === undefined ? [] : [error.type])))
     if (errorTypes.has("RATE_LIMITED")) {
-      return yield* new ProfileRefused({ code: "rate_limited", stage: "graphql", upstreamStatus: 200 })
+      throw new ProfileRefused({ code: "rate_limited", stage: "graphql", upstreamStatus: 200 })
     }
     const rawOwner = answer.data?.repositoryOwner
     if (rawOwner === null) {
       if (errorTypes.has("NOT_FOUND") || errorTypes.size === 0) {
-        return yield* new ProfileRefused({ code: "not_found", stage: "graphql", upstreamStatus: 200 })
+        throw new ProfileRefused({ code: "not_found", stage: "graphql", upstreamStatus: 200 })
       }
-      return yield* new ProfileRefused({ code: "github_unavailable", stage: "graphql" })
+      throw new ProfileRefused({ code: "github_unavailable", stage: "graphql" })
     }
     if (rawOwner === undefined) {
-      return yield* new ProfileRefused({ code: "github_unavailable", stage: "graphql" })
+      throw new ProfileRefused({ code: "github_unavailable", stage: "graphql" })
     }
     const decoded = decodeGraphOwner(rawOwner)
     if (Option.isNone(decoded)) {
-      return yield* new ProfileRefused({ code: "github_unavailable", stage: "graphql" })
+      throw new ProfileRefused({ code: "github_unavailable", stage: "graphql" })
     }
     const parsed = decoded.value
     const repositories = (parsed.repositories?.nodes ?? []).flatMap((node) => {
@@ -594,4 +592,4 @@ export const graphql = (client: GitHub.GitHubClient.GitHubClient, owner: string)
       } satisfies Profile,
       missing: [],
     } satisfies Read
-  }).pipe(Effect.withSpan("profile.read.graphql"))
+  }, "profile.read.graphql")

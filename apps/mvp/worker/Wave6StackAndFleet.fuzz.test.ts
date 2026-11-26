@@ -12,7 +12,7 @@ import * as DeploymentPolicy from "./DeploymentPolicy.vibe"
 import * as FleetMcpTools from "./fleet/FleetMcpTools.vibe"
 import * as FleetStore from "./fleet/FleetStore.vibe"
 import type { McpPrincipal } from "./mcp/Contract.ts"
-import * as Stack from "./stack/Stack.ts"
+import * as Stack from "./stack/Stack.vibe"
 import { testFile, uuid } from "./test/harness.ts"
 
 const runtime = testFile("wave6_stack_fleet")

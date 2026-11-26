@@ -1,5 +1,5 @@
 // Adversarial fuzzing of the BYOA MCP tool catalog (worker/mcp/Tools.ts) over fake deps and a fake McpAuthService, and
-// model-based fuzzing of the TODO stack (src/features/todos/stack.ts, worker/stack/Access.vibe, worker/stack/Stack.ts's
+// model-based fuzzing of the TODO stack (src/features/todos/stack.ts, worker/stack/Access.vibe, worker/stack/Stack.vibe's
 // payload hash) against a reference model written here. No network, no database.
 import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Effect, Exit, Option, Schema } from "effect"
@@ -26,7 +26,7 @@ import {
   TOOL_SPECS,
 } from "./mcp/Tools.ts"
 import { mayChange, mayConfigure, mayRead, mayRetryAny, viaOf } from "./stack/Access.vibe"
-import { type Change, payloadHash } from "./stack/Stack.ts"
+import { type Change, payloadHash } from "./stack/Stack.vibe"
 
 const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "100"))
 const pureExecutions = Math.max(25, Math.min(baseExecutions, 150))
@@ -891,7 +891,7 @@ describe("the TODO stack against a reference model", () => {
             const ordinal = (target?.attempt ?? 1) + command.skew
             op = command.kind === "publish" ? { kind: "publish", id, ordinal } : { kind: "finish", id, ordinal, state: command.ending }
           } else {
-            // The route's gate (worker/stack/Api.ts) against the reference: commit and drop a Member's own press,
+            // The route's gate (worker/stack/Api.vibe) against the reference: commit and drop a Member's own press,
             // settings an Admin's own press, retry a Member's or their agent's.
             const allowed = command.kind === "retry" ? mayRead(Option.some(actor)) : command.kind === "configure" ? mayConfigure(actor) : mayChange(actor)
             const expected = command.kind === "retry" ? rank(role) >= 2 : command.kind === "configure" ? rank(role) === 4 && !command.agent : rank(role) >= 2 && !command.agent

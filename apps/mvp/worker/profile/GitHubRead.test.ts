@@ -2,7 +2,7 @@ import { GitHub } from "@smthrs/integrations"
 import { Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
-import * as GitHubRead from "./GitHubRead.ts"
+import * as GitHubRead from "./GitHubRead.vibe"
 
 const API = "https://api.github.test"
 
@@ -309,3 +309,200 @@ describe("worker/profile/GitHubRead.rest", () => {
     if (result._tag === "Failure") expect(result.failure.code).toBe("not_found")
   })
 })
+
+describe("worker/profile/GitHubRead upstream edge cases", () => {
+  test.each([
+    { payload: { data: { repositoryOwner: null } }, code: "not_found", status: 200 },
+    { payload: { data: { repositoryOwner: null }, errors: [{ type: "FORBIDDEN" }] }, code: "github_unavailable" },
+    { payload: { data: null, errors: [{}] }, code: "github_unavailable" },
+    { payload: { data: { repositoryOwner: { __typename: "Bot", login: "octocat" } } }, code: "github_unavailable" },
+  ])("interprets GraphQL owner replies with $code", async ({ payload, code, status }) => {
+    const answer = await readOver(() => json(payload), (client) => GitHubRead.graphql(client, "octocat"), "ghs_test")
+    expect(answer).toMatchObject({ _tag: "Failure", failure: { code, stage: "graphql" } })
+    if (answer._tag === "Failure") expect(answer.failure.upstreamStatus).toBe(status)
+  })
+
+  test("refuses a partially rate-limited GraphQL profile instead of saving incomplete data", async () => {
+    const answer = await readOver(
+      () => json({
+        data: { repositoryOwner: { __typename: "User", login: "octocat" } },
+        errors: [{ type: "RATE_LIMITED" }],
+      }),
+      (client) => GitHubRead.graphql(client, "octocat"),
+      "ghs_test",
+    )
+    expect(answer).toMatchObject({
+      _tag: "Failure", failure: { code: "rate_limited", stage: "graphql", upstreamStatus: 200 },
+    })
+  })
+
+  test("preserves a GitHub rate limit's response status and retry windows", async () => {
+    const answer = await readOver(
+      () => json({ message: "Rate limited" }, 429, { "retry-after": "8", "x-ratelimit-reset": "12345" }),
+      (client) => GitHubRead.graphql(client, "octocat"), "ghs_test",
+    )
+    expect(answer).toMatchObject({
+      _tag: "Failure",
+      failure: { code: "rate_limited", stage: "graphql", upstreamStatus: 429, retryAfterMillis: 8000, resetAtMillis: 12_345_000 },
+    })
+  })
+
+  test("maps a transport outage and refuses an invalid REST owner before making a request", async () => {
+    let calls = 0
+    const offline = () => {
+      calls++
+      throw new Error("transport offline")
+    }
+    expect(await readOver(offline, (client) => GitHubRead.rest(client, "bad_owner"))).toMatchObject({
+      _tag: "Failure", failure: { code: "not_found", stage: "owner" },
+    })
+    expect(calls).toBe(0)
+    const answer = await readOver(offline, (client) => GitHubRead.rest(client, "octocat"))
+    expect(answer).toMatchObject({ _tag: "Failure", failure: { code: "github_unavailable", stage: "owner" } })
+    if (answer._tag === "Failure") expect(answer.failure.upstreamStatus).toBeUndefined()
+  })
+
+  test("uses organization REST endpoints and keeps defaults for sparse public repository data", async () => {
+    const calls = new Map<string, URLSearchParams>()
+    const answer = await readOver((url) => {
+      calls.set(url.pathname, url.searchParams)
+      switch (url.pathname) {
+        case "/users/octo-org":
+          return json({ login: "octo-org", type: "Organization" })
+        case "/orgs/octo-org/repos":
+          return json([
+            { name: "public", owner: { login: "octo-org" } },
+            { name: "fallback-license", owner: { login: "octo-org" }, license: { spdx_id: "NOASSERTION" } },
+            { name: "private", owner: { login: "octo-org" }, private: true },
+          ])
+        case "/repos/octo-org/.github/contents/profile/README.md":
+          return json({ path: "profile/README.md", size: 7, encoding: "base64", content: btoa("# Hello") })
+        default:
+          throw new Error("Unexpected path " + url.pathname)
+      }
+    }, (client) => GitHubRead.rest(client, "octo-org"))
+    expect([...calls.keys()].sort()).toEqual([
+      "/orgs/octo-org/repos", "/repos/octo-org/.github/contents/profile/README.md", "/users/octo-org",
+    ])
+    expect(calls.get("/orgs/octo-org/repos")?.get("type")).toBe("public")
+    expect(answer).toMatchObject({
+      _tag: "Success",
+      success: {
+        missing: [],
+        profile: {
+          kind: "Organization", website: null, avatarUrl: null, followers: null, following: null, publicRepos: 2,
+          repositories: [
+            { name: "public", stars: 0, forks: 0, fork: false, archived: false, license: null, topics: [] },
+            { name: "fallback-license", license: null },
+          ],
+          organizations: [],
+          readme: { repository: "octo-org/.github", path: "profile/README.md", text: "# Hello" },
+        },
+      },
+    })
+  })
+
+  test.each([
+    { path: "README.md", size: 1_000_000_000, encoding: "base64", content: "QQ==" },
+    { path: "README.md", size: 4, encoding: "utf-8", content: "text" },
+    { path: "README.md", size: 4, encoding: "base64" },
+    { path: "README.md", size: 4, encoding: "base64", content: "%%%?" },
+    { path: "README.md", size: 1, encoding: "base64", content: "AA==" },
+    null,
+  ])("tolerates missing or unreadable REST README data (%j)", async (readme) => {
+    const answer = await readOver((url) => {
+      switch (url.pathname) {
+        case "/users/octocat":
+          return json({ login: "octocat", type: "User", blog: "https://bad site.test" })
+        case "/users/octocat/repos":
+          throw new Error("repository transport offline")
+        case "/users/octocat/orgs":
+          return json([{ login: "octo-org", avatar_url: "data:not-an-image" }])
+        case "/repos/octocat/octocat/readme":
+          return readme === null ? json({}, 404) : json(readme)
+        default:
+          throw new Error("Unexpected path " + url.pathname)
+      }
+    }, (client) => GitHubRead.rest(client, "octocat"))
+    expect(answer).toMatchObject({
+      _tag: "Success",
+      success: {
+        missing: ["repositories"],
+        profile: {
+          kind: "User", website: null, followers: 0, following: 0, publicRepos: 0, repositories: [],
+          organizations: [{ login: "octo-org", name: null, avatarUrl: null }],
+          readme: null,
+        },
+      },
+    })
+  })
+
+  test("discards invalid GraphQL nodes and reads the next usable README casing", async () => {
+    const repo = {
+      name: "public", owner: { login: "octocat" }, stargazerCount: 0, forkCount: 0,
+      isFork: false, isArchived: false, isPrivate: false,
+    }
+    const answer = await readOver(() => json({ data: { repositoryOwner: {
+      __typename: "User",
+      login: "octocat",
+      avatarUrl: "https://[",
+      pinnedItems: { nodes: [false, { ...repo, isPrivate: true }, repo] },
+      repositories: { totalCount: 2, nodes: [null, repo, { ...repo, name: "topics", repositoryTopics: { nodes: [null, { topic: { name: "typescript" } }] } }] },
+      organizations: { nodes: [null, { login: "org" }] },
+      status: { message: " Active " },
+      profileRepo: {
+        isPrivate: false,
+        readmeUpper: { text: "binary", byteSize: 6, isBinary: true },
+        readmeLower: { text: "contains\0nul", byteSize: 12 },
+        readmeTitle: { text: "Readable", byteSize: 8 },
+      },
+      contributionsCollection: {
+        totalCommitContributions: 0, totalPullRequestContributions: 0, totalIssueContributions: 0,
+        totalPullRequestReviewContributions: 0,
+        contributionCalendar: {
+          totalContributions: 0,
+          weeks: [{ contributionDays: [{ date: "2026-01-01", contributionCount: 0, contributionLevel: "NOVEL_LEVEL" }] }],
+        },
+      },
+    } } }), (client) => GitHubRead.graphql(client, "octocat"), "ghs_test")
+    expect(answer).toMatchObject({
+      _tag: "Success",
+      success: { profile: {
+        avatarUrl: null, status: { message: "Active", emoji: null },
+        repositories: [{ name: "public", license: null, topics: [] }, { name: "topics", topics: ["typescript"] }],
+        pinned: [{ name: "public" }],
+        organizations: [{ login: "org", avatarUrl: null }],
+        readme: { text: "Readable", path: "Readme.md" },
+        contributions: { weeks: [[{ level: 0 }]] },
+      } },
+    })
+  })
+
+  test.each([
+    { isPrivate: true, readmeUpper: { text: "Private", byteSize: 7 } },
+    { isPrivate: false, readmeUpper: { byteSize: 1 }, readmeLower: { text: null, byteSize: 1 }, readmeTitle: { text: "truncated", byteSize: 9, isTruncated: true } },
+  ])("does not expose private or incomplete GraphQL User README blobs (%j)", async (profileRepo) => {
+    const answer = await readOver(() => json({ data: { repositoryOwner: { __typename: "User", login: "octocat", profileRepo } } }),
+      (client) => GitHubRead.graphql(client, "octocat"), "ghs_test")
+    expect(answer).toMatchObject({
+      _tag: "Success",
+      success: { profile: { readme: null, publicRepos: 0, followers: 0, following: 0, contributions: null } },
+    })
+  })
+
+  test.each([
+    { repository: undefined, text: null },
+    { repository: { isPrivate: false }, text: null },
+    { repository: { isPrivate: false, readmeProfile: { text: "oversize", byteSize: 1_000_000_000 }, readmeProfileLower: { text: "Fallback", byteSize: 8 } }, text: "Fallback" },
+  ])("selects the public Organization profile README, when usable (%j)", async ({ repository, text }) => {
+    const answer = await readOver(
+      () => json({ data: { repositoryOwner: { __typename: "Organization", login: "octo-org", orgProfileRepo: repository } } }),
+      (client) => GitHubRead.graphql(client, "octo-org"), "ghs_test",
+    )
+    expect(answer).toMatchObject({
+      _tag: "Success",
+      success: { profile: { readme: text === null ? null : { text, path: "profile/readme.md" } } },
+    })
+  })
+})
+

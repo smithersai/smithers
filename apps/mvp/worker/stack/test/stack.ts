@@ -1,4 +1,4 @@
-// The stack's routes (worker/stack/Api.ts) for the worker tests, on a test file's own schema of the compose Postgres
+// The stack's routes (worker/stack/Api.vibe) for the worker tests, on a test file's own schema of the compose Postgres
 // (`pnpm db:up`) and the compose Electric, recording every log line, span and metric. Who is signed in is a test's
 // `Sessions`; a host that runs TODOs is a test's `TodoRuns`, recording each start and stop, or failing them.
 import { Logger as StructuredLogger } from "@smthrs/observability"
@@ -11,8 +11,8 @@ import * as Actor from "../../Actor.ts"
 import { SigningKeyIds } from "../../SessionStore.ts"
 import type { testFile } from "../../test/harness.ts"
 import { signedIn } from "../../test/harness.ts"
-import * as Api from "../Api.ts"
-import * as Stack from "../Stack.ts"
+import * as Api from "../Api.vibe"
+import * as Stack from "../Stack.vibe"
 import { type Repository, repositoryOf } from "../../github/Config.ts"
 import * as RepoRoles from "../../github/RepoRoles.ts"
 

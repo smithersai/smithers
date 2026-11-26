@@ -4,7 +4,7 @@ import { isProfileOwner, PROFILE_ROUTE, type ProfileRefusal } from "../../src/fe
 import { codeOf } from "../ErrorCode.ts"
 import { withRequestRay } from "../RequestRay.vibe"
 import * as ProfileMetrics from "./Metrics.vibe"
-import * as ProfileSource from "./Source.ts"
+import * as ProfileSource from "./Source.vibe"
 
 // `GET /api/profiles/<owner>`: returns the GitHub user or organization profile JSON cached in Postgres.
 // Public read (open to visitors and signed-in users alike). Content-free observability: never logs logins or bios.

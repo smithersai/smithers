@@ -146,7 +146,7 @@ export default defineConfig({
         "db/migrations/0010_views.ts",
         // A repository's docs and the docs view (docs/features/docs.md).
         "worker/docs/**/*.{ts,vibe}",
-        "worker/profile/{Api,Store,Metrics}.vibe",
+        "worker/profile/{Api,GitHubRead,Metrics,Source,Store}.vibe",
         "worker/home/Api.vibe",
         "db/migrations/0043_docs_views.ts",
         // A repository's view and its issues view in the conversation (docs/features/views.md).

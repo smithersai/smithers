@@ -9,7 +9,10 @@ export const PROFILE_ROUTE = "/api/profiles"
 /** `GET` route for `owner`'s profile JSON. */
 export const profileRoute = (owner: string): string => `${PROFILE_ROUTE}/${encodeURIComponent(owner)}`
 
-/** Normalized profile cache key: lowercased GitHub login. */
+/**
+ * Normalized profile cache key: lowercased GitHub login.
+ * @throws {never}
+ */
 export const profileKey = (owner: string): string => owner.toLowerCase()
 
 /**
@@ -30,7 +33,10 @@ export const RESERVED_PROFILE_OWNERS: ReadonlyArray<string> = [
   "demo",
 ]
 
-/** Whether `owner` names a valid GitHub user or organization login that `/$owner` serves. */
+/**
+ * Whether `owner` names a valid GitHub user or organization login that `/$owner` serves.
+ * @throws {never}
+ */
 export const isProfileOwner = (owner: string): boolean =>
   OWNER_PATTERN.test(owner) && !RESERVED_PROFILE_OWNERS.includes(owner.toLowerCase())
 

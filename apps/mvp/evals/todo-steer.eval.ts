@@ -28,7 +28,7 @@ import { REPOSITORY, reset, services as githubServices, sql } from "../worker/gi
 import { scriptedGitHub } from "../worker/github/test/scriptedGitHub.ts"
 import * as ModelSeats from "../worker/ModelSeats.ts"
 import { PersonalModels } from "../worker/personal/Models.vibe"
-import * as Stack from "../worker/stack/Stack.ts"
+import * as Stack from "../worker/stack/Stack.vibe"
 import { runFlow } from "../worker/test/flowHost.ts"
 import { testFile } from "../worker/test/harness.ts"
 import { machines } from "../worker/test/todoMachines.ts"

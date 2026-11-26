@@ -39,7 +39,7 @@ import { INSTALLATION_ID, scriptedGitHub } from "../github/test/scriptedGitHub.t
 import * as ModelSeats from "../ModelSeats.ts"
 import { PersonalModels } from "../personal/Models.vibe"
 import { KEY, resetModels, seedKeys } from "../personal/test/harness.ts"
-import * as Stack from "../stack/Stack.ts"
+import * as Stack from "../stack/Stack.vibe"
 import { runFlow } from "../test/flowHost.ts"
 import * as RunContentTest from "../test/runContent.ts"
 import * as RunContent from "./RunContent.ts"

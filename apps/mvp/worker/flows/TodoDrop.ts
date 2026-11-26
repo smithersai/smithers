@@ -2,7 +2,7 @@ import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import * as Stack from "../stack/Stack.ts"
+import * as Stack from "../stack/Stack.vibe"
 import * as Todo from "./Todo.ts"
 
 // Cancelling `todo` prevents its Await step from closing its PR. The stop adapter starts this independent durable

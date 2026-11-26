@@ -12,7 +12,7 @@ import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import { REPOSITORY, services as githubServices } from "../github/test/fixtures.ts"
 import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
-import * as Stack from "../stack/Stack.ts"
+import * as Stack from "../stack/Stack.vibe"
 import { testFile } from "../test/harness.ts"
 import * as Todo from "./Todo.ts"
 

@@ -1,4 +1,4 @@
-// The stack's writer (worker/stack/Stack.ts, decision 0016 §1 and §7) on this file's schema of the compose Postgres
+// The stack's writer (worker/stack/Stack.vibe, decision 0016 §1 and §7) on this file's schema of the compose Postgres
 // (`pnpm db:up`): what each change writes, its receipt under the op id, the stack's refusals, the attempts it records
 // when the host runs TODOs, and, with writers racing on connections of their own, that no change is lost and the
 // stack's rules hold after every race.
@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { isReady, openOf, type Row, type Stack as Rules, violations } from "../../src/features/todos/stack.ts"
 import { testFile, uuid } from "../test/harness.ts"
-import * as Stack from "./Stack.ts"
+import * as Stack from "./Stack.vibe"
 import { foldCommit } from "./StackFeed.vibe"
 import { workStatusOf } from "../../src/features/issues/work.ts"
 
@@ -874,6 +874,42 @@ test("a TODO queued on a working one waits through its base's close; dropping th
   expect((await runtime.runPromise(Stack.belowOf(dropped.receipt.starts[0]!)))._tag).toBe("None")
 })
 
+test("a branch report cannot record work built on a closed TODO base", async () => {
+  await applyOn(configure(2, "independent"), true)
+  const first = await applyOn(commit(), true)
+  const second = await applyOn(commit(), true)
+  if (first.kind !== "applied" || second.kind !== "applied") throw new Error("commit refused")
+  const [base] = first.receipt.starts
+  const [child] = second.receipt.starts
+  const branch = { kind: "branch", branch: "closed-base", baseRef: "main", baseSha: "a".repeat(40) } as const
+  expect(await runtime.runPromise(Stack.report(base!, branch, { runs: true }))).toEqual({ outcome: "applied", starts: [] })
+  await applyOn(drop(1), true)
+  expect(await runtime.runPromise(Stack.report(child!, {
+    ...branch, branch: "child", baseRef: branch.branch,
+  }, { runs: true }))).toEqual({ outcome: "base_closed", starts: [] })
+  expect(await sql("SELECT branch, base_ref FROM todos WHERE number = 2")).toEqual([{ branch: null, base_ref: null }])
+})
+
+test("the archived attempt keeps its own pull after Retry creates a new attempt", async () => {
+  const made = await applyOn(commit(), true)
+  if (made.kind !== "applied") throw new Error("commit refused")
+  const original = made.receipt.starts[0]!
+  const pull = (attempt: Stack.RunAttempt) => runtime.runPromise(Stack.attemptPull(attempt))
+  expect(await pull(original)).toBeNull()
+  expect(await pull({ ...original, ordinal: 2 })).toBeNull()
+  await runtime.runPromise(Stack.report(original, {
+    kind: "published", headSha: "a".repeat(40), prNumber: 17, draft: false,
+  }, { runs: true }))
+  expect(await pull(original)).toBe(17)
+  await runtime.runPromise(Stack.report(original, { kind: "finished", state: "failed", failure: "implement" }, { runs: true }))
+  const retried = await applyOn({ ...drop(1), op: { kind: "retry", number: 1 } }, true)
+  if (retried.kind !== "applied") throw new Error("retry refused")
+  const replacement = retried.receipt.starts[0]!
+  expect(replacement.ordinal).toBe(2)
+  expect(await pull(original)).toBe(17)
+  expect(await pull(replacement)).toBeNull()
+})
+
 test("descendant discovery ignores absent attempts, branchless work and a base that is still open", async () => {
   const made = await applyOn(commit(), true)
   if (made.kind !== "applied") throw new Error("commit refused")
@@ -1087,6 +1123,21 @@ describe("a TODO made from an issue links its work to the issue", () => {
       { kind: "session", ref: "TODO #1", state: "done", url: null, source: "todo:1" },
     ])
     expect(await status()).toBe("merged")
+  })
+
+  test("dropping a published TODO marks its pull and work links closed", async () => {
+    await sql("TRUNCATE work_links")
+    const committed = await applyOn(commit({
+      op: { kind: "commit", title: "T", prompt: "P", acceptance: [], issue: 12 },
+    }), true)
+    if (committed.kind !== "applied") throw new Error("commit refused")
+    const attempt = committed.receipt.starts[0]!
+    await reportAs(attempt, { kind: "published", headSha: "b".repeat(40), prNumber: 7, draft: false })
+    await applyOn(drop(1), true)
+    expect(await links()).toEqual([
+      { kind: "pr", ref: "#7", state: "closed", url: "https://github.com/octo/hello/pull/7", source: "todo:1" },
+      { kind: "session", ref: "TODO #1", state: "closed", url: null, source: "todo:1" },
+    ])
   })
 
   test("a dropped TODO's link says closed; a TODO made from no issue links nothing", async () => {

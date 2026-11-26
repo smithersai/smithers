@@ -40,7 +40,7 @@ import { KEY, resetModels, seed, seedKeys, VALUE } from "../personal/test/harnes
 import { OPENAI_ORIGIN, scriptedProvider } from "../personal/test/provider.ts"
 import { SecretKeys } from "../secrets/Keys.vibe"
 import * as RunnerStore from "../runners/Store.ts"
-import * as Stack from "../stack/Stack.ts"
+import * as Stack from "../stack/Stack.vibe"
 import { build, runFlow } from "../test/flowHost.ts"
 import * as Box from "../test/box.ts"
 import { machines } from "../test/todoMachines.ts"

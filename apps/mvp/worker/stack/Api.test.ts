@@ -7,7 +7,7 @@ import * as Pause from "../flows/Pause.ts"
 import { build } from "../test/flowHost.ts"
 import * as TodoRuns from "./TodoRuns.vibe"
 import * as Flows from "../Flows.ts"
-// The stack's routes (worker/stack/Api.ts, decision 0016 §1 and §5) through the real handler on this file's schema of
+// The stack's routes (worker/stack/Api.vibe, decision 0016 §1 and §5) through the real handler on this file's schema of
 // the compose Postgres and Electric (`pnpm db:up`): every refusal of `POST /api/repos/<owner>/<name>/stack`, a commit and
 // a drop end to end, repeated ops, the run host's seam, the shapes' access, and records free of titles and prompts.
 import { Context, Deferred, Effect, Layer, Option } from "effect"
@@ -27,13 +27,13 @@ import {
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import * as SessionStore from "../SessionStore.ts"
 import { eventually, testFile, uuid } from "../test/harness.ts"
-import * as Api from "./Api.ts"
+import * as Api from "./Api.vibe"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import * as IssueRead from "./IssueRead.vibe"
 import { rolesThatRead } from "../github/test/fixtures.ts"
 import { app } from "../github/test/harness.ts"
 import { accountIdOf, appKey, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
-import * as Stack from "./Stack.ts"
+import * as Stack from "./Stack.vibe"
 import { OWN_REPOSITORY, runs, stackHarness, type StackHarness } from "./test/stack.ts"
 
 const runtime = testFile("stack_api")
@@ -599,6 +599,52 @@ describe("another repository's stack (decision 0079)", () => {
     expect((await post(h, commitBody(), {}, OTHER)).status).toBe(202)
     expect(github.seen("GET", /\/permission$/)).toHaveLength(2)
     expect(await sql(`SELECT repo_id AS "repoId" FROM todos`)).toEqual([{ repoId: "github/acme/widgets" }])
+  })
+
+  test.each(["denied", "upstream unavailable", "timed out"] as const)(
+    "a stale write follows the refreshed authority when the check is %s",
+    async (outcome) => {
+      const github = scriptedGitHub("acme", "widgets")
+      github.roles.set("maya", "write")
+      const h = await stackHarness(runtime, {
+        actor: maya,
+        roles: { app: Option.some(app({ privateKey: key ??= await appKey() })), http: github.http },
+        wrapRoles: (roles) => ({
+          ...roles,
+          resolve: (actor, repository) => Effect.tap(roles.resolve(actor, repository), () => Effect.promise(async () => {
+            await expire()
+            if (outcome === "denied") github.roles.set("maya", "read")
+            if (outcome === "upstream unavailable") {
+              github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502 })
+            }
+          })),
+          refresh: outcome === "timed out" ? () => Effect.never : roles.refresh!,
+        }),
+      })
+      const response = await post(h, commitBody(), {}, OTHER)
+      const code = outcome === "denied" ? "forbidden" : outcome === "upstream unavailable" ? "github_unavailable" : "unavailable"
+      expect(await json(response)).toEqual([outcome === "denied" ? 403 : 503, { code }])
+      expect(h.only("stack.request").annotations).toMatchObject({
+        refreshed: 1, outcome: code,
+        ...(outcome === "upstream unavailable" ? { stage: "permission", upstreamStatus: 502 } : {}),
+        ...(outcome === "timed out" ? { stage: "role_refresh" } : {}),
+      })
+      if (outcome === "timed out") expect(response.headers.get("retry-after")).toBe("1")
+      expect(github.seen("GET", /\/permission$/)).toHaveLength(outcome === "timed out" ? 1 : 2)
+      expect(await sql("SELECT id FROM todos")).toEqual([])
+    },
+  )
+
+  test("a stalled initial role read returns a retry without opening a stack", async () => {
+    const h = await stackHarness(runtime, { actor: maya, faultyRoles: {
+      repository: OWN_REPOSITORY,
+      resolve: () => Effect.never,
+    } })
+    const response = await post(h, commitBody(), {}, OTHER)
+    expect(response.headers.get("retry-after")).toBe("1")
+    expect(await json(response)).toEqual([503, { code: "unavailable" }])
+    expect(h.only("stack.request").annotations).toMatchObject({ stage: "role", outcome: "unavailable" })
+    expect(await sql("SELECT repo_id FROM stacks")).toEqual([])
   })
 
   test("a change whose row expires again after the refresh is answered 503 unavailable, to retry", async () => {

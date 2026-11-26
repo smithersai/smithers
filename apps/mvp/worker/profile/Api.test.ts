@@ -3,7 +3,7 @@ import { FetchHttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import { describe, expect, test } from "vitest"
 import * as ReadToken from "../github/ReadToken.ts"
 import * as ProfileApi from "./Api.vibe"
-import * as ProfileSource from "./Source.ts"
+import * as ProfileSource from "./Source.vibe"
 import type { Kept, KeptAnswer, KeptRefusal, ProfileStore, Via } from "./Store.vibe"
 
 const API = "https://api.github.test"

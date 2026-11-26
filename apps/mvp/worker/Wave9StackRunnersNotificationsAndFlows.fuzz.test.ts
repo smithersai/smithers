@@ -13,7 +13,7 @@ import * as PersonalUsage from "./personal/Usage.vibe"
 import * as Fence from "./runners/Fence.vibe"
 import * as Overflow from "./runners/Overflow.ts"
 import * as RunnerStore from "./runners/Store.ts"
-import * as Stack from "./stack/Stack.ts"
+import * as Stack from "./stack/Stack.vibe"
 import * as H from "./test/harness.ts"
 
 const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")

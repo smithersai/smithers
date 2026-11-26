@@ -112,8 +112,8 @@ import * as SecretFlows from "../../worker/secrets/SecretFlows.vibe"
 import * as SignIn from "../../worker/SignIn.ts"
 import * as SessionKeys from "../../worker/SessionKeys.vibe"
 import * as SessionStore from "../../worker/SessionStore.ts"
-import * as StackApi from "../../worker/stack/Api.ts"
-import * as Stack from "../../worker/stack/Stack.ts"
+import * as StackApi from "../../worker/stack/Api.vibe"
+import * as Stack from "../../worker/stack/Stack.vibe"
 import {
   codeStorageGit,
   type GitHost,

@@ -360,13 +360,22 @@ export const draftFromIssue = <D extends { readonly title: string; readonly prom
   prompt: draft.prompt !== "" ? draft.prompt : clipPrompt(issue.body.trim() === "" ? issue.title : issue.body),
 })
 
-/** Whether `title` is a TODO title: 1 to `MAX_TITLE_LENGTH` characters, not blank. */
+/**
+ * Whether `title` is a TODO title: 1 to `MAX_TITLE_LENGTH` characters, not blank.
+ * @throws {never}
+ */
 export const isTitle = (title: string): boolean => title.trim().length > 0 && Array.from(title).length <= MAX_TITLE_LENGTH
 
-/** Whether `prompt` is a TODO prompt: not blank, at most `MAX_PROMPT_BYTES`. */
+/**
+ * Whether `prompt` is a TODO prompt: not blank, at most `MAX_PROMPT_BYTES`.
+ * @throws {never}
+ */
 export const isPrompt = (prompt: string): boolean => prompt.trim().length > 0 && bytesOf(prompt) <= MAX_PROMPT_BYTES
 
-/** Whether `acceptance` is a TODO's acceptance criteria: at most `MAX_ACCEPTANCE`, each 1 to the limit, not blank. */
+/**
+ * Whether `acceptance` is a TODO's acceptance criteria: at most `MAX_ACCEPTANCE`, each 1 to the limit, not blank.
+ * @throws {never}
+ */
 export const isAcceptance = (acceptance: ReadonlyArray<string>): boolean =>
   acceptance.length <= MAX_ACCEPTANCE &&
   acceptance.every((line) => line.trim().length > 0 && line.length <= MAX_ACCEPTANCE_LENGTH)
