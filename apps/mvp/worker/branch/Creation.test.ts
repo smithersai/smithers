@@ -13,8 +13,8 @@ import { fixture, scripted } from "../test/codeStorage.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import { BranchRoles } from "./Access.vibe"
-import { selections, select } from "./Creation.ts"
-import { CreateRefused } from "./Forge.ts"
+import { selections, select } from "./Creation.vibe"
+import { CreateRefused } from "./Forge.vibe"
 
 const repository = { owner: "octocat", name: "spoon-knife" }
 const sha = "a".repeat(40)
@@ -47,6 +47,13 @@ describe("public branch creation selection", () => {
     expect(await Effect.runPromise(select(undefined, repository, "builtin"))).toMatchObject({
       ...repository, tag: "branches/create", revision: "builtin", source: CREATION.source,
       digest: digestSync(CREATION.source), allowed: ["branches/ephemeral"],
+    })
+  })
+
+  test("an operation without an installation or a built-in flow is unavailable", async () => {
+    const result = await Effect.runPromiseExit(select(undefined, repository, "builtin", "publish", { create: CREATION }))
+    expect(Exit.isFailure(result) && Cause.squash(result.cause)).toMatchObject({
+      _tag: "CreationRefused", code: "unavailable",
     })
   })
 

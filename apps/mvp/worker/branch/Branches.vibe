@@ -1,6 +1,6 @@
 import { FlowStarter } from "../Flows.ts"
 import * as GitHubConfig from "../github/Config.ts"
-import * as GitHubCreation from "./GitHubCreation.ts"
+import * as GitHubCreation from "./GitHubCreation.vibe"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { HttpClient } from "effect/http"
@@ -14,7 +14,7 @@ import { branchAccess, canView, isMemberOn } from "./Access.vibe"
 import * as Repos from "../Repos.ts"
 import * as Conversations from "./Conversations.vibe"
 import * as ConversationPeople from "./ConversationPeople.vibe"
-import { branchHead, createBranch, defaultBranch, failureFields, Forge } from "./Forge.ts"
+import { branchHead, createBranch, defaultBranch, failureFields, Forge } from "./Forge.vibe"
 
 // `POST /api/branches` (decision 0013 §2, docs/features/branch-workspace.md#tracking-a-branch): the write path of the
 // client flows `branch/track`, which a person opening a branch's page and the agent run alike, and `branch/create`,

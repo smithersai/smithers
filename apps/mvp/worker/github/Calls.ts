@@ -45,7 +45,10 @@ export const classify = (error: unknown): Classified => {
 export const isRateLimited = (error: unknown): boolean =>
   Core.IntegrationError.isIntegrationError(error) && error.details?.["rateLimited"] === true
 
-/** GitHub's status for a failed call, when it answered one: for log lines. */
+/**
+ * GitHub's status for a failed call, when it answered one: for log lines.
+ * @throws {never}
+ */
 export const statusOf = (error: unknown): number | undefined =>
   Core.IntegrationError.isIntegrationError(error) ? numberOf(error.details?.["status"]) : undefined
 

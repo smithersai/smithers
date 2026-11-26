@@ -10,7 +10,7 @@ import * as Config from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import * as Conversations from "./Conversations.vibe"
 import * as Repos from "../Repos.ts"
-import { CreateRefused } from "./CreateRefused.ts"
+import { CreateRefused } from "./CreateRefused.vibe"
 
 /** Explicit, repository-selected GitHub creation; never used by the default branch flow. */
 export interface Input {
@@ -38,34 +38,34 @@ const refused = (error: Core.IntegrationError.IntegrationError | CreateRefused):
 export const make = <R, H, P>(services: {
   readonly app: Pick<GitHub.AppAuth.AppAuth, "installation" | "installationToken">
   readonly roles: RepoRoles.RepoRoles<R>
-  readonly hold: (held: RepoRoles.Held) => Effect.Effect<boolean, CreateRefused, H>
-  readonly authorize: (input: Input, token: Redacted.Redacted<string>) => Effect.Effect<boolean, CreateRefused, P>
+  readonly hold: (held: RepoRoles.Held) => boolean!CreateRefused!H
+  readonly authorize: (input: Input, token: Redacted.Redacted<string>) => boolean!CreateRefused!P
   readonly http: HttpClient.HttpClient
   readonly apiBaseUrl: string
-}) => (input: Input) => Effect.gen(function* () {
-  const resolved = yield* services.roles.resolve(input.actor, input.repository).pipe(Effect.mapError((error) =>
+}) => (input: Input) => (effect {
+  const resolved = try services.roles.resolve(input.actor, input.repository).pipe(Effect.mapError((error) =>
     new CreateRefused({ code: error.code === "not_found" || error.code === "app_not_installed" ? "not_found" : error.code === "not_configured" ? "not_configured" : "unavailable" })))
   if (resolved.role === null || !["member", "maintainer", "admin"].includes(resolved.role)) {
-    return yield* new CreateRefused({ code: "forbidden" })
+    throw new CreateRefused({ code: "forbidden" })
   }
-  if (Option.isSome(resolved.held) && !(yield* services.hold(resolved.held.value))) {
-    return yield* new CreateRefused({ code: "forbidden" })
+  if (Option.isSome(resolved.held) && !(try services.hold(resolved.held.value))) {
+    throw new CreateRefused({ code: "forbidden" })
   }
-  const installation = yield* services.app.installation(input.repository.owner, input.repository.name).pipe(Effect.mapError(refused))
-  const minted = yield* services.app.installationToken({
+  const installation = try services.app.installation(input.repository.owner, input.repository.name).pipe(Effect.mapError(refused))
+  const minted = try services.app.installationToken({
     installationId: installation.id, repositories: [input.repository.name], permissions: { contents: "write" },
   }).pipe(Effect.mapError(refused))
-  const keyed = GitHub.Once.branch(input.repository.owner, input.repository.name, {
-    prefix: "smithers/", label: input.ref.replaceAll("/", "-").slice(0, 160), at: Effect.succeed(input.from),
-  })
-  const authorized = Action.keyed({
+  const keyed = try sync(() => GitHub.Once.branch(input.repository.owner, input.repository.name, {
+    prefix: "smithers/", label: input.ref.replaceAll("/", "-").slice(0, 160), at: succeed(input.from),
+  }))
+  const authorized = try sync(() => Action.keyed({
     find: (key) => keyed.find(key).pipe(withToken(minted.token, services.apiBaseUrl)),
-    perform: (key) => Effect.gen(function* () {
-      if (!(yield* services.authorize(input, minted.token))) return yield* new CreateRefused({ code: "forbidden" })
-      return yield* keyed.perform(key).pipe(withToken(minted.token, services.apiBaseUrl))
-    }),
-  })
-  const branch = yield* Action.once("branch", authorized).pipe(
+    perform: effect (key) => {
+      if (!(try services.authorize(input, minted.token))) throw new CreateRefused({ code: "forbidden" })
+      return try keyed.perform(key).pipe(withToken(minted.token, services.apiBaseUrl))
+    },
+  }))
+  const branch = try Action.once("branch", authorized).pipe(
     withToken(minted.token, services.apiBaseUrl),
     Effect.provideService(HttpClient.HttpClient, services.http),
     Effect.mapError(refused),
@@ -80,10 +80,10 @@ export const make = <R, H, P>(services: {
 const unavailable = (error: unknown): CreateRefused => error instanceof CreateRefused ? error : new CreateRefused({ code: "unavailable" })
 
 /** Deployment choices captured before constructing handlers or durable step implementations. */
-export const settings = Effect.gen(function* () {
-  const app = yield* Config.configured
-  return { app, allowed: yield* RepoRoles.allowed, configReads: yield* RepoRoles.configuredReads(app) }
-})
+export const settings = effect {
+  const app = try Config.configured
+  return { app, allowed: try RepoRoles.allowed, configReads: try RepoRoles.configuredReads(app) }
+}
 export class Settings extends Context.Service<Settings, {
   readonly app: Option.Option<Config.GitHubApp>
   readonly allowed: Option.Option<ReadonlySet<string>>
@@ -92,27 +92,27 @@ export class Settings extends Context.Service<Settings, {
 }>()("smithers/branch/GitHubCreation/Settings") {}
 
 /** Build provider services from injected deployment choices on the remote action host. */
-export const configured = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, http: HttpClient.HttpClient) => Effect.gen(function* () {
-  const { app, allowed, configReads } = yield* Settings
-  if (Option.isNone(app)) return yield* new CreateRefused({ code: "not_configured" })
-  const auth = yield* GitHub.AppAuth.make(app.value).pipe(Effect.provideService(HttpClient.HttpClient, http), Effect.mapError(refused))
-  const roles = yield* RepoRoles.makeWith(database, {
+export const configured = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, http: HttpClient.HttpClient) => effect {
+  const { app, allowed, configReads } = try Settings
+  if (Option.isNone(app)) throw new CreateRefused({ code: "not_configured" })
+  const auth = try GitHub.AppAuth.make(app.value).pipe(Effect.provideService(HttpClient.HttpClient, http), Effect.mapError(refused))
+  const roles = try RepoRoles.makeWith(database, {
     repository: app.value.repository, app, allowed, http,
   }, configReads)
   const apiBaseUrl = app.value.apiBaseUrl
-  const authorize = (input: Input, token: Redacted.Redacted<string>) => Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [person] = yield* sql<{ readonly login: string; readonly accountId: string }>`
+  const authorize = (input: Input, token: Redacted.Redacted<string>) => (effect {
+    const sql = try SqlClient.SqlClient
+    const [person] = try sql<{ readonly login: string; readonly accountId: string }>`
       SELECT github_login AS login, github_id::text AS "accountId" FROM people WHERE id = ${input.actor.subject.id}`
     if (person === undefined) return false
-    const permission = yield* GitHub.Collaborators.permission(input.repository.owner, input.repository.name, person.login).pipe(
+    const permission = try GitHub.Collaborators.permission(input.repository.owner, input.repository.name, person.login).pipe(
       withToken(token, apiBaseUrl), Effect.provideService(HttpClient.HttpClient, http), Effect.mapError(refused),
     )
     return Option.isSome(permission) && permission.value.userId !== undefined && String(permission.value.userId) === person.accountId &&
-      ["write", "maintain", "admin"].includes(RepoRoles.permissionOf(permission.value))
+      ["write", "maintain", "admin"].includes(try sync(() => RepoRoles.permissionOf(permission.value)))
   }).pipe(Effect.mapError(unavailable))
   return { app: auth, http, apiBaseUrl, roles, authorize, hold: (held: RepoRoles.Held) => RepoRoles.holds(held).pipe(Effect.mapError(unavailable)) }
-})
+}
 
 export class CreationUnavailable extends Schema.TaggedError<CreationUnavailable>()("GitHubCreationUnavailable", {}) {}
 export const Outcome = Schema.Struct({ status: Schema.Literals(["done", "failed"]) })
@@ -141,45 +141,45 @@ export interface RequestRow {
   readonly branchId: string | null
 }
 
-export const read = (request: string, person: string) => Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient
-  const [row] = yield* sql<RequestRow>`SELECT id, actor, repo_id AS repo, owner, name, ref, sha, failure, branch_id AS "branchId"
+export const read = (request: string, person: string) => effect {
+  const sql = try SqlClient.SqlClient
+  const [row] = try sql<RequestRow>`SELECT id, actor, repo_id AS repo, owner, name, ref, sha, failure, branch_id AS "branchId"
     FROM github_branch_requests WHERE id = ${request} AND person_id = ${person}`
   return row
-})
+}
 
-export const admit = (input: Input) => Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`INSERT INTO github_branch_requests (id, person_id, actor, repo_id, owner, name, ref, sha)
+export const admit = (input: Input) => effect {
+  const sql = try SqlClient.SqlClient
+  try sql`INSERT INTO github_branch_requests (id, person_id, actor, repo_id, owner, name, ref, sha)
     VALUES (${input.request}, ${input.actor.subject.id}, ${JSON.stringify(input.actor)}::jsonb, ${input.repository.id},
       ${input.repository.owner}, ${input.repository.name}, ${input.ref}, ${input.from}) ON CONFLICT (id) DO NOTHING`
-  const row = yield* read(input.request, input.actor.subject.id)
+  const row = try read(input.request, input.actor.subject.id)
   return row !== undefined && row.repo === input.repository.id && row.ref === input.ref ? row : undefined
-})
+}
 
 /** One durable step owns the provider receipt and the branch's persisted forge. */
-export const send = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, http: HttpClient.HttpClient) => (payload: { readonly request: string }) => Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient
-  const [row] = yield* sql<RequestRow>`SELECT id, actor, repo_id AS repo, owner, name, ref, sha, failure, branch_id AS "branchId"
+export const send = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, http: HttpClient.HttpClient) => (payload: { readonly request: string }) => (effect {
+  const sql = try SqlClient.SqlClient
+  const [row] = try sql<RequestRow>`SELECT id, actor, repo_id AS repo, owner, name, ref, sha, failure, branch_id AS "branchId"
     FROM github_branch_requests WHERE id = ${payload.request}`
   if (row === undefined || row.failure !== null) return { status: "failed" as const }
   if (row.branchId !== null) return { status: "done" as const }
-  const result = yield* Effect.gen(function* () {
-    const services = yield* configured(database, http)
-    const made = yield* sql.withTransaction(make(services)({
+  const result = try (effect {
+    const services = try configured(database, http)
+    const made = try sql.withTransaction(make(services)({
       actor: row.actor, repository: { id: row.repo, owner: row.owner, name: row.name }, ref: row.ref, from: row.sha, request: row.id,
     }))
-    yield* sql.withTransaction(Effect.gen(function* () {
-      const tracked = yield* Conversations.track(row.repo, made.name, "open", made.sha, row.actor.subject.id, row.id, "default", "github")
-      yield* sql`UPDATE github_branch_requests SET branch_id = ${tracked.branch.branchId} WHERE id = ${row.id}`
-      yield* Repos.refsChanged(row.repo)
-    }))
+    try sql.withTransaction(effect {
+      const tracked = try Conversations.track(row.repo, made.name, "open", made.sha, row.actor.subject.id, row.id, "default", "github")
+      try sql`UPDATE github_branch_requests SET branch_id = ${tracked.branch.branchId} WHERE id = ${row.id}`
+      try Repos.refsChanged(row.repo)
+    })
   }).pipe(Effect.result)
   if (result._tag === "Failure") {
     // A database failure after the provider wrote must replay its keyed receipt, never become a terminal orphan.
-    if (!(result.failure instanceof CreateRefused) || result.failure.code === "unavailable") return yield* new CreationUnavailable()
+    if (!(result.failure instanceof CreateRefused) || result.failure.code === "unavailable") throw new CreationUnavailable()
     const failure = result.failure.code
-    yield* sql`UPDATE github_branch_requests SET failure = ${failure} WHERE id = ${row.id}`
+    try sql`UPDATE github_branch_requests SET failure = ${failure} WHERE id = ${row.id}`
     return { status: "failed" as const }
   }
   return { status: "done" as const }

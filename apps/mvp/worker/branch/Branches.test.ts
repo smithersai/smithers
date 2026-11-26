@@ -17,7 +17,7 @@ import * as RepoRoles from "../github/RepoRoles.ts"
 import { BranchRoles } from "./Access.vibe"
 import * as Branches from "./Branches.vibe"
 import * as Conversations from "./Conversations.vibe"
-import { CreateRefused, Forge } from "./Forge.ts"
+import { CreateRefused, Forge } from "./Forge.vibe"
 
 const runtime = testFile("branches")
 beforeEach(() => resetBranches(runtime))

@@ -1,5 +1,5 @@
 import { TestSchemas } from "@smthrs/database"
-import * as GitHubCreation from "../branch/GitHubCreation.ts"
+import * as GitHubCreation from "../branch/GitHubCreation.vibe"
 // What a host builds to run the git loop (worker/github/{Config,Host}.ts, worker/ExecutionHost.ts `withGitHub`): the
 // App's settings from Config, the App itself, and the Durable Object's handlers running `github/Write` to the end over
 // the compose Postgres (`pnpm db:up`) with an in-memory object storage, as worker/ExecutionHost.test.ts runs the others.

@@ -7,7 +7,7 @@ import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/h
 import { describe, expect, test } from "vitest"
 import { gitHost, shaOf } from "../test/branch.ts"
 import { machineOf } from "../flows/TodoMachine.vibe"
-import { branchHead, CreateRefused, createBranch, defaultBranch, failureFields, Forge, forgeOf, proxy } from "./Forge.ts"
+import { branchHead, CreateRefused, createBranch, defaultBranch, failureFields, Forge, forgeOf, proxy } from "./Forge.vibe"
 
 /** A fresh ES256 key, as Code Storage's Keys page hands one out: a PKCS#8 PEM. */
 const pem = async () => {

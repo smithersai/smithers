@@ -16,7 +16,7 @@ import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.vibe
 import * as Artifacts from "./branch/Artifacts.vibe"
 import * as Budget from "./branch/Budget.vibe"
 import { CHECKOUT_FAILURES, checkoutArgv, forgeRemote } from "./branch/Checkout.ts"
-import { Forge, proxy } from "./branch/Forge.ts"
+import { Forge, proxy } from "./branch/Forge.vibe"
 import * as JobMachines from "./branch/JobMachines.ts"
 import * as Machine from "./branch/Machine.ts"
 import {

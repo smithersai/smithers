@@ -1,4 +1,4 @@
-import * as GitHubCreation from "../branch/GitHubCreation.ts"
+import * as GitHubCreation from "../branch/GitHubCreation.vibe"
 import { GitHub } from "@smthrs/integrations"
 import { Effect, Layer, Option } from "effect"
 import { HttpClient } from "effect/http"

@@ -12,7 +12,7 @@ import { testFile } from "../test/harness.ts"
 import { resetBranches } from "../test/branch.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import * as Conversations from "./Conversations.vibe"
-import { admit, read, send, configured, registration, settings, Settings, Create, make, type Input } from "./GitHubCreation.ts"
+import { admit, read, send, configured, registration, settings, Settings, Create, make, type Input } from "./GitHubCreation.vibe"
 
 const input: Input = {
   actor: { subject: { kind: "person", id: crypto.randomUUID() }, role: "admin" },

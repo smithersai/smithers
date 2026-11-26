@@ -56,7 +56,7 @@ describe("the app's rule scopes", () => {
     const rule = importRules.find((rule) => rule.because.startsWith("plugin.core-names-no-plugin:"))!
     const files = rule.files!
     expect(["src/plugins/builtin.ts", "src/plugins/builtinFlows.ts", "src/plugins/manifests.ts"].filter((path) => reads(files, path))).toEqual([])
-    for (const path of ["src/plugins/plugins.ts", "src/plugins/other.ts", "src/plugins/nested/builtin.ts", "src/features/branch/steps.ts", "worker/branch/Creation.ts"]) {
+    for (const path of ["src/plugins/plugins.ts", "src/plugins/other.ts", "src/plugins/nested/builtin.ts", "src/features/branch/steps.ts", "worker/branch/Creation.vibe"]) {
       expect(reads(files, path), path).toBe(true)
     }
   })

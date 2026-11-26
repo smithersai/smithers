@@ -12,7 +12,7 @@ import { BRANCH_FLOWS } from "../../src/plugins/builtinFlows.ts"
 import { Sessions } from "../Actor.ts"
 import { isMemberOn } from "./Access.vibe"
 import { homeRepositoryNames } from "./Conversations.vibe"
-import { defaultBranch } from "./Forge.ts"
+import { defaultBranch } from "./Forge.vibe"
 
 export class CreationRefused extends Data.TaggedError("CreationRefused")<{
   readonly code: "invalid" | "unavailable"
@@ -31,7 +31,6 @@ const Config = Schema.Struct({
 })
 const invalid = () => new CreationRefused({ code: "invalid" })
 const decodeConfig = Schema.decodeUnknownEffect(Schema.fromJsonString(Config))
-const textOf = (bytes: Uint8Array) => new TextDecoder("utf-8", { fatal: true }).decode(bytes)
 const creationCapability = (capability: string) => Object.values(CREATION_ACTIONS).includes(capability as never)
 const facts = new Map(Object.entries(CREATION_ACTIONS).map(([name, capability]) => [name, {
   capabilities: [capability], minimum: "member" as const, personOnly: false, system: true,
@@ -44,51 +43,52 @@ export const select = (
   revision: string,
   operation: BranchOperation = "create",
   builtins: Partial<typeof BRANCH_FLOWS> = BRANCH_FLOWS,
-): Effect.Effect<CreationSelection, CreationRefused> => Effect.gen(function* () {
+): CreationSelection!CreationRefused => effect {
   const read = (path: string) => client!.readFile(repoId(repository.owner, repository.name), { path, ref: revision, maxBytes: 65_536 }).pipe(
-    Effect.flatMap(({ bytes }) => Effect.try({ try: () => textOf(bytes), catch: invalid })),
+    Effect.flatMap(({ bytes }) => Effect.try({ try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes), catch: invalid })),
     Effect.catchTag("@smthrs/effect-code-storage/CodeStorageError", (error) =>
       error.code === "not_found" ? Effect.succeed(undefined) : Effect.fail(new CreationRefused({ code: "unavailable" }))),
   )
-  const configText = client === undefined ? undefined : yield* read(".smithers/branch.json")
+  const configText = client === undefined ? undefined : try read(".smithers/branch.json")
   let manifest: unknown
   let source: string
   let tag: string
-  const config = configText === undefined ? undefined : yield* decodeConfig(configText).pipe(Effect.mapError(invalid))
+  const config = configText === undefined ? undefined : try decodeConfig(configText).pipe(Effect.mapError(invalid))
   const flow = config === undefined ? undefined : operation === "create" ? config.flow : config[operation]
   if (config !== undefined && flow !== undefined) {
     tag = `${config.plugin}/${flow}`
-    const manifestText = yield* read(`.smithers/plugins/${config.plugin}/plugin.json`)
-    const flowSource = yield* read(`.smithers/flows/${tag}/flow.ts`)
-    if (manifestText === undefined || flowSource === undefined) return yield* invalid()
-    manifest = yield* Effect.try({ try: () => JSON.parse(manifestText) as unknown, catch: invalid })
+    const manifestText = try read(`.smithers/plugins/${config.plugin}/plugin.json`)
+    const flowSource = try read(`.smithers/flows/${tag}/flow.ts`)
+    if (manifestText === undefined || flowSource === undefined) throw invalid()
+    manifest = try Effect.try({ try: () => JSON.parse(manifestText) as unknown, catch: invalid })
     source = flowSource
-    const checked = yield* Manifest.decode(manifest).pipe(Effect.mapError(invalid))
-    if (checked.id !== config.plugin || !checked.owns?.includes(flow)) return yield* invalid()
+    const checked = try Manifest.decode(manifest).pipe(Effect.mapError(invalid))
+    if (checked.id !== config.plugin || !checked.owns?.includes(flow)) throw invalid()
   } else {
     const builtin = builtins[operation]
-    if (builtin === undefined) return yield* new CreationRefused({ code: "unavailable" })
+    if (builtin === undefined) throw new CreationRefused({ code: "unavailable" })
     manifest = builtin.manifest
     source = builtin.source
     tag = builtin.tag
   }
-  const checked = yield* Manifest.decode(manifest).pipe(Effect.mapError(invalid))
-  const metadata = readSource(source, tag)
-  if (metadata.tag !== tag || metadata.warnings.length > 0) return yield* invalid()
-  const loaded = yield* Load.load({
+  const checked = try Manifest.decode(manifest).pipe(Effect.mapError(invalid))
+  const metadata = try sync(() => readSource(source, tag))
+  if (metadata.tag !== tag || metadata.warnings.length > 0) throw invalid()
+  const loaded = try Load.load({
     api: Manifest.PLUGIN_API, points: ["flows"], catalog: facts, queries: new Map(),
     tierCap: { "built-in": creationCapability, repository: creationCapability, personal: creationCapability },
   }, [{
     tier: flow === undefined ? "built-in" : "repository", manifest,
     flows: [{ tag, capabilities: checked.capabilities, minimum: "member", personOnly: false, system: false, modelInvocable: true }],
   }])
-  if (loaded.refused.length > 0) return yield* invalid()
+  if (loaded.refused.length > 0) throw invalid()
   // A flow may call only its own operation's host actions, whatever else its plugin uses.
   const allowed = (checked.uses ?? []).filter((action) => OPERATION_ACTIONS[operation].includes(action as never))
   // A creation's selection reads as it did before Publish existed, so a journaled one resumes unchanged.
-  return { ...repository, tag, source, digest: digestSync(source), revision, runtime: RealmFlow.version, allowed,
+  const digest = try orDie(Effect.try(() => digestSync(source)))
+  return { ...repository, tag, source, digest, revision, runtime: RealmFlow.version, allowed,
     ...(operation === "create" ? {} : { operation }) }
-})
+}
 
 export const selections = Metric.counter("smithers_branch_creation_selections", { incremental: true })
 
@@ -96,8 +96,8 @@ export const selections = Metric.counter("smithers_branch_creation_selections", 
  * The browser's journaled selection step; only a Member or above on the repository may request an installation.
  * `database` opens a Postgres client for the role check.
  */
-export const route = <E, R>(client: Option.Option<CodeStorage.Client>, database: Layer.Layer<SqlClient.SqlClient, E, R>) => Effect.gen(function* () {
-  const request = yield* HttpServerRequest.HttpServerRequest
+export const route = <E, R>(client: Option.Option<CodeStorage.Client>, database: Layer.Layer<SqlClient.SqlClient, E, R>) => (effect {
+  const request = try HttpServerRequest.HttpServerRequest
   let stage = "request"
   let failure: Record<string, string | number> = {}
   const refused = (error: { readonly _tag: string; readonly code: string; readonly status?: number }, status: number) => Effect.sync(() => {
@@ -105,33 +105,33 @@ export const route = <E, R>(client: Option.Option<CodeStorage.Client>, database:
       ...(error.status === undefined ? {} : { upstreamStatus: error.status }) }
     return HttpServerResponse.empty({ status })
   })
-  const answer = yield* Effect.gen(function* () {
+  const answer = try (effect {
     if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
     stage = "session"
-    const actor = yield* (yield* Sessions).resolve
+    const actor = try (try Sessions).resolve
     if (Option.isNone(actor)) return HttpServerResponse.empty({ status: 401 })
     stage = "repository"
     const query = new URL(request.url, "http://app").searchParams
     const operation = query.get("operation") ?? "create"
     if (!BRANCH_OPERATIONS.includes(operation as never)) return HttpServerResponse.empty({ status: 400 })
-    const home = yield* homeRepositoryNames
+    const home = try homeRepositoryNames
     const owner = query.get("owner") ?? home.owner
     const name = query.get("name") ?? home.name
-    if (!isRepository(owner, name) || query.has("owner") !== query.has("name")) return HttpServerResponse.empty({ status: 400 })
+    if (!(try sync(() => isRepository(owner, name))) || query.has("owner") !== query.has("name")) return HttpServerResponse.empty({ status: 400 })
     // A Member or above on the repository itself (decision 0079).
     stage = "role"
-    const member = yield* isMemberOn(actor, repoId(owner, name)).pipe(
+    const member = try isMemberOn(actor, repoId(owner, name)).pipe(
       Effect.provide(database),
       Effect.mapError(() => new CreationRefused({ code: "unavailable" })),
     )
     if (!member) return HttpServerResponse.empty({ status: 403 })
     // Without Code Storage there is no installed repository code; the ordinary default still refuses its write.
     stage = "head"
-    const head = Option.isNone(client) ? undefined : yield* defaultBranch({ owner, name })
+    const head = Option.isNone(client) ? undefined : try defaultBranch({ owner, name })
     stage = "installation"
-    const selected = yield* select(Option.getOrUndefined(client), { owner, name }, head?.sha ?? "builtin", operation as BranchOperation)
+    const selected = try select(Option.getOrUndefined(client), { owner, name }, head?.sha ?? "builtin", operation as BranchOperation)
     return HttpServerResponse.jsonUnsafe(selected, { headers: { "cache-control": "no-store" } })
-  }).pipe(
+  }.pipe(
     Effect.catchTags({
       CreationRefused: (error) => refused(error, error.code === "invalid" ? 400 : 503),
       "@smthrs/effect-code-storage/GitRemoteError": (error) => refused(error,
@@ -139,9 +139,9 @@ export const route = <E, R>(client: Option.Option<CodeStorage.Client>, database:
     }),
     // Defects and unexpected failures remain unavailable; never log their message or raw cause.
     Effect.catchCause(() => refused({ _tag: "unexpected", code: "unexpected" }, 503)),
-  )
-  yield* Metric.update(Metric.withAttributes(selections, { status: String(answer.status) }), 1)
-  yield* Effect.logInfo("branch.creation.select").pipe(Effect.annotateLogs({ status: answer.status, ...failure }))
-  yield* Effect.annotateCurrentSpan({ "http.response.status_code": answer.status, ...failure })
+  ))
+  try Metric.update(Metric.withAttributes(selections, { status: String(answer.status) }), 1)
+  try Effect.logInfo("branch.creation.select").pipe(Effect.annotateLogs({ status: answer.status, ...failure }))
+  try Effect.annotateCurrentSpan({ "http.response.status_code": answer.status, ...failure })
   return answer
 }).pipe(Effect.withSpan("branch.creation.select", { kind: "server" }))

@@ -6,7 +6,7 @@
 // ChatApi's real refusals.
 import { Effect, Metric, Option } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { CreateRefused, Forge } from "../../../worker/branch/Forge.ts"
+import { CreateRefused, Forge } from "../../../worker/branch/Forge.vibe"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { dispatches } from "../../flows/dispatch"
 import { failingWorker, nodeDevice, type NodeDevice, openTab, openTestApp, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"

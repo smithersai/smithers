@@ -1,6 +1,6 @@
 import { withUserAgent } from "../github/Http.ts"
-import { CreateRefused } from "./CreateRefused.ts"
-export { CreateRefused } from "./CreateRefused.ts"
+import { CreateRefused } from "./CreateRefused.vibe"
+export { CreateRefused } from "./CreateRefused.vibe"
 import { type CodeStorage, GitProxy, GitRemote } from "@smthrs/effect-code-storage"
 import { Context, Effect, Layer, Metric, Option } from "effect"
 import { type HttpClient, type HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -29,11 +29,11 @@ export interface Repository {
  * credential this forge never holds.
  */
 const gitHubForge = {
-  upstream: ({ owner, name }: Repository): Effect.Effect<GitRemote.Upstream> =>
-    Effect.succeed({ url: `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}.git` }),
-  create: (): Effect.Effect<void, CreateRefused> => Effect.fail(new CreateRefused({ code: "not_configured" })),
-  move: (): Effect.Effect<void, CreateRefused> => Effect.fail(new CreateRefused({ code: "not_configured" })),
-  pull: (): Effect.Effect<void, CreateRefused> => Effect.fail(new CreateRefused({ code: "not_configured" })),
+  upstream: ({ owner, name }: Repository): GitRemote.Upstream!! =>
+    succeed({ url: `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}.git` }),
+  create: (): void!CreateRefused => fail(new CreateRefused({ code: "not_configured" })),
+  move: (): void!CreateRefused => fail(new CreateRefused({ code: "not_configured" })),
+  pull: (): void!CreateRefused => fail(new CreateRefused({ code: "not_configured" })),
 }
 
 /** A Code Storage failure as the forge's refusal, keeping its safe cause. */
@@ -55,17 +55,17 @@ const refusedOf = (error: CodeStorage.CodeStorageError) =>
 export class Forge extends Context.Service<
   Forge,
   {
-    readonly upstream: (repository: Repository, namespace?: CodeStorage.RefNamespace) => Effect.Effect<GitRemote.Upstream>
+    readonly upstream: (repository: Repository, namespace?: CodeStorage.RefNamespace) => GitRemote.Upstream!!
     /** Creates `branch` at the commit `from` names, on the forge. */
-    readonly create: (repository: Repository, branch: string, from: string) => Effect.Effect<void, CreateRefused>
+    readonly create: (repository: Repository, branch: string, from: string) => void!CreateRefused
     /**
      * Moves ephemeral `branch` to commit `to`, fast-forward or not: a resync brings a Smithers branch to the head its
      * GitHub branch reached ([branch publish](../../docs/features/branch-publish.md#resync)). A commit the mirror hasn't
      * synced yet is `not_found`.
      */
-    readonly move: (repository: Repository, branch: string, to: string) => Effect.Effect<void, CreateRefused>
+    readonly move: (repository: Repository, branch: string, to: string) => void!CreateRefused
     /** Starts the mirror's sync from GitHub. One already running is no failure. */
-    readonly pull: (repository: Repository) => Effect.Effect<void, CreateRefused>
+    readonly pull: (repository: Repository) => void!CreateRefused
   }
 >()("@smthrs/mvp/branch/Forge") {
   /**
@@ -114,8 +114,11 @@ export class Forge extends Context.Service<
 
 /** A branch's commit on its forge, through the forge's credential: `ref_not_found` when it has no such branch. */
 export const branchHead = (repository: Repository, branch: string, namespace: CodeStorage.RefNamespace = "default") =>
-  Effect.flatMap(Forge, (forge) =>
-    Effect.flatMap(forge.upstream(repository, namespace), (upstream) => GitRemote.ref(upstream, branch))).pipe((effect) => withUserAgent(effect, true))
+  withUserAgent(effect {
+    const forge = try Forge
+    const upstream = try forge.upstream(repository, namespace)
+    return try GitRemote.ref(upstream, branch)
+  }, true)
 
 /** Creates `branch` on the repository's forge at the commit `from` names. */
 export const createBranch = (repository: Repository, branch: string, from: string) =>
@@ -131,7 +134,6 @@ export const createBranch = (repository: Repository, branch: string, from: strin
 
 /**
  * Safe typed error metadata only: never a URL, branch, credential, message or raw cause.
- * @throws {never}
  */
 export const failureFields = (
   operation: "default_branch" | "create_ref" | "refs_read",
@@ -150,8 +152,11 @@ export const failureFields = (
 
 /** The repository's default branch on its forge. */
 export const defaultBranch = (repository: Repository) =>
-  Effect.flatMap(Forge, (forge) =>
-    Effect.flatMap(forge.upstream(repository), (upstream) => GitRemote.head(upstream))).pipe((effect) => withUserAgent(effect, true))
+  withUserAgent(effect {
+    const forge = try Forge
+    const upstream = try forge.upstream(repository)
+    return try GitRemote.head(upstream)
+  }, true)
 
 /**
  * The forge a branch's machine checks `branch` out through: GitHub for what lives there (`forge: "github"`, a TODO's
@@ -174,20 +179,20 @@ export const proxy = (
   request: HttpServerRequest.HttpServerRequest,
   deployment: Forge["Service"],
   branch: Repository & { readonly branch?: string | undefined; readonly forge?: "github" | undefined; readonly namespace?: CodeStorage.RefNamespace | undefined },
-) => Effect.gen(function* () {
+) => (effect {
   if (branch.namespace === "ephemeral" && branch.branch === undefined) {
-    const service = GitProxy.classify(request.method, request.url) ?? "refused"
-    yield* Metric.update(Metric.withAttributes(GitProxy.requests, { service, outcome: "refused" }), 1)
-    yield* Effect.annotateCurrentSpan({
+    const service = (try sync(() => GitProxy.classify(request.method, request.url))) ?? "refused"
+    try Metric.update(Metric.withAttributes(GitProxy.requests, { service, outcome: "refused" }), 1)
+    try Effect.annotateCurrentSpan({
       "git.proxy.service": service,
       "http.response.status_code": 403,
       outcome: "namespace_unscoped",
     })
-    yield* Effect.logWarning("sandbox.forge").pipe(
+    try Effect.logWarning("sandbox.forge").pipe(
       Effect.annotateLogs({ status: 403, outcome: "namespace_unscoped" }),
     )
     return HttpServerResponse.empty({ status: 403 })
   }
-  const remote = yield* forgeOf(deployment, branch).upstream(branch)
-  return yield* GitProxy.uploadPack(request, remote, branch.namespace === "ephemeral" ? branch.branch : undefined)
+  const remote = try forgeOf(deployment, branch).upstream(branch)
+  return try GitProxy.uploadPack(request, remote, branch.namespace === "ephemeral" ? branch.branch : undefined)
 }).pipe((effect) => withUserAgent(effect, true), Effect.withSpan("sandbox.forge", { kind: "server" }))

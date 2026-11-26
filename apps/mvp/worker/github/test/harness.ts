@@ -1,5 +1,5 @@
 import { afterBody } from "../../WriteAdmission.ts"
-import * as GitHubCreation from "../../branch/GitHubCreation.ts"
+import * as GitHubCreation from "../../branch/GitHubCreation.vibe"
 import { BranchRoles } from "../../branch/Access.vibe"
 // The git loop's routes (worker/github/Api.ts) for the tests, on a test file's own schema of the compose Postgres and
 // Electric (`pnpm db:up`), as ChatApi serves them: who is asking from a `Sessions` layer, remote flows from a
