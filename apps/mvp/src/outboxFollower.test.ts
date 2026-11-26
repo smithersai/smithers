@@ -1,8 +1,9 @@
 import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { WebLock } from "@smthrs/platform-browser"
 import { startOfflineExecutor } from "@tanstack/offline-transactions"
-import { Context, Effect, Layer, Metric, Schema, Scope, Stream } from "effect"
+import { Context, Effect, Layer, Metric, Option, Schema, Scope, Stream } from "effect"
 import { describe, expect, test } from "vitest"
+import { sendingAdmitted } from "./outboxAdmission.vibe"
 import { followingOutbox } from "./outboxFollower"
 import { memoryStorage } from "./wipe"
 
@@ -95,6 +96,30 @@ const tab = (on: ReturnType<typeof device>, follow = followingOutbox) =>
 
 const scoped = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
   Effect.runPromise(Effect.scoped(effect).pipe(Effect.provide(Layer.succeed(Metric.MetricRegistry, new Map()))))
+
+test("sending rows use live admission receipts when present", async () => {
+  await scoped(Effect.gen(function* () {
+    const { outbox, save } = yield* tab(device())
+    expect(yield* sendingAdmitted(outbox, "save", "restored")).toBe(true)
+
+    yield* save("live")
+    expect(yield* sendingAdmitted(outbox, "save", "live")).toBe(true)
+
+    let rolledBack = false
+    const faulty: Outbox.Service = {
+      ...outbox,
+      admission: () => Effect.succeed(Option.some({
+        id: "refused",
+        admitted: Effect.fail(new Outbox.NotAdmitted({ reason: "storage" })),
+        settled: Effect.sync(() => { rolledBack = true }).pipe(
+          Effect.andThen(Effect.fail(new Collection.TransactionFailed({ cause: "quota" }))),
+        ),
+      })),
+    }
+    expect(yield* sendingAdmitted(faulty, "save", "refused")).toBe(false)
+    expect(rolledBack).toBe(true)
+  }))
+})
 
 /**
  * Tab 1 queues `ghost` and `kept` offline; tab 2 takes the lead and shows both; tab 1 leads again, so tab 2 follows.

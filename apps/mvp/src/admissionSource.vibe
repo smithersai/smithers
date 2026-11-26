@@ -1,7 +1,7 @@
 import { setDraft } from "./features/chat/actions"
 import { COMPOSER, HOME_DRAFT, PLACE } from "./features/chat/schema"
 import { ChatStore } from "./features/chat/store"
-import { admissionReceipt, WriteIntents, type WriteIntent } from "./writeAdmission"
+import { admissionReceipt, WriteIntents, type WriteIntent } from "./writeAdmission.vibe"
 
 /** Admission and Retry share the same source cleanup, including its actual persistence receipt. */
 export const clearComposerSource = (source: NonNullable<WriteIntent["composer"]>) => exit(effect {

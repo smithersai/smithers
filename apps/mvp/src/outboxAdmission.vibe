@@ -1,0 +1,15 @@
+import type { Outbox } from "@smthrs/effect-tanstack-db"
+import { Effect, Option } from "effect"
+
+/** A sending row restored from storage is durable; a live optimistic row must await its actual receipt. */
+export const sendingAdmitted = effect (outbox: Outbox.Service, name: string, id: string) => {
+  const write = try outbox.admission(name, id)
+  if (Option.isNone(write)) return true
+  return write.value.admitted.pipe(Effect.as(true)) catch effect (refused) => {
+    try Effect.logWarning("outbox.admission.refused").pipe(
+      Effect.annotateLogs({ name, reason: refused.reason, errorCode: "not_admitted" }),
+    )
+    try Effect.ignore(write.value.settled)
+    return false
+  }
+}

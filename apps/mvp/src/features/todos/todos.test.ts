@@ -49,7 +49,7 @@ import { syncIssueChoices } from "./issuePickers.vibe"
 import { Todos } from "./todos.vibe"
 import { accessFor, draftsOfAnswer, draftsOfRepo, notSentRows, stackRows, todoCardOf, todosByIssue } from "./view"
 import { keep, StackWrites } from "./writes.vibe"
-import { whileAdmitting } from "../../writeAdmission"
+import { whileAdmitting } from "../../writeAdmission.vibe"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {

@@ -1,4 +1,4 @@
-import { admissionReceipt } from "../writeAdmission"
+import { admissionReceipt } from "../writeAdmission.vibe"
 import type { Flow as FlowTypes } from "@smthrs/flow"
 import { FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
 import { WebCrypto } from "effect/crypto/WebCrypto"

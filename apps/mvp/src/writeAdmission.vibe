@@ -1,5 +1,6 @@
 import type { PendingSnapshot } from "@smthrs/platform-browser"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { WebCrypto as WebCryptoReference } from "effect/crypto/WebCrypto"
 import { Cause, Clock, Context, Effect, Exit, Layer, Metric, Option, PubSub, Schema, Stream } from "effect"
 
 /** Temporary input receipt; delivery and retries remain the durable outbox's responsibility. */
@@ -50,8 +51,8 @@ export class WriteIntents extends Context.Service<WriteIntents, {
   /** Once after every change to the receipts, the admissions running or the refusals: what a projection reads again on. */
   readonly changes: Stream.Stream<void>
 }>()("@smthrs/mvp/WriteIntents") {
-  static readonly layer = (snapshot?: PendingSnapshot.Service, writable = true) => Layer.effect(WriteIntents, Effect.gen(function* () {
-    const changed = yield* PubSub.unbounded<void>()
+  static readonly layer = (snapshot?: PendingSnapshot.Service, writable = true) => Layer.effect(WriteIntents, effect {
+    const changed = try PubSub.unbounded<void>()
     const notify = () => void PubSub.publishUnsafe(changed, undefined)
     /** A map that says when it changed. */
     class Observed<V> extends Map<string, V> {
@@ -104,7 +105,7 @@ export class WriteIntents extends Context.Service<WriteIntents, {
       answered: new Observed<Answered>(),
       changes: Stream.fromPubSub(changed),
     }
-  }))
+  })
 }
 
 /** How an engine operation's run ended, as the engine answered this tab's dispatch. */
@@ -117,11 +118,11 @@ export interface Answered {
 
 export const admissionStages = Metric.counter("smithers_write_admission_stages", { incremental: true })
 /** Correlation and receipt timing only. Never annotate payloads, repository names or hash inputs. */
-export const recordAdmission = (commandId: string, flow: string, stage: string, outcome: string, startedAt: number) => Effect.gen(function* () {
-  const atMs = yield* Clock.currentTimeMillis
-  yield* Metric.update(Metric.withAttributes(admissionStages, { flow, stage, outcome }), 1)
-  yield* Effect.logInfo("write.admission").pipe(Effect.annotateLogs({ commandId, flow, stage, outcome, atMs, durationMs: atMs - startedAt }))
-})
+export const recordAdmission = effect (commandId: string, flow: string, stage: string, outcome: string, startedAt: number) => {
+  const atMs = try Clock.currentTimeMillis
+  try Metric.update(Metric.withAttributes(admissionStages, { flow, stage, outcome }), 1)
+  try Effect.logInfo("write.admission").pipe(Effect.annotateLogs({ commandId, flow, stage, outcome, atMs, durationMs: atMs - startedAt }))
+}
 
 /** Compare the fields JSON storage retains; property order and omitted optional fields are immaterial. */
 const samePayload = (left: Readonly<Record<string, unknown>>, right: Readonly<Record<string, unknown>>) => {
@@ -130,17 +131,17 @@ const samePayload = (left: Readonly<Record<string, unknown>>, right: Readonly<Re
 }
 
 /** This runs synchronously before hashing, device persistence, outbox leadership or engine startup can yield. */
-export const beginAdmission = (flow: string, payload: Readonly<Record<string, unknown>>, identity?: WriteIntent["identity"], draftId?: string, composer?: WriteIntent["composer"], door?: WriteIntent["door"]) => Effect.gen(function* () {
-  const store = yield* Effect.serviceOption(WriteIntents)
+export const beginAdmission = effect (flow: string, payload: Readonly<Record<string, unknown>>, identity?: WriteIntent["identity"], draftId?: string, composer?: WriteIntent["composer"], door?: WriteIntent["door"]) => {
+  const store = try Effect.serviceOption(WriteIntents)
   // An engine operation's input lives until its run settled: a press while it runs joins it.
   const held = Option.isNone(store) ? undefined : store.value.pending().find(row => row.flow === flow && (row.cleaned !== true || ENGINE_OPERATIONS.has(row.flow)) &&
     (draftId !== undefined ? row.draftId === draftId : composer !== undefined && row.composer?.conversationId === composer.conversationId && row.composer.text === composer.text && row.composer.generation === composer.generation) && samePayload(row.payload, payload))
-  const intent: WriteIntent = held ?? { commandId: crypto.randomUUID(), flow, payload, stagedAt: yield* Clock.currentTimeMillis, ...(identity === undefined ? {} : { identity }), ...(draftId === undefined ? {} : { draftId }), ...(composer === undefined ? {} : { composer }), ...(door === undefined ? {} : { door }) }
+  const intent: WriteIntent = held ?? { commandId: try sync(() => WebCryptoReference.defaultValue().randomUUID()), flow, payload, stagedAt: try Clock.currentTimeMillis, ...(identity === undefined ? {} : { identity }), ...(draftId === undefined ? {} : { draftId }), ...(composer === undefined ? {} : { composer }), ...(door === undefined ? {} : { door }) }
   const retained = Option.isNone(store) || store.value.retain(intent)
   if (retained && Option.isSome(store)) beginAttempt(store.value, intent.commandId, intent.commandId)
-  yield* recordAdmission(intent.commandId, flow, "input", retained ? "retained" : "refused", yield* Clock.currentTimeMillis)
+  try recordAdmission(intent.commandId, flow, "input", retained ? "retained" : "refused", try Clock.currentTimeMillis)
   return retained ? Option.some(intent) : Option.none<WriteIntent>()
-})
+}
 
 export const executionOf = (intent: WriteIntent) => (intent.identity === undefined
   ? Effect.succeed(intent.commandId)
@@ -149,14 +150,14 @@ export const executionOf = (intent: WriteIntent) => (intent.identity === undefin
   )
 
 /** Correlates a command with its execution and, for an outbox write, its write id. An engine operation has none. */
-export const identifyAdmission = (intent: WriteIntent, executionId: string, writeId?: string) => Effect.gen(function* () {
-  const store = yield* Effect.serviceOption(WriteIntents)
+export const identifyAdmission = effect (intent: WriteIntent, executionId: string, writeId?: string) => {
+  const store = try Effect.serviceOption(WriteIntents)
   if (Option.isSome(store)) {
     if (writeId !== undefined) store.value.byWrite.set(writeId, intent.commandId)
     store.value.update(intent.commandId, writeId === undefined ? { executionId } : { executionId, writeId })
   }
-  yield* Effect.logInfo("write.identity").pipe(Effect.annotateLogs({ commandId: intent.commandId, executionId, ...(writeId === undefined ? {} : { writeId }) }))
-})
+  try Effect.logInfo("write.identity").pipe(Effect.annotateLogs({ commandId: intent.commandId, executionId, ...(writeId === undefined ? {} : { writeId }) }))
+}
 
 /**
  * Starts an admission of `commandId`, fenced under `key` (the command, or a recovery row's write id): the previous
@@ -213,36 +214,36 @@ const outcomeOf = (
   else if (outcome === "admitted") store.refused.delete(intent.commandId)
 }
 
-export const finishAdmission = (intent: WriteIntent, admitted: boolean, cleaned = true, unconfirmed = false) => Effect.gen(function* () {
-  const store = yield* Effect.serviceOption(WriteIntents)
-  const at = yield* Clock.currentTimeMillis
+export const finishAdmission = effect (intent: WriteIntent, admitted: boolean, cleaned = true, unconfirmed = false) => {
+  const store = try Effect.serviceOption(WriteIntents)
+  const at = try Clock.currentTimeMillis
   const outcome = admitted ? "admitted" : unconfirmed ? "unconfirmed" : "refused"
   if (Option.isSome(store)) {
     outcomeOf(store.value, intent, outcome, at, { key: intent.commandId, count: 1 })
     release(store.value, intent.commandId)
     settle(store.value, intent, admitted, cleaned)
   }
-  yield* recordAdmission(intent.commandId, intent.flow, "outbox", admitted ? "admitted" : unconfirmed ? "unconfirmed" : "not_admitted", at)
-})
+  try recordAdmission(intent.commandId, intent.flow, "outbox", admitted ? "admitted" : unconfirmed ? "unconfirmed" : "not_admitted", at)
+}
 
 /** Explicit Retry completes the same input lifecycle without releasing another caller's admission fence. */
-export const finishRetainedAdmission = (writeId: string, admitted: boolean, cleaned: boolean) => Effect.gen(function* () {
-  const store = yield* Effect.serviceOption(WriteIntents)
+export const finishRetainedAdmission = effect (writeId: string, admitted: boolean, cleaned: boolean) => {
+  const store = try Effect.serviceOption(WriteIntents)
   if (Option.isNone(store)) return
   const intent = store.value.pending().find(row => row.writeId === writeId || store.value.byWrite.get(writeId) === row.commandId)
   if (intent === undefined) return
-  const at = yield* Clock.currentTimeMillis
+  const at = try Clock.currentTimeMillis
   // Called inside its own `whileAdmitting(writeId)`, whose fence is still held.
   outcomeOf(store.value, intent, admitted ? "admitted" : "refused", at, { key: writeId, count: 1 })
   settle(store.value, intent, admitted, cleaned)
-  yield* recordAdmission(intent.commandId, intent.flow, "outbox", admitted ? "admitted" : "not_admitted", at)
-})
+  try recordAdmission(intent.commandId, intent.flow, "outbox", admitted ? "admitted" : "not_admitted", at)
+}
 
 /** Includes legacy recovery rows that have no input snapshot. Finalization also releases cancellation/failure. */
-export const whileAdmitting = <A, E, R>(writeId: string, effect: Effect.Effect<A, E, R>) => Effect.gen(function* () {
-  const store = yield* Effect.serviceOption(WriteIntents)
-  if (Option.isNone(store)) return yield* effect
-  return yield* Effect.acquireUseRelease(
+export const whileAdmitting = effect <A, E, R>(writeId: string, effect: Effect.Effect<A, E, R>) => {
+  const store = try Effect.serviceOption(WriteIntents)
+  if (Option.isNone(store)) return try effect
+  return try Effect.acquireUseRelease(
     Effect.sync(() => {
       const intent = store.value.pending().find(row => row.writeId === writeId || store.value.byWrite.get(writeId) === row.commandId)
       if (intent === undefined) store.value.admitting.set(writeId, (store.value.admitting.get(writeId) ?? 0) + 1)
@@ -251,21 +252,21 @@ export const whileAdmitting = <A, E, R>(writeId: string, effect: Effect.Effect<A
     () => effect,
     () => Effect.sync(() => release(store.value, writeId)),
   )
-})
+}
 
 /** Navigation and delivery are independent receipts; neither may retire the other. */
-export const acknowledgeNavigation = (writeId: string) => Effect.gen(function* () {
-  const store = yield* Effect.serviceOption(WriteIntents)
+export const acknowledgeNavigation = effect (writeId: string) => {
+  const store = try Effect.serviceOption(WriteIntents)
   if (Option.isNone(store)) return
   const intent = store.value.pending().find(row => row.writeId === writeId || store.value.byWrite.get(writeId) === row.commandId)
   if (intent === undefined) return
   store.value.update(intent.commandId, { navigated: true })
   if (intent.admitted && intent.cleaned) store.value.forget(intent.commandId)
-})
+}
 
 /** Synchronous lookup keeps Edit/Discard inside their existing synchronous frontend boundary. */
-export const forgetAdmission = (_namespace: string, writeId: string) => Effect.gen(function* () {
-  const store = yield* Effect.serviceOption(WriteIntents)
+export const forgetAdmission = effect (_namespace: string, writeId: string) => {
+  const store = try Effect.serviceOption(WriteIntents)
   if (Option.isNone(store)) return true
   if (store.value.admitting.has(writeId)) return false
   for (const intent of store.value.pending()) {
@@ -273,21 +274,21 @@ export const forgetAdmission = (_namespace: string, writeId: string) => Effect.g
     if (store.value.admitting.has(intent.commandId) || !store.value.forget(intent.commandId)) return false
   }
   return true
-})
+}
 
 /** A source draft cannot cancel admission while that admission is still running. */
-export const forgetDraftAdmissions = (draftId: string) => Effect.gen(function* () {
-  const store = yield* Effect.serviceOption(WriteIntents)
+export const forgetDraftAdmissions = effect (draftId: string) => {
+  const store = try Effect.serviceOption(WriteIntents)
   if (Option.isNone(store)) return true
   const intents = store.value.pending().filter(row => row.draftId === draftId)
   if (intents.some(intent => store.value.admitting.has(intent.commandId) || (intent.writeId !== undefined && store.value.admitting.has(intent.writeId)) || [...store.value.byWrite].some(([id, command]) => command === intent.commandId && store.value.admitting.has(id)))) return false
   return intents.every(intent => store.value.forget(intent.commandId))
-})
+}
 
 /** Start plus receipt records identify an interrupted or unresolved storage/engine boundary. */
-export const admissionReceipt = <A, E, R>(effect: Effect.Effect<A, E, R>, commandId: string, flow: string, stage: string) => Effect.gen(function* () {
-  const startedAt = yield* Clock.currentTimeMillis
-  yield* recordAdmission(commandId, flow, stage, "pending", startedAt)
-  return yield* effect.pipe(Effect.annotateLogs({ commandId, flow, stage }), Effect.onExit(exit => recordAdmission(commandId, flow, stage,
+export const admissionReceipt = effect <A, E, R>(effect: Effect.Effect<A, E, R>, commandId: string, flow: string, stage: string) => {
+  const startedAt = try Clock.currentTimeMillis
+  try recordAdmission(commandId, flow, stage, "pending", startedAt)
+  return try effect.pipe(Effect.annotateLogs({ commandId, flow, stage }), Effect.onExit(exit => recordAdmission(commandId, flow, stage,
     Exit.isSuccess(exit) ? "confirmed" : Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "failed", startedAt)))
-})
+}

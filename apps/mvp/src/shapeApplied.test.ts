@@ -2,7 +2,7 @@ import { Collection } from "@smthrs/effect-tanstack-db"
 import { Deferred, Effect, Fiber, Logger, Metric } from "effect"
 import { expect, test, vi } from "vitest"
 import { IssuesStore } from "./features/issues/store.vibe"
-import { initialSnapshots, observeInitialApplied } from "./shapeApplied"
+import { initialSnapshots, observeInitialApplied } from "./shapeApplied.vibe"
 import { openTestApp } from "./test/chatApi"
 
 for (const fault of ["none", "held receipt", "load failure"] as const) test(`initial applied observation: ${fault}`, async () => {

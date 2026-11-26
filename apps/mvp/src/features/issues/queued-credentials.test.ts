@@ -8,7 +8,7 @@ import { harness, RUN_CREDENTIAL_SECRET, signedIn, testFile } from "../../../wor
 import { githubHarness } from "../../../worker/github/test/harness"
 import { confirmedSession, sql } from "../../../worker/github/test/fixtures"
 import { outboxUpgrade } from "../../device/registry"
-import { OutboxWrites } from "../../outbox"
+import { OutboxWrites } from "../../outbox.vibe"
 import { IssuesClient } from "./api.vibe"
 import { ISSUE_WRITE, IssueWrites } from "./writes.vibe"
 

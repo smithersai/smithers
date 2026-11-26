@@ -1,5 +1,5 @@
-import { observeInitialApplied } from "../../shapeApplied"
-import { admissionReceipt } from "../../writeAdmission"
+import { observeInitialApplied } from "../../shapeApplied.vibe"
+import { admissionReceipt } from "../../writeAdmission.vibe"
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
 import { AuthStore } from "../auth/store"
@@ -9,7 +9,7 @@ import { evictOnRefusal, repositoryShapeSource, wipeAuthority } from "../issues/
 import { stackAccess } from "./source"
 import { ChatStore } from "../chat/store"
 import { repoId } from "../repo/contract"
-import { sendingAdmitted } from "../../outboxAdmission"
+import { sendingAdmitted } from "../../outboxAdmission.vibe"
 import { TODO_REQUESTS_SHAPE_ROUTE, TODOS_SHAPE_ROUTE } from "./contract"
 import {
   Access,

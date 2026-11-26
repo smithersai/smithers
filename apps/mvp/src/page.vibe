@@ -26,4 +26,7 @@ export const pageReloads = Metric.counter("smithers_web_page_reloads", {
  * The next boot logs `page reloaded` with the reason and counts it, so the record never races the page unloading.
  */
 export const reload = (reason: AppReloadReason) =>
-  Effect.flatMap(Page, (page) => page.reload(reason)).pipe(Effect.annotateLogs({ feature: "app" }))
+  (effect {
+    const page = try Page
+    try page.reload(reason)
+  }).pipe(Effect.annotateLogs({ feature: "app" }))

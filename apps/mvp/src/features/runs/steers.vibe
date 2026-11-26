@@ -4,7 +4,7 @@ import { ChatStore } from "../chat/store"
 import { runsChannel } from "./contract"
 import { type QueuedSteer, RunsCall } from "./schema"
 import { keep, RUN_STEER, SteerWrites } from "./writes.vibe"
-import { sendingAdmitted } from "../../outboxAdmission"
+import { sendingAdmitted } from "../../outboxAdmission.vibe"
 
 // The tab's side of steering (docs/features/runs.md#steering): a `run/steer` step, in the leader tab's engine worker,
 // asks the tab that started its run to put the message in the device's outbox, which chat's store leads. Every tab

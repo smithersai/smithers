@@ -9,7 +9,7 @@ import * as CoeditSaved from "./features/coedit/saved.ts"
 import * as PersonalContract from "./features/personal-model/contract.ts"
 import { ChangeNotTaken, StackClient } from "./features/todos/api.vibe"
 import * as TodoWrites from "./features/todos/writes.vibe"
-import { held, OutboxWrites } from "./outbox.ts"
+import { held, OutboxWrites } from "./outbox.vibe"
 import * as DeviceFixture from "./test/deviceFixture.ts"
 
 const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")

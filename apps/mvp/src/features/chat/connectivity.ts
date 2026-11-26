@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { runners } from "../../boundary.vibe"
 import { DEVICE_ADOPTED_EVENT } from "../auth/contract"
-import { type Page, reload } from "../../page"
+import { type Page, reload } from "../../page.vibe"
 import { lead, retry, wentOffline } from "./actions"
 import type { ChatStore } from "./store"
 

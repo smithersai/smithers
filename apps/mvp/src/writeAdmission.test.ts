@@ -1,7 +1,7 @@
 import { PendingSnapshot } from "@smthrs/platform-browser"
 import { Context, Effect, Layer, Option } from "effect"
 import { expect, test } from "vitest"
-import { beginAdmission, executionOf, finishAdmission, settledEngineInputs, whileAdmitting, WriteIntents, type WriteIntent } from "./writeAdmission"
+import { beginAdmission, executionOf, finishAdmission, settledEngineInputs, whileAdmitting, WriteIntents, type WriteIntent } from "./writeAdmission.vibe"
 
 const intent = (commandId: string, flow = "issue/comment"): WriteIntent => ({ commandId, flow, payload: { repo: "private/name", body: "private content" } })
 const device = () => {
@@ -93,7 +93,7 @@ test("non-browser hosts retain existing boundaries and deterministic identities 
 
 test("Edit and Discard retire exactly the original identity, and refuse a failed cleanup", async () => {
   const { Uuid, WebCrypto } = await import("@smthrs/crypto")
-  const { forgetAdmission, identifyAdmission } = await import("./writeAdmission")
+  const { forgetAdmission, identifyAdmission } = await import("./writeAdmission.vibe")
   const namespace = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
   const host = device()
   const store = await storeOf(host.snapshot)
@@ -113,7 +113,7 @@ test("Edit and Discard retire exactly the original identity, and refuse a failed
 })
 
 test("receipt instrumentation preserves successes, typed failures and cancellation", async () => {
-  const { admissionReceipt } = await import("./writeAdmission")
+  const { admissionReceipt } = await import("./writeAdmission.vibe")
   expect(await Effect.runPromise(admissionReceipt(Effect.succeed(7), "command", "issue/comment", "engine"))).toBe(7)
   expect(await Effect.runPromise(admissionReceipt(Effect.fail("refused"), "command", "issue/comment", "engine").pipe(Effect.flip))).toBe("refused")
   const exit = await Effect.runPromiseExit(admissionReceipt(Effect.interrupt, "command", "issue/comment", "engine"))
@@ -127,7 +127,7 @@ test("a browser without a stable reload identity refuses staging", async () => {
 })
 
 test("navigation before admission or cleanup cannot retire a Create receipt", async () => {
-  const { acknowledgeNavigation, identifyAdmission } = await import("./writeAdmission")
+  const { acknowledgeNavigation, identifyAdmission } = await import("./writeAdmission.vibe")
   const host = device()
   const store = await storeOf(host.snapshot)
   const row = { ...intent("creation", "issue/create"), draftId: "new-issue-form" }
@@ -153,7 +153,7 @@ test("navigation before admission or cleanup cannot retire a Create receipt", as
 })
 
 test("Discard remains synchronous and fences running admission for its write or source draft", async () => {
-  const { forgetAdmission, forgetDraftAdmissions, identifyAdmission } = await import("./writeAdmission")
+  const { forgetAdmission, forgetDraftAdmissions, identifyAdmission } = await import("./writeAdmission.vibe")
   const host = device()
   const store = await storeOf(host.snapshot)
   const row = Option.getOrThrow(Effect.runSync(beginAdmission("todo/commit", {}, undefined, "draft").pipe(Effect.provideService(WriteIntents, store))))
@@ -191,7 +191,7 @@ test("repeated admission of the same source joins its original identity; indepen
 
 test("explicit admissions fence legacy writes and release on success, failure and interruption", async () => {
   const { Deferred, Fiber } = await import("effect")
-  const { finishRetainedAdmission, forgetDraftAdmissions, identifyAdmission, whileAdmitting } = await import("./writeAdmission")
+  const { finishRetainedAdmission, forgetDraftAdmissions, identifyAdmission, whileAdmitting } = await import("./writeAdmission.vibe")
   const host = device()
   const store = await storeOf(host.snapshot)
   expect(await Effect.runPromise(whileAdmitting("legacy", Effect.succeed(7)))).toBe(7)
@@ -228,7 +228,7 @@ test("identical content in a new composer generation is an independent press", a
 
 test("a refused identity update still fences and completes Retry through its in-memory correlation", async () => {
   const { Deferred, Fiber } = await import("effect")
-  const { finishRetainedAdmission, forgetDraftAdmissions, identifyAdmission, whileAdmitting } = await import("./writeAdmission")
+  const { finishRetainedAdmission, forgetDraftAdmissions, identifyAdmission, whileAdmitting } = await import("./writeAdmission.vibe")
   const host = device()
   const store = await storeOf(host.snapshot)
   const provide = <A, E>(effect: Effect.Effect<A, E>) => effect.pipe(Effect.provideService(WriteIntents, store))
@@ -337,7 +337,7 @@ test("a press joins an engine operation's input until it retires, cleaned or not
 
 for (const flow of ["todo/issue", "conversation/new"]) {
   for (const sibling of [false, true]) test(`failed receipt removal preserves newer ${flow} metadata with sibling=${sibling}`, async () => {
-    const { identifyAdmission } = await import("./writeAdmission")
+    const { identifyAdmission } = await import("./writeAdmission.vibe")
     const host = device()
     const store = await storeOf(host.snapshot)
     const original = intent("original", flow)
@@ -383,7 +383,7 @@ test("an admission reply after its input retired cannot overwrite a newer press"
 
 test("Discard waits for a retried write's admission before removing its receipt", async () => {
   const { Deferred, Fiber } = await import("effect")
-  const { forgetAdmission } = await import("./writeAdmission")
+  const { forgetAdmission } = await import("./writeAdmission.vibe")
   const host = device()
   const store = await storeOf(host.snapshot)
   const row = { ...intent("retry"), writeId: "write-retry" }

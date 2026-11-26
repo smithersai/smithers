@@ -21,7 +21,7 @@ const STORE_SIDE = /^src\/features\/[^/]+\/(store|actions|source|writes|queries|
 
 /** Other modules that read a store's raw rows to act, never to show them, by why. */
 const ACTS: Readonly<Record<string, string>> = {
-  "src/resumeAdmissions.ts": "finishes the device's own queued writes after a reload; renders nothing",
+  "src/resumeAdmissions.vibe": "finishes the device's own queued writes after a reload; renders nothing",
   "src/admissionSource.vibe": "admits the device's own queued writes; renders nothing",
   "src/features/timeline/notice.vibe": "checks whether its own notice is already raised before it raises one",
   "src/features/conversations/pin.ts": "names the routed branch in a pin's payload; renders nothing",

@@ -10,12 +10,12 @@ export const initialSnapshots = Metric.counter("smithers_shape_initial_applied",
 
 /** Observe the real decoding/persistence barrier; a download alone never certifies installed controls. */
 export const observeInitialApplied = (shape: InitialSnapshot, source: LayoutSource, repository: string) =>
-  Effect.gen(function* () {
-    yield* shape.preload
-    yield* shape.currentApplied
-    yield* Metric.update(Metric.withAttributes(initialSnapshots, { source }), 1)
-    yield* Effect.logInfo("shape.initial.applied").pipe(Effect.annotateLogs({ source, repository }))
-  }).pipe(Effect.withSpan("shape.initial.apply"), Effect.ignore)
+  effect {
+    try shape.preload
+    try shape.currentApplied
+    try Metric.update(Metric.withAttributes(initialSnapshots, { source }), 1)
+    try Effect.logInfo("shape.initial.applied").pipe(Effect.annotateLogs({ source, repository }))
+  }.pipe(Effect.withSpan("shape.initial.apply"), Effect.ignore)
 
 export const SHAPE_APPLIED_TELEMETRY = {
   records: ["shape.initial.applied", "shape.initial.apply", "smithers_shape_initial_applied"],

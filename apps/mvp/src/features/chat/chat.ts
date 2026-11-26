@@ -3,7 +3,7 @@ import { runners } from "../../boundary.vibe"
 import { Clock, Option } from "effect"
 import { Context, Data, Effect, Layer, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch.vibe"
-import { Page, reload } from "../../page"
+import { Page, reload } from "../../page.vibe"
 import {
   type AskResult,
   ask,

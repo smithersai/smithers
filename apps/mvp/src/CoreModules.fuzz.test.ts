@@ -9,7 +9,7 @@ import * as DocumentLocale from "./documentLocale.ts"
 import * as ErrorCode from "./errorCode.ts"
 import * as RepoPaths from "./features/repo/paths.ts"
 import * as PersonOnly from "./flows/personOnly.ts"
-import * as ShapeApplied from "./shapeApplied.ts"
+import * as ShapeApplied from "./shapeApplied.vibe"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "1000" : "300"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261122")

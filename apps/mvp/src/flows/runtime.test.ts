@@ -7,7 +7,7 @@ import { expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as ExecutionHost from "../../worker/ExecutionHost.vibe"
 import { build } from "../../worker/test/flowHost.ts"
-import { admissionStages } from "../writeAdmission"
+import { admissionStages } from "../writeAdmission.vibe"
 import { ClientEngine, DispatchFailed, makeDispatch } from "./dispatch.vibe"
 import { TabRequests } from "./requests.vibe"
 

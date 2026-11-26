@@ -3,14 +3,15 @@ import { ChatStore } from "./features/chat/store"
 import { COMPOSER, HOME_DRAFT, PLACE } from "./features/chat/schema"
 import { PendingSnapshot } from "@smthrs/platform-browser"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { Deferred, Effect, Fiber, Option, Scope } from "effect"
+import { Deferred, Effect, Exit, Fiber, Option, Scope } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { nodeDevice, openTab, openTestApi, TEST_REPOSITORY, TestChatApi } from "./test/chatApi"
 import { Issues } from "./features/issues/issues.vibe"
 import { IssuesStore } from "./features/issues/store.vibe"
 import { TodosStore } from "./features/todos/store.vibe"
-import { executionOf, WriteIntents, type WriteIntent } from "./writeAdmission"
-import { resumeAdmissions } from "./resumeAdmissions"
+import { executionOf, WriteIntents, type WriteIntent } from "./writeAdmission.vibe"
+import { DispatchFailed } from "./flows/dispatch.vibe"
+import { followRun, resumeAdmissions, runEnded } from "./resumeAdmissions.vibe"
 import { commentDraftKey, newDraftKey, WRITE_ID_NAMESPACE } from "./features/issues/contract"
 import { OP_ID_NAMESPACE } from "./features/todos/contract"
 
@@ -242,7 +243,7 @@ for (const state of ["matching", "new_text", "other_conversation", "no_stored_dr
 
 test("Discard draft cancels its retained commit after refusal and fences a running admission", async () => {
   const tab = await opening()
-  const { beginAdmission, finishAdmission } = await import("./writeAdmission")
+  const { beginAdmission, finishAdmission } = await import("./writeAdmission.vibe")
   const { discardDraft } = await import("./features/todos/actions.vibe")
   const id = crypto.randomUUID()
   await tab.app.runPromise(tab.todos.drafts.insert({ id, repo: TEST_REPOSITORY, repoId, title: "Retained TODO", prompt: "Prompt", acceptance: [], answerId: null, createdAt: 1 }))
@@ -287,7 +288,7 @@ for (const source of ["comment", "issue", "todo"] as const) {
 
 for (const source of ["issue", "todo", "legacy"] as const) test(`Retry fences Discard and completes the retained ${source} lifecycle`, async () => {
   const tab = await opening()
-  const { beginAdmission, finishAdmission, identifyAdmission } = await import("./writeAdmission")
+  const { beginAdmission, finishAdmission, identifyAdmission } = await import("./writeAdmission.vibe")
   const { retryWrite, discard, comment } = await import("./features/issues/actions.vibe")
   const { retryChange, discard: discardTodo } = await import("./features/todos/actions.vibe")
   const todo = source === "todo"
@@ -425,7 +426,7 @@ test("recovering a slash-created issue never takes over the New issue form", asy
 })
 
 test("a settled run admits its engine input whatever became of its Start reply; only a finished one's line leaves the composer (decision 0124)", async () => {
-  const { settleFromRuns } = await import("./resumeAdmissions")
+  const { settleFromRuns } = await import("./resumeAdmissions.vibe")
   const tab = await opening()
   const text = "/new octo/hello topic"
   const engine = (commandId: string, fields: Partial<WriteIntent> = {}): WriteIntent => ({
@@ -454,14 +455,14 @@ test("a settled run admits its engine input whatever became of its Start reply; 
   expect(tab.intents.pending().find((row) => row.commandId === "unclean")).toMatchObject({ admitted: true, cleaned: false })
   expect(tab.chat.composer.tanstack.get(COMPOSER)?.draft).toBe("New text")
   // The cleanup itself, awaited: unconfirmed, it leaves the input for the next page open.
-  const { completeFromRun } = await import("./resumeAdmissions")
+  const { completeFromRun } = await import("./resumeAdmissions.vibe")
   tab.intents.retain(engine("awaited", { composer: { conversationId: null, text, generation: "g3" } }))
   await tab.app.runPromise(completeFromRun(engine("awaited", { composer: { conversationId: null, text, generation: "g3" } }), "done"))
   expect(tab.intents.pending().find((row) => row.commandId === "awaited")).toMatchObject({ admitted: true, cleaned: false })
 })
 
 test("a settled run's input this tab can't forget is tried once, and the refused forget wakes nothing", async () => {
-  const { settleFromRuns } = await import("./resumeAdmissions")
+  const { settleFromRuns } = await import("./resumeAdmissions.vibe")
   const { Context, Fiber, Layer, Ref, Stream } = await import("effect")
   const tab = await opening()
   const engine = (commandId: string): WriteIntent => ({
@@ -482,4 +483,34 @@ test("a settled run's input this tab can't forget is tried once, and the refused
   expect(await Effect.runPromise(Ref.get(wakes))).toBe(0)
   expect([...attempted]).toEqual(["kept"])
   await Effect.runPromise(Fiber.interrupt(counting))
+})
+
+test("only a result or an execution defect proves the run ended", () => {
+  const flow = "conversation/new"
+  expect(runEnded(Exit.succeed({ _tag: "Done" }))).toBe("done")
+  expect(runEnded(Exit.succeed({ _tag: "Failed" }))).toBe("failed")
+  expect(runEnded(Exit.fail(new DispatchFailed({ flow, reason: "defect" })))).toBe("failed")
+  expect(runEnded(Exit.fail(new DispatchFailed({ flow, reason: "unavailable" })))).toBeUndefined()
+  expect(runEnded(Exit.interrupt())).toBeUndefined()
+})
+
+test("following a run records or preserves its staged input according to the engine answer", async () => {
+  const flow = "conversation/new"
+  const intent: WriteIntent = { commandId: "command", executionId: "execution", flow, payload: { repo: TEST_REPOSITORY } }
+  const scenario = Effect.scoped(Effect.gen(function* () {
+    const scope = yield* Scope.Scope
+    const receipts = yield* WriteIntents
+    expect(receipts.retain(intent)).toBe(true)
+
+    const unavailable = yield* Effect.forkChild(Effect.fail(new DispatchFailed({ flow, reason: "unavailable" })))
+    yield* Fiber.join(yield* followRun(intent, unavailable, scope))
+    expect(receipts.pending()).toEqual([intent])
+    expect(receipts.answered.size).toBe(0)
+
+    const finished = yield* Effect.forkChild(Effect.succeed({ _tag: "Done" } as const))
+    yield* Fiber.join(yield* followRun(intent, finished, scope))
+    expect(receipts.pending()).toEqual([])
+    expect(receipts.answered.get("execution")).toMatchObject({ flow, repo: TEST_REPOSITORY, state: "done" })
+  }))
+  await Effect.runPromise(scenario.pipe(Effect.provide(WriteIntents.layer(undefined, false))))
 })

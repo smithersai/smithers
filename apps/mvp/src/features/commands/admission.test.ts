@@ -1,5 +1,5 @@
 import { PendingSnapshot } from "@smthrs/platform-browser"
-import { WriteIntents } from "../../writeAdmission"
+import { WriteIntents } from "../../writeAdmission.vibe"
 import { Effect, Option } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { nodeDevice, openTab, openTestApi, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
@@ -192,7 +192,7 @@ for (const failure of ["hold", "fail"] as const) test(`slash input identity surv
   const { Collection } = await import("@smthrs/effect-tanstack-db")
   const { Fiber } = await import("effect")
   const { submit } = await import("./actions.vibe")
-  const { resumeAdmissions } = await import("../../resumeAdmissions")
+  const { resumeAdmissions } = await import("../../resumeAdmissions.vibe")
   const chat = await t.tab.runPromise(Effect.service(ChatStore))
   const text = "/comment octo/hello 7 Retain the cleanup receipt"
   await t.commands.actions.type(text)

@@ -8,7 +8,7 @@ import { IssuesClient } from "./features/issues/api.vibe"
 import { ISSUE_WRITE, IssueWrites } from "./features/issues/writes.vibe"
 import { StackClient } from "./features/todos/api.vibe"
 import { StackWrites, TODO_OP } from "./features/todos/writes.vibe"
-import { OutboxWrites } from "./outbox"
+import { held, OutboxWrites } from "./outbox.vibe"
 
 // How features hand their writes to the device's one outbox (src/outbox.ts): a second feature adds its own to the
 // writes a layer below handed over, and the first feature's names stay as they were. The outbox sending them is tested
@@ -59,4 +59,8 @@ describe("the device's writes", () => {
     )
     expect(mutations.sort()).toEqual([ISSUE_WRITE, TEXT_UPDATE, TODO_OP].sort())
   })
+})
+
+test("a refused session holds its persisted write for another attempt", () => {
+  expect(held()).toMatchObject({ _tag: "Retry", status: 401, held: true })
 })
