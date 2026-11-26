@@ -1,4 +1,5 @@
 import { Effect, Layer } from "effect"
+import { HttpClientError } from "effect/http"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { describe, expect, test } from "vitest"
 import {
@@ -191,6 +192,124 @@ describe("workbench store and helpers", () => {
           yield* Effect.promise(() => workbench.actions.submitWaitlist())
           expect(store.waitlist.tanstack.get(WAITLIST_ROW_ID)?.status).toBe("error")
           expect(store.waitlist.tanstack.get(WAITLIST_ROW_ID)?.errorMessage).toContain("Too many requests")
+        }).pipe(Effect.provide(layer)),
+      ),
+    )
+  })
+})
+
+describe("workbench store boundary and failure cases", () => {
+  test("planNodesFromTree breaks cycles and sorts equal-order siblings by id", () => {
+    const nodes = planNodesFromTree({
+      revision: 1,
+      nodes: {
+        b: {
+          id: "b",
+          parent: "missing-parent",
+          title: "B",
+          milestone: "M0",
+          status: "pending",
+          sources: [],
+          assumptions: [],
+          dodFast: "fast",
+          artifactIds: [],
+          order: 1,
+        },
+        a: {
+          id: "a",
+          parent: null,
+          title: "A",
+          milestone: "M0",
+          status: "pending",
+          sources: [],
+          assumptions: [],
+          dodFast: "fast",
+          artifactIds: [],
+          order: 1,
+        },
+      },
+    })
+    expect(nodes.map((n) => n.id)).toEqual(["a", "b"])
+  })
+
+  test("loadPlan handles 401, 500, invalid snapshot, empty tree, null state, transport failure, and timeout", async () => {
+    let mode: "401" | "500" | "invalid" | "null-state" | "empty-tree" | "transport" | "timeout" = "401"
+    const clientLayer = Layer.succeed(
+      HttpClient.HttpClient,
+      HttpClient.make((request) => {
+        if (mode === "transport") {
+          return Effect.fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request }) }))
+        }
+        if (mode === "timeout") {
+          return Effect.never
+        }
+        if (mode === "401") return Effect.succeed(HttpClientResponse.fromWeb(request, new Response("", { status: 401 })))
+        if (mode === "500") return Effect.succeed(HttpClientResponse.fromWeb(request, new Response("", { status: 500 })))
+        if (mode === "invalid") {
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(request, new Response(JSON.stringify({ nope: true }), { status: 200 })),
+          )
+        }
+        if (mode === "null-state") {
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(request, new Response(JSON.stringify({ hubSeq: 0, state: null }), { status: 200 })),
+          )
+        }
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            new Response(JSON.stringify({ hubSeq: 2, state: { tree: { revision: 0, nodes: {} } } }), { status: 200 }),
+          ),
+        )
+      }),
+    )
+
+    const layer = Workbench.live({ origin: "https://smithers.sh", within: "20 millis" }).pipe(
+      Layer.provideMerge(WorkbenchStore.layer),
+      Layer.provide(clientLayer),
+    )
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const workbench = yield* Workbench
+          const store = yield* WorkbenchStore
+
+          mode = "401"
+          yield* Effect.promise(() => workbench.actions.loadPlan("evmts", "voltaire"))
+          expect(store.plan.tanstack.get(PLAN_ROW_ID)?.error).toBe("sign_in_required")
+
+          mode = "500"
+          yield* Effect.promise(() => workbench.actions.loadPlan("evmts", "voltaire"))
+          expect(store.plan.tanstack.get(PLAN_ROW_ID)?.error).toBe("unavailable")
+
+          mode = "invalid"
+          yield* Effect.promise(() => workbench.actions.loadPlan("evmts", "voltaire"))
+          expect(store.plan.tanstack.get(PLAN_ROW_ID)?.error).toBe("invalid_snapshot")
+
+          mode = "null-state"
+          yield* Effect.promise(() => workbench.actions.loadPlan("evmts", "voltaire"))
+          expect(store.plan.tanstack.get(PLAN_ROW_ID)?.status).toBe("empty")
+
+          mode = "empty-tree"
+          yield* Effect.promise(() => workbench.actions.loadPlan("evmts", "voltaire"))
+          expect(store.plan.tanstack.get(PLAN_ROW_ID)?.status).toBe("empty")
+          expect(store.plan.tanstack.get(PLAN_ROW_ID)?.totalFrames).toBe(3)
+
+          mode = "transport"
+          yield* Effect.promise(() => workbench.actions.loadPlan("evmts", "voltaire"))
+          expect(store.plan.tanstack.get(PLAN_ROW_ID)?.error).toBe("unavailable")
+
+          mode = "timeout"
+          yield* Effect.promise(() => workbench.actions.loadPlan("evmts", "voltaire"))
+          expect(store.plan.tanstack.get(PLAN_ROW_ID)?.error).toBe("timeout")
+
+          // Blank workflowNote branch in submitWaitlistDraft
+          workbench.actions.setWaitlistRepoUrl("https://github.com/evmts/voltaire")
+          workbench.actions.setWaitlistWorkflowNote("   ")
+          mode = "500"
+          yield* Effect.promise(() => workbench.actions.submitWaitlist())
+          expect(store.waitlist.tanstack.get(WAITLIST_ROW_ID)?.status).toBe("error")
         }).pipe(Effect.provide(layer)),
       ),
     )

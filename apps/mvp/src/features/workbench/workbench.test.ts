@@ -253,3 +253,57 @@ describe("workbench keyboard shortcut precedence", () => {
     expect(workbenchShortcutAction({ key: "Escape" }, { ...base, size: "inline" }, 10)).toBeNull()
   })
 })
+
+describe("workbench layout reducer and parser edge coverage", () => {
+  test("parses URLSearchParams and plain records with numbers and booleans", () => {
+    const fromParams = parseWorkbenchSearch(new URLSearchParams("pane=diff&size=side&frame=4&diffScope=all"), "maintainer")
+    expect(fromParams).toEqual({
+      pane: "diff",
+      size: "side",
+      frame: 4,
+      audience: "maintainer",
+      diffScope: "all",
+    })
+    const fromRecord = parseWorkbenchSearch({ pane: "attach", frame: 2, size: true, node: "n1" }, "contributor")
+    expect(fromRecord.pane).toBe("attach")
+    expect(fromRecord.frame).toBe(2)
+    expect(fromRecord.size).toBe("inline")
+    expect(fromRecord.selectedId).toBe("n1")
+  })
+
+  test("covers openPane, inspect, restore, seek, stepBack/Forward on empty frames, selectNode, revealCause, setAudience, setDiffScope, and shortcut edge cases", () => {
+    const init = defaultWorkbenchLayout("maintainer")
+    const opened = reduceWorkbenchLayout(init, { type: "openPane", pane: "workflow" })
+    expect(opened.size).toBe("side")
+    expect(reduceWorkbenchLayout(opened, { type: "openPane", pane: "diff" }).size).toBe("side")
+    expect(reduceWorkbenchLayout(opened, { type: "inspect" }).size).toBe("side")
+    expect(reduceWorkbenchLayout(init, { type: "restore" }).size).toBe("inline")
+
+    expect(reduceWorkbenchLayout(init, { type: "seek", frame: 1, totalFrames: 0 }).frame).toBe("live")
+    expect(reduceWorkbenchLayout(init, { type: "seek", frame: Number.NaN, totalFrames: 5 }).frame).toBe("live")
+    expect(reduceWorkbenchLayout(init, { type: "stepBack", totalFrames: 0 }).frame).toBe("live")
+    expect(reduceWorkbenchLayout(init, { type: "stepForward", totalFrames: 0 }).frame).toBe("live")
+    expect(reduceWorkbenchLayout(init, { type: "stepForward", totalFrames: 5 }).frame).toBe("live")
+    expect(reduceWorkbenchLayout({ ...init, frame: 2 }, { type: "returnLive" }).frame).toBe("live")
+
+    const withNode = reduceWorkbenchLayout(init, { type: "selectNode", id: "node-1" })
+    expect(withNode.selectedId).toBe("node-1")
+    expect(reduceWorkbenchLayout(withNode, { type: "selectNode", id: undefined }).selectedId).toBeUndefined()
+
+    const withCause = reduceWorkbenchLayout(init, { type: "revealCause", causeRef: "out-1" })
+    expect(withCause.size).toBe("side")
+    expect(withCause.causeRef).toBe("out-1")
+    expect(reduceWorkbenchLayout(withCause, { type: "revealCause", causeRef: undefined }).causeRef).toBeUndefined()
+
+    expect(reduceWorkbenchLayout(init, { type: "setAudience", role: "visitor", maxRole: "maintainer" }).audience).toBe("visitor")
+    expect(reduceWorkbenchLayout(init, { type: "setDiffScope", scope: "branch" }).diffScope).toBe("branch")
+
+    expect(workbenchShortcutAction({ key: "1" }, init, 5)).toBeNull()
+    expect(workbenchShortcutAction({ key: "0" }, init, 5)).toBeNull()
+    expect(workbenchShortcutAction({ key: "Escape", repeat: true }, opened, 5)).toBeNull()
+    expect(workbenchShortcutAction({ key: "x" }, init, 5)).toBeNull()
+    // Overflow frame string and invalid frame state branches
+    expect(parseWorkbenchSearch("?frame=999999999999999999999999999", "visitor").frame).toBe("live")
+    expect(reduceWorkbenchLayout({ ...init, frame: -1 }, { type: "stepBack", totalFrames: 5 }).frame).toBe(3)
+  })
+})

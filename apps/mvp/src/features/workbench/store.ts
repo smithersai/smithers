@@ -1,7 +1,7 @@
 import { PlanTree as PlanTreeSchema, type PlanNodeState, type PlanTree } from "@smthrs/app-state"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
 import type { AttachTransportMode, AudienceRole, PlanTreeNodeItem, WaitlistStatus } from "@smthrs/ui"
-import { Context, Data, type Duration, Effect, Layer, Option, Schema, type Scope } from "effect"
+import { Context, Data, type Duration, Effect, Layer, Schema, type Scope } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { runners } from "../../boundary"
 import type { Role } from "../auth/contract"
@@ -95,13 +95,10 @@ export const planNodesFromTree = (tree: PlanTree): ReadonlyArray<PlanTreeNodeIte
     bucket.sort((a, b) => (a.order !== b.order ? a.order - b.order : a.id.localeCompare(b.id)))
   }
   const items: Array<PlanTreeNodeItem> = []
-  const visited = new Set<string>()
   const walk = (parentId: string | null, depth: number) => {
     const children = byParent.get(parentId)
     if (children === undefined) return
     for (const node of children) {
-      if (visited.has(node.id)) continue
-      visited.add(node.id)
       items.push({
         id: node.id,
         title: node.title,
@@ -311,8 +308,8 @@ export const loadPlan = (owner: string, repo: string) =>
       milestone: node.milestone,
       status: node.status,
       depth: node.depth,
-      sources: [...(node.sources ?? [])],
-      assumptions: [...(node.assumptions ?? [])],
+      sources: [...node.sources!],
+      assumptions: [...node.assumptions!],
     }))
     yield* setPlan({
       repoSlug: slug,
@@ -325,9 +322,9 @@ export const loadPlan = (owner: string, repo: string) =>
 
 export const submitWaitlistDraft = Effect.gen(function* () {
   const store = yield* WorkbenchStore
-  const current = yield* Effect.sync(() => Option.fromNullishOr(store.waitlist.tanstack.get(WAITLIST_ROW_ID)))
-  if (Option.isNone(current)) return
-  const { repoUrl, workflowNote } = current.value
+  const { repoUrl, workflowNote } = yield* Effect.sync(
+    () => store.waitlist.tanstack.get(WAITLIST_ROW_ID)!,
+  )
   yield* setWaitlist({ status: "submitting", errorMessage: null })
   const client = yield* WorkbenchClient
   const outcome = yield* client
