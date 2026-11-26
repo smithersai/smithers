@@ -19,8 +19,8 @@ import { eventually, testFile } from "../test/harness.ts"
 import { incarnation } from "../test/flowHost.ts"
 import * as DomainsApi from "./Api.ts"
 import * as DomainFlows from "./DomainFlows.ts"
-import { DomainProvider, HostnameRejected, HostnameTaken, ProviderUnavailable } from "./Provider.ts"
-import * as Store from "./Store.ts"
+import { DomainProvider, HostnameRejected, HostnameTaken, ProviderUnavailable } from "./Provider.vibe"
+import * as Store from "./Store.vibe"
 import {
   admin,
   agent,
@@ -782,6 +782,19 @@ describe("the steps", () => {
     expect(of("pending", "active")).toBe("pending")
     expect(of("failed", "active")).toBe("failed")
     expect(of("active", "failed")).toBe("failed")
+  })
+
+  test("erase preserves a withdrawn registration for legacy or unauthorized callers", async () => {
+    const hostname = "docs.example.com"
+    const pollId = "poll-1"
+    const registration = { hostname, repoId: REPO_ID, pollId }
+    await seed(runtime, { hostname, pollId, providerId: "provider-1", state: "removing" })
+
+    expect(await runtime.runPromise(Store.erase(hostname, null))).toBe("stale")
+    expect(await runtime.runPromise(Store.erase(registration))).toBe("stale")
+    expect(await rows(runtime)).toMatchObject([
+      { ...registration, providerId: "provider-1", state: "removing" },
+    ])
   })
 
   test("the store keeps a check's verdicts it didn't get, and writes nothing for a poll that lost the row", async () => {

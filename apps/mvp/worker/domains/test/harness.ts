@@ -15,9 +15,9 @@ import * as Flows from "../../Flows.ts"
 import * as FlowHost from "../../test/flowHost.ts"
 import { signedIn, type testFile } from "../../test/harness.ts"
 import * as DomainsApi from "../Api.ts"
-import * as Dns from "../Dns.ts"
+import * as Dns from "../Dns.vibe"
 import * as DomainFlows from "../DomainFlows.ts"
-import { DomainProvider, type Provider } from "../Provider.ts"
+import { DomainProvider, type Provider } from "../Provider.vibe"
 
 type Runtime = ReturnType<typeof testFile>
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>

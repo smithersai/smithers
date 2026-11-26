@@ -2,8 +2,8 @@ import { Effect, Fiber, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { expect, test } from "vitest"
-import * as Dns from "./Dns.ts"
-import { ProviderUnavailable, type Provider } from "./Provider.ts"
+import * as Dns from "./Dns.vibe"
+import { ProviderUnavailable, type Provider } from "./Provider.vibe"
 
 const run = <A, E>(fetch: typeof globalThis.fetch, use: (provider: Provider) => Effect.Effect<A, E>) =>
   Dns.make({ zone: "ZONE.TEST.", target: "TARGET.TEST.", dohUrl: "https://resolver.test/query" }).pipe(Effect.flatMap(use), Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, fetch))

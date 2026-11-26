@@ -1,8 +1,8 @@
 import { ConfigProvider, Effect, Logger, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { expect, test } from "vitest"
-import * as Config from "./Config.ts"
-import { DomainProvider, type Provider } from "./Provider.ts"
+import * as Config from "./Config.vibe"
+import { DomainProvider, type Provider } from "./Provider.vibe"
 
 const configured = <A, E, R>(effect: Effect.Effect<A, E, R>, values: Record<string, string>) => effect.pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(values)), Effect.provide(FetchHttpClient.layer))
 

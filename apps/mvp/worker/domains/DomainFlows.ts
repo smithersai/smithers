@@ -5,8 +5,8 @@ import type { SqlClient } from "effect/sql"
 import type { DomainState } from "../../src/features/domains/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as WriteAuthority from "../WriteAuthority.ts"
-import { DomainProvider, ProviderUnavailable, type Registration } from "./Provider.ts"
-import * as Store from "./Store.ts"
+import { DomainProvider, ProviderUnavailable, type Registration } from "./Provider.vibe"
+import * as Store from "./Store.vibe"
 
 // The custom-domain flows (decision 0039 §4, docs/features/domains.md#flows). The route admits the write (signed in;
 // a Maintainer or Admin acting in person) and starts one of them:

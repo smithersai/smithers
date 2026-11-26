@@ -1,9 +1,8 @@
-import { Context, type Effect, Layer, Option, Schema } from "effect"
 import type { CertificateState, DnsRecord, VerificationState } from "../../src/features/domains/contract.ts"
 
 // The domain provider (decision 0039 §3): what registers a custom domain, says whether it is verified and has a
 // certificate, and forgets it. Cloudflare is one implementation (worker/domains/Cloudflare.ts), reached only through
-// this service (ARCH-7); worker/domains/Dns.ts is the other, for a host that terminates its own TLS. The flows
+// this service (ARCH-7); worker/domains/Dns.vibe is the other, for a host that terminates its own TLS. The flows
 // (worker/domains/DomainFlows.ts) and the routes (worker/domains/Api.ts) read it; nothing else names a provider.
 
 /** A domain as its provider sees it. */
@@ -44,11 +43,11 @@ export interface Provider {
   /** Registers `hostname`, or finds it when an earlier attempt already did, so a step run again registers once. */
   readonly ensure: (
     hostname: string,
-  ) => Effect.Effect<Registration, ProviderUnavailable | HostnameTaken | HostnameRejected>
+  ) => Registration!(ProviderUnavailable | HostnameTaken | HostnameRejected)
   /** The registration `id` of `hostname` now; none when the provider no longer has it. */
-  readonly status: (id: string, hostname: string) => Effect.Effect<Option.Option<Registration>, ProviderUnavailable>
+  readonly status: (id: string, hostname: string) => Option.Option<Registration>!ProviderUnavailable
   /** Forgets registration `id`; one the provider no longer has is already forgotten. */
-  readonly remove: (id: string) => Effect.Effect<void, ProviderUnavailable>
+  readonly remove: (id: string) => void!ProviderUnavailable
 }
 
 /** The deployment's provider, or none when custom domains are off (`DOMAINS_PROVIDER` unset). */

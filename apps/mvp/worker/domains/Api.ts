@@ -23,8 +23,8 @@ import * as Flows from "../Flows.ts"
 import * as ShapeAccess from "../ShapeAccess.vibe"
 import * as WriteAuthority from "../WriteAuthority.ts"
 import * as DomainFlows from "./DomainFlows.ts"
-import { DomainProvider } from "./Provider.ts"
-import * as Store from "./Store.ts"
+import { DomainProvider } from "./Provider.vibe"
+import * as Store from "./Store.vibe"
 
 // The custom-domain routes (decision 0039, docs/features/domains.md#routes). Every one is a Maintainer's or an Admin's,
 // acting in person, on the repository sign-in reads roles on (`GITHUB_REPOSITORY`, since a session carries one role):

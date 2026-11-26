@@ -1,4 +1,3 @@
-import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import type { Role } from "../Actor.ts"
 import * as ProtectedAuthority from "../ProtectedAuthority.ts"
@@ -43,55 +42,58 @@ export type Authority = WriteAuthority.Session | null | undefined
  */
 export const authorized = (
   authority: Authority,
-): Effect.Effect<"held" | "unavailable" | "denied", unknown, SqlClient.SqlClient> =>
-  authority === undefined ? Effect.succeed("denied" as const) : ProtectedAuthority.check(authority, MANAGERS)
+): ("held" | "unavailable" | "denied")!unknown!SqlClient.SqlClient =>
+  authority === undefined ? succeed("denied" as const) : ProtectedAuthority.check(authority, MANAGERS)
 
 /** `authorized` in its own transaction: what a step asks before it calls the provider. */
 export const authorizedNow = (
   authority: Authority,
-): Effect.Effect<"held" | "unavailable" | "denied", unknown, SqlClient.SqlClient> =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(authorized(authority)))
+): ("held" | "unavailable" | "denied")!unknown!SqlClient.SqlClient =>
+  effect {
+    const sql = try SqlClient.SqlClient
+    return try sql.withTransaction(authorized(authority))
+  }
 
-const repeated = (invocationKey: string) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    Effect.map(
-      sql<{ readonly id: string }>`SELECT id FROM domain_events WHERE invocation_key = ${invocationKey}`,
-      (rows) => rows.length > 0,
-    ))
+effect function repeated(invocationKey: string) {
+  const sql = try SqlClient.SqlClient
+  const rows = try sql<{ readonly id: string }>`SELECT id FROM domain_events WHERE invocation_key = ${invocationKey}`
+  return rows.length > 0
+}
 
 /** Claims and cleanup serialize even when no row exists, so a new claim cannot adopt a registration being deleted. */
-const lockHostname = (hostname: string) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql`SELECT pg_advisory_xact_lock(hashtextextended('domain:' || ${hostname}, 0))`)
+effect function lockHostname(hostname: string) {
+  const sql = try SqlClient.SqlClient
+  return try sql`SELECT pg_advisory_xact_lock(hashtextextended('domain:' || ${hostname}, 0))`
+}
 
 /** Forget only a registration no newer poll owns, excluding claims until the provider has forgotten it. */
 export const cleanup = <E, R>(
   input: { readonly hostname: string; readonly pollId: string; readonly providerId: string },
-  forget: Effect.Effect<void, E, R>,
-): Effect.Effect<"released" | "superseded" | "pending", unknown, SqlClient.SqlClient | R> =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    return yield* sql.withTransaction(Effect.gen(function* () {
-      yield* lockHostname(input.hostname)
-      const row = yield* read(input.hostname)
+  forget: void!E!R,
+): ("released" | "superseded" | "pending")!unknown!(SqlClient.SqlClient | R) =>
+  effect {
+    const sql = try SqlClient.SqlClient
+    return try sql.withTransaction(effect {
+      try lockHostname(input.hostname)
+      const row = try read(input.hostname)
       if (Option.isSome(row) && row.value.pollId !== input.pollId && row.value.state !== "removing") {
         // Only a recorded id transfers cleanup to the new owner's removal; an in-flight check may not adopt it.
         return row.value.providerId === input.providerId ? "superseded" as const : "pending" as const
       }
-      yield* forget
+      try forget
       return "released" as const
-    }))
-  })
+    })
+  }
 
 /** The row of `hostname`, if any. */
-export const read = (hostname: string): Effect.Effect<Option.Option<Row>, unknown, SqlClient.SqlClient> =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const rows = yield* sql<Row>`
+export const read = (hostname: string): Option.Option<Row>!unknown!SqlClient.SqlClient =>
+  effect {
+    const sql = try SqlClient.SqlClient
+    const rows = try sql<Row>`
       SELECT hostname, repo_id AS "repoId", provider_id AS "providerId", poll_id AS "pollId", state, problem
       FROM domains WHERE hostname = ${hostname}`
     return Option.fromUndefinedOr(rows[0])
-  })
+  }
 
 /**
  * Claims `hostname` for `repoId` under poll `pollId`, and records `add` or `refresh` once. A hostname another repository
@@ -108,14 +110,14 @@ export const claim = (write: {
   /** A refresh of a domain the route saw: one removed since stays removed. */
   readonly refresh: boolean
   readonly authority?: Authority
-}): Effect.Effect<Claim, unknown, SqlClient.SqlClient> =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    return yield* sql.withTransaction(Effect.gen(function* () {
-      yield* lockHostname(write.hostname)
-      if (yield* repeated(write.invocationKey)) return "repeat" as const
-      if ((yield* authorized(write.authority)) !== "held") return "stale" as const
-      const [held] = yield* sql<{ readonly repoId: string; readonly state: string }>`
+}): Claim!unknown!SqlClient.SqlClient =>
+  effect {
+    const sql = try SqlClient.SqlClient
+    return try sql.withTransaction(effect {
+      try lockHostname(write.hostname)
+      if (try repeated(write.invocationKey)) return "repeat" as const
+      if ((try authorized(write.authority)) !== "held") return "stale" as const
+      const [held] = try sql<{ readonly repoId: string; readonly state: string }>`
         SELECT repo_id AS "repoId", state FROM domains WHERE hostname = ${write.hostname} FOR UPDATE`
       if (held !== undefined && held.repoId !== write.repoId) return "taken" as const
       // A removal in flight finishes first: refreshing would revive a row whose registration is going.
@@ -124,22 +126,22 @@ export const claim = (write: {
       if (held === undefined && write.refresh) return "missing" as const
       const action = held === undefined ? "add" as const : "refresh" as const
       if (held === undefined) {
-        yield* sql`
+        try sql`
           INSERT INTO domains (hostname, repo_id, poll_id, state, verification, certificate, updated_by)
           VALUES (${write.hostname}, ${write.repoId}, ${write.pollId}, 'pending', 'pending', 'pending', ${write.actorId})`
       } else {
-        yield* sql`
+        try sql`
           UPDATE domains SET poll_id = ${write.pollId}, problem = NULL,
             updated_by = ${write.actorId}, updated_at = now()
           WHERE hostname = ${write.hostname}`
       }
-      yield* sql`
+      try sql`
         INSERT INTO domain_events (hostname, repo_id, action, actor_id, invocation_key, state)
         VALUES (${write.hostname}, ${write.repoId}, ${action}, ${write.actorId}, ${write.invocationKey}, 'pending')`
-      yield* ProtectedAuthority.requireAtCommit(write.authority)
+      try ProtectedAuthority.requireAtCommit(write.authority)
       return action
-    }))
-  })
+    })
+  }
 
 /** What one check found. A verdict it didn't get (`undefined`) keeps the row's last one. */
 export interface Check {
@@ -163,13 +165,13 @@ export interface Check {
  */
 export const record = (
   check: Check,
-): Effect.Effect<"written" | "removed" | "superseded" | "denied" | "unavailable", unknown, SqlClient.SqlClient> =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    return yield* sql.withTransaction(Effect.gen(function* () {
-      const held = yield* authorized(check.authority)
+): ("written" | "removed" | "superseded" | "denied" | "unavailable")!unknown!SqlClient.SqlClient =>
+  effect {
+    const sql = try SqlClient.SqlClient
+    return try sql.withTransaction(effect {
+      const held = try authorized(check.authority)
       if (held !== "held") return held
-      const [before] = yield* sql<{
+      const [before] = try sql<{
         readonly repoId: string
         readonly pollId: string
         readonly state: string
@@ -179,7 +181,7 @@ export const record = (
         WHERE hostname = ${check.hostname} FOR UPDATE`
       if (before === undefined || before.state === "removing") return "removed" as const
       if (before.pollId !== check.pollId) return "superseded" as const
-      yield* sql`
+      try sql`
         UPDATE domains SET provider_id = COALESCE(${check.providerId ?? null}, provider_id), state = ${check.state},
           verification = COALESCE(${check.verification ?? null}, verification),
           certificate = COALESCE(${check.certificate ?? null}, certificate),
@@ -187,14 +189,14 @@ export const record = (
           problem = ${check.problem}, checked_at = now()
         WHERE hostname = ${check.hostname}`
       if (before.state !== check.state || before.problem !== check.problem) {
-        yield* sql`
+        try sql`
           INSERT INTO domain_events (hostname, repo_id, action, state, problem)
           VALUES (${check.hostname}, ${before.repoId}, 'check', ${check.state}, ${check.problem})`
       }
-      yield* ProtectedAuthority.requireAtCommit(check.authority)
+      try ProtectedAuthority.requireAtCommit(check.authority)
       return "written" as const
-    }))
-  })
+    })
+  }
 
 /**
  * Marks the admitted registration as removing and records `remove` once. Returns its generation and provider id,
@@ -209,18 +211,18 @@ export const withdraw = (write: {
   readonly invocationKey: string
   readonly pollId?: string | null | undefined
   readonly authority?: Authority
-}): Effect.Effect<Option.Option<Pick<Row, "repoId" | "pollId" | "providerId">> | "stale", unknown, SqlClient.SqlClient> =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    return yield* sql.withTransaction(Effect.gen(function* () {
-      if ((yield* authorized(write.authority)) !== "held") return "stale" as const
-      const [receipt] = yield* sql<{ readonly id: string }>`
+}): (Option.Option<Pick<Row, "repoId" | "pollId" | "providerId">> | "stale")!unknown!SqlClient.SqlClient =>
+  effect {
+    const sql = try SqlClient.SqlClient
+    return try sql.withTransaction(effect {
+      if ((try authorized(write.authority)) !== "held") return "stale" as const
+      const [receipt] = try sql<{ readonly id: string }>`
         SELECT id FROM domain_events WHERE invocation_key = ${write.invocationKey} AND action = 'remove'
           AND hostname = ${write.hostname} AND repo_id = ${write.repoId}`
       if (receipt !== undefined) {
         // The first try marked its row and recorded `remove` together. Its row is still removing, or erased: a row
         // claimed since (`add` after the receipt) is another registration.
-        const [marked] = yield* sql<Pick<Row, "repoId" | "pollId" | "providerId">>`
+        const [marked] = try sql<Pick<Row, "repoId" | "pollId" | "providerId">>`
           SELECT repo_id AS "repoId", poll_id AS "pollId", provider_id AS "providerId" FROM domains
           WHERE hostname = ${write.hostname} AND repo_id = ${write.repoId} AND state = 'removing'
             AND NOT EXISTS (
@@ -228,19 +230,19 @@ export const withdraw = (write: {
         return Option.fromUndefinedOr(marked)
       }
       if (write.pollId == null) return Option.none()
-      const [row] = yield* sql<Pick<Row, "repoId" | "pollId" | "providerId">>`
+      const [row] = try sql<Pick<Row, "repoId" | "pollId" | "providerId">>`
         UPDATE domains SET state = 'removing', updated_by = ${write.actorId}, updated_at = now()
         WHERE hostname = ${write.hostname} AND repo_id = ${write.repoId}
           AND poll_id = ${write.pollId}
         RETURNING repo_id AS "repoId", poll_id AS "pollId", provider_id AS "providerId"`
       if (row === undefined) return Option.none()
-      yield* sql`
+      try sql`
         INSERT INTO domain_events (hostname, repo_id, action, actor_id, invocation_key, state)
         VALUES (${write.hostname}, ${write.repoId}, 'remove', ${write.actorId}, ${write.invocationKey}, 'removing')`
-      yield* ProtectedAuthority.requireAtCommit(write.authority)
+      try ProtectedAuthority.requireAtCommit(write.authority)
       return Option.some(row)
-    }))
-  })
+    })
+  }
 
 /**
  * Deletes the exact generation withdrawn before the provider call. A changed or absent generation is superseded.
@@ -249,26 +251,28 @@ export const withdraw = (write: {
 export const erase = (
   registration: Pick<Row, "hostname" | "repoId" | "pollId"> | string,
   authority?: Authority,
-): Effect.Effect<"erased" | "stale" | "superseded", unknown, SqlClient.SqlClient> =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql.withTransaction(Effect.gen(function* () {
+): ("erased" | "stale" | "superseded")!unknown!SqlClient.SqlClient =>
+  effect {
+    const sql = try SqlClient.SqlClient
+    return try sql.withTransaction(effect {
       // A legacy hostname-only request cannot establish which registration it withdrew.
-      if (typeof registration === "string" || (yield* authorized(authority)) !== "held") return "stale" as const
-      const erased = yield* sql`DELETE FROM domains WHERE hostname = ${registration.hostname} AND state = 'removing'
+      if (typeof registration === "string" || (try authorized(authority)) !== "held") return "stale" as const
+      const erased = try sql`DELETE FROM domains WHERE hostname = ${registration.hostname} AND state = 'removing'
         AND repo_id = ${registration.repoId} AND poll_id = ${registration.pollId} RETURNING poll_id`
       if (erased.length === 0) return "superseded" as const
-      yield* ProtectedAuthority.requireAtCommit(authority)
+      try ProtectedAuthority.requireAtCommit(authority)
       return "erased" as const
-    })))
+    })
+  }
 
 /** The repository that holds `hostname`, if any: what a route checks before it starts a claim. */
-export const holder = (hostname: string): Effect.Effect<Option.Option<string>, unknown, SqlClient.SqlClient> =>
-  Effect.map(read(hostname), Option.map((row) => row.repoId))
+export const holder = (hostname: string): Option.Option<string>!unknown!SqlClient.SqlClient =>
+  map(read(hostname), Option.map((row) => row.repoId))
 
 /** Whether `hostname` is a verified custom domain, its row `active`: a host sign-in hands sessions to (decision 0130). */
-export const active = (hostname: string): Effect.Effect<boolean, unknown, SqlClient.SqlClient> =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const rows = yield* sql`SELECT 1 FROM domains WHERE hostname = ${hostname} AND state = 'active'`
+export const active = (hostname: string): boolean!unknown!SqlClient.SqlClient =>
+  effect {
+    const sql = try SqlClient.SqlClient
+    const rows = try sql`SELECT 1 FROM domains WHERE hostname = ${hostname} AND state = 'active'`
     return rows.length > 0
-  })
+  }
