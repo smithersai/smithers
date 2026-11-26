@@ -23,7 +23,7 @@ import {
   TriagePause,
   TriageRunAgain,
   type WriteRequested,
-} from "./flows"
+} from "./flows.vibe"
 import { writes } from "./metrics"
 import { Queued, type QueuedWrite } from "./schema"
 

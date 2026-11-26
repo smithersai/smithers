@@ -3,7 +3,6 @@ import { acknowledgeNavigation, admissionReceipt, beginAdmission, identifyAdmiss
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { keep } from "./writes"
 import type { Commitment } from "./lifecycle"
-import { Clock, Effect, Metric, Option, Stream } from "effect"
 import { AuthStore } from "../auth/store"
 import { FlowDispatch } from "../../flows/dispatch"
 import { repoId } from "../repo/contract"
@@ -30,11 +29,17 @@ import { IssuesStore } from "./store"
  * sync without showing a page, so the page the click opens has its rows.
  */
 export const warm = (owner: string, name: string, number?: number) =>
-  Effect.flatMap(IssuesStore, (store) => Effect.asVoid(store.forRepo(repoId(owner, name), number)))
+  effect {
+    const store = try IssuesStore
+    try store.forRepo(repoId(owner, name), number)
+  }
 
 /** Reconnects this tab's issue shapes after one stopped or failed; the SDK owns retries and resumption. */
-export const reconnectShapes = Effect.flatMap(IssuesStore, (store) =>
-  Effect.all([store.routed().reconnect, store.writes.reconnect], { discard: true }))
+export const reconnectShapes = effect {
+  const store = try IssuesStore
+  const routed = try sync(() => store.routed())
+  try all([routed.reconnect, store.writes.reconnect], { discard: true })
+}
 
 /** How long a search waits for the next keypress before it asks the route. */
 export const SEARCH_AFTER = "150 millis"
@@ -44,31 +49,30 @@ export const SEARCH_AFTER = "150 millis"
  * list hasn't installed (a direct issue may keep its heading after the list installs). Waits for the repository to open (the route opens it) and for its authority's answer.
  */
 const keepable = (store: IssuesStore["Service"], id: string, issue: boolean) =>
-  Effect.gen(function* () {
+  effect {
     if (issue) {
-      const status = yield* store.authority(id).pipe(Stream.filter((status) => status !== "unknown"), Stream.runHead)
+      const status = try (store.authority(id) |> Stream.filter(%, (status) => status !== "unknown") |> Stream.runHead(%))
       return Option.getOrUndefined(status) === "allowed"
     }
-    const repo = yield* store.forRepo(id)
-    const rows = yield* repo.accessState.rows.pipe(
-      Stream.filter((rows) => rows[0]?.status !== "unknown"),
-      Stream.runHead,
-    )
+    const repo = try store.forRepo(id)
+    const rows = try (repo.accessState.rows
+      |> Stream.filter(%, (rows) => rows[0]?.status !== "unknown")
+      |> Stream.runHead(%))
     const row = Option.getOrThrow(rows)[0]!
     return row.status === "allowed" && row.installed !== true
-  })
+  }
 
 /** Whether this tab already knows it may not keep an answer on `id`: refused, or its list installed. Never waits. */
 const declined = (store: IssuesStore["Service"], id: string, issue: boolean) =>
-  Effect.gen(function* () {
+  effect {
     // The server authorizes the early read now; publication waits for device authority in `keepable` and the gate.
     // A summary transport failure must not prevent this independent read from answering.
     if (issue) return false
-    const repo = store.opened(id)
+    const repo = try sync(() => store.opened(id))
     if (repo === undefined) return false
-    const row = Option.getOrUndefined(yield* Stream.runHead(repo.accessState.rows))?.[0]
+    const row = Option.getOrUndefined(try Stream.runHead(repo.accessState.rows))?.[0]
     return row !== undefined && row.status !== "unknown" && !(row.status === "allowed" && row.installed !== true)
-  })
+  }
 
 /**
  * A person typed search `q` in a list that hasn't synced yet: the issues route answers it, under the shapes' own rule,
@@ -79,71 +83,74 @@ const declined = (store: IssuesStore["Service"], id: string, issue: boolean) =>
  * repository forget it (`forgetSearch`). One log line `issues.search` with the outcome and time; never the search.
  */
 export const search = (owner: string, name: string, q: string, number?: number) =>
-  Effect.gen(function* () {
-    const store = yield* IssuesStore
+  effect {
+    const store = try IssuesStore
     const id = repoId(owner, name)
     const asked = q.trim()
     const issue = number !== undefined
-    yield* store.forgetSearch
+    try store.forgetSearch
     const generation = store.searches.latest
     store.searches.repoId = id
     store.searches.issue = issue
     if (asked === "") return
-    if (!issue) yield* Effect.sleep(SEARCH_AFTER)
-    if (store.searches.latest !== generation || (yield* declined(store, id, issue))) return
-    const startedAt = yield* Clock.currentTimeMillis
-    const answer = yield* Effect.result(store.search(owner, name, asked, number))
-    const fields = { durationMs: (yield* Clock.currentTimeMillis) - startedAt, purpose: issue ? "issue" : "search" }
-    yield* Metric.update(Metric.withAttributes(reads, { purpose: fields.purpose, outcome: answer._tag === "Failure" ? "failed" : "answered" }), 1)
+    if (!issue) try sleep(SEARCH_AFTER)
+    if (store.searches.latest !== generation || (try declined(store, id, issue))) return
+    const startedAt = try Clock.currentTimeMillis
+    const answer = try result(store.search(owner, name, asked, number))
+    const fields = { durationMs: (try Clock.currentTimeMillis) - startedAt, purpose: issue ? "issue" : "search" }
+    try Metric.update(Metric.withAttributes(reads, { purpose: fields.purpose, outcome: answer._tag === "Failure" ? "failed" : "answered" }), 1)
     if (answer._tag === "Failure") {
-      return yield* Effect.logWarning("issues.search").pipe(
-        Effect.annotateLogs({ ...fields, outcome: "failed", status: answer.failure.status ?? 0 }),
-      )
+      try (logWarning("issues.search") |> annotateLogs(%, { ...fields, outcome: "failed", status: answer.failure.status ?? 0 }))
+      return
     }
-    yield* Effect.logInfo("issues.search").pipe(Effect.annotateLogs({ ...fields, outcome: "answered", count: answer.success.length }))
-    if (store.searches.latest !== generation || !(yield* keepable(store, id, issue))) return
+    try (logInfo("issues.search") |> annotateLogs(%, { ...fields, outcome: "answered", count: answer.success.length }))
+    if (store.searches.latest !== generation || !(try keepable(store, id, issue))) return
     if (store.searches.latest !== generation) return
-    yield* Effect.orDie(store.searched.insert({ id: SEARCHED, repoId: id, q: asked, issues: answer.success }))
-  }).pipe(Effect.annotateLogs({ feature: "issues" }), Effect.withSpan("issues.read", { attributes: { purpose: number !== undefined ? "issue" : "search" } }))
+    try orDie(store.searched.insert({ id: SEARCHED, repoId: id, q: asked, issues: answer.success }))
+  }
+    |> annotateLogs(%, { feature: "issues" })
+    |> withSpan(%, "issues.read", { attributes: { purpose: number !== undefined ? "issue" : "search" } })
 
 /** Restores a URL's list search after navigation, including Back from a direct read that replaced its answer. */
-export const restoreSearch = (owner: string, name: string, q?: string) => Effect.gen(function* () {
-  const store = yield* IssuesStore
+export const restoreSearch = (owner: string, name: string, q?: string) => effect {
+  const store = try IssuesStore
   const asked = q?.trim() ?? ""
-  const retained = Option.getOrUndefined(yield* store.searched.get(SEARCHED))
+  const retained = Option.getOrUndefined(try store.searched.get(SEARCHED))
   if (!store.searches.issue && retained?.repoId === repoId(owner, name) && retained.q === asked) return
   // `search` advances the generation before asking, so a late issue response cannot overwrite the restored list.
-  yield* search(owner, name, asked)
-})
+  try search(owner, name, asked)
+}
 
 /** The direct page's early heading read, independent of Electric and without a typing debounce. */
 export const readIssue = (owner: string, name: string, number: number) => search(owner, name, `#${number}`, number)
 
 /** A person's Try again on an unavailable direct issue. */
-export const retry = Effect.flatMap(AuthStore, (auth) => auth.askCheck).pipe(
-  Effect.andThen(reconnectShapes),
-  Effect.andThen(recordShapeRetry("issue")),
-)
+export const retry = effect {
+  const auth = try AuthStore
+  try auth.askCheck
+  try reconnectShapes
+  return try recordShapeRetry("issue")
+}
 
 /**
  * What the route calls on a navigation: shows `owner/name`'s issues, or, with `number`, that issue; and opens that
  * repository's issues, its own shapes (decision 0079 slice 1b), once.
  */
 export const open = (owner: string, name: string, number?: number, writeId?: string | null) =>
-  Effect.gen(function* () {
-    const store = yield* IssuesStore
+  effect {
+    const store = try IssuesStore
     const id = repoId(owner, name)
-    yield* store.forRepo(id, number)
-    yield* store.route(id, number)
+    try store.forRepo(id, number)
+    try store.route(id, number)
     // Another repository: what its search answered goes.
-    if (store.searches.repoId !== id) yield* store.forgetSearch
-    const intents = yield* Effect.serviceOption(WriteIntents)
+    if (store.searches.repoId !== id) try store.forgetSearch
+    const intents = try serviceOption(WriteIntents)
     const resumed = Option.isSome(intents) ? intents.value.resumed.get(`${owner}/${name}`) : undefined
     if (typeof writeId === "string" && Option.isSome(intents)) {
-      yield* acknowledgeNavigation(writeId)
+      try acknowledgeNavigation(writeId)
       intents.value.resumed.delete(`${owner}/${name}`)
     }
-    yield* store.view.update(VIEW, (row) => {
+    try store.view.update(VIEW, (row) => {
       row.owner = owner
       row.name = name
       row.repoId = id
@@ -155,24 +162,24 @@ export const open = (owner: string, name: string, number?: number, writeId?: str
       if (number === undefined && writeId === null && resumed !== undefined) row.createdWriteId = resumed
       delete row.submissionFailed
     })
-  }).pipe(Effect.orDie)
+  } |> orDie(%)
 
 /** Changes draft `key`, made empty first if the device has none. Answers the change's transaction. */
 const changeDraft = (key: string, change: Partial<Omit<Draft, "id">>) =>
-  Effect.gen(function* () {
-    const { drafts } = yield* IssuesStore
-    if (Option.isNone(yield* drafts.get(key))) return yield* drafts.insert({ id: key, title: "", body: "", ...change })
-    return yield* drafts.update(key, (draft) => void Object.assign(draft, change))
-  }).pipe(Effect.orDie)
+  effect {
+    const { drafts } = try IssuesStore
+    if (Option.isNone(try drafts.get(key))) return try drafts.insert({ id: key, title: "", body: "", ...change })
+    return try drafts.update(key, (draft) => void Object.assign(draft, change))
+  } |> orDie(%)
 
 export const setNewTitle = (owner: string, name: string, title: string) =>
-  Effect.asVoid(changeDraft(newDraftKey(repoId(owner, name)), { title }))
+  asVoid(changeDraft(newDraftKey(repoId(owner, name)), { title }))
 
 export const setNewBody = (owner: string, name: string, body: string) =>
-  Effect.asVoid(changeDraft(newDraftKey(repoId(owner, name)), { body }))
+  asVoid(changeDraft(newDraftKey(repoId(owner, name)), { body }))
 
 export const setCommentDraft = (owner: string, name: string, number: number, body: string) =>
-  Effect.asVoid(changeDraft(commentDraftKey(repoId(owner, name), number), { body }))
+  asVoid(changeDraft(commentDraftKey(repoId(owner, name), number), { body }))
 
 /** A new issue's draft as `issue/create` takes it: a title that isn't blank, and both within GitHub's limits. */
 export const newIssueOf = (draft: Draft | undefined) => {
@@ -188,125 +195,134 @@ export const commentBodyOf = (draft: Draft | undefined) => {
 }
 
 const setSubmitting = (submitting: boolean) =>
-  Effect.flatMap(IssuesStore, ({ view }) => Effect.orDie(view.update(VIEW, (row) => void (row.submitting = submitting))))
+  effect {
+    const { view } = try IssuesStore
+    return try orDie(view.update(VIEW, (row) => void (row.submitting = submitting)))
+  }
 
 /** The view's press is on its way already. */
-const submitting = Effect.flatMap(IssuesStore, ({ view }) => Effect.map(view.get(VIEW), (row) => Option.getOrThrow(row).submitting))
+const submitting = effect {
+  const { view } = try IssuesStore
+  return Option.getOrThrow(try view.get(VIEW)).submitting
+}
 
 /** Retain recoverable intent, await local admission, then join the public flow under the same identity. */
-const admitWrite = (write: Omit<QueuedWrite, "id" | "credential">, join: (executionId: string) => Effect.Effect<unknown, unknown>, key?: string) =>
-  Effect.gen(function* () {
-    const store = yield* IssuesStore
+const admitWrite = (write: Omit<QueuedWrite, "id" | "credential">, joinFlow: (executionId: string) => unknown!unknown, key?: string) =>
+  effect {
+    const store = try IssuesStore
     const { drafts, view } = store
-    const admission = yield* beginAdmission(write.op, write as unknown as Readonly<Record<string, unknown>>, undefined, key)
+    const admission = try beginAdmission(write.op, write as unknown as Readonly<Record<string, unknown>>, undefined, key)
     if (Option.isNone(admission)) {
-      yield* view.update(VIEW, value => { value.submissionFailed = true })
+      try view.update(VIEW, value => { value.submissionFailed = true })
       return false
     }
-    const executionId = yield* executionOf(admission.value)
-    yield* view.update(VIEW, (row) => {
+    const executionId = try executionOf(admission.value)
+    try view.update(VIEW, (row) => {
       if (key !== undefined) { row.submitting = true; row.submissionKey = executionId }
       delete row.submissionFailed
     })
-    const id = yield* Uuid.v5(WRITE_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
-    yield* identifyAdmission(admission.value, executionId, id)
-    const row = { ...write, id, repoId: repoId(...write.repo.split("/") as [string, string]), queuedAt: yield* Clock.currentTimeMillis, v: 3 as const }
+    const id = try (Uuid.v5(WRITE_ID_NAMESPACE, executionId) |> Effect.provide(%, WebCrypto.layer) |> orDie(%))
+    try identifyAdmission(admission.value, executionId, id)
+    const row = { ...write, id, repoId: repoId(...write.repo.split("/") as [string, string]), queuedAt: try Clock.currentTimeMillis, v: 3 as const }
     // A recoverable receipt precedes every asynchronous admission. If this tab closes here, no old tab is needed
     // to recover the text, and Retry uses this same write identity.
-    const kept = yield* Effect.result(admissionReceipt(keep(store.requested, row, "not_sent", null), admission.value.commandId, write.op, "recovery"))
-    const current = Option.getOrThrow(yield* view.get(VIEW))
+    const kept = try result(admissionReceipt(keep(store.requested, row, "not_sent", null), admission.value.commandId, write.op, "recovery"))
+    const current = Option.getOrThrow(try view.get(VIEW))
     if (kept._tag === "Failure") {
-      if (key === undefined || current.submissionKey === executionId) yield* view.update(VIEW, (value) => {
-        if (key !== undefined) value.submitting = false
-        value.submissionFailed = true
-      })
-      if (write.op === "issue/comment") yield* Metric.update(Metric.withAttributes(submissionFailures, { reason: "storage" }), 1)
-      yield* finishAdmission(admission.value, false)
-      yield* Metric.update(Metric.withAttributes(admissions, { outcome: "storage_failed" }), 1)
-      yield* Effect.logWarning("issues.write.admission").pipe(Effect.annotateLogs({ feature: "issues", writeId: id, op: row.op, outcome: "storage_failed" }))
+      if (key === undefined || current.submissionKey === executionId) {
+        try view.update(VIEW, (value) => {
+          if (key !== undefined) value.submitting = false
+          value.submissionFailed = true
+        })
+      }
+      if (write.op === "issue/comment") try Metric.update(Metric.withAttributes(submissionFailures, { reason: "storage" }), 1)
+      try finishAdmission(admission.value, false)
+      try Metric.update(Metric.withAttributes(admissions, { outcome: "storage_failed" }), 1)
+      try (logWarning("issues.write.admission") |> annotateLogs(%, { feature: "issues", writeId: id, op: row.op, outcome: "storage_failed" }))
       return false
     }
-    if (write.op === "issue/create" && current.submissionKey === executionId) yield* view.update(VIEW, (value) => { value.createdWriteId = id })
-    const { queued } = yield* store.queue(row)
-    const latest = Option.getOrThrow(yield* view.get(VIEW))
+    if (write.op === "issue/create" && current.submissionKey === executionId) try view.update(VIEW, (value) => { value.createdWriteId = id })
+    const { queued } = try store.queue(row)
+    const latest = Option.getOrThrow(try view.get(VIEW))
     let cleaned = true
     if (latest.submissionKey === executionId) {
       if (queued && key !== undefined) {
-        const source = yield* drafts.get(key)
+        const source = try drafts.get(key)
         if (Option.isSome(source) && source.value.body === (write.body ?? "") &&
           (write.op !== "issue/create" || source.value.title.trim() === write.title)) {
-          cleaned = yield* admissionReceipt(drafts.delete(key).pipe(Effect.flatMap((removed) => removed.persisted)), admission.value.commandId, write.op, "source").pipe(Effect.as(true), Effect.orElseSucceed(() => false))
+          const removed = drafts.delete(key) |> flatMap(%, (removed) => removed.persisted)
+          cleaned = (admissionReceipt(removed, admission.value.commandId, write.op, "source") |> Effect.as(%, true)) catch () => false
         }
       }
-      if (!queued && write.op === "issue/comment") yield* view.update(VIEW, (value) => { value.submissionFailed = true })
-      yield* setSubmitting(false)
+      if (!queued && write.op === "issue/comment") try view.update(VIEW, (value) => { value.submissionFailed = true })
+      try setSubmitting(false)
     }
-    yield* finishAdmission(admission.value, queued, cleaned)
-    yield* Metric.update(Metric.withAttributes(admissions, { outcome: queued ? "queued" : "not_admitted" }), 1)
-    yield* Effect.logInfo("issues.write.admission").pipe(Effect.annotateLogs({
+    try finishAdmission(admission.value, queued, cleaned)
+    try Metric.update(Metric.withAttributes(admissions, { outcome: queued ? "queued" : "not_admitted" }), 1)
+    try (logInfo("issues.write.admission") |> annotateLogs(%, {
       feature: "issues", writeId: id, op: row.op, outcome: queued ? "queued" : "not_admitted",
     }))
     // The durable outbox already owns delivery. The public flow joins the same write, so engine startup and the
     // asking tab's lifetime cannot hold admission hostage or create a second issue.
-    if (queued) yield* join(executionId).pipe(Effect.ignore, Effect.forkIn(store.scope, { startImmediately: true }))
+    if (queued) try (joinFlow(executionId) |> ignore(%) |> forkIn(%, store.scope, { startImmediately: true }))
     return key !== undefined || queued
-  })
+  }
 
-export const create = (owner: string, name: string) => Effect.gen(function* () {
-  const { drafts } = yield* IssuesStore
+export const create = (owner: string, name: string) => effect {
+  const { drafts } = try IssuesStore
   const key = newDraftKey(repoId(owner, name))
-  const issue = newIssueOf(Option.getOrUndefined(yield* drafts.get(key)))
-  if (issue === undefined || (yield* submitting)) return false
-  const flows = yield* FlowDispatch
+  const issue = newIssueOf(Option.getOrUndefined(try drafts.get(key)))
+  if (issue === undefined || (try submitting)) return false
+  const flows = try FlowDispatch
   const payload = { repo: `${owner}/${name}`, ...issue }
-  return yield* admitWrite({ ...payload, op: "issue/create", number: 0 }, (executionId) => flows.dispatch("issue/create", payload, { door: "button", executionId }), key)
-})
+  return try admitWrite({ ...payload, op: "issue/create", number: 0 }, (executionId) => flows.dispatch("issue/create", payload, { door: "button", executionId }), key)
+}
 
 /** Retry a locally retained admission under its original id; the server and outbox deduplicate it. */
-export const retryWrite = (writeId: string) => whileAdmitting(writeId, Effect.gen(function* () {
-  const store = yield* IssuesStore
-  const held = yield* store.requested.get(writeId)
+export const retryWrite = (writeId: string) => whileAdmitting(writeId, effect {
+  const store = try IssuesStore
+  const held = try store.requested.get(writeId)
   if (Option.isNone(held) || held.value.status !== "not_sent" || held.value.reason !== null) return
-  const { queued } = yield* store.queue(held.value)
+  const { queued } = try store.queue(held.value)
   let cleaned = true
   if (queued) {
     const row = held.value
     const key = row.op === "issue/create" ? newDraftKey(row.repoId) : commentDraftKey(row.repoId, row.number)
-    const draft = yield* store.drafts.get(key)
+    const draft = try store.drafts.get(key)
     if (Option.isSome(draft) && draft.value.body === row.body && (row.op !== "issue/create" || draft.value.title.trim() === row.title)) {
-      cleaned = yield* store.drafts.delete(key).pipe(Effect.flatMap((removed) => removed.persisted), Effect.as(true), Effect.orElseSucceed(() => false))
-      yield* store.view.update(VIEW, (view) => { if (view.draftKey === key) delete view.submissionFailed }).pipe(Effect.orDie)
+      cleaned = (store.drafts.delete(key) |> flatMap(%, (removed) => removed.persisted) |> Effect.as(%, true)) catch () => false
+      try orDie(store.view.update(VIEW, (view) => { if (view.draftKey === key) delete view.submissionFailed }))
     }
   }
-  if (queued) cleaned = (yield* clearWriteComposer(writeId)) && cleaned
-  yield* finishRetainedAdmission(writeId, queued, cleaned)
-}))
+  if (queued) cleaned = (try clearWriteComposer(writeId)) && cleaned
+  try finishRetainedAdmission(writeId, queued, cleaned)
+})
 
 /** Comment on issue `number` of `owner/name`: `issue/comment` with its draft. Answers whether it ran. */
 export const comment = (owner: string, name: string, number: number) =>
-  Effect.gen(function* () {
-    const { drafts, requested } = yield* IssuesStore
+  effect {
+    const { drafts, requested } = try IssuesStore
     const key = commentDraftKey(repoId(owner, name), number)
-    const body = commentBodyOf(Option.getOrUndefined(yield* drafts.get(key)))
-    if (body === undefined || (yield* submitting)) return false
-    const recovery = (yield* requested.toArray).find((row) => row.op === "issue/comment" && row.repoId === repoId(owner, name) && row.number === number && row.body === body && row.status === "not_sent" && row.reason === null)
+    const body = commentBodyOf(Option.getOrUndefined(try drafts.get(key)))
+    if (body === undefined || (try submitting)) return false
+    const recovery = (try requested.toArray).find((row) => row.op === "issue/comment" && row.repoId === repoId(owner, name) && row.number === number && row.body === body && row.status === "not_sent" && row.reason === null)
     if (recovery !== undefined) {
-      yield* retryWrite(recovery.id)
+      try retryWrite(recovery.id)
       return true
     }
-    const flows = yield* FlowDispatch
+    const flows = try FlowDispatch
     const payload = { repo: `${owner}/${name}`, number, body }
-    return yield* admitWrite({ ...payload, op: "issue/comment", title: "" }, (executionId) => flows.dispatch("issue/comment", payload, { door: "button", executionId }), key)
-  })
+    return try admitWrite({ ...payload, op: "issue/comment", title: "" }, (executionId) => flows.dispatch("issue/comment", payload, { door: "button", executionId }), key)
+  }
 
 /** Every issue outbox operation owns its durable admission before the button's action resolves. */
 const operation = <N extends "issue/triage" | "triage/run" | "triage/enable" | "triage/pause" | "issue/commitment">(
   op: N, payload: import("../../flows/dispatch").PayloadOf<N>, fields: Partial<QueuedWrite>,
-) => Effect.gen(function* () {
-  const flows = yield* FlowDispatch
-  return yield* admitWrite({ repo: payload.repo, op, title: "", body: "", number: 0, ...fields },
+) => effect {
+  const flows = try FlowDispatch
+  return try admitWrite({ repo: payload.repo, op, title: "", body: "", number: 0, ...fields },
     (executionId) => flows.dispatch(op, payload, { door: "button", executionId }))
-})
+}
 
 export const triage = (owner: string, name: string, number: number, decision: TriageDecision) =>
   operation("issue/triage", { repo: `${owner}/${name}`, number, decision }, { number, decision })
@@ -324,39 +340,39 @@ export const pauseTriage = (owner: string, name: string) =>
  * device has stored the draft; a draft the device couldn't store leaves the write Not sent, and Edit answers nothing.
  */
 const handle = (writeId: string, action: "edit" | "discard") =>
-  Effect.gen(function* () {
-    const { requested } = yield* IssuesStore
-    const found = yield* requested.get(writeId)
+  effect {
+    const { requested } = try IssuesStore
+    const found = try requested.get(writeId)
     if (Option.isNone(found)) return undefined
     const write = found.value
-    if (!(yield* forgetAdmission(WRITE_ID_NAMESPACE, write.id))) return undefined
+    if (!(try forgetAdmission(WRITE_ID_NAMESPACE, write.id))) return undefined
     const [owner, name] = write.repo.split("/") as [string, string]
     const created = write.op === "issue/create"
     if (action === "edit") {
       const draft = created
         ? changeDraft(newDraftKey(write.repoId), { title: write.title, body: write.body })
         : changeDraft(commentDraftKey(write.repoId, write.number), { body: write.body })
-      const stored = yield* Effect.result(Effect.flatMap(draft, (transaction) => transaction.persisted))
+      const stored = try result(flatMap(draft, (transaction) => transaction.persisted))
       if (stored._tag === "Failure") {
-        yield* Effect.logWarning("issues.pending").pipe(Effect.annotateLogs({ writeId, op: write.op, action, outcome: "storage_failed", feature: "issues" }))
+        try (logWarning("issues.pending") |> annotateLogs(%, { writeId, op: write.op, action, outcome: "storage_failed", feature: "issues" }))
         return undefined
       }
-      yield* Effect.ignore(Effect.flatMap(requested.delete(writeId), (transaction) => transaction.persisted))
-    } else yield* Effect.ignore(requested.delete(writeId))
-    yield* Metric.update(Metric.withAttributes(pendingActions, { action }), 1)
-    yield* Effect.logInfo("issues.pending").pipe(Effect.annotateLogs({ writeId, op: write.op, action, feature: "issues" }))
+      try ignore(flatMap(requested.delete(writeId), (transaction) => transaction.persisted))
+    } else try ignore(requested.delete(writeId))
+    try Metric.update(Metric.withAttributes(pendingActions, { action }), 1)
+    try (logInfo("issues.pending") |> annotateLogs(%, { writeId, op: write.op, action, feature: "issues" }))
     return created ? newIssuePath(owner, name) : issuePath(owner, name, write.number)
-  })
+  }
 
 /** Edit on a write that wasn't sent: its text goes back to its draft. Answers the path where that draft is edited. */
 export const edit = (writeId: string) => handle(writeId, "edit")
 
 /** Discard on a write that wasn't sent: it goes. */
-export const discard = (writeId: string) => Effect.asVoid(handle(writeId, "discard"))
+export const discard = (writeId: string) => asVoid(handle(writeId, "discard"))
 
 /** A Maintainer's own press; the write is admitted and completed in the durable outbox. */
 export const setCommitment = (owner: string, name: string, number: number, commitment: Commitment, previousWriteId?: string) =>
-  Effect.gen(function* () {
-    const kept = yield* operation("issue/commitment", { repo: `${owner}/${name}`, number, commitment }, { number, commitment })
-    if (kept && previousWriteId !== undefined) yield* discard(previousWriteId)
-  })
+  effect {
+    const kept = try operation("issue/commitment", { repo: `${owner}/${name}`, number, commitment }, { number, commitment })
+    if (kept && previousWriteId !== undefined) try discard(previousWriteId)
+  }

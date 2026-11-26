@@ -1,7 +1,7 @@
 import { Deferred, Effect } from "effect"
 import { TestClock } from "effect/testing"
 import { expect, test } from "vitest"
-import { SearchNotAnswered } from "./api"
+import { SearchNotAnswered } from "./api.vibe"
 import { earlySearch } from "./earlySearch"
 
 test("a refused early read expires, rapid input cancels old reads, and blank input sends nothing", async () => {

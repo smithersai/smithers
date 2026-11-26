@@ -5,7 +5,7 @@ import { TodosStore } from "../todos/store"
 import { PendingSnapshot } from "@smthrs/platform-browser"
 import { resumeAdmissions } from "../../resumeAdmissions"
 import { reloadAfter } from "../../test/reloadTiming"
-import { comment as commentAction, create as createAction, edit as editAction, open as openAction, retryWrite, search as searchAction, triage as triageAction } from "./actions"
+import { comment as commentAction, create as createAction, edit as editAction, open as openAction, readIssue, restoreSearch, retryWrite, search as searchAction, triage as triageAction } from "./actions.vibe"
 import { dispatches, FlowDispatch } from "../../flows/dispatch"
 import { replaceRole, RepoStore } from "../repo/store"
 import { RepoClient } from "../repo/api"
@@ -47,7 +47,7 @@ import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands"
 import { repoId } from "../repo/contract"
-import { IssuesClient, SearchNotAnswered, WriteNotTaken } from "./api"
+import { IssuesClient, SearchNotAnswered, WriteNotTaken } from "./api.vibe"
 import {
   ACCEPTED_LABEL,
   commentId,
@@ -64,7 +64,7 @@ import {
   writeExecutionId,
   writesRoute,
 } from "./contract"
-import { Issues } from "./issues"
+import { Issues } from "./issues.vibe"
 import { IssueWrites } from "./writes"
 import { AuthClient, AuthUnreachable } from "../auth/api"
 import { detailsUnlisted, evictions, pendingActions, sends } from "./metrics"
@@ -81,7 +81,7 @@ import {
   syncsHere,
   triageSwitchOf,
 } from "./view"
-import { SEARCHED } from "./schema"
+import { type Access, SEARCHED } from "./schema"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -480,6 +480,66 @@ describe("a new issue", () => {
     expect(row()).toBeUndefined()
     // The real route: nothing of this repository yet, an empty first page.
     expect(await tab.runtime.runPromise(tab.store.search(OWNER, NAME, "nothing-matches"))).toEqual([])
+  }, WITHIN)
+
+  test("a direct issue's heading read asks at once and keeps the issue once this tab may read it; Back asks the list's search again", async () => {
+    // Unopened, so the list's summaries never arrive and forget a search mid-test.
+    const tab = await open()
+    await tab.runtime.runPromise(tab.store.forgetSearch)
+    const listed = (number: number) => [{ number, title: `#${number}`, state: "open", author: { login: null }, comments: 0, created_at: "c", updated_at: "u", triage: "", commitment: null }]
+    const asked: Array<{ readonly q: string; readonly number: number | undefined }> = []
+    // This tab's authority on the repository, as a test sets it: a direct read waits past `unknown`; the list's rows allow.
+    let authority: Access["status"] = "allowed"
+    const repoOf = () => ({ accessState: { rows: Stream.make([{ status: "allowed", installed: false }]) } }) as never
+    const store = {
+      ...tab.store,
+      authority: () => Stream.make<Array<Access["status"]>>("unknown", authority),
+      opened: repoOf,
+      forRepo: () => Effect.sync(repoOf),
+      search: (_owner: string, _name: string, q: string, number?: number) => Effect.sync(() => asked.push({ q, number })).pipe(
+        Effect.andThen(q === "#404" ? Effect.fail(new SearchNotAnswered({})) : Effect.succeed(listed(number ?? 1))),
+      ),
+    }
+    const run = <A, E>(action: Effect.Effect<A, E, IssuesStore>) => tab.runtime.runPromise(action.pipe(Effect.provideService(IssuesStore, store)))
+    const row = () => tab.store.searched.tanstack.toArray[0]
+    // Allowed: the route is asked for the exact number, and only that issue stays.
+    await run(readIssue(OWNER, NAME, 7))
+    expect(asked).toEqual([{ q: "#7", number: 7 }])
+    expect(tab.store.searches.issue).toBe(true)
+    expect(row()).toMatchObject({ repoId: REPO_ID, q: "#7", issues: listed(7) })
+    // Refused once this tab's authority answers: the answer goes. Not answered: nothing stays.
+    authority = "forbidden"
+    await run(readIssue(OWNER, NAME, 8))
+    expect(asked).toHaveLength(2)
+    expect(row()).toBeUndefined()
+    authority = "allowed"
+    await run(readIssue(OWNER, NAME, 404))
+    expect(asked).toHaveLength(3)
+    expect(row()).toBeUndefined()
+    // Back to the list: a direct read replaced its search, so the list's search is asked again, trimmed.
+    await run(restoreSearch(OWNER, NAME, " ab "))
+    expect(asked.at(-1)).toEqual({ q: "ab", number: undefined })
+    expect(tab.store.searches.issue).toBe(false)
+    expect(row()).toMatchObject({ repoId: REPO_ID, q: "ab", issues: listed(1) })
+    // The list's own answer still kept: nothing is asked. Another search is; none forgets the answer.
+    await run(restoreSearch(OWNER, NAME, "ab"))
+    expect(asked).toHaveLength(4)
+    await run(restoreSearch(OWNER, NAME, "other"))
+    expect(asked).toHaveLength(5)
+    expect(row()).toMatchObject({ q: "other" })
+    await run(restoreSearch(OWNER, NAME))
+    expect(asked).toHaveLength(5)
+    expect(row()).toBeUndefined()
+    await run(restoreSearch(OWNER, NAME, "fresh"))
+    expect(asked).toHaveLength(6)
+    expect(row()).toMatchObject({ q: "fresh" })
+    // The page's own actions, on the real store: a blank search forgets, a direct read is an issue's, and Back isn't.
+    tab.actions.search(OWNER, NAME, " ")
+    await until(() => expect(row()).toBeUndefined())
+    tab.actions.readIssue(OWNER, NAME, 1)
+    await until(() => expect(tab.store.searches.issue).toBe(true))
+    tab.actions.restoreSearch(OWNER, NAME)
+    await until(() => expect(tab.store.searches.issue).toBe(false))
   }, WITHIN)
 
   test("a failed device receipt keeps the draft and shows Not sent without starting delivery", async () => {

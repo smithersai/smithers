@@ -6,7 +6,7 @@ import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Deferred, Effect, Fiber, Option, Scope } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { nodeDevice, openTab, openTestApi, TEST_REPOSITORY, TestChatApi } from "./test/chatApi"
-import { Issues } from "./features/issues/issues"
+import { Issues } from "./features/issues/issues.vibe"
 import { IssuesStore } from "./features/issues/store"
 import { TodosStore } from "./features/todos/store"
 import { executionOf, WriteIntents, type WriteIntent } from "./writeAdmission"
@@ -41,7 +41,7 @@ for (const source of ["comment", "todo"] as const) test(`live and retried ${sour
   const todoDraft = { id: key, repo: TEST_REPOSITORY, repoId, title: "Retain failed cleanup", prompt: "Prompt", acceptance: [], answerId: null, createdAt: 1 }
   let failures = 0
   const failedReceipt = Effect.sync(() => { failures++; }).pipe(Effect.andThen(Effect.fail(new Collection.TransactionFailed({ cause: "quota" }))))
-  const { comment, retryWrite } = await import("./features/issues/actions")
+  const { comment, retryWrite } = await import("./features/issues/actions.vibe")
   const { commit, retryChange } = await import("./features/todos/actions")
   const issueDrafts = { ...tab.store.drafts, delete: (id: string | ReadonlyArray<string>) => tab.store.drafts.delete(id).pipe(Effect.map(write => ({ ...write, persisted: failedReceipt }))) }
   const todoDrafts = { ...tab.todos.drafts, delete: (id: string | ReadonlyArray<string>) => tab.todos.drafts.delete(id).pipe(Effect.map(write => ({ ...write, persisted: failedReceipt }))) }
@@ -148,7 +148,7 @@ test("an unresolved local recovery receipt cannot erase a press on immediate shu
   tab.issues.actions.setCommentDraft(owner, name, 45, "Retained before device persistence")
   const real = tab.store.requested
   const faulty = { ...real, insert: (row: Parameters<typeof real.insert>[0]) => real.insert(row).pipe(Effect.map(write => ({ ...write, persisted: Effect.never }))) }
-  const { comment } = await import("./features/issues/actions")
+  const { comment } = await import("./features/issues/actions.vibe")
   const fiber = tab.app.runFork(comment(owner, name, 45).pipe(Effect.provideService(IssuesStore, { ...tab.store, requested: faulty })))
   await until(() => expect(tab.snapshot.read()).toBeDefined())
   await Effect.runPromise(Fiber.interrupt(fiber))
@@ -159,7 +159,7 @@ test("input-storage refusal keeps source drafts and never admits a write", async
   const tab = await opening()
   await tab.issues.actions.open(owner, name)
   tab.issues.actions.setNewTitle(owner, name, "Keep this issue draft")
-  const { create, open } = await import("./features/issues/actions")
+  const { create, open } = await import("./features/issues/actions.vibe")
   const { commit, drop } = await import("./features/todos/actions")
   const refusing = { ...tab.intents, retain: () => false }
   expect(await tab.app.runPromise(create(owner, name).pipe(Effect.provideService(WriteIntents, refusing)))).toBe(false)
@@ -223,7 +223,7 @@ test("Discard draft cancels its retained commit after refusal and fences a runni
 for (const source of ["comment", "issue", "todo"] as const) {
   test(`an admission receipt cannot delete newer typing in its ${source} source draft`, async () => {
     const tab = await opening()
-    const { comment, create } = await import("./features/issues/actions")
+    const { comment, create } = await import("./features/issues/actions.vibe")
     const { commit } = await import("./features/todos/actions")
     const key = source === "comment" ? commentDraftKey(repoId, 45) : source === "issue" ? newDraftKey(repoId) : crypto.randomUUID()
     const gate = await Effect.runPromise(Deferred.make<void>())
@@ -251,7 +251,7 @@ for (const source of ["comment", "issue", "todo"] as const) {
 for (const source of ["issue", "todo", "legacy"] as const) test(`Retry fences Discard and completes the retained ${source} lifecycle`, async () => {
   const tab = await opening()
   const { beginAdmission, finishAdmission, identifyAdmission } = await import("./writeAdmission")
-  const { retryWrite, discard, comment } = await import("./features/issues/actions")
+  const { retryWrite, discard, comment } = await import("./features/issues/actions.vibe")
   const { retryChange, discard: discardTodo } = await import("./features/todos/actions")
   const todo = source === "todo"
   const flow = todo ? "todo/commit" : "issue/comment"

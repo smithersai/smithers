@@ -2,7 +2,7 @@ import { Effect, FiberHandle, Layer, Metric, Stream, SubscriptionRef } from "eff
 import { runners } from "../../boundary.vibe"
 import { RepoStore } from "../repo/store"
 import { repoId } from "../repo/contract"
-import { IssuesClient } from "./api"
+import { IssuesClient } from "./api.vibe"
 import type { EarlySearchHost } from "./earlySearch"
 import type { FirstPaintIssue } from "./contract"
 

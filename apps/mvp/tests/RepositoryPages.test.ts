@@ -25,7 +25,7 @@ import { SecretsScreen } from "../src/screens/secrets/SecretsScreen"
 import { RepoSettingsScreen } from "../src/screens/repo-settings/RepoSettingsScreen"
 import { ActionsScreen } from "../src/screens/actions/ActionsScreen"
 import { Home } from "../src/features/home/home.vibe"
-import { Issues } from "../src/features/issues/issues"
+import { Issues } from "../src/features/issues/issues.vibe"
 import { Runs } from "../src/features/runs/runs"
 import { Secrets } from "../src/features/secrets/secrets.vibe"
 

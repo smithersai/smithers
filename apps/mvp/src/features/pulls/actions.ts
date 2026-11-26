@@ -1,7 +1,7 @@
 import { Effect, Metric, Stream } from "effect"
 import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
-import { open as openIssues, reconnectShapes as reconnectIssueShapes } from "../issues/actions"
+import { open as openIssues, reconnectShapes as reconnectIssueShapes } from "../issues/actions.vibe"
 import { recordShapeRetry } from "../issues/shapeSync"
 import { repoId } from "../repo/contract"
 import { PullsClient } from "./api"

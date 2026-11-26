@@ -1,4 +1,4 @@
-import { IssuesClient } from "./api"
+import { IssuesClient } from "./api.vibe"
 import { finishEarlySearch } from "./earlySearch"
 import { observeInitialApplied } from "../../shapeApplied"
 import { admissionReceipt } from "../../writeAdmission"

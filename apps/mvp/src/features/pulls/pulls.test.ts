@@ -22,7 +22,7 @@ import { CHATAPI_ORIGIN, openTab, openTestApp, type TabOptions, TEST_REPOSITORY,
 import { read } from "../../test/otlp"
 import { itemId } from "../issues/contract"
 import { ISSUES_STREAM } from "../issues/contract"
-import { Issues } from "../issues/issues"
+import { Issues } from "../issues/issues.vibe"
 import { pageOf } from "../issues/view"
 import { shapeRetries } from "../issues/shapeSync"
 import { repoId } from "../repo/contract"

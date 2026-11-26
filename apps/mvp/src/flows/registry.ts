@@ -34,7 +34,7 @@ import {
   FlowSaveReference,
   FlowWriteReference,
 } from "../features/flows-ui/reference"
-import { IssueCommitment, IssueComment, IssueCreate, IssueTriage, TriageEnable, TriagePause, TriageRunAgain } from "../features/issues/flows"
+import { IssueCommitment, IssueComment, IssueCreate, IssueTriage, TriageEnable, TriagePause, TriageRunAgain } from "../features/issues/flows.vibe"
 import { Classify, Evaluate } from "../features/jev/flows"
 import { Cancel, Inspect, List, RepoRun, Resume, Retry, RetryFrom, Steer } from "../features/runs/flows"
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"

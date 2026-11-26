@@ -4,7 +4,7 @@ import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Effect } from "effect"
 import { describe, expect, test } from "vitest"
-import { commentBodyOf, newIssueOf } from "./actions"
+import { commentBodyOf, newIssueOf } from "./actions.vibe"
 import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from "./contract"
 import { Requested, type Sending } from "./schema"
 import {

@@ -5,7 +5,7 @@ import { expect, test } from "vitest"
 import { boundFetch } from "../../device/identity"
 import { OutboxWrites } from "../../outbox"
 import { SESSION_ROUTE } from "../auth/contract"
-import { IssuesClient } from "./api"
+import { IssuesClient } from "./api.vibe"
 import { Requested, type Sending } from "./schema"
 import { ISSUE_WRITE, IssueWrites, keep, keepParked } from "./writes"
 

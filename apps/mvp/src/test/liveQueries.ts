@@ -1,6 +1,6 @@
 /**
  * `queries` as React reads them: each live query starts when a page reads it, as `useLiveQuery` subscribes on render.
- * A feature's routed-repository queries are getters (src/features/issues/issues.ts, src/features/pulls/pulls.ts), so
+ * A feature's routed-repository queries are getters (src/features/issues/issues.vibe, src/features/pulls/pulls.ts), so
  * a read is the routed repository's, started then.
  */
 export const startedOnRead = <Q extends object>(queries: Q): Q =>

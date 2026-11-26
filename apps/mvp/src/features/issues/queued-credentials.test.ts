@@ -9,7 +9,7 @@ import { githubHarness } from "../../../worker/github/test/harness"
 import { confirmedSession, sql } from "../../../worker/github/test/fixtures"
 import { outboxUpgrade } from "../../device/registry"
 import { OutboxWrites } from "../../outbox"
-import { IssuesClient } from "./api"
+import { IssuesClient } from "./api.vibe"
 import { ISSUE_WRITE, IssueWrites } from "./writes"
 
 const server = testFile("queued_run_authority")

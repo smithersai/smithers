@@ -4,7 +4,7 @@ import { TabChannel } from "@smthrs/platform-browser"
 import { Cause, Effect, Exit, Metric, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import * as RunCredentials from "../../flows/credentials"
-import { IssueWriteRefused } from "./flows"
+import { IssueWriteRefused } from "./flows.vibe"
 import { writes } from "./metrics"
 import { queueWrite, TabIssues } from "./steps"
 

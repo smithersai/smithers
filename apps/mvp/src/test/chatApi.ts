@@ -137,7 +137,7 @@ import { TEXT_UPDATES_TABLE } from "../features/coedit/contract"
 import { CONVERSATION_PEOPLE_TABLE } from "../features/conversations/contract"
 import { DOMAINS_TABLE } from "../features/domains/contract"
 import { FLOW_DRAFTS_TABLE, FLOWS_TABLE } from "../features/flows-ui/contract"
-import type { IssuesClient } from "../features/issues/api"
+import type { IssuesClient } from "../features/issues/api.vibe"
 import {
   COMMENTS_TABLE,
   ITEMS_TABLE,

@@ -26,7 +26,10 @@ export const CONFIRM_401_HEADER = "x-smithers-confirm-401"
  */
 export const SESSION_CHECK_HEADER = "x-smithers-session-check"
 
-/** What a write's client reads from {@link SESSION_CHECK_HEADER}: `same_person`, or nothing. */
+/**
+ * What a write's client reads from {@link SESSION_CHECK_HEADER}: `same_person`, or nothing.
+ * @throws {never}
+ */
 export const sessionCheckOf = (headers: Readonly<Record<string, string | undefined>>) =>
   headers[SESSION_CHECK_HEADER] === "same_person" ? { sessionCheck: "same_person" as const } : {}
 

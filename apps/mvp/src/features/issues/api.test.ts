@@ -11,7 +11,7 @@ import { finishEarlySearch, type EarlySearchHost } from "./earlySearch"
 import type { FirstPaintIssue } from "./contract"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test } from "vitest"
-import { IssuesClient, type WriteRequest } from "./api"
+import { IssuesClient, type WriteRequest } from "./api.vibe"
 
 // The real writes client from the browser's side, against a local HTTP server that plays a gateway: real sockets, so a
 // stalled body, a body cut short and nothing listening are what a browser would meet. Every answer ChatApi itself gives
@@ -259,6 +259,30 @@ describe("a direct issue read", () => {
       })
       expect(await read(gateway.origin)).toMatchObject({ _tag: "Failure", failure: { _tag: "SearchNotAnswered", ...(status === 0 ? {} : { status }) } })
     }
+  })
+
+  test("a last page without the issue answers none; a next link without a cursor, or one already followed, is no answer", async () => {
+    const pages = (link: string | undefined) => serve((request, response) => {
+      if (link !== undefined) response.setHeader("link", link)
+      json(200, [{ ...target, number: 99 }])(request, response)
+    })
+    // No status: the route answered, but never with the issue.
+    const unanswered = async (origin: string) => {
+      const answer = await read(origin)
+      expect(answer).toMatchObject({ _tag: "Failure", failure: { _tag: "SearchNotAnswered" } })
+      expect(answer._tag === "Failure" && "status" in answer.failure).toBe(false)
+    }
+    const last = await pages(undefined)
+    expect(await read(last.origin)).toMatchObject({ _tag: "Success", success: [] })
+    expect(last.asked).toHaveLength(1)
+    for (const link of ['</api/repos/octo/hello/issues?cursor=p>; rel="prev"', '</api/repos/octo/hello/issues>; rel="next"']) {
+      const gateway = await pages(link)
+      await unanswered(gateway.origin)
+      expect(gateway.asked).toHaveLength(1)
+    }
+    const loop = await pages('</api/repos/octo/hello/issues?cursor=same>; rel="next"')
+    await unanswered(loop.origin)
+    expect(loop.asked.map(({ url }) => url)).toEqual(["/api/repos/octo/hello/issues?state=all&q=%237", "/api/repos/octo/hello/issues?state=all&q=%237&cursor=same"])
   })
 })
 

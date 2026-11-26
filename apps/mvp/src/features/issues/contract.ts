@@ -335,7 +335,9 @@ export const QUEUE_WITHIN = "10 seconds"
 
 /** The app's issue routes: GitHub's paths (decision 0012 §6). */
 export const issuesPath = (owner: string, name: string): string => `/${owner}/${name}/issues`
+/** @throws {never} */
 export const newIssuePath = (owner: string, name: string): string => `/${owner}/${name}/issues/new`
+/** @throws {never} */
 export const issuePath = (owner: string, name: string, number: number): string => `/${owner}/${name}/issues/${number}`
 
 /** The issue on github.com: "Open on GitHub ↗". */
@@ -352,8 +354,12 @@ export const issueNumberOf = (text: string): number | undefined => {
   return number <= MAX_ISSUE_NUMBER ? number : undefined
 }
 
-/** A draft's key on the device: the new-issue form's per repository, the comment composer's per issue. */
+/**
+ * A draft's key on the device: the new-issue form's per repository, the comment composer's per issue.
+ * @throws {never}
+ */
 export const newDraftKey = (repoId: string): string => `new:${repoId}`
+/** @throws {never} */
 export const commentDraftKey = (repoId: string, number: number): string => `comment:${itemId(repoId, number)}`
 
 /** The line the agent's text ends with on GitHub: agent text never shows under a person's name (decision 0012 §5). */

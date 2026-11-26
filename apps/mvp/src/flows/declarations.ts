@@ -29,7 +29,7 @@ import {
   FlowSave,
   FlowWrite,
 } from "../features/flows-ui/flows"
-import { IssueCommitment, IssueComment, IssueCreate, IssueTriage, TriageEnable, TriagePause, TriageRunAgain } from "../features/issues/flows"
+import { IssueCommitment, IssueComment, IssueCreate, IssueTriage, TriageEnable, TriagePause, TriageRunAgain } from "../features/issues/flows.vibe"
 import { Classify, Evaluate } from "../features/jev/flows"
 import { Cancel, Inspect, List, RepoRun, Resume, Retry, RetryFrom, Steer } from "../features/runs/flows"
 import { CloseFile, OpenFile } from "../features/files/flows.vibe"

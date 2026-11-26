@@ -10,7 +10,10 @@ import { credentialRoute } from "./contract"
 // write a run queued in its outbox (src/features/issues/writes.ts, src/features/runs/writes.ts). Nothing here imports
 // more than Effect.
 
-/** `request` carrying run credential `token`. */
+/**
+ * `request` carrying run credential `token`.
+ * @throws {never}
+ */
 export const withBearer = (request: HttpClientRequest.HttpClientRequest, token: string) =>
   HttpClientRequest.setHeader(request, "authorization", `Bearer ${token}`)
 
@@ -22,7 +25,10 @@ export const withoutCookie = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       credentials: "omit",
     }))
 
-/** Routing hints only. Renewal verifies the signed token, never these client-decoded fields. */
+/**
+ * Routing hints only. Renewal verifies the signed token, never these client-decoded fields.
+ * @throws {never}
+ */
 export const renewalOf = (token: string): Option.Option<{ readonly run: string; readonly flow: string }> => {
   const separator = token.lastIndexOf(".")
   if (separator <= 0 || separator === token.length - 1) return Option.none()

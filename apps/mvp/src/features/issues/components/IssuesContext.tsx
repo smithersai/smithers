@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { IssuesLayer } from "../issues"
+import type { IssuesLayer } from "../issues.vibe"
 
 // What React components get: the issues layer's live queries to render and plain actions to call
 // (features/issues/issues.ts).
