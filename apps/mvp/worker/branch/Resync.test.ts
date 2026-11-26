@@ -24,7 +24,7 @@ import { type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitH
 import * as Box from "../test/box.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
-import * as Conversations from "./Conversations.ts"
+import * as Conversations from "./Conversations.vibe"
 import { CreateRefused, Forge } from "./Forge.ts"
 import { Machines } from "./Machines.ts"
 import * as Publish from "./Publish.ts"

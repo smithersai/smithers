@@ -11,7 +11,7 @@ import { appKey } from "../github/test/scriptedGitHub.ts"
 import { testFile } from "../test/harness.ts"
 import { resetBranches } from "../test/branch.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
-import * as Conversations from "./Conversations.ts"
+import * as Conversations from "./Conversations.vibe"
 import { admit, read, send, configured, registration, settings, Settings, Create, make, type Input } from "./GitHubCreation.ts"
 
 const input: Input = {

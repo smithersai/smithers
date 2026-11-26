@@ -8,7 +8,7 @@ import type { Actor } from "../Actor.ts"
 import { classify, statusOf, withToken } from "../github/Calls.ts"
 import * as Config from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
-import * as Conversations from "./Conversations.ts"
+import * as Conversations from "./Conversations.vibe"
 import * as Repos from "../Repos.ts"
 import { CreateRefused } from "./CreateRefused.ts"
 

@@ -14,7 +14,7 @@ import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
-import * as Conversations from "../../../worker/branch/Conversations.ts"
+import * as Conversations from "../../../worker/branch/Conversations.vibe"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { dispatches, FlowDispatch } from "../../flows/dispatch"
 import {

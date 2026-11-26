@@ -33,7 +33,7 @@ import {
 import { eventually, recorded, testFile } from "../test/harness.ts"
 import { BranchRoles } from "./Access.ts"
 import * as BranchApi from "./BranchApi.vibe"
-import * as Conversations from "./Conversations.ts"
+import * as Conversations from "./Conversations.vibe"
 import { TerminalSockets } from "./Sandboxes.ts"
 import * as Terminals from "./Terminals.ts"
 

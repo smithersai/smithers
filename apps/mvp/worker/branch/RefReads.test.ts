@@ -6,7 +6,7 @@ import type { Role } from "../Actor.ts"
 import { resetBranches } from "../test/branch.ts"
 import { branchRoles, testFile } from "../test/harness.ts"
 import { BranchRoles } from "./Access.ts"
-import * as Conversations from "./Conversations.ts"
+import * as Conversations from "./Conversations.vibe"
 import { RoleRefused } from "../github/RepoRoles.ts"
 import { visible as visibleIn } from "./RefReads.ts"
 

@@ -12,8 +12,8 @@ import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { branchAccess, canView, isMemberOn } from "./Access.ts"
 import * as Repos from "../Repos.ts"
-import * as Conversations from "./Conversations.ts"
-import * as ConversationPeople from "./ConversationPeople.ts"
+import * as Conversations from "./Conversations.vibe"
+import * as ConversationPeople from "./ConversationPeople.vibe"
 import { branchHead, createBranch, defaultBranch, failureFields, Forge } from "./Forge.ts"
 
 // `POST /api/branches` (decision 0013 §2, docs/features/branch-workspace.md#tracking-a-branch): the write path of the

@@ -1,5 +1,5 @@
 import { SandboxTools } from "@smthrs/sandbox"
-import { Effect, Schema } from "effect"
+import { Schema } from "effect"
 import { Machines } from "./Machines.ts"
 import type { SandboxBranch } from "./Sandboxes.ts"
 
@@ -40,26 +40,28 @@ export interface Collecting {
   readonly maxFiles: number
   readonly maxBytes: number
   /** The id of the step's call `name` (`status`, `read:<path>`): the same every time the step runs. */
-  readonly callId: (name: string) => Effect.Effect<string>
+  readonly callId: (name: string) => string!!
 }
 
 /** Reads the change from the machine as `collecting` says. */
 export const collect = (collecting: Collecting) =>
-  Effect.gen(function* () {
-    const machines = yield* Machines
+  effect {
+    const machines = try Machines
     const tool = (name: string, call: SandboxTools.Call) =>
-      Effect.flatMap(collecting.callId(name), (callId) => machines.tool(collecting.branch, collecting.ownerId, callId, call)).pipe(
-        Effect.map((ran) => ran.result),
-        Effect.mapError((error) =>
-          error._tag === "@smthrs/sandbox/SandboxTools/ToolRefused" || error._tag === "@smthrs/mvp/branch/CheckoutFailed"
-            ? new ChangeRefused({ reason: "refused" })
-            : new ChangeUnavailable()
-        ),
-      )
+      effect {
+        const callId = try collecting.callId(name)
+        const ran = machines.tool(collecting.branch, collecting.ownerId, callId, call) catch effect (error) => {
+          if (error._tag === "@smthrs/sandbox/SandboxTools/ToolRefused" || error._tag === "@smthrs/mvp/branch/CheckoutFailed") {
+            throw new ChangeRefused({ reason: "refused" })
+          }
+          throw new ChangeUnavailable()
+        }
+        return ran.result
+      }
     // A tool answers its own call's result.
-    const { entries } = (yield* tool("status", { tool: "status", base: collecting.base })) as typeof SandboxTools.StatusResult.Type
-    if (entries.length === 0) return yield* new ChangeRefused({ reason: "empty" })
-    if (entries.length > collecting.maxFiles) return yield* new ChangeRefused({ reason: "too_large" })
+    const { entries } = (try tool("status", { tool: "status", base: collecting.base })) as typeof SandboxTools.StatusResult.Type
+    if (entries.length === 0) throw new ChangeRefused({ reason: "empty" })
+    if (entries.length > collecting.maxFiles) throw new ChangeRefused({ reason: "too_large" })
     const additions: Array<{ readonly path: string; readonly contents: string }> = []
     const deletions: Array<string> = []
     let bytes = 0
@@ -69,11 +71,11 @@ export const collect = (collecting: Collecting) =>
         continue
       }
       // Its exact bytes as base64: a text read would replace bytes that aren't UTF-8, as in an image or a font.
-      const read = (yield* tool(`read:${entry.path}`, { tool: "read", path: entry.path, encoding: "base64" })) as typeof SandboxTools.ReadResult.Type
-      if (read.truncated) return yield* new ChangeRefused({ reason: "too_large" })
+      const read = (try tool(`read:${entry.path}`, { tool: "read", path: entry.path, encoding: "base64" })) as typeof SandboxTools.ReadResult.Type
+      if (read.truncated) throw new ChangeRefused({ reason: "too_large" })
       bytes += read.bytes
       additions.push({ path: entry.path, contents: read.content })
     }
-    if (bytes > collecting.maxBytes) return yield* new ChangeRefused({ reason: "too_large" })
+    if (bytes > collecting.maxBytes) throw new ChangeRefused({ reason: "too_large" })
     return { additions, deletions } satisfies Change
-  }).pipe(Effect.withSpan("branch.change.collect"))
+  } |> withSpan(%, "branch.change.collect")

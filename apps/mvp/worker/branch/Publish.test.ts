@@ -23,7 +23,7 @@ import { BOT_LOGIN, type ScriptedGitHub, scriptedGitHub } from "../github/test/s
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import { machines as todoMachines } from "../test/todoMachines.ts"
-import * as Conversations from "./Conversations.ts"
+import * as Conversations from "./Conversations.vibe"
 import { Forge } from "./Forge.ts"
 import { Machines } from "./Machines.ts"
 import * as Publish from "./Publish.ts"

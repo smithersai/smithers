@@ -10,7 +10,7 @@ import { agentAttribution } from "../../src/features/issues/contract.ts"
 import { checkExecutionId, todoExecutionId } from "../../src/features/pulls/contract.ts"
 import { base64Bytes } from "../../src/features/runners/contract.ts"
 import { TODO_FAILURES } from "../../src/features/todos/contract.ts"
-import * as Change from "../branch/Change.ts"
+import * as Change from "../branch/Change.vibe"
 import type { Machines } from "../branch/Machines.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { agentFailureCodes } from "./TodoDiagnostic.vibe"
@@ -686,7 +686,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
         checkout: begun.baseSha,
         ownerId: begun.ownerId,
       }))
-      // The working copy's change against the base, read as Publish reads a branch's (worker/branch/Change.ts).
+      // The working copy's change against the base, read as Publish reads a branch's (worker/branch/Change.vibe).
       return try Change.collect({
         branch: machine.branch,
         ownerId: machine.ownerId,

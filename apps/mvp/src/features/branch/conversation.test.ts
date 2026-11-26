@@ -10,8 +10,8 @@ import type { Outbox } from "@smthrs/effect-tanstack-db"
 import { Effect, type ManagedRuntime, Scheduler, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import * as ConversationPeople from "../../../worker/branch/ConversationPeople.ts"
-import * as Conversations from "../../../worker/branch/Conversations.ts"
+import * as ConversationPeople from "../../../worker/branch/ConversationPeople.vibe"
+import * as Conversations from "../../../worker/branch/Conversations.vibe"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { framable } from "../../../worker/test/pages.ts"
 import { FlowDispatch } from "../../flows/dispatch"
@@ -96,7 +96,7 @@ const tabOn = async <R, E>(
     place: () => chat.queries.place.toArray[0]?.conversationId,
     /**
      * Branch `name` of `octo/hello`, recorded as `POST /api/branches` records it: tracked, and opened by the person, whose
-     * list then has its conversation (worker/branch/ConversationPeople.ts). Its conversation's id.
+     * list then has its conversation (worker/branch/ConversationPeople.vibe). Its conversation's id.
      */
     branch: (name: string) =>
       runtime.runPromise(api.branches.run(Effect.gen(function* () {

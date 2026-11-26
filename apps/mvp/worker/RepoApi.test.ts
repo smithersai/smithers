@@ -1,5 +1,5 @@
 import { CodeStorage } from "@smthrs/effect-code-storage"
-import * as Conversations from "./branch/Conversations.ts"
+import * as Conversations from "./branch/Conversations.vibe"
 // RepoApi (worker/RepoApi.ts, docs/features/repo.md#repoapi) through its real handler, over this file's schema of the
 // compose Postgres and Electric (`pnpm db:up`), with the scripted Code Storage and GitHub (worker/test/codeStorage.ts).
 // Clones run on the Node host in this process (worker/test/repos.ts). Unhappy paths arm a fault on the scripted

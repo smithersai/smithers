@@ -33,10 +33,10 @@ import * as RunCredentials from "../RunCredentials.ts"
 import * as SessionKeys from "../SessionKeys.vibe"
 import * as ViewRealm from "../ViewRealm.ts"
 import { BranchRoles } from "../branch/Access.ts"
-import * as Conversations from "../branch/Conversations.ts"
+import * as Conversations from "../branch/Conversations.vibe"
 import { repositoryOf } from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
-import * as ConversationApi from "../branch/ConversationApi.ts"
+import * as ConversationApi from "../branch/ConversationApi.vibe"
 import * as Chat from "../Chat.ts"
 import * as DocsApi from "../docs/Api.vibe"
 import * as AboutStore from "../about/Store.vibe"
@@ -418,6 +418,6 @@ export const eventually = async (check: () => boolean | Promise<boolean>, within
   throw new Error("condition never held")
 }
 
-/** The home conversation's id (worker/branch/Conversations.ts): what an ask that names no conversation belongs to. */
+/** The home conversation's id (worker/branch/Conversations.vibe): what an ask that names no conversation belongs to. */
 export const homeConversation = (runtime: Runtime) =>
   runtime.runPromise(Effect.map(Conversations.home, (home) => home!))

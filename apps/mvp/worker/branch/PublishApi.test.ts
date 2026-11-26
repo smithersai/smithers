@@ -15,7 +15,7 @@ import { REPOSITORY, reset, signedIn, sql } from "../github/test/fixtures.ts"
 import { githubHarness, member } from "../github/test/harness.ts"
 import { branchHarness, type BranchHarness, resetBranches, shared, tracked } from "../test/branch.ts"
 import { eventually, testFile } from "../test/harness.ts"
-import * as Conversations from "./Conversations.ts"
+import * as Conversations from "./Conversations.vibe"
 import * as Publications from "./Publications.ts"
 
 const runtime = testFile("branch_publish_api")

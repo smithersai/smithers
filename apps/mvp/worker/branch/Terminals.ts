@@ -1,4 +1,4 @@
-import { forgeOf, namespaceOf } from "./Conversations.ts"
+import { forgeOf, namespaceOf } from "./Conversations.vibe"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"

@@ -1,15 +1,15 @@
 // A person's own list of conversations on the server (decision 0013 decision 2, docs/features/conversations.md): the
-// statements (worker/branch/ConversationPeople.ts) and the routes (worker/branch/ConversationApi.ts) against the compose
+// statements (worker/branch/ConversationPeople.vibe) and the routes (worker/branch/ConversationApi.vibe) against the compose
 // Postgres and Electric, in this file's own schema (worker/test/harness.ts).
 import * as Database from "../../db/Database.ts"
 import { ARCHIVE_ROUTE } from "../../src/features/conversations/contract.ts"
-import * as Api from "./ConversationApi.ts"
+import * as Api from "./ConversationApi.vibe"
 import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
 import { branchHarness, resetBranches, tracked } from "../test/branch.ts"
 import { testFile } from "../test/harness.ts"
-import * as People from "./ConversationPeople.ts"
+import * as People from "./ConversationPeople.vibe"
 
 const runtime = testFile("conversation_people")
 beforeEach(() => resetBranches(runtime))

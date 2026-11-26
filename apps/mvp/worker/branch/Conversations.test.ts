@@ -1,4 +1,4 @@
-// A branch's conversation (worker/branch/Conversations.ts, decision 0013 §1) on this file's schema of the compose
+// A branch's conversation (worker/branch/Conversations.vibe, decision 0013 §1) on this file's schema of the compose
 // Postgres (`pnpm db:up`): a conversation's id is the version 5 UUID of its branch's id, recorded with the branch in one
 // transaction, and the home conversation is the deployment repository's `main`, which 0014_branch_workspace records.
 import { Uuid, WebCrypto } from "@smthrs/crypto"
@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, test } from "vitest"
 import { CONVERSATION_NAMESPACE, HOME_BRANCH } from "../../src/features/branch/contract.ts"
 import { resetBranches, shaOf } from "../test/branch.ts"
 import { testFile } from "../test/harness.ts"
-import * as Conversations from "./Conversations.ts"
+import * as Conversations from "./Conversations.vibe"
 
 const runtime = testFile("conversations")
 beforeEach(() => resetBranches(runtime))

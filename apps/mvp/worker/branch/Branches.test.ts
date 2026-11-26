@@ -16,7 +16,7 @@ import { recorded, testFile } from "../test/harness.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import { BranchRoles } from "./Access.ts"
 import * as Branches from "./Branches.vibe"
-import * as Conversations from "./Conversations.ts"
+import * as Conversations from "./Conversations.vibe"
 import { CreateRefused, Forge } from "./Forge.ts"
 
 const runtime = testFile("branches")

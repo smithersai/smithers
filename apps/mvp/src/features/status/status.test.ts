@@ -5,7 +5,7 @@
 // and the title on every device. The attached agent can continue after a device records the person's answer.
 import { Effect, type ManagedRuntime, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import * as Conversations from "../../../worker/branch/Conversations.ts"
+import * as Conversations from "../../../worker/branch/Conversations.vibe"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { Chat } from "../chat/chat"
 import { dispatches } from "../../flows/dispatch"

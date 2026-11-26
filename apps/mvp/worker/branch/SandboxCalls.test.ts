@@ -25,7 +25,7 @@ import { branchHarness, type BranchHarness, resetBranches, shared, tracked } fro
 import { recorded, testFile } from "../test/harness.ts"
 import { BranchRoles } from "./Access.ts"
 import * as BranchApi from "./BranchApi.vibe"
-import * as Conversations from "./Conversations.ts"
+import * as Conversations from "./Conversations.vibe"
 import * as SandboxCalls from "./SandboxCalls.ts"
 
 const runtime = testFile("sandbox_calls")

@@ -1,5 +1,5 @@
 // Generated scenarios against the real routes and stores on this file's schema of the compose Postgres: GitHub's
-// callback (worker/SignIn.ts), a branch's conversation (worker/branch/Conversations.ts), the git loop's sync and
+// callback (worker/SignIn.ts), a branch's conversation (worker/branch/Conversations.vibe), the git loop's sync and
 // installation rows (worker/github/Store.ts), a person's saved connections (worker/personal/Store.vibe), protected
 // write authority (worker/ProtectedAuthority.ts) and the read token (worker/github/ReadToken.ts). Each property
 // computes what must happen from the scenario alone, then reads the answer and the rows back.
@@ -12,7 +12,7 @@ import { REPOSITORY_GRANTEE } from "../src/features/branch/contract.ts"
 import type { Role } from "./Actor.ts"
 import * as ProtectedAuthority from "./ProtectedAuthority.ts"
 import type * as WriteAuthority from "./WriteAuthority.ts"
-import * as Conversations from "./branch/Conversations.ts"
+import * as Conversations from "./branch/Conversations.vibe"
 import * as ReadToken from "./github/ReadToken.ts"
 import * as GitHubStore from "./github/Store.ts"
 import { appKey, scriptedApp, scriptedGitHub } from "./github/test/scriptedGitHub.ts"

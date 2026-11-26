@@ -1,6 +1,5 @@
 import type { CodeStorage } from "@smthrs/effect-code-storage"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { Config, Context, Effect, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { CONVERSATION_NAMESPACE, HOME_BRANCH, type Mode, REPOSITORY_GRANTEE } from "../../src/features/branch/contract.ts"
 import { repoId } from "../../src/features/repo/contract.ts"
@@ -15,7 +14,7 @@ import { DEFAULT_REPOSITORY } from "../defaultRepository.ts"
 
 /** A conversation's id: the version 5 UUID of its branch's id in `CONVERSATION_NAMESPACE`. */
 export const conversationIdOf = (branchId: string) =>
-  Uuid.v5(CONVERSATION_NAMESPACE, branchId.toLowerCase()).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+  Uuid.v5(CONVERSATION_NAMESPACE, branchId.toLowerCase()) |> Effect.provide(%, WebCrypto.layer) |> orDie(%)
 
 /** The deployment repository's owner and name. */
 const repositoryNames = (repository: string) => {
@@ -35,7 +34,7 @@ export const homeRepositoryNames = Context.Reference<{ readonly owner: string; r
 )
 
 /** `GITHUB_REPOSITORY`'s id. */
-export const homeRepository = homeRepositoryNames.pipe(Effect.map(({ owner, name }) => repoId(owner, name)))
+export const homeRepository = map(homeRepositoryNames, ({ owner, name }) => repoId(owner, name))
 
 /** A tracked branch as the routes answer it. */
 export interface Branch {
@@ -55,15 +54,16 @@ const BranchRow = Schema.Struct({
 })
 
 /** The living branch `name` of repository `repo`, with its conversation, if the app tracks it. */
-export const find = (repo: string, name: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const rows = yield* sql`
-      SELECT b.id AS "branchId", c.id AS "conversationId", b.repo_id AS "repoId", b.name, b.mode
-      FROM branches b JOIN conversations c ON c.branch_id = b.id
-      WHERE b.repo_id = ${repo} AND b.name = ${name} AND b.deleted_at IS NULL`
-    return rows[0] === undefined ? undefined : yield* Schema.decodeUnknownEffect(BranchRow)(rows[0]).pipe(Effect.orDie)
-  })
+export const find = effect (repo: string, name: string) => {
+  const sql = try SqlClient.SqlClient
+  const rows = try sql`
+    SELECT b.id AS "branchId", c.id AS "conversationId", b.repo_id AS "repoId", b.name, b.mode
+    FROM branches b JOIN conversations c ON c.branch_id = b.id
+    WHERE b.repo_id = ${repo} AND b.name = ${name} AND b.deleted_at IS NULL`
+  const [row] = rows
+  if (row === undefined) return undefined
+  return try orDie(Schema.decodeUnknownEffect(BranchRow)(row))
+}
 
 /**
  * Records branch `name` of `repo` with its conversation, in one transaction, unless the app already tracks it: either
@@ -71,7 +71,7 @@ export const find = (repo: string, name: string) =>
  * without one, or for a `locked` branch, it is the team's: anyone in the repository with the link may edit it.
  * `createRequest` is the request that made it, when one did (`conversation/new`).
  */
-export const track = (
+export const track = effect (
   repo: string,
   name: string,
   mode: Mode,
@@ -80,67 +80,66 @@ export const track = (
   createRequest?: string,
   namespace: CodeStorage.RefNamespace = "default",
   forge: "deployment" | "github" = "deployment",
-) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const owner = mode === "locked" ? null : createdBy ?? null
-    return yield* sql.withTransaction(Effect.gen(function* () {
-      const [inserted] = yield* sql<{ readonly id: string }>`
-        INSERT INTO branches (id, repo_id, name, mode, base_sha, created_by, create_request, ref_namespace, ref_forge)
-        VALUES (gen_random_uuid(), ${repo}, ${name}, ${mode}, ${baseSha}, ${owner}, ${createRequest ?? null}, ${namespace}, ${forge})
-        ON CONFLICT (repo_id, name) WHERE deleted_at IS NULL DO NOTHING
-        RETURNING id`
-      if (inserted !== undefined) {
-        const conversationId = yield* conversationIdOf(inserted.id)
-        yield* sql`
-          INSERT INTO conversations (id, repo_id, branch_id) VALUES (${conversationId}, ${repo}, ${inserted.id})`
-        if (owner === null) {
-          yield* sql`
-            INSERT INTO branch_shares (branch_id, grantee, access) VALUES (${inserted.id}, ${REPOSITORY_GRANTEE}, 'edit')`
-        }
-        return { created: true, branch: { branchId: inserted.id, conversationId, repoId: repo, name, mode } }
+) => {
+  const sql = try SqlClient.SqlClient
+  const owner = mode === "locked" ? null : createdBy ?? null
+  return try sql.withTransaction(effect {
+    const [inserted] = try sql<{ readonly id: string }>`
+      INSERT INTO branches (id, repo_id, name, mode, base_sha, created_by, create_request, ref_namespace, ref_forge)
+      VALUES (gen_random_uuid(), ${repo}, ${name}, ${mode}, ${baseSha}, ${owner}, ${createRequest ?? null}, ${namespace}, ${forge})
+      ON CONFLICT (repo_id, name) WHERE deleted_at IS NULL DO NOTHING
+      RETURNING id`
+    if (inserted !== undefined) {
+      const conversationId = try conversationIdOf(inserted.id)
+      try sql`
+        INSERT INTO conversations (id, repo_id, branch_id) VALUES (${conversationId}, ${repo}, ${inserted.id})`
+      if (owner === null) {
+        try sql`
+          INSERT INTO branch_shares (branch_id, grantee, access) VALUES (${inserted.id}, ${REPOSITORY_GRANTEE}, 'edit')`
       }
-      return { created: false, branch: (yield* find(repo, name))! }
-    }))
+      return { created: true, branch: { branchId: inserted.id, conversationId, repoId: repo, name, mode } }
+    }
+    return { created: false, branch: (try find(repo, name))! }
   })
+}
 
 /** The request that made branch `branchId` (`conversation/new`), if one did. */
-export const createRequestOf = (branchId: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly createRequest: string | null }>`
-      SELECT create_request AS "createRequest" FROM branches WHERE id = ${branchId}`
-    return row?.createRequest ?? null
-  })
+export const createRequestOf = effect (branchId: string) => {
+  const sql = try SqlClient.SqlClient
+  const [row] = try sql<{ readonly createRequest: string | null }>`
+    SELECT create_request AS "createRequest" FROM branches WHERE id = ${branchId}`
+  return row?.createRequest ?? null
+}
 
 /** The home conversation's id: the deployment repository's `main`, which 0014_branch_workspace records. */
-export const home = Effect.gen(function* () {
-  const branch = yield* find(yield* homeRepository, HOME_BRANCH)
+export const home = effect {
+  const branch = try find(try homeRepository, HOME_BRANCH)
   return branch?.conversationId
-})
+}
 
 /** The persisted forge namespace; legacy branches and unknown ids use the ordinary namespace. */
-export const namespaceOf = (branchId: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly namespace: CodeStorage.RefNamespace }>`
-      SELECT ref_namespace AS namespace FROM branches WHERE id = ${branchId}`
-    return row?.namespace ?? "default"
-  })
+export const namespaceOf = effect (branchId: string) => {
+  const sql = try SqlClient.SqlClient
+  const [row] = try sql<{ readonly namespace: CodeStorage.RefNamespace }>`
+    SELECT ref_namespace AS namespace FROM branches WHERE id = ${branchId}`
+  return row?.namespace ?? "default"
+}
 
 /** The recorded forge for a conversation branch; historical branches use the deployment mirror. */
-export const forgeOf = (branchId: string) => Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient
-  const [row] = yield* sql<{ readonly forge: "deployment" | "github" }>`SELECT ref_forge AS forge FROM branches WHERE id = ${branchId}`
+export const forgeOf = effect (branchId: string) => {
+  const sql = try SqlClient.SqlClient
+  const [row] = try sql<{ readonly forge: "deployment" | "github" }>`SELECT ref_forge AS forge FROM branches WHERE id = ${branchId}`
   return row?.forge === "github" ? "github" as const : undefined
-})
+}
 
 /** The living branch a durable create request recorded, including its provider-selected name. */
-export const createdFor = (repo: string, person: string, request: string) => Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient
-  const rows = yield* sql`
+export const createdFor = effect (repo: string, person: string, request: string) => {
+  const sql = try SqlClient.SqlClient
+  const rows = try sql`
     SELECT b.id AS "branchId", c.id AS "conversationId", b.repo_id AS "repoId", b.name, b.mode
     FROM branches b JOIN conversations c ON c.branch_id = b.id
     WHERE b.repo_id = ${repo} AND b.created_by = ${person} AND b.create_request = ${request} AND b.ref_forge = 'github' AND b.deleted_at IS NULL`
-  return rows[0] === undefined ? undefined : yield* Schema.decodeUnknownEffect(BranchRow)(rows[0]).pipe(Effect.orDie)
-})
+  const [row] = rows
+  if (row === undefined) return undefined
+  return try orDie(Schema.decodeUnknownEffect(BranchRow)(row))
+}

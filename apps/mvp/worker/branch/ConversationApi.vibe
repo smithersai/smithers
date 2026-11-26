@@ -1,5 +1,5 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
-import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
+import type { Layer } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
@@ -14,7 +14,7 @@ import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as ShapeAccess from "../ShapeAccess.vibe"
 import { branchAccess, canView } from "./Access.ts"
-import * as People from "./ConversationPeople.ts"
+import * as People from "./ConversationPeople.vibe"
 import { answerConversation } from "./SandboxCalls.ts"
 
 // A person's own list of conversations (decision 0013 decision 2, docs/features/conversations.md#the-routes):
@@ -76,11 +76,11 @@ const refusal = (status: number, code: string) => HttpServerResponse.jsonUnsafe(
  * count; never a branch's name or a repository.
  */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
-  Effect.gen(function* () {
-    const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+  effect {
+    const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
     const shape = ShapeProxy.make({
       ...connection,
-      shape: Effect.map(ShapeAccess.actor, (actor) => ({
+      shape: map(ShapeAccess.actor, (actor) => ({
         table: CONVERSATION_PEOPLE_TABLE,
         where: "person_id = $1",
         params: { "1": Option.isSome(actor) ? actor.value.subject.id : NOBODY },
@@ -90,63 +90,57 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       metric: shapes,
     })
 
-    const archive = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      const startedAt = yield* Clock.currentTimeMillis
+    const archive = effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      const startedAt = try Clock.currentTimeMillis
       const fields: Record<string, string | number> = {}
-      const response = yield* Effect.gen(function* () {
+      const response = try catchCause(effect {
         if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
-        const actor = yield* (yield* Sessions).resolve
+        const actor = try (try Sessions).resolve
         if (Option.isNone(actor)) return refusal(401, "authentication")
-        const body = yield* readBounded(request, MAX_ARCHIVE_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
-          Effect.result,
-        )
+        const body = try result(readBounded(request, MAX_ARCHIVE_BODY_BYTES, (bytes) => (fields.bytes = bytes)))
         if (body._tag === "Failure") return refusal(body.failure.reason === "too_large" ? 413 : 400, "invalid")
-        const decoded = yield* decodeArchive(body.success).pipe(Effect.option)
+        const decoded = try option(decodeArchive(body.success))
         if (Option.isNone(decoded) || decoded.value.at > startedAt + MAX_AHEAD_MS) return refusal(400, "invalid")
         const { archived, at, answerId } = decoded.value
         // The agent's run names its answer, and only its own: the conversation is the answer's.
-        if (answerId !== undefined && !boundTo(actor.value, answerId)) return refusal(403, "forbidden")
+        if (answerId !== undefined && !(try sync(() => boundTo(actor.value, answerId)))) return refusal(403, "forbidden")
         const conversationId = answerId === undefined
           ? decoded.value.conversationId!.toLowerCase()
-          : yield* answerConversation(answerId.toLowerCase(), actor.value).pipe(Effect.provide(database))
+          : try Effect.provide(answerConversation(answerId.toLowerCase(), actor.value), database)
         if (conversationId === "forbidden") return refusal(403, "forbidden")
         if (conversationId === undefined) return refusal(404, "not_found")
         fields.conversationId = conversationId
-        const found = yield* branchAccess(actor, conversationId, "conversation").pipe(Effect.provide(database))
+        const found = try Effect.provide(branchAccess(actor, conversationId, "conversation"), database)
         if (found === undefined) return refusal(404, "not_found")
         if (!canView(found.access)) return refusal(403, "forbidden")
-        const txid = yield* People.archive(conversationId, actor.value.subject.id, archived, at).pipe(
-          Effect.provide(database),
-        )
+        const txid = try Effect.provide(People.archive(conversationId, actor.value.subject.id, archived, at), database)
         fields.outcome = txid === null ? "unchanged" : archived ? "archived" : "restored"
         return HttpServerResponse.jsonUnsafe({ archived, txid }, { headers: noStore })
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.sync(() => {
-            fields.errorCode = codeOf(Cause.squash(cause))
-            return refusal(503, "unavailable")
-          })
-        ),
+      }, (cause) =>
+        sync(() => {
+          fields.errorCode = codeOf(Cause.squash(cause))
+          return refusal(503, "unavailable")
+        })
       )
       fields.status = response.status
-      fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+      fields.durationMs = (try Clock.currentTimeMillis) - startedAt
       const outcome = String(fields.outcome ?? (response.status === 405 ? "method" : codeFor(response.status)))
-      yield* Metric.update(Metric.withAttributes(archives, { outcome }), 1)
-      yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
-      yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+      try Metric.update(Metric.withAttributes(archives, { outcome }), 1)
+      try annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+      try (logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
         "conversation.archive",
-      ).pipe(Effect.annotateLogs({ ...fields, outcome }))
+      ) |> annotateLogs(%, { ...fields, outcome }))
       return response
-    }).pipe(Effect.withSpan("conversation.archive", { kind: "server" }))
+    } |> withSpan(%, "conversation.archive", { kind: "server" })
 
-    const fetch = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
+    const fetch = effect {
+      const request = try HttpServerRequest.HttpServerRequest
       const path = request.url.split("?")[0]!
-      return yield* (path === MY_CONVERSATIONS_SHAPE_ROUTE ? shape : archive)
-    })
+      return try (path === MY_CONVERSATIONS_SHAPE_ROUTE ? shape : archive)
+    }
     return { fetch }
-  })
+  }
 
 /** A refusal's outcome by its status. */
 const codeFor = (status: number) =>

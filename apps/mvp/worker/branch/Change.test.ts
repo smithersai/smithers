@@ -1,10 +1,10 @@
-// A working copy's change read from its machine (worker/branch/Change.ts) over a test `Machines`, an injected Effect
+// A working copy's change read from its machine (worker/branch/Change.vibe) over a test `Machines`, an injected Effect
 // service that answers each tool call as a branch's machine does: the change, and each reason it can't be committed.
 import type { SandboxTools } from "@smthrs/sandbox"
 import { Cause, Effect, Exit, Layer } from "effect"
 import { Base64 } from "effect/encoding"
 import { describe, expect, test } from "vitest"
-import { ChangeRefused, ChangeUnavailable, collect } from "./Change.ts"
+import { ChangeRefused, ChangeUnavailable, collect } from "./Change.vibe"
 import { Machines } from "./Machines.ts"
 
 const BASE = "a".repeat(40)

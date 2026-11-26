@@ -24,7 +24,7 @@ import {
 import { installUrl } from "../src/features/repo/contract.ts"
 import * as Actor from "./Actor.ts"
 import { DEFAULT_REPOSITORY } from "./defaultRepository.ts"
-import * as Conversations from "./branch/Conversations.ts"
+import * as Conversations from "./branch/Conversations.vibe"
 import { readBounded } from "./Body.vibe"
 import { HOSTNAME, parseAliases } from "./aliases.ts"
 import * as Domains from "./domains/Store.vibe"

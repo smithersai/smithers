@@ -1,7 +1,7 @@
 import { Uuid as CryptoUuid, WebCrypto } from "@smthrs/crypto"
 import { TEXT_NAMESPACE, textName } from "../../src/features/coedit/contract.ts"
 import { savedMarkOf } from "../../src/features/coedit/saved.ts"
-import { forgeOf, namespaceOf } from "./Conversations.ts"
+import { forgeOf, namespaceOf } from "./Conversations.vibe"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"

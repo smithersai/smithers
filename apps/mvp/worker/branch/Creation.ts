@@ -11,7 +11,7 @@ import { isRepository, repoId } from "../../src/features/repo/contract.ts"
 import { BRANCH_FLOWS } from "../../src/plugins/builtinFlows.ts"
 import { Sessions } from "../Actor.ts"
 import { isMemberOn } from "./Access.ts"
-import { homeRepositoryNames } from "./Conversations.ts"
+import { homeRepositoryNames } from "./Conversations.vibe"
 import { defaultBranch } from "./Forge.ts"
 
 export class CreationRefused extends Data.TaggedError("CreationRefused")<{

@@ -9,7 +9,7 @@ import { BRANCHES_ROUTE, PUBLICATIONS_SHAPE_ROUTE, SHARES_SHAPE_ROUTE } from "..
 import { commandMaxSeconds } from "../../src/features/sandbox/config.ts"
 import { TERMINALS_ROUTE, TERMINALS_SHAPE_ROUTE } from "../../src/features/terminal/contract.ts"
 import * as Branches from "./Branches.vibe"
-import * as ConversationApi from "./ConversationApi.ts"
+import * as ConversationApi from "./ConversationApi.vibe"
 import * as Presence from "./Presence.ts"
 import * as Publications from "./Publications.ts"
 import * as SandboxCalls from "./SandboxCalls.ts"

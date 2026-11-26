@@ -24,7 +24,7 @@ import { VIEWS_ROUTE, VIEWS_SHAPE_ROUTE } from "../src/features/views/contract.t
 import { WEB_PREVIEW_ROUTE } from "../src/features/web/contract.ts"
 import * as Actor from "./Actor.ts"
 import * as BranchAccess from "./branch/Access.ts"
-import * as Conversations from "./branch/Conversations.ts"
+import * as Conversations from "./branch/Conversations.vibe"
 import * as ChatMetrics from "./ChatMetrics.ts"
 import * as Messages from "./Messages.ts"
 import * as Views from "./Views.ts"
