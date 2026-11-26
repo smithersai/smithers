@@ -1,16 +1,17 @@
-import { Effect } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
-import { ThemeStore } from "./store"
+import { ThemeStore } from "./store.vibe"
 
 // What a person does with the theme. The button never writes the theme itself: it dispatches `app/theme/set`, the
 // flow the agent calls, with the mode other than the one the page shows, so both doors run one declaration.
 
 /** Switches to the other mode: reads the mode the page shows, then sets the opposite one through `app/theme/set`. */
-export const toggleTheme = Effect.gen(function* () {
-  const current = yield* (yield* ThemeStore).current
-  return yield* (yield* FlowDispatch).dispatch(
+export const toggleTheme = effect {
+  const store = try ThemeStore
+  const current = try store.current
+  const dispatch = try FlowDispatch
+  return try dispatch.dispatch(
     "app/theme/set",
     { mode: current === "dark" ? "light" : "dark" },
     { door: "button" },
   )
-})
+}

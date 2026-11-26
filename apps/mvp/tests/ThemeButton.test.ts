@@ -10,9 +10,9 @@ import { ClientEngine, FlowDispatch } from "../src/flows/dispatch"
 import { FlowRegistry } from "../src/flows/registry"
 import { THEME_ATTRIBUTE, THEME_MIRROR_KEY, type ThemeMode } from "../src/features/theme/contract"
 import { ThemeButton, ThemeProvider, useShownMode } from "../src/features/theme/components/ThemeButton"
-import { registration, SetTheme } from "../src/features/theme/flows"
-import { tabPreferences, ThemeStore } from "../src/features/theme/store"
-import { Theme } from "../src/features/theme/theme"
+import { registration, SetTheme } from "../src/features/theme/flows.vibe"
+import { tabPreferences, ThemeStore } from "../src/features/theme/store.vibe"
+import { Theme } from "../src/features/theme/theme.vibe"
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 const disposals: Array<() => Promise<void>> = []

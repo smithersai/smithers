@@ -1,0 +1,62 @@
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { WAITLIST_JOIN_ROUTE, type WaitlistJoinResponse } from "./contract.ts"
+
+schema WaitlistJoinResponseSchema {
+  readonly status: "submitted"
+  readonly repoUrl: string
+  readonly position: number
+}
+
+schema WaitlistErrorBody {
+  readonly error?: string
+  readonly code?: string
+}
+
+const decodeSuccess = Schema.decodeUnknownEffect(WaitlistJoinResponseSchema)
+const decodeError = Schema.decodeUnknownEffect(WaitlistErrorBody)
+
+export error WaitlistJoinFailed {
+  status?: number
+  code: string
+}
+
+export const waitlistErrorMessage = (error: WaitlistJoinFailed): string => {
+  if (error.code === "invalid_repo_url" || error.code === "invalid_json" || error.code === "invalid_payload") {
+    return "Enter a valid HTTPS repository URL."
+  }
+  if (error.code === "person_only") return "Sign in directly to request repository hosting."
+  if (error.code === "rate_limited") return "Too many requests. Wait a minute and try again."
+  if (error.code === "too_large") return "Request is too large."
+  return "Waitlist is unavailable right now. Try again shortly."
+}
+
+/** Submit a repository hosting waitlist request through ChatApi via Effect HttpClient. */
+export const submitWaitlist = effect (input: {
+  readonly origin?: string
+  readonly repoUrl: string
+  readonly workflowNote?: string
+}): WaitlistJoinResponse!WaitlistJoinFailed!HttpClient.HttpClient => {
+  const client = try HttpClient.HttpClient
+  const url = input.origin === undefined ? WAITLIST_JOIN_ROUTE : `${input.origin}${WAITLIST_JOIN_ROUTE}`
+  const request = (HttpClientRequest.post(url) |> HttpClientRequest.bodyJson(%, {
+    repoUrl: input.repoUrl,
+    ...(input.workflowNote !== undefined && input.workflowNote.trim().length > 0
+      ? { workflowNote: input.workflowNote.trim() }
+      : {}),
+  })) catch effect () => {
+    throw new WaitlistJoinFailed({ code: "invalid_payload" })
+  }
+  const response = client.execute(request) catch effect () => {
+    throw new WaitlistJoinFailed({ code: "unavailable" })
+  }
+  if (response.status !== 200) {
+    const parsed = try (response.json |> flatMap(%, decodeError) |> option(%))
+    const code = Option.isSome(parsed)
+      ? parsed.value.error ?? parsed.value.code ?? "unavailable"
+      : response.status === 429 ? "rate_limited" : response.status === 413 ? "too_large" : "unavailable"
+    throw new WaitlistJoinFailed({ status: response.status, code })
+  }
+  return (response.json |> flatMap(%, decodeSuccess)) catch effect () => {
+    throw new WaitlistJoinFailed({ status: 200, code: "invalid_response" })
+  }
+}

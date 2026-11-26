@@ -1,4 +1,4 @@
-import { SetTheme } from "../features/theme/flows"
+import { SetTheme } from "../features/theme/flows.vibe"
 // This device's engine as the browser builds it (src/test/device.ts): a tab dispatches through `BrowserEngine` to the
 // leader's engine worker, which runs every client flow and reaches the tab's collections through the tab port. A
 // person's button and the agent's cell both switch the theme through the one declaration, `app/theme/set`. The tab's
@@ -14,8 +14,8 @@ import { sessionChannel } from "../features/auth/contract"
 import { SessionCall } from "../features/auth/schema"
 import { answerAskingTab } from "./askingTab"
 import type { ThemeMode } from "../features/theme/contract"
-import { WriteTheme } from "../features/theme/flows"
-import { ThemeStore } from "../features/theme/store"
+import { WriteTheme } from "../features/theme/flows.vibe"
+import { ThemeStore } from "../features/theme/store.vibe"
 import { openFlowHost } from "../test/flowHost"
 import { openDevice } from "../test/device"
 import { EngineFailed, engineRequests, failFastOnEngine, tabAnswers, tabEngine, TabWorker } from "./engine"

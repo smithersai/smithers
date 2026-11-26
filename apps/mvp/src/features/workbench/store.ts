@@ -7,7 +7,7 @@ import { runners } from "../../boundary.vibe"
 import type { Role } from "../auth/contract"
 import { repoId } from "../repo/contract"
 import { RepoStore } from "../repo/store"
-import { submitWaitlist as submitWaitlistRequest, waitlistErrorMessage } from "../waitlist/api"
+import { submitWaitlist as submitWaitlistRequest, waitlistErrorMessage } from "../waitlist/api.vibe"
 import { conversationStateKey, restoreConversationSnapshot, saveConversationSnapshot, type ConversationPaneSnapshot, type ConversationPaneStore } from "./conversationState"
 import type { WorkbenchLayout } from "./layout"
 

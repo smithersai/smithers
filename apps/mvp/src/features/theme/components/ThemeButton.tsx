@@ -1,7 +1,7 @@
 import { Button } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { createContext, useContext } from "react"
-import type { ThemeView } from "../theme"
+import type { ThemeView } from "../theme.vibe"
 
 // The theme's one door for a person (decision 0003 §5): an icon button in the header, labelled for assistive tech
 // only. It shows the mode it switches to, and dispatches `app/theme/set` through the theme layer's `toggle`.

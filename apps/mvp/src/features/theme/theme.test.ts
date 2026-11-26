@@ -11,9 +11,9 @@ import { build } from "../../../worker/test/flowHost.ts"
 import { ClientEngine, FlowDispatch } from "../../flows/dispatch"
 import { TabCallFailed, TabPort } from "../../flows/tabPort"
 import type { ThemeMode } from "./contract"
-import { Preferences, registration, SetTheme, workerPreferences } from "./flows"
-import { tabHandlers, tabPreferences, ThemeStore } from "./store"
-import { Theme } from "./theme"
+import { Preferences, registration, SetTheme, workerPreferences } from "./flows.vibe"
+import { tabHandlers, tabPreferences, ThemeStore } from "./store.vibe"
+import { Theme } from "./theme.vibe"
 
 const disposables: Array<() => Promise<void>> = []
 afterEach(async () => {
