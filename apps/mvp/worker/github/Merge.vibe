@@ -1,4 +1,4 @@
-import { digestSync } from "@smthrs/crypto"
+import { mergeKeyOf } from "./MergeKey.ts"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Core, GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
@@ -17,7 +17,7 @@ import { codeOf } from "../ErrorCode.ts"
 import type { Services } from "./Apply.vibe"
 import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.vibe"
-import * as Metrics from "./Metrics.ts"
+import * as Metrics from "./Metrics.vibe"
 import { fetchPull, liveBaseHeadOf, moveBase, projectPull } from "./Pulls.ts"
 import * as Store from "./Store.ts"
 
@@ -119,7 +119,7 @@ export type Landed = "seen" | "moved" | "unchecked"
  * The key a merge carries in its commit message: SHA-256 of the write id, which the route recorded before the flow
  * started, so every attempt and every run of this write derives the same one and no other write does.
  */
-export const mergeKeyOf = (writeId: string): string => digestSync(`smithers/pr-merge/v1\n${writeId}`)
+export { mergeKeyOf }
 
 /**
  * `.smithers/merge.json`'s one field (decision 0134). Anything else in the file is refused, so a typo never reads as
@@ -154,158 +154,154 @@ export const refusalOf = (status: number): WriteFailure =>
 
 /** The steps over `services`. */
 export const steps = <E, R>(services: Services<E, R>) => {
-  const settled = (
+  const settled = effect (
     write: Store.Write,
     settlement: Store.Settlement,
     mergeSha: string | null,
     landed?: Landed,
     project?: Effect.Effect<unknown, never, SqlClient.SqlClient>,
     flow?: MergeFlow,
-  ) =>
-    Effect.gen(function* () {
-      const now = yield* Store.settleWrite(write.id, settlement, project)
-      const outcome = settlement.status === "done" ? "done" : settlement.failure
-      const base: Record<string, string> = {
-        ...(landed === undefined ? {} : { base: landed }),
-        ...(flow === undefined ? {} : { flow }),
-      }
-      if (now) {
-        yield* Metric.update(Metric.withAttributes(merges, { outcome, ...base }), 1)
-        yield* Metric.update(Metric.withAttributes(Metrics.writeMs, { op: write.op }), (yield* Clock.currentTimeMillis) - write.createdAt)
-      }
-      yield* Effect.logWithLevel(settlement.status === "done" && landed !== "moved" ? "Info" : "Warn")("github.merge").pipe(
-        Effect.annotateLogs({ writeId: write.id, outcome, settled: now, ...base }),
-      )
-      return { status: settlement.status, mergeSha } satisfies Merged
-    })
+  ) => {
+    const now = try Store.settleWrite(write.id, settlement, project)
+    const outcome = settlement.status === "done" ? "done" : settlement.failure
+    const base: Record<string, string> = {
+      ...(landed === undefined ? {} : { base: landed }),
+      ...(flow === undefined ? {} : { flow }),
+    }
+    if (now) {
+      try Metric.update(Metric.withAttributes(merges, { outcome, ...base }), 1)
+      try Metric.update(Metric.withAttributes(Metrics.writeMs, { op: write.op }), (try Clock.currentTimeMillis) - write.createdAt)
+    }
+    try Effect.logWithLevel(settlement.status === "done" && landed !== "moved" ? "Info" : "Warn")("github.merge").pipe(
+      Effect.annotateLogs({ writeId: write.id, outcome, settled: now, ...base }),
+    )
+    return { status: settlement.status, mergeSha } satisfies Merged
+  }
 
   /**
    * The merged pull request read back with the App's token and projected, and every other open pull request into its
    * base given the merge as its base's head, in a savepoint: a projection that fails is logged and left to the next
    * read, never rolling back the merge's settlement (Fable review, 2026-10-21).
    */
-  const projected = (
+  const projected = effect (
     writeId: string,
     repository: ReturnType<typeof repositoryOf>,
     number: number,
     checked: string,
     mergeSha: string,
-  ) =>
-    Effect.gen(function* () {
-      const read = yield* services.tokens.forInstallation(repository, "pulls").pipe(Effect.option)
-      const fetched = Option.isSome(read)
-        ? yield* fetchPull(repository, number).pipe(withToken(read.value, services.apiBaseUrl), Effect.option)
-        : Option.none()
-      const sql = yield* SqlClient.SqlClient
-      return sql.withTransaction(Effect.gen(function* () {
-        if (Option.isSome(fetched)) yield* projectPull(repository, number, fetched.value)
-        yield* moveBase(repository.id, number, checked, mergeSha)
-      })).pipe(
-        Effect.catchCause((cause) =>
-          Effect.gen(function* () {
-            yield* Metric.update(Metric.withAttributes(Metrics.projectionFailures, { op: "pr/merge" }), 1)
-            yield* Effect.logWarning("github.merge").pipe(
-              Effect.annotateLogs({ writeId, projection: "failed", errorCode: codeOf(Cause.squash(cause)) }),
-            )
-          })
-        ),
-      )
-    })
+  ) => {
+    const read = try services.tokens.forInstallation(repository, "pulls").pipe(Effect.option)
+    const fetched = Option.isSome(read)
+      ? try fetchPull(repository, number).pipe(withToken(read.value, services.apiBaseUrl), Effect.option)
+      : Option.none()
+    const sql = try SqlClient.SqlClient
+    return sql.withTransaction(effect {
+      if (Option.isSome(fetched)) try projectPull(repository, number, fetched.value)
+      try moveBase(repository.id, number, checked, mergeSha)
+    }).pipe(
+      Effect.catchCause(effect (cause) => {
+        try Metric.update(Metric.withAttributes(Metrics.projectionFailures, { op: "pr/merge" }), 1)
+        try Effect.logWarning("github.merge").pipe(
+          Effect.annotateLogs({ writeId, projection: "failed", errorCode: codeOf(Cause.squash(cause)) }),
+        )
+      }
+      ),
+    )
+  }
 
   /**
    * The repository's merge flow (decision 0134): `.smithers/merge.json` at the base the person saw, read with the App's
    * contents token. No file is GitHub's merge. A file that isn't `{ "flow": "github" | "queue" }` is refused `invalid`,
    * never read as the default, so a repository that asked for its queue never gets a direct merge by mistake.
    */
-  const flowOf = (repository: ReturnType<typeof repositoryOf>, ref: string) =>
-    Effect.gen(function* () {
-      const token = yield* services.tokens.forInstallation(repository, "contents").pipe(
-        Effect.mapError((error) =>
-          error.reason === "app_not_installed" || error.reason === "not_allowed"
-            ? new Refused({ failure: error.reason })
-            : new MergeUnavailable(error.retryAfterMillis === undefined ? {} : { retryAfterMillis: error.retryAfterMillis })
-        ),
-      )
-      const file = yield* GitHub.Contents.getText(repository.owner, repository.name, MERGE_FLOW_FILE, { ref }).pipe(
-        withToken(token, services.apiBaseUrl),
-        Effect.mapError((error) => {
-          // A directory, a file over 1 MB or bytes that aren't UTF-8: no merge flow we can read.
-          if (Core.IntegrationError.isIntegrationError(error) && error.reason === "decode-failed") {
-            return new Refused({ failure: "invalid" })
-          }
-          const classified = classify(error)
-          return classified.kind === "refused"
-            ? new Refused({ failure: refusalOf(classified.status) })
-            : new MergeUnavailable(
-              classified.kind === "retry" && classified.retryAfterMillis !== undefined
-                ? { retryAfterMillis: classified.retryAfterMillis }
-                : {},
-            )
-        }),
-      )
-      if (Option.isNone(file)) return DEFAULT_MERGE_FLOW
-      const flow = mergeFlowOf(file.value.text)
-      return Option.isSome(flow) ? flow.value : yield* new Refused({ failure: "invalid" })
-    })
+  const flowOf = effect (repository: ReturnType<typeof repositoryOf>, ref: string) => {
+    const token = try services.tokens.forInstallation(repository, "contents").pipe(
+      Effect.mapError((error) =>
+        error.reason === "app_not_installed" || error.reason === "not_allowed"
+          ? new Refused({ failure: error.reason })
+          : new MergeUnavailable(error.retryAfterMillis === undefined ? {} : { retryAfterMillis: error.retryAfterMillis })
+      ),
+    )
+    const file = try GitHub.Contents.getText(repository.owner, repository.name, MERGE_FLOW_FILE, { ref }).pipe(
+      withToken(token, services.apiBaseUrl),
+      Effect.catch(effect (error) => {
+        // A directory, a file over 1 MB or bytes that aren't UTF-8: no merge flow we can read.
+        const unreadable = try sync(() => Core.IntegrationError.isIntegrationError(error) && error.reason === "decode-failed")
+        if (unreadable) {
+          throw new Refused({ failure: "invalid" })
+        }
+        const classified = classify(error)
+        throw classified.kind === "refused"
+          ? new Refused({ failure: refusalOf(classified.status) })
+          : new MergeUnavailable(
+            classified.kind === "retry" && classified.retryAfterMillis !== undefined
+              ? { retryAfterMillis: classified.retryAfterMillis }
+              : {},
+          )
+      }),
+    )
+    if (Option.isNone(file)) return DEFAULT_MERGE_FLOW
+    const flow = mergeFlowOf(file.value.text)
+    if (Option.isSome(flow)) return flow.value
+    throw new Refused({ failure: "invalid" })
+  }
 
   /**
    * A queue merge: the head rechecked as for a merge, then one comment as the person asking the repository's queue to
    * land it, found again by the write's key in its hidden marker. The base isn't checked: the queue lands the head on
    * whatever main is then, through its own gate.
    */
-  const queued = (repository: ReturnType<typeof repositoryOf>, number: number, headSha: string, key: string) => {
-    const request = GitHub.Once.comment(repository.owner, repository.name, number, queueRequestOf(headSha))
-    return Action.once(
+  const queued = effect (repository: ReturnType<typeof repositoryOf>, number: number, headSha: string, key: string) => {
+    const request = try sync(() => GitHub.Once.comment(repository.owner, repository.name, number, queueRequestOf(headSha)))
+    return try Action.once(
       "queue",
-      Action.keyed({
+      try sync(() => Action.keyed({
         find: request.find,
-        perform: (key) =>
-          Effect.gen(function* () {
-            const pull = yield* GitHub.Pulls.getPull(repository.owner, repository.name, number)
-            if (pull.merged) return yield* new Refused({ failure: "merged" })
-            if (pull.state === "closed") return yield* new Refused({ failure: "closed" })
-            if (pull.draft) return yield* new Refused({ failure: "draft" })
-            if (pull.head.sha !== headSha) return yield* new Refused({ failure: "head_moved" })
-            return yield* request.perform(key)
-          }),
-      }),
+        perform: effect (key) => {
+          const pull = try GitHub.Pulls.getPull(repository.owner, repository.name, number)
+          if (pull.merged) throw new Refused({ failure: "merged" })
+          if (pull.state === "closed") throw new Refused({ failure: "closed" })
+          if (pull.draft) throw new Refused({ failure: "draft" })
+          if (pull.head.sha !== headSha) throw new Refused({ failure: "head_moved" })
+          return try request.perform(key)
+        },
+      })),
       { key },
     )
   }
 
   /** A merge or a queue request that failed: refused for good and settled, or unavailable and tried again. */
-  const failedSend = (write: Store.Write, failure: unknown, flow: MergeFlow) =>
-    Effect.gen(function* () {
-      if (failure instanceof Refused) {
-        return yield* settled(write, { status: "refused", failure: failure.failure }, null, undefined, undefined, flow)
-      }
-      const classified = classify(failure)
-      if (classified.kind === "refused") {
-        return yield* settled(
-          write,
-          { status: "refused", failure: refusalOf(classified.status) },
-          null,
-          undefined,
-          undefined,
-          flow,
-        )
-      }
-      if (classified.kind === "unknown") {
-        yield* Metric.update(Metric.withAttributes(Metrics.writeUnknown, { op: write.op }), 1)
-      }
-      yield* Effect.logWarning("github.merge").pipe(
-        Effect.annotateLogs({ writeId: write.id, flow, outcome: classified.kind, errorCode: codeOf(failure) }),
+  const failedSend = effect (write: Store.Write, failure: unknown, flow: MergeFlow) => {
+    if (failure instanceof Refused) {
+      return try settled(write, { status: "refused", failure: failure.failure }, null, undefined, undefined, flow)
+    }
+    const classified = classify(failure)
+    if (classified.kind === "refused") {
+      return try settled(
+        write,
+        { status: "refused", failure: refusalOf(classified.status) },
+        null,
+        undefined,
+        undefined,
+        flow,
       )
-      return yield* new MergeUnavailable(
-        classified.kind === "retry" && classified.retryAfterMillis !== undefined
-          ? { retryAfterMillis: classified.retryAfterMillis }
-          : {},
-      )
-    })
+    }
+    if (classified.kind === "unknown") {
+      try Metric.update(Metric.withAttributes(Metrics.writeUnknown, { op: write.op }), 1)
+    }
+    try Effect.logWarning("github.merge").pipe(
+      Effect.annotateLogs({ writeId: write.id, flow, outcome: classified.kind, errorCode: codeOf(failure) }),
+    )
+    throw new MergeUnavailable(
+      classified.kind === "retry" && classified.retryAfterMillis !== undefined
+        ? { retryAfterMillis: classified.retryAfterMillis }
+        : {},
+    )
+  }
 
   const send = ({ writeId }: typeof Send.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const found = yield* Store.writeOf(writeId)
+    effect {
+      const found = try Store.writeOf(writeId)
       if (Option.isNone(found) || found.value.payload.op !== "pr/merge") {
         return { status: "missing", mergeSha: null } satisfies Merged
       }
@@ -315,31 +311,31 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const repository = repositoryOf(write.repoId.replace(/^github\//, ""))
       // Only a person's own session admits a merge. A write without one, which the route never admits, is refused now
       // rather than retried.
-      if (write.sessionId === null) return yield* settled(write, { status: "refused", failure: "sign_in_required" }, null)
-      const token = yield* services.tokens.forSession(write.sessionId).pipe(Effect.result)
+      if (write.sessionId === null) return try settled(write, { status: "refused", failure: "sign_in_required" }, null)
+      const token = try services.tokens.forSession(write.sessionId).pipe(Effect.result)
       if (token._tag === "Failure") {
         if (token.failure.reason === "refreshing" || token.failure.reason === "unavailable") {
-          return yield* new MergeUnavailable(
+          throw new MergeUnavailable(
             token.failure.retryAfterMillis === undefined ? {} : { retryAfterMillis: token.failure.retryAfterMillis },
           )
         }
-        return yield* settled(write, { status: "refused", failure: "sign_in_required" }, null)
+        return try settled(write, { status: "refused", failure: "sign_in_required" }, null)
       }
-      const flow = yield* flowOf(repository, payload.baseSha).pipe(Effect.result)
+      const flow = try flowOf(repository, payload.baseSha).pipe(Effect.result)
       if (flow._tag === "Failure") {
         if (flow.failure instanceof Refused) {
-          return yield* settled(write, { status: "refused", failure: flow.failure.failure }, null)
+          return try settled(write, { status: "refused", failure: flow.failure.failure }, null)
         }
-        return yield* flow.failure
+        throw flow.failure
       }
       if (flow.success === "queue") {
-        const asked = yield* Effect.gen(function* () {
+        const asked = try effect {
           // Counted for the write's record; `Action.once` decides what was asked, by the key alone.
-          yield* Store.beginAttempt(write.id)
-          return yield* queued(repository, payload.number, payload.headSha, mergeKeyOf(write.id))
-        }).pipe(withToken(token.success, services.apiBaseUrl), Effect.result)
-        if (asked._tag === "Failure") return yield* failedSend(write, asked.failure, "queue")
-        return yield* settled(
+          try Store.beginAttempt(write.id)
+          return try queued(repository, payload.number, payload.headSha, try sync(() => mergeKeyOf(write.id)))
+        }.pipe(withToken(token.success, services.apiBaseUrl), Effect.result)
+        if (asked._tag === "Failure") return try failedSend(write, asked.failure, "queue")
+        return try settled(
           write,
           { status: "done", itemNumber: payload.number, githubId: asked.success.id, mergeFlow: "queue" },
           null,
@@ -354,60 +350,59 @@ export const steps = <E, R>(services: Services<E, R>) => {
           method: payload.method,
           ...(commitTitle === undefined ? {} : { commitTitle }),
         })
-      const outcome = yield* Effect.gen(function* () {
+      const outcome = try effect {
         // Counted for the write's record; `Action.once` decides what was merged, by the key alone.
-        yield* Store.beginAttempt(write.id)
-        const merged = yield* Action.once(
+        try Store.beginAttempt(write.id)
+        const merged = try Action.once(
           "merge",
-          Action.keyed({
+          try sync(() => Action.keyed({
             find: keyed().find,
-            perform: (key) =>
-              Effect.gen(function* () {
-                const pull = yield* GitHub.Pulls.getPull(repository.owner, repository.name, payload.number)
-                if (pull.merged) return yield* new Refused({ failure: "merged" })
-                if (pull.state === "closed") return yield* new Refused({ failure: "closed" })
-                if (pull.draft) return yield* new Refused({ failure: "draft" })
-                if (pull.head.sha !== payload.headSha) return yield* new Refused({ failure: "head_moved" })
-                // The branch's own head, never GitHub's snapshot: a branch gone, or one whose head can't be read, is
-                // refused rather than merged onto a base nobody checked (Codex Astra review).
-                const baseHead = yield* liveBaseHeadOf(repository, pull)
-                if (Option.isNone(baseHead)) return yield* new Refused({ failure: "base_moved" })
-                if (baseHead.value !== payload.baseSha) {
-                  return yield* new Refused({ failure: "base_moved", baseHead: baseHead.value })
-                }
-                return yield* keyed(`${pull.title} (#${pull.number})`).perform(key)
-              }),
-          }),
-          { key: mergeKeyOf(write.id) },
+            perform: effect (key) => {
+              const pull = try GitHub.Pulls.getPull(repository.owner, repository.name, payload.number)
+              if (pull.merged) throw new Refused({ failure: "merged" })
+              if (pull.state === "closed") throw new Refused({ failure: "closed" })
+              if (pull.draft) throw new Refused({ failure: "draft" })
+              if (pull.head.sha !== payload.headSha) throw new Refused({ failure: "head_moved" })
+              // The branch's own head, never GitHub's snapshot: a branch gone, or one whose head can't be read, is
+              // refused rather than merged onto a base nobody checked (Codex Astra review).
+              const baseHead = try liveBaseHeadOf(repository, pull)
+              if (Option.isNone(baseHead)) throw new Refused({ failure: "base_moved" })
+              if (baseHead.value !== payload.baseSha) {
+                throw new Refused({ failure: "base_moved", baseHead: baseHead.value })
+              }
+              return try keyed(`${pull.title} (#${pull.number})`).perform(key)
+            },
+          })),
+          { key: try sync(() => mergeKeyOf(write.id)) },
         )
         // A squash is one commit on the base GitHub merged onto: one ahead of the base checked, unless a push landed
         // between the check and the merge.
         const landed: Landed = payload.method === "squash"
-          ? yield* GitHub.Commits.compare(repository.owner, repository.name, payload.baseSha, merged.sha).pipe(
+          ? try GitHub.Commits.compare(repository.owner, repository.name, payload.baseSha, merged.sha).pipe(
             Effect.map((compared): Landed => (compared.aheadBy === 1 && compared.behindBy === 0 ? "seen" : "moved")),
             Effect.catch(() => Effect.succeed<Landed>("unchecked")),
           )
           : "unchecked"
         return { sha: merged.sha, landed }
-      }).pipe(withToken(token.success, services.apiBaseUrl), Effect.result)
+      }.pipe(withToken(token.success, services.apiBaseUrl), Effect.result)
       if (outcome._tag === "Failure") {
         const failure = outcome.failure
         // The base moved: every open pull request into it shows the head read, so the person decides again on it.
         if (failure instanceof Refused && failure.baseHead !== undefined) {
-          yield* moveBase(repository.id, payload.number, payload.baseSha, failure.baseHead)
+          try moveBase(repository.id, payload.number, payload.baseSha, failure.baseHead)
         }
-        return yield* failedSend(write, failure, "github")
+        return try failedSend(write, failure, "github")
       }
       const merged = outcome.success
-      return yield* settled(
+      return try settled(
         write,
         { status: "done", itemNumber: payload.number, githubId: null, mergeFlow: "github" },
         merged.sha,
         merged.landed,
-        yield* projected(write.id, repository, payload.number, payload.baseSha, merged.sha),
+        try projected(write.id, repository, payload.number, payload.baseSha, merged.sha),
         "github",
       )
-    }).pipe(
+    }.pipe(
       Effect.provideService(HttpClient.HttpClient, services.http),
       Effect.provide(services.database),
       Effect.catch((error) =>
@@ -422,13 +417,13 @@ export const steps = <E, R>(services: Services<E, R>) => {
     )
 
   const giveUp = ({ writeId }: typeof GiveUp.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const found = yield* Store.writeOf(writeId)
+    effect {
+      const found = try Store.writeOf(writeId)
       if (Option.isNone(found)) return { status: "missing", mergeSha: null } satisfies Merged
       // A write another run settled answers what it settled, never `failed`.
       if (found.value.status !== "pending") return { status: found.value.status, mergeSha: null } satisfies Merged
-      return yield* settled(found.value, { status: "failed", failure: "unavailable" }, null)
-    }).pipe(
+      return try settled(found.value, { status: "failed", failure: "unavailable" }, null)
+    }.pipe(
       Effect.provide(services.database),
       Effect.mapError(() => new MergeUnavailable({})),
       Effect.withSpan("github.merge.give_up", { attributes: { "smithers.github.write": writeId } }),

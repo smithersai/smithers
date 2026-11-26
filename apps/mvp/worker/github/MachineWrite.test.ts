@@ -11,7 +11,7 @@ import { FlowStarter } from "../Flows.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as Host from "./Host.vibe"
-import * as MachineWrite from "./MachineWrite.ts"
+import * as MachineWrite from "./MachineWrite.vibe"
 import { admit, reset, REPOSITORY, services, signedIn, sql, writeRow } from "./test/fixtures.ts"
 import { githubHarness } from "./test/harness.ts"
 import { BOT_LOGIN, INSTALLATION_ID, scriptedGitHub as makeScriptedGitHub } from "./test/scriptedGitHub.ts"
@@ -410,6 +410,194 @@ describe("what a machine writes renders as written", () => {
 })
 
 describe("github/MachineDispatch", () => {
+  test("a comment retries a rate limit and an outage before filing exactly once", async () => {
+    await issueToken()
+    const github = scriptedGitHub()
+    const issue = github.open("Parent", "")
+    const comment = { writeId: crypto.randomUUID(), op: "issue/comment", number: issue.number, body: "Please check." }
+    expect(await admitAs(comment)).toEqual({ kind: "inserted" })
+    let faults = 0
+    const http = HttpClient.make((request, url) => {
+      if (request.method === "POST" && url.pathname.endsWith("/comments") && faults++ < 2) {
+        return Effect.succeed(HttpClientResponse.fromWeb(request, new Response("invalid JSON", {
+          status: faults === 1 ? 429 : 502,
+          headers: faults === 1 ? { "retry-after": "120" } : {},
+        })))
+      }
+      return github.http.execute(request)
+    })
+    const d = await dispatcher({ ...github, http })
+    await d.tick()
+    expect(await row(comment.writeId)).toMatchObject({ status: "pending", tries: 0 })
+    expect(await d.tick()).toMatchObject({ stop: false, waitMs: expect.any(Number) })
+    expect(faults).toBe(1)
+    await d.next()
+    expect(await row(comment.writeId)).toMatchObject({ status: "pending", tries: 1 })
+    await d.next()
+    expect(await row(comment.writeId)).toMatchObject({ status: "done", number: issue.number })
+    expect(issue.comments.map(({ body }) => body)).toEqual([expect.stringContaining("Please check")])
+    expect(github.seen("POST", /\/comments$/)).toHaveLength(1)
+  })
+
+  test.each([
+    { scenario: "empty parent description", path: "/issues/1/parent", malformed: true, status: undefined, settled: "refused", failure: "has_parent" },
+    { scenario: "parent lookup outage", path: "/issues/1/parent", malformed: false, status: 502, settled: "pending", failure: null },
+    { scenario: "child gone", path: "/issues/1", malformed: false, status: 410, settled: "refused", failure: "not_found" },
+    { scenario: "child lookup lacks an id", path: "/issues/1", malformed: true, status: undefined, settled: "pending", failure: null },
+  ])("a relation sends nothing after $scenario", async ({ path, malformed, status, settled, failure }) => {
+    await issueToken()
+    const github = scriptedGitHub()
+    const child = github.open("Child", "")
+    const parent = github.open("Parent", "")
+    const relate = { writeId: crypto.randomUUID(), op: "issue/relate", number: child.number, parent: { repo: "acme/widgets", number: parent.number } }
+    expect(await admitAs(relate)).toEqual({ kind: "inserted" })
+    github.faults.push({ match: (method, url) => method === "GET" && url.endsWith(path), malformed, status })
+    await (await dispatcher(github)).tick()
+    expect(await row(relate.writeId)).toMatchObject({ status: settled, failure })
+    expect(github.seen("POST", /\/sub_issues$/)).toEqual([])
+  })
+
+  test("a stored relation to another owner is refused before reading its parent", async () => {
+    await issueToken()
+    await issueToken({ token: "smm_other", repoId: "github/other/plan" })
+    const github = scriptedGitHub()
+    const { services: value } = await services(runtime, github, { mayAct: () => true })
+    const relate = { writeId: crypto.randomUUID(), op: "issue/relate", number: 1, parent: { repo: "other/plan", number: 2 } }
+    expect(await admitAs(relate)).toEqual({ kind: "inserted" })
+    const epoch = await runtime.runPromise(MachineWrite.launch("acme"))
+    await Effect.runPromise(MachineWrite.steps(value).tick({ owner: "acme", epoch, round: 0, waitMs: 0 }))
+    expect(await row(relate.writeId)).toMatchObject({ status: "refused", failure: "invalid" })
+    expect(github.seen("GET", /\/parent$/)).toEqual([])
+  })
+
+  test.each([[404, "refused", "not_found"], [502, "pending", null]] as const)(
+    "an update whose initial GitHub read returns %i sends no PATCH",
+    async (status, settled, failure) => {
+      await issueToken()
+      const github = scriptedGitHub()
+      const created = create()
+      expect(await admitAs(created)).toEqual({ kind: "inserted" })
+      const d = await dispatcher(github)
+      await d.tick()
+      const update = { writeId: crypto.randomUUID(), op: "issue/update", number: 1, body: "New body." }
+      expect(await admitAs(update)).toEqual({ kind: "inserted" })
+      github.faults.push({ match: (method, url) => method === "GET" && url.endsWith("/issues/1"), status })
+      await d.next()
+      expect(await row(update.writeId)).toMatchObject({ status: settled, failure })
+      expect(github.seen("PATCH", /\/issues\/1$/)).toEqual([])
+    },
+  )
+
+  test("a body-only update stays done when its Postgres read-back fails", async () => {
+    await issueToken()
+    const github = scriptedGitHub()
+    const created = create()
+    await admitAs(created)
+    const d = await dispatcher(github)
+    await d.tick()
+    const { number } = github.issues.get(1)!
+    const update = { writeId: crypto.randomUUID(), op: "issue/update", number, body: "A replacement." }
+    await admitAs(update)
+    let intercepted = false
+    const http = HttpClient.make((request, url) => {
+      if (!intercepted && request.method === "GET" && url.pathname.endsWith("/issues/1")) {
+        intercepted = true
+        return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({ body: null, user: { login: BOT_LOGIN } })))
+      }
+      return github.http.execute(request)
+    })
+    const replacement = await dispatcher({ ...github, http })
+    await sql(runtime, "ALTER TABLE items ADD CONSTRAINT reject_machine_projection CHECK (number < 0) NOT VALID")
+    try {
+      await expect(replacement.next()).rejects.toMatchObject({ _tag: "@smthrs/mvp/github/MachineUnavailable" })
+      expect(await row(update.writeId)).toMatchObject({ status: "done", number })
+      expect(github.issues.get(number)!.body).toContain("A replacement")
+      expect(github.issues.get(number)!.body).not.toContain("smithers:write")
+      await replacement.next()
+      expect(github.seen("PATCH", /\/issues\/1$/)).toHaveLength(1)
+    } finally {
+      await sql(runtime, "ALTER TABLE items DROP CONSTRAINT reject_machine_projection")
+    }
+  })
+
+  test("an issue with a recorded number retries a read and accepts a response with no labels", async () => {
+    await issueToken()
+    const github = scriptedGitHub()
+    const write = create()
+    await admitAs(write)
+    const issue = github.open("Recorded", "")
+    await sql(runtime, 'UPDATE machine_writes SET item_number = 1')
+    let readBack = 0
+    const http = HttpClient.make((request, url) => {
+      if (request.method === "GET" && url.pathname.endsWith("/issues/1") && ++readBack <= 2) {
+        return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({}, { status: readBack === 1 ? 502 : 200 })))
+      }
+      return github.http.execute(request)
+    })
+    const d = await dispatcher({ ...github, http })
+    await d.tick()
+    expect(await row(write.writeId)).toMatchObject({ status: "pending", number: issue.number })
+    await d.next()
+    expect(await row(write.writeId)).toMatchObject({ status: "done", number: issue.number })
+    expect(github.seen("POST", /\/issues$/)).toEqual([])
+  })
+
+  test("concurrent admissions on separate token rows settle one insertion", async () => {
+    await issueToken()
+    await issueToken({ token: "smm_second" })
+    const body = create() as MachineWrite.MachineBody
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let inserted = () => {}
+    const holding = new Promise<void>((resolve) => { inserted = resolve })
+    const first = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+      const admission = yield* MachineWrite.admit({ repoId: REPOSITORY.id, owner: "acme", machine: machineOf(), body })
+      inserted()
+      yield* Effect.promise(() => gate)
+      return admission
+    }))))
+    await holding
+    const second = admitAs(body, machineOf("lane-1", "smm_second"))
+    try {
+      await vi.waitFor(async () => expect(await sql(runtime, "SELECT count(*)::int AS waiting FROM pg_locks WHERE NOT granted")).not.toEqual([{ waiting: 0 }]))
+    } finally {
+      release()
+    }
+    expect(await first).toEqual({ kind: "inserted" })
+    expect(await second).toEqual({ kind: "conflict" })
+    expect(await sql(runtime, "SELECT count(*)::int AS count FROM machine_writes")).toEqual([{ count: 1 }])
+  })
+
+  test("an empty tick leaves a replacement epoch running", async () => {
+    await issueToken()
+    const github = scriptedGitHub()
+    const d = await dispatcher(github)
+    const write = create()
+    await admitAs(write)
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let locked = () => {}
+    const holding = new Promise<void>((resolve) => { locked = resolve })
+    const replacement = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+      yield* sql`SELECT 1 FROM machine_writes WHERE id = ${write.writeId}::uuid FOR UPDATE`
+      locked()
+      yield* Effect.promise(() => gate)
+      yield* sql`DELETE FROM machine_writes WHERE id = ${write.writeId}::uuid`
+      yield* sql`UPDATE machine_dispatch SET epoch = epoch + 1 WHERE owner = 'acme'`
+    }))))
+    await holding
+    const old = d.tick()
+    try {
+      await vi.waitFor(async () => expect(await sql(runtime, "SELECT count(*)::int AS waiting FROM pg_locks WHERE NOT granted")).not.toEqual([{ waiting: 0 }]))
+    } finally {
+      release()
+    }
+    await replacement
+    expect(await old).toEqual({ stop: true, waitMs: 0 })
+    expect(await sql(runtime, "SELECT epoch, running FROM machine_dispatch")).toEqual([{ epoch: d.epoch + 1, running: true }])
+    expect(github.calls).toEqual([])
+  })
+
   test.each(["issue/create", "issue/relate"] as const)("logs a done %s once with ids only", async (op) => {
     await issueToken()
     const github = scriptedGitHub()
@@ -1095,7 +1283,7 @@ describe("github/MachineDispatch", () => {
     // Another epoch is another execution, a Durable Object of its own: the module is loaded again, so nothing in memory
     // (`Action.once` serializes a key within one process) stands between the two, as nothing does in production.
     vi.resetModules()
-    const replacement = await dispatcher(github, await import("./MachineWrite.ts"))
+    const replacement = await dispatcher(github, await import("./MachineWrite.vibe"))
     expect(replacement.epoch).toBe(stalled.epoch + 1)
     // The replacement can't look for the marker while the first may still send.
     const waiting = await replacement.tick()

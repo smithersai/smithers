@@ -120,12 +120,11 @@ interface Row {
 const UTC_MICROS = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
 
 /** One page of `repoId`'s issues for `query`, and the cursor of the page after it when there is one. */
-export const page = (repoId: string, query: Query) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const number = /^#?(\d{1,10})$/.exec(query.q)?.[1]
-    const like = `%${query.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
-    const rows = yield* sql<Row>`
+export const page = effect (repoId: string, query: Query) => {
+  const sql = try SqlClient.SqlClient
+  const number = /^#?(\d{1,10})$/.exec(query.q)?.[1]
+  const like = `%${query.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+  const rows = try sql<Row>`
       SELECT number, title, state, author_login, comments, triage, commitment,
         to_char(created_at AT TIME ZONE 'UTC', ${UTC_MICROS}) AS created_at,
         to_char(updated_at AT TIME ZONE 'UTC', ${UTC_MICROS}) AS updated_at,
@@ -134,33 +133,33 @@ export const page = (repoId: string, query: Query) =>
       WHERE repo_id = ${repoId} AND kind = 'issue' AND deleted_at IS NULL
         ${query.state === "all" ? sql`` : sql`AND state = ${query.state}`}
         ${query.q === "" ? sql`` : number === undefined
-          ? sql`AND title ILIKE ${like}`
-          : sql`AND (number = ${Number(number)} OR title ILIKE ${like})`}
+        ? sql`AND title ILIKE ${like}`
+        : sql`AND (number = ${Number(number)} OR title ILIKE ${like})`}
         ${query.cursor === undefined ? sql`` : sql`AND (updated_at, number) < (${query.cursor.updatedAt}::timestamptz, ${query.cursor.number})`}
         ${query.work === undefined ? sql`` : sql`AND EXISTS (SELECT 1 FROM work_links w WHERE w.repo_id = items.repo_id
           AND w.number = items.number ${query.work === "pr-or-queue" ? sql`AND w.kind IN ('pr', 'queue')` : sql``})`}
       ORDER BY updated_at DESC, number DESC
       LIMIT ${query.limit + 1}`
-    const shown = rows.slice(0, query.limit)
-    const last = shown.at(-1)
-    const work = yield* workOf(repoId, shown.map((row) => row.number))
-    const issues: Array<ListedIssue> = shown.map((row) => ({
-      number: row.number,
-      title: row.title,
-      state: row.state,
-      author: { login: row.author_login },
-      comments: row.comments,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      triage: row.triage,
-      commitment: row.commitment,
-      work: work.get(row.number) ?? { status: "none", links: [] },
-    }))
-    return {
-      issues,
-      next: rows.length > query.limit && last !== undefined ? encodeCursor({ updatedAt: last.cursor_at, number: last.number }) : undefined,
-    }
-  })
+  const shown = rows.slice(0, query.limit)
+  const last = shown.at(-1)
+  const work = try workOf(repoId, shown.map((row) => row.number))
+  const issues: Array<ListedIssue> = shown.map((row) => ({
+    number: row.number,
+    title: row.title,
+    state: row.state,
+    author: { login: row.author_login },
+    comments: row.comments,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    triage: row.triage,
+    commitment: row.commitment,
+    work: work.get(row.number) ?? { status: "none", links: [] },
+  }))
+  return {
+    issues,
+    next: rows.length > query.limit && last !== undefined ? encodeCursor({ updatedAt: last.cursor_at, number: last.number }) : undefined,
+  }
+}
 
 /** The answer for one page: the issues, and a relative `Link` to the next page when there is one. */
 export const answer = (

@@ -3,7 +3,7 @@ import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { expect, test } from "vitest"
 import * as Visibility from "./Visibility.ts"
-import * as Metrics from "./Metrics.ts"
+import * as Metrics from "./Metrics.vibe"
 
 const repository = { id: "acme/widgets", owner: "acme", name: "widgets" }
 

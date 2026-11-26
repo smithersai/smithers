@@ -20,7 +20,7 @@ import * as GitHubStore from "./github/Store.ts"
 import * as GitHubWrite from "./github/Write.ts"
 import * as Triage from "./github/TriageStore.ts"
 import { TokenUnavailable } from "./github/Tokens.ts"
-import * as GitHubMetrics from "./github/Metrics.ts"
+import * as GitHubMetrics from "./github/Metrics.vibe"
 import { SigningKeyIds } from "./SessionStore.ts"
 import * as ProtectedAuthority from "./ProtectedAuthority.ts"
 

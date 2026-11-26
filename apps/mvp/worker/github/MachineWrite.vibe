@@ -1,9 +1,11 @@
 import { withUserAgent } from "./Http.vibe"
+import { responseHeaders } from "./HttpHeaders.ts"
 import { digestSync } from "@smthrs/crypto"
 import { Action, Flow, Interpreter, RetryPolicy, Sleep } from "@smthrs/flow"
 import { Core, GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { identity } from "effect/Function"
 import { HttpClient, HttpClientRequest, type HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
@@ -58,17 +60,16 @@ export interface Machine {
   readonly tokenSha256: string
 }
 
-export const machineOf = (request: HttpServerRequest.HttpServerRequest, repoId: string) =>
-  Effect.gen(function* () {
-    const token = bearerOf(request)
-    if (Option.isNone(token) || !token.value.startsWith(TOKEN_PREFIX)) return Option.none<Machine>()
-    const sql = yield* SqlClient.SqlClient
-    const digest = digestSync(token.value)
-    const [row] = yield* sql<Omit<Machine, "tokenSha256">>`
+export const machineOf = effect (request: HttpServerRequest.HttpServerRequest, repoId: string) => {
+  const token = try sync(() => bearerOf(request))
+  if (Option.isNone(token) || !token.value.startsWith(TOKEN_PREFIX)) return Option.none<Machine>()
+  const sql = try SqlClient.SqlClient
+  const digest = try Effect.orDie(Effect.try({ try: () => digestSync(token.value), catch: identity }))
+  const [row] = try sql<Omit<Machine, "tokenSha256">>`
       SELECT agent, lane, scope FROM machine_tokens
       WHERE token_sha256 = ${digest} AND repo_id = ${repoId} AND revoked_at IS NULL AND expires_at > now()`
-    return Option.map(Option.fromNullishOr(row), (found): Machine => ({ ...found, tokenSha256: digest }))
-  })
+  return Option.map(Option.fromNullishOr(row), (found): Machine => ({ ...found, tokenSha256: digest }))
+}
 
 /** Whether a request carries a machine token at all, for a route that must not read it as anything else. */
 export const carriesMachineToken = (request: HttpServerRequest.HttpServerRequest) =>
@@ -186,37 +187,36 @@ const hasRoom = (tokenSha256: string) =>
  */
 export const admit = (write: { readonly repoId: string; readonly owner: string; readonly machine: Machine; readonly body: MachineBody }) =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql.withTransaction(Effect.gen(function* () {
+    sql.withTransaction(effect {
       const { writeId, ...payload } = write.body
       const { agent, lane, tokenSha256 } = write.machine
-      if (!(yield* tokenHeld(tokenSha256, write.repoId, write.body.op))) return { kind: "token" } as const
+      if (!(try tokenHeld(tokenSha256, write.repoId, write.body.op))) return { kind: "token" } as const
       const parentRepo = write.body.op === "issue/relate" ? write.body.parent.repo : undefined
-      if (!(yield* parentHeld(agent, lane, write.repoId, parentRepo))) return { kind: "parent" } as const
-      const hash = digestSync(JSON.stringify(payload))
-      const [found] = yield* sql<{ readonly repoId: string; readonly agent: string; readonly lane: string; readonly hash: string; readonly status: string }>`
+      if (!(try parentHeld(agent, lane, write.repoId, parentRepo))) return { kind: "parent" } as const
+      const hash = try Effect.orDie(Effect.try({ try: () => digestSync(JSON.stringify(payload)), catch: identity }))
+      const [found] = try sql<{ readonly repoId: string; readonly agent: string; readonly lane: string; readonly hash: string; readonly status: string }>`
         SELECT repo_id AS "repoId", agent, lane, payload_hash AS hash, status FROM machine_writes WHERE id = ${writeId}::uuid`
       if (found !== undefined) {
         return found.repoId !== write.repoId || found.agent !== agent || found.lane !== lane || found.hash !== hash
           ? ({ kind: "conflict" } as const)
           : ({ kind: "existing", status: found.status } as const)
       }
-      if (!(yield* hasRoom(tokenSha256))) return { kind: "backlog" } as const
-      const [inserted] = yield* sql<{ readonly id: string }>`
+      if (!(try hasRoom(tokenSha256))) return { kind: "backlog" } as const
+      const [inserted] = try sql<{ readonly id: string }>`
         INSERT INTO machine_writes (id, repo_id, owner, token_sha256, agent, lane, op, payload, payload_hash)
         VALUES (${writeId}::uuid, ${write.repoId}, ${write.owner}, ${tokenSha256}, ${agent}, ${lane}, ${write.body.op}, ${JSON.stringify(payload)}::jsonb, ${hash})
         ON CONFLICT (id) DO NOTHING RETURNING id::text`
       return inserted === undefined ? ({ kind: "conflict" } as const) : ({ kind: "inserted" } as const)
-    })))
+    }))
 
 /** A write as the agent and lane that made it may read it: its status and the issue number. */
-export const statusOf = (id: string, repoId: string, machine: Machine) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly status: string; readonly failure: string | null; readonly cause: string | null; readonly githubStatus: number | null; readonly number: number | null }>`
+export const statusOf = effect (id: string, repoId: string, machine: Machine) => {
+  const sql = try SqlClient.SqlClient
+  const [row] = try sql<{ readonly status: string; readonly failure: string | null; readonly cause: string | null; readonly githubStatus: number | null; readonly number: number | null }>`
       SELECT status, failure, cause, github_status AS "githubStatus", item_number AS number FROM machine_writes
       WHERE id = ${id}::uuid AND repo_id = ${repoId} AND agent = ${machine.agent} AND lane = ${machine.lane}`
-    return Option.fromNullishOr(row)
-  })
+  return Option.fromNullishOr(row)
+}
 
 /**
  * Whether a `refused` write's recorded cause came from an upstream or server condition that can be fixed and retried
@@ -239,8 +239,8 @@ export const isRetryableRefusal = (cause: string | null): boolean =>
  */
 export const retry = (id: string, repoId: string, machine: Machine, mayAct: (id: string) => boolean) =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql.withTransaction(Effect.gen(function* () {
-      const [write] = yield* sql<{ readonly op: string; readonly status: string; readonly cause: string | null; readonly payload: { readonly parent?: { readonly repo: string } } }>`
+    sql.withTransaction(effect {
+      const [write] = try sql<{ readonly op: string; readonly status: string; readonly cause: string | null; readonly payload: { readonly parent?: { readonly repo: string } } }>`
         SELECT op, status, cause, payload FROM machine_writes
         WHERE id = ${id}::uuid AND repo_id = ${repoId} AND agent = ${machine.agent} AND lane = ${machine.lane}
         FOR UPDATE`
@@ -250,17 +250,17 @@ export const retry = (id: string, repoId: string, machine: Machine, mayAct: (id:
         (write.status === "refused" && isRetryableRefusal(write.cause))
       )
       if (!retryable) return "conflict" as const
-      if (!(yield* tokenHeld(machine.tokenSha256, repoId, write.op))) return "forbidden" as const
-      if (!(yield* parentHeld(machine.agent, machine.lane, repoId, write.payload.parent?.repo))) return "forbidden" as const
+      if (!(try tokenHeld(machine.tokenSha256, repoId, write.op))) return "forbidden" as const
+      if (!(try parentHeld(machine.agent, machine.lane, repoId, write.payload.parent?.repo))) return "forbidden" as const
       if (write.payload.parent !== undefined && !mayAct(repositoryOf(write.payload.parent.repo).id)) return "forbidden" as const
       if (write.status === "pending") return "pending" as const
-      if (!(yield* hasRoom(machine.tokenSha256))) return "backlog" as const
-      yield* sql`
+      if (!(try hasRoom(machine.tokenSha256))) return "backlog" as const
+      try sql`
         UPDATE machine_writes SET status = 'pending', failure = NULL, cause = NULL, github_status = NULL, settled_at = NULL, tries = 0, queued_at = clock_timestamp(),
           token_sha256 = ${machine.tokenSha256}
         WHERE id = ${id}::uuid`
       return "pending" as const
-    })))
+    }))
 
 // ── The owner's dispatcher ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -269,19 +269,18 @@ export const retry = (id: string, repoId: string, machine: Machine, mayAct: (id:
  * does is long past when it said it would wake. Starting that epoch's execution id twice starts one run, so any request
  * can make good a start that was lost.
  */
-export const launch = (owner: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    yield* sql`INSERT INTO machine_dispatch (owner) VALUES (${owner}) ON CONFLICT (owner) DO NOTHING`
-    const [row] = yield* sql<{ readonly epoch: number }>`
+export const launch = effect (owner: string) => {
+  const sql = try SqlClient.SqlClient
+  try sql`INSERT INTO machine_dispatch (owner) VALUES (${owner}) ON CONFLICT (owner) DO NOTHING`
+  const [row] = try sql<{ readonly epoch: number }>`
       UPDATE machine_dispatch SET
         epoch = CASE WHEN running AND due_at > clock_timestamp() - make_interval(mins => ${LEASE_MINUTES}) THEN epoch ELSE epoch + 1 END,
         due_at = CASE WHEN running AND due_at > clock_timestamp() - make_interval(mins => ${LEASE_MINUTES}) THEN due_at ELSE clock_timestamp() END,
         running = true
       WHERE owner = ${owner}
       RETURNING epoch`
-    return row!.epoch
-  })
+  return row!.epoch
+}
 
 /** What names an owner's turn, after the schema, in the Postgres lock a tick holds. */
 export const turnKey = (owner: string) => `:machine-dispatch:${owner}`
@@ -293,15 +292,14 @@ export const dispatchExecutionId = (owner: string, epoch: number) => `github-mac
 export const dispatchPayload = (owner: string, epoch: number) => ({ owner, epoch, round: 0, waitMs: 0 })
 
 /** Notes a rate limit: every call waits until the server's full wait or the penalty, and the penalty doubles. */
-const noteLimited = (owner: string, hintMs: number | null) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    yield* sql`
+const noteLimited = effect (owner: string, hintMs: number | null) => {
+  const sql = try SqlClient.SqlClient
+  try sql`
       UPDATE machine_dispatch
       SET next_at = GREATEST(next_at, clock_timestamp() + make_interval(secs => GREATEST(${hintMs ?? 0}::double precision, penalty_ms) / 1000)),
         penalty_ms = LEAST(penalty_ms * 2, ${MAX_PENALTY_MS})
       WHERE owner = ${owner}`
-  })
+}
 
 /** Says when the dispatcher of `epoch` will wake, which is its lease. */
 const lease = (owner: string, epoch: number, waitMs: number) =>
@@ -312,11 +310,10 @@ const lease = (owner: string, epoch: number, waitMs: number) =>
     ))
 
 /** Holds the next call for at least `ms` from now. */
-const holdFor = (owner: string, ms: number) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    yield* sql`UPDATE machine_dispatch SET next_at = GREATEST(next_at, clock_timestamp() + make_interval(secs => ${ms / 1000})) WHERE owner = ${owner}`
-  })
+const holdFor = effect (owner: string, ms: number) => {
+  const sql = try SqlClient.SqlClient
+  try sql`UPDATE machine_dispatch SET next_at = GREATEST(next_at, clock_timestamp() + make_interval(secs => ${ms / 1000})) WHERE owner = ${owner}`
+}
 
 // ── One GitHub mutation ─────────────────────────────────────────────────────────────────────────────────────────
 
@@ -344,7 +341,7 @@ export const readAnswer = (status: number, headers: Headers, body: unknown, nowM
 
 /** One call to GitHub with `token`, answering its status, headers and JSON: never retried, nothing capped. */
 const call = <E, R>(services: Services<E, R>, http: HttpClient.HttpClient, token: Redacted.Redacted<string>, method: "GET" | "POST" | "PATCH", path: string, body?: unknown) =>
-  Effect.gen(function* () {
+  effect {
     const base = HttpClientRequest.make(method)(`${services.apiBaseUrl}${path}`).pipe(
       HttpClientRequest.setHeaders({
         authorization: `Bearer ${Redacted.value(token)}`,
@@ -353,10 +350,10 @@ const call = <E, R>(services: Services<E, R>, http: HttpClient.HttpClient, token
       }),
     )
     const request = body === undefined ? base : HttpClientRequest.bodyJsonUnsafe(base, body)
-    const response = yield* HttpClient.execute(request)
-    const json: unknown = yield* response.json.pipe(Effect.orElseSucceed(() => undefined))
-    return { status: response.status, headers: new Headers(response.headers as Record<string, string>), json }
-  }).pipe(withUserAgent, Effect.provideService(HttpClient.HttpClient, http))
+    const response = try HttpClient.execute(request)
+    const json: unknown = try response.json.pipe(Effect.orElseSucceed(() => undefined))
+    return { status: response.status, headers: try sync(() => responseHeaders(response.headers)), json }
+  }.pipe(withUserAgent, Effect.provideService(HttpClient.HttpClient, http))
 
 // ── The flow ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -480,304 +477,299 @@ export const steps = <E, R>(services: Services<E, R>) => {
    * The one write this tick handles. Every GitHub answer passes `observed`, so a limit on any call is heard. `turnHeld`
    * fails once this tick's hold on the owner's turn is gone.
    */
-  const work = (write: Row, owner: string, turnHeld: Effect.Effect<unknown, unknown>) =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient
-      let limit: { readonly hintMs: number | null } | undefined
-      const observed = HttpClient.tap(services.http, (response) =>
-        Effect.gen(function* () {
-          const body: unknown = response.status === 403 || response.status === 429 ? yield* response.json.pipe(Effect.orElseSucceed(() => undefined)) : undefined
-          const answer = readAnswer(response.status, new Headers(response.headers as Record<string, string>), body, Date.now())
-          if (answer.kind === "limited") limit = { hintMs: answer.hintMs }
-        }))
-      const repository = repositoryOf(write.repoId.replace(/^github\//, ""))
-      const onGitHub = <A, EE, RR>(effect: Effect.Effect<A, EE, RR>) =>
-        effect.pipe(withToken(token, services.apiBaseUrl), Effect.provideService(HttpClient.HttpClient, observed))
+  const work = effect (write: Row, owner: string, turnHeld: Effect.Effect<unknown, unknown>) => {
+    const sql = try SqlClient.SqlClient
+    let limit: { readonly hintMs: number | null } | undefined
+    const observed = HttpClient.tap(services.http, effect (response) => {
+      const body: unknown = response.status === 403 || response.status === 429 ? try response.json.pipe(Effect.orElseSucceed(() => undefined)) : undefined
+      const answer = readAnswer(response.status, try sync(() => responseHeaders(response.headers)), body, Date.now())
+      if (answer.kind === "limited") limit = { hintMs: answer.hintMs }
+    })
+    const repository = repositoryOf(write.repoId.replace(/^github\//, ""))
+    const onGitHub = <A, EE, RR>(effect: Effect.Effect<A, EE, RR>) =>
+      effect.pipe(withToken(token, services.apiBaseUrl), Effect.provideService(HttpClient.HttpClient, observed))
 
-      /** A rate limit, wherever it was heard: every call waits, and this write's try isn't spent. */
-      const limited = (hintMs: number | null) =>
-        Effect.andThen(noteLimited(owner, hintMs), sql`UPDATE machine_writes SET tries = GREATEST(tries - 1, 0) WHERE id = ${write.id}::uuid`)
-      /** A token GitHub wouldn't give: a refusal only when it says so, else this write waits. */
-      const notMinted = (failure: {
-        readonly reason: string
-        readonly upstreamStatus?: number | undefined
-        readonly retryAfterMillis?: number | undefined
-        readonly rateLimited?: boolean | undefined
-        readonly headerLimited?: boolean | undefined
-        readonly fullWaitMillis?: number | undefined
-      }) =>
-        // A wait in GitHub's headers is a limit here, message or not, as `readAnswer` reads any other call.
-        failure.rateLimited === true || failure.headerLimited === true
-          ? limited(failure.fullWaitMillis ?? failure.retryAfterMillis ?? null)
-          : failure.reason === "app_not_installed" || failure.reason === "not_allowed"
-          ? refuse(write.id, failure.reason, "installation", failure.upstreamStatus ?? null)
-          : failure.retryAfterMillis !== undefined
-          ? noteLimited(owner, failure.retryAfterMillis)
-          : holdFor(owner, READ_RETRY_MS)
-      const minted = yield* services.tokens.forInstallation(repository, "write").pipe(Effect.result)
-      if (minted._tag === "Failure") return yield* notMinted(minted.failure)
-      const token = minted.success
-      const path = `/repos/${repository.owner}/${repository.name}`
-      const payload = write.payload
-      // Every ASCII punctuation character escaped, so GitHub shows exactly what was written (publicContent.mjs): no
-      // emphasis, link, entity, HTML or mention can change what a reader sees, and the scan reads what the page shows.
-      const attributed = (text: string) => `${escapeMarkdown(text)}${attribution(write.agent, write.lane)}`
-      const get = (url: string, as = token) => call(services, observed, as, "GET", url)
-      /** A read that didn't answer. A limit `observed` heard holds on its own; this goes to the back of the line. */
-      const notNow = Effect.gen(function* () {
-        yield* sql`UPDATE machine_writes SET queued_at = clock_timestamp() WHERE id = ${write.id}::uuid`
-        yield* holdFor(owner, READ_RETRY_MS)
-      })
-      /** The tick's one mutation. The hold goes on before it and again after its answer, so spacing runs from the end of a send. */
-      const send = <A>(
-        method: "POST" | "PATCH",
-        url: string,
-        body: unknown,
-        onOk: (json: unknown) => Effect.Effect<A, unknown, SqlClient.SqlClient>,
-        as = token,
-        accepts?: (status: number, json: unknown) => boolean,
-      ) =>
-        Effect.gen(function* () {
-          yield* holdFor(owner, SPACING_MS)
-          // The fence: a tick whose turn was lost, with its connection, sends nothing; another may hold the turn by now.
-          yield* turnHeld
-          const sent = yield* call(services, observed, as, method, url, body).pipe(Effect.result)
-          yield* holdFor(owner, SPACING_MS)
-          // The answer was lost, so GitHub may have done it: the next tick looks first.
-          if (sent._tag === "Failure") return yield* noteLimited(owner, null)
-          const answer = readAnswer(sent.success.status, sent.success.headers, sent.success.json, Date.now())
-          if (answer.kind === "limited") return undefined
-          if (answer.kind === "outage") return yield* noteLimited(owner, null)
-          if (answer.kind === "refused" && !accepts?.(sent.success.status, sent.success.json)) return yield* refuse(write.id, answer.failure, `github_status:${sent.success.status}`, sent.success.status)
-          yield* sql`UPDATE machine_dispatch SET penalty_ms = 60000 WHERE owner = ${owner}`
-          return yield* onOk(sent.success.json)
-        })
-      /**
-       * A create or comment through `Action.once`, keyed by the write's recovery id: it looks for its own marker first,
-       * and sends only when that lookup proves nothing was made. A send that didn't make it answers `made: false`, having
-       * already held, refused or put the write back, so `once` never reads again during a hold.
-       */
-      const once = (name: string, keyed: Action.Keyed<Sent, unknown, SqlClient.SqlClient>) =>
-        Action.once(`machine-${name}`, keyed, { key: write.recoveryId })
-      const made = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-        Effect.map(effect, (result): Sent =>
-          typeof result === "object" && result !== null && "made" in result ? (result as Sent) : { made: false })
-      const refresh = (number: number) =>
-        Effect.gen(function* () {
-          const fetched = yield* onGitHub(fetchIssue(repository, number))
-          yield* project(repository, number, fetched)
-        })
+    /** A rate limit, wherever it was heard: every call waits, and this write's try isn't spent. */
+    const limited = (hintMs: number | null) =>
+      Effect.andThen(noteLimited(owner, hintMs), sql`UPDATE machine_writes SET tries = GREATEST(tries - 1, 0) WHERE id = ${write.id}::uuid`)
+    /** A token GitHub wouldn't give: a refusal only when it says so, else this write waits. */
+    const notMinted = (failure: {
+      readonly reason: string
+      readonly upstreamStatus?: number | undefined
+      readonly retryAfterMillis?: number | undefined
+      readonly rateLimited?: boolean | undefined
+      readonly headerLimited?: boolean | undefined
+      readonly fullWaitMillis?: number | undefined
+    }) =>
+      // A wait in GitHub's headers is a limit here, message or not, as `readAnswer` reads any other call.
+      failure.rateLimited === true || failure.headerLimited === true
+        ? limited(failure.fullWaitMillis ?? failure.retryAfterMillis ?? null)
+        : failure.reason === "app_not_installed" || failure.reason === "not_allowed"
+        ? refuse(write.id, failure.reason, "installation", failure.upstreamStatus ?? null)
+        : failure.retryAfterMillis !== undefined
+        ? noteLimited(owner, failure.retryAfterMillis)
+        : holdFor(owner, READ_RETRY_MS)
+    const minted = try services.tokens.forInstallation(repository, "write").pipe(Effect.result)
+    if (minted._tag === "Failure") return try notMinted(minted.failure)
+    const token = minted.success
+    const path = `/repos/${repository.owner}/${repository.name}`
+    const payload = write.payload
+    // Every ASCII punctuation character escaped, so GitHub shows exactly what was written (publicContent.mjs): no
+    // emphasis, link, entity, HTML or mention can change what a reader sees, and the scan reads what the page shows.
+    const attributed = (text: string) => `${escapeMarkdown(text)}${attribution(write.agent, write.lane)}`
+    const get = (url: string, as = token) => call(services, observed, as, "GET", url)
+    /** A read that didn't answer. A limit `observed` heard holds on its own; this goes to the back of the line. */
+    const notNow = effect {
+      try sql`UPDATE machine_writes SET queued_at = clock_timestamp() WHERE id = ${write.id}::uuid`
+      try holdFor(owner, READ_RETRY_MS)
+    }
+    /** The tick's one mutation. The hold goes on before it and again after its answer, so spacing runs from the end of a send. */
+    const send = effect <A>(
+      method: "POST" | "PATCH",
+      url: string,
+      body: unknown,
+      onOk: (json: unknown) => Effect.Effect<A, unknown, SqlClient.SqlClient>,
+      as = token,
+      accepts?: (status: number, json: unknown) => boolean,
+    ) => {
+      try holdFor(owner, SPACING_MS)
+      // The fence: a tick whose turn was lost, with its connection, sends nothing; another may hold the turn by now.
+      try turnHeld
+      const sent = try call(services, observed, as, method, url, body).pipe(Effect.result)
+      try holdFor(owner, SPACING_MS)
+      // The answer was lost, so GitHub may have done it: the next tick looks first.
+      if (sent._tag === "Failure") return try noteLimited(owner, null)
+      const answer = readAnswer(sent.success.status, sent.success.headers, sent.success.json, Date.now())
+      if (answer.kind === "limited") return undefined
+      if (answer.kind === "outage") return try noteLimited(owner, null)
+      if (answer.kind === "refused" && !accepts?.(sent.success.status, sent.success.json)) return try refuse(write.id, answer.failure, `github_status:${sent.success.status}`, sent.success.status)
+      try sql`UPDATE machine_dispatch SET penalty_ms = 60000 WHERE owner = ${owner}`
+      return try onOk(sent.success.json)
+    }
+    /**
+     * A create or comment through `Action.once`, keyed by the write's recovery id: it looks for its own marker first,
+     * and sends only when that lookup proves nothing was made. A send that didn't make it answers `made: false`, having
+     * already held, refused or put the write back, so `once` never reads again during a hold.
+     */
+    const once = (name: string, keyed: Action.Keyed<Sent, unknown, SqlClient.SqlClient>) =>
+      Action.once(`machine-${name}`, keyed, { key: write.recoveryId })
+    const made = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      Effect.map(effect, (result): Sent =>
+        typeof result === "object" && result !== null && "made" in result ? (result as Sent) : { made: false })
+    const refresh = effect (number: number) => {
+      const fetched = try onGitHub(fetchIssue(repository, number))
+      try project(repository, number, fetched)
+    }
 
-      const finish = Effect.gen(function* () {
-        if (write.op === "issue/relate") {
-          const number = payload.number as number
-          const parent = payload.parent as { readonly repo: string; readonly number: number }
-          const target = repositoryOf(parent.repo)
-          if (target.owner.toLowerCase() !== repository.owner.toLowerCase()) return yield* refuse(write.id, "invalid", "invalid")
-          const now = yield* get(`${path}/issues/${number}/parent`)
-          if (now.status === 200) {
-            const url = String((now.json as { url?: unknown } | undefined)?.url ?? "")
-            const same = url.toLowerCase().endsWith(`/repos/${parent.repo}/issues/${parent.number}`.toLowerCase())
-            return yield* (same ? settle(write.id, "done", null, number) : refuse(write.id, "has_parent", "has_parent", now.status))
-          }
-          if (now.status !== 404) return yield* notNow
-          const child = yield* get(`${path}/issues/${number}`)
-          const id = (child.json as { id?: unknown } | undefined)?.id
-          if (child.status === 404 || child.status === 410) return yield* refuse(write.id, "not_found", `github_status:${child.status}`, child.status)
-          if (child.status !== 200 || typeof id !== "number") return yield* notNow
-          // A parent in another repository: GitHub reads `sub_issue_id` with the parent's token, so that token must reach
-          // the child's repository too. One token covers both, with Issues: write only. The same repository is one name.
-          const parentToken = yield* (target.id === repository.id
-            ? services.tokens.forInstallation(target, "write")
-            : services.tokens.forInstallation(target, "write", [repository])).pipe(Effect.result)
-          if (parentToken._tag === "Failure") return yield* notMinted(parentToken.failure)
-          return yield* send("POST", `/repos/${target.owner}/${target.name}/issues/${parent.number}/sub_issues`, { sub_issue_id: id }, () =>
-            settle(write.id, "done", null, number), parentToken.success)
+    const finish = effect {
+      if (write.op === "issue/relate") {
+        const number = payload.number as number
+        const parent = payload.parent as { readonly repo: string; readonly number: number }
+        const target = repositoryOf(parent.repo)
+        if (target.owner.toLowerCase() !== repository.owner.toLowerCase()) return try refuse(write.id, "invalid", "invalid")
+        const now = try get(`${path}/issues/${number}/parent`)
+        if (now.status === 200) {
+          const url = String((now.json as { url?: unknown } | undefined)?.url ?? "")
+          const same = url.toLowerCase().endsWith(`/repos/${parent.repo}/issues/${parent.number}`.toLowerCase())
+          return try (same ? settle(write.id, "done", null, number) : refuse(write.id, "has_parent", "has_parent", now.status))
         }
+        if (now.status !== 404) return try notNow
+        const child = try get(`${path}/issues/${number}`)
+        const id = (child.json as { id?: unknown } | undefined)?.id
+        if (child.status === 404 || child.status === 410) return try refuse(write.id, "not_found", `github_status:${child.status}`, child.status)
+        if (child.status !== 200 || typeof id !== "number") return try notNow
+        // A parent in another repository: GitHub reads `sub_issue_id` with the parent's token, so that token must reach
+        // the child's repository too. One token covers both, with Issues: write only. The same repository is one name.
+        const parentToken = try (target.id === repository.id
+          ? services.tokens.forInstallation(target, "write")
+          : services.tokens.forInstallation(target, "write", [repository])).pipe(Effect.result)
+        if (parentToken._tag === "Failure") return try notMinted(parentToken.failure)
+        return try send("POST", `/repos/${target.owner}/${target.name}/issues/${parent.number}/sub_issues`, { sub_issue_id: id }, () =>
+          settle(write.id, "done", null, number), parentToken.success)
+      }
 
-        if (write.op === "issue/comment") {
-          const number = payload.number as number
-          const text = attributed(String(payload.body))
-          const marked = GitHub.Once.comment(repository.owner, repository.name, number, text, { author: appLogin })
-          const sent = yield* once("comment", {
-            find: (key) => Effect.map(onGitHub(marked.find(key)), Option.map((): Sent => ({ made: true, number, json: undefined }))),
-            perform: (key) => made(send("POST", `${path}/issues/${number}/comments`, { body: GitHub.Issues.withWriteMarker(text, key) }, () =>
-              Effect.succeed<Sent>({ made: true, number, json: undefined }))),
-          })
-          if (sent.made) return yield* settle(write.id, "done", null, number)
-          return
-        }
+      if (write.op === "issue/comment") {
+        const number = payload.number as number
+        const text = attributed(String(payload.body))
+        const marked = try sync(() => GitHub.Once.comment(repository.owner, repository.name, number, text, { author: appLogin }))
+        const sent = try once("comment", {
+          find: (key) => Effect.map(onGitHub(marked.find(key)), Option.map((): Sent => ({ made: true, number, json: undefined }))),
+          perform: effect (key) => {
+            const body = try sync(() => GitHub.Issues.withWriteMarker(text, key))
+            return try made(send("POST", `${path}/issues/${number}/comments`, { body }, () =>
+              Effect.succeed<Sent>({ made: true, number, json: undefined })))
+          },
+        })
+        if (sent.made) return try settle(write.id, "done", null, number)
+        return
+      }
 
-        if (write.op === "issue/update") {
-          const number = payload.number as number
-          // This lane filed it: a `done` create of its own names the number. Any other lane's issue, an unrelated App's
-          // or a person's is refused, whoever GitHub says wrote it.
-          const [own] = yield* sql`
+      if (write.op === "issue/update") {
+        const number = payload.number as number
+        // This lane filed it: a `done` create of its own names the number. Any other lane's issue, an unrelated App's
+        // or a person's is refused, whoever GitHub says wrote it.
+        const [own] = try sql`
             SELECT 1 FROM machine_writes
             WHERE repo_id = ${write.repoId} AND op = 'issue/create' AND status = 'done' AND item_number = ${number}
               AND agent = ${write.agent} AND lane = ${write.lane} LIMIT 1`
-          if (own === undefined) return yield* refuse(write.id, "not_allowed", "lane")
-          // Updates to one issue land in admission order, field by field: a field a newer done update set is that
-          // update's, and the rest of this one still goes. With nothing left, it is superseded and sends nothing.
-          const newer = yield* sql<{ readonly payload: Record<string, unknown> }>`
+        if (own === undefined) return try refuse(write.id, "not_allowed", "lane")
+        // Updates to one issue land in admission order, field by field: a field a newer done update set is that
+        // update's, and the rest of this one still goes. With nothing left, it is superseded and sends nothing.
+        const newer = try sql<{ readonly payload: Record<string, unknown> }>`
             SELECT payload FROM machine_writes
             WHERE repo_id = ${write.repoId} AND op = 'issue/update' AND status = 'done' AND item_number = ${number} AND seq > ${write.seq}::bigint`
-          const taken = new Set(newer.flatMap((row) => UPDATE_FIELDS.filter((field) => row.payload[field] !== undefined)))
-          const wanted = UPDATE_FIELDS.filter((field) => payload[field] !== undefined && !taken.has(field))
-          if (wanted.length === 0) return yield* refuse(write.id, "superseded", "superseded")
-          const asked = (field: (typeof UPDATE_FIELDS)[number]) => wanted.includes(field) ? payload[field] : undefined
-          const issue = yield* get(`${path}/issues/${number}`)
-          if (issue.status === 404 || issue.status === 410) return yield* refuse(write.id, "not_found", `github_status:${issue.status}`, issue.status)
-          if (issue.status !== 200) return yield* notNow
-          const found = issue.json as { readonly body?: string | null; readonly user?: { readonly login?: string } | null }
-          if (!byThisApp(found.user)) return yield* refuse(write.id, "not_allowed", "lane", issue.status)
-          const marker = GitHub.Issues.writeIdOf(found.body ?? "")
-          const fields = {
-            ...(asked("title") === undefined ? {} : { title: payload.title }),
-            ...(asked("state") === undefined ? {} : { state: payload.state }),
-            ...(asked("body") === undefined ? {} : { body: marker === null || marker === undefined ? attributed(String(payload.body)) : GitHub.Issues.withWriteMarker(attributed(String(payload.body)), marker) }),
-          }
-          return yield* send("PATCH", `${path}/issues/${number}`, fields, () =>
-            Effect.gen(function* () {
-              // Done the moment GitHub says so: a read-back that fails can't send the PATCH again over a newer update.
-              yield* settle(write.id, "done", null, number)
-              yield* refresh(number).pipe(Effect.catch((error) => integrationFailure(error)
-                ? Effect.logWarning("github.machine_write").pipe(Effect.annotateLogs({ writeId: write.id, outcome: "refresh_failed" }))
-                : Effect.fail(error)))
-            }))
+        const taken = new Set(newer.flatMap((row) => UPDATE_FIELDS.filter((field) => row.payload[field] !== undefined)))
+        const wanted = UPDATE_FIELDS.filter((field) => payload[field] !== undefined && !taken.has(field))
+        if (wanted.length === 0) return try refuse(write.id, "superseded", "superseded")
+        const asked = (field: (typeof UPDATE_FIELDS)[number]) => wanted.includes(field) ? payload[field] : undefined
+        const issue = try get(`${path}/issues/${number}`)
+        if (issue.status === 404 || issue.status === 410) return try refuse(write.id, "not_found", `github_status:${issue.status}`, issue.status)
+        if (issue.status !== 200) return try notNow
+        const found = issue.json as { readonly body?: string | null; readonly user?: { readonly login?: string } | null }
+        if (!byThisApp(found.user)) return try refuse(write.id, "not_allowed", "lane", issue.status)
+        const marker = try sync(() => GitHub.Issues.writeIdOf(found.body ?? ""))
+        const fields = {
+          ...(asked("title") === undefined ? {} : { title: payload.title }),
+          ...(asked("state") === undefined ? {} : { state: payload.state }),
+          ...(asked("body") === undefined ? {} : { body: marker === null || marker === undefined ? attributed(String(payload.body)) : try sync(() => GitHub.Issues.withWriteMarker(attributed(String(payload.body)), marker)) }),
         }
+        return try send("PATCH", `${path}/issues/${number}`, fields, effect () => {
+          // Done the moment GitHub says so: a read-back that fails can't send the PATCH again over a newer update.
+          try settle(write.id, "done", null, number)
+          try refresh(number).pipe(Effect.catch((error) => integrationFailure(error)
+            ? Effect.logWarning("github.machine_write").pipe(Effect.annotateLogs({ writeId: write.id, outcome: "refresh_failed" }))
+            : Effect.fail(error)))
+        })
+      }
 
-        // issue/create. The number goes on the row the moment GitHub gives it, so a later tick goes on to the labels.
-        const requestedLabels = (payload.labels ?? []) as ReadonlyArray<Label>
-        const labels = requestedLabels.map(labelName)
-        /** One missing label consumes this tick's mutation; the next tick GETs again, even after a lost answer. */
-        const ensureLabels = Effect.gen(function* () {
-          for (const label of requestedLabels) {
-            const name = labelName(label)
-            const found = yield* get(`${path}/labels/${encodeURIComponent(name)}`)
-            const answer = readAnswer(found.status, found.headers, found.json, Date.now())
-            if (answer.kind === "ok") continue
-            if (found.status !== 404) {
-              if (answer.kind === "refused") yield* refuse(write.id, answer.failure, `github_status:${found.status}`, found.status)
-              else if (answer.kind !== "limited") yield* notNow
-              return false
-            }
-            const metadata: Exclude<Label, string> = typeof label === "string" ? { name } : label
-            yield* send("POST", `${path}/labels`, { name, color: metadata.color ?? "ededed", description: metadata.description ?? "" }, () =>
-              // Provisioning progress is not a failed issue attempt: all twenty requested labels must fit.
-              sql`UPDATE machine_writes SET tries = GREATEST(tries - 1, 0) WHERE id = ${write.id}::uuid`.pipe(
-                Effect.andThen(Effect.logInfo("github.machine_write").pipe(Effect.annotateLogs({ writeId: write.id, outcome: "label_ready" }))),
-              ), token, labelAlreadyExists)
+      // issue/create. The number goes on the row the moment GitHub gives it, so a later tick goes on to the labels.
+      const requestedLabels = (payload.labels ?? []) as ReadonlyArray<Label>
+      const labels = requestedLabels.map(labelName)
+      /** One missing label consumes this tick's mutation; the next tick GETs again, even after a lost answer. */
+      const ensureLabels = effect {
+        for (const label of requestedLabels) {
+          const name = labelName(label)
+          const found = try get(`${path}/labels/${encodeURIComponent(name)}`)
+          const answer = readAnswer(found.status, found.headers, found.json, Date.now())
+          if (answer.kind === "ok") continue
+          if (found.status !== 404) {
+            if (answer.kind === "refused") try refuse(write.id, answer.failure, `github_status:${found.status}`, found.status)
+            else if (answer.kind !== "limited") try notNow
             return false
           }
-          return true
-        })
-        const settleOrLabels = (made: number, issue: unknown) =>
-          Effect.gen(function* () {
-            const has = new Set(((issue as { labels?: ReadonlyArray<{ name: string }> }).labels ?? []).map((label) => label.name.toLowerCase()))
-            const missing = labels.filter((label) => !has.has(label.toLowerCase()))
-            if (missing.length > 0) return missing
-            yield* refresh(made)
-            yield* settle(write.id, "done", null, made)
-            return []
-          })
-        let number = write.itemNumber
-        if (number === null) {
-          const since = new Date(Date.parse(write.createdAt) - 60_000).toISOString()
-          const text = attributed(String(payload.body))
-          // Only an issue this App wrote is adopted: a marker someone copied into theirs is never the match.
-          const marked = GitHub.Once.issue(repository.owner, repository.name, { title: String(payload.title), body: text, since, author: appLogin })
-          const sent = yield* once("issue", {
-            find: (key) => Effect.map(onGitHub(marked.find(key)), Option.map((issue): Sent => ({ made: true, number: issue.number, json: issue }))),
-            perform: (key) => Effect.gen(function* () {
-              if (!(yield* ensureLabels)) return { made: false } as Sent
-              return yield* made(send("POST", `${path}/issues`, { title: payload.title, body: GitHub.Issues.withWriteMarker(text, key), ...(labels.length === 0 ? {} : { labels }) }, (json) =>
-                Effect.gen(function* () {
-                  const number = (json as { number?: unknown } | undefined)?.number
-                  // Done but unreadable: the next tick finds it by its marker.
-                  if (typeof number !== "number") return yield* Effect.as(notNow, { made: false } as Sent)
-                  return { made: true, number, json } as Sent
-                })))
-            }),
-          })
-          if (!sent.made) return
-          yield* sql`UPDATE machine_writes SET item_number = ${sent.number} WHERE id = ${write.id}::uuid`
-          yield* settleOrLabels(sent.number, sent.json)
-          return
+          const metadata: Exclude<Label, string> = typeof label === "string" ? { name } : label
+          try send("POST", `${path}/labels`, { name, color: metadata.color ?? "ededed", description: metadata.description ?? "" }, () =>
+            // Provisioning progress is not a failed issue attempt: all twenty requested labels must fit.
+            sql`UPDATE machine_writes SET tries = GREATEST(tries - 1, 0) WHERE id = ${write.id}::uuid`.pipe(
+              Effect.andThen(Effect.logInfo("github.machine_write").pipe(Effect.annotateLogs({ writeId: write.id, outcome: "label_ready" }))),
+            ), token, labelAlreadyExists)
+          return false
         }
-        yield* sql`UPDATE machine_writes SET item_number = ${number} WHERE id = ${write.id}::uuid`
-        const issue = yield* get(`${path}/issues/${number}`)
-        if (issue.status !== 200) return yield* notNow
-        const missing = yield* settleOrLabels(number, issue.json)
-        if (missing.length > 0) yield* send("POST", `${path}/issues/${number}/labels`, { labels: missing }, () => Effect.void)
-      })
+        return true
+      }
+      const settleOrLabels = effect (made: number, issue: unknown) => {
+        const has = new Set(((issue as { labels?: ReadonlyArray<{ name: string }> }).labels ?? []).map((label) => label.name.toLowerCase()))
+        const missing = labels.filter((label) => !has.has(label.toLowerCase()))
+        if (missing.length > 0) return missing
+        try refresh(made)
+        try settle(write.id, "done", null, made)
+        return []
+      }
+      let number = write.itemNumber
+      if (number === null) {
+        const since = new Date(Date.parse(write.createdAt) - 60_000).toISOString()
+        const text = attributed(String(payload.body))
+        // Only an issue this App wrote is adopted: a marker someone copied into theirs is never the match.
+        const marked = try sync(() => GitHub.Once.issue(repository.owner, repository.name, { title: String(payload.title), body: text, since, author: appLogin }))
+        const sent = try once("issue", {
+          find: (key) => Effect.map(onGitHub(marked.find(key)), Option.map((issue): Sent => ({ made: true, number: issue.number, json: issue }))),
+          perform: effect (key) => {
+            if (!(try ensureLabels)) return { made: false } as Sent
+            return try made(send("POST", `${path}/issues`, { title: payload.title, body: try sync(() => GitHub.Issues.withWriteMarker(text, key)), ...(labels.length === 0 ? {} : { labels }) }, effect (json) => {
+              const number = (json as { number?: unknown } | undefined)?.number
+              // Done but unreadable: the next tick finds it by its marker.
+              if (typeof number !== "number") return try Effect.as(notNow, { made: false } as Sent)
+              return { made: true, number, json } as Sent
+            }))
+          },
+        })
+        if (!sent.made) return
+        try sql`UPDATE machine_writes SET item_number = ${sent.number} WHERE id = ${write.id}::uuid`
+        try settleOrLabels(sent.number, sent.json)
+        return
+      }
+      try sql`UPDATE machine_writes SET item_number = ${number} WHERE id = ${write.id}::uuid`
+      const issue = try get(`${path}/issues/${number}`)
+      if (issue.status !== 200) return try notNow
+      const missing = try settleOrLabels(number, issue.json)
+      if (missing.length > 0) try send("POST", `${path}/issues/${number}/labels`, { labels: missing }, () => Effect.void)
+    }
 
-      const done = yield* finish.pipe(
-        // GitHub's client failing a read is no verdict on the write; Postgres failing goes up, to retry the tick.
-        Effect.catch((error) => integrationFailure(error) ? notNow : Effect.fail(error)),
-      )
-      if (limit !== undefined) yield* limited(limit.hintMs)
-      return done
-    })
+    const done = try finish.pipe(
+      // GitHub's client failing a read is no verdict on the write; Postgres failing goes up, to retry the tick.
+      Effect.catch((error) => integrationFailure(error) ? notNow : Effect.fail(error)),
+    )
+    if (limit !== undefined) try limited(limit.hintMs)
+    return done
+  }
 
   /** One tick's work, by the dispatcher that holds the owner's turn. */
-  const turn = ({ owner, epoch }: typeof Tick.payloadSchema.Type, turnHeld: Effect.Effect<unknown, unknown>) =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient
-      const remaining = Effect.map(sql<{ readonly ms: string }>`
+  const turn = effect ({ owner, epoch }: typeof Tick.payloadSchema.Type, turnHeld: Effect.Effect<unknown, unknown>) => {
+    const sql = try SqlClient.SqlClient
+    const remaining = Effect.map(sql<{ readonly ms: string }>`
         SELECT GREATEST(0, ceil(extract(epoch FROM next_at - clock_timestamp()) * 1000))::bigint::text AS ms
         FROM machine_dispatch WHERE owner = ${owner} AND epoch = ${epoch}`, (rows) => (rows[0] === undefined ? undefined : Number(rows[0].ms)))
-      const wake = (waitMs: number) => lease(owner, epoch, waitMs)
-      // The epoch fence: another took over. The hold comes before any read or token.
-      const held = yield* remaining
-      if (held === undefined) return { stop: true, waitMs: 0 }
-      if (held > 0) return yield* wake(held)
-      const [write] = yield* sql<Row>`
+    const wake = (waitMs: number) => lease(owner, epoch, waitMs)
+    // The epoch fence: another took over. The hold comes before any read or token.
+    const held = try remaining
+    if (held === undefined) return { stop: true, waitMs: 0 }
+    if (held > 0) return try wake(held)
+    const [write] = try sql<Row>`
         UPDATE machine_writes SET tries = tries + 1
         WHERE id = (SELECT id FROM machine_writes WHERE owner = ${owner} AND status = 'pending' ORDER BY queued_at, id LIMIT 1)
         RETURNING id::text, recovery_id::text AS "recoveryId", seq::text, repo_id AS "repoId", token_sha256 AS "tokenSha256", agent, lane, op, payload, item_number AS "itemNumber", tries, created_at::text AS "createdAt"`
-      if (write === undefined) {
-        // Stops only with the owner's row held and the queue read empty after that, in a fresh snapshot: a launch holds the
-        // same row, so a write it answered for is seen here, and one admitted after this sees `running` false and starts another.
-        const stopped = yield* sql.withTransaction(Effect.gen(function* () {
-          const [held] = yield* sql`SELECT 1 FROM machine_dispatch WHERE owner = ${owner} AND epoch = ${epoch} FOR UPDATE`
-          if (held === undefined) return true
-          const [waiting] = yield* sql`SELECT 1 FROM machine_writes WHERE owner = ${owner} AND status = 'pending' LIMIT 1`
-          if (waiting !== undefined) return false
-          yield* sql`UPDATE machine_dispatch SET running = false WHERE owner = ${owner} AND epoch = ${epoch}`
-          return true
-        }))
-        return stopped ? { stop: true, waitMs: 0 } : yield* wake(0)
-      }
-      if (write.tries > MAX_TRIES) {
-        yield* settle(write.id, "failed", "exhausted", null)
-        return yield* wake(0)
-      }
-      // The write's authority holds at the moment of work too: a token revoked since admission stops here.
-      const parent = write.op === "issue/relate" ? (write.payload.parent as { readonly repo: string }).repo : undefined
-      const authorized = (yield* tokenHeld(write.tokenSha256, write.repoId, write.op)) && (yield* parentHeld(write.agent, write.lane, write.repoId, parent))
-      if (!authorized) {
-        yield* refuse(write.id, "revoked", "revoked")
-        return yield* wake(0)
-      }
-      // So does the deployment's list, which may have changed since: this repository and the parent's.
-      if (!services.mayAct(write.repoId) || (parent !== undefined && !services.mayAct(repositoryOf(parent).id))) {
-        yield* refuse(write.id, "not_allowed", "allow_list")
-        return yield* wake(0)
-      }
-      yield* work(write, owner, turnHeld).pipe(
-        // A defect is this write's, not the queue's: it settles `failed`, and the dispatcher goes on.
-        Effect.catchCause((cause) =>
-          Cause.hasDies(cause) && !Cause.hasInterrupts(cause)
-            ? Effect.logWarning("github.machine_write").pipe(
-              Effect.annotateLogs({ writeId: write.id, outcome: "defect" }),
-              Effect.andThen(settle(write.id, "failed", "defect", null)),
-            )
-            : Effect.failCause(cause)
-        ),
-      )
-      return yield* wake((yield* remaining) ?? 0)
-    })
+    if (write === undefined) {
+      // Stops only with the owner's row held and the queue read empty after that, in a fresh snapshot: a launch holds the
+      // same row, so a write it answered for is seen here, and one admitted after this sees `running` false and starts another.
+      const stopped = try sql.withTransaction(effect {
+        const [held] = try sql`SELECT 1 FROM machine_dispatch WHERE owner = ${owner} AND epoch = ${epoch} FOR UPDATE`
+        if (held === undefined) return true
+        const [waiting] = try sql`SELECT 1 FROM machine_writes WHERE owner = ${owner} AND status = 'pending' LIMIT 1`
+        if (waiting !== undefined) return false
+        try sql`UPDATE machine_dispatch SET running = false WHERE owner = ${owner} AND epoch = ${epoch}`
+        return true
+      })
+      return stopped ? { stop: true, waitMs: 0 } : try wake(0)
+    }
+    if (write.tries > MAX_TRIES) {
+      try settle(write.id, "failed", "exhausted", null)
+      return try wake(0)
+    }
+    // The write's authority holds at the moment of work too: a token revoked since admission stops here.
+    const parent = write.op === "issue/relate" ? (write.payload.parent as { readonly repo: string }).repo : undefined
+    const authorized = (try tokenHeld(write.tokenSha256, write.repoId, write.op)) && (try parentHeld(write.agent, write.lane, write.repoId, parent))
+    if (!authorized) {
+      try refuse(write.id, "revoked", "revoked")
+      return try wake(0)
+    }
+    // So does the deployment's list, which may have changed since: this repository and the parent's.
+    if (!services.mayAct(write.repoId) || (parent !== undefined && !services.mayAct(repositoryOf(parent).id))) {
+      try refuse(write.id, "not_allowed", "allow_list")
+      return try wake(0)
+    }
+    try work(write, owner, turnHeld).pipe(
+      // A defect is this write's, not the queue's: it settles `failed`, and the dispatcher goes on.
+      Effect.catchCause((cause) =>
+        Cause.hasDies(cause) && !Cause.hasInterrupts(cause)
+          ? Effect.logWarning("github.machine_write").pipe(
+            Effect.annotateLogs({ writeId: write.id, outcome: "defect" }),
+            Effect.andThen(settle(write.id, "failed", "defect", null)),
+          )
+          : Effect.failCause(cause)
+      ),
+    )
+    return try wake((try remaining) ?? 0)
+  }
 
   /**
    * One tick, alone. It takes the owner's turn first: a transaction-scoped Postgres lock on a connection of its own,
@@ -787,18 +779,18 @@ export const steps = <E, R>(services: Services<E, R>) => {
    * dropped the turn with its connection. The turn's own statements run on another connection: they commit as they go.
    */
   const tick = (cursor: typeof Tick.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const lock = yield* SqlClient.SqlClient
-      const taken = yield* lock.withTransaction(Effect.gen(function* () {
+    effect {
+      const lock = try SqlClient.SqlClient
+      const taken = try lock.withTransaction(effect {
         // The schema is in the key because a lock is the database's, and the queue is the schema's.
-        const [row] = yield* lock<{ readonly held: boolean }>`
+        const [row] = try lock<{ readonly held: boolean }>`
           SELECT pg_try_advisory_xact_lock(hashtextextended(current_schema() || ${turnKey(cursor.owner)}, 0)) AS held`
         if (!row!.held) return Option.none<typeof Outcome.Type>()
-        return Option.some(yield* turn(cursor, lock`SELECT 1`).pipe(Effect.provide(services.database)))
-      }))
+        return Option.some(try turn(cursor, lock`SELECT 1`).pipe(Effect.provide(services.database)))
+      })
       // Another dispatcher is mid-tick: this one looks again after a send's spacing, its lease kept.
-      return Option.isSome(taken) ? taken.value : yield* lease(cursor.owner, cursor.epoch, SPACING_MS)
-    }).pipe(
+      return Option.isSome(taken) ? taken.value : try lease(cursor.owner, cursor.epoch, SPACING_MS)
+    }.pipe(
       Effect.provide(Layer.fresh(services.database)),
       Effect.catch((error) =>
         Effect.logWarning("github.machine_write").pipe(

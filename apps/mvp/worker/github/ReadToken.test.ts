@@ -3,7 +3,7 @@
 // GitHub (worker/github/test/scriptedGitHub.ts) on the `HttpClient` seam; nothing intercepts a request.
 import { ConfigProvider, Deferred, Effect, Fiber, Logger, Metric, Option, Redacted } from "effect"
 import { describe, expect, test } from "vitest"
-import * as Metrics from "./Metrics.ts"
+import * as Metrics from "./Metrics.vibe"
 import * as ReadToken from "./ReadToken.ts"
 import { APP_ID, appKey, INSTALLATION_ID, SCRIPTED_API, scriptedApp, scriptedGitHub } from "./test/scriptedGitHub.ts"
 

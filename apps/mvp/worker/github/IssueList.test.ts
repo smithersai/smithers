@@ -13,8 +13,8 @@ import * as Database from "../../db/Database.ts"
 import { issuesRoute } from "../../src/features/issues/contract.ts"
 import { testFile } from "../test/harness.ts"
 import { handles } from "./Api.vibe"
-import { decodeCursor, encodeCursor, parseIssuesPath } from "./IssueList.ts"
-import * as Metrics from "./Metrics.ts"
+import { decodeCursor, encodeCursor, parseIssuesPath, parseQuery } from "./IssueList.vibe"
+import * as Metrics from "./Metrics.vibe"
 import { scriptedGitHub } from "./test/scriptedGitHub.ts"
 import { member, githubHarness } from "./test/harness.ts"
 import { REPOSITORY, reset, sql } from "./test/fixtures.ts"
@@ -97,6 +97,19 @@ describe("the issues list", () => {
     expect(parseIssuesPath("/api/repos/-bad/widgets/issues")).toBeUndefined()
     expect(parseIssuesPath("/api/other/acme/widgets/issues")).toBeUndefined()
     expect([decodeCursor("@@"), decodeCursor("a"), decodeCursor(btoa("{}"))]).toEqual([undefined, undefined, undefined])
+  })
+
+  test("validates the cursor timestamp and issue number independently", () => {
+    const updatedAt = "2026-10-01T00:01:00.123456Z"
+    for (const cursor of [
+      { updatedAt: "2026-13-01T00:01:00Z", number: 1 },
+      { updatedAt, number: 0 },
+    ]) {
+      expect(decodeCursor(encodeCursor(cursor))).toBeUndefined()
+    }
+    expect(decodeCursor(encodeCursor({ updatedAt, number: 7 }))).toEqual({ updatedAt, number: 7 })
+    expect(parseQuery(new URLSearchParams("cursor=&work=any"))).toMatchObject({ cursor: undefined, work: "any" })
+    expect(parseQuery(new URLSearchParams("work=unknown"))).toBeUndefined()
   })
 
   test("pages a repository's open issues, latest update first, with a next link until the last page", async () => {

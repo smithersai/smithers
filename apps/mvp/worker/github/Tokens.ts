@@ -4,7 +4,7 @@ import type { SqlClient } from "effect/sql"
 import type { SessionKeys } from "../SessionKeys.vibe"
 import { classify, isRateLimited, statusOf } from "./Calls.ts"
 import type { Repository } from "./Config.vibe"
-import * as Metrics from "./Metrics.ts"
+import * as Metrics from "./Metrics.vibe"
 import * as Store from "./Store.ts"
 
 // `GitHubTokens` (decision 0012 §3, docs/features/issues.md#tokens): the two tokens a GitHub step acts with.

@@ -9,7 +9,7 @@ import { codeOf } from "./ErrorCode.ts"
 import { FlowStarter } from "./Flows.ts"
 import { Ask, ASK_FLOW, askExecutionId, AskId } from "./flows/Ask.vibe"
 import { repositoryOf } from "./github/Config.vibe"
-import { type Machine, machineOf, type MachineScope } from "./github/MachineWrite.ts"
+import { type Machine, machineOf, type MachineScope } from "./github/MachineWrite.vibe"
 import { rowIdOf } from "./RepoRuns.ts"
 import { bearerOf } from "./RunCredentials.ts"
 

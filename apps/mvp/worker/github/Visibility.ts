@@ -3,7 +3,7 @@ import { Clock, Effect, Metric, Option, Redacted, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { classify, isRateLimited, statusOf } from "./Calls.ts"
 import type { Repository } from "./Config.vibe"
-import * as Metrics from "./Metrics.ts"
+import * as Metrics from "./Metrics.vibe"
 import type { ReadToken } from "./ReadToken.ts"
 
 /** Only bounded diagnostics leave the metadata transport; no headers or provider text are logged. */

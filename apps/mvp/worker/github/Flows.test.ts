@@ -14,7 +14,7 @@ import { ISSUES_STREAM, reconcileExecutionId, SYNC_STALE_MS, writeExecutionId } 
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as Apply from "./Apply.vibe"
-import * as Metrics from "./Metrics.ts"
+import * as Metrics from "./Metrics.vibe"
 import * as Reconcile from "./Reconcile.ts"
 import * as RepoRoles from "./RepoRoles.ts"
 import { repositoryOf } from "./Config.vibe"
