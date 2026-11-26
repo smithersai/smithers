@@ -1,0 +1,88 @@
+import { SqlClient } from "effect/sql"
+import type { Role } from "./Actor.vibe"
+import * as WriteAuthority from "./WriteAuthority.ts"
+import * as RepoRoles from "./github/RepoRoles.vibe"
+import { latestRole, latestRoleVerifiedAt, RoleFreshMs } from "./SessionStore.vibe"
+import type { Session } from "./WriteAuthority.ts"
+
+export const checks = Metric.counter("smithers_protected_authority_checks", {
+  incremental: true,
+  description: "Protected write authority checks, by held, unavailable or denied outcome",
+})
+
+export const commitChecks = Metric.counter("smithers_protected_authority_commit_checks", {
+  incremental: true,
+  description: "Protected writes checked after all mutations, by held or unavailable outcome",
+})
+
+/** Read under the role/person lock already held by check. Missing and future observations have no authority. */
+const roleDeadline = effect (sql: SqlClient.SqlClient, authority: Session) => {
+  if (authority.scope === undefined) return sql`'-infinity'::timestamptz`
+  if (authority.scope._tag === "Repo") {
+    const held: RepoRoles.Held = authority.scope.held
+    return sql`coalesce((SELECT CASE WHEN checked_at <= clock_timestamp()
+      THEN checked_at + make_interval(secs => ${held.freshSeconds ?? RepoRoles.FRESH_SECONDS})
+      ELSE '-infinity'::timestamptz END FROM github_repo_roles
+      WHERE repo_id = ${held.repoId} AND person_id = ${held.personId}), '-infinity'::timestamptz)`
+  }
+  const window = try RoleFreshMs
+  const verified = latestRoleVerifiedAt(sql, sql`${authority.personId}::uuid`)
+  return sql`CASE WHEN ${verified} <= clock_timestamp()
+    THEN ${verified} + (${window} * interval '1 millisecond') ELSE '-infinity'::timestamptz END`
+}
+
+const live = effect (authority: Session) => {
+  const sql = try SqlClient.SqlClient
+  const [row] = try sql<{ live: boolean }>`SELECT clock_timestamp() <
+    least(${WriteAuthority.deadline(sql, authority)}, ${try roleDeadline(sql, authority)}) AS live`
+  return row?.live === true
+}
+
+/** In the final transaction, distinguish missing authority from a live person's confirmed permission denial. */
+export const check = (authority: Session | null | undefined, roles: ReadonlyArray<Role>) =>
+  effect {
+    if (authority === null) return "held" as const // explicit sessionless local development
+    if (authority?.scope === undefined) return "unavailable" as const
+    if (authority.scope._tag === "Repo") {
+      const held = authority.scope.held
+      if (held.personId !== authority.personId) return "unavailable" as const
+      // A fresh locked role can confirm denial; a missing, older or expired observation cannot.
+      const role = try RepoRoles.checkHeld(held, roles)
+      if (!(try WriteAuthority.holds(authority))) return "unavailable" as const
+      // The role may have aged out while the session or alias lock waited.
+      return (try live(authority)) ? role : "unavailable" as const
+    }
+    const sql = try SqlClient.SqlClient
+    // SessionStore records all verified role observations under this same person lock.
+    const [person] = try sql`SELECT 1 FROM people WHERE id::text = ${authority.personId} FOR SHARE`
+    if (person === undefined || !(try WriteAuthority.holds(authority))) return "unavailable" as const
+    if (!(try live(authority))) return "unavailable" as const
+    const [row] = try sql<{ readonly role: Role | null }>`SELECT ${
+      latestRole(sql, sql`${authority.personId}::uuid`)
+    } AS role`
+    return row?.role != null && roles.includes(row.role) ? "held" as const : "denied" as const
+  }.pipe(
+    tap(effect outcome => {
+      try Metric.update(Metric.withAttributes(checks, { outcome }), 1)
+      try annotateCurrentSpan({ "protected.authority.outcome": outcome })
+      if (outcome !== "held") try logWarning("protected.authority").pipe(annotateLogs({ outcome }))
+    }),
+    withSpan("protected.authority"),
+  )
+
+/** Stores that already return retryable stale authority keep their boolean check. */
+export const holds = (authority: Session | null | undefined, roles: ReadonlyArray<Role>) =>
+  map(check(authority, roles), outcome => outcome === "held")
+
+/** Both grants and denials must survive every settings, audit and receipt-fold wait before settlement commits. */
+export const requireAtCommit = (authority: Session | null | undefined) =>
+  effect {
+    if (authority == null) return // explicit local/internal writes already checked by their caller
+    const outcome = (try live(authority)) ? "held" : "unavailable"
+    try Metric.update(Metric.withAttributes(commitChecks, { outcome }), 1)
+    try annotateCurrentSpan({ "protected.authority.stage": "commit", "protected.authority.outcome": outcome })
+    if (outcome === "unavailable") {
+      try logWarning("protected.authority").pipe(annotateLogs({ stage: "commit", outcome }))
+      throw new WriteAuthority.Expired({})
+    }
+  }.pipe(withSpan("protected.authority"))

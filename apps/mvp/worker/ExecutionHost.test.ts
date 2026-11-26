@@ -56,7 +56,7 @@ import * as GitHubStore from "./github/Store.vibe"
 import * as TriageStore from "./github/TriageStore.vibe"
 import * as SecretStore from "./secrets/Store.vibe"
 import { TokenUnavailable } from "./github/Tokens.vibe"
-import * as ProtectedAuthority from "./ProtectedAuthority.ts"
+import * as ProtectedAuthority from "./ProtectedAuthority.vibe"
 
 // The deployed flows' app database, on this file's own schema.
 const app = testFile("execution_host")

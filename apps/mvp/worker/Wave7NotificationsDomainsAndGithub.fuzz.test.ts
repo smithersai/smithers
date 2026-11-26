@@ -16,7 +16,7 @@ import * as GitHubTokens from "./github/Tokens.vibe"
 import * as TreeScope from "./github/TreeScope.vibe"
 import * as HostedModel from "./HostedModel.vibe"
 import * as ModelRoles from "./ModelRoles.vibe"
-import * as Notifications from "./Notifications.ts"
+import * as Notifications from "./Notifications.vibe"
 import * as SetModel from "./SetModel.vibe"
 import * as WriteAuthority from "./WriteAuthority.ts"
 

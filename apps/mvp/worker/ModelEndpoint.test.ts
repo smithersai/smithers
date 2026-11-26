@@ -16,7 +16,7 @@ import * as TestDatabase from "../db/TestDatabase.ts"
 import { type Actor, CurrentActor, Sessions, SessionsUnavailable } from "./Actor.vibe"
 import * as Flows from "./Flows.vibe"
 import * as HostedModel from "./HostedModel.vibe"
-import * as ModelSeats from "./ModelSeats.ts"
+import * as ModelSeats from "./ModelSeats.vibe"
 import * as ModelSpend from "./ModelSpend.vibe"
 import * as ModelRoles from "./ModelRoles.vibe"
 import * as ModelTiers from "./ModelTiers.vibe"
@@ -1687,6 +1687,25 @@ describe("a server flow's own calls (ModelSeats.local)", () => {
     )
     const exit = await run(local("judge"), ask("judge this"))
     expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ code: "no_route", httpStatus: 409 })
+    expect(await usageRows()).toEqual([])
+  })
+
+  test("seat preflight resolves without spending and distinguishes missing configuration from a database failure", async () => {
+    const owner = { personId: member.subject.id, deploymentPays: true }
+    const { judge, requests } = await seat(answering)
+    expect(await Effect.runPromise(Effect.result(judge.requireSeat(owner))))
+      .toMatchObject({ _tag: "Success" })
+    expect(await Effect.runPromise(Effect.result(judge.requireSeat({ ...owner, deploymentPays: false }))))
+      .toMatchObject({ _tag: "Failure", failure: new ModelSeats.NoSeat() })
+
+    const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://nobody:nothing@127.0.0.1:1/none")))
+    const local = await Effect.runPromise(ModelSeats.local(unreachable, { hosted: true }).pipe(
+      Effect.provide(PersonalModels.none),
+      Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+    ))
+    expect(await Effect.runPromise(Effect.result(local("judge").requireSeat(owner))))
+      .toMatchObject({ _tag: "Failure", failure: { status: 503, modelErrorCode: "provider_internal" } })
+    expect(requests).toEqual([])
     expect(await usageRows()).toEqual([])
   })
 

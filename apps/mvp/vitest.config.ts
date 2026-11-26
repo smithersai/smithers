@@ -80,7 +80,7 @@ export default defineConfig({
         "worker/AgentSandbox.vibe",
         "worker/BodyLimits.vibe",
         "worker/ErrorCode.ts",
-        "worker/ModelSeats.ts",
+        "worker/ModelSeats.vibe",
         "worker/ModelRefusal.ts",
         "db/migrations/0059_model_quota_failure.ts",
         "worker/ModelRoles.vibe",
@@ -162,7 +162,7 @@ export default defineConfig({
         // Budget reservations (docs/features/model-endpoint.md#budget).
         "db/migrations/0012_model_reservations.ts",
         // A person's own flows (docs/features/flows.md#your-own-flows).
-        "worker/PersonalFlows.ts",
+        "worker/PersonalFlows.vibe",
         "db/migrations/0015_flows.ts",
         "db/migrations/0087_flow_draft_receipts.ts",
         // Every stored prompt flow converted to flow source (docs/features/flows.md#your-own-flows).
@@ -188,7 +188,7 @@ export default defineConfig({
         // Notifications: the feed's fold, routes and shape, and the run index's scope (docs/features/notifications.md).
         "worker/FeedLocks.vibe",
         "worker/NotificationPolicy.vibe",
-        "worker/Notifications.ts",
+        "worker/Notifications.vibe",
         "db/migrations/0020_notifications.ts",
         // The git loop: GitHub's webhook, the writes route, the issues' shapes and the GitHub flows
         // (docs/features/issues.md). The scripted GitHub and the fixtures are test support.

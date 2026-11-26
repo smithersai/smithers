@@ -19,7 +19,7 @@ import { codeOf } from "./ErrorCode.ts"
 import { TaskAnswers } from "./Flows.vibe"
 import { ASK_TASK } from "./flows/Ask.vibe"
 import { withAnswerConversation } from "./Messages.ts"
-import * as Notifications from "./Notifications.ts"
+import * as Notifications from "./Notifications.vibe"
 import * as RunCredentials from "./RunCredentials.vibe"
 import * as ShapeAccess from "./ShapeAccess.vibe"
 

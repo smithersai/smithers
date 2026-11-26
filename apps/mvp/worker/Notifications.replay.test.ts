@@ -7,7 +7,7 @@ import { NOTIFICATIONS_SHAPE_ROUTE } from "../src/features/attention/contract.ts
 import { BranchRoles } from "./branch/Access.vibe"
 import { repositoryOf } from "./github/Config.vibe"
 import * as RepoRoles from "./github/RepoRoles.vibe"
-import * as Notifications from "./Notifications.ts"
+import * as Notifications from "./Notifications.vibe"
 import { app } from "./github/test/harness.ts"
 import { accountIdOf, appKey, INSTALLATION_ID, scriptedGitHub } from "./github/test/scriptedGitHub.ts"
 import { harness, recorded, testFile } from "./test/harness.ts"

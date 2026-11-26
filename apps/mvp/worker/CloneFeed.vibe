@@ -2,7 +2,7 @@ import { Inbox } from "@smthrs/notifications"
 import { identity } from "effect/Function"
 import { SqlClient } from "effect/sql"
 import { cloneRef, cloneSubject } from "../src/features/repo/contract.ts"
-import { routed } from "./Notifications.ts"
+import { routed } from "./Notifications.vibe"
 
 // A clone in its person's feed (decision 0009, docs/features/repo.md#the-clone-in-the-feed): the person who asked for
 // the attempt gets one `notifications` row, `clone:<repo id>`, that follows the `repositories` row through requested,

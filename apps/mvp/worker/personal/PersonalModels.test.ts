@@ -24,7 +24,7 @@ import {
 } from "../../src/features/personal-model/contract.ts"
 import * as Actor from "../Actor.vibe"
 import * as Flows from "../Flows.vibe"
-import * as ModelSeats from "../ModelSeats.ts"
+import * as ModelSeats from "../ModelSeats.vibe"
 import * as ModelTiers from "../ModelTiers.vibe"
 import * as SpendAlert from "../flows/SpendAlert.vibe"
 import { SecretKeys } from "../secrets/Keys.vibe"

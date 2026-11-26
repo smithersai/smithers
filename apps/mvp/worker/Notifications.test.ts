@@ -14,7 +14,7 @@ import type { Actor } from "./Actor.vibe"
 import { REPOSITORY } from "./github/test/fixtures.ts"
 import { delivery, githubHarness } from "./github/test/harness.ts"
 import * as FeedLocks from "./FeedLocks.vibe"
-import * as Notifications from "./Notifications.ts"
+import * as Notifications from "./Notifications.vibe"
 import * as RepoRoles from "./github/RepoRoles.vibe"
 import { eventually, harness, recorded, testFile } from "./test/harness.ts"
 

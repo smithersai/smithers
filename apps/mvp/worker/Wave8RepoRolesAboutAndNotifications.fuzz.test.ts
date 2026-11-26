@@ -25,7 +25,7 @@ import * as Actor from "./Actor.vibe"
 import * as BranchAccess from "./branch/Access.vibe"
 import { repositoryOf } from "./github/Config.vibe"
 import * as RepoRoles from "./github/RepoRoles.vibe"
-import * as Notifications from "./Notifications.ts"
+import * as Notifications from "./Notifications.vibe"
 import * as RepoAbout from "./RepoAbout.vibe"
 import * as TimelineSummaries from "./TimelineSummaries.vibe"
 

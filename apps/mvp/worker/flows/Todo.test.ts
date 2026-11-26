@@ -33,7 +33,7 @@ import { REPOSITORY, reset, services as githubServices, sql } from "../github/te
 import { BOT_LOGIN, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as Apply from "../github/Apply.vibe"
 import * as ExecutionHost from "../ExecutionHost.ts"
-import * as ModelSeats from "../ModelSeats.ts"
+import * as ModelSeats from "../ModelSeats.vibe"
 import * as ModelRoles from "../ModelRoles.vibe"
 import { PersonalModels } from "../personal/Models.vibe"
 import { KEY, resetModels, seed, seedKeys, VALUE } from "../personal/test/harness.ts"

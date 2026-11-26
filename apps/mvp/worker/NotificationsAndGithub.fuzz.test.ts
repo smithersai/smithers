@@ -12,7 +12,7 @@ import * as RepoRoles from "./github/RepoRoles.vibe"
 import * as GhStore from "./github/Store.vibe"
 import * as Tokens from "./github/Tokens.vibe"
 import * as Visibility from "./github/Visibility.vibe"
-import * as Notifications from "./Notifications.ts"
+import * as Notifications from "./Notifications.vibe"
 import * as SessionStore from "./SessionStore.vibe"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "250" : "100"))

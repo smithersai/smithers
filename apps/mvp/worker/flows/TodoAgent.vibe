@@ -11,7 +11,7 @@ import type { SqlClient } from "effect/sql"
 import { CHECKS_DIRECTORY } from "../../src/features/pulls/contract.ts"
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.vibe"
-import type { Seat as EndpointSeat } from "../ModelSeats.ts"
+import type { Seat as EndpointSeat } from "../ModelSeats.vibe"
 import * as SandboxCommand from "./SandboxCommand.vibe"
 import * as Machine from "./TodoMachine.vibe"
 

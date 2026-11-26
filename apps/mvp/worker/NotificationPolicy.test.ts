@@ -8,7 +8,7 @@ import { TestClock } from "effect/testing"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
 import * as Policy from "./NotificationPolicy.vibe"
-import * as Notifications from "./Notifications.ts"
+import * as Notifications from "./Notifications.vibe"
 import { testFile } from "./test/harness.ts"
 import ExamplePolicy, { layer as examplePolicyRule } from "../../../.smithers/flows/notification-policy/flow.ts"
 import { Decision as ExampleDecision, Request as ExampleRequest } from "../../../.smithers/flows/notification-policy/src/policy.ts"
@@ -226,6 +226,17 @@ const run = async () => {
   return { id, branch }
 }
 const fold = (id: string) => Effect.flatMap(SqlClient.SqlClient, sql => sql.withTransaction(Notifications.foldRun(id, undefined)))
+
+test.each([null, repoId])("a run with no branch keeps the launcher's notice for repository %s", async (repository) => {
+  const id = crypto.randomUUID()
+  await query(
+    `INSERT INTO runs (id, flow, status, launched_by, repo_id) VALUES ($1, 'test', 'working', 'ann', $2)`,
+    id, repository,
+  )
+  expect(await runtime.runPromise(fold(id))).toBe(1)
+  expect(await query(`SELECT subject, recipient, mine, href FROM notifications`))
+    .toEqual([{ subject: Notifications.runSubject(id), recipient: "ann", mine: true, href: "/app" }])
+})
 
 test("repository run policy narrows new notices; existing recipients still settle with acknowledgments intact", async () => {
   const { id } = await run()

@@ -1,4 +1,4 @@
-import * as ProtectedAuthority from "../ProtectedAuthority.ts"
+import * as ProtectedAuthority from "../ProtectedAuthority.vibe"
 import * as WriteAuthority from "../WriteAuthority.ts"
 import { Clock, Context, Effect, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"

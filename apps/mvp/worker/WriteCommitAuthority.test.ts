@@ -22,7 +22,7 @@ import * as Triage from "./github/TriageStore.vibe"
 import { TokenUnavailable } from "./github/Tokens.vibe"
 import * as GitHubMetrics from "./github/Metrics.vibe"
 import { SigningKeyIds } from "./SessionStore.vibe"
-import * as ProtectedAuthority from "./ProtectedAuthority.ts"
+import * as ProtectedAuthority from "./ProtectedAuthority.vibe"
 
 const runtime = testFile("write_commit_authority")
 const query = <A extends object>(f: (sql: SqlClient.SqlClient) => Effect.Effect<ReadonlyArray<A>, unknown>) =>

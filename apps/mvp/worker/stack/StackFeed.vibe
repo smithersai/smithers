@@ -1,5 +1,5 @@
 import { SqlClient } from "effect/sql"
-import { routed } from "../Notifications.ts"
+import { routed } from "../Notifications.vibe"
 
 /**
  * Fold a committed TODO into its person's notification in the transaction that commits it (decision 0124): Commit's

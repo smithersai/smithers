@@ -12,7 +12,7 @@ import { describe, expect, test, vi } from "vitest"
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.vibe"
 import { noCommands } from "../test/commands.ts"
-import type { Seat } from "../ModelSeats.ts"
+import type { Seat } from "../ModelSeats.vibe"
 import * as TodoAgent from "./TodoAgent.vibe"
 import * as TodoMachine from "./TodoMachine.vibe"
 

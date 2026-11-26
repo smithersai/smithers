@@ -5,7 +5,7 @@ import type { SqlClient } from "effect/sql"
 import type { ModelRole } from "../../src/features/model/contract.ts"
 import { canAsk, Sessions } from "../Actor.vibe"
 import { codeOf } from "../ErrorCode.ts"
-import * as ModelSeats from "../ModelSeats.ts"
+import * as ModelSeats from "../ModelSeats.vibe"
 import * as ModelSpend from "../ModelSpend.vibe"
 import type * as PersonalUsage from "../personal/Usage.vibe"
 

@@ -47,7 +47,7 @@ import * as Api from "../Api.vibe"
 import type { GitHubApp, Repository } from "../Config.vibe"
 import * as RepoRoles from "../RepoRoles.vibe"
 import * as Host from "../Host.vibe"
-import type { Seat } from "../../ModelSeats.ts"
+import type { Seat } from "../../ModelSeats.vibe"
 import { confirmedSession, REPOSITORY, services as flowServices } from "./fixtures.ts"
 import { APP_ID, appKey, SCRIPTED_API, type ScriptedGitHub, scriptedGitHub } from "./scriptedGitHub.ts"
 

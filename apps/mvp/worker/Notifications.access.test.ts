@@ -8,7 +8,7 @@ import { NOTIFICATIONS_SHAPE_ROUTE } from "../src/features/attention/contract.ts
 import { Sessions, SessionsUnavailable, type Actor } from "./Actor.vibe"
 import { BranchRoles } from "./branch/Access.vibe"
 import * as FeedLocks from "./FeedLocks.vibe"
-import * as Notifications from "./Notifications.ts"
+import * as Notifications from "./Notifications.vibe"
 import * as SessionKeys from "./SessionKeys.vibe"
 import * as SessionSigningKeys from "./SessionSigningKeys.vibe"
 import * as SessionStore from "./SessionStore.vibe"
@@ -1152,6 +1152,18 @@ const decisionFixture = async (count = 1, delayMs = 0) => {
     FROM notification_repository_access WHERE recipient = $1 ORDER BY repo_id`, id)
   return { id, actor, repos, roles, calls, unavailable, remember, receipts, peak: () => peak }
 }
+
+test("local feed emission uses the session role when the policy omits its uninstalled override", async () => {
+  const f = await decisionFixture()
+  const roles = Layer.effect(BranchRoles, Effect.map(
+    BranchRoles, (service) => BranchRoles.of({ ...service, uninstalled: undefined }),
+  )).pipe(Layer.provide(f.roles))
+  const { h } = await proxy(f.actor, roles)
+  const response = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(response.status).toBe(200)
+  expect((await values(response)).map((row) => row.subject)).toEqual(f.repos)
+  expect(f.calls).toEqual(f.repos)
+})
 
 test.each([true, false])("a recent recorded decision readable=%s is reused without resolving or writing", async readable => {
   const f = await decisionFixture()

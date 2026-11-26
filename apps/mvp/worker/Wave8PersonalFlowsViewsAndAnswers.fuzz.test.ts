@@ -24,7 +24,7 @@ import * as Actor from "./Actor.vibe"
 import * as BranchAccess from "./branch/Access.vibe"
 import { DocsSource } from "./docs/Source.vibe"
 import * as PersonalModels from "./personal/Models.vibe"
-import * as PersonalFlows from "./PersonalFlows.ts"
+import * as PersonalFlows from "./PersonalFlows.vibe"
 import { SecretKeys } from "./secrets/Keys.vibe"
 import * as Views from "./Views.ts"
 

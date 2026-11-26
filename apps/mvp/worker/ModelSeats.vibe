@@ -1,0 +1,503 @@
+import { finalFailure } from "./ModelRefusal.ts"
+import type { FlowEngineLike } from "@smthrs/agent"
+import { FlowRuntime } from "@smthrs/flow"
+import { Model, ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
+import { HostModel, HostModelUnusable } from "@smthrs/model-host"
+import { SecureRandom } from "effect/crypto"
+import type { SqlClient } from "effect/sql"
+import type { ModelRole } from "../src/features/model/contract.ts"
+import { codeOf } from "./ErrorCode.ts"
+import { FlowStarter } from "./Flows.vibe"
+import * as HostedModel from "./HostedModel.vibe"
+import * as ModelRoles from "./ModelRoles.vibe"
+import * as ModelSpend from "./ModelSpend.vibe"
+import * as ModelTiers from "./ModelTiers.vibe"
+import * as ModelUsage from "./ModelUsage.vibe"
+import { PersonalModels, PersonalModelUnusable } from "./personal/Models.vibe"
+import * as PersonalUsage from "./personal/Usage.vibe"
+
+// In-process model seats for durable server flows. Admission opens a person's own model when available. Otherwise
+// an eligible call uses the deployment's configured model and reserves its worst-case cost from the daily budget.
+
+/** `params` with `effort` set on them; unchanged when there is none. */
+const withEffort = (params: ModelRequest.GenerationParams, effort: ModelRequest.ReasoningEffort | undefined) =>
+  effort === undefined ? params : ModelRequest.GenerationParams.make({ ...params, reasoningEffort: effort })
+
+/** Terminal model quota and credit refusals, with no provider text or credentials. */
+export const quotaRefusals = Metric.counter("smithers_model_quota_refusals", { incremental: true })
+
+const recordRefusal = (role: ModelRole, error: Model.ModelFailure) => {
+  if (
+    !(error instanceof ModelError.ModelError) || (error.code !== "quota_exceeded" && error.code !== "out_of_credit")
+  ) {
+    return Effect.void
+  }
+  const attributes = { role, errorCode: error.code, httpStatus: error.httpStatus ?? 0 }
+  return andThen(
+    Metric.update(Metric.withAttributes(quotaRefusals, { role, errorCode: error.code }), 1),
+    logWarning("model.quota.refused").pipe(annotateLogs(attributes)),
+  ).pipe(withSpan("model.quota.refused", { attributes }))
+}
+
+/** The deployment's token budget per UTC day, input and output together, when `MODEL_DAILY_TOKEN_BUDGET` is unset. */
+export const DAILY_TOKEN_BUDGET = 1_000_000
+
+/** The most output tokens one call may ask for when `MODEL_MAX_OUTPUT_TOKENS` is unset. */
+export const MAX_OUTPUT_TOKENS = 8_000
+
+/** The most messages one call may send when `MODEL_MAX_MESSAGES` is unset. */
+export const MAX_MESSAGES = 200
+
+/**
+ * The largest request body, in bytes, when `MODEL_MAX_REQUEST_BYTES` is unset: 192 KiB. It is the prompt's token cap
+ * too, because a call reserves each byte as a token. The agent compacts against a 32,768-token window
+ * (worker/flows/TodoAgent.ts), about 128 KiB of text at four bytes a token, and its JSON
+ * body adds field names and escapes, so a smaller bound would refuse requests the agent counts as fitting.
+ */
+export const MAX_REQUEST_BYTES = 192 * 1024
+
+const modelBytes = Config.schema(Schema.Int.check(Schema.isGreaterThan(0)), "MODEL_MAX_REQUEST_BYTES").pipe(
+  Config.withDefault(MAX_REQUEST_BYTES),
+)
+
+/**
+ * How long a call's reservation lasts before it is final, when `MODEL_RESERVATION_EXPIRY` is unset: an hour. A
+ * reservation that never settles (its Worker died, or its settle never ran) counts in full either way; past its expiry,
+ * a late settle can't refund it. The longest call the caps allow writes 16,000 tokens (`MAX_OUTPUT_TOKENS` of output
+ * and as many of thinking), about 27 minutes at 10 tokens a second, so an hour leaves every call time to settle.
+ */
+export const RESERVATION_EXPIRY = Duration.hours(1)
+
+/**
+ * Settles of a served call's reservation, by `outcome`: `recorded` (settled to what it spent), `refused` (the provider
+ * refused it before any output, so it settled to the usage the provider reported, 0 when none), `kept` (its usage was
+ * unknown, so it keeps its reservation), `expired` (it ended after its reservation expired, so it stays charged in
+ * full) or `error`.
+ */
+export const usageWrites = Metric.counter("smithers_model_usage_writes", {
+  description: "Model usage settled after served calls, by outcome",
+  incremental: true,
+})
+
+const positive = Schema.Int.check(Schema.isGreaterThan(0))
+
+const refuse = (status: number, code: ModelProxy.Refusal["code"], message: string) =>
+  new ModelProxy.Refusal({ status, code, message })
+
+const unavailable = refuse(503, "provider_internal", "Smithers can't reach its database. Try again.")
+
+// A role whose model can't be used here is a setting to change, not an outage to wait out: a 4xx, which a caller's
+// model step seals as its answer. A 503 was a capacity refusal to the step, which the engine retried six times.
+const noRoute = refuse(409, "no_route", "This model isn't available.")
+
+// A person's own model that can't answer here is theirs to save again; it never falls back to the deployment's model.
+const ownUnusable = refuse(409, "no_route", "Your model can't be used. Save it again in Settings.")
+
+// Hosted inference is off (decision 0099): a person without a model of their own adds one; nobody's call is refused.
+const hostedOff = refuse(409, "no_route", "Add your model in Settings to ask Smithers.")
+
+const INVALID_CAPS = "Send maxTokens as a whole number above 0 and thinkingBudget as a whole number of at least 0."
+
+/**
+ * Reads `MODEL_DAILY_TOKEN_BUDGET`, `MODEL_MAX_OUTPUT_TOKENS`, `MODEL_MAX_MESSAGES`, `MODEL_MAX_REQUEST_BYTES`,
+ * `MODEL_RESERVATION_EXPIRY`, `SUMMARY_MODEL` and the deployment's default model (`HostModel`) at build time, and
+ * returns what admits and meters one call on a role: `admit` bounds the request,
+ * picks the person's own model or the role's and, for the role's, reserves the call's worst case; `meter` settles a
+ * reservation, and `meterOwn` a person's own call.
+ * `database` opens a Postgres client for each read and write.
+ */
+export const metering = effect <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, hostedFallback = false) => {
+  const budget = try Config.schema(positive, "MODEL_DAILY_TOKEN_BUDGET").pipe(
+    Config.withDefault(DAILY_TOKEN_BUDGET),
+  )
+  const maxOutputTokens = try Config.schema(positive, "MODEL_MAX_OUTPUT_TOKENS").pipe(
+    Config.withDefault(MAX_OUTPUT_TOKENS),
+  )
+  const maxMessages = try Config.schema(positive, "MODEL_MAX_MESSAGES").pipe(Config.withDefault(MAX_MESSAGES))
+  const maxBodyBytes = try modelBytes
+  const expiry = try Config.Duration("MODEL_RESERVATION_EXPIRY").pipe(Config.withDefault(RESERVATION_EXPIRY))
+  // Whether the deployment's model answers when no Admin set it; a value that doesn't parse is off.
+  const hostedDefault = HostedModel.hostedModelDefault(hostedFallback) catch () => false
+  // Alchemy binds settings while the program builds. Configuration failures stay local to the seat that needs it.
+  const host = try serviceOption(HostModel)
+  const defaults: ModelRoles.Defaults = {
+    summary: try ModelRoles.summaryModel.pipe(
+      mapError(() => new HostModelUnusable({ reason: "config" })),
+      result,
+    ),
+    tiers: try ModelRoles.tierModels.pipe(
+      mapError(() => new HostModelUnusable({ reason: "config" })),
+      result,
+    ),
+    fallback: Option.isSome(host)
+      ? Result.succeed({ source: "default", modelId: host.value.modelId, model: host.value.model })
+      : try ModelRoles.defaultModel.pipe(result),
+  }
+  // Which tier answers each role; a value that doesn't parse leaves the defaults, logged once.
+  const routes = try ModelTiers.roleTiers.pipe(
+    tapError((error) => logError("model.endpoint").pipe(annotateLogs({ errorCode: `role_tiers:${codeOf(error)}` }))),
+    orElseSucceed(() => ModelTiers.ROLE_TIERS),
+  )
+
+  /** Logs why a role couldn't serve the call, by code only. */
+  const logFailure = (role: ModelRole, errorCode: string) =>
+    logError("model.endpoint").pipe(annotateLogs({ role, errorCode }))
+
+  const resolve = effect (role: ModelRole, personId: string | undefined, deploymentPays: boolean) => {
+    const route = routes[role]
+    const opened = personId === undefined ? Option.none() : try (try PersonalModels).open(personId, route.tier).pipe(
+      tapError((error) =>
+        logFailure(role, error instanceof PersonalModelUnusable ? `own_unusable:${error.reason}` : error.errorCode)
+      ),
+      mapError((error) => error instanceof PersonalModelUnusable ? ownUnusable : unavailable),
+    )
+    if (Option.isSome(opened)) return { kind: "personal" as const, opened: opened.value }
+    // No model of the person's own: the deployment's answers only its own Members (ruling AUTH-8), and only while
+    // hosted inference is on.
+    if (!deploymentPays) {
+      try logFailure(role, "hosted_members_only")
+      throw hostedOff
+    }
+    const hosted = try HostedModel.enabled(hostedDefault).pipe(
+      Effect.provide(database),
+      tapError((error) => logFailure(role, codeOf(error))),
+      mapError(() => unavailable),
+    )
+    if (!hosted) {
+      try logFailure(role, "hosted_off")
+      throw hostedOff
+    }
+    const resolved = try ModelRoles.resolve(role, route.tier, defaults).pipe(
+      Effect.provide(database),
+      tapError((error) =>
+        logFailure(role, error instanceof HostModelUnusable ? `unusable:${error.reason}` : codeOf(error))
+      ),
+      mapError((error) => error instanceof HostModelUnusable ? noRoute : unavailable),
+    )
+    return { kind: "deployment" as const, resolved }
+  }
+
+  /**
+   * What the caller may choose (the conversation, its tools and parameters within bounds) and the model that answers:
+   * the person's own when `personId` saved one (`PersonalModels`), with its call's ledger row written, else the role's,
+   * once the call's worst case is reserved against the deployment's budget: its body's bytes, each counted as a
+   * prompt token, plus its output and thinking caps. The reservation or the ledger row is the last step, so no refusal
+   * after it leaves one behind. `own` is the person's call, when their model answers it. `deploymentPays` says whether
+   * the deployment's model may answer a call no model of the person's own does: only a Member or above of the
+   * deployment's own repository's, or nobody's (ruling AUTH-8).
+   */
+  const admit =
+    (role: ModelRole, personId?: string, deploymentPays = true) =>
+    effect (
+      request: ModelRequest.ModelRequest,
+      admission: ModelProxy.Admission,
+    ): Admitted!ModelProxy.Refusal!(R | PersonalModels) => {
+      if ((request.serverTools?.length ?? 0) > 0) {
+        throw refuse(400, "invalid_request", "Send no provider-run tools.")
+      }
+      if (request.messages.length === 0) throw refuse(400, "invalid_request", "Send at least one message.")
+      if (request.messages.length > maxMessages) {
+        throw refuse(400, "invalid_request", `Send at most ${maxMessages} messages.`)
+      }
+      // The reservation counts both caps, so each must be a whole number of tokens: a negative or fractional one
+      // would shrink the reservation while the provider still spends (Opus review 4, P2-1).
+      const { maxTokens: askedTokens, thinkingBudget: askedThinking } = request.params
+      if (
+        (askedTokens !== undefined && !(Number.isInteger(askedTokens) && askedTokens > 0))
+        || (askedThinking !== undefined && !(Number.isInteger(askedThinking) && askedThinking >= 0))
+      ) {
+        throw refuse(400, "invalid_request", INVALID_CAPS)
+      }
+      const maxTokens = Math.min(askedTokens ?? maxOutputTokens, maxOutputTokens)
+      const thinkingBudget = askedThinking === undefined ? undefined : Math.min(askedThinking, maxOutputTokens)
+      const params = try sync(() => ModelRequest.GenerationParams.make({
+        ...request.params,
+        maxTokens,
+        ...(thinkingBudget === undefined ? {} : { thinkingBudget }),
+      }))
+      const route = routes[role]
+      const chosen = try resolve(role, personId, deploymentPays)
+      if (chosen.kind === "personal") {
+        const own: PersonalUsage.Call = {
+          invocationId: admission.invocationId,
+          requestId: admission.requestId,
+          personId: personId!,
+          role,
+          modelId: chosen.opened.modelId,
+          host: chosen.opened.host,
+          connectionId: chosen.opened.connectionId,
+          credentialNonce: chosen.opened.credentialNonce,
+          protocol: chosen.opened.protocol,
+          tier: chosen.opened.tier,
+        }
+        try PersonalUsage.begin(own).pipe(
+          Effect.provide(database),
+          tapError((error) =>
+            andThen(
+              Metric.update(Metric.withAttributes(PersonalUsage.errors, { op: "begin" }), 1),
+              logFailure(role, codeOf(error)),
+            )
+          ),
+          mapError(() => unavailable),
+        )
+        const effort = try ModelTiers.effortFor(role, route, request, chosen.opened.modelId)
+        return {
+          own,
+          prepared: {
+            model: chosen.opened.model,
+            request: try sync(() => ModelRequest.ModelRequest.make({
+              ...request,
+              modelId: chosen.opened.modelId,
+              params: withEffort(params, effort),
+            })),
+          },
+        } satisfies Admitted
+      }
+      const resolved = chosen.resolved
+      const reserved = try ModelUsage.reserve(
+        {
+          invocationId: admission.invocationId,
+          requestId: admission.requestId,
+          role,
+          modelId: resolved.modelId,
+          tokens: admission.requestBytes + maxTokens + (thinkingBudget ?? 0),
+        },
+        { budget, expiry },
+      ).pipe(
+        Effect.provide(database),
+        tapError((error) => logFailure(role, codeOf(error))),
+        mapError(() => unavailable),
+      )
+      if (!reserved) throw refuse(429, "quota_exceeded", "Today's model budget is spent.")
+      // The record's effort when it sets one, else the role's hint where the model takes one.
+      const effort = try ModelTiers.effortFor(role, route, request, resolved.modelId, resolved.reasoningEffort)
+      return {
+        prepared: {
+          model: Model.Model.of({
+            ...resolved.model,
+            stream: (request) =>
+              resolved.model.stream(request).pipe(
+                Stream.mapError(finalFailure),
+                Stream.tapError((error) => recordRefusal(role, error)),
+              ),
+          }),
+          request: try sync(() => ModelRequest.ModelRequest.make({
+            ...request,
+            modelId: resolved.modelId,
+            params: withEffort(params, effort),
+          })),
+        },
+      } satisfies Admitted
+    }
+
+  /**
+   * Settles a served call's reservation, whether it succeeded, failed or lost its client. A call that ended normally
+   * with both counts reported settles to them. A call the provider refused before any output (`rate_limited`, or a
+   * provider 4xx: `ModelProxy.refusedCleanly`) spent nothing beyond what the provider reported, so it settles to
+   * that, 0 when none (`refused`). Any other usage is unknown, never zero: a call that failed or lost its client may
+   * have spent tokens the model never reported, so it keeps its reservation (`kept`). A call that ends after its
+   * reservation expired stays charged in full (`expired`). A failed write is logged and counted, never raised into
+   * the response, and leaves the reservation counted. First it records what the model reported the call spent, by
+   * role and model (`ModelSpend.record`).
+   */
+  const meter = (role: ModelRole) => effect (end: ModelProxy.End) => {
+    const { inputTokens, outputTokens } = end.usage
+    const reported = inputTokens !== undefined && outputTokens !== undefined
+      ? "complete"
+      : inputTokens !== undefined || outputTokens !== undefined
+      ? "partial"
+      : "none"
+    const refused = try sync(() => ModelProxy.refusedCleanly(end))
+    const complete = (end.outcome === "success" && reported === "complete") || refused
+    const ids = { role, invocationId: end.invocationId, requestId: end.requestId }
+    const failure = end.errorCode === undefined ? {} : { errorCode: end.errorCode }
+    const record = (settled: boolean) => {
+      const outcome = !settled ? "expired" : refused ? "refused" : complete ? "recorded" : "kept"
+      const counted = Metric.update(Metric.withAttributes(usageWrites, { outcome }), 1)
+      if (outcome === "recorded") return counted
+      const line = outcome === "expired"
+        ? logWarning("model.usage").pipe(
+          annotateLogs({ ...ids, outcome, ended: end.outcome, ...failure }),
+        )
+        : logInfo("model.usage").pipe(
+          annotateLogs({ ...ids, outcome, ended: end.outcome, reported, ...failure }),
+        )
+      return andThen(counted, line)
+    }
+    return try andThen(
+      ModelSpend.record(role, end),
+      ModelUsage.settle({
+        invocationId: end.invocationId,
+        inputTokens,
+        outputTokens,
+        complete,
+        ended: {
+          outcome: end.outcome === "success"
+            ? "answered"
+            : end.outcome === "interrupted"
+            ? "aborted"
+            : refused
+            ? "refused"
+            : "failed",
+          ...(end.errorCode === undefined ? {} : { errorCode: end.errorCode }),
+          ...(end.httpStatus === undefined ? {} : { httpStatus: end.httpStatus }),
+        },
+      }),
+    ).pipe(
+      Effect.provide(database),
+      flatMap(record),
+      catchCause((cause) =>
+        andThen(
+          Metric.update(Metric.withAttributes(usageWrites, { outcome: "error" }), 1),
+          logError("model.usage").pipe(
+            annotateLogs({ ...ids, errorCode: codeOf(Cause.squash(cause)) }),
+          ),
+        )
+      ),
+    )
+  }
+
+  /** Settles a person's own call (`PersonalUsage.end`): never the deployment's budget, ledger or spend. */
+  const meterOwn = (own: PersonalUsage.Call) => (end: ModelProxy.End) => PersonalUsage.end(own, end, database)
+
+  return { admit, resolve, meter, meterOwn, maxBodyBytes, logFailure, budget }
+}
+
+/** An admitted call: what the model is asked, and the person's own call when their model answers it. */
+interface Admitted {
+  readonly prepared: ModelProxy.Prepared
+  readonly own?: PersonalUsage.Call
+}
+
+/** The TODO has no personal or configured deployment coding seat. */
+export class NoSeat extends Schema.TaggedError<NoSeat>()("@smthrs/mvp/todo/NoSeat", {}) {}
+
+/** A model a server flow calls with, and the route its durable step keys on (`ModelStep.model` from `@smthrs/agent`). */
+export interface Seat {
+  readonly model: Model.Model
+  readonly route: FlowEngineLike.RouteResolver
+}
+
+/** A refusal of a server flow's own call, as the model error its caller reads: the endpoint's code and status. */
+const refusedCall = (refusal: ModelProxy.Refusal) =>
+  new ModelError.ModelError({ code: refusal.modelErrorCode, message: refusal.message, httpStatus: refusal.status })
+
+/**
+ * Builds the role-specific models server flows call in process. `owner` identifies the person whose saved model
+ * answers. The flow's durable model step keys on `route.prepare` so replay can reuse its sealed answer. A hosted
+ * call reserves and settles against the deployment's budget, and `starter` starts its window's spend alert.
+ */
+export const local = effect <E, R>(
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
+  options: { readonly alerts?: boolean; readonly hosted?: boolean } = {},
+) => {
+  const { admit, resolve, meter, meterOwn, maxBodyBytes, budget } = try metering(database, options.hosted)
+  const alert = try ModelSpend.alerter(
+    try ModelSpend.settings(options.alerts === undefined ? {} : { on: options.alerts }),
+    budget,
+  )
+  // What the database layer needs, and the people's own models, captured here, so a model call needs nothing of its
+  // caller.
+  const context = try Effect.context<R | PersonalModels>()
+  return (role: ModelRole, starter?: FlowStarter["Service"], owner?: Owner<R>) => {
+    // Keep the historical route identity so already sealed model calls remain replayable.
+    const prepare = ModelProxy.prepare({ url: `/api/model/${role}` })
+    const call = (request: ModelRequest.ModelRequest, executionId: string | undefined) =>
+      effect {
+        // Each model call has a fresh id for its ledger reservation.
+        const invocationId = try SecureRandom.SecureRandom.use((random) => random.uuidV4()).pipe(
+          Effect.provide(SecureRandom.layerWebCrypto),
+        )
+        const encoded = try prepare(request)
+        if (encoded.body.byteLength > maxBodyBytes) {
+          throw new ModelError.ModelError({
+            code: "invalid_request",
+            message: "The request is too large.",
+            httpStatus: 413,
+          })
+        }
+        // A run's owner supplies their own model or uses an eligible deployment seat (ruling AUTH-8).
+        const owned = owner === undefined || executionId === undefined
+          ? Option.none<Owned>()
+          : try owner(executionId).pipe(
+            mapError(() =>
+              new ModelError.ModelError({ code: "provider_internal", message: "Smithers can't reach its database." })
+            ),
+          )
+        const admission = { requestId: invocationId, invocationId, requestBytes: encoded.body.byteLength }
+        const admitted = try admit(
+          role,
+          Option.getOrUndefined(Option.map(owned, (run) => run.personId)),
+          Option.match(owned, { onNone: () => true, onSome: (run) => run.deploymentPays }),
+        )(request, admission).pipe(
+          mapError(refusedCall),
+        )
+        const { prepared, own } = admitted
+        if (own === undefined && starter !== undefined) try alert.pipe(provideService(FlowStarter, starter))
+        // What the model reported, merged as `ModelEvent.settledMessage` merges it: a `retry` event starts it over.
+        let usage: ModelEvent.Usage = {}
+        // Whether the model sent any output, which tells a refusal (that spent nothing) from a failure that may have.
+        let produced = false
+        return prepared.model.stream(prepared.request).pipe(
+          Stream.tap((event) =>
+            sync(() => {
+              usage = ModelEvent.settledMessage([{ type: "usage", ...usage }, event]).usage
+              produced ||= ModelProxy.producesOutput(event)
+            })
+          ),
+          Stream.onExit(effect (exit) => {
+            const end: ModelProxy.End = {
+              requestId: invocationId,
+              invocationId,
+              modelId: prepared.request.modelId,
+              usage,
+              produced,
+              ...(Exit.isSuccess(exit)
+                ? { outcome: "success" as const }
+                : Cause.hasInterruptsOnly(exit.cause)
+                ? { outcome: "interrupted" as const }
+                : { outcome: "failed" as const, ...(try sync(() => ModelProxy.failureOf(exit.cause))) }),
+            }
+            if (own === undefined) return try meter(role)(end)
+            return try meterOwn(own)(end)
+          }),
+        )
+      }.pipe(provideContext(context))
+    return {
+      model: Model.make({
+        // The run calling, read before the captured context replaces the caller's: its owner's model answers it.
+        stream: (request) =>
+          Stream.unwrap(
+            map(
+              serviceOption(FlowRuntime.FlowInstance),
+              (instance) =>
+                Stream.unwrap(call(request, Option.getOrUndefined(Option.map(instance, (run) => run.executionId))))
+                  .pipe(Stream.provideContext(context)),
+            ),
+          ),
+      }),
+      route: { prepare },
+      requireSeat: (owner: Owned) =>
+        resolve(role, owner.personId, owner.deploymentPays).pipe(
+          asVoid,
+          mapError((error) => error.modelErrorCode === "no_route" ? new NoSeat() : error),
+          provideContext(context),
+        ),
+    } satisfies Seat & { readonly requireSeat: (owner: Owned) => void!(NoSeat | ModelProxy.Refusal) }
+  }
+}
+
+/**
+ * The person a server flow's run is for (`personId`), and whether the deployment pays for its calls their own model
+ * doesn't answer (`deploymentPays`: a Member or above of the deployment's own repository, ruling AUTH-8).
+ */
+export interface Owned {
+  readonly personId: string
+  readonly deploymentPays: boolean
+}
+
+/**
+ * The person a server flow's run is for, by its execution id: a `todo` run's is the person who committed the TODO
+ * (`TodoMachine.ownerOf`). None for a run that is nobody's, such as triage, which the deployment pays for.
+ */
+export type Owner<R = never> = (executionId: string) => Option.Option<Owned>!unknown!R

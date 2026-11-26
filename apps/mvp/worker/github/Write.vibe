@@ -1,4 +1,4 @@
-import * as ProtectedAuthority from "../ProtectedAuthority.ts"
+import * as ProtectedAuthority from "../ProtectedAuthority.vibe"
 import * as WriteAuthority from "../WriteAuthority.ts"
 import { COMMITMENTS, commitmentLabel } from "../../src/features/issues/lifecycle.ts"
 import { triageOf } from "../../src/features/issues/contract.ts"

@@ -1,5 +1,5 @@
 import { withRequestRay } from "../RequestRay.vibe"
-import * as ProtectedAuthority from "../ProtectedAuthority.ts"
+import * as ProtectedAuthority from "../ProtectedAuthority.vibe"
 import * as WriteAuthority from "../WriteAuthority.ts"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"

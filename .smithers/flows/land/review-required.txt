@@ -33,10 +33,11 @@ apps/mvp/worker/BranchSandboxes.vibe
 
 # Access checks outside those areas, and what they guard
 apps/mvp/worker/*Authority.ts
+apps/mvp/worker/ProtectedAuthority.vibe
 apps/mvp/worker/WriteAuthority.ts
 apps/mvp/worker/Chat.ts
 apps/mvp/worker/ModelEndpoint.ts
-apps/mvp/worker/Notifications.ts
+apps/mvp/worker/Notifications.vibe
 apps/mvp/worker/RemoteRuns.vibe
 apps/mvp/worker/RepoAbout.vibe
 apps/mvp/worker/RepoApi.vibe

@@ -27,7 +27,7 @@ import { hasReproCandidate, isBug, NEEDS_REPRO_COMMENT, NEEDS_REPRO_LABEL, REPRO
 import { JUDGE_ROLE } from "../../src/features/jev/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { type Permission, roleOf } from "../GitHubAuth.ts"
-import type { Seat } from "../ModelSeats.ts"
+import type { Seat } from "../ModelSeats.vibe"
 import type { Services as GitHubServices } from "./Apply.vibe"
 import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.vibe"
