@@ -76,7 +76,10 @@ const keptOf = (row: Row): Kept => ({
 /** Postgres-backed profile cache store. */
 export const postgres = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>): ProfileStore<R> => {
   const run = <A>(op: StoreUnavailable["op"], query: (sql: SqlClient.SqlClient) => Effect.Effect<A, unknown>) =>
-    Effect.flatMap(SqlClient.SqlClient, query).pipe(
+    (effect {
+      const sql = try SqlClient.SqlClient
+      return try query(sql)
+    }).pipe(
       Effect.provide(database),
       Effect.mapError(() => new StoreUnavailable({ op })),
       Effect.withSpan(`profile.store.${op}`),

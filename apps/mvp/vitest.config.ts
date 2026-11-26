@@ -122,7 +122,7 @@ export default defineConfig({
         "db/migrations/0009_clone_ids.ts",
         // What GitHub says of a repository, the clone in its asker's feed, and the reclaim mark (docs/features/repo.md).
         "worker/RepoAbout.ts",
-        "worker/about/*.ts",
+        "worker/about/*.{ts,vibe}",
         "db/migrations/0060_repo_about.ts",
         "db/migrations/0098_about_claim_generation.ts",
         "worker/CloneFeed.vibe",
@@ -139,7 +139,8 @@ export default defineConfig({
         "worker/WebPreview.vibe",
         "db/migrations/0010_views.ts",
         // A repository's docs and the docs view (docs/features/docs.md).
-        "worker/docs/**/*.ts",
+        "worker/docs/**/*.{ts,vibe}",
+        "worker/profile/{Store,Metrics}.vibe",
         "db/migrations/0043_docs_views.ts",
         // A repository's view and its issues view in the conversation (docs/features/views.md).
         "db/migrations/0063_app_template_views.ts",

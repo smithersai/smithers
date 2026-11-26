@@ -12,7 +12,7 @@ import {
 } from "../../src/features/docs/contract.ts"
 import type { DocsListing, DocsPage, ListedPage } from "../../src/features/docs/schema.ts"
 import { isRepository, REPOS_ROUTE } from "../../src/features/repo/contract.ts"
-import { DocsSource } from "./Source.ts"
+import { DocsSource } from "./Source.vibe"
 
 // A repository's docs (ruling AGENT-6, docs/features/docs.md#chatapi): `GET /api/repos/<owner>/<name>/docs[?q=]`, its
 // index or the pages that match a query, and `GET /api/repos/<owner>/<name>/docs/page?path=`, one page's Markdown. Open

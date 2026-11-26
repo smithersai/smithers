@@ -3,7 +3,7 @@ import { ConfigProvider, Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { expect, test } from "vitest"
 import { markdown, outsideWeb } from "../test/pages.ts"
-import * as Source from "./Source.ts"
+import * as Source from "./Source.vibe"
 
 test("docs settings are captured without acquiring a runtime cache", async () => {
   // Alchemy's Node build has no ImmutableCache/Worker cache service. Only runtime service construction needs it.

@@ -1,7 +1,7 @@
 import { withUserAgent } from "../github/Http.ts"
 import { ImmutableCache } from "@smthrs/artifacts"
 import { Docs, Home } from "@smthrs/views"
-import { Cause, Clock, Config, Context, Data, Duration, Effect, Layer, Schema } from "effect"
+import { Cause, Clock, Config, Context, Duration, Effect, Layer, Schema } from "effect"
 import type { HttpClient } from "effect/http"
 import { type DocsRefusal, MAX_PAGE_BYTES } from "../../src/features/docs/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
@@ -62,7 +62,7 @@ export interface Options<R = never> {
   readonly privateHosts?: ReadonlyArray<string>
 }
 
-class Unreachable extends Data.TaggedError("Unreachable")<{ readonly reason: string }> {}
+error Unreachable { readonly reason: string }
 
 const refused = (code: DocsRefusal, reason?: string): Refused =>
   reason === undefined ? { _tag: "Refused", code } : { _tag: "Refused", code, reason }
@@ -81,15 +81,15 @@ const docsOfHome = (text: string): string | undefined => {
 }
 
 /** Captures `DOCS_KEPT` at program build, without acquiring a runtime cache. */
-export const settings = Effect.gen(function* () {
-  return { kept: Duration.toMillis(yield* Config.Duration("DOCS_KEPT").pipe(Config.withDefault(KEPT))) }
-})
+export const settings = effect {
+  return { kept: Duration.toMillis(try Config.withDefault(Config.Duration("DOCS_KEPT"), KEPT)) }
+}
 
 /** Captured deployment settings over the runtime's HTTP client and cache; never reads Config. */
 export const make = <R = never>({ kept }: { readonly kept: number }, options: Options<R>) =>
-  Effect.gen(function* () {
+  effect {
     const privateHosts = options.privateHosts ?? []
-    const context = yield* Effect.context<HttpClient.HttpClient | ImmutableCache.ImmutableCache | R>().pipe((effect) => withUserAgent(effect, true))
+    const context = try withUserAgent(Effect.context<HttpClient.HttpClient | ImmutableCache.ImmutableCache | R>(), true)
 
     /**
      * The index `owner/name` names: its own home's `docs` at the newest commit, else its curated home's. When GitHub
@@ -97,22 +97,22 @@ export const make = <R = never>({ kept }: { readonly kept: number }, options: Op
      * repository GitHub doesn't have.
      */
     const named = (owner: string, name: string) =>
-      Effect.gen(function* () {
-        const curated = Curated.find(owner, name, options.homes)
+      effect {
+        const curated = try orDie(Effect.try({ try: () => Curated.find(owner, name, options.homes), catch: identity }))
         const fallback = typeof curated === "object" ? curated.docs : undefined
         // A docs read spends no deployment token: anyone may name any repository. The App's still reads a repository
         // it is installed on.
-        const read = yield* options.about.answer(owner, name, Effect.succeed(false))
+        const read = try options.about.answer(owner, name, Effect.succeed(false))
         if (read._tag === "Refused") {
           if (fallback !== undefined) return { url: fallback, source: "curated" as const }
           return refused(read.code === "not_found" ? "not_found" : "unavailable")
         }
-        const { home } = decodeAbout(read.text)
+        const { home } = try orDie(Effect.try({ try: () => decodeAbout(read.text), catch: identity }))
         const own = home === null ? undefined : docsOfHome(home)
         if (own !== undefined) return { url: own, source: "declared" as const }
         if (fallback !== undefined) return { url: fallback, source: "curated" as const }
         return refused("no_docs")
-      })
+      }
 
     /**
      * `url`'s text, kept for the window: `Unreachable` with the docs site's reason when it didn't answer, `busy` for a
@@ -120,71 +120,67 @@ export const make = <R = never>({ kept }: { readonly kept: number }, options: Op
      * kept as this one's.
      */
     const text = (namespace: string, url: string, maxBytes?: number) =>
-      Effect.gen(function* () {
+      effect {
         let fresh = false
-        const load = Effect.gen(function* () {
-          const fetched = yield* Docs.fetchText(url, {
+        const load = effect {
+          const fetched = try Docs.fetchText(url, {
             privateHosts,
             ...(maxBytes === undefined ? {} : { maxBytes }),
           })
           if (fetched._tag === "Refused") {
             const busy = fetched.reason === "status" && (fetched.status === 429 || (fetched.status ?? 0) >= 500)
-            return yield* new Unreachable({ reason: busy ? "busy" : fetched.reason })
+            throw new Unreachable({ reason: busy ? "busy" : fetched.reason })
           }
-          if (new URL(fetched.url).origin !== new URL(url).origin) return yield* new Unreachable({ reason: "redirects" })
+          if (new URL(fetched.url).origin !== new URL(url).origin) throw new Unreachable({ reason: "redirects" })
           fresh = true
           return { bytes: encoder.encode(fetched.text), metadata: {} }
-        })
+        }
         // Zero (or less) keeps nothing: dividing by it would give every read the one `Infinity` window, forever.
-        const entry = yield* kept > 0
-          ? ImmutableCache.readThrough(
-            ImmutableCache.key(namespace, url, String(Math.floor((yield* Clock.currentTimeMillis) / kept))),
-            load,
-          )
-          : load
+        const entry = try (kept > 0 ? effect {
+          const window = String(Math.floor((try Clock.currentTimeMillis) / kept))
+          const key = try orDie(Effect.try({ try: () => ImmutableCache.key(namespace, url, window), catch: identity }))
+          return try ImmutableCache.readThrough(key, load)
+        } : load)
         return { text: decoder.decode(entry.bytes), cached: !fresh }
-      })
+      }
 
     /** Anything that isn't an answer (a defect, a cache that broke) is `unavailable`, logged by its code only. */
-    const orUnavailable = <A, E, R>(effect: Effect.Effect<A | Refused, E, R>) =>
-      effect.pipe(
-        Effect.catchCause((cause) =>
-          Effect.as(
-            Effect.logWarning("docs.source").pipe(Effect.annotateLogs({ errorCode: codeOf(Cause.squash(cause)) })),
-            refused("unavailable"),
-          )
-        ),
-      )
+    const orUnavailable = <A, E, R>(read: Effect.Effect<A | Refused, E, R>) =>
+      Effect.catchCause(read, effect (cause) => {
+        const errorCode = try orDie(Effect.try({ try: () => codeOf(Cause.squash(cause)), catch: identity }))
+        try annotateLogs(logWarning("docs.source"), { errorCode })
+        return refused("unavailable")
+      })
 
     /** The index of `owner/name`; a name GitHub couldn't have is `not_found`, as GitHub would answer. */
     const index = (owner: string, name: string): Effect.Effect<IndexRead> =>
-      orUnavailable(Effect.gen(function* () {
-        const found = yield* named(owner, name)
+      orUnavailable(effect {
+        const found = try named(owner, name)
         if ("_tag" in found) return found
-        const read = yield* text("docs.index", found.url).pipe(Effect.result)
+        const read = try result(text("docs.index", found.url))
         if (read._tag === "Failure") return refused("docs_unreachable", read.failure.reason)
         // Against the URL the repository named, so a page is kept only on the host it named, whatever the redirects.
         return {
           _tag: "Index" as const,
-          index: Docs.parse(read.success.text, found.url),
+          index: try orDie(Effect.try({ try: () => Docs.parse(read.success.text, found.url), catch: identity })),
           source: found.source,
           cached: read.success.cached,
         }
-      })).pipe(Effect.provideContext(context))
+      }).pipe(Effect.provideContext(context))
 
     const page = (owner: string, name: string, path: string): Effect.Effect<PageRead> =>
-      orUnavailable(Effect.gen(function* () {
-        const read = yield* index(owner, name)
+      orUnavailable(effect {
+        const read = try index(owner, name)
         if (read._tag === "Refused") return read
-        const listed = Docs.find(read.index, path)
+        const listed = try orDie(Effect.try({ try: () => Docs.find(read.index, path), catch: identity }))
         if (listed === undefined) return refused("page_not_found")
-        const fetched = yield* text("docs.page", listed.url, MAX_PAGE_BYTES).pipe(Effect.result)
+        const fetched = try result(text("docs.page", listed.url, MAX_PAGE_BYTES))
         if (fetched._tag === "Failure") return refused("docs_unreachable", fetched.failure.reason)
         return { _tag: "Page" as const, page: listed, text: fetched.success.text, cached: fetched.success.cached }
-      })).pipe(Effect.provideContext(context))
+      }).pipe(Effect.provideContext(context))
 
     return DocsSource.of({ index, page })
-  })
+  }
 
 /** The source as a layer, over the `HttpClient` and `ImmutableCache` it is built with, and what its about read needs. */
 export const layer = <R = never>(captured: { readonly kept: number }, options: Options<R>) =>

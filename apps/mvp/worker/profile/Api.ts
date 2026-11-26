@@ -3,7 +3,7 @@ import { type HttpClient, HttpServerRequest, HttpServerResponse } from "effect/h
 import { isProfileOwner, PROFILE_ROUTE, type ProfileRefusal } from "../../src/features/profile/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { withRequestRay } from "../RequestRay.vibe"
-import * as ProfileMetrics from "./Metrics.ts"
+import * as ProfileMetrics from "./Metrics.vibe"
 import * as ProfileSource from "./Source.ts"
 
 // `GET /api/profiles/<owner>`: returns the GitHub user or organization profile JSON cached in Postgres.

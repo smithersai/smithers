@@ -7,8 +7,8 @@ import * as GitHubConfig from "../github/Config.ts"
 import { withUserAgent } from "../github/Http.ts"
 import * as ReadToken from "../github/ReadToken.ts"
 import { graphql, ProfileRefused, type ProfileStage, rest } from "./GitHubRead.ts"
-import * as ProfileMetrics from "./Metrics.ts"
-import type { KeptAnswer, KeptRefusal, ProfileStore, Via } from "./Store.ts"
+import * as ProfileMetrics from "./Metrics.vibe"
+import type { KeptAnswer, KeptRefusal, ProfileStore, Via } from "./Store.vibe"
 
 // Postgres-backed single-flight reader for GitHub user & organization profiles (mirrors worker/RepoAbout.ts):
 // - Serves fresh answers from `owner_profile` across every Cloudflare data center.

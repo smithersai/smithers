@@ -79,7 +79,7 @@ import {
   scriptedGitHub
 } from "../../worker/github/test/scriptedGitHub.ts"
 import * as DocsApi from "../../worker/docs/Api.ts"
-import * as DocsSource from "../../worker/docs/Source.ts"
+import * as DocsSource from "../../worker/docs/Source.vibe"
 import * as DomainsApi from "../../worker/domains/Api.ts"
 import * as DomainsConfig from "../../worker/domains/Config.ts"
 import * as DomainFlows from "../../worker/domains/DomainFlows.ts"

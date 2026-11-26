@@ -20,7 +20,7 @@ import { PHASES_FLOW, SUMMARIZE_FLOW } from "../src/features/timeline/contract.t
 import { revisionOf, segmentRevision } from "../src/features/timeline/identity.ts"
 import * as Marks from "../src/features/timeline/marks.ts"
 import * as AboutGitHub from "./about/GitHubRead.ts"
-import * as AboutStore from "./about/Store.ts"
+import * as AboutStore from "./about/Store.vibe"
 import * as Actor from "./Actor.ts"
 import * as BranchAccess from "./branch/Access.ts"
 import { repositoryOf } from "./github/Config.ts"
