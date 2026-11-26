@@ -1,102 +1,25 @@
----
-id: plan/root
-title: Smithers Cloud Public Release Plan Tree
-milestone: M0-M3
-status: in_progress
-updated: 2026-11-25
-gates_approved: 2026-11-24
-owner: Gemini 4 Neon (Coordinator)
-children:
-  - "[[M0-dogfood-foundations]]"
-  - "[[M1-core-node-plugins-ux]]"
-  - "[[M2-factories-playgrounds-upgrades]]"
-  - "[[M3-release-gate]]"
-contracts:
-  - "Wave 1 draft contracts/core-contracts.ts (outside the repo until M1 Track B lands @smthrs/app-core)"
-sources:
-  - /Users/williamcory/Smithers-Ops/Decisions/2026-11-24 smithers-cloud-release-prompt.md
-  - /Users/williamcory/Smithers-Ops/Decisions/2026-11-24 smithers-cloud-release-direction.md
-  - /Users/williamcory/smithers/apps/mvp/docs/rulings.md
-  - /Users/williamcory/smithers/apps/mvp/docs/decisions/0017-everything-is-a-plugin.md
-  - /Users/williamcory/smithers/docs/libraries.md
----
-
 # Smithers Cloud Public Release Plan Tree
 
-Target: Quiet launch of `smithers.sh` (`apps/mvp`) plus self-hostable local-first node runtime first, loud launch next week. Ship above slop. Dogfood inside Smithers from Day 1 (`smithers.sh/evmts/voltaire` baseline, private `Smithers-Ops` visible only to `roninjin10`).
+Live production build on `https://smithers.sh`: `f97d8fa14875` (Quiet Launch deployed via Alchemy, 17/17 live canary checks passed, 5/5 Chromium and WebKit Playwright deploy-smoke runs passed).
+Latest pushed `origin/main` revision: `e477666aedec` (47 verified commits landed since `85aa0fc1f416`).
 
-## Live Execution Progress (2026-11-25)
+## Milestone Status
 
-- **Landed on main:** 17 verified commits (`85aa0fc1` to `3b38cfaf`)
-- **M1 Core, Sync & UX:** BYOA stdio MCP bridge, multi-node SQLite swarm convergence + overflow burst tests, WorkbenchScreen + WaitlistScreen + Command Palette, approval typing-focus guard, conversation pane restoration, PR keyboard review navigation, Decision 0017 plugin deletion gate, and zero-`jjhub` gate are landed on `main`. ADR 0170 Slice 3 `MessagesShard` Astra security fixes + Lean 4 specs are finishing verification.
-- **M2 Factories, Playgrounds & VibeLang:** 30 worker modules migrated to idiomatic `.vibe` at 100% V8 coverage (Slices 1-5 landed, Slices 6-7 in flight), canonical `.smithers/workflows/gate.vibe` + 4-client parity landed, 9-repo factory matrix + 7 `smithersai/` fork attribution landed, VibeStack UI patterns doc landed, and Astra-approved `PlaygroundBridge` (`sandbox="allow-scripts"`) landed.
-- **M3 Release Gate:** Production canary suite (`apps/mvp/ops/canary/run.ts`) with `maxRedirects: 0` SPA checks, 7-fork checks, and private `Smithers-Ops` fail-closed checks added. Quiet launch Alchemy deploy queued right after `W5-SYNC` clears Astra and lands.
+| Milestone | Status | Verified Receipts |
+| --- | --- | --- |
+| Wave 1 and 4 Architecture Gates | Done | ADRs 0170, 0171, 0172, 0173, and 0174 committed on `main` |
+| M1 One Core, Four Clients | Done | `@smthrs/app-core` + `smthrs node serve` stdio MCP + 4-client local SQLite E2E (`LocalNodeFourClient.test.ts` 4/4) + `.smithers/workflows/gate.vibe` discovery |
+| M1 Local-First SQLite Shards (ADR 0170) | In Progress (Slices 1-4a Done) | Slice 3 `MessagesShard` + `MessagesShardObject` live in prod (Codex Astra `APPROVE_TO_LAND`, 100% V8, 0 `worker/request-owned-io` errors across all workers), Slice 4a browser `MessagesShardClient` + `JournalCollection` landed (`5df62b88`), Slice 4b app-state + Lean metadata running on Claude Fable |
+| M1 Thin GUI and Progressive Disclosure | Done | `WorkbenchScreen`, `WaitlistScreen`, 3-tier `PaneFrame`, URL-owned layout, shortcuts `1`-`7` / `[` / `]` / `0` / `Esc`, Command Palette, conversation restoration, compact clamping, `PlaygroundFrame` (100% V8, zero `useState`/`useEffect`, Gemini 4 Neon) |
+| M2 First-Party Factories and Playgrounds | Done | Sandboxed `PlaygroundFrame` (`sandbox="allow-scripts"`, Codex Astra `APPROVE_TO_LAND` bridge) live on `tevm-monorepo`, `zevm`, `vibelang`, and `smithers` (all 200 live), plus isolated `cfbox` `.smithers/` inventory verified for all 7 `smithersai/` example forks |
+| M2 VibeLang Worker Migration | In Progress (94 `.vibe` Modules) | `domains/*`, `secrets/*`, `personal/*`, `stack/*`, `profile/*` 100% migrated, `runners/*` and `mcp/*` wrapping up with 100% V8 coverage on every migrated module |
+| M3 Formal Verification and Fuzzing | Done | Lean 4.32.0 + 4.36.0 installed on Mac mini, 22/22 Lean packages `lake build` exit 0 (0 `sorry`, 0 `axiom`, 0 `admit`), 20/20 real Lean-oracle `lean-diff` suites pass (323/323 executed), 7 MVP fuzz suites x 4 seeds deterministic pass |
+| M3 Security, Hygiene, and Startup Budget | Done | `BundleHygiene.test.ts` 6/6 pass on `apps/mvp/dist`, `bench/startup.ts` 50.2 ms median vs 200 ms budget, zero `worker/request-owned-io` errors across all worker modules |
+| M3 Quiet Launch Production Deploy and Canary | Done | Live on `https://smithers.sh` (`f97d8fa14875`), 17/17 live canary pass (`maxRedirects: 0`), 5/5 Chromium + WebKit `ops/deploy-smoke/run.ts` pass, `@smthrs/notifications` Telegram failure alerting wired (`2bd64862`, 100% V8) |
 
-## Gate Decisions
+## Active Parallel Lanes
 
-- [x] Gate 1: Sync Engine & Node Swarm. Approved by Will 2026-11-24. [Decision 0170](../../apps/mvp/docs/decisions/0170-sqlite-shards-replace-electric.md)
-- [x] Gate 2: Multi-Client Core & `.smithers/` Plugins. Approved by Will 2026-11-24. [Decision 0171](../../apps/mvp/docs/decisions/0171-one-core-four-clients-and-workflows-dir.md)
-- [x] Gate 3: Progressive-Disclosure UX. Approved by Will 2026-11-24. [Decision 0172](../../apps/mvp/docs/decisions/0172-progressive-disclosure-and-cause-receipts.md)
-- [x] Gate 4: BYOA-Only MCP & Jev. Approved by Will 2026-11-24. [Decision 0173](../../apps/mvp/docs/decisions/0173-byoa-only-mcp-attach-and-jev-config.md)
-
-Each gate took its recommended options (Gate 1: 1A and 2A, Gate 2: 1A and 2A, Gate 3: 1A and 2A, Gate 4: 1A and 2A).
-
-## Tree Overview
-
-```mermaid
-flowchart TD
-  ROOT["plan/root: Smithers Cloud Public Release"]
-  M0["[[M0-dogfood-foundations]]\nM0: Dogfood & Foundations"]
-  M1["[[M1-core-node-plugins-ux]]\nM1: Core Node, Plugins & UX"]
-  M2["[[M2-factories-playgrounds-upgrades]]\nM2: Factories, Playgrounds & Upgrades"]
-  M3["[[M3-release-gate]]\nM3: Release Gate"]
-
-  G1["Gate 1: Sync Engine & Node Swarm\n(Approved 2026-11-24)"]
-  G2["Gate 2: Multi-Client Core & .smithers/ Plugins\n(Approved 2026-11-24)"]
-  G3["Gate 3: Progressive-Disclosure UX\n(Approved 2026-11-24)"]
-  G4["Gate 4: BYOA-Only MCP & Jev\n(Approved 2026-11-24)"]
-
-  ROOT --> M0
-  M0 --> G1
-  M0 --> G2
-  M0 --> G3
-  M0 --> G4
-  G1 --> M1
-  G2 --> M1
-  G3 --> M1
-  G4 --> M1
-  M1 --> M2
-  M2 --> M3
-```
-
-## Wave 1 Fleet & Account Readiness (Verified 2026-11-24 17:24 PT)
-
-### Compute Fleet
-
-| Host | Reachability | Resources | Live Work Detected (Do Not Clobber) | Action / Warning |
-| --- | --- | --- | --- | --- |
-| MacBook Pro (`Williams-MacBook-Pro-3.local`) | Local | **2.4 GiB free** on `/` (CRITICAL) | 25 tmux sessions (`antigravity`, `smithers-design`, `fuzz-site`, `needlefish-09`, `recovery-dash`, etc.) | Coordinator and light checks ONLY. Zero builds or workspaces here. |
-| Mac mini (`Williams-Mac-mini.local`) | SSH OK | 199 GiB free, 40d uptime | `smithers-backend`, `postgres`, `alchemy` exec | Ready for self-hosted node dogfooding, local CI, and `mini-run` test slots. |
-| Latitude `nyc-02` | SSH OK | 251 GiB RAM (214 GiB avail), **33 GiB free (99% full)** | `smthrs-fleet` serving `https://smithers.sh --cfbox`, VibeLang fuzz (`ws-fuzz-100`) | Ready for heavy compute once stale artifacts trimmed. Watch `cpu-slices.sh` 5-core pin (no wall-time benchmarks). |
-| Latitude `nyc-01` | Port 22 open, **SSH hangs** | Unknown (direct and jump hang) | Likely under `MemoryHigh` / SSH saturation | Needs host check or `lane-exec` recovery before assigning lanes. |
-| Cloudflare (`cfbox` + Alchemy) | `cfbox list` OK, `smithers.sh` HTTP 200 | Up to 500 burst sandboxes | Stale Nov 14 reserved jobs in `cfbox list` | Ready for burst parallel test/fuzz shards and Alchemy deploys (check `/version` before `--yes`). |
-
-### Model Tiers
-
-Tier split: Gemini 4 Neon owns UI, copy and docs. Codex Sol takes about 40% of non-UI work, Claude Opus about 30%, Claude Fable about 20%, and the peak panel about 10% (Gates, security boundaries, core state machines). Per-account quota and reset state lives in the coordinator's private notes, not in the repository.
-
-## Tiered Backpressure Protocol (Incremental via `smthrs affected`)
-
-| Tier | Cadence | Target Time | Exact Gate Commands | Execution Host |
-| --- | --- | --- | --- | --- |
-| `fast-check` | Every edit / leaf iteration | 5-30s | `smthrs affected --kinds lint,typecheck,test` + headless MCP/SDK contract suite | Mac mini / `nyc-02` / `cfbox` |
-| `medium-check` | Every completed Plan Tree leaf & integration join | 2-5 min | Cross-package integration tests + affected Playwright E2E + bounded property/fuzz checks + targeted Lean 4 proofs | `nyc-02` / `cfbox` (Postgres tests on `run-heavy --image pg` or Mac mini compose) |
-| `full-check` | Milestone gates (M0, M1, M2, M3) & release candidates | 10-25 min sharded | Full E2E + GIF verification (`pnpm e2e:gifs:check`) + deep arbitrary fuzzing + full Lean proof suite + local/live benchmarks + prod canary checks | Sharded across `cfbox` + `nyc-02` + `nyc-01` |
-
-## Anti-Drift & Orchestration Invariants
-
-1. **Direct source pointers only**: Every leaf prompt links directly to its Plan Tree node, contract file, and ruling file. No paraphrased copies.
-2. **Living plan updates**: Whenever a POC or implementation breaks an assumption, update the node's `assumptions` checklist and `[[wikilinks]]` before continuing.
-3. **Binary Definition of Done**: Every leaf is `done` (exit code `0` + verified disk artifacts + landed commit on `main`) or `not_done`. Never "almost done".
-4. **Hard circuit breaker**: Max 2 repair cycles per leaf. If still red, stop, write a blocker note (evidence, root cause, smallest unblock), and escalate.
-5. **Hard Security Rule**: Zero `eliza` / `elizaOS` code on any local or bare-metal host. Strictly isolated Cloudflare Sandbox with zero host secrets.
+1. `W6-SYNC-SLICE4B` (Claude Fable): Extend `@smthrs/app-state` chat state machine and Lean 4 proofs with full message metadata for Slice 5 Electric cutover.
+2. `W6-VIBE-22` (Codex Sol `codex-2`): Migrate `mcp/{Auth,LiveDeps}` and `plan/{PlanTreeRoutes,PlanTreeShard}` to `.vibe`.
+3. `W6-VIBE-23` (Codex Sol `codex-5`): Complete `runners/{RunContent,TranscriptHost}` and start `ci/{Cron,Dispatch}` in `.vibe`.
+4. `M3-MEDIUM-CHECK-AND-NODESERVE` (Claude Opus): Full tier-2 `medium-check.ts` verification across `worker`, `src`, `db`, fuzz, and Lean.
