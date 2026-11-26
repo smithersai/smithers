@@ -68,7 +68,7 @@ export default defineConfig({
         // External agents on runners (docs/features/agent-runners.md): their routes, store and Admin writes.
         "worker/runners/*.ts",
         // The metered model endpoint and admin/SetModel (docs/features/model-endpoint.md).
-        "worker/Pins.ts",
+        "worker/Pins.vibe",
         "db/migrations/0054_message_pins.ts",
         // The timeline's summaries, once per message (docs/features/timeline.md#cost).
         "worker/TimelineSummaries.ts",
@@ -103,11 +103,11 @@ export default defineConfig({
         "db/migrations/0133_byoa_cutover.ts",
         // Repositories: RepoApi, cloning into Code Storage and its spend (docs/features/repo.md).
         "worker/RepoApi.ts",
-        "worker/RepoConfig.ts",
+        "worker/RepoConfig.vibe",
         "worker/RepoMetrics.ts",
         "worker/RepoReads.ts",
         "worker/Repos.ts",
-        "worker/RepoUpstream.ts",
+        "worker/RepoUpstream.vibe",
         "db/migrations/0007_repositories.ts",
         // A clone attempt's own id (docs/features/repo.md#the-clone).
         "db/migrations/0009_clone_ids.ts",
@@ -152,7 +152,7 @@ export default defineConfig({
         "worker/SpendAlerts.vibe",
         "db/migrations/0019_spend_alerts.ts",
         // Where spend alerts go outside the app, and their receipts (docs/features/spend-alerts.md#channels).
-        "worker/AlertChannels.ts",
+        "worker/AlertChannels.vibe",
         "db/migrations/0029_alert_channels.ts",
         // Agent status: the runs routes and table (docs/features/agent-status.md).
         "worker/Runs.ts",

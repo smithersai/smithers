@@ -1,5 +1,5 @@
 import * as GitHubConfig from "../github/Config.ts"
-import * as RepoConfig from "../RepoConfig.ts"
+import * as RepoConfig from "../RepoConfig.vibe"
 import { CREATION_ROUTE } from "../../src/features/branch/creation.ts"
 import * as Creation from "./Creation.ts"
 import { Effect, type Layer } from "effect"

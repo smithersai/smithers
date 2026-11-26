@@ -4,12 +4,13 @@
 import { Channels } from "@smthrs/notifications"
 import { ElectricCollection } from "@smthrs/effect-electric"
 import { ConfigProvider, Data, Effect, Layer, Option, Schema } from "effect"
+import { HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import { ALERT_CHANNEL_COLUMNS, ALERT_DELIVERY_COLUMNS } from "../src/features/spend/contract.ts"
-import type { Actor } from "./Actor.ts"
-import * as AlertChannels from "./AlertChannels.ts"
+import { ALERT_CHANNEL_COLUMNS, ALERT_DELIVERY_COLUMNS, MAX_ALERT_CHANNEL_BODY_BYTES } from "../src/features/spend/contract.ts"
+import { type Actor, Sessions } from "./Actor.ts"
+import * as AlertChannels from "./AlertChannels.vibe"
 import { answers, harness, recorded, testFile } from "./test/harness.ts"
 
 const runtime = testFile("alert_channels")
@@ -321,4 +322,18 @@ describe("the deployment's providers", () => {
     expect(await available({}, { dev: true })).toEqual([])
     expect(AlertChannels.DEV_CREDENTIAL).toBe("dev")
   })
+})
+
+test("the alert-channels handler rejects oversized bodies before writing", async () => {
+  const database = Layer.effect(SqlClient.SqlClient, Effect.die("body validation should precede SQL"))
+  const routes = await runtime.runPromise(AlertChannels.make(database))
+  const request = HttpServerRequest.fromWeb(new Request("http://chat.test/api/alert-channels", {
+    method: "POST",
+    body: "x".repeat(MAX_ALERT_CHANNEL_BODY_BYTES + 1),
+  }))
+  const response = await runtime.runPromise(routes.set.pipe(
+    Effect.provideService(Sessions, { resolve: Effect.succeed(Option.some(admin)) }),
+    Effect.provideService(HttpServerRequest.HttpServerRequest, request),
+  ))
+  expect(response.status).toBe(413)
 })

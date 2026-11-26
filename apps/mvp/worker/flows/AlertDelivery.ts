@@ -2,7 +2,7 @@ import { RetryPolicy } from "@smthrs/flow"
 import { Channels } from "@smthrs/notifications"
 import { Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import { destinationOf } from "../AlertChannels.ts"
+import { destinationOf } from "../AlertChannels.vibe"
 import { codeOf } from "../ErrorCode.ts"
 
 // Delivering an alert outside the app (docs/features/spend-alerts.md#delivery): what every alert flow's delivery step

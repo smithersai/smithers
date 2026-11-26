@@ -98,20 +98,19 @@ export const write = (
   destinations: ReadonlyArray<string>,
   appUrl: string,
   actor: string,
-) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const rows = destinations.length === 0
-      ? yield* sql<{ readonly txid: string }>`
-          DELETE FROM alert_channels WHERE channel = ${channel} RETURNING pg_current_xact_id()::xid::text AS txid`
-      : yield* sql<{ readonly txid: string }>`
-          INSERT INTO alert_channels (channel, destinations, app_url, updated_by, updated_at)
-          VALUES (${channel}, ${JSON.stringify(destinations)}::jsonb, ${appUrl}, ${actor}, now())
-          ON CONFLICT (channel) DO UPDATE SET destinations = EXCLUDED.destinations, app_url = EXCLUDED.app_url,
-            updated_by = EXCLUDED.updated_by, updated_at = now()
-          RETURNING pg_current_xact_id()::xid::text AS txid`
-    return rows[0] === undefined ? null : Number(rows[0].txid)
-  })
+) => effect {
+  const sql = try SqlClient.SqlClient
+  const rows = destinations.length === 0
+    ? try sql<{ readonly txid: string }>`
+        DELETE FROM alert_channels WHERE channel = ${channel} RETURNING pg_current_xact_id()::xid::text AS txid`
+    : try sql<{ readonly txid: string }>`
+        INSERT INTO alert_channels (channel, destinations, app_url, updated_by, updated_at)
+        VALUES (${channel}, ${JSON.stringify(destinations)}::jsonb, ${appUrl}, ${actor}, now())
+        ON CONFLICT (channel) DO UPDATE SET destinations = EXCLUDED.destinations, app_url = EXCLUDED.app_url,
+          updated_by = EXCLUDED.updated_by, updated_at = now()
+        RETURNING pg_current_xact_id()::xid::text AS txid`
+  return rows[0] === undefined ? null : Number(rows[0].txid)
+}
 
 /** The audience an Admin reads. */
 const ADMINS = "admin"
@@ -125,93 +124,93 @@ const audience = Effect.as(ShapeAccess.admin, ADMINS)
  * and a count, with the channel and how many destinations, never one of them. `database` opens a Postgres client for
  * the scope of each request.
  */
-export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
-  Effect.gen(function* () {
-    const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
-    const appUrlConfig = yield* Config.NonEmptyString("ALERT_APP_URL").pipe(Effect.result)
+export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => effect {
+  const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+  const appUrlConfig = try Effect.result(Config.NonEmptyString("ALERT_APP_URL"))
 
-    const set = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      const startedAt = yield* Clock.currentTimeMillis
-      const fields: Fields = {}
-      const response = yield* Effect.gen(function* () {
-        if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
-        const actor = yield* (yield* Sessions).resolve
-        if (Option.isNone(actor)) return refusal(401, "authentication")
-        // Where alerts go is the Admin's own choice: an agent, flow or sandbox acting for them is refused.
-        if (yield* refusesPersonOnly(actor.value, "alert/channel")) return refusal(403, "person_only")
-        if (actor.value.role !== "admin") return refusal(403, "forbidden")
-        const body = yield* readBounded(request, MAX_ALERT_CHANNEL_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
-          Effect.result,
-        )
-        if (body._tag === "Failure") {
-          return body.failure.reason === "too_large" ? refusal(413, "too_large") : refusal(400, "invalid")
-        }
-        const decoded = yield* decodeSet(body.success).pipe(Effect.option)
-        if (Option.isNone(decoded)) return refusal(400, "invalid")
-        const { channel } = decoded.value
-        fields.channel = channel
-        const destinations = destinationsOf(channel, decoded.value.destinations)
-        if (destinations === undefined) return refusal(400, "invalid_destination")
-        fields.destinations = destinations.length
-        const appUrl = new URL(yield* Effect.fromResult(appUrlConfig))
-        if (!["http:", "https:"].includes(appUrl.protocol) || appUrl.username !== "" || appUrl.password !== "") {
-          fields.errorCode = "configuration"
+  const set = Effect.withSpan(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const startedAt = try Clock.currentTimeMillis
+    const fields: Fields = {}
+    const response = try Effect.catchCause(effect {
+      if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
+      const actor = try (try Sessions).resolve
+      if (Option.isNone(actor)) return refusal(401, "authentication")
+      // Where alerts go is the Admin's own choice: an agent, flow or sandbox acting for them is refused.
+      if (try refusesPersonOnly(actor.value, "alert/channel")) return refusal(403, "person_only")
+      if (actor.value.role !== "admin") return refusal(403, "forbidden")
+      const body = try Effect.result(
+        readBounded(request, MAX_ALERT_CHANNEL_BODY_BYTES, (bytes) => (fields.bytes = bytes)),
+      )
+      if (body._tag === "Failure") {
+        return body.failure.reason === "too_large" ? refusal(413, "too_large") : refusal(400, "invalid")
+      }
+      const decoded = try Effect.option(decodeSet(body.success))
+      if (Option.isNone(decoded)) return refusal(400, "invalid")
+      const { channel } = decoded.value
+      fields.channel = channel
+      const destinations = destinationsOf(channel, decoded.value.destinations)
+      if (destinations === undefined) return refusal(400, "invalid_destination")
+      fields.destinations = destinations.length
+      const configuredUrl = try Effect.fromResult(appUrlConfig)
+      const appUrl = try Effect.sync(() => new URL(configuredUrl))
+      if (!["http:", "https:"].includes(appUrl.protocol) || appUrl.username !== "" || appUrl.password !== "") {
+        fields.errorCode = "configuration"
+        return refusal(503, "unavailable")
+      }
+      const txid = try (write(channel, destinations, appUrl.href, actor.value.subject.id) |> Effect.provide(%, database))
+      if (txid === null) fields.existing = true
+      return ok(txid)
+    },
+      (cause) =>
+        Effect.sync(() => {
+          fields.errorCode = codeOf(Cause.squash(cause))
           return refusal(503, "unavailable")
-        }
-        const txid = yield* write(channel, destinations, appUrl.href, actor.value.subject.id).pipe(Effect.provide(database))
-        if (txid === null) fields.existing = true
-        return ok(txid)
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.sync(() => {
-            fields.errorCode = codeOf(Cause.squash(cause))
-            return refusal(503, "unavailable")
-          })
-        ),
-      )
-      fields.status = response.status
-      fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
-      yield* Metric.update(
-        Metric.withAttributes(requests, {
-          channel: typeof fields.channel === "string" ? fields.channel : "none",
-          status: String(response.status),
         }),
-        1,
-      )
-      yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-      yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
-        "alerts.channel",
-      ).pipe(Effect.annotateLogs(fields))
-      return response
-    }).pipe(Effect.withSpan("alerts.channel.request", { kind: "server" }))
+    )
+    fields.status = response.status
+    fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+    try Metric.update(
+      Metric.withAttributes(requests, {
+        channel: typeof fields.channel === "string" ? fields.channel : "none",
+        status: String(response.status),
+      }),
+      1,
+    )
+    try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+    try (
+      Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")("alerts.channel")
+      |> Effect.annotateLogs(%, fields)
+    )
+    return response
+  }, "alerts.channel.request", { kind: "server" })
 
-    const channels = ShapeProxy.make({
-      ...connection,
-      shape: Effect.map(audience, (reader) => ({
-        table: ALERT_CHANNELS_TABLE,
-        where: "audience = $1",
-        params: { "1": reader },
-        columns: [...ALERT_CHANNEL_COLUMNS],
-      })),
-      name: "alerts.channels.shape",
-      metric: channelShapes,
-    })
-
-    const deliveries = ShapeProxy.make({
-      ...connection,
-      shape: Effect.map(audience, (reader) => ({
-        table: ALERT_DELIVERIES_TABLE,
-        where: "audience = $1",
-        params: { "1": reader },
-        columns: [...ALERT_DELIVERY_COLUMNS],
-      })),
-      name: "alerts.deliveries.shape",
-      metric: deliveryShapes,
-    })
-
-    return { set, channels, deliveries }
+  const channels = ShapeProxy.make({
+    ...connection,
+    shape: Effect.map(audience, (reader) => ({
+      table: ALERT_CHANNELS_TABLE,
+      where: "audience = $1",
+      params: { "1": reader },
+      columns: [...ALERT_CHANNEL_COLUMNS],
+    })),
+    name: "alerts.channels.shape",
+    metric: channelShapes,
   })
+
+  const deliveries = ShapeProxy.make({
+    ...connection,
+    shape: Effect.map(audience, (reader) => ({
+      table: ALERT_DELIVERIES_TABLE,
+      where: "audience = $1",
+      params: { "1": reader },
+      columns: [...ALERT_DELIVERY_COLUMNS],
+    })),
+    name: "alerts.deliveries.shape",
+    metric: deliveryShapes,
+  })
+
+  return { set, channels, deliveries }
+}
 
 /** The sender an email comes from when `ALERT_EMAIL_FROM` is unset: Resend's test sender, which reaches only its own account. */
 export const DEFAULT_EMAIL_FROM = "Smithers <onboarding@resend.dev>"
@@ -226,23 +225,22 @@ export const DEV_CREDENTIAL = "dev"
  * `unconfigured`. With `dev` (`alchemy dev` only), a provider whose URL is set uses {@link DEV_CREDENTIAL} when its
  * credential isn't, so a laptop or the end-to-end tests reach a local fake provider without a key.
  */
-export const channelsConfig = (options: { readonly dev?: boolean } = {}) =>
-  Effect.gen(function* () {
-    const emailUrl = yield* Config.option(Config.NonEmptyString("ALERT_EMAIL_API_URL"))
-    const telegramUrl = yield* Config.option(Config.NonEmptyString("ALERT_TELEGRAM_API_URL"))
-    const credential = (configured: Option.Option<Redacted.Redacted<string>>, url: Option.Option<string>) =>
-      Option.isNone(configured) && options.dev === true && Option.isSome(url)
-        ? Option.some(Redacted.make(DEV_CREDENTIAL))
-        : configured
-    const apiKey = credential(yield* Config.option(Config.Redacted("ALERT_EMAIL_API_KEY")), emailUrl)
-    const token = credential(yield* Config.option(Config.Redacted("ALERT_TELEGRAM_BOT_TOKEN")), telegramUrl)
-    const from = yield* Config.NonEmptyString("ALERT_EMAIL_FROM").pipe(Config.withDefault(DEFAULT_EMAIL_FROM))
-    return Channels.layer({
-      ...(Option.isSome(apiKey)
-        ? { email: { apiKey: apiKey.value, from, ...(Option.isSome(emailUrl) ? { url: emailUrl.value } : {}) } }
-        : {}),
-      ...(Option.isSome(token)
-        ? { telegram: { token: token.value, ...(Option.isSome(telegramUrl) ? { url: telegramUrl.value } : {}) } }
-        : {}),
-    })
+export const channelsConfig = (options: { readonly dev?: boolean } = {}) => effect {
+  const emailUrl = try Config.option(Config.NonEmptyString("ALERT_EMAIL_API_URL"))
+  const telegramUrl = try Config.option(Config.NonEmptyString("ALERT_TELEGRAM_API_URL"))
+  const credential = (configured: Option.Option<Redacted.Redacted<string>>, url: Option.Option<string>) =>
+    Option.isNone(configured) && options.dev === true && Option.isSome(url)
+      ? Option.some(Redacted.make(DEV_CREDENTIAL))
+      : configured
+  const apiKey = credential(try Config.option(Config.Redacted("ALERT_EMAIL_API_KEY")), emailUrl)
+  const token = credential(try Config.option(Config.Redacted("ALERT_TELEGRAM_BOT_TOKEN")), telegramUrl)
+  const from = try Config.withDefault(Config.NonEmptyString("ALERT_EMAIL_FROM"), DEFAULT_EMAIL_FROM)
+  return Channels.layer({
+    ...(Option.isSome(apiKey)
+      ? { email: { apiKey: apiKey.value, from, ...(Option.isSome(emailUrl) ? { url: emailUrl.value } : {}) } }
+      : {}),
+    ...(Option.isSome(token)
+      ? { telegram: { token: token.value, ...(Option.isSome(telegramUrl) ? { url: telegramUrl.value } : {}) } }
+      : {}),
   })
+}

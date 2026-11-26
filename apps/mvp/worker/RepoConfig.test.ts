@@ -1,4 +1,4 @@
-// The repository feature's configuration (worker/RepoConfig.ts): Code Storage only when its organization and key are
+// The repository feature's configuration (worker/RepoConfig.vibe): Code Storage only when its organization and key are
 // set, a key that doesn't import refused without printing it, and the clone's services built from the same settings.
 import { ImmutableCache } from "@smthrs/artifacts"
 import { Core, type GitHub } from "@smthrs/integrations"
@@ -8,7 +8,7 @@ import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
 import { CloneUnavailable } from "./flows/RepoClone.ts"
-import * as RepoConfig from "./RepoConfig.ts"
+import * as RepoConfig from "./RepoConfig.vibe"
 
 /** A fresh ES256 key, as Code Storage's Keys page hands one out: a PKCS#8 PEM. */
 const pem = async () => {

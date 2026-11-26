@@ -7,7 +7,7 @@ import { CAPACITY_REASONS, FAILURES } from "../../src/features/repo/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as RepoMetrics from "../RepoMetrics.ts"
 import * as Repos from "../Repos.ts"
-import type { RepoUpstream } from "../RepoUpstream.ts"
+import type { RepoUpstream } from "../RepoUpstream.vibe"
 
 // `repo/Clone { id, owner, name, cloneId, requestedAt }` (decision 0006 §1, docs/features/repo.md#the-clone): mirrors
 // a public GitHub repository into Code Storage and records it in `repositories`. `cloneId` is the attempt's own id: it

@@ -26,9 +26,9 @@ export class RepoUpstream extends Context.Service<
   RepoUpstream,
   {
     /** The repository's HEAD: its commit and default branch. */
-    readonly head: (owner: string, name: string) => Effect.Effect<GitRemote.Head, GitRemote.GitRemoteError>
+    readonly head: (owner: string, name: string) => GitRemote.Head!GitRemote.GitRemoteError
     /** The repository's size, which GitHub reports in KiB and computes hourly. */
-    readonly size: (owner: string, name: string) => Effect.Effect<Sized, UpstreamUnavailable>
+    readonly size: (owner: string, name: string) => Sized!UpstreamUnavailable
   }
 >()("@smthrs/mvp/repo/RepoUpstream") {
   /**
@@ -39,8 +39,8 @@ export class RepoUpstream extends Context.Service<
   static readonly layer = (options: { readonly token: ReadToken.ReadToken }) =>
     Layer.effect(
       RepoUpstream,
-      Effect.gen(function* () {
-        const http = yield* Effect.context<HttpClient.HttpClient>().pipe(withUserAgent)
+      effect {
+        const http = try (Effect.context<HttpClient.HttpClient>() |> withUserAgent(%))
         // An explicit, empty environment: no ambient GITHUB_TOKEN chooses the account.
         const github = Effect.flatMap(options.token, (token) =>
           GitHub.GitHubClient.make(Option.isSome(token) ? { token: Redacted.value(token.value) } : {}, {}).pipe(
@@ -50,34 +50,32 @@ export class RepoUpstream extends Context.Service<
         return RepoUpstream.of({
           head: (owner, name) =>
             GitRemote.head(`https://github.com/${owner}/${name}.git`).pipe(Effect.provideContext(http)),
-          size: (owner, name) =>
-            Effect.flatMap(github, (client) =>
-              client.request("GET", `/repos/${GitHub.Repository.repositoryPath(owner, name)}`, undefined, {
-                schema: Schema.Struct({ size: Schema.Number }),
-              })).pipe(
-              Effect.map(({ size }): Sized => ({ bytes: Math.max(0, size) * 1024 })),
-              Effect.catch((error) => {
-                // Every IntegrationError carries details: its reason at least.
-                const details = error.details as Readonly<Record<string, unknown>>
-                if (details["rateLimited"] === true) {
-                  // GitHub's reset when it named one; a secondary limit names only a wait, often capped, so an hour.
-                  const reset = details["rateLimitResetAt"]
-                  return typeof reset === "number"
-                    ? Effect.succeed<Sized>({ retryAt: reset })
-                    : Effect.map(Clock.currentTimeMillis, (now): Sized => ({ retryAt: now + DEFAULT_RATE_LIMIT_WAIT_MS }))
-                }
-                if (details["status"] === 404) return Effect.succeed<Sized>({ missing: true })
-                return Effect.fail(
-                  new UpstreamUnavailable(
-                    typeof details["retryAfterMillis"] === "number"
-                      ? { retryAfterMillis: details["retryAfterMillis"] }
-                      : {},
-                  ),
-                )
-              }),
-            ),
+          size: effect (owner, name): Sized!UpstreamUnavailable => {
+            const client = try github
+            const path = try Effect.sync(() => GitHub.Repository.repositoryPath(owner, name))
+            const read = client.request("GET", `/repos/${path}`, undefined, {
+              schema: Schema.Struct({ size: Schema.Number }),
+            })
+            const sized = Effect.map(read, ({ size }): Sized => ({ bytes: Math.max(0, size) * 1024 }))
+            return sized catch effect (error): Sized!UpstreamUnavailable => {
+              // Every IntegrationError carries details: its reason at least.
+              const details = error.details as Readonly<Record<string, unknown>>
+              if (details["rateLimited"] === true) {
+                // GitHub's reset when it named one; a secondary limit names only a wait, often capped, so an hour.
+                const reset = details["rateLimitResetAt"]
+                if (typeof reset === "number") return { retryAt: reset }
+                return { retryAt: (try Clock.currentTimeMillis) + DEFAULT_RATE_LIMIT_WAIT_MS }
+              }
+              if (details["status"] === 404) return { missing: true }
+              throw new UpstreamUnavailable(
+                typeof details["retryAfterMillis"] === "number"
+                  ? { retryAfterMillis: details["retryAfterMillis"] }
+                  : {},
+              )
+            }
+          },
         })
-      }),
+      },
     )
 
   /** `layer` with the deployment's read token: `GITHUB_TOKEN`, else the GitHub App's, else none (`ReadToken.fromConfig`). */

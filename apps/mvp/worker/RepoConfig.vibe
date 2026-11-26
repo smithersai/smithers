@@ -9,7 +9,7 @@ import { statusOf } from "./github/Calls.ts"
 import * as GitHubHost from "./github/Host.ts"
 import * as RepoReads from "./RepoReads.ts"
 import * as Repos from "./Repos.ts"
-import { RepoUpstream } from "./RepoUpstream.ts"
+import { RepoUpstream } from "./RepoUpstream.vibe"
 
 // The repository feature's configuration (docs/features/repo.md#configuration), read with Effect `Config` where ChatApi
 // and the `FlowExecution` Durable Object start: the Code Storage organization, GitHub's optional token, the budgets and
@@ -20,22 +20,15 @@ import { RepoUpstream } from "./RepoUpstream.ts"
  * `None` when either is unset: this deployment clones nothing. A key that doesn't import is logged, never printed, and
  * is `None` too.
  */
-export const codeStorage: Effect.Effect<Option.Option<CodeStorage.Client>, never, HttpClient.HttpClient> = Effect.gen(
-  function* () {
-    const credentials = yield* Config.option(CodeStorage.config).pipe(Effect.orDie)
-    if (Option.isNone(credentials)) return Option.none()
-    return yield* Effect.service(CodeStorage.CodeStorage).pipe(
-      Effect.provide(CodeStorage.CodeStorage.layer(credentials.value)),
-      Effect.map(Option.some),
-      Effect.catch((error) =>
-        Effect.as(
-          Effect.logError("repo.config").pipe(Effect.annotateLogs({ errorCode: error.code })),
-          Option.none<CodeStorage.Client>(),
-        )
-      ),
-    )
-  },
-)
+export const codeStorage: Option.Option<CodeStorage.Client>!never!HttpClient.HttpClient = effect {
+  const credentials = try Effect.orDie(Config.option(CodeStorage.config))
+  if (Option.isNone(credentials)) return Option.none()
+  const client = Effect.provide(CodeStorage.CodeStorage, CodeStorage.CodeStorage.layer(credentials.value))
+  return Effect.map(client, Option.some) catch effect (error) => {
+    try (Effect.logError("repo.config") |> Effect.annotateLogs(%, { errorCode: error.code }))
+    return Option.none<CodeStorage.Client>()
+  }
+}
 
 /**
  * Whether the Smithers GitHub App is installed on a repository, asked of GitHub as the `app` of `github` (the host's
@@ -43,11 +36,14 @@ export const codeStorage: Effect.Effect<Option.Option<CodeStorage.Client>, never
  * Index's retry policy waits out. A deployment without the App (`None`) has it installed nowhere.
  */
 export const installedWith =
-  (github: Option.Option<{ readonly app: GitHub.AppAuth.AppAuth }>) => (owner: string, name: string) =>
-    Option.isNone(github) ? Effect.succeed(false) : github.value.app.installation(owner, name).pipe(
-      Effect.as(true),
-      Effect.catch((error) => statusOf(error) === 404 ? Effect.succeed(false) : Effect.fail(new RepoClone.CloneUnavailable())),
-    )
+  (github: Option.Option<{ readonly app: GitHub.AppAuth.AppAuth }>) =>
+    (owner: string, name: string): boolean!RepoClone.CloneUnavailable => {
+      if (Option.isNone(github)) return Effect.succeed(false)
+      return Effect.catch(Effect.as(github.value.app.installation(owner, name), true), effect (error) => {
+        if ((try Effect.sync(() => statusOf(error))) === 404) return false
+        throw new RepoClone.CloneUnavailable()
+      })
+    }
 
 /**
  * What `repo/Clone` needs on this host, over `database` (the app's tables) and `cache` (the immutable cache RepoApi's
@@ -59,27 +55,28 @@ export const cloneServices = <E, R>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
   cache: Layer.Layer<ImmutableCache.ImmutableCache>,
 ) =>
-  Effect.gen(function* () {
-    const client = yield* codeStorage
+  effect {
+    const client = try codeStorage
     if (Option.isNone(client)) return Option.none<RepoClone.Services<E, R>>()
-    const upstream = yield* Effect.service(RepoUpstream).pipe(Effect.provide(RepoUpstream.layerConfig))
-    const budgets = yield* Repos.budgets
-    const reads = RepoReads.make({
+    const upstream = try Effect.provide(RepoUpstream, RepoUpstream.layerConfig)
+    const budgets = try Repos.budgets
+    const settings = {
       codeStorage: client.value,
       database,
       budgets,
-      maxTreePaths: yield* RepoReads.maxTreePaths,
-      maxRefs: yield* RepoReads.maxRefs,
-    })
-    const app = yield* GitHubHost.ready(database)
+      maxTreePaths: try RepoReads.maxTreePaths,
+      maxRefs: try RepoReads.maxRefs,
+    }
+    const reads = try Effect.sync(() => RepoReads.make(settings))
+    const app = try GitHubHost.ready(database)
     return Option.some<RepoClone.Services<E, R>>({
       database,
       codeStorage: client.value,
       upstream,
       budgets,
-      deadline: yield* RepoClone.deadline,
+      deadline: try RepoClone.deadline,
       index: (owner, name, sha) =>
         reads.files(owner, name, sha).pipe(Effect.provide(cache), Effect.mapError(() => new RepoClone.CloneUnavailable())),
       installed: installedWith(app),
     })
-  })
+  }

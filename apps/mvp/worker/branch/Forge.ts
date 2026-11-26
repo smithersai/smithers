@@ -5,7 +5,7 @@ import { type CodeStorage, GitProxy, GitRemote } from "@smthrs/effect-code-stora
 import { Context, Effect, Layer, Metric, Option } from "effect"
 import { type HttpClient, type HttpServerRequest, HttpServerResponse } from "effect/http"
 import { repoId } from "../../src/features/repo/contract.ts"
-import * as RepoConfig from "../RepoConfig.ts"
+import * as RepoConfig from "../RepoConfig.vibe"
 
 // Where a branch's git comes from (decision 0013 §2, docs/features/branch-workspace.md#the-forge): the remote and the
 // read credential the host adds outside the sandbox. `branch/Track` reads a branch through it, and the branch sandbox's

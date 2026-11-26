@@ -1,6 +1,10 @@
-import { Effect } from "effect"
+import { Effect, Layer, Option } from "effect"
+import { HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
+import { Sessions } from "./Actor.ts"
+import { BranchRoles } from "./branch/Access.ts"
+import * as Pins from "./Pins.vibe"
 import { answers, harness, testFile } from "./test/harness.ts"
 
 const runtime = testFile("pins")
@@ -150,4 +154,19 @@ test("the Electric shape ignores forged filters and syncs only the session perso
     expect(requests.at(-1)!.searchParams.get("params[1]")).toBe(person?.subject.id ?? "")
     expect(requests.at(-1)!.searchParams.get("columns")).toBe("conversation_id,person_id,message_id,changed_at")
   }
+})
+
+test("the message-pin handler rejects oversized bodies before writing", async () => {
+  const database = Layer.effect(SqlClient.SqlClient, Effect.die("body validation should precede SQL"))
+  const routes = await runtime.runPromise(Pins.make(database))
+  const request = HttpServerRequest.fromWeb(new Request("http://chat.test/api/message-pin", {
+    method: "POST",
+    body: "x".repeat(512 + 1),
+  }))
+  const response = await runtime.runPromise(routes.write.pipe(
+    Effect.provideService(BranchRoles, { roleOn: () => Effect.die("body validation should precede branch access") }),
+    Effect.provideService(Sessions, { resolve: Effect.succeed(Option.some(actor)) }),
+    Effect.provideService(HttpServerRequest.HttpServerRequest, request),
+  ))
+  expect(response.status).toBe(413)
 })
