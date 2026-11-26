@@ -1,4 +1,4 @@
-import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Channels } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import { Duration, Effect, Layer, Metric, Option, Schema } from "effect"
@@ -10,6 +10,9 @@ import * as Fleet from "../runners/Fleet.vibe"
 import { AUDIENCE } from "../runners/FleetAudience.vibe"
 export { AUDIENCE } from "../runners/FleetAudience.vibe"
 import * as AlertDelivery from "./AlertDelivery.vibe"
+import { Bell, type Belled, Deliver, FleetAlert, FleetAlertUnavailable, retryPolicy } from "./FleetAlertPlan.ts"
+
+export { Bell, Belled, Deliver, FleetAlert, FleetAlertUnavailable } from "./FleetAlertPlan.ts"
 
 // The fleet's alerts (decision 0143, docs/features/fleet.md#alerts): durable flows, no sweeps (ruling DUR-2).
 //
@@ -37,12 +40,6 @@ import * as AlertDelivery from "./AlertDelivery.vibe"
 const nonNegative = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const positive = Schema.Int.check(Schema.isGreaterThan(0))
 
-/** Postgres failed a step. It retries, and never gives up. */
-export class FleetAlertUnavailable extends Schema.TaggedError<FleetAlertUnavailable>()(
-  "@smthrs/mvp/ops/FleetAlertUnavailable",
-  { reason: Schema.Literal("database") },
-) {}
-
 /** Bell entries written, by `kind`. */
 export const bells = Metric.counter("smithers_fleet_alert_bells", {
   description: "Fleet alert entries written to people's bells, by kind",
@@ -53,62 +50,6 @@ export const bells = Metric.counter("smithers_fleet_alert_bells", {
 export const deliveries = Metric.counter("smithers_fleet_alert_deliveries", {
   description: "Fleet alert deliveries outside the app, by channel and outcome",
   incremental: true,
-})
-
-const retryPolicy = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000 })
-
-/** What the bell did: whom it reached, `none` when the incident's subject is gone. */
-export const Belled = Schema.Struct({ outcome: Schema.Literals(["written", "none"]), recipients: nonNegative })
-export type Belled = typeof Belled.Type
-
-/** Records the incident and puts it in each recipient's bell, once. */
-export const Bell = Action.make("ops/BellFleetAlert", {
-  payload: Fleet.Alert.fields,
-  success: Belled,
-  error: FleetAlertUnavailable,
-  capabilities: ["db:read:agent_runs", "db:read:todos", "db:read:runners", "db:write:fleet_alerts", "db:write:notifications"],
-  retryPolicy,
-})
-
-/** Sends the incident on one channel and records its receipt, at least once, as every alert's delivery does. */
-export const Deliver = Action.make("ops/DeliverFleetAlert", {
-  payload: { alertId: Fleet.Alert.fields.alertId, channel: Channels.Channel },
-  success: AlertDelivery.Delivered,
-  error: Schema.Union([Channels.DeliveryFailed, AlertDelivery.DeliverUnavailable]),
-  capabilities: ["db:read:fleet_alerts", "db:read:alert_channels", "db:write:alert_deliveries", "net:alert_channels"],
-  tier: "irreversible",
-  idempotencyKey: ({ alertId, channel }) => ({ alert: alertId, channel }),
-  retryPolicy: AlertDelivery.retryPolicy,
-})
-
-const Outcome = Schema.Struct({ email: AlertDelivery.Delivered, telegram: AlertDelivery.Delivered })
-
-/** `ops/FleetAlert`: one incident, to its people's bells and the deployment's channels. */
-export const FleetAlert = Flow.make("ops/FleetAlert", {
-  description: "Tell the people an agent run or runner incident is for: a run that failed, stalled, waited too long " +
-    "for a runner or cost too much, or a runner that went offline. In their notifications, and by email and Telegram " +
-    "where an Admin set them.",
-  capabilities: [
-    "db:read:agent_runs",
-    "db:read:todos",
-    "db:read:runners",
-    "db:write:fleet_alerts",
-    "db:write:notifications",
-    "db:read:alert_channels",
-    "db:write:alert_deliveries",
-    "net:alert_channels",
-  ],
-  modelInvocable: false,
-  payload: Fleet.Alert.fields,
-  success: Outcome,
-  error: Schema.Union([FleetAlertUnavailable, Channels.DeliveryFailed, AlertDelivery.DeliverUnavailable]),
-  body: Node.capture({}, (alert: Fleet.Alert) =>
-    Bell.call(alert).pipe(
-      Node.andThen(Node.all({
-        email: Deliver.call({ alertId: alert.alertId, channel: "email" }),
-        telegram: Deliver.call({ alertId: alert.alertId, channel: "telegram" }),
-      })),
-    )),
 })
 
 /** The longest title a bell row and a message's subject carry. */
@@ -151,19 +92,19 @@ const WORDS: Readonly<Record<Exclude<Fleet.Kind, "offline">, string>> = {
 
 /** The words for an incident, read from the run, the TODO attempt or the runner it is about. */
 export const describe = (alert: Fleet.Alert) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
+  effect {
+    const sql = try SqlClient.SqlClient
     if (alert.kind === "offline") {
-      const [runner] = yield* sql<{ readonly name: string; readonly repoId: string }>`
+      const [runner] = try sql<{ readonly name: string; readonly repoId: string }>`
         SELECT name, repo_id AS "repoId" FROM runners WHERE id::text = ${alert.subject}`
       if (runner === undefined) return Option.none<Described>()
       return Option.some({ title: clip(`Runner ${runner.name} offline`), href: `${repoPath(runner.repoId)}/-/fleet`, committer: null })
     }
     const [row] = alert.kind === "failed"
-      ? yield* sql<{ readonly number: number; readonly title: string; readonly createdBy: string; readonly detail: string | null }>`
+      ? try sql<{ readonly number: number; readonly title: string; readonly createdBy: string; readonly detail: string | null }>`
         SELECT t.number, t.title, t.created_by AS "createdBy", t.failure AS detail
         FROM todo_attempts a JOIN todos t ON t.id = a.todo_id WHERE a.id::text = ${alert.subject}`
-      : yield* sql<{ readonly number: number | null; readonly title: string | null; readonly createdBy: string | null; readonly detail: string | null }>`
+      : try sql<{ readonly number: number | null; readonly title: string | null; readonly createdBy: string | null; readonly detail: string | null }>`
         SELECT r.number, r.title, t.created_by AS "createdBy",
           CASE WHEN r.cost_usd IS NULL THEN r.agent ELSE '$' || to_char(r.cost_usd, 'FM999999990.00') END AS detail
         FROM agent_runs r LEFT JOIN todos t ON t.id = r.todo_id WHERE r.key = ${alert.subject}`
@@ -175,7 +116,7 @@ export const describe = (alert: Fleet.Alert) =>
       href: row.number === null ? `${repoPath(alert.repoId)}/-/fleet` : `${repoPath(alert.repoId)}/stack/${row.number}`,
       committer: AUDIENCE[alert.kind].committer ? row.createdBy : null,
     })
-  })
+  }
 
 /**
  * Records incident `alert` and puts it in the bell of everyone it is for, once each (`fleet:<alert id>`): the run's
@@ -184,15 +125,15 @@ export const describe = (alert: Fleet.Alert) =>
  * and the repository (`bellTitleOf`).
  */
 export const bell = (alert: Fleet.Alert, home: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const described = yield* describe(alert)
+  effect {
+    const sql = try SqlClient.SqlClient
+    const described = try describe(alert)
     if (Option.isNone(described)) return { outcome: "none", recipients: 0 } satisfies Belled
     const { title, href, committer } = described.value
     const roles = AUDIENCE[alert.kind].role === "admin" ? ["admin"] : ["maintainer", "admin"]
     const rolesJson = JSON.stringify(roles)
-    return yield* sql.withTransaction(Effect.gen(function* () {
-      yield* sql`
+    return try sql.withTransaction(effect {
+      try sql`
         INSERT INTO fleet_alerts (id, kind, repo_id, subject, title, href)
         VALUES (${alert.alertId}, ${alert.kind}, ${alert.repoId}, ${alert.subject}, ${title}, ${href})
         ON CONFLICT (id) DO NOTHING`
@@ -215,20 +156,20 @@ export const bell = (alert: Fleet.Alert, home: string) =>
             WHERE repo_id = ${alert.repoId} AND person_id = ${committer}::text AND checked_at <> '-infinity'
               AND (role IS NULL OR role NOT IN ('member', 'maintainer', 'admin')))
         ) AS audience`
-      const held = yield* FeedLocks.lock(sql, (yield* audience()).map(({ recipient }) => ({ repoId: alert.repoId, personId: recipient })))
-      const recipients = (yield* audience()).map(({ recipient }) => recipient)
+      const held = try FeedLocks.lock(sql, (try audience()).map(({ recipient }) => ({ repoId: alert.repoId, personId: recipient })))
+      const recipients = (try audience()).map(({ recipient }) => recipient)
         .filter((recipient) => FeedLocks.holds(held, { repoId: alert.repoId, personId: recipient }))
-      const rows = yield* sql<{ readonly recipient: string }>`
+      const rows = try sql<{ readonly recipient: string }>`
         INSERT INTO notifications (recipient, subject, kind, state, repo_id, title, href)
         SELECT recipient, ${`fleet:${alert.alertId}`}, 'fleet', 'update', ${alert.repoId},
           ${bellTitleOf(alert.kind, alert.repoId)}, ${href}
         FROM jsonb_array_elements_text(${JSON.stringify(recipients)}::jsonb) AS chosen(recipient)
         ON CONFLICT (recipient, subject) DO NOTHING
         RETURNING recipient`
-      yield* sql`UPDATE fleet_alerts SET recipients = recipients + ${rows.length} WHERE id = ${alert.alertId}`
+      try sql`UPDATE fleet_alerts SET recipients = recipients + ${rows.length} WHERE id = ${alert.alertId}`
       return { outcome: "written", recipients: rows.length } satisfies Belled
-    }))
-  })
+    })
+  }
 
 /** The bell step over `database`, with its `fleet.alert.bell` line, span and count: the alert and a count, never who. */
 export const observedBell = <E, R>(alert: Fleet.Alert, home: string, database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
@@ -334,23 +275,31 @@ export const checks = Metric.counter("smithers_runner_health_checks", {
   incremental: true,
 })
 
+interface OfflineRunner {
+  readonly id: string
+  readonly repoId: string
+  readonly seenAt: Date
+}
+
 /**
  * The runners unseen for `offlineSeconds` (registered, not removed, seen at least once): each one's alert, keyed by its
  * last sighting, so one outage is one incident however many windows see it.
  */
 export const offline = (offlineSeconds: number) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const rows = yield* sql<{ readonly id: string; readonly repoId: string; readonly seenAt: Date }>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const rows: ReadonlyArray<OfflineRunner> = try sql<OfflineRunner>`
       SELECT id::text AS id, repo_id AS "repoId", seen_at AS "seenAt" FROM runners
       WHERE removed_at IS NULL AND seen_at < now() - ${offlineSeconds}::int * interval '1 second'`
-    return rows.map((row): Fleet.Alert => ({
-      alertId: Fleet.alertId.offline(row.id, new Date(row.seenAt).getTime()),
-      kind: "offline",
-      repoId: row.repoId,
-      subject: row.id,
-    }))
-  })
+    return rows.map((row): Fleet.Alert => {
+      return {
+        alertId: Fleet.alertId.offline(row.id, new Date(row.seenAt).getTime()),
+        kind: "offline",
+        repoId: row.repoId,
+        subject: row.id,
+      }
+    })
+  }
 
 /**
  * The check over `database`: starts each offline runner's alert through `start` (a start already made starts nothing).

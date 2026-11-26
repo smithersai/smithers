@@ -58,7 +58,7 @@ import { SecretKeys } from "../secrets/Keys.vibe"
 import * as Flows from "../Flows.ts"
 import * as FlowHost from "../test/flowHost.ts"
 import { branchRoles, signedIn } from "../test/harness.ts"
-import * as FleetAlert from "../flows/FleetAlert.ts"
+import * as FleetAlert from "../flows/FleetAlert.vibe"
 import { type AlertProviders, startAlertProviders } from "../test/alertProviders.ts"
 import { Channels } from "@smthrs/notifications"
 

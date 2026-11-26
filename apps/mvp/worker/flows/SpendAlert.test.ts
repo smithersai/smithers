@@ -10,7 +10,7 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import { type AlertProviders, startAlertProviders } from "../test/alertProviders.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
-import * as SpendAlert from "./SpendAlert.ts"
+import * as SpendAlert from "./SpendAlert.vibe"
 
 const runtime = testFile("spend_alert")
 

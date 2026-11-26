@@ -7,7 +7,7 @@ import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import type { Actor } from "./Actor.ts"
 import * as Flows from "./Flows.ts"
-import * as SpendAlert from "./flows/SpendAlert.ts"
+import * as SpendAlert from "./flows/SpendAlert.vibe"
 import * as ModelSpend from "./ModelSpend.vibe"
 import { delta, harness, stop, testFile } from "./test/harness.ts"
 

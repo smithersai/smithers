@@ -6,7 +6,7 @@ import type { Role } from "./Actor.ts"
 import * as Access from "./branch/Access.ts"
 import * as Budget from "./branch/Budget.ts"
 import * as RegistryEgress from "./branch/RegistryEgress.ts"
-import { CI_OWNER } from "./flows/CiJobMachine.ts"
+import { CI_OWNER } from "./flows/CiJobMachine.vibe"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "120"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261123")

@@ -2,7 +2,7 @@ import { Effect, type Layer, Metric } from "effect"
 import { SqlClient } from "effect/sql"
 import { DEFAULT_SANDBOX_LIMITS, type SandboxLimits } from "../../src/features/spend/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
-import { CI_OWNER } from "../flows/CiJobMachine.ts"
+import { CI_OWNER } from "../flows/CiJobMachine.vibe"
 import type { Store } from "./Machine.ts"
 import type { SandboxBranch } from "./Sandboxes.ts"
 

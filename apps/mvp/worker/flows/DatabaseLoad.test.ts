@@ -22,7 +22,7 @@ import { build, runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as AlertDelivery from "./AlertDelivery.vibe"
 import * as V1 from "../test/DatabaseLoadV1.ts"
-import * as DatabaseLoad from "./DatabaseLoad.ts"
+import * as DatabaseLoad from "./DatabaseLoad.vibe"
 
 const runtime = testFile("database_load")
 
@@ -286,6 +286,17 @@ const frozenV1 = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, delive
   ).pipe(Layer.provide(deliveries), Layer.provideMerge(Action.layerImplementations))
 
 describe("ops/DatabaseLoad on the Node host", () => {
+  test("registration defaults to the deployment threshold and leaves channels off", async () => {
+    const ran = await runFlow(DatabaseLoad.DatabaseLoadV2, window(), DatabaseLoad.registration(await database()))
+    expect(ran.status).toBe("completed")
+    if (Exit.isFailure(ran.exit)) throw Cause.squash(ran.exit.cause)
+    const { sample, email, telegram } = ran.exit.value
+    expect(sample.over).toBe(sample.used * 100 >= ALERT_PERCENT * sample.max)
+    const outcome = sample.over ? "off" : "none"
+    expect(email).toEqual({ outcome })
+    expect(telegram).toEqual({ outcome })
+  })
+
   test("under the share it samples and sends nothing, even with both channels set", async () => {
     await setChannel("email", ADDRESSES)
     await setChannel("telegram", [CHAT])

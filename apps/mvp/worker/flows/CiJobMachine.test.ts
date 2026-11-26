@@ -7,7 +7,7 @@ import { noCommands } from "../test/commands.ts"
 import { Machines } from "../branch/Machines.ts"
 import { SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { runFlow } from "../test/flowHost.ts"
-import * as CiJobMachine from "./CiJobMachine.ts"
+import * as CiJobMachine from "./CiJobMachine.vibe"
 
 const target: CiJob.Target = { run: "ci:delivery-7", repo: "acme/widgets", sha: "b".repeat(40), ref: "refs/heads/main" }
 

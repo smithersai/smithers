@@ -16,7 +16,7 @@ import { noCommands } from "../test/commands.ts"
 import { Machines } from "../branch/Machines.ts"
 import { CheckoutFailed } from "../branch/Sandboxes.ts"
 import { runFlow } from "../test/flowHost.ts"
-import * as CiJobMachine from "./CiJobMachine.ts"
+import * as CiJobMachine from "./CiJobMachine.vibe"
 
 const image = sandboxImage
 /**
