@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { ROLES } from "../../src/features/auth/contract.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
@@ -73,20 +73,20 @@ export type Outcome = "set" | "removed" | "missing" | Refused
  * stands (`clock_timestamp()`), the fence's expiry last, right before the write.
  */
 export const authorityHolds = (fence: Fence) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const held = fence.authority._tag === "Repo"
-      ? fence.authority.session === undefined ? false
-        : (yield* RepoRoles.holds(fence.authority.held)) && (fence.authority.session === null ||
-          fence.authority.session.personId === fence.authority.held.personId && (yield* WriteAuthority.holds(fence.authority.session)))
-      : fence.authority._tag === "Session"
-      ? yield* sessionHolds(fence.authority)
-      : true
-    if (!held) return false
-    const [now] = yield* sql<{ readonly live: boolean }>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const authority = fence.authority
+    if (authority._tag === "Repo") {
+      const session = authority.session
+      if (session === undefined || !(try RepoRoles.holds(authority.held))) return false
+      if (session !== null && (session.personId !== authority.held.personId || !(try WriteAuthority.holds(session)))) return false
+    } else if (authority._tag === "Session" && !(try sessionHolds(authority))) {
+      return false
+    }
+    const [now] = try sql<{ readonly live: boolean }>`
       SELECT clock_timestamp() < to_timestamp(${fence.expiresAt}::float8 / 1000) AS live`
     return now!.live
-  })
+  }
 
 /**
  * Whether the sign-in session (and the alias it came through) is live and the person's newest role is Admin: the
@@ -94,16 +94,16 @@ export const authorityHolds = (fence: Fence) =>
  * between.
  */
 const sessionHolds = (authority: WriteAuthority.Session) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
+  effect {
+    const sql = try SqlClient.SqlClient
     const { personId } = authority
-    const [person] = yield* sql`SELECT 1 FROM people WHERE id::text = ${personId} FOR SHARE`
+    const [person] = try sql`SELECT 1 FROM people WHERE id::text = ${personId} FOR SHARE`
     if (person === undefined) return false
-    if (!(yield* WriteAuthority.holds(authority))) return false
-    const [row] = yield* sql<{ readonly admin: boolean | null }>`
+    if (!(try WriteAuthority.holds(authority))) return false
+    const [row] = try sql<{ readonly admin: boolean | null }>`
       SELECT ${latestRole(sql, sql`${personId}::uuid`)} = 'admin' AS admin`
     return row?.admin === true
-  })
+  }
 
 /** The earliest authority deadline, in the database's clock. */
 const deadline = (sql: SqlClient.SqlClient, fence: Fence) => {
@@ -121,11 +121,11 @@ export class LateCommit extends Schema.TaggedError<LateCommit>()("@smthrs/mvp/ru
 
 /** Final check after all writes, against the same earliest authority deadline. */
 export const stillHolds = (fence: Fence) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    Effect.map(
-      sql<{ readonly live: boolean }>`SELECT coalesce(clock_timestamp() < ${deadline(sql, fence)}, false) AS live`,
-      (rows) => rows[0]?.live === true,
-    ))
+  effect {
+    const sql = try SqlClient.SqlClient
+    const rows = try sql<{ readonly live: boolean }>`SELECT coalesce(clock_timestamp() < ${deadline(sql, fence)}, false) AS live`
+    return rows[0]?.live === true
+  }
 
 /** Records how an Admin action ended, once per execution. */
 export const receipt = (
@@ -135,25 +135,27 @@ export const receipt = (
   outcome: Outcome,
   actorId: string,
 ) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql`
+  effect {
+    const sql = try SqlClient.SqlClient
+    return try sql`
       INSERT INTO admin_receipts (execution, repo_id, kind, name, op, outcome, actor_id)
       VALUES (${execution}, ${action.repoId}, ${action.kind}, ${action.name}, ${op}, ${outcome}, ${actorId})
-      ON CONFLICT (execution) DO NOTHING`)
+      ON CONFLICT (execution) DO NOTHING`
+  }
 
 /** The outcome recorded for `execution`: what a replay of the same action answers. */
 export const recorded = (execution: string) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    Effect.map(
-      sql<{ readonly outcome: Outcome }>`SELECT outcome FROM admin_receipts WHERE execution = ${execution}`,
-      (rows) => rows[0]?.outcome,
-    ))
+  effect {
+    const sql = try SqlClient.SqlClient
+    const rows = try sql<{ readonly outcome: Outcome }>`SELECT outcome FROM admin_receipts WHERE execution = ${execution}`
+    return rows[0]?.outcome
+  }
 
 /** The receipt of `execution`, for `actorId` alone: none while the action hasn't ended. */
 export const receiptOf = (execution: string, actorId: string) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    Effect.map(
-      sql<{ readonly kind: string; readonly name: string; readonly op: string; readonly outcome: Outcome }>`
-        SELECT kind, name, op, outcome FROM admin_receipts WHERE execution = ${execution} AND actor_id = ${actorId}`,
-      (rows) => rows[0],
-    ))
+  effect {
+    const sql = try SqlClient.SqlClient
+    const rows = try sql<{ readonly kind: string; readonly name: string; readonly op: string; readonly outcome: Outcome }>`
+      SELECT kind, name, op, outcome FROM admin_receipts WHERE execution = ${execution} AND actor_id = ${actorId}`
+    return rows[0]
+  }

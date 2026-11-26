@@ -8,7 +8,7 @@ import { beforeEach, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import type * as Actor from "../Actor.ts"
 import { signedIn, signedOut, testFile } from "../test/harness.ts"
-import * as Audit from "./Audit.ts"
+import * as Audit from "./Audit.vibe"
 import * as Store from "./Store.ts"
 
 const runtime = testFile("runner_audit")
@@ -32,12 +32,12 @@ const register = (repoId: string, name: string, token: string) =>
     invocationKey: crypto.randomUUID(),
   }))
 
-const audit = async (actor: Actor.Actor | null) => {
+const audit = async (actor: Actor.Actor | null, method = "GET") => {
   const handler = HttpEffect.toWebHandler(
     Audit.make(await database()).fetch.pipe(Effect.provide(actor === null ? signedOut : signedIn(actor))),
   )
-  const response = await handler(new Request(`http://localhost${Audit.ROUTE}`))
-  return { status: response.status, text: await response.text() }
+  const response = await handler(new Request(`http://localhost${Audit.ROUTE}`, { method }))
+  return { status: response.status, headers: response.headers, text: await response.text() }
 }
 
 test("only an Admin of the deployment's own repository, in person, reads it", async () => {
@@ -48,6 +48,14 @@ test("only an Admin of the deployment's own repository, in person, reads it", as
 })
 
 // Migration `0095_runner_reauthorization` cleared every runner's authorization: the audit names each one that needs registering again.
+test("the audit only accepts GET on its exact route", async () => {
+  expect(Audit.handles(Audit.ROUTE)).toBe(true)
+  expect(Audit.handles(`${Audit.ROUTE}/`)).toBe(false)
+  const response = await audit(admin, "POST")
+  expect(response.status).toBe(405)
+  expect(response.headers.get("allow")).toBe("GET")
+})
+
 test("lists each live runner with its registrant, its authorization and installation, flags what needs acting on, and no token", async () => {
   await sql`INSERT INTO people (id, github_id, github_login) VALUES (${ADMIN_ID}::uuid, 1, 'octo-admin')`
   await sql`INSERT INTO github_repositories (repo_id, installation_id) VALUES ('github/acme/ok', 7)`
@@ -106,7 +114,11 @@ test("a stale Admin session cannot read the deployment-wide audit", async () => 
   const session = crypto.randomUUID()
   await sql`INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, role_verified_at, expires_at)
     VALUES (${session}, ${session}, ${ADMIN_ID}::uuid, 'admin', now(), now() - interval '61 minutes', now() + interval '1 day')`
-  expect((await audit({ ...admin, session })).status).toBe(503)
+  const stale = await audit({ ...admin, session })
+  expect(stale.status).toBe(503)
+  expect(stale.headers.get("retry-after")).toBe("5")
+  expect(stale.headers.get("cache-control")).toBe("no-store")
+  expect(JSON.parse(stale.text)).toEqual({ code: "unavailable" })
   await sql`UPDATE sessions SET role_verified_at = now() WHERE id = ${session}`
   expect((await audit({ ...admin, session })).status).toBe(200)
   await sql`UPDATE sessions SET role_verified_at = NULL WHERE id = ${session}`

@@ -2,7 +2,7 @@ import * as WriteAuthority from "../WriteAuthority.ts"
 import { AgentRunner } from "@smthrs/agent"
 import { Effect, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import * as Fence from "./Fence.ts"
+import * as Fence from "./Fence.vibe"
 
 // The runner and agent tables an Admin writes (db/migrations/0078_agent_runners.ts, docs/features/agent-runners.md):
 // each write runs in one transaction with its change record, once per invocation key, so a step run again writes once.

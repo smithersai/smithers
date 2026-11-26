@@ -22,7 +22,7 @@ import * as NotificationPolicy from "./NotificationPolicy.vibe"
 import * as ShapeAccess from "./ShapeAccess.vibe"
 import { FRESH_SECONDS } from "./github/RoleAge.ts"
 import { TTL_MS } from "./github/Visibility.ts"
-import * as FleetAudience from "./runners/FleetAudience.ts"
+import * as FleetAudience from "./runners/FleetAudience.vibe"
 import { pruned as repositoryPruned } from "./github/RepoRoles.ts"
 
 // The personal feed on the server (decision 0009, docs/features/notifications.md): one `notifications` row per person

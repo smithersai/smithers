@@ -68,7 +68,7 @@ export default defineConfig({
         "worker/ci/*.ts",
         "worker/flows/**/*.{ts,vibe}",
         // External agents on runners (docs/features/agent-runners.md): their routes, store and Admin writes.
-        "worker/runners/*.ts",
+        "worker/runners/*.{ts,vibe}",
         // The metered model endpoint and admin/SetModel (docs/features/model-endpoint.md).
         "worker/Pins.vibe",
         "db/migrations/0054_message_pins.ts",

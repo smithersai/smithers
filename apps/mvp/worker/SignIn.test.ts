@@ -26,7 +26,7 @@ import { Sessions as ActorSessions, SessionsUnavailable as ActorSessionsUnavaila
 import * as SessionStore from "./SessionStore.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { branchAccess, BranchRoles } from "./branch/Access.ts"
-import * as Audit from "./runners/Audit.ts"
+import * as Audit from "./runners/Audit.vibe"
 import { HttpEffect } from "effect/http"
 import * as SessionKeys from "./SessionKeys.vibe"
 import * as RunCredentials from "./RunCredentials.ts"

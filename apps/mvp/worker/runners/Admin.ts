@@ -21,7 +21,7 @@ import { SecretKeys } from "../secrets/Keys.vibe"
 import * as AdminFlows from "./AdminFlows.ts"
 import * as Overflow from "./Overflow.ts"
 import type * as RepoRoles from "../github/RepoRoles.ts"
-import * as Fence from "./Fence.ts"
+import * as Fence from "./Fence.vibe"
 import * as Store from "./Store.ts"
 
 // The Admin routes for a repository's runners and agents (decision 0136, docs/features/agent-runners.md#admin):

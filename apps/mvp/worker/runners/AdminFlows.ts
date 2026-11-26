@@ -4,7 +4,7 @@ import { Node } from "@smthrs/plan"
 import { Effect, Layer, Metric, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
-import * as Fence from "./Fence.ts"
+import * as Fence from "./Fence.vibe"
 import * as Overflow from "./Overflow.ts"
 import * as Store from "./Store.ts"
 

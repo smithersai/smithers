@@ -54,7 +54,7 @@ test("token use and notification audiences share the absolute session bound", ()
 
 test("the final write checks use the shared absolute deadline", () => {
   expect(sourceText(new URL("./WriteAuthority.ts", import.meta.url))).toContain("sessionDeadline(")
-  expect(sourceText(new URL("./runners/Fence.ts", import.meta.url))).toContain("WriteAuthority.deadline(")
+  expect(sourceText(new URL("./runners/Fence.vibe", import.meta.url))).toContain("WriteAuthority.deadline(")
   expect(sourceText(new URL("./stack/Stack.ts", import.meta.url))).toContain("WriteAuthority.requireAtCommit(")
   const text = sourceText(new URL("./branch/Texts.ts", import.meta.url))
   expect(text).toContain("WriteAuthority.live(")

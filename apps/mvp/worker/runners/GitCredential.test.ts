@@ -15,7 +15,7 @@ import { appKey, scriptedGitHub as makeScriptedGitHub } from "../github/test/scr
 import * as RunContentTest from "../test/runContent.ts"
 import { testFile } from "../test/harness.ts"
 import * as RunnersApi from "./Api.ts"
-import * as GitCredential from "./GitCredential.ts"
+import * as GitCredential from "./GitCredential.vibe"
 import * as Jobs from "./Jobs.ts"
 import * as Store from "./Store.ts"
 
@@ -495,6 +495,9 @@ describe("the App's token behind it", () => {
     expect(github.revoked).toEqual([Redacted.value(minted.password)])
     // Revoking again is refused by GitHub, and still never fails.
     await Effect.runPromise(credentials.revoke(minted))
+    expect(github.revoked).toHaveLength(1)
+    await expect(Effect.runPromise(GitCredential.make(Option.none(), await database(), github.http).revoke(minted)))
+      .resolves.toBeUndefined()
     expect(github.revoked).toHaveLength(1)
   })
 

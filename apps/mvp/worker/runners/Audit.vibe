@@ -42,23 +42,23 @@ const noStore = { "cache-control": "no-store" }
 
 /** The audit route over `database`. It reads who is asking from `Sessions`. */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
-  const fetch = Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest
-    const startedAt = yield* Clock.currentTimeMillis
+  const fetch = withSpan(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const startedAt = try Clock.currentTimeMillis
     const fields: Record<string, string | number> = {}
     const refuse = (status: number, code: string) => {
       fields.code = code
       return HttpServerResponse.jsonUnsafe({ code }, { status, headers: status === 503 ? { ...noStore, "retry-after": "5" } : noStore })
     }
-    const response = yield* Effect.gen(function* () {
+    const response = try catchCause(effect {
       if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
-      const actor = yield* (yield* Sessions).resolve
+      const actor = try (try Sessions).resolve
       if (Option.isNone(actor)) return refuse(401, "authentication")
-      if (yield* refusesPersonOnly(actor.value, "runner")) return refuse(403, "forbidden")
+      if (try refusesPersonOnly(actor.value, "runner")) return refuse(403, "forbidden")
       // The deployment-wide audit requires current, confirmed authority even if the actor was resolved earlier.
-      const role = yield* SessionStore.freshRole(actor.value).pipe(Effect.provide(database))
+      const role = try Effect.provide(SessionStore.freshRole(actor.value), database)
       if (role !== "admin") return refuse(403, "forbidden")
-      const rows = yield* Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{
+      const rows = try Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{
         readonly repoId: string
         readonly name: string
         readonly addedBy: string
@@ -99,7 +99,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
       fields.flagged = runners.filter((runner) => runner.flags.length > 0).length
       fields.outcome = "listed"
       // What the runner cutover marked (ops/runner-cutover/cutover.ts): it doesn't run until an Admin writes it again.
-      const reconfirm = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      const reconfirm = try Effect.flatMap(SqlClient.SqlClient, (sql) =>
         Effect.all({
           agents: sql`
             SELECT repo_id AS "repoId", name, coding, updated_by AS "updatedBy", to_json(reconfirm_at)#>>'{}' AS "markedAt"
@@ -109,20 +109,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
             FROM repo_overflow WHERE reconfirm_at IS NOT NULL ORDER BY repo_id`,
         })).pipe(Effect.provide(database))
       return HttpServerResponse.jsonUnsafe({ runners, reconfirm }, { headers: noStore })
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.sync(() => {
-          fields.errorCode = codeOf(Cause.squash(cause))
-          return refuse(503, "unavailable")
-        })
-      ),
-    )
+    }, (cause) => sync(() => {
+      fields.errorCode = codeOf(Cause.squash(cause))
+      return refuse(503, "unavailable")
+    }))
     fields.status = response.status
-    fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
-    yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+    fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+    try Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
       "runner.audit",
     ).pipe(Effect.annotateLogs({ ...fields, outcome: String(fields.outcome ?? fields.code ?? "refused") }))
     return response
-  }).pipe(Effect.withSpan("runner.audit", { kind: "server" }))
+  }, "runner.audit", { kind: "server" })
   return { fetch }
 }
