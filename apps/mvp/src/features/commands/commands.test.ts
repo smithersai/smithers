@@ -11,7 +11,7 @@ import { choose as chooseCommand, submit as submitCommand, type as typeCommand }
 import { entryOf, names } from "../../flows/registry.vibe"
 import type { Actor } from "../../../worker/Actor.vibe"
 import { nodeDevice, openTab, openTestApi, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
-import { AuthStore, SESSION } from "../auth/store"
+import { AuthStore, SESSION } from "../auth/store.vibe"
 import { Chat } from "../chat/chat"
 import { PLACE, Place } from "../chat/schema"
 import { pinConversation } from "../sandbox/actions.vibe"

@@ -1,8 +1,8 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { type Collection, LiveQuery, type Persistence } from "@smthrs/effect-tanstack-db"
 import type { ContextFromSource, QueryBuilder } from "@tanstack/db"
-import { AuthStore } from "../auth/store"
-import { signedInShapeSource } from "../auth/source"
+import { AuthStore } from "../auth/store.vibe"
+import { signedInShapeSource } from "../auth/source.vibe"
 import { BUG_REPORTS_SHAPE_ROUTE } from "./contract"
 import { BugReport } from "./schema"
 

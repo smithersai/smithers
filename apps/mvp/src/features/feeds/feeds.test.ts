@@ -15,7 +15,7 @@ import { member, nodeDevice, openTab, openTestApi, openTestApp, TEST_FEED_KEY, T
 import { FEEDS_SHAPE_ROUTE, feedAnswersRoute, feedsRoute } from "./contract"
 import type { FeedDocument, FeedItem } from "./schema"
 import { documents, FeedsStore } from "./store.vibe"
-import { AuthStore, SESSION } from "../auth/store"
+import { AuthStore, SESSION } from "../auth/store.vibe"
 import { repoId } from "../repo/contract"
 import { replaceRole, RepoStore } from "../repo/store.vibe"
 

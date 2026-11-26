@@ -1,7 +1,7 @@
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { Effect, Fiber, Layer } from "effect"
 import { expect, test } from "vitest"
-import { AuthStore, SESSION } from "../auth/store"
+import { AuthStore, SESSION } from "../auth/store.vibe"
 import { identityReady } from "./identity.vibe"
 
 test.each(["signed_in", "signed_out", "unreachable"] as const)("branch admission waits through loading for %s", async (status) => {

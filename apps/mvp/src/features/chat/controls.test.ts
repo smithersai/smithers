@@ -17,7 +17,7 @@ import {
 } from "../../test/chatApi"
 import { QuestionFaults } from "../../test/faults"
 import { failRestore } from "../../test/restoreFailure"
-import { AuthStore, SESSION } from "../auth/store"
+import { AuthStore, SESSION } from "../auth/store.vibe"
 import { Branch } from "../branch/branch.vibe"
 import { BranchStore } from "../branch/store.vibe"
 import { ConversationOwners } from "../conversations/owners"

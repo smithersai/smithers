@@ -22,7 +22,7 @@ import { read as readTelemetry } from "../../test/otlp"
 import { Domains } from "./domains.vibe"
 import { DomainsStore } from "./store.vibe"
 import { DOMAINS_SHAPE_ROUTE } from "./contract"
-import { AuthStore, SESSION } from "../auth/store"
+import { AuthStore, SESSION } from "../auth/store.vibe"
 import { repoId } from "../repo/contract"
 import { replaceRole, RepoStore } from "../repo/store.vibe"
 

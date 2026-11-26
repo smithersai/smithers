@@ -1,8 +1,10 @@
 import { Effect, Layer } from "effect"
 import { answerAskingTab } from "../../flows/askingTab"
-import { check } from "./actions"
+import { check } from "./actions.vibe"
 import { sessionChannel } from "./contract"
 import { SessionCall } from "./schema"
+
+const channelName = (name: string): string => sessionChannel(name)
 
 // The tab's side of `auth/refresh` (docs/features/sign-in.md#when-chatapi-cant-say): every tab listens on the engine's
 // session channel, and only the tab that started a refresh answers its step (src/flows/askingTab.ts), by checking its
@@ -10,11 +12,12 @@ import { SessionCall } from "./schema"
 // device, does nothing.
 
 /** Answers the session channel of engine `name` for this tab's refreshes until its scope closes. */
-export const tabSession = (host: { readonly name: string }) =>
-  Layer.effectDiscard(
+export const tabSession = (host: { readonly name: string }) => {
+  return Layer.effectDiscard(
     answerAskingTab({
-      channel: sessionChannel(host.name),
+      channel: channelName(host.name),
       input: SessionCall,
       answer: () => Effect.map(check("retry"), (outcome) => ({ outcome })),
     }),
   )
+}

@@ -1,10 +1,10 @@
 import { Context, Deferred, Effect, Layer, Queue, Stream } from "effect"
 import { runners } from "../../boundary.vibe"
 import { FlowDispatch } from "../../flows/dispatch.vibe"
-import { cancelSignOut, check, pressSignIn, promptSignOut, refresh, restore, setHostedModel, signOut } from "./actions"
-import type { AuthClient } from "./api"
-import type { DeviceWipe } from "./device"
-import { AuthStore } from "./store"
+import { cancelSignOut, check, pressSignIn, promptSignOut, refresh, restore, setHostedModel, signOut } from "./actions.vibe"
+import type { AuthClient } from "./api.vibe"
+import type { DeviceWipe } from "./device.vibe"
+import { AuthStore } from "./store.vibe"
 
 // Sign-in as a frontend sees it: a live query to read and plain functions to act, with no Effect in sight. React
 // renders the query with `useLiveQuery` and calls the actions from event handlers.
@@ -45,13 +45,13 @@ export class Auth extends Context.Service<Auth, { readonly queries: AuthQueries;
    */
   static readonly layer = Layer.effect(
     Auth,
-    Effect.gen(function* () {
-      const store = yield* AuthStore
-      const { runSync: run } = runners(yield* Effect.context<AuthStore | AuthClient | DeviceWipe | FlowDispatch>(), "auth")
+    effect {
+      const store = try AuthStore
+      const { runSync: run } = runners(try Effect.context<AuthStore | AuthClient | DeviceWipe | FlowDispatch>(), "auth")
       const reload = Effect.asVoid(Effect.forkIn(check("retry").pipe(
         Effect.tap((outcome) => outcome === "unreachable" || outcome === "unconfirmed" ? refresh : Effect.void),
       ), store.scope, { startImmediately: true }))
-      yield* Effect.forkIn(restore, store.scope, { startImmediately: true })
+      try Effect.forkIn(restore, store.scope, { startImmediately: true })
       return Auth.of({
         queries: { session: store.sessionState.tanstack, confirmed: store.confirmedState.tanstack },
         actions: {
@@ -63,7 +63,7 @@ export class Auth extends Context.Service<Auth, { readonly queries: AuthQueries;
           setHostedModel: (enabled) => run(setHostedModel(enabled)),
         },
       })
-    }),
+    },
   )
 }
 
@@ -75,28 +75,28 @@ export type AuthView = Auth["Service"]
  * the application's scope. A check ChatApi couldn't answer starts `auth/refresh`, which asks again until it does, so a
  * failed first check recovers with no event, click or reload (`refresh`). The host can reauthorize an unverified boot.
  */
-export const bindSessionConnectivity = (target: EventTarget) => Effect.gen(function* () {
-  const listening = yield* Deferred.make<void>()
-  const store = yield* AuthStore
-  const source = Stream.callback<"startup" | "online" | "retry">((queue) => Effect.gen(function* () {
+export const bindSessionConnectivity = (target: EventTarget) => effect {
+  const listening = try Deferred.make<void>()
+  const store = try AuthStore
+  const source = Stream.callback<"startup" | "online" | "retry">((queue) => effect {
     // A burst of shapes answering 401 asks once.
-    yield* store.checksAsked.pipe(
+    try store.checksAsked.pipe(
       Stream.debounce("100 millis"),
       Stream.runForEach(() => Queue.offer(queue, "retry")),
       Effect.forkScoped({ startImmediately: true }),
     )
     const online = () => { Queue.offerUnsafe(queue, "online") }
-    yield* Effect.acquireRelease(
+    try Effect.acquireRelease(
       Effect.sync(() => target.addEventListener("online", online)),
       () => Effect.sync(() => target.removeEventListener("online", online)),
     )
     // Subscribe before admitting the initial read, so an earlier network transition needs no second event.
-    yield* Queue.offer(queue, "startup")
-    yield* Deferred.succeed(listening, undefined)
-  }))
-  yield* source.pipe(Stream.runForEach((via) => check(via).pipe(
+    try Queue.offer(queue, "startup")
+    try Deferred.succeed(listening, undefined)
+  })
+  try source.pipe(Stream.runForEach((via) => check(via).pipe(
     Effect.flatMap((outcome) => outcome === "unreachable" || outcome === "unconfirmed" ? refresh : Effect.void),
   )), Effect.ensuring(Effect.logInfo("auth.session_subscription").pipe(Effect.annotateLogs({ stage: "stopped" }))), Effect.forkScoped({ startImmediately: true }))
-  yield* Deferred.await(listening)
-  yield* Effect.logInfo("auth.session_subscription").pipe(Effect.annotateLogs({ stage: "listening" }))
-})
+  try Deferred.await(listening)
+  try Effect.logInfo("auth.session_subscription").pipe(Effect.annotateLogs({ stage: "listening" }))
+}

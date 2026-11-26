@@ -1,7 +1,7 @@
 import { Data, Effect, Fiber, FiberHandle, Metric, Option, Queue, Ref, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { share, show } from "../chat/actions"
-import { signedOut } from "../auth/store"
+import { signedOut } from "../auth/store.vibe"
 import { openAt } from "../conversations/actions"
 import { ChatStore } from "../chat/store"
 import { isRepository } from "../repo/contract"

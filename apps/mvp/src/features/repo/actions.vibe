@@ -25,7 +25,7 @@ import type { AboutRow, BlobRow, CloneRow, HeadRow, RefsRow, TreeRow, ViewRow } 
 import { VIEW } from "./rows"
 import type { Repository } from "./schema"
 import type { RepoRole } from "../auth/schema"
-import { AuthStore } from "../auth/store"
+import { AuthStore } from "../auth/store.vibe"
 import { grantsNothing } from "./visibility"
 import { replaceRole, RepoStore } from "./store.vibe"
 

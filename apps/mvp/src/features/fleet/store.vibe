@@ -1,7 +1,7 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { LiveQuery } from "@smthrs/effect-tanstack-db"
 import { Cache, Context, Effect, Latch, Layer, Option, Scope, Stream } from "effect"
-import { AuthStore, SESSION } from "../auth/store"
+import { AuthStore, SESSION } from "../auth/store.vibe"
 import { repoId } from "../repo/contract"
 import type { Source } from "../repo/gate"
 import { RepoStore } from "../repo/store.vibe"

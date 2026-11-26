@@ -1,7 +1,7 @@
 import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Layer, Option, Schema, Scope, Semaphore } from "effect"
-import { AuthStore } from "../auth/store"
+import { AuthStore } from "../auth/store.vibe"
 import { VIEWS_SHAPE_ROUTE } from "./contract"
 import { ConversationOwners, homeNamed } from "../conversations/owners"
 import type { Gated, Source } from "../repo/gate"

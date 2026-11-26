@@ -8,7 +8,7 @@ import { Runs } from "../runs/runs.vibe"
 import { Pulls } from "../pulls/pulls.vibe"
 import { role as readRole } from "../repo/actions.vibe"
 import { repoId } from "../repo/contract"
-import { AuthStore, SESSION } from "./store"
+import { AuthStore, SESSION } from "./store.vibe"
 
 // Which shapes a page opens (decision 0112): a real app over a real ChatApi, with a recording source that sends every
 // request on. Before, every tab opened every store's shape on boot: a signed-out visitor's repository page followed a

@@ -20,8 +20,8 @@ import {
   TEST_REPOSITORY,
   TestChatApi,
 } from "../../test/chatApi"
-import { Auth } from "../auth/auth"
-import { AuthStore, SESSION } from "../auth/store"
+import { Auth } from "../auth/auth.vibe"
+import { AuthStore, SESSION } from "../auth/store.vibe"
 import { repoId } from "../repo/contract"
 import { replaceRole, RepoStore } from "../repo/store.vibe"
 import { Repo } from "../repo/repo.vibe"

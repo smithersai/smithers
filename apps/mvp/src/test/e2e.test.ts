@@ -3,7 +3,7 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import type { ChatView } from "../features/chat/chat"
 import { nodeDevice, TestChatApi } from "./chatApi"
-import { AuthClient, AuthUnreachable } from "../features/auth/api"
+import { AuthClient, AuthUnreachable } from "../features/auth/api.vibe"
 import { AuthFaults, faultyAuth, faultySession } from "./authFaults"
 import { opening, sessionDown, startWithFaults, type Switches } from "./e2e"
 

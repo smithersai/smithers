@@ -5,7 +5,7 @@ import { Clock, Context, Deferred, Duration, Effect, Fiber, FiberHandle, Layer, 
 import { codeOf } from "../../errorCode"
 import { RepoRole, Session } from "../auth/schema"
 import { makeVisibility } from "./gate"
-import { AuthStore } from "../auth/store"
+import { AuthStore } from "../auth/store.vibe"
 import { REPOSITORIES_SHAPE_ROUTE } from "./contract"
 import { aboutQuery, embedsQuery, fileQuery, manifestQuery, readmeQuery, refsQuery, treeQuery, viewQuery } from "./queries"
 import { AboutRow, BlobRow, CloneRow, EmbedRow, emptyView, HeadRow, RefsRow, TreeRow, VIEW, ViewRow } from "./rows"

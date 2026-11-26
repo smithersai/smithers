@@ -9,7 +9,7 @@ import { TabRequests } from "../../flows/requests.vibe"
 import { type CheckOutcome, sessionChannel } from "./contract"
 import { AuthRefresh, REFRESH_RETRY } from "./flows"
 import { SessionCall } from "./schema"
-import * as Steps from "./steps"
+import * as Steps from "./steps.vibe"
 
 // `auth/refresh`'s step over the engine's session channel, on Node's own `BroadcastChannel` and the Node host's durable
 // engine: what each outcome the tab answers becomes, the engine asking again while ChatApi can't say, and a tab that is

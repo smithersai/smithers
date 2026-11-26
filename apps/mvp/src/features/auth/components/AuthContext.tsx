@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { AuthView } from "../auth"
+import type { AuthView } from "../auth.vibe"
 
 // What React components get: sign-in's live query to render and plain actions to call (features/auth/auth.ts).
 

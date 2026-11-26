@@ -17,9 +17,9 @@ import { RECEIPTS_SHOWN } from "./queries"
 import { Spend } from "./spend.vibe"
 import { setChannel } from "./actions.vibe"
 import { DispatchFailed, FlowDispatch } from "../../flows/dispatch.vibe"
-import { AuthStore, SESSION } from "../auth/store"
-import { check } from "../auth/actions"
-import type { AuthClient } from "../auth/api"
+import { AuthStore, SESSION } from "../auth/store.vibe"
+import { check } from "../auth/actions.vibe"
+import type { AuthClient } from "../auth/api.vibe"
 import { hidden, shown, SpendStore } from "./store.vibe"
 
 const admin: Actor = { subject: { kind: "person", id: "person-admin" }, role: "admin" }

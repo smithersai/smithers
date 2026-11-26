@@ -1,4 +1,4 @@
-import type { AuthStore } from "../auth/store"
+import type { AuthStore } from "../auth/store.vibe"
 import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch.vibe"
 import {

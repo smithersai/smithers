@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Ref } from "effect"
-import { AuthClient, AuthUnreachable } from "../features/auth/api"
+import { AuthClient, AuthUnreachable } from "../features/auth/api.vibe"
 
 // The session read behind a switch, for the end-to-end tests of a ChatApi that can't say who is signed in
 // (docs/rules.md, test.faults-by-injection). The page's switch (`AuthFaults`, on `window.faults.session`) and its

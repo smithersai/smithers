@@ -1,6 +1,6 @@
 import { ShapeSource } from "@smthrs/effect-electric"
 import { Stream } from "effect"
-import type { AuthStore } from "./store"
+import type { AuthStore } from "./store.vibe"
 
 // Which shapes a device opens before anyone signs in (decisions 0110, 0112): a person's own rows are theirs to sync, so
 // a tab signed out never asks for them, and sign-in opens them without a reload. Sign-out wipes the device's collections.

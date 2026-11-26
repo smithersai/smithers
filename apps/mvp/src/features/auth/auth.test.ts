@@ -11,17 +11,18 @@ import * as Database from "../../../db/Database"
 import { build } from "../../../worker/test/flowHost"
 import { testFile } from "../../../worker/test/harness"
 import { signInHarness } from "../../../worker/test/signIn"
+import { boundFetch, VISITOR } from "../../device/identity"
 import { ClientEngine, FlowDispatch } from "../../flows/dispatch.vibe"
 import { type NodeDevice, nodeDevice } from "../../test/chatApi"
-import { Auth, bindSessionConnectivity } from "./auth"
-import { AuthClient, AuthUnreachable } from "./api"
+import { Auth, bindSessionConnectivity } from "./auth.vibe"
+import { AuthClient, AuthUnreachable, getSession } from "./api.vibe"
 import { type ComposerAccess, composerAccess, DEVICE_PERSON_HEADER, signInHref } from "./contract"
-import { DeviceWipe } from "./device"
+import { DeviceWipe } from "./device.vibe"
 import { AuthRefresh } from "./flows"
 import { deviceWipes, sessionRefreshes, signInPresses, signOuts } from "./metrics"
-import * as Steps from "./steps"
-import { AuthStore } from "./store"
-import { tabSession } from "./tab"
+import * as Steps from "./steps.vibe"
+import { AuthStore } from "./store.vibe"
+import { tabSession } from "./tab.vibe"
 
 // Sign-in's state machine, driven as React drives it: through the auth layer's plain actions, reading its live query,
 // with no React. The tab reaches sign-in's real routes (worker/SignIn.ts) over the compose Postgres, through a fetch
@@ -141,6 +142,7 @@ const openTab = async (client: Layer.Layer<AuthClient>, device: NodeDevice = nod
     ).count
   return {
     actions,
+    requestCheck: () => runtime.runSync(Effect.flatMap(AuthStore, (store) => store.askCheck)),
     listen,
     confirmation: () => runtime.runSync(Effect.flatMap(AuthStore, (store) => store.confirmation)),
     confirmed: () => queries.confirmed.toArray[0],
@@ -304,6 +306,69 @@ describe("sign-in on a tab", () => {
           level: "WARN", annotations: { feature: "auth", outcome: "failed", errorCode: "status", status: 403 },
         })
       }
+    })
+  })
+
+  test("a stale credential hides private rows until ChatApi verifies the session again", async () => {
+    const b = browser(await signInHarness(server))
+    await b.signIn()
+    const device = nodeDevice()
+    let stale = false
+    const transport = boundFetch(async (input, init) => {
+      if (stale) return new Response(null, { status: 503, headers: { "x-smithers-credential": "stale" } })
+      return b.fetch(input, init)
+    }, { origin: ORIGIN, principal: () => VISITOR })
+    const tab = await openTab(realClient({ ...b, fetch: transport }), device, device.wipe, false)
+    tab.actions.reload()
+    await tab.settled("signed_in")
+    expect(tab.session().unverifiable).toBe(false)
+
+    stale = true
+    tab.actions.reload()
+    await tab.settled("unreachable")
+    expect(tab.session().unverifiable).toBe(true)
+    await vi.waitFor(() => expect(tab.logs.find((log) => log.message === "session unreachable")?.annotations)
+      .toMatchObject({ errorCode: "credential_stale" }))
+
+    stale = false
+    tab.actions.reload()
+    await tab.settled("signed_in")
+    expect(tab.session().unverifiable).toBe(false)
+  })
+
+  test("an invalid session URL fails before sending the request", async () => {
+    const result = await Effect.runPromiseExit(getSession("http://[", "2 seconds").pipe(
+      Effect.provide(FetchHttpClient.layer),
+    ))
+    expect(Exit.isFailure(result) && Cause.squash(result.cause)).toEqual(new AuthUnreachable({ code: "unreachable" }))
+  })
+
+  test("an answer without a home conversation clears the formerly confirmed home", async () => {
+    const b = browser(await signInHarness(server))
+    await b.signIn()
+    let previousHome = "previous-home"
+    const fetchSession: typeof fetch = async (input, init) => {
+      const response = await b.fetch(input, init)
+      const state = await response.json() as Record<string, unknown>
+      if (previousHome) state.homeConversationId = previousHome
+      else delete state.homeConversationId
+      return Response.json(state, { status: response.status })
+    }
+    const device = nodeDevice()
+    const tab = await openTab(realClient({ ...b, fetch: fetchSession }), device, device.wipe, false)
+    tab.actions.reload()
+    await tab.settled("signed_in")
+    await vi.waitFor(() => expect(tab.confirmed()?.homeConversationId).toBe("previous-home"))
+    previousHome = "replacement-home"
+    tab.actions.reload()
+    await vi.waitFor(() => expect(tab.confirmed()?.homeConversationId).toBe("replacement-home"))
+    previousHome = ""
+    tab.actions.reload()
+    await vi.waitFor(() => {
+      expect(tab.confirmed()).toMatchObject({ login: "octocat" })
+      expect(tab.confirmed()).not.toHaveProperty("homeConversationId")
+      expect(device.storedRows("auth-confirmed")).toEqual([expect.objectContaining({ login: "octocat" })])
+      expect(device.storedRows("auth-confirmed")[0]).not.toHaveProperty("homeConversationId")
     })
   })
 
@@ -627,6 +692,18 @@ test("reconnecting refreshes the real session through the auth lifecycle", async
 })
 
 
+test("a burst of store check requests rechecks the session once", async () => {
+  const b = browser(await signInHarness(server))
+  const tab = await openTab(realClient(b))
+  await tab.settled("signed_out")
+  await b.signIn()
+  tab.requestCheck()
+  tab.requestCheck()
+  await tab.settled("signed_in")
+  expect(tab.count(sessionRefreshes, { via: "retry" })).toBe(1)
+  expect(b.sessionRequests()).toBe(2)
+})
+
 test("a network transition before subscription needs no second event: one initial check reads the current real session", async () => {
   const h = await signInHarness(server)
   const b = browser(h)
@@ -908,7 +985,7 @@ describe("Admin hosted-inference toggle", () => {
   })
 
   test("postHostedModel maps 200, non-200, malformed JSON, transport failure, and timeout", async () => {
-    const { postHostedModel } = await import("./api")
+    const { postHostedModel } = await import("./api.vibe")
     const runWith = (fetchFn: typeof fetch, within: "50 millis" | "2 seconds" = "2 seconds") =>
       Effect.runPromiseExit(
         postHostedModel(ORIGIN, within, true).pipe(

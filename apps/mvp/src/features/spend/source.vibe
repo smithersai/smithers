@@ -1,6 +1,6 @@
 import { ShapeSource } from "@smthrs/effect-electric"
 import { Effect, Stream } from "effect"
-import type { AuthStore } from "../auth/store"
+import type { AuthStore } from "../auth/store.vibe"
 
 /** Spend shapes wait for current Admin authority; refusals remember the confirmation they checked. */
 export const adminShapeSource = (

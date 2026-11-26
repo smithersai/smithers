@@ -24,8 +24,8 @@ export class AuthStore extends Context.Service<
     readonly confirmedState: Effect.Success<ReturnType<typeof confirmedQuery>>
     /** Successful server confirmations, including an unchanged role; generations fence in-flight refusals. */
     readonly confirmations: Stream.Stream<number>
-    readonly confirmation: Effect.Effect<number>
-    readonly sessionConfirmed: Effect.Effect<void>
+    readonly confirmation: number!!
+    readonly sessionConfirmed: void!!
     /** Where requests an action starts run, closed with the store. */
     readonly scope: Scope.Scope
     /** One session check at a time on this tab: a check waits for the one already asking ChatApi. */
@@ -36,7 +36,7 @@ export class AuthStore extends Context.Service<
      * Asks this tab to check the session (`bindSessionConnectivity`): what a repository shape's or role read's 401 does,
      * since only a session confirmed ended wipes the device, never a 401 alone. Returns at once.
      */
-    readonly askCheck: Effect.Effect<void>
+    readonly askCheck: void!!
     /** Each `askCheck`, for the tab's session lifecycle. */
     readonly checksAsked: Stream.Stream<void>
   }
@@ -47,8 +47,8 @@ export class AuthStore extends Context.Service<
    */
   static readonly layer: Layer.Layer<AuthStore, Collection.LoadFailed, Persistence.Persistence> = Layer.effect(
     AuthStore,
-    Effect.gen(function* () {
-      const session = yield* Collection.local<Session, string>({
+    effect {
+      const session = try Collection.local<Session, string>({
         id: "auth-session",
         schema: Session,
         getKey: (row) => row.id,
@@ -64,30 +64,30 @@ export class AuthStore extends Context.Service<
           },
         ],
       })
-      const confirmed = yield* Collection.persisted<Confirmed, string>({
+      const confirmed = try Collection.persisted<Confirmed, string>({
         id: "auth-confirmed",
         schema: Confirmed,
         getKey: (row) => row.id,
         schemaVersion: 3,
       })
-      const confirmations = yield* PubSub.unbounded<number>()
-      const checksAsked = yield* PubSub.unbounded<void>()
+      const confirmations = try PubSub.unbounded<number>()
+      const checksAsked = try PubSub.unbounded<void>()
       let confirmation = 0
       return {
         session,
-        sessionState: yield* sessionQuery(session),
+        sessionState: try sessionQuery(session),
         confirmed,
-        confirmedState: yield* confirmedQuery(confirmed),
+        confirmedState: try confirmedQuery(confirmed),
         confirmations: Stream.fromPubSub(confirmations),
         confirmation: Effect.sync(() => confirmation),
         sessionConfirmed: Effect.sync(() => { PubSub.publishUnsafe(confirmations, ++confirmation) }),
-        scope: yield* Effect.scope,
-        checking: yield* Semaphore.make(1),
-        refreshing: yield* Ref.make(false),
+        scope: try Effect.scope,
+        checking: try Semaphore.make(1),
+        refreshing: try Ref.make(false),
         askCheck: Effect.sync(() => { PubSub.publishUnsafe(checksAsked, undefined) }),
         checksAsked: Stream.fromPubSub(checksAsked),
       }
-    }),
+    },
   )
 }
 
@@ -95,7 +95,7 @@ export class AuthStore extends Context.Service<
  * Whether sign-in's row says nobody is signed in, so a request only a signed-in person may make isn't sent to be
  * refused: `false` while ChatApi hasn't said, when it couldn't be asked, and in an app without sign-in.
  */
-export const signedOut: Effect.Effect<boolean> = Effect.flatMap(
+export const signedOut: boolean!! = Effect.flatMap(
   Effect.serviceOption(AuthStore),
   Option.match({
     onNone: () => Effect.succeed(false),
@@ -104,7 +104,7 @@ export const signedOut: Effect.Effect<boolean> = Effect.flatMap(
 )
 
 /** A new run may ask for a session credential only after this tab confirmed sign-in. */
-export const anonymousRun: Effect.Effect<boolean> = Effect.flatMap(
+export const anonymousRun: boolean!! = Effect.flatMap(
   Effect.serviceOption(AuthStore),
   Option.match({
     onNone: () => Effect.succeed(false),

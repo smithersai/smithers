@@ -4,7 +4,7 @@ import { createMemoryHistory, createRootRoute, createRoute, createRouter, Router
 import { Effect } from "effect"
 import { expect, test, vi } from "vitest"
 import { AppProviders } from "../src/AppProviders"
-import { AuthStore, SESSION } from "../src/features/auth/store"
+import { AuthStore, SESSION } from "../src/features/auth/store.vibe"
 import { FlowsScreen } from "../src/screens/flows/FlowsScreen"
 import { appViews } from "../src/test/appViews"
 import { openTestApp } from "../src/test/chatApi"

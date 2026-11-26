@@ -1,7 +1,7 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import type { Comment, Item, ItemSummary } from "../issues/schema"
-import { AuthStore } from "../auth/store"
+import { AuthStore } from "../auth/store.vibe"
 import { evictOnRefusal, repositoryAccessChanges, repositoryShapeSource, revokingSource, syncStatusAfter, wipeAuthority } from "../issues/source.vibe"
 import { IssuesStore, syncStatusOf } from "../issues/store.vibe"
 import { RepoStore } from "../repo/store.vibe"

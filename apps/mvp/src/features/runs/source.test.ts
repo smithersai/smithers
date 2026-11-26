@@ -1,7 +1,7 @@
 import { Effect, Layer, ManagedRuntime, Option, Stream } from "effect"
 import { expect, test } from "vitest"
 import { ShapeSource } from "@smthrs/effect-electric"
-import { AuthStore, SESSION } from "../auth/store"
+import { AuthStore, SESSION } from "../auth/store.vibe"
 import { RepoStore } from "../repo/store.vibe"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { cloudRunList, memberRunSource } from "./source.vibe"

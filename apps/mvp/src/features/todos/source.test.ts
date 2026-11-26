@@ -5,7 +5,7 @@ import { nodeDevice, openTab, openTestApi, openTestApp, TEST_REPOSITORY, TestCha
 import type { Session } from "../auth/schema"
 import { role as readRole } from "../repo/actions.vibe"
 import { repoId } from "../repo/contract"
-import { AuthStore } from "../auth/store"
+import { AuthStore } from "../auth/store.vibe"
 import { Repo } from "../repo/repo.vibe"
 import { RepoStore } from "../repo/store.vibe"
 import { TodosStore } from "./store.vibe"

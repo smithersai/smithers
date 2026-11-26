@@ -21,9 +21,9 @@ import {
   type TabOptions,
   TestChatApi,
 } from "../../test/chatApi"
-import { Auth } from "../auth/auth"
-import { AuthClient } from "../auth/api"
-import { load as loadSession } from "../auth/actions"
+import { Auth } from "../auth/auth.vibe"
+import { AuthClient } from "../auth/api.vibe"
+import { load as loadSession } from "../auth/actions.vibe"
 import { open as openBranch } from "./actions.vibe"
 import { retry, wentOffline } from "../chat/actions"
 import { Chat } from "../chat/chat"

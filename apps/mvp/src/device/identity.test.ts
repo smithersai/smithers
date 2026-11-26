@@ -5,7 +5,7 @@ import { Cause, Deferred, Effect, Exit, Fiber, Logger, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
-import { AuthUnreachable, getSession } from "../features/auth/api"
+import { AuthUnreachable, getSession } from "../features/auth/api.vibe"
 import { CONFIRM_401_HEADER, NO_DEVICE_DATA, SESSION_CHECK_HEADER, SESSION_ROUTE, SIGN_OUT_ROUTE, type SessionState } from "../features/auth/contract"
 import { deviceFrom, type Fixture } from "../test/deviceFixture"
 import deployed from "./fixtures/7b96f878.json" with { type: "json" }

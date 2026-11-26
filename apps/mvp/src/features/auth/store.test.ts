@@ -2,7 +2,7 @@ import { Persistence } from "@smthrs/effect-tanstack-db"
 import { Effect, Layer, Fiber, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import type { Session } from "./schema"
-import { AuthStore, SESSION, signedOut, anonymousRun } from "./store"
+import { AuthStore, SESSION, signedOut, anonymousRun } from "./store.vibe"
 
 // `signedOut` (store.ts): what a request only a signed-in person may make reads first, so a visitor's page sends no
 // request to be refused (a branch's tracking, a run's credential). Only a sign-in row that says signed out says so.

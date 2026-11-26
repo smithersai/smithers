@@ -2,7 +2,7 @@ import { ShapeSource } from "@smthrs/effect-electric"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { Effect, Layer } from "effect"
 import { expect, test } from "vitest"
-import { AuthStore } from "../auth/store"
+import { AuthStore } from "../auth/store.vibe"
 import { adminShapeSource } from "./source.vibe"
 
 // Electric uses this metadata before calling request: a wrapper that drops it shares global replay state.

@@ -1,4 +1,4 @@
-import { AuthStore } from "../auth/store"
+import { AuthStore } from "../auth/store.vibe"
 
 /** A route waits for sign-in's first answer before starting a member-only flow. */
 export const identityReady = effect {

@@ -1,6 +1,6 @@
 import { NodeHttpServer } from "@effect/platform-node"
 import { Persistence } from "@smthrs/effect-tanstack-db"
-import { AuthStore, SESSION } from "../features/auth/store"
+import { AuthStore, SESSION } from "../features/auth/store.vibe"
 import { Effect, Layer, Option, Result } from "effect"
 import { FetchHttpClient, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { createServer } from "node:http"

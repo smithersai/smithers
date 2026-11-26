@@ -1,6 +1,6 @@
 import { ShapeSource } from "@smthrs/effect-electric"
 import { Effect, Option, Stream } from "effect"
-import type { AuthStore } from "../auth/store"
+import type { AuthStore } from "../auth/store.vibe"
 import type { RepoStore } from "../repo/store.vibe"
 
 /** Repository flow runs require a Member, including on a public repository. No authority means no request. */

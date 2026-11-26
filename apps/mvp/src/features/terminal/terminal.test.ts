@@ -26,7 +26,7 @@ import {
   type TabOptions,
   TestChatApi
 } from "../../test/chatApi"
-import { AuthStore, SESSION } from "../auth/store"
+import { AuthStore, SESSION } from "../auth/store.vibe"
 import { Branch } from "../branch/branch.vibe"
 import { attach as attachTerminal, open as openTerminal, show, socketUrl } from "./actions.vibe"
 import { OpenRefused, TerminalClient } from "./api.vibe"

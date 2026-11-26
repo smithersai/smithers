@@ -3,7 +3,7 @@ import { acknowledgeNavigation, admissionReceipt, beginAdmission, identifyAdmiss
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { keep } from "./writes.vibe"
 import type { Commitment } from "./lifecycle"
-import { AuthStore } from "../auth/store"
+import { AuthStore } from "../auth/store.vibe"
 import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { repoId } from "../repo/contract"
 import {

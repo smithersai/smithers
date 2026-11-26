@@ -1,7 +1,7 @@
 import { Option, Result, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { signedOut } from "../features/auth/store"
+import { signedOut } from "../features/auth/store.vibe"
 import { credentialRoute } from "./contract"
 
 // How a request goes as a run rather than as the person (decision 0017 slice 0, docs/features/sign-in.md#run-credentials):

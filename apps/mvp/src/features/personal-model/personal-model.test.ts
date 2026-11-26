@@ -27,7 +27,7 @@ import {
   TestChatApi,
 } from "../../test/chatApi"
 import { EngineFaults } from "../../test/faults"
-import { AuthStore, SESSION } from "../auth/store"
+import { AuthStore, SESSION } from "../auth/store.vibe"
 import { MODEL_TIERS } from "../model/contract"
 import { save } from "./actions.vibe"
 import { ModelNotTaken, PersonalModelClient } from "./api.vibe"

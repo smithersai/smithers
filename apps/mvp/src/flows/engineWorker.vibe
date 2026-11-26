@@ -3,7 +3,7 @@ import { BrowserCache, BrowserRuntime, type SharedSqlite } from "@smthrs/platfor
 import { FetchHttpClient } from "effect/http"
 import { answer, authorizeDevice, IDENTITY_MESSAGE, type Receipt, VISITOR } from "../device/identity"
 import { deviceRegistry } from "../device/registry"
-import { getSession } from "../features/auth/api"
+import { getSession } from "../features/auth/api.vibe"
 import { NO_DEVICE_DATA } from "../features/auth/contract"
 import { ENGINE_NAME } from "./contract"
 import { firstReadFrom } from "./sessionRead"

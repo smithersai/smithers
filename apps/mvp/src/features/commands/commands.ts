@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch.vibe"
-import type { AuthStore } from "../auth/store"
+import type { AuthStore } from "../auth/store.vibe"
 import type { DraftSelection } from "../chat/sharedPrompt"
 import type { ChatStore } from "../chat/store"
 import { choose, choosePalette, closePalette, dismiss, highlight, highlightPalette, openPalette, setPaletteQuery, submit, togglePalette, type } from "./actions.vibe"

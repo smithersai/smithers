@@ -3,7 +3,7 @@ import { Cause, Context, Effect, FiberHandle, Layer, Scope } from "effect"
 import { runners } from "../../boundary.vibe"
 import { codeOf } from "../../errorCode"
 import type { FlowDispatch } from "../../flows/dispatch.vibe"
-import type { AuthStore } from "../auth/store"
+import type { AuthStore } from "../auth/store.vibe"
 import { attach, detach, input, open, resize, show, type Sink } from "./actions.vibe"
 import { TerminalStore } from "./store.vibe"
 
