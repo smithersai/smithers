@@ -9,7 +9,7 @@ import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile, uuid } from "../test/harness.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
-import * as Dispatch from "./Dispatch.ts"
+import * as Dispatch from "./Dispatch.vibe"
 import * as Pause from "../flows/Pause.ts"
 
 const runtime = testFile("ci_dispatch")
@@ -227,6 +227,25 @@ describe("triggers/Dispatch", { timeout: 60_000 }, () => {
     })
     expect(ran.exit).toEqual(Exit.succeed([`ci:delivery-${sha.slice(0, 8)}`]))
     expect(starts).toHaveLength(1)
+  })
+
+  test("a transient failure reading an active flow retries the match", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    github.push("main", { ".smithers/factory.json": MANIFEST, ".smithers/flows/ci/flow.ts": FLOW })
+    const request = pushed(github.push("feature/x", { a: "1" }))
+    const { services } = await githubServices(runtime, github)
+    const impl = Dispatch.steps({
+      ...services,
+      repositories: new Set([request.repo.toLowerCase()]),
+      start: () => Effect.die("matching must not start a run"),
+    })
+    github.faults.push({
+      match: (method, path) => method === "GET" && path.endsWith("/.smithers/flows/ci/flow.ts"),
+      status: 502,
+    })
+
+    expect(await runtime.runPromise(Effect.flip(impl.match({ request })))).toBeInstanceOf(Dispatch.DispatchUnavailable)
+    expect(await runtime.runPromise(impl.match({ request }))).toEqual({ flows: ["ci"], outcome: "matched" })
   })
 
   test("an unreadable flow isn't active, and the others still start; a dispatch never shares an id with a run", async () => {

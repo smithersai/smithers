@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest"
 import { GENESIS, PAGE_BYTES, PAGE_EVENTS } from "../../src/features/transcript/contract.ts"
 import { chain } from "../../src/features/transcript/digest.ts"
 import { sqliteStore } from "../test/runContent.ts"
-import * as Store from "./RunContent.ts"
+import * as Store from "./RunContent.vibe"
 
 const event = (seq: number, text = `word ${seq}`): Transcript.Event => ({
   seq,
@@ -61,6 +61,17 @@ describe("a run's transcript store", () => {
     const page = Store.page(big, -1)
     expect(page.length).toBeGreaterThan(1)
     expect(page.length).toBeLessThan(40)
+  })
+
+  test("reopening the store preserves receipt times and malformed stored JSON surfaces as a syntax error", () => {
+    const sql = sqliteStore()
+    expect(Store.lastAt(sql)).toBeUndefined()
+    Store.append(sql, 1, [event(0)], 5_000)
+    Store.migrate(sql)
+    expect(Store.lastAt(sql)).toBe(5_000)
+    expect(Store.page(sql, 0)).toHaveLength(1)
+    sql.exec("UPDATE events SET body = ? WHERE n = ?", "{", 1)
+    expect(() => Store.page(sql, 0)).toThrow(SyntaxError)
   })
 
   test("the cap and a page count UTF-8 bytes, not UTF-16 code units: CJK text stops at the same size as ASCII", () => {

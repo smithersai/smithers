@@ -1,9 +1,9 @@
 import { Transcript } from "@smthrs/agent"
 import { Context, Schema } from "effect"
-import type { Effect } from "effect"
 import { GENESIS, PAGE_BYTES, PAGE_EVENTS } from "../../src/features/transcript/contract.ts"
 import { chain } from "../../src/features/transcript/digest.ts"
 import type { Row } from "../../src/features/transcript/schema.ts"
+import { parseStoredUpdate } from "./TranscriptJson.ts"
 
 // A run's transcript store (decision 0141, docs/features/agent-transcripts.md#the-store): what the run's `RunContent`
 // Durable Object (worker/RunContent.ts) keeps in its own SQLite, written here over a synchronous SQL port so the same
@@ -107,7 +107,7 @@ export const append = (
       `INSERT INTO events (generation, seq, at, received, kind, body) VALUES (?, ?, ?, ?, ?, ?) RETURNING n`,
       generation, event.seq, event.at, now, event.kind, body,
     )
-    const stored_: Row = { n: Number(row!.n), generation, seq: event.seq, at: event.at, kind: event.kind, update: JSON.parse(body) }
+    const stored_: Row = { n: Number(row!.n), generation, seq: event.seq, at: event.at, kind: event.kind, update: parseStoredUpdate(body) }
     totals = {
       ...totals,
       events: totals.events + 1,
@@ -158,7 +158,7 @@ export const page = (sql: Sql, after: number): ReadonlyArray<Row> => {
       seq: Number(row.seq),
       at: Number(row.at),
       kind: String(row.kind),
-      update: JSON.parse(body),
+      update: parseStoredUpdate(body),
     })
   }
   return out
@@ -180,7 +180,7 @@ export class Transcripts extends Context.Service<Transcripts, {
     runId: string,
     generation: number,
     events: ReadonlyArray<Transcript.Event>,
-  ) => Effect.Effect<{ readonly next: number; readonly summary: Summary }, TranscriptsUnavailable>
+  ) => { readonly next: number; readonly summary: Summary }!TranscriptsUnavailable
 }>()("@smthrs/mvp/runners/Transcripts") {}
 
 /** When the last event was received, epoch milliseconds (what `append`'s `now` was); `undefined` with none. */

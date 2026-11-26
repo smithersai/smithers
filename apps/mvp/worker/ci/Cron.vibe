@@ -1,4 +1,3 @@
-import { digestSync } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database"
 import { Action, Flow, Interpreter, RetryPolicy, Sleep } from "@smthrs/flow"
 import { GitHub } from "@smthrs/integrations"
@@ -9,8 +8,9 @@ import { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import * as RepoRuns from "../RepoRuns.ts"
-import * as Dispatch from "./Dispatch.ts"
+import * as Dispatch from "./Dispatch.vibe"
 import * as RepoFlow from "./RepoFlow.ts"
+import { triggerDigest } from "./ScheduleIdentity.ts"
 import * as Triggers from "./Triggers.ts"
 
 // A repository's schedules (docs/features/ci.md#schedules): the `cron` rows of its `.smithers/factory.json` start its
@@ -96,7 +96,7 @@ const occurrenceOf = (idempotencyKey: string): Option.Option<{ readonly triggerI
  * <occurrence>`, so every tick that starts the same occurrence starts the same run.
  */
 export const runExecutionId = (flow: string, trigger: string, stamp: string): string =>
-  Dispatch.runExecutionId(flow, `cron-${digestSync(trigger).slice(0, 16)}-${stamp}`)
+  Dispatch.runExecutionId(flow, `cron-${triggerDigest(trigger)}-${stamp}`)
 
 /** GitHub, Postgres or the store couldn't answer, or a tick left a trigger undispatched: retried. */
 export class ScheduleUnavailable extends Schema.TaggedError<ScheduleUnavailable>()(
@@ -204,7 +204,7 @@ export interface Services<E, R> extends Dispatch.Services<E, R> {
   /** The trigger store (`storeOn`). */
   readonly store: Layer.Layer<TriggerStore.TriggerStore, unknown, R>
   /** Stops a run's execution, as Stop does: an `overlap: "supersede"` schedule's predecessor. */
-  readonly cancel: (executionId: string) => Effect.Effect<void, unknown>
+  readonly cancel: (executionId: string) => void!unknown
 }
 
 /** A trigger's declaration, without what the store adds: what registering it again writes. */
@@ -230,7 +230,7 @@ const runnerError = (message: string, code: "runner" | "runner_unavailable" = "r
  * The runs a tick starts: `repo/Run` at the default branch's head, as the App, recorded as `schedule` runs. A start
  * GitHub, Postgres or the host couldn't make now fails `runner_unavailable`, so the occurrence waits for the next tick.
  */
-export const runner = <E, R>(services: Services<E, R>): Effect.Effect<Scheduler.RunnerService, never, R> => {
+export const runner = <E, R>(services: Services<E, R>): Scheduler.RunnerService!never!R => {
   const record = (outcome: "started" | "not_allowed" | "refused" | "unavailable", fields: Record<string, string>) =>
     Effect.andThen(
       Metric.update(Metric.withAttributes(starts, { outcome }), 1),
@@ -239,66 +239,66 @@ export const runner = <E, R>(services: Services<E, R>): Effect.Effect<Scheduler.
       ),
     )
   const start = ({ input, idempotencyKey }: Scheduler.StartInput) =>
-    Effect.gen(function* () {
+    effect {
       const scheduled = decodeScheduledRun(input)
       const occurrence = occurrenceOf(idempotencyKey)
       if (Option.isNone(scheduled) || Option.isNone(occurrence)) {
-        yield* record("refused", { reason: "input" })
-        return yield* runnerError("The trigger's input names no scheduled run")
+        try record("refused", { reason: "input" })
+        throw runnerError("The trigger's input names no scheduled run")
       }
       const { repo, flow, defaultBranch, cron } = scheduled.value
       const executionId = runExecutionId(flow, occurrence.value.triggerId, occurrence.value.stamp)
       const fields = { repo, flow, executionId }
       if (!services.repositories.has(repo.toLowerCase())) {
-        yield* record("not_allowed", fields)
-        return yield* runnerError("The repository's flows aren't allowed")
+        try record("not_allowed", fields)
+        throw runnerError("The repository's flows aren't allowed")
       }
       // A start tried again runs at the commit the first recorded; a new one at the default branch's head now.
-      const recorded = yield* RepoRuns.recordedSha(executionId)
-      const sha = Option.isSome(recorded) ? Option.some(recorded.value) : yield* Effect.gen(function* () {
-        const app = yield* Dispatch.asApp(services, repo)
+      const recorded = try RepoRuns.recordedSha(executionId)
+      const sha = Option.isSome(recorded) ? Option.some(recorded.value) : try effect {
+        const app = try Dispatch.asApp(services, repo)
         if (Option.isNone(app)) return Option.none<string>()
-        const head = yield* app.value.call(GitHub.Refs.getBranch(app.value.repository.owner, app.value.repository.name, defaultBranch))
+        const head = try app.value.call(GitHub.Refs.getBranch(app.value.repository.owner, app.value.repository.name, defaultBranch))
         return Option.map(head, (branch) => branch.sha)
-      })
+      }
       if (Option.isNone(sha)) {
-        yield* record("refused", fields)
-        return yield* runnerError("The App can't read the repository's default branch")
+        try record("refused", fields)
+        throw runnerError("The App can't read the repository's default branch")
       }
       const ref = `refs/heads/${defaultBranch}`
       const payload: RepoFlow.RunRequest = {
         run: executionId, repo, flow, sha: sha.value, ref, event: "schedule", secrets: true, input: { schedule: cron },
       }
-      yield* Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(RepoRuns.record({
+      const sql = try SqlClient.SqlClient
+      try sql.withTransaction(RepoRuns.record({
         execution: executionId, repoId: `github/${repo.toLowerCase()}`, flow, sha: sha.value, ref, event: "schedule",
         launchedBy: "github",
-      }).pipe(Effect.andThen(services.start(RepoFlow.Run, { executionId, payload })))))
-      yield* record("started", fields)
+      }).pipe(Effect.andThen(services.start(RepoFlow.Run, { executionId, payload }))))
+      try record("started", fields)
       return executionId
-    }).pipe(
+    }.pipe(
       Effect.provide(services.database),
-      Effect.catchCause((cause) => {
+      Effect.catchCause(effect (cause) => {
         const error = Cause.squash(cause)
-        return error instanceof TriggerError.TriggerError
-          ? Effect.fail(error)
-          : Effect.andThen(
-            record("unavailable", { errorCode: codeOf(error) }),
-            Effect.fail(runnerError("GitHub, Postgres or the host couldn't start the run", "runner_unavailable")),
-          )
+        if (error instanceof TriggerError.TriggerError) throw error
+        const errorCode = try sync(() => codeOf(error))
+        try record("unavailable", { errorCode })
+        throw runnerError("GitHub, Postgres or the host couldn't start the run", "runner_unavailable")
       }),
       Effect.withSpan("ci.schedule.start"),
     )
   const inspect = (runId: string) =>
-    Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ readonly status: string }>`
-      SELECT status FROM runs WHERE execution = ${runId}`).pipe(
-      Effect.map((rows): Scheduler.RunState => {
-        const status = rows[0]?.status
-        return status === undefined ? "missing"
-          : status === "done" ? "completed"
-          : status === "failed" ? "failed"
-          : status === "stopped" ? "cancelled"
-          : "active"
-      }),
+    effect {
+      const sql = try SqlClient.SqlClient
+      const rows = try sql<{ readonly status: string }>`
+      SELECT status FROM runs WHERE execution = ${runId}`
+      const status = rows[0]?.status
+      return (status === undefined ? "missing"
+        : status === "done" ? "completed"
+        : status === "failed" ? "failed"
+        : status === "stopped" ? "cancelled"
+        : "active") satisfies Scheduler.RunState
+    }.pipe(
       Effect.provide(services.database),
       Effect.mapError(() => runnerError("Postgres couldn't read the run")),
       Effect.withSpan("ci.schedule.inspect"),
@@ -319,18 +319,18 @@ export const runner = <E, R>(services: Services<E, R>): Effect.Effect<Scheduler.
 /** The steps over `services`. */
 export const steps = <E, R>(services: Services<E, R>) => {
   const register = ({ request }: typeof Register.payloadSchema.Type) =>
-    Effect.gen(function* () {
+    effect {
       const repo = request.repo.toLowerCase()
       const none = { registered: 0, unchanged: 0, disabled: 0, refused: 0 }
       if (!services.repositories.has(repo)) return { outcome: "not_allowed", ...none } satisfies Registered
-      const app = yield* Dispatch.asApp(services, request.repo)
+      const app = try Dispatch.asApp(services, request.repo)
       if (Option.isNone(app)) return { outcome: "unreadable", ...none } satisfies Registered
-      const manifest = yield* app.value.read(Triggers.MANIFEST_PATH, request.defaultBranch)
-      const rows = Option.match(manifest, { onNone: () => [], onSome: Triggers.schedulesOf })
+      const manifest = try app.value.read(Triggers.MANIFEST_PATH, request.defaultBranch)
+      const rows = Option.isSome(manifest) ? try sync(() => Triggers.schedulesOf(manifest.value)) : []
       // As a push's: a flow is active once its entry point is on the default branch.
       const active = new Set<string>()
       for (const flow of new Set(rows.map((row) => row.flow))) {
-        if (Option.isSome(yield* app.value.workflow(flow, request.defaultBranch))) active.add(flow)
+        if (Option.isSome(try app.value.workflow(flow, request.defaultBranch))) active.add(flow)
       }
       const wanted = new Map<string, Trigger.Trigger>()
       let refused = 0
@@ -344,21 +344,21 @@ export const steps = <E, R>(services: Services<E, R>) => {
           cron: row.cron,
           ...(row.timezone === undefined ? {} : { timezone: row.timezone }),
         }
-        const made = yield* Effect.result(Trigger.make({
+        const made = try Effect.result(Trigger.make({
           id, flowId: row.flow, input, cron: row.cron, ...(row.timezone === undefined ? {} : { timezone: row.timezone }),
           overlap: row.overlap, catchUp: row.catchUp, maxCatchUp: row.maxCatchUp, enabled: true,
         }))
         if (Result.isFailure(made)) {
           refused++
-          yield* Effect.logWarning("ci.schedule.refused").pipe(
+          try Effect.logWarning("ci.schedule.refused").pipe(
             Effect.annotateLogs({ delivery: request.delivery, repo, flow: row.flow, errorCode: made.failure.code }),
           )
           continue
         }
         wanted.set(id, made.success)
       }
-      const store = yield* TriggerStore.TriggerStore
-      const stored = new Map((yield* store.list()).flatMap((listed) =>
+      const store = try TriggerStore.TriggerStore
+      const stored = new Map((try store.list()).flatMap((listed) =>
         listed.triggerId.startsWith(`${repo}#`) && Result.isSuccess(listed.trigger)
           ? [[listed.triggerId, listed.trigger.success] as const]
           : []
@@ -370,18 +370,18 @@ export const steps = <E, R>(services: Services<E, R>) => {
         const prior = stored.get(id)
         if (prior !== undefined && sameDeclaration(prior, trigger)) unchanged++
         else {
-          yield* store.register(trigger)
+          try store.register(trigger)
           registered++
         }
       }
       // The store keeps every trigger it was given: one the manifest dropped stays, disabled.
       for (const [id, prior] of stored) {
         if (wanted.has(id) || !prior.enabled) continue
-        yield* store.register({ ...declarationOf(prior), enabled: false })
+        try store.register({ ...declarationOf(prior), enabled: false })
         disabled++
       }
       return { outcome: "registered", registered, unchanged, disabled, refused } satisfies Registered
-    }).pipe(
+    }.pipe(
       Effect.provide(Layer.merge(services.database, services.store)),
       Effect.mapError(() => new ScheduleUnavailable({ reason: "unavailable" })),
       Effect.tap((done) =>
@@ -402,8 +402,11 @@ export const steps = <E, R>(services: Services<E, R>) => {
     )
 
   const since = ({ from }: typeof Since.payloadSchema.Type) =>
-    Effect.flatMap(TriggerStore.TriggerStore, (store) => store.lastHeartbeat()).pipe(
-      Effect.map(Option.match({ onNone: () => null, onSome: (beat) => beat.tickedAt })),
+    effect {
+      const store = try TriggerStore.TriggerStore
+      const beat = try store.lastHeartbeat()
+      return Option.isSome(beat) ? beat.value.tickedAt : null
+    }.pipe(
       Effect.provide(services.store),
       Effect.mapError(() => new ScheduleUnavailable({ reason: "unavailable" })),
       Effect.tap((at) =>
@@ -413,10 +416,12 @@ export const steps = <E, R>(services: Services<E, R>) => {
     )
 
   const fire = ({ from, since }: typeof Fire.payloadSchema.Type) =>
-    Effect.flatMap(runner(services), (built) =>
-      Scheduler.tick({ since: since ?? undefined, host: HOST, startTimeout: START_TIMEOUT }).pipe(
+    effect {
+      const built = try runner(services)
+      return try Scheduler.tick({ since: since ?? undefined, host: HOST, startTimeout: START_TIMEOUT }).pipe(
         Effect.provideService(Scheduler.Runner, built),
-      )).pipe(
+      )
+    }.pipe(
       Effect.provide(services.store),
       Effect.mapError(() => new ScheduleUnavailable({ reason: "unavailable" })),
       // A trigger that didn't finish dispatching: the same interval again, which the claim protocol keeps to once.

@@ -16,8 +16,8 @@ import { database, REPOSITORY, reset, services as githubServices } from "../gith
 import { type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile, uuid } from "../test/harness.ts"
-import * as Cron from "./Cron.ts"
-import type * as Dispatch from "./Dispatch.ts"
+import * as Cron from "./Cron.vibe"
+import type * as Dispatch from "./Dispatch.vibe"
 
 const runtime = testFile("ci_cron")
 beforeEach(async () => {

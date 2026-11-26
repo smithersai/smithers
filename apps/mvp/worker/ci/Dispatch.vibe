@@ -200,7 +200,7 @@ export interface Services<E, R> {
   readonly http: HttpClient.HttpClient
   readonly apiBaseUrl: string
   /** Records a start on its own execution; the same start again changes nothing. */
-  readonly start: (flow: Flow.Any, options: { readonly executionId: string; readonly payload: unknown }) => Effect.Effect<void, unknown>
+  readonly start: (flow: Flow.Any, options: { readonly executionId: string; readonly payload: unknown }) => void!unknown
 }
 
 /**
@@ -209,52 +209,55 @@ export interface Services<E, R> {
  * can't read the repository at all; a token GitHub or Postgres couldn't mint fails with `DispatchUnavailable`.
  */
 export const asApp = (services: Pick<Services<unknown, unknown>, "tokens" | "http" | "apiBaseUrl">, repo: string) =>
-  Effect.gen(function* () {
-    const repository = repositoryOf(repo)
-    const token = yield* services.tokens.forInstallation(repository, "contents").pipe(Effect.result)
+  effect {
+    const repository = try sync(() => repositoryOf(repo))
+    const token = try services.tokens.forInstallation(repository, "contents").pipe(Effect.result)
     if (token._tag === "Failure") {
       if (token.failure.reason === "unavailable" || token.failure.reason === "refreshing") {
-        return yield* Effect.fail(new DispatchUnavailable())
+        throw new DispatchUnavailable()
       }
       return Option.none()
     }
-    const call = <A, CE, CR>(effect: Effect.Effect<A, CE, CR>) =>
+    const call = <A, CE, CR>(effect: A!CE!CR) =>
       effect.pipe(withToken(token.success, services.apiBaseUrl), Effect.provideService(HttpClient.HttpClient, services.http))
-    const read = (path: string, ref: string) =>
-      call(GitHub.Contents.getText(repository.owner, repository.name, path, { ref })).pipe(
-        Effect.map(Option.map((file) => file.text)),
-        Effect.catch((error) =>
-          RepoFlow.isUnreadable(error) ? Effect.succeed(Option.none<string>()) : Effect.fail(new DispatchUnavailable())
-        ),
-      )
-    const workflow = (name: string, ref: string) => call(RepoFlow.readWorkflow(repository, name, ref)).pipe(Effect.catch((error) =>
-      RepoFlow.isUnreadable(error) ? Effect.succeedNone : Effect.fail(new DispatchUnavailable())
-    ))
+    const read = effect (path: string, ref: string) => {
+      const file = call(GitHub.Contents.getText(repository.owner, repository.name, path, { ref })) catch effect (error) => {
+        if (try sync(() => RepoFlow.isUnreadable(error))) return Option.none()
+        throw new DispatchUnavailable()
+      }
+      return Option.map(file, (value) => value.text)
+    }
+    const workflow = effect (name: string, ref: string) => {
+      return call(RepoFlow.readWorkflow(repository, name, ref)) catch effect (error) => {
+        if (try sync(() => RepoFlow.isUnreadable(error))) return Option.none()
+        throw new DispatchUnavailable()
+      }
+    }
     return Option.some({ repository, call, read, workflow })
-  })
+  }
 
 /** The steps over `services`. */
 export const steps = <E, R>(services: Services<E, R>) => {
   const match = ({ request }: typeof Match.payloadSchema.Type) =>
-    Effect.gen(function* () {
+    effect {
       if (!services.repositories.has(request.repo.toLowerCase())) {
         return { flows: [], outcome: "not_allowed" } satisfies Matched
       }
-      const app = yield* asApp(services, request.repo)
+      const app = try asApp(services, request.repo)
       if (Option.isNone(app)) return { flows: [], outcome: "unreadable" } satisfies Matched
       // Read as the App at the default branch: what a person merged, never the event's commit. A file no retry will
       // read is read as absent: an unreadable manifest starts nothing, an unreadable flow isn't active, and the rest
       // still start.
       const read = (path: string) => app.value.read(path, request.defaultBranch)
-      const manifest = yield* read(Triggers.MANIFEST_PATH)
+      const manifest = try read(Triggers.MANIFEST_PATH)
       if (Option.isNone(manifest)) return { flows: [], outcome: "no_manifest" } satisfies Matched
-      const wanted = Triggers.flowsFor(Triggers.triggersOf(manifest.value), request)
+      const wanted = try sync(() => Triggers.flowsFor(Triggers.triggersOf(manifest.value), request))
       const active: Array<string> = []
       for (const flow of wanted) {
-        if (Option.isSome(yield* app.value.workflow(flow, request.defaultBranch))) active.push(flow)
+        if (Option.isSome(try app.value.workflow(flow, request.defaultBranch))) active.push(flow)
       }
       return { flows: active, outcome: active.length > 0 ? "matched" : "none" } satisfies Matched
-    }).pipe(
+    }.pipe(
       Effect.provide(services.database),
       Effect.mapError(() => new DispatchUnavailable()),
       Effect.tap((matched) =>
@@ -274,13 +277,13 @@ export const steps = <E, R>(services: Services<E, R>) => {
     )
 
   const start = ({ flows, request }: typeof Start.payloadSchema.Type) =>
-    Effect.gen(function* () {
+    effect {
       if (!services.repositories.has(request.repo.toLowerCase())) {
-        yield* Metric.update(Metric.withAttributes(starts, { outcome: "not_allowed" }), 1)
-        yield* Effect.logInfo("ci.start").pipe(Effect.annotateLogs({ repo: request.repo, outcome: "not_allowed" }))
+        try Metric.update(Metric.withAttributes(starts, { outcome: "not_allowed" }), 1)
+        try Effect.logInfo("ci.start").pipe(Effect.annotateLogs({ repo: request.repo, outcome: "not_allowed" }))
         return []
       }
-      return yield* Effect.forEach(flows, (flow) => {
+      return try forEach(flows, (flow) => {
         const executionId = runExecutionId(flow, request.delivery)
         const payload: RepoFlow.RunRequest = {
           run: executionId,
@@ -303,21 +306,26 @@ export const steps = <E, R>(services: Services<E, R>) => {
               ...(errorCode === undefined ? {} : { errorCode }),
             })),
           )
-        return Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(RepoRuns.record({
-          execution: executionId, repoId: `github/${request.repo.toLowerCase()}`, flow,
-          sha: request.sha, ref: request.ref, event: request.event, launchedBy: "github",
-        }).pipe(
-          Effect.andThen(services.start(RepoFlow.Run, { executionId, payload })),
-        ))).pipe(
+        return effect {
+          const sql = try SqlClient.SqlClient
+          try sql.withTransaction(RepoRuns.record({
+            execution: executionId, repoId: `github/${request.repo.toLowerCase()}`, flow,
+            sha: request.sha, ref: request.ref, event: request.event, launchedBy: "github",
+          }).pipe(
+            Effect.andThen(services.start(RepoFlow.Run, { executionId, payload })),
+          ))
+        }.pipe(
           Effect.provide(services.database),
           Effect.tap(() => record("started")),
-          Effect.catchCause((cause) =>
-            record("not_started", codeOf(Cause.squash(cause))).pipe(Effect.andThen(Effect.fail(new DispatchUnavailable())))
-          ),
+          Effect.catchCause(effect (cause) => {
+            const errorCode = try sync(() => codeOf(Cause.squash(cause)))
+            try record("not_started", errorCode)
+            throw new DispatchUnavailable()
+          }),
           Effect.as(executionId),
         )
       })
-    }).pipe(Effect.mapError(() => new DispatchUnavailable()), Effect.withSpan("ci.dispatch.start", { attributes: { "smithers.ci.delivery": request.delivery } }))
+    }.pipe(Effect.mapError(() => new DispatchUnavailable()), Effect.withSpan("ci.dispatch.start", { attributes: { "smithers.ci.delivery": request.delivery } }))
 
   return { match, start }
 }

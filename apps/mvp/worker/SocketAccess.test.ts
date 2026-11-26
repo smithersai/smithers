@@ -17,8 +17,8 @@ import * as BranchRooms from "./BranchRooms.ts"
 import * as BranchSandboxes from "./BranchSandboxes.ts"
 import { repositoryOf } from "./github/Config.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
-import * as Store from "./runners/RunContent.ts"
-import * as TranscriptHost from "./runners/TranscriptHost.ts"
+import * as Store from "./runners/RunContent.vibe"
+import * as TranscriptHost from "./runners/TranscriptHost.vibe"
 import * as SessionStore from "./SessionStore.ts"
 import * as SocketAccess from "./SocketAccess.ts"
 import * as SocketHost from "./durable/SocketHost.ts"
@@ -551,6 +551,100 @@ describe("a transcript's watchers", () => {
     }))
     expect(expired.sent).toEqual([])
     expect(expired.closed?.code).toBe(4401)
+  })
+
+  test("a live session is admitted but cannot replay after its lease lapses", async () => {
+    const actor = await signIn("member")
+    const admission = await admit(actor)
+    const store = sqliteStore()
+    Store.append(store, 1, [event(0)], 1)
+    const socket = new Socket()
+    const host = transcriptHost(memoryStorage().storage, [socket], () => Effect.succeed("keep"), store)
+
+    await onTestClock(Effect.gen(function*() {
+      yield* TestClock.adjust(LEASE_MS + 1_000)
+      expect(yield* host.admissible(admission)).toBeUndefined()
+      expect(yield* host.join(socket, admission, -1)).toBe(1)
+    }))
+    expect(socket.sent).toEqual([])
+    expect(socket.closed).toEqual({ code: 1012, reason: "access unverified" })
+  })
+
+  test("a duplicate append neither extends retention nor renews or sends to watchers", async () => {
+    const socket = new Socket()
+    const admission = await admit(await signIn("member"))
+    const { storage, values } = memoryStorage()
+    let checks = 0
+    const host = transcriptHost(storage, [socket], () => Effect.sync(() => {
+      checks++
+      return "keep" as const
+    }))
+
+    await onTestClock(Effect.gen(function*() {
+      yield* host.join(socket, admission, -1)
+      expect((yield* host.append(1, [event(0)])).next).toBe(1)
+      const originalRetention = values.get(TranscriptHost.RETAIN_KEY)
+      expect(originalRetention).toBe((yield* now) + RETENTION_MS)
+      yield* TestClock.adjust(60 * 60 * 1_000 + 1)
+      expect(yield* host.append(1, [event(0)])).toMatchObject({ next: 1, summary: { events: 1 } })
+      expect(values.get(TranscriptHost.RETAIN_KEY)).toBe(originalRetention)
+    }))
+    expect(checks).toBe(0)
+    expect(socket.events()).toEqual([1])
+  })
+
+  test("a socket dropped during its renewal stays out of the sending set when the check returns", async () => {
+    const socket = new Socket()
+    const admission = await admit(await signIn("member"))
+    const store = sqliteStore()
+    const { storage } = memoryStorage(store)
+
+    await onTestClock(Effect.gen(function*() {
+      const started = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const host = transcriptHost(storage, [socket], () => Effect.gen(function*() {
+        yield* Deferred.succeed(started, undefined)
+        yield* Deferred.await(release)
+        return "keep" as const
+      }), store)
+      yield* host.join(socket, admission, -1)
+      yield* TestClock.adjust(LEASE_MS + 1_000)
+      const appended = yield* Effect.forkChild(host.append(1, [event(0)]))
+      yield* Deferred.await(started)
+      socket.serializeAttachment({ dropped: true })
+      yield* Deferred.succeed(release, undefined)
+      expect((yield* Fiber.join(appended)).next).toBe(1)
+    }))
+    expect(socket.deserializeAttachment()).toEqual({ dropped: true })
+    expect(socket.events()).toEqual([])
+    expect(Store.page(store, -1).map((row) => row.seq)).toEqual([0])
+  })
+
+  test("an alarm logs a renewal defect and still rearms for retention", async () => {
+    const store = sqliteStore()
+    const { storage, values, alarm } = memoryStorage(store)
+    const messages: unknown[] = []
+    const logger = Logger.make(({ message }) => { messages.push(message) })
+    let reads = 0
+    const host = TranscriptHost.make({
+      sql: store,
+      storage,
+      sockets: Effect.sync(() => {
+        if (++reads === 1) throw new Error("socket enumeration failed")
+        return []
+      }),
+      check: () => Effect.die("no sockets to check"),
+      within,
+    })
+
+    await onTestClock(Effect.gen(function*() {
+      const until = (yield* now) + RETENTION_MS
+      values.set(TranscriptHost.RETAIN_KEY, until)
+      yield* host.alarm
+      expect(alarm()).toBe(until)
+    }).pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger]))))
+    expect(messages.flat()).toContain("run_content.renew")
+    expect(reads).toBe(2)
   })
 
   test("a failed role refresh renews nothing: the lease ends 1012, and the route answers stale", async () => {

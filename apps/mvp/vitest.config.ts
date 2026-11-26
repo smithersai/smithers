@@ -65,7 +65,7 @@ export default defineConfig({
         "worker/index.ts",
         // Injected development-host fault boundaries used by old and new browser builds.
         "worker/DevFaults.ts",
-        "worker/ci/*.ts",
+        "worker/ci/*.{ts,vibe}",
         "worker/flows/**/*.{ts,vibe}",
         // External agents on runners (docs/features/agent-runners.md): their routes, store and Admin writes.
         "worker/runners/*.{ts,vibe}",

@@ -5,7 +5,7 @@
 // object itself under `alchemy dev`.
 import { Effect, Layer } from "effect"
 import { DatabaseSync } from "node:sqlite"
-import * as Store from "../runners/RunContent.ts"
+import * as Store from "../runners/RunContent.vibe"
 
 /** A fresh store on an in-memory SQLite. */
 export const sqliteStore = (): Store.Sql => {

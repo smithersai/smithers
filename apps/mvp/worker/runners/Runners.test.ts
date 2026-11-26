@@ -33,7 +33,7 @@ import type * as Fence from "./Fence.vibe"
 import * as AdminFlows from "./AdminFlows.vibe"
 import * as RunnersApi from "./Api.vibe"
 import * as Jobs from "./Jobs.vibe"
-import * as RunContent from "./RunContent.ts"
+import * as RunContent from "./RunContent.vibe"
 import * as Store from "./Store.vibe"
 
 const runtime = testFile("runners")

@@ -11,7 +11,7 @@ import { codeOf } from "../ErrorCode.ts"
 import { bearerOf } from "../RunCredentials.ts"
 import * as Fleet from "./Fleet.vibe"
 import { SETTLE_GRACE_SECONDS } from "./Jobs.vibe"
-import { Transcripts } from "./RunContent.ts"
+import { Transcripts } from "./RunContent.vibe"
 
 // The runner routes (decision 0136, docs/features/agent-runners.md#the-runner-protocol): a runner machine pulls its
 // jobs over HTTPS, so nothing calls into it. Each request carries the runner's own token as `Authorization: Bearer`; the

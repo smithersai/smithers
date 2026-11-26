@@ -2,13 +2,13 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import { expect, test } from "vitest"
 
-// Durable Object instance coordinators (worker/durable/**, worker/runners/TranscriptHost.ts) may hold per-object
+// Durable Object instance coordinators (worker/durable/**, worker/runners/TranscriptHost.vibe) may hold per-object
 // Effect Deferred/Semaphore waits. Only Durable Object entrypoints and tests may import them; stateless Workers must not.
 const DURABLE_OWNERS = new Set([
   "BranchRooms.ts",
   "BranchSandboxes.ts",
   "RunContent.ts",
-  "runners/TranscriptHost.ts",
+  "runners/TranscriptHost.vibe",
 ])
 
 const walk = (dir: string): Array<string> =>
