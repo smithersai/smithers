@@ -2,14 +2,15 @@ import { Collection } from "@smthrs/effect-tanstack-db"
 import { PendingSnapshot } from "@smthrs/platform-browser"
 import { Deferred, Effect, Exit, Logger, type ManagedRuntime, Metric, Scope } from "effect"
 import { slashMenu, slashSubmit } from "@smthrs/ui"
+import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { DispatchFailed, FlowDispatch, dispatches } from "../../flows/dispatch"
 import { WriteIntents } from "../../writeAdmission"
 import { NavigationRefused } from "../navigation/flows"
-import { choose as chooseCommand, submit as submitCommand, type as typeCommand } from "./actions"
+import { choose as chooseCommand, submit as submitCommand, type as typeCommand } from "./actions.vibe"
 import { entryOf, names } from "../../flows/registry"
 import type { Actor } from "../../../worker/Actor.vibe"
-import { nodeDevice, openTestApi, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
+import { nodeDevice, openTab, openTestApi, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { AuthStore, SESSION } from "../auth/store"
 import { Chat } from "../chat/chat"
 import { PLACE, Place } from "../chat/schema"
@@ -497,6 +498,30 @@ describe("submitting", () => {
     }
   })
 
+  test("an admitted run's late failure respects a menu dismissal", async () => {
+    const tab = await open({ host: keepingInputs() })
+    const intents = await tab.runtime.runPromise(Effect.service(WriteIntents))
+    const release = Effect.runSync(Deferred.make<void>())
+    const text = "/new roninjin10/smithers-github-tests late-failure"
+    const unavailable = FlowDispatch.of({
+      dispatch: ((_name, _payload, options) => Effect.gen(function* () {
+        if (options.admitted !== undefined) yield* Deferred.succeed(options.admitted, undefined)
+        yield* Deferred.await(release)
+        return yield* new DispatchFailed({ flow: "conversation/new", reason: "defect" })
+      })) as FlowDispatch["Service"]["dispatch"],
+    })
+    await tab.actions.type(text)
+    await tab.runtime.runPromise(submitCommand(text).pipe(Effect.provideService(FlowDispatch, unavailable)))
+    tab.actions.dismiss()
+    Effect.runSync(Deferred.succeed(release, undefined))
+    await until(() => {
+      expect([...intents.answered.values()]).toEqual([expect.objectContaining({ state: "failed" })])
+      expect(intents.pending()).toEqual([])
+    })
+    expect(tab.draft()).toBe(text)
+    expect(tab.menu()).toMatchObject({ items: [], refusal: null })
+  })
+
   test("a /new pressed again after its run failed is a new execution, never the failed one joined", async () => {
     const tab = await open({ host: keepingInputs() })
     await ready(tab)
@@ -933,3 +958,25 @@ test("repository-scoped plugin slash commands resolve /{repo}/ from the open rep
   })
   commands.actions.closePalette()
 })
+
+test("a repository-scoped slash command navigates through the synced repository when none is open", async () => {
+  const server = openTestApi()
+  runtimes.push(server)
+  const api = await server.runPromise(Effect.service(TestChatApi))
+  await server.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, sql => sql`
+    INSERT INTO repositories (id, owner, name, status, default_branch, head_sha)
+    VALUES ('github/acme/fallback', 'acme', 'fallback', 'ready', 'main', ${"a".repeat(40)})`)))
+  const host = nodeDevice({ agent: api })
+  const tab = openTab(api, { host })
+  runtimes.push(tab)
+  const repos = await tab.runPromise(Effect.service(RepoStore))
+  const commands = await tab.runPromise(Effect.service(Commands))
+  await until(async () => {
+    expect(await tab.runPromise(repos.repositories.toArray)).toContainEqual(expect.objectContaining({
+      owner: "acme", name: "fallback",
+    }))
+  }, engineWithin)
+  await commands.actions.type("/factory")
+  await commands.actions.submit("/factory")
+  await until(() => expect(host.navigated).toEqual(["/acme/fallback/-/factory"]), engineWithin)
+}, 60_000)

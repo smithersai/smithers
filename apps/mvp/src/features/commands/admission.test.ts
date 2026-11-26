@@ -14,7 +14,7 @@ import { IssuesStore } from "../issues/store"
 import { TodosStore } from "../todos/store"
 import { SteerWrites } from "../runs/writes"
 import { Commands } from "./commands"
-import { admitCommand } from "./admission"
+import { admitCommand } from "./admission.vibe"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => { for (const runtime of runtimes.splice(0).reverse()) await runtime.dispose() })
@@ -53,6 +53,7 @@ const writes: ReadonlyArray<readonly [FlowName, Record<string, unknown>]> = [
   ["todo/commit", { repo: "octo/hello", title: "Full TODO", prompt: "Full prompt", acceptance: ["Done"], issue: 7 }],
   ["todo/drop", { repo: "octo/hello", number: 7 }],
   ["todo/Retry", { repo: "octo/hello", number: 7 }],
+  ["todo/attach", { repo: "octo/hello", number: 11, issue: 9 }],
   ["run/steer", { runId: "todo:00000000-0000-4000-8000-000000000007", body: "Steer" }],
 ]
 
@@ -65,7 +66,11 @@ test("all command-capable outbox writes admit before an unavailable engine can r
   const todos = await t.tab.runPromise(Effect.service(TodosStore))
   const steers = await t.tab.runPromise(Effect.service(SteerWrites))
   expect(await t.tab.runPromise(issues.sending.toArray)).toHaveLength(7)
-  expect(await t.tab.runPromise(todos.sending.toArray)).toHaveLength(4)
+  const ops = await t.tab.runPromise(todos.sending.toArray)
+  expect(ops).toHaveLength(5)
+  expect(ops).toContainEqual(expect.objectContaining({
+    repo: "octo/hello", op: "attach", number: 11, issue: 9, title: "", prompt: "", acceptance: [],
+  }))
   expect(await t.tab.runPromise(steers.sending.toArray)).toHaveLength(1)
 })
 
@@ -186,7 +191,7 @@ for (const failure of ["hold", "fail"] as const) test(`slash input identity surv
   const t = await open()
   const { Collection } = await import("@smthrs/effect-tanstack-db")
   const { Fiber } = await import("effect")
-  const { submit } = await import("./actions")
+  const { submit } = await import("./actions.vibe")
   const { resumeAdmissions } = await import("../../resumeAdmissions")
   const chat = await t.tab.runPromise(Effect.service(ChatStore))
   const text = "/comment octo/hello 7 Retain the cleanup receipt"
@@ -218,7 +223,7 @@ for (const failure of ["hold", "fail"] as const) test(`slash input identity surv
 
 test("an input-storage refusal keeps the slash source and never queues delivery", async () => {
   const t = await open()
-  const { submit } = await import("./actions")
+  const { submit } = await import("./actions.vibe")
   const text = "/comment octo/hello 7 Retain the refused input"
   await t.commands.actions.type(text)
   const intents = await t.tab.runPromise(Effect.service(WriteIntents))
@@ -248,7 +253,7 @@ for (const text of ["/comment octo/hello 7 Retry the slash source", "/todo.drop 
 test("a new identical press stays independent while the earlier source cleanup waits", async () => {
   const t = await open()
   const { Deferred, Fiber } = await import("effect")
-  const { submit } = await import("./actions")
+  const { submit } = await import("./actions.vibe")
   const chat = await t.tab.runPromise(Effect.service(ChatStore))
   const gate = await Effect.runPromise(Deferred.make<void>())
   const text = "/comment octo/hello 7 Another legitimate press"

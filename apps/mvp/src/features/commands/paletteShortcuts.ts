@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { runners } from "../../boundary.vibe"
-import { togglePalette } from "./actions"
+import { togglePalette } from "./actions.vibe"
 import type { CommandsStore } from "./store"
 
 // `⌘P` / `Ctrl+P` (and `⌘⇧P` / `Ctrl+Shift+P`) toggles the global Command Palette & Go-to-File dialog from anywhere

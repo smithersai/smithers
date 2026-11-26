@@ -5,7 +5,7 @@ import { RepoStore } from "../repo/store"
 import { follow, hover, keyAction, problem, select, definition, targetOf, togglePane, type Token, type KeyModifiers } from "./actions.vibe"
 import { CODE_INTEL } from "./rows"
 import type { LanguageServers } from "./session.vibe"
-import { CodeIntelStore } from "./store"
+import { CodeIntelStore } from "./store.vibe"
 
 // Code intelligence as a frontend sees it: one live query to read and plain functions to act, with no Effect in sight
 // (docs/features/code-intelligence.md). It follows the repository view's routed file on its own: when the view shows

@@ -11,7 +11,7 @@ import { asks, sessions } from "./metrics"
 import { CODE_INTEL, type CodeIntelRow, fresh, type PlaceRow } from "./rows"
 import { LanguageServers } from "./session.vibe"
 import { problemsAt } from "./view"
-import { CodeIntelStore, type Session, type Target } from "./store"
+import { CodeIntelStore, type Session, type Target } from "./store.vibe"
 
 // What a person does with code intelligence, as Effects: the routed file opening, hovering a token, selecting a symbol,
 // going to a definition, stepping through problems and the keys. Each reads the language server of the shown

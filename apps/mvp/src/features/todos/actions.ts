@@ -4,7 +4,7 @@ import { admissionReceipt, beginAdmission, executionOf, finishAdmission, finishR
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Clock, Effect, Metric, Option } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
-import { startOperation } from "../commands/admission"
+import { startOperation } from "../commands/admission.vibe"
 import { followRun } from "../../resumeAdmissions"
 import { repoId } from "../repo/contract"
 import { isPrompt, isTitle, OP_ID_NAMESPACE, type StackBase, stackPath } from "./contract"

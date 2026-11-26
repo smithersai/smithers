@@ -36,7 +36,7 @@ import { ClientEngine, FlowDispatch } from "../flows/dispatch"
 import type { TabRequests } from "../flows/requests"
 import { CodeIntel } from "../features/code-intel/codeIntel.vibe"
 import type { LanguageServers } from "../features/code-intel/session.vibe"
-import { CodeIntelStore } from "../features/code-intel/store"
+import { CodeIntelStore } from "../features/code-intel/store.vibe"
 
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>
 

@@ -12,7 +12,7 @@ import { contextOf, isBugPage, type Recorded, repoOf, routeOf, UNANSWERED } from
 import { BugTabs } from "./flows.vibe"
 import { issueUrl, MAX_ISSUE_WORDS, routeKind, titleOf } from "./github"
 import type { ReportRequest } from "./schema"
-import { type BugHost, PAGES_KEPT, tabBugContext } from "./tab"
+import { type BugHost, PAGES_KEPT, tabBugContext } from "./tab.vibe"
 
 const TRACE = "0123456789abcdef0123456789abcdef"
 const OTHER_TRACE = "fedcba9876543210fedcba9876543210"

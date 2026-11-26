@@ -1,0 +1,338 @@
+import { clearComposerSource } from "../../admissionSource.vibe"
+import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { admissionReceipt, beginAdmission, executionOf, finishAdmission, identifyAdmission } from "../../writeAdmission"
+import { slashMenu, slashSubmit } from "@smthrs/ui"
+import { WebCrypto as WebCryptoReference } from "effect/crypto/WebCrypto"
+import { type DispatchFailed, type Dispatched, FlowDispatch } from "../../flows/dispatch"
+import type { FlowName } from "../../flows/registry"
+import { AuthStore, SESSION } from "../auth/store"
+import { ask, setDraft } from "../chat/actions"
+import { MAX_QUESTION_LENGTH } from "../chat/contract"
+import type { DraftSelection } from "../chat/sharedPrompt"
+import { COMPOSER, PLACE } from "../chat/schema"
+import { ChatStore } from "../chat/store"
+import { pinBranch } from "../conversations/pin"
+import { ACTION_FAILED } from "../home/contract"
+import { RepoName } from "../repo/flows"
+import { pinConversation } from "../sandbox/actions"
+import { openWebPage, refusedPage } from "../web/actions"
+import { CANT_OPEN } from "../web/contract"
+import { Plugins } from "../../plugins/plugins"
+import { COMMANDS as COMMAND_LIST, type Command, commandsFor, pluginCommands, viewerOf } from "./catalog"
+import { COMMANDS, invalidArgument, missingArguments, unknownCommand } from "./contract"
+import { choices, submits } from "./metrics"
+import { MENU, type Menu, PALETTE, type Palette } from "./schema"
+import { type PaletteEntry, resolveRepoTarget } from "./palette"
+import { VIEW as REPO_VIEW } from "../repo/rows"
+import { CommandsStore } from "./store"
+import { admissionNamespace, admitCommand, hasEngineAdmission, hasOutboxAdmission, startOperation } from "./admission.vibe"
+import { followRun, runEnded } from "../../resumeAdmissions"
+import { BranchStore } from "../branch/store"
+import { CURRENT } from "../branch/schema"
+import { RepoStore } from "../repo/store"
+import { repoId } from "../repo/contract"
+import { WRITE_ID_NAMESPACE } from "../issues/contract"
+
+// Composer actions await local write admission (docs/features/slash-commands.md). Typing
+// lists what the draft completes to; the keys and the pointer move, choose and close; submitting runs a command's flow
+// through `FlowDispatch`, door `slash`, or asks Smithers. The menu completes and submits from the commands this person
+// may run, read at that moment.
+
+/** The commands the person at the composer may run, as sign-in knows them now. */
+const offered = effect {
+  const { session, confirmed } = try AuthStore
+  const { contributions } = try Plugins
+  const now = try map(session.get(SESSION), Option.getOrThrow)
+  const proof = try confirmed.get(SESSION)
+  let viewer = try sync(() => viewerOf(now, Option.getOrUndefined(proof)))
+  const { place } = try ChatStore
+  const conversation = (try map(place.get(PLACE), Option.getOrThrow)).conversationId
+  if (conversation !== null) {
+    const branch = try BranchStore
+    const repos = try RepoStore
+    const current = try map(branch.current.get(CURRENT), Option.getOrThrow)
+    const role = current.status === "ready" && current.conversationId === conversation
+      ? Option.getOrUndefined(try repos.roles.get(repoId(current.owner, current.repo)))
+      : undefined
+    if (current.status !== "none") viewer = { signedIn: viewer.signedIn, role: viewer.signedIn && role?.failure === undefined ? (role?.workspaceRole === undefined ? role?.role ?? null : role.workspaceRole) : null }
+  }
+  return try sync(() => commandsFor(viewer, [...COMMAND_LIST, ...pluginCommands(contributions.commands)]))
+}
+
+const draftNow = effect {
+  const { composer } = try ChatStore
+  return (try map(composer.get(COMPOSER), Option.getOrThrow)).draft
+}
+
+const menuNow = effect {
+  const { menu } = try CommandsStore
+  return try map(menu.get(MENU), Option.getOrThrow)
+}
+
+const write = (fields: Partial<Omit<Menu, "id">>) =>
+  effect {
+    const { menu, revision } = try CommandsStore
+    try Ref.update(revision, n => n + 1)
+    try menu.update(MENU, (row) => void Object.assign(row, fields))
+  } |> orDie(%)
+
+/** Lists what `draft` completes to, highlighting the first row, with `refusal` on the status line. */
+const list = effect (draft: string, refusal: string | null = null) => {
+  const commands = try offered
+  const found = try sync(() => slashMenu(draft, commands))
+  try write({
+    draft,
+    kind: found.kind,
+    label: found.kind === "values" ? found.field.label : COMMANDS,
+    items: found.items.map(({ id, label, detail, draft, runs }) => ({ id, label, detail: detail ?? null, draft, runs })),
+    highlighted: 0,
+    refusal,
+  })
+}
+
+/** Typing: the composer's draft becomes `text`, with `selection` after, and the menu lists what it completes to. */
+export const type = (text: string, selection?: DraftSelection) => andThen(list(text, text.trim().length > MAX_QUESTION_LENGTH ? "8,000 characters max" : null), setDraft(text, selection))
+
+/** The arrows or the pointer moved the highlight to row `index`. */
+export const highlight = (index: number) => write({ highlighted: index })
+
+/** Escape: the menu closes and the draft stays. Typing lists again. */
+export const dismiss = write({ items: [], highlighted: 0 })
+
+/** Keeps the line in the composer, lists what it completes to, and says why it didn't run. */
+const refuse = effect (outcome: "unknown" | "missing" | "invalid", copy: string, command?: Command) => {
+  try list(try draftNow, copy)
+  const fields: Record<string, string> = command === undefined ? { outcome } : { outcome, command: command.name }
+  try Metric.update(Metric.withAttributes(submits, fields), 1)
+  try annotateLogs(logWarning("slash.refused"), fields)
+}
+
+/** The flows that add views to the conversation the tab shows, which a slash command pins into their payload. */
+const PINNED_FLOWS: ReadonlySet<string> = new Set(["app/docs/search", "ui/repo", "ui/issues"])
+
+/** Runs `command`'s flow with `payload` through dispatch, door `slash`, in the background; the composer clears at once. */
+const run = effect (command: Command, payload: Readonly<Record<string, unknown>>, draft: string) => {
+  // `/web` names a page the app won't open: the line stays, saying why, and nothing runs (src/features/web/actions.ts).
+  if (command.flow === "app/web/open") {
+    const refused = try refusedPage(payload as never, "slash")
+    if (Option.isSome(refused)) return try refuse("invalid", CANT_OPEN[refused.value], command)
+  }
+  if (payload.repo !== undefined && !Schema.is(RepoName)(payload.repo)) {
+    return try refuse("invalid", `/${command.name} needs owner/name`, command)
+  }
+  const { place, composer } = try ChatStore
+  const conversation = (try map(place.get(PLACE), Option.getOrThrow)).conversationId
+  const pinned = command.flow.startsWith("sandbox/") || PINNED_FLOWS.has(command.flow)
+    ? try pinConversation(payload)
+    : command.flow === "branch/publish" || command.flow === "branch/update" || command.flow === "branch/resync"
+    ? try pinBranch(payload)
+    : payload
+  const { scope, revision, requestNamespace } = try CommandsStore
+  const before = try draftNow
+  const generation = (try map(composer.get(COMPOSER), Option.getOrThrow)).generation
+  const rawInput: Record<string, unknown> = { ...pinned, ...command.args }
+  const to = rawInput.to
+  if (typeof to === "string" && to.startsWith("/{repo}/")) {
+    const repos = try RepoStore
+    const view = Option.getOrUndefined(try repos.view.get(REPO_VIEW))
+    const activeRepo = view !== undefined && view.owner !== "" && view.name !== "" ? { owner: view.owner, name: view.name } : undefined
+    const first = (try repos.repositories.toArray)[0]
+    const fallbackRepo = first === undefined ? undefined : { owner: first.owner, name: first.name }
+    const resolved = try sync(() => resolveRepoTarget(to, activeRepo, fallbackRepo))
+    if (resolved === undefined) return try refuse("invalid", "Open a repository first", command)
+    rawInput.to = resolved
+  }
+  const input = rawInput
+  // An outbox write, or an engine operation such as `/new`, stages its input first, so a reload resumes it (decisions
+  // 0123, 0124).
+  const engine = hasEngineAdmission(command.flow)
+  const staging = engine || hasOutboxAdmission(command.flow)
+  // An engine operation's execution is its staged command's: a press that joins its input joins its run, and a press
+  // once it settled is a new one (decision 0124).
+  const staged = staging
+    ? try beginAdmission(command.flow, input, engine ? undefined : { namespace: WRITE_ID_NAMESPACE, value: JSON.stringify([requestNamespace, try Ref.get(revision), conversation, command.flow, pinned]) }, undefined, { conversationId: conversation, text: before, generation }, engine ? "slash" : undefined)
+    : Option.none()
+  if (staging && Option.isNone(staged)) return try refuse("invalid", "Not sent", command)
+  let executionId: string
+  if (Option.isSome(staged)) {
+    executionId = try executionOf(staged.value)
+    const writeId = engine ? undefined : try (Uuid.v5(admissionNamespace(command.flow), executionId) |> Effect.provide(%, WebCrypto.layer) |> orDie(%))
+    try identifyAdmission(staged.value, executionId, writeId)
+  } else {
+    executionId = try sync(() => WebCryptoReference.defaultValue().randomUUID())
+  }
+  const unchanged = effect {
+    return (try draftNow) === before && (try map(composer.get(COMPOSER), Option.getOrThrow)).generation === generation &&
+      (try map(place.get(PLACE), Option.getOrThrow)).conversationId === conversation
+  }
+  /** A failed run puts its line back, unless the composer moved on; a failed navigation says so. */
+  const restoreOnFailure = (ran: Dispatched<FlowName>!DispatchFailed, cleared: number) =>
+    effect {
+      const dispatched = try result(ran)
+      const navigationFailed = command.flow === "app/navigate" &&
+        (dispatched._tag === "Failure" || dispatched.success._tag === "Failed" ||
+          !(dispatched.success.value as { readonly moved: boolean }).moved)
+      if (!navigationFailed && dispatched._tag === "Success" && dispatched.success._tag === "Done") return
+      if ((try Ref.get(revision)) !== cleared || (try draftNow) !== "" ||
+        (try map(place.get(PLACE), Option.getOrThrow)).conversationId !== conversation) return
+      try type(draft)
+      try list(draft, navigationFailed ? "Couldn’t open page" : ACTION_FAILED)
+    } |> forkIn(%, scope)
+  if (engine) {
+    // Admitted once the engine records its run, which then goes on in the background. The line stays the person's
+    // until that run finished: its result clears it (decision 0124), so a run that fails, or a reload meanwhile, never
+    // loses it. A refusal keeps it, Not sent; a reply that never came keeps it too, and proves nothing.
+    const intent = try sync(() => Option.getOrThrow(staged))
+    const { started, run: running } = try startOperation(command.flow, input, { executionId, door: "slash", scope })
+    try finishAdmission(intent, started === "admitted", false, started === "unconfirmed")
+    if (started === "admitted") try followRun({ ...intent, executionId }, running, scope)
+    if (started === "refused") {
+      if (try unchanged) try refuse("invalid", "Not sent", command)
+      return
+    }
+    if (started === "admitted") {
+      // A run that fails says so under its line, if the composer still holds it and the person did nothing since:
+      // new typing, a dismissal or another command advances the revision.
+      const admittedAt = try Ref.get(revision)
+      // Only the run's own end says it failed: a read of it that failed proves nothing.
+      fork.in(scope) effect {
+        const ended = try exit(Fiber.join(running))
+        if ((try sync(() => runEnded(ended))) !== "failed") return
+        if ((try Ref.get(revision)) === admittedAt && (try unchanged)) try list(draft, ACTION_FAILED)
+      }
+    }
+    try Metric.update(Metric.withAttributes(submits, { outcome: "run", command: command.name }), 1)
+    try annotateLogs(logInfo("slash.run"), { command: command.name, flow: command.flow })
+    return
+  }
+  const admission = try admitCommand(command.flow, input, executionId)
+  if (Option.isSome(admission) && admission.value === "not_admitted") {
+    // Only an outbox command can return not_admitted, so its input was staged above.
+    try finishAdmission(try sync(() => Option.getOrThrow(staged)), false)
+    if (try unchanged) try refuse("invalid", "Not sent", command)
+    return
+  }
+  // A new tab must open while this keypress still owns browser activation, before shared-text admission waits.
+  if (command.flow === "app/web/open") try openWebPage(payload as never, "slash", scope, conversation)
+  let cleaned = true
+  if (Option.isSome(staged)) {
+    cleaned = Exit.isSuccess(try exit(admissionReceipt(effect {
+      if (!(try clearComposerSource(staged.value.composer!))) throw "unconfirmed"
+    }, staged.value.commandId, command.flow, "source")))
+    if ((try draftNow) === "" && (try map(place.get(PLACE), Option.getOrThrow)).conversationId === conversation) try list("")
+    try finishAdmission(staged.value, Option.isSome(admission) && admission.value !== "not_admitted", cleaned)
+  } else if (try unchanged) try type("")
+  // New typing, dismissal or another command advances the revision even when
+  // its row is unchanged, so an older refusal cannot take over the composer.
+  const cleared = try Ref.get(revision)
+  const flows = try FlowDispatch
+  if (command.flow !== "app/web/open" && (Option.isNone(admission) || admission.value === "queued")) {
+    // A sandbox tool runs on the branch of the conversation this tab shows now (src/features/sandbox/actions.ts), and
+    // `/docs`, `/repo` and `/issues` show their views in that conversation. `/new` names its repository explicitly; `/publish`, `/branch.update` and `/branch.resync` act on that branch.
+    try restoreOnFailure(flows.dispatch(command.flow, input as never, { door: "slash", executionId }), cleared)
+  }
+  try Metric.update(Metric.withAttributes(submits, { outcome: "run", command: command.name }), 1)
+  try annotateLogs(logInfo("slash.run"), { command: command.name, flow: command.flow })
+}
+
+/**
+ * Sends `text`, the composer's line: a command the person may run, with its arguments, runs its flow; a line naming no
+ * such command, or one missing or misusing an argument, stays in the composer with one line saying why, so the agent
+ * never improvises on it; anything else asks Smithers.
+ */
+export const submit = (text: string) =>
+  effect {
+    if (text.trim().length > MAX_QUESTION_LENGTH) return try refuse("invalid", "8,000 characters max")
+    const commands = try offered
+    const submitted = try sync(() => slashSubmit(text, commands))
+    switch (submitted.kind) {
+      case "empty":
+        return
+      case "prompt":
+        try ask(submitted.text)
+        return
+      case "unknown":
+        return try refuse("unknown", try sync(() => unknownCommand(submitted.name)))
+      case "missing": {
+        const { command } = submitted
+        const labels = command.fields.filter(({ name }) => submitted.fields.includes(name)).map(({ label }) => label)
+        return try refuse("missing", try sync(() => missingArguments(command.name, labels.map(lower))), command)
+      }
+      case "invalid": {
+        const { command } = submitted
+        const field = command.fields.find(({ name }) => name === submitted.field)!
+        return try refuse("invalid", try sync(() => invalidArgument(command.name, field.options!.map(({ value }) => value))), command)
+      }
+      case "run":
+        return try run(submitted.command, submitted.payload, text)
+    }
+  } |> annotateLogs(%, { feature: "commands" })
+
+const lower = (label: string) => label.toLowerCase()
+
+/**
+ * Enter or a click (`accept`) or Tab (`complete`) on row `index`: the composer takes the row's draft, and the menu
+ * lists what follows, such as a command's argument values. Accepting a row whose draft names every required argument
+ * runs it. A row of a menu for an older draft does nothing.
+ */
+export const choose = (index: number, how: "accept" | "complete", keyboard = false) =>
+  effect {
+    const menu = try menuNow
+    if (menu.draft !== (try draftNow)) return
+    let item: { readonly label: string; readonly draft: string; readonly runs: boolean } | undefined = menu.items[index]
+    let selectionMatch = "row"
+    // React's menu query and the highlighted index may come from different renders. On Enter the typed command
+    // is authoritative; a pointer click still selects the row the person explicitly chose.
+    if (keyboard && menu.kind === "commands") {
+      const commands = try offered
+      const current = try sync(() => slashMenu(menu.draft, commands))
+      const query = menu.draft.toLowerCase()
+      const exact = current.items.find(candidate => candidate.label.toLowerCase() === query)
+      const prefix = current.items.find(candidate => candidate.label.toLowerCase().startsWith(query))
+      item = exact ?? (item?.label.toLowerCase().startsWith(query) ? item : prefix) ?? item
+      selectionMatch = exact !== undefined ? "exact" : prefix !== undefined ? "prefix" : "row"
+    }
+    if (item === undefined) return
+    try Metric.update(Metric.withAttributes(choices, { kind: menu.kind, how }), 1)
+    try annotateLogs(logInfo("slash.choose"), { kind: menu.kind, how,
+      via: keyboard ? "keyboard" : "selection", match: selectionMatch, index })
+    if (how === "accept" && (item.runs || menu.draft.trim() === item.label)) {
+      return try submit(item.runs ? item.draft : menu.draft)
+    }
+    try type(item.draft)
+  } |> annotateLogs(%, { feature: "commands" })
+
+
+const writePalette = (fields: Partial<Omit<Palette, "id">>) =>
+  effect {
+    const { palette } = try CommandsStore
+    try palette.update(PALETTE, (row) => void Object.assign(row, fields))
+  } |> orDie(%)
+
+/** Opens the global command palette with an empty query. */
+export const openPalette = writePalette({ open: true, query: "", highlighted: 0 })
+
+/** Closes the global command palette and clears its query. */
+export const closePalette = writePalette({ open: false, query: "", highlighted: 0 })
+
+/** Toggles the global command palette (`⌘P` / `Ctrl+P`). */
+export const togglePalette = effect {
+  const { palette } = try CommandsStore
+  const current = try map(palette.get(PALETTE), Option.getOrThrow)
+  return try (current.open ? closePalette : openPalette)
+} |> orDie(%)
+
+/** Updates the global command palette's search query and resets highlight to the first row. */
+export const setPaletteQuery = (query: string) => writePalette({ query, highlighted: 0 })
+
+/** Moves the highlighted row in the global command palette. */
+export const highlightPalette = (highlighted: number) => writePalette({ highlighted })
+
+/** Runs a chosen global palette item through `FlowDispatch` and closes the palette. */
+export const choosePalette = effect (entry: PaletteEntry) => {
+  const { scope } = try CommandsStore
+  const flows = try FlowDispatch
+  try closePalette
+  // expected: navigation or flow refusal is handled by the flow itself
+  try forkIn(ignore(flows.dispatch(entry.flow, entry.args as never, { door: "button" })), scope, { startImmediately: true })
+}

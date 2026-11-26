@@ -1,4 +1,3 @@
-import { Effect, Layer, Option, Queue, Schema, Stream } from "effect"
 import { answerAskingTab } from "../../flows/askingTab"
 import { TabErrors } from "../../flows/errors"
 import { TabHistory } from "../../flows/history"
@@ -40,48 +39,47 @@ const UNKNOWN_SCREEN = { browser: "unknown", viewport: "unknown" } as const
  */
 export const tabBugContext = (host: BugHost) =>
   Layer.effectDiscard(
-    Effect.gen(function* () {
+    effect {
       // The latest distinct pages, newest first.
       let pages: ReadonlyArray<string> = []
       const listen = host.pages
       if (listen !== undefined) {
-        yield* Stream.callback<string>((queue) =>
-          Effect.acquireRelease(
-            Effect.sync(() => listen((path) => void Queue.offerUnsafe(queue, path))),
-            (stop) => Effect.sync(stop),
+        try Stream.callback<string>((queue) =>
+          acquireRelease(
+            sync(() => listen((path) => void Queue.offerUnsafe(queue, path))),
+            (stop) => sync(stop),
           )
         ).pipe(
           Stream.runForEach((path) =>
-            Effect.sync(() => {
+            sync(() => {
               pages = [path, ...pages.filter((page) => page !== path)].slice(0, PAGES_KEPT)
             })
           ),
           // Subscribed before the layer is built, so no page the router shows next is missed.
-          Effect.forkScoped({ startImmediately: true }),
+          forkScoped({ startImmediately: true }),
         )
       }
-      const history = yield* Effect.serviceOption(TabHistory)
-      const errors = yield* Effect.serviceOption(TabErrors)
-      yield* answerAskingTab({
-        channel: bugContextChannel(host.name),
+      const history = try serviceOption(TabHistory)
+      const errors = try serviceOption(TabErrors)
+      try answerAskingTab({
+        channel: try sync(() => bugContextChannel(host.name)),
         input: ContextCall,
-        answer: () =>
-          Effect.gen(function* () {
-            const ran = Option.isSome(history) ? yield* history.value.recent : []
-            const recentErrors = Option.isSome(errors) ? yield* errors.value.recent : []
-            const { browser, viewport } = host.screen?.() ?? UNKNOWN_SCREEN
-            // The router's page now; the pages it showed before the form keep where the bug was.
-            const current = host.pathname?.()
-            return contextOf({
-              current,
-              pages: current === pages[0] ? pages.slice(1) : pages,
-              ran,
-              errors: recentErrors,
-              build: host.build,
-              browser,
-              viewport,
-            })
-          }),
+        answer: effect () => {
+          const ran = Option.isSome(history) ? try history.value.recent : []
+          const recentErrors = Option.isSome(errors) ? try errors.value.recent : []
+          const { browser, viewport } = host.screen?.() ?? UNKNOWN_SCREEN
+          // The router's page now; the pages it showed before the form keep where the bug was.
+          const current = host.pathname?.()
+          return try sync(() => contextOf({
+            current,
+            pages: current === pages[0] ? pages.slice(1) : pages,
+            ran,
+            errors: recentErrors,
+            build: host.build,
+            browser,
+            viewport,
+          }))
+        },
       })
-    }),
+    },
   )

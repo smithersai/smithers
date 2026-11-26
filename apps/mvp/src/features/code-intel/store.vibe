@@ -1,6 +1,5 @@
 import type { LanguageServer } from "@smthrs/std"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, FiberHandle, Layer, Ref, ScopedRef } from "effect"
 import type { Place } from "./lsp.vibe"
 import { CODE_INTEL, CodeIntelRow, fresh } from "./rows"
 
@@ -29,35 +28,36 @@ export interface Session {
   readonly paths: ReadonlySet<string>
 }
 
-const make = Effect.gen(function* () {
-  const state = yield* Collection.local<CodeIntelRow, string>({
+const make = effect {
+  const initial = try sync(() => fresh(null, null, false))
+  const state = try Collection.local<CodeIntelRow, string>({
     id: CODE_INTEL,
     schema: CodeIntelRow,
     getKey: (row) => row.id,
-    initialData: [fresh(null, null, false)],
+    initialData: [initial],
   })
   return {
     state,
     /** The one row, live. */
-    query: yield* LiveQuery.make((q) => q.from({ state: state.tanstack }).findOne()),
+    query: try LiveQuery.make((q) => q.from({ state: state.tanstack }).findOne()),
     /** The server of the shown repository and commit; the previous one stops when another replaces it. */
-    session: yield* ScopedRef.make<Session | undefined>(() => undefined),
+    session: try ScopedRef.make<Session | undefined>(() => undefined),
     /** The shown file. */
-    target: yield* Ref.make<Target | undefined>(undefined),
+    target: try Ref.make<Target | undefined>(undefined),
     /** The latest hover asked for: an answer to an older one is dropped. */
-    asked: yield* Ref.make(0),
+    asked: try Ref.make(0),
     /** Whether the latest hover is still awaiting its answer. */
-    hovering: yield* Ref.make(false),
+    hovering: try Ref.make(false),
     /** Invalidates definition navigation when a newer request starts. */
-    defining: yield* Ref.make(0),
+    defining: try Ref.make(0),
     /** Where a definition in another file lands the cursor once that file opens. */
-    landing: yield* Ref.make<Place | undefined>(undefined),
+    landing: try Ref.make<Place | undefined>(undefined),
     /** The routed file's load: opening another interrupts it. */
-    loader: yield* FiberHandle.make<void, never>(),
+    loader: try FiberHandle.make<void, never>(),
     /** Where actions' work runs, closed with the store. */
-    scope: yield* Effect.scope,
+    scope: try scope,
   }
-})
+}
 
 export class CodeIntelStore extends Context.Service<CodeIntelStore, Effect.Success<typeof make>>()(
   "@smthrs/mvp/code-intel/CodeIntelStore",
