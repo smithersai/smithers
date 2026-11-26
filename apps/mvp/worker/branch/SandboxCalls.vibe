@@ -92,15 +92,15 @@ const standing = (row: CallRow) =>
  * someone else asked it; nothing when there is no such answer.
  */
 export const answerConversation = (answerId: string, actor: Actor) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly conversationId: string; readonly askedBy: string | null }>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [row] = try sql<{ readonly conversationId: string; readonly askedBy: string | null }>`
       SELECT a.conversation_id AS "conversationId", q.asked_by AS "askedBy"
       FROM messages a JOIN messages q ON q.id = a.question_id
       WHERE a.id = ${answerId} AND a.role = 'assistant'`
     if (row === undefined) return undefined
     return row.askedBy === actor.subject.id ? row.conversationId : ("forbidden" as const)
-  })
+  }
 
 /**
  * Reads the routes over `database`, which opens a Postgres client for each request's scope, admitting commands of up to
@@ -114,20 +114,20 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, com
     route: "call" | "result",
     run: (fields: Fields) => Effect.Effect<HttpServerResponse.HttpServerResponse, never, RR>,
   ) =>
-    Effect.gen(function* () {
-      const startedAt = yield* Clock.currentTimeMillis
+    effect {
+      const startedAt = try Clock.currentTimeMillis
       const fields: Fields = {}
-      const response = yield* run(fields)
+      const response = try run(fields)
       fields.status = response.status
-      fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+      fields.durationMs = (try Clock.currentTimeMillis) - startedAt
       const outcome = String(fields.outcome ?? fields.code ?? "refused")
-      yield* Metric.update(Metric.withAttributes(requests, { route, outcome }), 1)
-      yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
-      yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+      try Metric.update(Metric.withAttributes(requests, { route, outcome }), 1)
+      try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+      try Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
         `sandbox.${route}`,
       ).pipe(Effect.annotateLogs({ ...fields, outcome }))
       return response
-    }).pipe(Effect.withSpan(`sandbox.${route}`, { kind: "server" }))
+    }.pipe(Effect.withSpan(`sandbox.${route}`, { kind: "server" }))
 
   const refuse = (fields: Fields, status: number, code: string) => {
     fields.code = code
@@ -141,18 +141,18 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, com
     })
 
   /** `POST /api/sandbox/calls`. */
-  const call = Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest
-    const sessions = yield* Sessions
-    const starter = yield* Flows.FlowStarter
-    return yield* recorded("call", (fields) =>
-      Effect.gen(function* () {
+  const call = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const sessions = try Sessions
+    const starter = try Flows.FlowStarter
+    return try recorded("call", (fields) =>
+      effect {
         if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
-        const actor = yield* sessions.resolve.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
+        const actor = try sessions.resolve.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
         if (Option.isNone(actor)) return refuse(fields, 401, "authentication")
-        const body = yield* readBounded(request, MAX_CALL_BODY_BYTES).pipe(Effect.result)
+        const body = try readBounded(request, MAX_CALL_BODY_BYTES).pipe(Effect.result)
         if (body._tag === "Failure") return refuse(fields, body.failure.reason === "too_large" ? 413 : 400, "invalid")
-        const decoded = yield* decodeCall(body.success).pipe(Effect.option)
+        const decoded = try decodeCall(body.success).pipe(Effect.option)
         if (Option.isNone(decoded)) return refuse(fields, 400, "invalid")
         const { answerId, call } = decoded.value
         const callId = decoded.value.callId.toLowerCase()
@@ -162,17 +162,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, com
         // targets only the answer its chain started from.
         fields.door = actor.value.act?.kind ?? "person"
         if ((answerId === undefined) === (decoded.value.conversationId === undefined)) return refuse(fields, 400, "invalid")
-        if (answerId !== undefined && !boundTo(actor.value, answerId)) return refuse(fields, 403, "other_run")
+        if (answerId !== undefined && !(try Effect.sync(() => boundTo(actor.value, answerId)))) return refuse(fields, 403, "other_run")
         const conversationId = answerId === undefined
           ? decoded.value.conversationId!.toLowerCase()
-          : yield* answerConversation(answerId.toLowerCase(), actor.value).pipe(Effect.provide(database))
+          : try answerConversation(answerId.toLowerCase(), actor.value).pipe(Effect.provide(database))
         if (conversationId === "forbidden") return refuse(fields, 403, "forbidden")
         if (conversationId === undefined) return refuse(fields, 404, "not_found")
-        const branch = yield* branchAccess(actor, conversationId, "conversation").pipe(Effect.provide(database))
+        const branch = try branchAccess(actor, conversationId, "conversation").pipe(Effect.provide(database))
         if (branch === undefined) return refuse(fields, 404, "not_found")
         fields.branchId = branch.branchId
         if (!canEdit(branch.access)) return refuse(fields, 403, "forbidden")
-        if (!canAsk(actor.value)) return refuse(fields, 403, "members_only")
+        if (!(try Effect.sync(() => canAsk(actor.value)))) return refuse(fields, 403, "members_only")
         if (branch.mode === "locked") return refuse(fields, 409, "locked")
         if (call.tool === "run" && (call.timeoutSeconds ?? 60) > commandSeconds) {
           fields.code = "too_long"
@@ -184,36 +184,36 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, com
         // The receipt comes from the admitted write, never from the tab that waits for it.
         const saved = decoded.value.save === true && call.tool === "write"
           ? {
-            textId: yield* CryptoUuid.v5(TEXT_NAMESPACE, textName({ kind: "file", conversation: conversationId, path: call.path }))
+            textId: try CryptoUuid.v5(TEXT_NAMESPACE, (try Effect.sync(() => textName({ kind: "file", conversation: conversationId, path: call.path }))))
               .pipe(Effect.provide(WebCrypto.layer), Effect.orDie),
-            mark: savedMarkOf(call.content),
+            mark: try Effect.sync(() => savedMarkOf(call.content)),
           }
           : undefined
         if (saved !== undefined) {
           // A mark alone is not file content: the editor must already have its shared seed.
-          const seeded = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          const seeded = try Effect.flatMap(SqlClient.SqlClient, (sql) =>
             sql`SELECT id FROM text_updates
               WHERE scope = ${`branch:${branch.branchId}`} AND text_id = ${saved.textId} AND seed = true
               LIMIT 1`).pipe(Effect.provide(database))
           if (seeded.length === 0) return refuse(fields, 400, "invalid")
         }
         const ownerId = actor.value.subject.id
-        const inserted = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        const inserted = try Effect.flatMap(SqlClient.SqlClient, (sql) =>
           sql`
             INSERT INTO sandbox_calls (id, branch_id, person_id, answer_id, tool)
             VALUES (${callId}, ${branch.branchId}, ${ownerId}, ${answerId?.toLowerCase() ?? null}, ${call.tool})
             ON CONFLICT (id) DO NOTHING RETURNING id`).pipe(Effect.provide(database))
-        const row = yield* rowOf(callId).pipe(Effect.provide(database))
+        const row = try rowOf(callId).pipe(Effect.provide(database))
         if (row === undefined || row.personId !== ownerId || row.branchId !== branch.branchId || row.tool !== call.tool) {
           return refuse(fields, 409, "id_taken")
         }
         if (row.status === "running") {
           const { owner, name } = partsOf(branch.repoId)
-          const namespace = yield* namespaceOf(branch.branchId).pipe(Effect.provide(database))
-          const forge = yield* forgeOf(branch.branchId).pipe(Effect.provide(database))
+          const namespace = try namespaceOf(branch.branchId).pipe(Effect.provide(database))
+          const forge = try forgeOf(branch.branchId).pipe(Effect.provide(database))
           // A resend starts the same execution, a no-op, so a call whose first start was lost still gets one.
-          const started = yield* starter.start(SandboxCall, {
-            executionId: callExecutionId(callId),
+          const started = try starter.start(SandboxCall, {
+            executionId: try Effect.sync(() => callExecutionId(callId)),
             payload: { callId, ownerId, branch: { branchId: branch.branchId, owner, name, branch: branch.name, ...(namespace === "ephemeral" ? { namespace } : {}), ...(forge === undefined ? {} : { forge }) }, call, ...(saved === undefined ? {} : { saved }) },
           }).pipe(Effect.result)
           if (started._tag === "Failure") {
@@ -226,36 +226,36 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, com
           { callId, ...standing(row) },
           { status: inserted.length > 0 ? 202 : 200, headers: noStore },
         )
-      }).pipe(Effect.catchCause(failed(fields))))
-  })
+      }.pipe(Effect.catchCause(failed(fields))))
+  }
 
   /** `GET /api/sandbox/calls/<id>`. */
   const result = (callId: string) =>
-    Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      const sessions = yield* Sessions
-      return yield* recorded("result", (fields) =>
-        Effect.gen(function* () {
+    effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      const sessions = try Sessions
+      return try recorded("result", (fields) =>
+        effect {
           if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
           if (!isUuid(callId)) return refuse(fields, 404, "not_found")
           fields.callId = callId.toLowerCase()
-          const actor = yield* sessions.resolve.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
+          const actor = try sessions.resolve.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
           if (Option.isNone(actor)) return refuse(fields, 401, "authentication")
-          const row = yield* rowOf(callId.toLowerCase()).pipe(Effect.provide(database))
+          const row = try rowOf(callId.toLowerCase()).pipe(Effect.provide(database))
           // Someone else's call is not found: its existence is theirs.
           if (row === undefined || row.personId !== actor.value.subject.id) return refuse(fields, 404, "not_found")
           fields.tool = row.tool
           fields.outcome = row.status
           return HttpServerResponse.jsonUnsafe({ callId: callId.toLowerCase(), ...standing(row) }, { headers: noStore })
-        }).pipe(Effect.catchCause(failed(fields))))
-    })
+        }.pipe(Effect.catchCause(failed(fields))))
+    }
 
-  const fetch = Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest
+  const fetch = effect {
+    const request = try HttpServerRequest.HttpServerRequest
     const path = request.url.split("?")[0]!
-    if (path === SANDBOX_CALLS_ROUTE) return yield* call
-    return yield* result(path.slice(SANDBOX_CALLS_ROUTE.length + 1))
-  })
+    if (path === SANDBOX_CALLS_ROUTE) return try call
+    return try result(path.slice(SANDBOX_CALLS_ROUTE.length + 1))
+  }
 
   return { fetch }
 }

@@ -15,7 +15,7 @@ import { codeOf } from "../ErrorCode.ts"
 import * as ShapeAccess from "../ShapeAccess.vibe"
 import { branchAccess, canView } from "./Access.vibe"
 import * as People from "./ConversationPeople.vibe"
-import { answerConversation } from "./SandboxCalls.ts"
+import { answerConversation } from "./SandboxCalls.vibe"
 
 // A person's own list of conversations (decision 0013 decision 2, docs/features/conversations.md#the-routes):
 //

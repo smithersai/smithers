@@ -83,22 +83,22 @@ interface Found {
 
 /** The open texts of `paths` in branch `branchId`'s conversations, by path. */
 const textsOf = (branchId: string, paths: ReadonlyArray<string>) =>
-  Effect.gen(function* () {
+  effect {
     if (paths.length === 0) return new Map<string, Found>()
-    const sql = yield* SqlClient.SqlClient
-    const conversations = yield* sql<{ readonly id: string }>`
+    const sql = try SqlClient.SqlClient
+    const conversations = try sql<{ readonly id: string }>`
       SELECT id::text AS id FROM conversations WHERE branch_id = ${branchId}::uuid`
     const pathOf = new Map<string, string>()
     for (const { id } of conversations) {
       for (const path of paths) {
-        const textId = yield* Uuid.v5(TEXT_NAMESPACE, textName({ kind: "file", conversation: id, path })).pipe(
+        const textId = try Uuid.v5(TEXT_NAMESPACE, (try Effect.sync(() => textName({ kind: "file", conversation: id, path })))).pipe(
           Effect.provide(WebCrypto.layer),
           Effect.orDie,
         )
         pathOf.set(textId, path)
       }
     }
-    const rows = yield* sql<{ readonly textId: string; readonly data: string }>`
+    const rows = try sql<{ readonly textId: string; readonly data: string }>`
       SELECT text_id::text AS "textId", data FROM text_updates
       WHERE scope = ${`branch:${branchId}`} AND text_id = ANY(${[...pathOf.keys()]}::uuid[])`
     const updates = new Map<string, Array<Uint8Array>>()
@@ -110,42 +110,46 @@ const textsOf = (branchId: string, paths: ReadonlyArray<string>) =>
     }
     const found = new Map<string, Found>()
     for (const [textId, list] of updates) {
-      const replica = yield* replicaOf(list)
+      const replica = try replicaOf(list)
       found.set(pathOf.get(textId)!, { textId, ...replica, updates: list })
     }
     return found
-  })
+  }
 
 /** A replica holding `updates`: its text and its newest Save's mark. */
 const replicaOf = (updates: ReadonlyArray<Uint8Array>) =>
-  Effect.scoped(Effect.gen(function* () {
-    const replica = yield* SharedText.make
-    for (const update of updates) yield* Effect.ignore(replica.apply(update))
-    return { content: yield* replica.text, saved: savedOf(yield* replica.marks) }
-  }))
+  Effect.scoped(effect {
+    const replica = try SharedText.make
+    for (const update of updates) try Effect.ignore(replica.apply(update))
+    const content = try replica.text
+    const marks = try replica.marks
+    return { content, saved: try Effect.sync(() => savedOf(marks)) }
+  })
 
 /**
  * The updates that make `found`'s text `next`, keeping a `saved` mark that said the old text was saved: a Save wrote
  * it, so the working copy's new contents are saved too.
  */
 const updatesTo = (found: Found, next: string) =>
-  Effect.scoped(Effect.gen(function* () {
-    const replica = yield* SharedText.make
-    for (const update of found.updates) yield* Effect.ignore(replica.apply(update))
-    const edit = yield* replica.replace(next)
-    const mark = found.saved.value === savedMarkOf(found.content)
-      ? yield* replica.mark(found.saved.name, savedMarkOf(next))
+  Effect.scoped(effect {
+    const replica = try SharedText.make
+    for (const update of found.updates) try Effect.ignore(replica.apply(update))
+    const edit = try replica.replace(next)
+    const mark = found.saved.value === (try Effect.sync(() => savedMarkOf(found.content)))
+      ? try replica.mark(found.saved.name, (try Effect.sync(() => savedMarkOf(next))))
       : undefined
     return [edit, mark].filter((update): update is Uint8Array => update !== undefined)
-  }))
+  })
+
+const digestOf = (content: string) => Effect.try(() => digestSync(content)).pipe(Effect.orDie)
 
 /** Brings branch `input.branch`'s Smithers branch and working copy to GitHub's head, as the module comment says. */
 export const resync = (input: Resyncing) =>
-  Effect.gen(function* () {
+  effect {
     const { branch, onto, actorId, key, repository } = input
-    const sql = yield* SqlClient.SqlClient
-    const machines = yield* Machines
-    const forge = yield* Forge
+    const sql = try SqlClient.SqlClient
+    const machines = try Machines
+    const forge = try Forge
     const machine: SandboxBranch = {
       branchId: branch.branchId,
       owner: repository.owner,
@@ -156,7 +160,7 @@ export const resync = (input: Resyncing) =>
     const idOf = (name: string) =>
       Uuid.v5(RESYNC_NAMESPACE, `${key}:${name}`).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
     // Each attempt's calls are its own: every one can run again, and a call an earlier attempt lost stays lost.
-    const attempt = yield* Clock.currentTimeMillis
+    const attempt = try Clock.currentTimeMillis
     const call = (name: string, request: SandboxTools.Call) =>
       Effect.flatMap(idOf(`${onto}:${attempt}:${name}`), (callId) => machines.tool(machine, actorId, callId, request)).pipe(
         Effect.map((ran) => ran.result),
@@ -167,25 +171,25 @@ export const resync = (input: Resyncing) =>
         ? new ResyncRefused({ failure: "invalid" })
         : new ResyncUnavailable({})
     const tool = (name: string, request: SandboxTools.Call) => call(name, request).pipe(Effect.mapError(failureOf))
-    const rebase = (name: string, options: SandboxTools.RebaseOptions) =>
-      Effect.flatMap(tool(name, SandboxTools.rebaseCall(options)), (result) =>
-        SandboxTools.rebased(result as typeof SandboxTools.RunResult.Type).pipe(
-          // `not_found`: the ref's move hasn't reached the machine's fetch yet. Tried again, as an outage is.
-          Effect.mapError((error) =>
-            error._tag === "@smthrs/sandbox/SandboxTools/ToolRefused" && error.reason === "not_a_repository"
-              ? new ResyncRefused({ failure: "invalid" })
-              : new ResyncUnavailable({})
-          ),
-        ))
-    const listed = (name: string, count: number) =>
-      count === 0
-        ? Effect.succeed<ReadonlyArray<string>>([])
-        : Effect.flatMap(tool(name, { tool: "read", path: SandboxTools.REBASE_PATHS }), (result) => {
-          const read = result as typeof SandboxTools.ReadResult.Type
-          return read.truncated
-            ? Effect.fail(new ResyncRefused({ failure: "too_large" }))
-            : Effect.succeed(SandboxTools.rebasePaths(read))
-        })
+    const rebase = effect (name: string, options: SandboxTools.RebaseOptions) => {
+      const request = try Effect.sync(() => SandboxTools.rebaseCall(options))
+      const result = try tool(name, request)
+      return try SandboxTools.rebased(result as typeof SandboxTools.RunResult.Type).pipe(
+        // `not_found`: the ref's move hasn't reached the machine's fetch yet. Tried again, as an outage is.
+        Effect.mapError((error) =>
+          error._tag === "@smthrs/sandbox/SandboxTools/ToolRefused" && error.reason === "not_a_repository"
+            ? new ResyncRefused({ failure: "invalid" })
+            : new ResyncUnavailable({})
+        ),
+      )
+    }
+    const listed = effect (name: string, count: number) => {
+      if (count === 0) return [] as ReadonlyArray<string>
+      const result = try tool(name, { tool: "read", path: SandboxTools.REBASE_PATHS })
+      const read = result as typeof SandboxTools.ReadResult.Type
+      if (read.truncated) throw new ResyncRefused({ failure: "too_large" })
+      return try Effect.sync(() => SandboxTools.rebasePaths(read))
+    }
     /**
      * The working copy's file at `path` as a text holds it, empty when the working copy has none; none when the machine
      * reads it only in part, which is no text's contents.
@@ -203,16 +207,16 @@ export const resync = (input: Resyncing) =>
         Effect.mapError(failureOf),
       )
     const conflicted = (paths: ReadonlyArray<string>) =>
-      Effect.gen(function* () {
-        yield* sql`
+      effect {
+        try sql`
           UPDATE branch_publications SET sync_state = 'conflict', sync_conflicts = ${JSON.stringify(paths)}::jsonb,
             updated_at = now()
           WHERE branch_id = ${branch.branchId}::uuid`
         return { state: "conflict", paths } satisfies Resynced
-      })
+      }
 
     // 1. The Smithers branch to GitHub's head, where the machine's scoped fetch finds it.
-    yield* forge.move(repository, branch.name, onto).pipe(
+    try forge.move(repository, branch.name, onto).pipe(
       Effect.catchTag("CreateRefused", (refused) =>
         refused.code === "not_found"
           // The mirror hasn't synced GitHub's head yet: ask it to, then try again shortly.
@@ -227,90 +231,90 @@ export const resync = (input: Resyncing) =>
     )
 
     // 2. The plan, which changes nothing. Texts an earlier attempt recorded still come along.
-    const plan = yield* rebase("plan", { branch: branch.name, onto })
+    const plan = try rebase("plan", { branch: branch.name, onto })
     const texts: Record<string, string> = { ...input.publication.syncing }
-    if (plan._tag === "Unrelated") return yield* conflicted([])
-    if (plan._tag === "Conflicted") return yield* conflicted(yield* listed("conflicts", plan.paths))
+    if (plan._tag === "Unrelated") return try conflicted([])
+    if (plan._tag === "Conflicted") return try conflicted(try listed("conflicts", plan.paths))
     if (plan._tag === "Planned") {
-      const changed = yield* listed("changed", plan.paths)
-      const open = yield* textsOf(branch.branchId, changed)
+      const changed = try listed("changed", plan.paths)
+      const open = try textsOf(branch.branchId, changed)
       const unsaved: Array<string> = []
       for (const [path, found] of open) {
-        const before = yield* fileOf(`before:${path}`, path)
+        const before = try fileOf(`before:${path}`, path)
         const recorded = texts[path]
-        if (recorded !== undefined && digestSync(found.content) === recorded) continue
+        if (recorded !== undefined && (try digestOf(found.content)) === recorded) continue
         // Its contents are the working copy's; a text of a file the working copy hasn't is empty to be.
-        if (Option.contains(before, found.content)) texts[path] = digestSync(found.content)
+        if (Option.contains(before, found.content)) texts[path] = (try digestOf(found.content))
         else unsaved.push(path)
       }
-      if (unsaved.length > 0) return yield* conflicted(unsaved)
+      if (unsaved.length > 0) return try conflicted(unsaved)
       // Recorded before the working copy changes, so a step that runs again after it still brings these texts along.
-      yield* sql`
+      try sql`
         UPDATE branch_publications SET syncing = ${JSON.stringify(texts)}::jsonb WHERE branch_id = ${branch.branchId}::uuid`
-      const applied = yield* rebase("apply", { branch: branch.name, onto, expect: plan.tree })
+      const applied = try rebase("apply", { branch: branch.name, onto, expect: plan.tree })
       // A Save landed between the plan and the apply: the next attempt plans again.
-      if (applied._tag !== "Applied") return yield* new ResyncUnavailable({})
+      if (applied._tag !== "Applied") throw new ResyncUnavailable({})
     }
     // Otherwise HEAD is GitHub's head already: a plan names no tree to apply on, so it never answers Moved or Applied.
 
     // 3. Each recorded text, if it still holds what it held, to the file's new contents; one someone typed in since, or
     // whose new file the machine reads only in part, is left as it is and listed.
-    const now = yield* textsOf(branch.branchId, Object.keys(texts))
+    const now = try textsOf(branch.branchId, Object.keys(texts))
     const typed: Array<string> = []
     const writes: Array<{ readonly id: string; readonly textId: string; readonly data: string }> = []
     for (const [path, found] of now) {
-      const after = yield* fileOf(`after:${path}`, path)
+      const after = try fileOf(`after:${path}`, path)
       if (Option.isNone(after)) {
         typed.push(path)
         continue
       }
       const next = after.value
       if (found.content === next) continue
-      if (digestSync(found.content) !== texts[path]) {
+      if ((try digestOf(found.content)) !== texts[path]) {
         typed.push(path)
         continue
       }
-      const updates = yield* updatesTo(found, next)
+      const updates = try updatesTo(found, next)
       for (const [index, update] of updates.entries()) {
-        writes.push({ id: yield* idOf(`${onto}:text:${found.textId}:${index}`), textId: found.textId, data: Base64.encode(update) })
+        writes.push({ id: try idOf(`${onto}:text:${found.textId}:${index}`), textId: found.textId, data: Base64.encode(update) })
       }
     }
     const state = typed.length > 0 ? "conflict" : "synced"
-    yield* sql.withTransaction(Effect.gen(function* () {
+    try sql.withTransaction(effect {
       for (const write of writes) {
-        yield* sql`
+        try sql`
           INSERT INTO text_updates (id, scope, text_id, data, person_id)
           VALUES (${write.id}::uuid, ${`branch:${branch.branchId}`}, ${write.textId}::uuid, ${write.data}, ${actorId})
           ON CONFLICT (id) DO NOTHING`
       }
-      yield* sql`
+      try sql`
         UPDATE branch_publications SET synced_sha = ${onto}, head_sha = ${onto}, pushed_sha = ${onto}, pushed = '{}'::jsonb,
           sync_state = ${state}, sync_conflicts = ${typed.length > 0 ? JSON.stringify(typed) : null}::jsonb, syncing = NULL,
           updated_at = now()
         WHERE branch_id = ${branch.branchId}::uuid`
-    }))
+    })
     return (typed.length > 0 ? { state: "conflict", paths: typed } : { state: "synced", sha: onto }) satisfies Resynced
-  }).pipe(
+  }.pipe(
     // Postgres didn't answer: tried again, as the machine's outage is.
     Effect.mapError((error) => SqlError.isSqlError(error) ? new ResyncUnavailable({}) : error),
     Effect.tap((resynced) =>
-      Effect.gen(function* () {
-        yield* Metric.update(Metric.withAttributes(resyncs, { outcome: resynced.state }), 1)
-        yield* Effect.logWithLevel(resynced.state === "synced" ? "Info" : "Warn")("branch.resync").pipe(
+      effect {
+        try Metric.update(Metric.withAttributes(resyncs, { outcome: resynced.state }), 1)
+        try Effect.logWithLevel(resynced.state === "synced" ? "Info" : "Warn")("branch.resync").pipe(
           Effect.annotateLogs({
             writeId: input.key,
             outcome: resynced.state,
             ...(resynced.state === "conflict" ? { files: resynced.paths.length } : {}),
           }),
         )
-      })
+      }
     ),
     Effect.tapError((error) =>
-      Effect.gen(function* () {
+      effect {
         const outcome = error._tag === "@smthrs/mvp/branch/ResyncRefused" ? error.failure : "unavailable"
-        yield* Metric.update(Metric.withAttributes(resyncs, { outcome }), 1)
-        yield* Effect.logWarning("branch.resync").pipe(Effect.annotateLogs({ writeId: input.key, outcome, errorCode: codeOf(error) }))
-      })
+        try Metric.update(Metric.withAttributes(resyncs, { outcome }), 1)
+        try Effect.logWarning("branch.resync").pipe(Effect.annotateLogs({ writeId: input.key, outcome, errorCode: codeOf(error) }))
+      }
     ),
     Effect.withSpan("branch.resync", { attributes: { "smithers.github.write": input.key } }),
   )

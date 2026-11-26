@@ -5,7 +5,7 @@ import { HttpClient, HttpClientError, HttpClientResponse, HttpServerRequest } fr
 import { describe, expect, it } from "vitest"
 import { MCP_BLOCKED_ACTS, MCP_PROTOCOL_VERSIONS } from "../src/features/mcp/contract.ts"
 import { isAppRoute } from "./appRoute.ts"
-import * as RegistryEgress from "./branch/RegistryEgress.ts"
+import * as RegistryEgress from "./branch/RegistryEgress.vibe"
 import * as Dns from "./domains/Dns.vibe"
 import { McpToolError, McpToolRegistry } from "./mcp/Contract.vibe"
 import * as McpProtocol from "./mcp/Protocol.vibe"

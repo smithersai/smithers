@@ -26,7 +26,7 @@ import { recorded, testFile } from "../test/harness.ts"
 import { BranchRoles } from "./Access.vibe"
 import * as BranchApi from "./BranchApi.vibe"
 import * as Conversations from "./Conversations.vibe"
-import * as SandboxCalls from "./SandboxCalls.ts"
+import * as SandboxCalls from "./SandboxCalls.vibe"
 
 const runtime = testFile("sandbox_calls")
 beforeEach(() => resetBranches(runtime))

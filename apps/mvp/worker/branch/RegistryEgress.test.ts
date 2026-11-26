@@ -4,7 +4,7 @@ import { Egress } from "@smthrs/secrets"
 import { Effect, Layer, Metric } from "effect"
 import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { describe, expect, test } from "vitest"
-import * as RegistryEgress from "./RegistryEgress.ts"
+import * as RegistryEgress from "./RegistryEgress.vibe"
 
 /** An upstream that answers every request with `body` and records each one it got. */
 const upstream = (body: string) => {

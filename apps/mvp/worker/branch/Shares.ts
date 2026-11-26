@@ -19,7 +19,7 @@ import * as Repos from "../Repos.ts"
 import * as ShapeAccess from "../ShapeAccess.vibe"
 import { branchAccess, canView, type Policy, policyOf, underPolicy } from "./Access.vibe"
 import { Directory } from "./People.vibe"
-import { Rooms } from "./Rooms.ts"
+import { Rooms } from "./Rooms.vibe"
 import { enforceRooms } from "./Texts.ts"
 import { type Revoked, TerminalSockets } from "./Sandboxes.ts"
 

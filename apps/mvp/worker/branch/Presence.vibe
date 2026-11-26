@@ -5,7 +5,7 @@ import { Sessions } from "../Actor.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as SocketAccess from "../SocketAccess.ts"
 import { branchAccess, canView } from "./Access.vibe"
-import { Rooms } from "./Rooms.ts"
+import { Rooms } from "./Rooms.vibe"
 import { isUpgrade, sameOrigin } from "./Upgrade.ts"
 
 // `GET /api/branches/<id>/room` with `Upgrade: websocket` (decision 0013 §4, docs/features/branch-workspace.md#presence):

@@ -26,7 +26,7 @@ import { type Change, collect } from "./Change.vibe"
 import { keyOf, pushedOf } from "./PublishDigests.ts"
 import type { Forge } from "./Forge.vibe"
 import { Machines } from "./Machines.vibe"
-import { resync, ResyncRefused, ResyncUnavailable } from "./Resync.ts"
+import { resync, ResyncRefused, ResyncUnavailable } from "./Resync.vibe"
 import type { SandboxBranch } from "./Sandboxes.ts"
 
 export { keyOf, pushedOf } from "./PublishDigests.ts"

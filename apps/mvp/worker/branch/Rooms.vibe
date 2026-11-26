@@ -22,19 +22,21 @@ export interface Member {
 /** The room couldn't be reached to apply a change of access. The change stands; applying it again is safe. */
 export class RoomUnavailable extends Schema.TaggedError<RoomUnavailable>()("@smthrs/mvp/branch/RoomUnavailable", {}) {}
 
-/** The rooms of every branch, by branch id. */
-export class Rooms extends Context.Service<
+const RoomsBase = Context.Service<
   Rooms,
   {
     /** Joins the request's socket to the branch's room: the host's answer to the upgrade. */
     readonly join: (
       branchId: string,
       member: Member,
-    ) => Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpServerRequest.HttpServerRequest>
+    ) => HttpServerResponse.HttpServerResponse!never!HttpServerRequest.HttpServerRequest
     /**
      * Applies the branch's permission list to everyone in its room: anyone who may no longer view it leaves for good
      * (close 1008), and anyone whose access changed reconnects to get the new one. Doing it again changes nothing.
      */
-    readonly enforce: (branchId: string, policy: Policy) => Effect.Effect<void, RoomUnavailable>
+    readonly enforce: (branchId: string, policy: Policy) => void!RoomUnavailable
   }
->()("@smthrs/mvp/branch/Rooms") {}
+>()("@smthrs/mvp/branch/Rooms")
+
+/** The rooms of every branch, by branch id. */
+export class Rooms extends RoomsBase {}

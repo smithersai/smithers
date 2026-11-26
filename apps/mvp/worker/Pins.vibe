@@ -7,7 +7,7 @@ import { PIN_ROUTE, PINS_TABLE } from "../src/features/pins/contract.ts"
 import { boundTo, Sessions } from "./Actor.ts"
 import { branchAccess, canView } from "./branch/Access.vibe"
 import * as Conversations from "./branch/Conversations.vibe"
-import { answerConversation } from "./branch/SandboxCalls.ts"
+import { answerConversation } from "./branch/SandboxCalls.vibe"
 import { readBounded } from "./Body.vibe"
 import * as ShapeAccess from "./ShapeAccess.vibe"
 

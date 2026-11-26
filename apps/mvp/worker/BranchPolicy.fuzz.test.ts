@@ -5,7 +5,7 @@ import { REPOSITORY_GRANTEE, type ShareAccess } from "../src/features/branch/con
 import type { Role } from "./Actor.ts"
 import * as Access from "./branch/Access.vibe"
 import * as Budget from "./branch/Budget.vibe"
-import * as RegistryEgress from "./branch/RegistryEgress.ts"
+import * as RegistryEgress from "./branch/RegistryEgress.vibe"
 import { CI_OWNER } from "./flows/CiJobMachine.vibe"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "120"))

@@ -28,7 +28,7 @@ import * as Conversations from "./Conversations.vibe"
 import { CreateRefused, Forge } from "./Forge.vibe"
 import { Machines } from "./Machines.vibe"
 import * as Publish from "./Publish.vibe"
-import * as Resync from "./Resync.ts"
+import * as Resync from "./Resync.vibe"
 import { CheckoutFailed, SandboxUnavailable } from "./Sandboxes.ts"
 import * as Store from "../github/Store.ts"
 
