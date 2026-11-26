@@ -9,7 +9,7 @@ import { PullsClient } from "./api.vibe"
 import { readComparison } from "./comparison.vibe"
 import { DEFAULT_MERGE_METHOD, type PullTab, SHA } from "./contract"
 import { VIEW } from "./schema"
-import { PullsStore } from "./store"
+import { PullsStore } from "./store.vibe"
 import { reviewAnswered } from "./view"
 
 // What a person does on the pull request pages, as Effects that finish synchronously. Opening a page sets what the

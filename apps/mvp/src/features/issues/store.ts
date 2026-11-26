@@ -1,5 +1,5 @@
 import { IssuesClient } from "./api.vibe"
-import { finishEarlySearch } from "./earlySearch"
+import { finishEarlySearch } from "./earlySearch.vibe"
 import { observeInitialApplied } from "../../shapeApplied"
 import { admissionReceipt } from "../../writeAdmission"
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"

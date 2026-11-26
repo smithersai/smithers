@@ -4,7 +4,7 @@ import type { FlowDispatch } from "../../flows/dispatch"
 import { closeFiles, loadFiles, merge, open, retry, review, warm } from "./actions.vibe"
 import { PullsClient } from "./api.vibe"
 import type { PullTab } from "./contract"
-import { PullsStore, type RepoPulls } from "./store"
+import { PullsStore, type RepoPulls } from "./store.vibe"
 
 // Pull requests as a frontend sees them: live queries to read and plain functions to act, with no Effect in sight. React
 // renders the queries with `useLiveQuery`, and the pull request routes' loaders call `open`.

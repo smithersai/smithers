@@ -1,0 +1,112 @@
+import { repoId } from "../repo/contract"
+import { runners } from "../../boundary.vibe"
+import type { IssuesClient, SearchNotAnswered } from "./api.vibe"
+import type { ListedIssue } from "./schema"
+import type { FirstPaintIssue } from "./contract"
+
+/** The first paint's input and its gated, transient output. */
+export interface EarlySearchHost {
+  readonly show?: (owner: string, name: string, q: string, issues: ReadonlyArray<FirstPaintIssue> | undefined) => void
+  readonly bind: (ask: (owner: string, name: string, q: string) => void, forget: () => void) => () => void
+}
+
+export interface EarlyRead {
+  readonly owner: string
+  readonly name: string
+  readonly q: string
+  readonly answer: ReadonlyArray<ListedIssue>!SearchNotAnswered
+  readonly current: () => boolean
+  readonly revoke: () => void
+}
+
+const reads = Metric.counter("issues_early_search_reads", { description: "Searches started before application services, by outcome" })
+
+/**
+ * One in-flight early read, consumed once by the ordinary search action. No collection receives it here. Its
+ * publisher joins the same data gate before handing rows to the shell; the ordinary action still checks authority.
+ * Replacement, revocation/navigation, a 15-second cap and scope close drop the read and its publication.
+ */
+export const earlySearch = (search: IssuesClient["Service"]["search"], host: EarlySearchHost) => effect {
+  const scope = try Effect.scope
+  const run = runners(try context<never>(), "issues")
+  type Answer = Effect.Success<ReturnType<typeof search>>
+  type Failure = Effect.Error<ReturnType<typeof search>>
+  let held: { readonly key: string; readonly generation: number; readonly fiber: Fiber.Fiber<Result.Result<Answer, Failure>>; revoked: boolean } | undefined
+  let generation = 0
+  const pending = try SubscriptionRef.make<EarlyRead | undefined>(undefined)
+  const keyOf = (owner: string, name: string, q: string) => JSON.stringify([owner.toLowerCase(), name.toLowerCase(), q.trim()])
+  const forget = effect {
+    try annotateLogs(logInfo("issues.search.early"), { phase: "forgotten" })
+    const active = try SubscriptionRef.get(pending)
+    active?.revoke()
+    generation++
+    try SubscriptionRef.set(pending, undefined)
+    const previous = held
+    held = undefined
+    if (previous !== undefined) try Fiber.interrupt(previous.fiber)
+  }
+  const ask = (owner: string, name: string, q: string) => effect {
+    try annotateLogs(logInfo("issues.search.early"), { phase: "asked" })
+    const current = ++generation
+    const active = try SubscriptionRef.get(pending)
+    active?.revoke()
+    try SubscriptionRef.set(pending, undefined)
+    const previous = held
+    held = undefined
+    if (previous !== undefined) try Fiber.interrupt(previous.fiber)
+    if (current !== generation) return
+    const asked = q.trim()
+    if (asked === "") return
+    const answering = effect {
+      try sleep("150 millis")
+      const started = try Clock.currentTimeMillis
+      const answer = try result(search(owner, name, asked))
+      const outcome = Result.isSuccess(answer) ? "answered" : "failed"
+      try Metric.update(Metric.withAttributes(reads, { outcome }), 1)
+      try annotateLogs(logInfo("issues.search.early"), {
+        feature: "issues", outcome, durationMs: (try Clock.currentTimeMillis) - started,
+      })
+      return answer
+    }
+    const fiber = try forkIn(withSpan(answering, "issues.search.early"), scope, { startImmediately: true })
+    const entry = { key: keyOf(owner, name, asked), generation: current, fiber, revoked: false }
+    held = entry
+    try SubscriptionRef.set(pending, {
+      owner, name, q: asked, current: () => generation === current && !entry.revoked, revoke: () => { entry.revoked = true },
+      answer: effect { return try fromResult(try Fiber.join(fiber)) },
+    })
+    try forkIn(andThen(sleep("15 seconds"), suspend(() => generation === current ? forget : Effect.void)), scope)
+  }
+  try annotateLogs(logInfo("issues.search.early"), { phase: "bound" })
+  try acquireRelease(
+    sync(() => host.bind((owner, name, q) => { run.runFork(ask(owner, name, q)) }, () => { run.runFork(forget) })),
+    (unbind) => andThen(sync(unbind), forget),
+  )
+  const read: IssuesClient["Service"]["search"] = (owner, name, q, number) => suspend(() => {
+    // A list page is not an exact issue answer: the target may be on a later page. Navigation also revokes
+    // the list's publisher, including an answer already claimed by its ordinary consumer.
+    if (number !== undefined) return andThen(forget, search(owner, name, q, number))
+    const entry = held
+    if (entry === undefined) return search(owner, name, q)
+    if (entry.revoked || entry.key !== keyOf(owner, name, q)) return andThen(forget, search(owner, name, q))
+    held = undefined
+    return effect {
+      try annotateLogs(logInfo("issues.search.early"), { phase: "consumed" })
+      const answer = try Fiber.join(entry.fiber)
+      // The gate can revoke an answer after this consumer claimed it but before its HTTP body finished.
+      return try (entry.generation !== generation || entry.revoked
+        ? search(owner, name, q)
+        : fromResult(answer))
+    }
+  })
+  return Object.assign(read, { pending })
+}
+
+/** The authoritative list arrived: revoke only that repository's early answer before it can stand in again. */
+export const finishEarlySearch = (pending: SubscriptionRef.SubscriptionRef<EarlyRead | undefined> | undefined, id: string) => effect {
+  if (pending === undefined) return
+  const read = try SubscriptionRef.get(pending)
+  if (read === undefined || repoId(read.owner, read.name) !== id) return
+  read.revoke()
+  try SubscriptionRef.set(pending, undefined)
+}

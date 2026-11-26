@@ -1,5 +1,6 @@
 import { Collection } from "@smthrs/effect-tanstack-db"
-import { Deferred, Effect, Scope } from "effect"
+import { Context, Deferred, Effect, Layer, Scope } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { afterEach, expect, test, vi } from "vitest"
 import { openTab, openTestApi, TestChatApi, TEST_REPOSITORY } from "../../test/chatApi"
 import { PublishStore } from "../branch/publishStore.vibe"
@@ -8,6 +9,7 @@ import { RepoStore } from "../repo/store"
 import { PullsClient, PullsRequestFailed } from "./api.vibe"
 import { readComparison } from "./comparison.vibe"
 import { comparisonKey } from "./contract"
+import { PullsStore } from "./store.vibe"
 import { type Compared, FilesRow } from "./schema"
 
 const closing: Array<{ dispose: () => Promise<void> }> = []
@@ -143,4 +145,31 @@ test("a repository already refused reads no comparison", async () => {
   expect(asked).toEqual([])
   expect(told).toEqual([])
   expect(rows.tanstack.has(comparisonKey("github/private/repo", base, head))).toBe(false)
+})
+
+test("a repository's refusal drops the comparisons the pull requests' store read of it, and only those", async () => {
+  const api = openTestApi(); closing.push(api)
+  const chatApi = await api.runPromise(Effect.service(TestChatApi))
+  const runtime = openTab(chatApi); closing.push(runtime)
+  await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+    const repos = yield* RepoStore
+    yield* repos.refusalsKnown
+    const store = Context.get(yield* Layer.build(PullsStore.layer({ origin: chatApi.origin }).pipe(
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, chatApi.fetch)),
+    )), PullsStore)
+    const real = yield* PullsClient
+    const client = { ...real, compare: (owner: string) => Effect.succeed(result(`${owner}.txt`)) }
+    const read = (owner: string) => readComparison(store.files, store.scope, owner, "repo", base, head, store.compared)
+      .pipe(Effect.provideService(PullsClient, client))
+    const refused = comparisonKey("github/private/repo", base, head)
+    const kept = comparisonKey("github/other/repo", base, head)
+    yield* read("private")
+    yield* read("other")
+    yield* Effect.promise(() => vi.waitFor(() =>
+      expect([refused, kept].map(key => store.files.tanstack.get(key)?.status)).toEqual(["ready", "ready"])))
+    yield* repos.refuse("github/private/repo")
+    yield* repos.wiped("github/private/repo")
+    expect(store.files.tanstack.has(refused)).toBe(false)
+    expect(store.files.tanstack.get(kept)).toMatchObject({ status: "ready", files: [{ filename: "other.txt" }] })
+  })))
 })

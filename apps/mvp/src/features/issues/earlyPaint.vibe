@@ -1,0 +1,57 @@
+import { runners } from "../../boundary.vibe"
+import { RepoStore } from "../repo/store"
+import { repoId } from "../repo/contract"
+import { IssuesClient } from "./api.vibe"
+import type { EarlyRead, EarlySearchHost } from "./earlySearch.vibe"
+import type { FirstPaintIssue } from "./contract"
+
+const paints = Metric.counter("issues_early_search_paints", { description: "Early search gate decisions, by outcome" })
+
+/** Publish a server-authorized read through the existing gate before unrelated application services finish. */
+export const earlySearchPaint = (host: EarlySearchHost | undefined) => Layer.effectDiscard(effect {
+  if (host?.show === undefined) return
+  const { early } = try IssuesClient
+  if (early === undefined) return
+  const repos = try RepoStore
+  const run = runners(try context<never>(), "issues")
+  const showing = try FiberHandle.make<void, never>()
+  const paint = (read: EarlyRead) => effect {
+    const id = repoId(read.owner, read.name)
+    const fence = try sync(() => repos.fenceOf(id))
+    try repos.refusalsKnown
+    if (!read.current() || (try sync(() => repos.fenceOf(id))) !== fence) { read.revoke(); return }
+    let rows: ReadonlyArray<FirstPaintIssue> | undefined
+    let shown = false
+    let last: boolean | undefined
+    const publish = () => {
+      const allowed = read.current() && shown
+      if (!allowed) read.revoke()
+      if (allowed && rows === undefined || last === allowed) return
+      last = allowed
+      host.show!(read.owner, read.name, read.q, allowed ? rows : undefined)
+      const outcome = allowed ? "shown" : "withheld"
+      run.runSync(andThen(
+        Metric.update(Metric.withAttributes(paints, { outcome }), 1),
+        annotateLogs(logInfo("issues.search.paint"), { outcome }),
+      ))
+    }
+    // Synchronous with the gate's own change: a refusal never leaves an early row on the page for another turn.
+    try acquireRelease(sync(() => repos.observe(id, show => {
+      shown = show
+      publish()
+    })), unsubscribe => sync(() => {
+      read.revoke()
+      unsubscribe()
+      host.show!(read.owner, read.name, read.q, undefined)
+    }))
+    // Observe authority while the body is still pending: a closed-and-reopened gate cannot revive that answer.
+    const answer = try result(read.answer)
+    if (answer._tag === "Failure") return
+    if (!read.current() || (try sync(() => repos.fenceOf(id))) !== fence) { read.revoke(); return }
+    rows = answer.success.map(issue => ({ number: issue.number, title: issue.title, state: issue.state, author: issue.author.login }))
+    publish()
+    try never
+  }
+  try forkScoped(Stream.runForEach(SubscriptionRef.changes(early), (read) => FiberHandle.run(showing,
+    read === undefined ? Effect.void : scoped(paint(read)), { startImmediately: true })), { startImmediately: true })
+})

@@ -1,4 +1,4 @@
-import { earlySearch, type EarlySearchHost, type EarlyRead } from "./earlySearch"
+import { earlySearch, type EarlySearchHost, type EarlyRead } from "./earlySearch.vibe"
 import type { Duration, SubscriptionRef } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { renewalOf, renewed, withBearer, withoutCookie } from "../../flows/bearer"

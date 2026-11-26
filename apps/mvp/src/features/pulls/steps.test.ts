@@ -4,7 +4,7 @@ import { Effect, Metric } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, expect, test } from "vitest"
 import { PullsClient, PullsRequestFailed } from "./api.vibe"
-import { failureOf, requestReview, reviews } from "./steps"
+import { failureOf, requestReview, reviews } from "./steps.vibe"
 
 // Review on request from the device's side (docs/features/pulls.md#review-on-request): `pull/review/request` through the
 // real `PullsClient`, against a local HTTP server that plays ChatApi, so what the step makes of each answer is what a

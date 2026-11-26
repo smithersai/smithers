@@ -42,7 +42,10 @@ export const PullCommitRow = Schema.Struct({
 })
 export type PullCommitRow = typeof PullCommitRow.Type
 
-/** A commit row's key: `<item id>/<position>`. */
+/**
+ * A commit row's key: `<item id>/<position>`.
+ * @throws {never}
+ */
 export const commitKey = (row: PullCommitRow): string => `${row.itemId}/${row.position}`
 
 /** One row of Postgres `reviews` (`REVIEW_COLUMNS`). */

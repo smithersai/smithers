@@ -32,8 +32,8 @@ import { mergeExecutionId, PULLS_SHAPE_ROUTE } from "./contract"
 import { persistenceFailingOnce } from "../../test/faults"
 import { startedOnRead } from "../../test/liveQueries"
 import { Pulls } from "./pulls.vibe"
-import { pullShapeTransitions } from "./shapeSync"
-import { PullsStore } from "./store"
+import { pullShapeTransitions } from "./shapeSync.vibe"
+import { PullsStore } from "./store.vibe"
 import { listPageOf, pullAccessOf, REVIEW_REQUESTED } from "./view"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
