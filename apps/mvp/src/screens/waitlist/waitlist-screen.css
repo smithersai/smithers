@@ -1,0 +1,19 @@
+.waitlist-screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.waitlist-screen-body {
+  max-width: 560px;
+  margin: 32px auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.waitlist-screen-note {
+  margin: 0;
+  font-size: var(--sui-font-sm, 13px);
+  color: var(--sui-text-muted, #6b7280);
+}

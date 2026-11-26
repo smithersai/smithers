@@ -1,0 +1,17 @@
+.workbench-screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.workbench-screen-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.workbench-screen-status {
+  font-size: var(--sui-font-sm, 13px);
+  color: var(--sui-text-muted, #6b7280);
+  margin: 0;
+}

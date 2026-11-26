@@ -109,6 +109,7 @@ import { ProfileClient } from "./features/profile/api"
 import { Profile, type ProfileView } from "./features/profile/profile"
 import { ProfileStore } from "./features/profile/store"
 import { Mcp, type McpView } from "./features/mcp/store"
+import { Workbench, type WorkbenchView } from "./features/workbench/store"
 import { FirstRun, type FirstRunView } from "./features/first-run/firstRun"
 import { type ThemeHost, ThemeStore } from "./features/theme/store"
 import { Theme, type ThemeView } from "./features/theme/theme"
@@ -314,6 +315,7 @@ export const appLayer = <S = never>(
     }))),
     // Bring Your Own Agent via MCP (docs/features/mcp.md): Connect Agent dialog, OAuth consent, and connected tokens.
     Mcp.live({ origin, within: REQUEST_WITHIN }),
+    Workbench.live({ origin, within: REQUEST_WITHIN }),
     tabIssues({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
     // TODOs and the stack (decision 0016): the stack pages, the drafts, and this tab's answers to the TODO steps it
     // started.
@@ -625,6 +627,7 @@ export interface BootOptions {
     firstRun: FirstRunView,
     mcp: McpView,
     profile: ProfileView,
+    workbench: WorkbenchView,
   ) => void
 }
 
@@ -667,6 +670,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const firstRun = yield* FirstRun
     const mcp = yield* Mcp
     const profile = yield* Profile
+    const workbench = yield* Workbench
     const store = yield* ChatStore
     // Summaries that can't be made say so, on the one stack (ruling FE-19).
     const { launches } = yield* AttentionStore
@@ -706,6 +710,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         firstRun,
         mcp,
         profile,
+        workbench,
       )
     )
     if (timeline !== undefined) {

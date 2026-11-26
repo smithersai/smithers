@@ -48,6 +48,7 @@ export function RepoHeader({ backTarget, notices = true }: { readonly backTarget
       <Link to="/$owner/$repo/pulls" params={{ owner: view.owner, repo: view.name }}>Pull requests</Link>
       <Link to="/$owner/$repo/runs" params={{ owner: view.owner, repo: view.name }}>Runs</Link>
       <Link to="/$owner/$repo/stack" params={{ owner: view.owner, repo: view.name }}>{STACK}</Link>
+      <Link to="/$owner/$repo/workbench" params={{ owner: view.owner, repo: view.name }}>Workbench</Link>
       <SecretsLink owner={view.owner} repo={view.name} />
       <Slot name="repo.tabs" repository={{ owner: view.owner, name: view.name }} />
       {session?.status === "signed_in" && ownRepository(answer) && mayManageDomains(answer!.role)

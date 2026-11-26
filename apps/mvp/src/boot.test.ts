@@ -36,6 +36,7 @@ import { Docs } from "./features/docs/docs"
 import { Domains } from "./features/domains/domains"
 import { PersonalModel } from "./features/personal-model/personalModel"
 import { Profile } from "./features/profile/profile"
+import { Workbench } from "./features/workbench/store"
 import { FirstRun } from "./features/first-run/firstRun"
 import { Mcp } from "./features/mcp/store"
 import { Pulls } from "./features/pulls/pulls"
@@ -131,6 +132,7 @@ test("renders the chat, sign-in, theme, repository, slash-command, views, web-pa
       Effect.service(FirstRun),
       Effect.service(Mcp),
       Effect.service(Profile),
+      Effect.service(Workbench),
     ]),
   )
   expect(views[0]).toHaveLength(layers.length)

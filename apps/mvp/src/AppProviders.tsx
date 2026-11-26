@@ -57,6 +57,8 @@ import { McpProvider } from "./features/mcp/components/McpContext"
 import type { McpView } from "./features/mcp/store"
 import { ProfileProvider } from "./features/profile/components/ProfileContext"
 import type { ProfileView } from "./features/profile/profile"
+import { WorkbenchProvider } from "./features/workbench/WorkbenchContext"
+import type { WorkbenchView } from "./features/workbench/store"
 
 /** Every layer the page's React tree reads: what the boot program hands the page (src/boot.ts `render`). */
 export interface AppViews {
@@ -89,6 +91,7 @@ export interface AppViews {
   readonly firstRun: FirstRunView
   readonly mcp?: McpView
   readonly profile?: ProfileView
+  readonly workbench?: WorkbenchView
 }
 
 /**
@@ -128,7 +131,8 @@ export function AppProviders({ views: app, children }: { readonly views: AppView
                                                         <PluginsProvider value={app.plugins}>
                                                           {(() => {
                                                             const withMcp = app.mcp === undefined ? children : <McpProvider value={app.mcp}>{children}</McpProvider>
-                                                            return app.profile === undefined ? withMcp : <ProfileProvider value={app.profile}>{withMcp}</ProfileProvider>
+                                                            const withProfile = app.profile === undefined ? withMcp : <ProfileProvider value={app.profile}>{withMcp}</ProfileProvider>
+                                                            return app.workbench === undefined ? withProfile : <WorkbenchProvider value={app.workbench}>{withProfile}</WorkbenchProvider>
                                                           })()}
                                                         </PluginsProvider>
                                                       </AttentionProvider>

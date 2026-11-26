@@ -18,6 +18,7 @@ import type { RepoView } from "./features/repo/repo"
 import type { RunsView } from "./features/runs/runs"
 import type { SecretsLayer } from "./features/secrets/secrets"
 import type { McpView } from "./features/mcp/store"
+import type { WorkbenchView } from "./features/workbench/store"
 import { isProfileOwner } from "./features/profile/contract"
 import type { ProfileView } from "./features/profile/profile"
 import { canonicalProfileHref, profileSearch } from "./features/profile/view"
@@ -63,6 +64,8 @@ import { SecretsScreen } from "./screens/secrets/SecretsScreen"
 import { RepoSettingsScreen } from "./screens/repo-settings/RepoSettingsScreen"
 import { SettingsScreen } from "./screens/settings/SettingsScreen"
 import { McpAuthorizeScreen } from "./screens/mcp/McpAuthorizeScreen"
+import { WaitlistScreen } from "./screens/waitlist/WaitlistScreen"
+import { WorkbenchScreen } from "./screens/workbench/WorkbenchScreen"
 import { ProfileScreen } from "./screens/profile/ProfileScreen"
 import { PluginScreen } from "./screens/plugin/PluginScreen"
 import { RepoPluginScreen } from "./screens/plugin/RepoPluginScreen"
@@ -101,6 +104,7 @@ export interface RouterContext {
   readonly secrets: SecretsLayer
   readonly mcp?: McpView
   readonly profile?: ProfileView
+  readonly workbench?: WorkbenchView
 }
 
 /**
@@ -421,6 +425,12 @@ const mcpAuthorizeRoute = createRoute({
   beforeLoad: (load) => enter(load, local, () => void load.context.mcp?.actions.loadConsent(load.location.searchStr)),
 })
 
+const waitlistRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: ROUTE_PATHS.waitlist,
+  component: WaitlistScreen,
+})
+
 /** `/app/runs/$runId`: one run's page, read from this device's engine. */
 const runRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -502,6 +512,27 @@ const branchesRoute = createRoute({
   beforeLoad: ({ context, params, ...load }) =>
     enterRepo(context, params, load, () => context.repo.actions.warmRoute("tree", params, {}), () =>
       context.repo.actions.openRoute("tree", params, {})),
+})
+
+const workbenchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: ROUTE_PATHS.workbench,
+  component: repoGated(WorkbenchScreen),
+  validateSearch: (search: Record<string, unknown>) => search,
+  beforeLoad: ({ context, params, ...load }) =>
+    enterRepo(
+      context,
+      params,
+      load,
+      () => Promise.all([
+        context.repo.actions.warmRoute("tree", params, {}),
+        context.workbench?.actions.loadPlan(params.owner, params.repo) ?? Promise.resolve(),
+      ]),
+      () => {
+        context.repo.actions.openRoute("tree", params, {})
+        void context.workbench?.actions.loadPlan(params.owner, params.repo)
+      },
+    ),
 })
 
 /**
@@ -909,6 +940,7 @@ const routeTree = rootRoute.addChildren([
   runRoute,
   settingsRoute,
   mcpAuthorizeRoute,
+  waitlistRoute,
   settingsAliasRoute,
   secretsAliasRoute,
   actionsAliasRoute,
@@ -922,6 +954,7 @@ const routeTree = rootRoute.addChildren([
   treeRoute,
   blobRoute,
   branchesRoute,
+  workbenchRoute,
   rawRoute,
   docsRoute,
   docsPageRoute,

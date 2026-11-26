@@ -115,7 +115,7 @@ interface Step {
 }
 
 const command = (cmd: string, args: ReadonlyArray<string>) => () => {
-  const result = spawnSync(cmd, args, { cwd: mvp, encoding: "utf8" })
+  const result = spawnSync(cmd, args, { cwd: mvp, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
   const output = `${result.stdout}${result.stderr}`
   return { ok: result.status === 0, detail: result.status === 0 ? "" : output.split("\n").slice(-40).join("\n") }
 }

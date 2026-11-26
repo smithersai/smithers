@@ -14,6 +14,7 @@ export function Landing() {
     <div className="landing">
       <nav className="landing-top" aria-label="Site">
         <a href="/docs">Docs</a>
+        <Link to="/app/waitlist">Host a repo</Link>
         <a href={SOURCE_URL} target="_blank" rel="noopener noreferrer">Source</a>
         {session?.status === "signed_in" ? null : <SignInButton />}
       </nav>
