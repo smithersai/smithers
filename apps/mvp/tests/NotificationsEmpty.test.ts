@@ -1,7 +1,7 @@
 import { createMemoryHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router"
 import { Effect } from "effect"
 import { expect, test, vi } from "vitest"
-import { AttentionStore } from "../src/features/attention/store"
+import { AttentionStore } from "../src/features/attention/store.vibe"
 import { NotificationsPanel } from "../src/features/attention/components/NotificationsPanel"
 import { appViews } from "../src/test/appViews"
 import { openTestApp } from "../src/test/chatApi"

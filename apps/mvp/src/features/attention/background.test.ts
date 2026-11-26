@@ -28,7 +28,7 @@ import { Todos } from "../todos/todos.vibe"
 import { TodosStore } from "../todos/store.vibe"
 import { dismiss, retry } from "./actions"
 import type { Entry } from "./schema"
-import { AttentionStore } from "./store"
+import { AttentionStore } from "./store.vibe"
 
 const [OWNER, NAME] = TEST_REPOSITORY.split("/") as [string, string]
 const REPO_ID = `github/${TEST_REPOSITORY}`

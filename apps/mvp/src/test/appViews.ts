@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import type { AppViews } from "../AppProviders"
-import { Attention } from "../features/attention/attention"
+import { Attention } from "../features/attention/attention.vibe"
 import { Auth } from "../features/auth/auth"
 import { Branch } from "../features/branch/branch.vibe"
 import { Chat } from "../features/chat/chat"

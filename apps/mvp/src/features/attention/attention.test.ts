@@ -28,11 +28,12 @@ import { replaceRole, RepoStore } from "../repo/store.vibe"
 import { viewById } from "../../plugins/plugins"
 import { PluginsUi } from "../../plugins/ui"
 import { dropped, hide, retry } from "./actions"
-import { Attention } from "./attention"
+import { Attention } from "./attention.vibe"
 import { NOTIFICATIONS_SHAPE_ROUTE } from "./contract"
 import { ActRefused } from "./flows"
 import { panel as panelActs, shown } from "./metrics"
-import { AttentionStore } from "./store"
+import { AttentionStore } from "./store.vibe"
+import { failWriteNotice, requestWriteNotice } from "./writeNotices.vibe"
 
 /** A test that drives run reports, device actions and sync: seconds each, more on a loaded machine. */
 const ENGINE_WITHIN = 120_000
@@ -859,4 +860,32 @@ test("a launched acknowledgement that fails restores its toast and records the r
   await until(() => expect(ann.pending()).toEqual([]))
   await until(() => expect(ann.entry(subject)).toMatchObject({ stack: true }))
   expect(ann.count(Metric.withAttributes(dropped, { act: "hide", reason: "@smthrs/mvp/attention/ActRefused" }))).toBe(1)
+}, ENGINE_WITHIN)
+
+test("local branch writes preserve their launch time and record a refused admission", async () => {
+  const api = await openApi()
+  const time = displayClock()
+  const ann = await openDevice(api, { answers: false, clock: time.clock })
+  const store = await ann.run(AttentionStore)
+  const branch = "feature/one two"
+  const startedAt = new Date()
+  const failedAt = new Date(startedAt.getTime() + 1000)
+  time.hold(startedAt.getTime())
+  await ann.run(requestWriteNotice({ writeId: "publish", repoId: "github/octo/hello", branch, operation: "publish" }))
+  await ann.run(requestWriteNotice({ writeId: "update", repoId: "github/octo/hello", branch, operation: "update" }))
+
+  expect(store.launches.tanstack.toArray.find((row) => row.subject === "write:publish")).toMatchObject({
+    state: "waiting", ref: "launch", title: "Publish", href: "/octo/hello/tree/feature/one%20two",
+  })
+  time.hold(failedAt.getTime())
+  await ann.run(failWriteNotice("publish"))
+  await ann.run(failWriteNotice("already-replaced"))
+  expect(store.launches.tanstack.toArray).toHaveLength(2)
+  expect(store.launches.tanstack.toArray).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      subject: "write:publish", state: "failed", occurredAt: startedAt.toISOString(),
+      createdAt: startedAt.toISOString(), updatedAt: failedAt.toISOString(),
+    }),
+    expect.objectContaining({ subject: "write:update", state: "waiting", title: "Update branch" }),
+  ]))
 }, ENGINE_WITHIN)

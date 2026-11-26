@@ -23,7 +23,7 @@ import { Theme } from "../theme/theme.vibe"
 import { BranchScreen } from "../../screens/branch/BranchScreen"
 import { branchRenderer, renderNoticeHistory } from "../../screens/branch/offline-render"
 import { Todos } from "../todos/todos.vibe"
-import { Attention } from "./attention"
+import { Attention } from "./attention.vibe"
 import { Views } from "../views/views"
 import { PluginsUi } from "../../plugins/ui"
 

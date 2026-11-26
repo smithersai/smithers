@@ -1,5 +1,5 @@
 import { WebCrypto } from "@smthrs/crypto"
-import { failWriteNotice, requestWriteNotice } from "../attention/writeNotices"
+import { failWriteNotice, requestWriteNotice } from "../attention/writeNotices.vibe"
 import { operationWriteId } from "./writeIdentity.vibe"
 import { Effect, FiberHandle, Metric, Option, type Result, Stream } from "effect"
 import { WebCrypto as WebCryptoReference } from "effect/crypto/WebCrypto"

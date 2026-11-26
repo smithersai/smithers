@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import { ChatProvider } from "./AppContext"
-import type { AttentionView } from "./features/attention/attention"
+import type { AttentionView } from "./features/attention/attention.vibe"
 import { AttentionProvider } from "./features/attention/components/AttentionContext"
 import type { AuthView } from "./features/auth/auth"
 import { AuthProvider } from "./features/auth/components/AuthContext"

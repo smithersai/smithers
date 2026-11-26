@@ -99,7 +99,7 @@ export const shownQuery = (entries: Source<Entry>, byRepo: Source<Entry>, byConv
       ) as unknown as LiveQuery.AnyQuery,
     // No `getKey`: an entry that moves between the branches (it gains a repository) is inserted by one before the other
     // deletes it, and one key for both would refuse the insert. TanStack DB's own key tells the branches apart.
-  ).pipe(Effect.map((query) => query as unknown as Gated<Entry>))
+  ) |> Effect.map(%, (query) => query as unknown as Gated<Entry>)
 
 /** The entries that name no repository but a conversation: what `shownQuery` attributes through the conversation. */
 export const ofConversationQuery = (entries: Source<Entry>) =>

@@ -6,8 +6,8 @@ import { createRoot } from "react-dom/client"
 import { expect, test } from "vitest"
 import { AttentionProvider } from "../src/features/attention/components/AttentionContext"
 import { Notices } from "../src/features/attention/components/Notices"
-import { Attention } from "../src/features/attention/attention"
-import { detailQuery, feedQuery, listQuery, needsQuery, panelQuery, stackQuery, unreadQuery } from "../src/features/attention/queries"
+import { Attention } from "../src/features/attention/attention.vibe"
+import { detailQuery, feedQuery, listQuery, needsQuery, panelQuery, stackQuery, unreadQuery } from "../src/features/attention/queries.vibe"
 import { Detail, Entry, Panel } from "../src/features/attention/schema"
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })

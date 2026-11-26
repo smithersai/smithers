@@ -18,7 +18,7 @@ import { LISTED_FOR_MS, NOTIFICATIONS_SHAPE_ROUTE } from "./contract"
 import { detailOf } from "./detail"
 import { feedOf, follows, landed } from "./entries"
 import { shown } from "./metrics"
-import { detailQuery, feedQuery, listQuery, needsQuery, ofConversationQuery, panelQuery, shownQuery, stackQuery, unreadQuery } from "./queries"
+import { detailQuery, feedQuery, listQuery, needsQuery, ofConversationQuery, panelQuery, shownQuery, stackQuery, unreadQuery } from "./queries.vibe"
 import { type Input, merged, OPERATION_RUNS, OPERATION_WRITES, progressOf, repoOf, type RunSummary } from "./progress"
 import { Detail, Dismissed, Entry, Notice, PANEL, Panel, Pending } from "./schema"
 import type { Source } from "../repo/gate"
@@ -85,7 +85,7 @@ export class AttentionStore extends Context.Service<
     /** Where the background work an action starts runs. */
     readonly scope: Scope.Scope
     /** Try again on this tab's refused admission of `subject`: its staged input again (decision 0124). Whether it started. */
-    readonly retryInput: (subject: string) => Effect.Effect<boolean>
+    readonly retryInput: (subject: string) => boolean!!
   }
 >()("@smthrs/mvp/attention/AttentionStore") {
   /**
@@ -95,20 +95,21 @@ export class AttentionStore extends Context.Service<
   static readonly layer = (config: AttentionConfig) =>
     Layer.effect(
       AttentionStore,
-      Effect.gen(function* () {
-        const scope = yield* Effect.scope
-        const chat = yield* ChatStore
+      effect {
+        const scope = try Effect.scope
+        const chat = try ChatStore
         const { place } = chat
-        const status = yield* StatusStore
-        const auth = yield* AuthStore
-        const flows = yield* FlowDispatch
-        const issues = yield* IssuesStore
-        const todos = yield* TodosStore
-        const intents = yield* WriteIntents
-        const engine = yield* BrowserEngine.BrowserEngine
+        const status = try StatusStore
+        const auth = try AuthStore
+        const flows = try FlowDispatch
+        const issues = try IssuesStore
+        const todos = try TodosStore
+        const intents = try WriteIntents
+        const engine = try BrowserEngine.BrowserEngine
         // What Try again on this tab's refusal admits through: the same stores and dispatch as opening the page.
-        const admitting = yield* Effect.context<IssuesStore | TodosStore | WriteIntents | FlowDispatch | RunSteers | ChatStore>()
-        const notices = yield* ElectricCollection.make<Notice>({
+        const admitting = try Effect.context<IssuesStore | TodosStore | WriteIntents | FlowDispatch | RunSteers | ChatStore>()
+        const shapeSource = try ShapeSource.ShapeSource
+        const notices = try ElectricCollection.make<Notice>({
           id: "notifications",
           schema: Notice,
           getKey: (row) => row.subject,
@@ -118,47 +119,47 @@ export class AttentionStore extends Context.Service<
           persist: { schemaVersion: 5 },
           shape: {
             url: `${config.origin}${NOTIFICATIONS_SHAPE_ROUTE}`,
-            columnMapper: ElectricCollection.snakeCamelMapper(),
+            columnMapper: try Effect.sync(() => ElectricCollection.snakeCamelMapper()),
           },
-        }).pipe(Effect.provideService(ShapeSource.ShapeSource, signedInShapeSource(yield* ShapeSource.ShapeSource, auth)))
-        const pending = yield* Collection.persisted<Pending, string>({
+        }).pipe(Effect.provideService(ShapeSource.ShapeSource, try Effect.sync(() => signedInShapeSource(shapeSource, auth))))
+        const pending = try Collection.persisted<Pending, string>({
           id: "attention-pending",
           schema: Pending,
           getKey: (row) => row.id,
           schemaVersion: 1,
         })
-        const dismissed = yield* Collection.persisted<Dismissed, string>({
+        const dismissed = try Collection.persisted<Dismissed, string>({
           id: "attention-dismissed",
           schema: Dismissed,
           getKey: (row) => row.id,
           schemaVersion: 1,
         })
-        const entries = yield* Collection.local<Entry, string>({
+        const entries = try Collection.local<Entry, string>({
           id: "attention-entries",
           schema: Entry,
           getKey: (row) => row.id,
         })
-        const launches = yield* Collection.local<Notice, string>({ id: "attention-launches", schema: Notice, getKey: (row) => row.subject })
-        const panel = yield* Collection.local<Panel, string>({
+        const launches = try Collection.local<Notice, string>({ id: "attention-launches", schema: Notice, getKey: (row) => row.subject })
+        const panel = try Collection.local<Panel, string>({
           id: "attention-panel",
           schema: Panel,
           getKey: (row) => row.id,
           initialData: [{ id: PANEL, open: false, expanded: null, focus: null, answer: 0 }],
         })
-        const details = yield* Collection.local<Detail, string>({
+        const details = try Collection.local<Detail, string>({
           id: "attention-details",
           schema: Detail,
           getKey: (row) => row.id,
         })
 
         // The feed: worked out again on every change, and when the next toast is due to hide.
-        const ticks = yield* Queue.unbounded<void>()
-        const timer = yield* FiberHandle.make<void, never>()
+        const ticks = try Queue.unbounded<void>()
+        const timer = try FiberHandle.make<void, never>()
         const recorded = new Set<string>()
         // The engine's runs of the operations the stack follows, as its last read said; read again soon after its events
         // and each new leader, so a run this tab just started replaces its input's Requested without a gap.
-        const runs = yield* Ref.make<ReadonlyArray<RunSummary>>([])
-        yield* engine.runs({ limit: RUNS_READ, flows: Object.keys(OPERATION_RUNS), within: LISTED_FOR_MS, every: "50 millis" }).pipe(
+        const runs = try Ref.make<ReadonlyArray<RunSummary>>([])
+        try engine.runs({ limit: RUNS_READ, flows: Object.keys(OPERATION_RUNS), within: LISTED_FOR_MS, every: "50 millis" }).pipe(
           Stream.runForEach((read) => Effect.andThen(Ref.set(runs, read.runs), Queue.offer(ticks, undefined))),
           Effect.forkIn(scope, { startImmediately: true }),
         )
@@ -182,75 +183,76 @@ export class AttentionStore extends Context.Service<
         const seen = new Set<string>()
         // The engine inputs whose settled run this tab already admitted or retired, once each (`settleFromRuns`).
         const settling = new Set<string>()
-        const work = Effect.gen(function* () {
-          const now = yield* Clock.currentTimeMillis
-          const synced = yield* notices.toArray
+        const work = (effect {
+          const now = try Clock.currentTimeMillis
+          const synced = try notices.toArray
           const known = new Set(synced.map((row) => row.subject))
-          const optimistic = yield* launches.toArray
-          for (const row of optimistic) if (known.has(row.subject)) yield* launches.delete(row.subject)
-          const acted = yield* dismissed.toArray
-          const commitSending = yield* todos.sending.toArray
-          const commitRequested = yield* stored(todos.requested)
-          const stagedInputs = yield* inputs
+          const optimistic = try launches.toArray
+          for (const row of optimistic) if (known.has(row.subject)) try launches.delete(row.subject)
+          const acted = try dismissed.toArray
+          const commitSending = try todos.sending.toArray
+          const commitRequested = try stored(todos.requested)
+          const stagedInputs = try inputs
           // A synced TODO is the commit's own durable result, even after the outbox and recovery rows leave.
           // Read only this person's commits from stacks already opened; this opens no new shapes.
-          const session = Option.getOrThrow(yield* auth.session.get(SESSION))
-          const committed = yield* Effect.forEach(todos.openedStacks(), (stack) => stack.stored)
+          const session = Option.getOrThrow(try auth.session.get(SESSION))
+          const committed = try Effect.forEach(todos.openedStacks(), (stack) => stack.stored)
           const mine = committed.flat().filter((todo) => session.status === "signed_in" && todo.createdLogin === session.login)
-          const progress = progressOf({
+          const receipts = {
             inputs: stagedInputs,
-            runs: yield* Ref.get(runs),
-            issueWrites: yield* issues.writes.toArray,
-            issueRequested: yield* stored(issues.requested),
-            issueSending: yield* issues.sending.toArray,
+            runs: try Ref.get(runs),
+            issueWrites: try issues.writes.toArray,
+            issueRequested: try stored(issues.requested),
+            issueSending: try issues.sending.toArray,
             todoRequested: commitRequested,
             todoSending: commitSending,
             todos: mine,
             dismissed: acted,
             answered: intents.answered,
             seen,
-          }, now)
+          }
+          const progress = try Effect.sync(() => progressOf(receipts, now))
           for (const subject of [...known, ...progress.decided]) seen.add(subject)
           // An engine operation's input bridges until its run settled; then the run's result admits and retires it.
-          yield* settleFromRuns(progress.results, settling).pipe(Effect.provideContext(admitting))
+          try settleFromRuns(progress.results, settling).pipe(Effect.provideContext(admitting))
 
           // A dismissal outlives the failure it hid only as long as the list could still show that failure.
           const lapsed = acted.filter((row) => row.at < now - LISTED_FOR_MS).map((row) => row.id)
-          if (lapsed.length > 0) yield* Effect.ignore(dismissed.delete(lapsed))
-          const rows = merged(synced, optimistic, progress)
-          const acts = yield* pending.toArray
+          if (lapsed.length > 0) try Effect.ignore(dismissed.delete(lapsed))
+          const rows = try Effect.sync(() => merged(synced, optimistic, progress))
+          const acts = try pending.toArray
           // Chat's place always holds its one row.
-          const where = (yield* place.toArray)[0]!
-          const feed = feedOf(rows, acts, now, where.conversationId)
-          const before = new Map((yield* entries.toArray).map((entry) => [entry.id, entry]))
+          const where = (try place.toArray)[0]!
+          const feed = try Effect.sync(() => feedOf(rows, acts, now, where.conversationId))
+          const before = new Map((try entries.toArray).map((entry) => [entry.id, entry]))
           const next = new Set(feed.entries.map((entry) => entry.id))
           const gone = [...before.keys()].filter((id) => !next.has(id))
-          if (gone.length > 0) yield* entries.delete(gone)
+          if (gone.length > 0) try entries.delete(gone)
           // New entries go in one transaction: each transaction makes every live query over the entries read all of
           // them again, so a cold device's feed of 4,600 writes, inserted one at a time, kept the page's main thread
           // busy for seconds (e2e/issue-waterfall.spec.ts).
           const added = feed.entries.filter((entry) => !before.has(entry.id))
-          if (added.length > 0) yield* entries.insert(added)
+          if (added.length > 0) try entries.insert(added)
           for (const entry of feed.entries) {
             const old = before.get(entry.id)
             if (old !== undefined && changed(old, entry)) {
-              yield* entries.update(entry.id, (draft) => { if (entry.local === undefined) delete draft.local; Object.assign(draft, entry) })
+              try entries.update(entry.id, (draft) => { if (entry.local === undefined) delete draft.local; Object.assign(draft, entry) })
             }
             // Each toast that came to show, once per version: a log line and a count, never its words.
             const key = `${entry.id}:${entry.version}`
             if (entry.stack && !recorded.has(key)) {
               recorded.add(key)
-              yield* Metric.update(Metric.withAttributes(shown, { state: entry.state }), 1)
-              yield* Effect.logInfo("notifications.shown").pipe(
+              try Metric.update(Metric.withAttributes(shown, { state: entry.state }), 1)
+              try Effect.logInfo("notifications.shown").pipe(
                 Effect.annotateLogs({ subject: entry.id, version: entry.version, state: entry.state, kind: entry.kind, local: entry.local === true }),
               )
             }
           }
-          const done = landed(rows, acts)
-          if (done.length > 0) yield* pending.delete(done)
-          if (feed.nextAt === undefined) yield* FiberHandle.clear(timer)
+          const done = try Effect.sync(() => landed(rows, acts))
+          if (done.length > 0) try pending.delete(done)
+          if (feed.nextAt === undefined) try FiberHandle.clear(timer)
           else {
-            yield* FiberHandle.run(
+            try FiberHandle.run(
               timer,
               Effect.sleep(Duration.millis(feed.nextAt - now)).pipe(
                 Effect.andThen(Queue.offer(ticks, undefined)),
@@ -262,7 +264,7 @@ export class AttentionStore extends Context.Service<
           // Local collections refuse only rows their own schema rejects, which `feedOf` never makes: a bug, not a state.
           Effect.orDie,
         )
-        yield* Stream.mergeAll(
+        try Stream.mergeAll(
           [
             Stream.map(notices.changes({ initial: true }), () => undefined),
             Stream.map(launches.changes({ initial: true }), () => undefined),
@@ -285,15 +287,15 @@ export class AttentionStore extends Context.Service<
         // The watch: each conversation this tab shows, once per person, once sign-in says a Member is signed in, or
         // can't say (ChatApi decides then). Signed out, still loading, or below a Member, nothing is asked.
         const watched = new Set<string>()
-        const watch = Effect.gen(function* () {
+        const watch = effect {
           // Sign-in's store and chat's place each always hold their one row.
-          const session = (yield* auth.session.toArray)[0]!
-          const shown = (yield* place.toArray)[0]!
+          const session = (try auth.session.toArray)[0]!
+          const shown = (try place.toArray)[0]!
           const key = `${session.login ?? ""}:${shown.conversationId ?? "home"}`
-          if (!follows(session) || watched.has(key)) return
+          if (!(try Effect.sync(() => follows(session))) || watched.has(key)) return
           // Reserve before forking: another emission must see this launch while its child is still scheduled.
           watched.add(key)
-          yield* flows.dispatch("watch/set", { conversationId: shown.conversationId }, { door: "view" }).pipe(
+          try flows.dispatch("watch/set", { conversationId: shown.conversationId }, { door: "view" }).pipe(
             Effect.onExit((exit) => Effect.sync(() => {
               // A refused dispatch or failed flow is not a watch. A later place/session change may ask again.
               if (Exit.isFailure(exit) || exit.value._tag === "Failed") watched.delete(key)
@@ -301,48 +303,47 @@ export class AttentionStore extends Context.Service<
             Effect.ignore,
             Effect.forkIn(scope),
           )
-        })
-        yield* Stream.merge(auth.session.changes({ initial: true }), place.changes({ initial: true })).pipe(
+        }
+        try Stream.merge(auth.session.changes({ initial: true }), place.changes({ initial: true })).pipe(
           Stream.runForEach(() => watch),
           Effect.forkIn(scope, { startImmediately: true }),
         )
 
         // The detail: the expanded entry, with what this device has of its run, worked out again on every change to them.
-        const answerOf = (runId: string, conversationId: string | null) =>
-          Effect.gen(function* () {
-            const home = yield* chat.messages.get(runId)
-            if (Option.isSome(home)) return home.value
-            // A branch's run: its answer, if this tab opened that branch's conversation.
-            const branch = conversationId === null ? undefined : chat.opened(conversationId)
-            return branch === undefined ? undefined : Option.getOrUndefined(yield* branch.messages.get(runId))
-          })
-        const explain = Effect.gen(function* () {
+        const answerOf = effect (runId: string, conversationId: string | null) => {
+          const home = try chat.messages.get(runId)
+          if (Option.isSome(home)) return home.value
+          // A branch's run: its answer, if this tab opened that branch's conversation.
+          const branch = conversationId === null ? undefined : try Effect.sync(() => chat.opened(conversationId))
+          return branch === undefined ? undefined : Option.getOrUndefined(try branch.messages.get(runId))
+        }
+        const entryDetail = effect (entry: Entry) => {
+          if (entry.runId === null) {
+            return try Effect.sync(() => detailOf({ entry, message: undefined, run: undefined, local: undefined }))
+          }
+          const message = try answerOf(entry.runId, entry.conversationId)
+          const run = Option.getOrUndefined(try status.runs.get(entry.runId))
+          const local = Option.getOrUndefined(try status.local.get(entry.runId))
+          return try Effect.sync(() => detailOf({ entry, message, run, local }))
+        }
+        const explain = (effect {
           // The panel's one row is always there.
-          const { expanded } = (yield* panel.toArray)[0]!
-          const entry = expanded === null ? Option.none() : yield* entries.get(expanded)
-          const before = yield* details.toArray
-          const next = Option.isNone(entry)
-            ? undefined
-            : entry.value.runId === null
-            ? detailOf({ entry: entry.value, message: undefined, run: undefined, local: undefined })
-            : detailOf({
-              entry: entry.value,
-              message: yield* answerOf(entry.value.runId, entry.value.conversationId),
-              run: Option.getOrUndefined(yield* status.runs.get(entry.value.runId)),
-              local: Option.getOrUndefined(yield* status.local.get(entry.value.runId)),
-            })
+          const { expanded } = (try panel.toArray)[0]!
+          const entry = expanded === null ? Option.none() : try entries.get(expanded)
+          const before = try details.toArray
+          const next = Option.isNone(entry) ? undefined : try entryDetail(entry.value)
           const gone = before.filter((row) => row.id !== next?.id).map((row) => row.id)
-          if (gone.length > 0) yield* details.delete(gone)
+          if (gone.length > 0) try details.delete(gone)
           if (next === undefined) return
           const old = before.find((row) => row.id === next.id)
           if (old === undefined) {
-            yield* details.insert(next)
+            try details.insert(next)
             return
           }
           // Field by field: a row the collection holds carries its own virtual fields besides the detail's.
           const fields = Object.keys(next) as ReadonlyArray<keyof Detail>
           if (fields.some((key) => JSON.stringify(old[key]) !== JSON.stringify(next[key]))) {
-            yield* details.update(next.id, (draft) => void Object.assign(draft, next))
+            try details.update(next.id, (draft) => void Object.assign(draft, next))
           }
         }).pipe(
           // Local collections refuse only rows their own schema rejects, which `detailOf` never makes: a bug, not a state.
@@ -355,16 +356,16 @@ export class AttentionStore extends Context.Service<
           Stream.map(entries.changes(), () => undefined),
           Stream.map(place.changes(), () => undefined),
         ], { concurrency: "unbounded" }).pipe(
-          Stream.mapEffect(() => Effect.gen(function* () {
-            const { expanded } = (yield* panel.toArray)[0]!
-            const entry = expanded === null ? Option.none() : yield* entries.get(expanded)
+          Stream.mapEffect(() => effect {
+            const { expanded } = (try panel.toArray)[0]!
+            const entry = expanded === null ? Option.none() : try entries.get(expanded)
             const conversationId = Option.isSome(entry) ? entry.value.conversationId : null
-            return conversationId === null ? undefined : chat.opened(conversationId)
-          })),
+            return conversationId === null ? undefined : try Effect.sync(() => chat.opened(conversationId))
+          }),
           Stream.changes,
           Stream.switchMap((branch) => branch === undefined ? Stream.empty : branch.messages.changes({ initial: true })),
         )
-        yield* Stream.mergeAll(
+        try Stream.mergeAll(
           [
             Stream.map(branchAnswers, () => undefined),
             Stream.map(panel.changes({ initial: true }), () => undefined),
@@ -378,11 +379,11 @@ export class AttentionStore extends Context.Service<
 
         // The data gate (decision 0110, 2026-11-03): an entry shows only while its repository, or its conversation's
         // repository, may show, from the change that hides it; one naming neither is the person's own.
-        const shownEntries = yield* shownQuery(
+        const shownEntries = try shownQuery(
           entries,
-          (yield* (yield* RepoStore).gate(entries)) as unknown as Source<Entry>,
-          (yield* (yield* ConversationOwners).ofShown(
-            (yield* ofConversationQuery(entries)) as unknown as Source<Entry>,
+          (try (try RepoStore).gate(entries)) as unknown as Source<Entry>,
+          (try (try ConversationOwners).ofShown(
+            (try ofConversationQuery(entries)) as unknown as Source<Entry>,
             "conversationId",
           )) as unknown as Source<Entry>,
         )
@@ -393,20 +394,20 @@ export class AttentionStore extends Context.Service<
           dismissed,
           entries,
           shown: shownEntries,
-          stack: yield* stackQuery(shownEntries, "stack"),
-          stackHere: yield* stackQuery(shownEntries, "stackHere"),
-          list: yield* listQuery(shownEntries, "stack"),
-          listHere: yield* listQuery(shownEntries, "stackHere"),
+          stack: try stackQuery(shownEntries, "stack"),
+          stackHere: try stackQuery(shownEntries, "stackHere"),
+          list: try listQuery(shownEntries, "stack"),
+          listHere: try listQuery(shownEntries, "stackHere"),
           panel,
           details,
-          feed: yield* feedQuery(shownEntries),
-          unread: yield* unreadQuery(shownEntries),
-          needs: yield* needsQuery(shownEntries),
-          panelState: yield* panelQuery(panel),
-          detail: yield* detailQuery(details, shownEntries),
+          feed: try feedQuery(shownEntries),
+          unread: try unreadQuery(shownEntries),
+          needs: try needsQuery(shownEntries),
+          panelState: try panelQuery(panel),
+          detail: try detailQuery(details, shownEntries),
           scope,
           retryInput: (subject) => retryInput(subject).pipe(Effect.provideContext(admitting)),
         })
-      }),
+      },
     )
 }

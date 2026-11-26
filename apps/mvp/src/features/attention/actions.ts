@@ -7,7 +7,7 @@ import { type PanelVia, type Surface } from "./contract"
 import { panel as panelActs } from "./metrics"
 import { newestNeed } from "./entries"
 import { PANEL, type Panel } from "./schema"
-import { AttentionNavigation, AttentionStore } from "./store"
+import { AttentionNavigation, AttentionStore } from "./store.vibe"
 
 // What a person does with the feed (decision 0009 decision 10): open an entry, hide a toast, dismiss an entry, mark one
 // read, and use the notifications panel: open it, expand an entry in it, answer or retry from it. Read, Hide and

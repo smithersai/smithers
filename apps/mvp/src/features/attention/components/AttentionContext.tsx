@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { AttentionView } from "../attention"
+import type { AttentionView } from "../attention.vibe"
 
 // What React components get: the feed's live queries to render and plain actions to call
 // (features/attention/attention.ts).

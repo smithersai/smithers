@@ -2,7 +2,7 @@ import { Collection } from "@smthrs/effect-tanstack-db"
 import { Effect } from "effect"
 import { expect, test } from "vitest"
 import { CloudRun, UNATTRIBUTED_RUN_KINDS } from "../runs/schema"
-import { shownQuery } from "./queries"
+import { ofConversationQuery, shownQuery } from "./queries.vibe"
 import { Entry, NoticeKind, UNATTRIBUTED_NOTICE_KINDS } from "./schema"
 
 // The data gate (decision 0110, 2026-11-03; coordinator's rulings 1 and 2): a notice or a run on Cloudflare that names no
@@ -36,4 +36,31 @@ test("a notice naming neither a repository nor a conversation shows only for an 
     return (yield* query.toArray).map((row) => row.kind).sort()
   })))
   expect(shown).toEqual(["bug", "run", "spend"])
+})
+
+test("conversation-owned entries keep their source keys until they gain a repository", async () => {
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const conversationId = "conversation"
+    const entries = yield* Collection.local<Entry, string>({
+      id: "conversation-entries",
+      schema: Entry,
+      getKey: (row) => row.id,
+      initialData: [
+        { ...entry("no-repo", "run"), conversationId },
+        { ...entry("undefined-repo", "run"), conversationId, repoId: undefined },
+        { ...entry("both", "run"), conversationId, repoId: "github/octo/hello" },
+        entry("no-conversation", "run"),
+      ],
+    })
+    const query = yield* ofConversationQuery(entries)
+    yield* query.preload
+    expect(query.tanstack.get("no-repo")?.conversationId).toBe(conversationId)
+    expect(query.tanstack.get("undefined-repo")?.conversationId).toBe(conversationId)
+    expect(query.tanstack.get("both")).toBeUndefined()
+    expect(query.tanstack.get("no-conversation")).toBeUndefined()
+
+    yield* entries.update("no-repo", (row) => { row.repoId = "github/octo/hello" })
+    expect(query.tanstack.get("no-repo")).toBeUndefined()
+    expect((yield* query.toArray).map((row) => row.id)).toEqual(["undefined-repo"])
+  })))
 })

@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
 import { answer, closePanel, dismiss, expand, hide, open, openPanel, read, retry, togglePanel } from "./actions"
 import type { PanelVia, Surface } from "./contract"
-import { AttentionStore } from "./store"
+import { AttentionStore } from "./store.vibe"
 
 // The personal feed as a frontend sees it (decision 0009): live queries to read and plain functions to act, with no
 // Effect in sight. The stack reads `stack` and `list` on a page, and `stackHere` and `listHere` over a conversation;
@@ -54,11 +54,11 @@ export class Attention extends Context.Service<
   /** Binds the store's queries and the actions for frontends, run with the services this layer was built with. */
   static readonly layer = Layer.effect(
     Attention,
-    Effect.gen(function* () {
-      const store = yield* AttentionStore
+    effect {
+      const store = try AttentionStore
       type Needs<A> = A extends (...args: never) => Effect.Effect<unknown, unknown, infer R> ? R : never
       const { runSync: run, runPromise: promise } = runners(
-        yield* Effect.context<
+        try Effect.context<
           | Needs<typeof open>
           | Needs<typeof answer>
           | Needs<typeof retry>
@@ -92,7 +92,7 @@ export class Attention extends Context.Service<
           retry: (subject) => promise(retry(subject)),
         },
       })
-    }),
+    },
   )
 }
 
