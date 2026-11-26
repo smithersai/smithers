@@ -4,6 +4,7 @@
 // and send replies through MCP. An agent's question reaches the conversation, the header's queries, `core/waits`,
 // and the title on every device. The attached agent can continue after a device records the person's answer.
 import { Effect, type ManagedRuntime, Metric } from "effect"
+import { Window } from "happy-dom"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import * as Conversations from "../../../worker/branch/Conversations.vibe"
 import { shaOf } from "../../../worker/test/branch.ts"
@@ -14,7 +15,8 @@ import { finishRun, personAnswered, recordedModelFailure, reportRun, waitOnPerso
 import { plain } from "../../test/deviceFixture"
 import { EngineFaults } from "../../test/faults"
 import { renderHeaderStatus } from "./header-render"
-import { Status } from "./status"
+import { focus } from "./actions.vibe"
+import { Status } from "./status.vibe"
 import { shown, StatusStore } from "./store"
 
 /** A test that drives devices' engines through run reports and sync: seconds each, more on a loaded machine. */
@@ -57,6 +59,7 @@ const openDevice = async (
   const store = await runtime.runPromise(Effect.service(StatusStore))
   for (const query of [store.statuses, store.waits, store.latest]) query.tanstack.startSyncImmediate()
   return {
+    runtime,
     chat,
     status,
     store,
@@ -85,6 +88,9 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     // Working first: the answer streams.
     await until(() => expect(a.statusOf(answerId)?.state).toBe("working"))
     expect(a.latest()).toMatchObject({ id: answerId, state: "working" })
+    // A working run asks nothing: its row holds no question to keep a draft for.
+    a.status.actions.setDraft(answerId, "early")
+    expect(a.store.local.tanstack.toArray).toEqual([])
     await waitOnPerson(api, answerId, { kind: "question", prompt: "Which branch should I deploy?", options: ["main", "docs-v2"] })
 
     for (const device of [a, b]) {
@@ -118,7 +124,22 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     a.status.actions.setDraft(answerId, "docs")
     a.status.actions.focus(answerId)
     a.status.actions.focus(answerId)
-    expect(a.statusOf(answerId)).toMatchObject({ draft: "docs", focus: 2 })
+    // Unforced, it still focuses: nobody is typing elsewhere on this headless device.
+    a.runtime.runSync(focus(answerId, { force: false }))
+    expect(a.statusOf(answerId)).toMatchObject({ draft: "docs", focus: 3 })
+    // While the person types in the composer, an unforced focus holds: the card doesn't take their keystrokes.
+    const page = new Window()
+    const composer = page.document.createElement("textarea")
+    page.document.body.append(composer)
+    composer.focus()
+    Object.assign(globalThis, { document: page.document })
+    try {
+      a.runtime.runSync(focus(answerId, { force: false }))
+    } finally {
+      Reflect.deleteProperty(globalThis, "document")
+      await page.happyDOM.close()
+    }
+    expect(a.statusOf(answerId)).toMatchObject({ focus: 3 })
     expect(b.statusOf(answerId)).toMatchObject({ draft: "", focus: 0 })
     expect(b.waits()).toEqual([expect.objectContaining({ runId: answerId })])
 

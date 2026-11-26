@@ -2,7 +2,7 @@ import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } fr
 import { renderToStaticMarkup } from "react-dom/server"
 import { ChatProvider } from "../../AppContext"
 import type { ChatView } from "../chat/chat"
-import type { StatusView } from "./status"
+import type { StatusView } from "./status.vibe"
 import { HeaderStatus } from "./components/HeaderStatus"
 import { StatusProvider } from "./components/StatusContext"
 

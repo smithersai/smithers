@@ -5,10 +5,10 @@ import { Action, FlowRuntime } from "@smthrs/flow"
 import { Cause, Context, Effect, Exit, Layer, Scope } from "effect"
 import { afterEach, describe, expect, test } from "vitest"
 import { build } from "../../../worker/test/flowHost.ts"
-import { RunsClient, RunsRefused } from "./api"
-import { AnswerNotOpen, AnswerRefused, AnswerRun, Ask, Deliver } from "./flows"
-import * as Status from "./flows"
-import { RunReporter } from "./reporter"
+import { RunsClient, RunsRefused } from "./api.vibe"
+import { AnswerNotOpen, AnswerRefused, AnswerRun, Ask, Deliver } from "./flows.vibe"
+import * as Status from "./flows.vibe"
+import { RunReporter } from "./reporter.vibe"
 import type { Report, RunAnswer } from "./schema"
 
 /** A failed call's error. The engine annotates an action's failed cause with its FailureSite, which the outcome doesn't depend on. */
@@ -72,6 +72,39 @@ describe("app/agent/ask under faults", () => {
     const exit = await e.run((flows) =>
       flows.execute(Ask, { executionId: `${crypto.randomUUID()}/call/0.0`, payload: { kind: "approval", prompt: "Delete?" } }))
     expect(exit).toEqual(Exit.succeed({ answered: false }))
+  })
+})
+
+describe("app/agent/ask reading an approval back", () => {
+  /** Asks an approval, delivers `value` to it once it parks, and gives what the agent reads. */
+  const approve = async (value: string | boolean | { readonly approved: boolean; readonly note: string }) => {
+    const e = await engine()
+    const execution = `${crypto.randomUUID()}/chat/Respond@x:1#0/call/0.0`
+    const payload = { kind: "approval" as const, prompt: "Delete the stale preview?" }
+    await e.run((flows) => flows.execute(Ask, { executionId: execution, payload, discard: true }))
+    expect(await e.run((flows) => flows.execute(Deliver, { executionId: `deliver-${execution}`, payload: { execution, value } })))
+      .toEqual(Exit.succeed({ delivered: true }))
+    return e.run((flows) => flows.execute(Ask, { executionId: execution, payload }))
+  }
+
+  test("a decision reads back with its note when the note has words, and words read back as no decision", async () => {
+    expect(await approve(false)).toEqual(Exit.succeed({ answered: true, approved: false }))
+    expect(await approve({ approved: true, note: "  Only docs-v1. " }))
+      .toEqual(Exit.succeed({ answered: true, approved: true, note: "Only docs-v1." }))
+    expect(await approve({ approved: false, note: "   " })).toEqual(Exit.succeed({ answered: true, approved: false }))
+    expect(await approve("main")).toEqual(Exit.succeed({ answered: false }))
+  })
+
+  test("an answer to a question already answered is closed: it isn't delivered again", async () => {
+    const e = await engine()
+    const execution = `${crypto.randomUUID()}/chat/Respond@x:1#0/call/0.0`
+    const payload = { kind: "question" as const, prompt: "Which?" }
+    await e.run((flows) => flows.execute(Ask, { executionId: execution, payload, discard: true }))
+    await e.run((flows) => flows.execute(Deliver, { executionId: `deliver-${execution}`, payload: { execution, value: "main" } }))
+    expect(await e.run((flows) => flows.execute(Ask, { executionId: execution, payload })))
+      .toEqual(Exit.succeed({ answered: true, answer: "main" }))
+    expect(await e.run((flows) => flows.execute(Deliver, { executionId: `again-${execution}`, payload: { execution, value: "docs" } })))
+      .toEqual(Exit.succeed({ delivered: false }))
   })
 })
 

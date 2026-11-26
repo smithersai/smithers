@@ -1,9 +1,8 @@
 import { Action, DurableDeferred, Flow, FlowRuntime, HumanTask, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
-import { Effect, Layer, Metric, Option, Schema } from "effect"
-import { RunsClient } from "./api"
+import { RunsClient } from "./api.vibe"
 import { ASK_TASK, ASK_WITHIN_MS, MAX_OPTION_LENGTH, MAX_OPTIONS, MAX_PROMPT_LENGTH } from "./contract"
-import { RunReporter } from "./reporter"
+import { RunReporter } from "./reporter.vibe"
 import { AnswerValue, Decision, NeedKind } from "./schema"
 
 // Needs you, as flows (decision 0015 §3 and §4, docs/features/agent-status.md#flows):
@@ -214,64 +213,54 @@ export const tokenOf = (execution: string) =>
   DurableDeferred.tokenFromExecutionId(HumanTask.deferred(ASK_TASK, 1), { flow: Ask, executionId: execution })
 
 /** `app/agent/ask/request`: reports the question, then states the human task. */
-const request = (need: { readonly kind: NeedKind; readonly prompt: string; readonly options?: ReadonlyArray<string> }) =>
-  Effect.gen(function* () {
-    const instance = yield* FlowRuntime.FlowInstance
-    yield* (yield* RunReporter).reportOrFail(instance.executionId, {
-      status: "needs_you",
-      wait: { execution: instance.executionId, kind: need.kind, prompt: need.prompt, options: need.options ?? [] },
-    }).pipe(
-      Effect.mapError((error) =>
-        isRefusal(error.status)
-          ? new QuestionRefused({ status: error.status })
-          : new QuestionUnshown()
-      ),
-    )
-    return {
-      kind: need.kind === "approval" ? "json" as const : "ask" as const,
-      prompt: need.prompt,
-      timeoutMs: ASK_WITHIN_MS,
-      maxAttempts: 1,
-    }
-  })
+effect function request(need: { readonly kind: NeedKind; readonly prompt: string; readonly options?: ReadonlyArray<string> }) {
+  const instance = try FlowRuntime.FlowInstance
+  const reporter = try RunReporter
+  reporter.reportOrFail(instance.executionId, {
+    status: "needs_you",
+    wait: { execution: instance.executionId, kind: need.kind, prompt: need.prompt, options: need.options ?? [] },
+  }) catch effect (error) => {
+    throw isRefusal(error.status) ? new QuestionRefused({ status: error.status }) : new QuestionUnshown()
+  }
+  return {
+    kind: need.kind === "approval" ? "json" as const : "ask" as const,
+    prompt: need.prompt,
+    timeoutMs: ASK_WITHIN_MS,
+    maxAttempts: 1,
+  }
+}
 
 /** `app/agent/ask/answer`: reports the run working again, and reads the answer back. */
-const answer = (input: { readonly kind: NeedKind; readonly value: AnswerValue | null }) =>
-  Effect.gen(function* () {
-    const instance = yield* FlowRuntime.FlowInstance
-    yield* (yield* RunReporter).report(instance.executionId, { status: "working" })
-    const { kind, value } = input
-    if (kind === "approval") {
-      if (typeof value === "boolean") return { answered: true, approved: value }
-      if (!isDecision(value)) return { answered: false }
-      const note = value.note.trim()
-      return note === "" ? { answered: true, approved: value.approved } : { answered: true, approved: value.approved, note }
-    }
-    return typeof value === "string" ? { answered: true, answer: value } : { answered: false }
-  })
+effect function answer(input: { readonly kind: NeedKind; readonly value: AnswerValue | null }) {
+  const instance = try FlowRuntime.FlowInstance
+  try (try RunReporter).report(instance.executionId, { status: "working" })
+  const { kind, value } = input
+  if (kind === "approval") {
+    if (typeof value === "boolean") return { answered: true, approved: value }
+    if (!isDecision(value)) return { answered: false }
+    const note = value.note.trim()
+    return note === "" ? { answered: true, approved: value.approved } : { answered: true, approved: value.approved, note }
+  }
+  return typeof value === "string" ? { answered: true, answer: value } : { answered: false }
+}
 
 /** `run/answer/record`: records the answer; a question no longer open is final. */
-const record = (input: { readonly runId: string; readonly version: number; readonly value: AnswerValue }) =>
-  Effect.gen(function* () {
-    yield* (yield* RunsClient).answer(input.runId, { version: input.version, value: input.value }).pipe(
-      Effect.mapError((error) =>
-        error.code === "not_open"
-          ? new AnswerNotOpen()
-          : isRefusal(error.status)
-          ? new AnswerRefused({ status: error.status })
-          : new AnswerUnrecorded()
-      ),
-      Effect.tapError((error) =>
-        Effect.andThen(
-          Metric.update(Metric.withAttributes(answers, { outcome: outcomeOf(error) }), 1),
-          Effect.logWarning("agent.status.answer").pipe(Effect.annotateLogs({ outcome: outcomeOf(error) })),
-        )
-      ),
-    )
-    yield* Metric.update(Metric.withAttributes(answers, { outcome: "recorded" }), 1)
-    yield* Effect.logInfo("agent.status.answer").pipe(Effect.annotateLogs({ outcome: "recorded" }))
-    return { recorded: true }
-  })
+effect function record(input: { readonly runId: string; readonly version: number; readonly value: AnswerValue }) {
+  const runs = try RunsClient
+  runs.answer(input.runId, { version: input.version, value: input.value }) catch effect (refused) => {
+    const error = refused.code === "not_open"
+      ? new AnswerNotOpen()
+      : isRefusal(refused.status)
+      ? new AnswerRefused({ status: refused.status })
+      : new AnswerUnrecorded()
+    try Metric.update(Metric.withAttributes(answers, { outcome: outcomeOf(error) }), 1)
+    try annotateLogs(logWarning("agent.status.answer"), { outcome: outcomeOf(error) })
+    throw error
+  }
+  try Metric.update(Metric.withAttributes(answers, { outcome: "recorded" }), 1)
+  try annotateLogs(logInfo("agent.status.answer"), { outcome: "recorded" })
+  return { recorded: true }
+}
 
 /** How a failed record is counted. */
 const outcomeOf = (error: AnswerNotOpen | AnswerRefused | AnswerUnrecorded) =>
@@ -286,24 +275,22 @@ const outcomeOf = (error: AnswerNotOpen | AnswerRefused | AnswerUnrecorded) =>
  * held is not here; one that finished is closed. A run that holds it but hasn't parked on it yet, as while the next tab
  * wakes it, is tried again.
  */
-const deliver = (input: { readonly execution: string; readonly value: AnswerValue }) =>
-  Effect.gen(function* () {
-    const runtime = yield* FlowRuntime.FlowRuntime
-    const polled = yield* runtime.poll(Ask, input.execution).pipe(Effect.option)
-    // The token is this question's own, and the value is bounded, so an answer it refuses is one the run isn't
-    // parked on yet.
-    const outcome = Option.isNone(polled)
-      ? "not_here"
-      : Option.isSome(polled.value) && polled.value.value._tag === "Complete"
-      ? "closed"
-      : yield* HumanTask.answer({ token: tokenOf(input.execution), value: input.value }).pipe(
-        Effect.as("delivered" as const),
-        Effect.mapError(() => new NotWaitingYet()),
-      )
-    yield* Metric.update(Metric.withAttributes(answers, { outcome }), 1)
-    yield* Effect.logInfo("agent.status.deliver").pipe(Effect.annotateLogs({ outcome, delivered: outcome === "delivered" }))
-    return { delivered: outcome === "delivered" }
-  })
+effect function deliver(input: { readonly execution: string; readonly value: AnswerValue }) {
+  const runtime = try FlowRuntime.FlowRuntime
+  const polled = try option(runtime.poll(Ask, input.execution))
+  // The token is this question's own, and the value is bounded, so an answer it refuses is one the run isn't
+  // parked on yet.
+  const outcome = Option.isNone(polled)
+    ? "not_here"
+    : Option.isSome(polled.value) && polled.value.value._tag === "Complete"
+    ? "closed"
+    : as(HumanTask.answer({ token: tokenOf(input.execution), value: input.value }), "delivered" as const) catch effect () => {
+      throw new NotWaitingYet()
+    }
+  try Metric.update(Metric.withAttributes(answers, { outcome }), 1)
+  try annotateLogs(logInfo("agent.status.deliver"), { outcome, delivered: outcome === "delivered" })
+  return { delivered: outcome === "delivered" }
+}
 
 /**
  * Registers `app/agent/ask` (with the human task it parks on), `run/answer` and `run/deliver`, with their steps. Needs the

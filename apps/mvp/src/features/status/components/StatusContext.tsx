@@ -1,8 +1,8 @@
 import { createContext, useContext } from "react"
-import type { StatusView } from "../status"
+import type { StatusView } from "../status.vibe"
 
 // What React components get: agent status's live queries to render and plain actions to call
-// (features/status/status.ts).
+// (features/status/status.vibe).
 
 const StatusContext = createContext<StatusView | null>(null)
 

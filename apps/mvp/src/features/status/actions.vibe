@@ -1,0 +1,89 @@
+import { FlowDispatch } from "../../flows/dispatch.vibe"
+import { readDocumentFocusTarget, resolveApprovalFocus } from "./approvalGuard"
+import { type AnswerValue, isOpen, type Local } from "./schema"
+import { StatusStore } from "./store"
+
+// What a person does about the agent's status (decision 0015): answer its open question, keep a draft, and ask the card
+// to take focus. Hiding its toast is the feed's (decision 0009, src/features/attention/actions.ts). Each finishes at once; an answer runs on as `run/answer` in the store's scope, and
+// the card shows it sending until the run's row says it was answered.
+
+/**
+ * This tab's row for run `id`'s question `version`, made fresh when it has none or an older question's. A newer
+ * question's row is left as it is: an older answer settling late never clears the draft of the question after it.
+ */
+const touch = (id: string, version: number, change: (row: Local) => Partial<Local>) =>
+  // A local collection refuses only a row its own schema rejects, which these never are: a bug, not a state.
+  orDie(effect {
+    const { local } = try StatusStore
+    const current = try local.get(id)
+    if (Option.isSome(current) && current.value.version > version) return
+    const fresh: Local = { id, version, draft: "", sending: false, focus: 0 }
+    const base = Option.isSome(current) && current.value.version === version ? current.value : fresh
+    const next = { ...base, ...change(base) }
+    if (Option.isNone(current)) {
+      try local.insert(next)
+      return
+    }
+    try local.update(id, (draft) => Object.assign(draft, next))
+  })
+
+/**
+ * The open question of run `id`, if it is open: as the conversation has it, or, for a run whose answer this tab doesn't
+ * show, such as one on a branch the notifications panel answers, as its own row has it.
+ */
+effect function openQuestion(id: string) {
+  const { statuses, runs } = try StatusStore
+  const row = (try statuses.toArray).find((status) => status.id === id)
+  // A run that needs the person has a row with its question: Postgres' CHECK holds `wait` to `needs_you`.
+  if (row !== undefined) {
+    return row.state === "needs_you" ? Option.some({ version: row.version!, execution: row.wait!.execution }) : Option.none()
+  }
+  const run = try runs.get(id)
+  if (Option.isNone(run) || !(try sync(() => isOpen(run.value)))) return Option.none()
+  return Option.some({ version: run.value.version, execution: run.value.wait!.execution })
+}
+
+/** Keeps the field's text for run `id`'s open question. */
+export effect function setDraft(id: string, text: string) {
+  const open = try openQuestion(id)
+  if (Option.isNone(open)) return
+  try touch(id, open.value.version, () => ({ draft: text }))
+}
+
+/** Asks run `id`'s card to take focus and come into view, holding focus if the person is typing elsewhere unless `force` is set. */
+export effect function focus(id: string, options?: { readonly force?: boolean }) {
+  const open = try openQuestion(id)
+  if (Option.isNone(open)) return
+  const decision = try sync(() =>
+    resolveApprovalFocus({
+      runId: id,
+      version: open.value.version,
+      execution: open.value.execution,
+      activeTarget: readDocumentFocusTarget(),
+      force: options?.force ?? true,
+    })
+  )
+  if (decision.action !== "focus") return
+  try touch(id, open.value.version, (row) => ({ focus: row.focus + 1 }))
+}
+
+/**
+ * Answers run `id`'s open question with `value`: dispatches `run/answer` (door `button`) in the background, which
+ * records it and delivers it to the run. The card shows it sending until the row says it was answered; a refused
+ * answer clears that, so the person can answer again. Does nothing unless the question is open, or while this tab is
+ * still sending an answer to it.
+ */
+export effect function answer(id: string, value: AnswerValue) {
+  const open = try openQuestion(id)
+  if (Option.isNone(open)) return
+  const { version, execution } = open.value
+  const { scope, local } = try StatusStore
+  const mine = try local.get(id)
+  if (Option.isSome(mine) && mine.value.version === version && mine.value.sending) return
+  const flows = try FlowDispatch
+  try touch(id, version, () => ({ sending: true }))
+  fork.in(scope) effect {
+    try ignore(flows.dispatch("run/answer", { runId: id, version, execution, value }, { door: "button" }))
+    try touch(id, version, () => ({ sending: false }))
+  }
+}

@@ -1,0 +1,74 @@
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { RUNS_ROUTE, RUNS_WITHIN } from "./contract"
+import { Refusal, type Report, type RunAnswer, Written } from "./schema"
+
+// ChatApi's runs routes as a flow step calls them (docs/features/agent-status.md#the-routes), through Effect's
+// HttpClient, with one deadline covering the whole exchange.
+
+/**
+ * ChatApi didn't take the write: no whole answer within the deadline, or no network (`status` absent), or a refusal
+ * (`status`, with ChatApi's `code` when its body had one).
+ */
+export error RunsRefused {
+  reason?: "unreachable" | "timeout"
+  status?: number
+  code?: string
+}
+
+const decodeRefusal = Schema.decodeUnknownEffect(Refusal)
+const decodeWritten = Schema.decodeUnknownEffect(Written)
+
+/** The runs routes on ChatApi at `origin`. */
+export class RunsClient extends Context.Service<
+  RunsClient,
+  {
+    /** `POST /api/runs/<runId>`: the run's status. */
+    readonly report: (runId: string, report: Report) => void!RunsRefused
+    /** `POST /api/runs/<runId>/answer`: the person's answer to the run's open question. */
+    readonly answer: (runId: string, answer: RunAnswer) => void!RunsRefused
+  }
+>()("@smthrs/mvp/status/RunsClient") {
+  /** The client over the host's `HttpClient`: a `200` took the write; anything else is refused. */
+  static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
+    Layer.effect(
+      RunsClient,
+      effect {
+        const client = try HttpClient.HttpClient
+        effect function post(path: string, body: unknown) {
+          let written = false
+          // ChatApi took the write (200), but its receipt was unreadable or didn't arrive in time.
+          const malformed = (errorCode: "decode" | "timeout_after_200") =>
+            annotateLogs(logWarning("agent.status.malformed"), { feature: "status", status: 200, outcome: "malformed", errorCode })
+          // Interrupting the request aborts its fetch, so a stalled body stops too.
+          try timeoutOrElse(effect {
+            const response = client.execute(
+              HttpClientRequest.post(`${options.origin}${RUNS_ROUTE}/${path}`) |> HttpClientRequest.bodyJsonUnsafe(%, body),
+            ) catch effect () => {
+              throw new RunsRefused({ reason: "unreachable" })
+            }
+            written = response.status === 200
+            try annotateCurrentSpan({ "http.response.status_code": response.status })
+            if (response.status !== 200) {
+              const refusal = try (response.json |> flatMap(%, decodeRefusal) |> option(%))
+              throw new RunsRefused({
+                status: response.status,
+                ...(Option.isSome(refusal) ? { code: refusal.value.code } : {}),
+              })
+            }
+            (response.json |> flatMap(%, decodeWritten)) catch effect () => {
+              try malformed("decode")
+            }
+          }, {
+            duration: options.within ?? RUNS_WITHIN,
+            orElse: () => written ? malformed("timeout_after_200") : fail(new RunsRefused({ reason: "timeout" })),
+          })
+        }
+        return RunsClient.of({
+          report: (runId, report) =>
+            withSpan(post(runId, report), "agent.status.report", { kind: "client", attributes: { "smithers.run.id": runId } }),
+          answer: (runId, answer) =>
+            withSpan(post(`${runId}/answer`, answer), "agent.status.answer", { kind: "client", attributes: { "smithers.run.id": runId } }),
+        })
+      },
+    )
+}

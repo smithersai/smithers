@@ -3,7 +3,7 @@
 import { Cause, Effect, Exit, Layer, Logger } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
-import { RunsClient, type RunsRefused } from "./api"
+import { RunsClient, type RunsRefused } from "./api.vibe"
 
 /** The client over a `fetch` that answers with `respond`, recording each request it was handed. */
 const client = (respond: (request: Request) => Promise<Response>, within?: `${number} millis`) => {

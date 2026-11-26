@@ -2,7 +2,7 @@ import { AgentStatusPill, NeedsYouCard } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useBranch } from "../../branch/components/BranchContext"
 import { answerOf } from "../../coedit/view"
-import type { ConversationStatusQueries } from "../status"
+import type { ConversationStatusQueries } from "../status.vibe"
 import { useStatus } from "./StatusContext"
 
 // An answer's agent status in the conversation (decision 0015): its question card while it needs the person, the

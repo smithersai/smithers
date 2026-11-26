@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { answerOf } from "./flows"
+import { answerOf } from "./flows.vibe"
 
 describe("answerOf", () => {
   test("keeps words, decisions and decisions with a note, and nothing else", () => {

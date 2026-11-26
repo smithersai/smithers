@@ -1,7 +1,6 @@
-import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch.vibe"
-import { answer, focus, setDraft } from "./actions"
+import { answer, focus, setDraft } from "./actions.vibe"
 import type { AnswerValue } from "./schema"
 import { StatusStore } from "./store"
 
@@ -42,9 +41,9 @@ export class Status extends Context.Service<Status, { readonly queries: StatusQu
   /** Binds the store's queries and the actions for frontends, run with the services this layer was built with. */
   static readonly layer = Layer.effect(
     Status,
-    Effect.gen(function* () {
-      const store = yield* StatusStore
-      const { runSync: run } = runners(yield* Effect.context<StatusStore | FlowDispatch>(), "status")
+    effect {
+      const store = try StatusStore
+      const { runSync: run } = runners(try Effect.context<StatusStore | FlowDispatch>(), "status")
       const queriesOf = ({ statuses, latest }: { readonly statuses: Store["statuses"]; readonly latest: Store["latest"] }) => ({
         statuses: statuses.tanstack,
         latest: latest.tanstack,
@@ -61,7 +60,7 @@ export class Status extends Context.Service<Status, { readonly queries: StatusQu
           focus: (id) => run(focus(id)),
         },
       })
-    }),
+    },
   )
 }
 

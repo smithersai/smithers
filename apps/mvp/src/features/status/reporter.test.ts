@@ -2,8 +2,8 @@
 // how it fails. The real client and routes run in flows.test.ts and status.test.ts.
 import { Deferred, Effect, Exit, Fiber, Layer, Metric } from "effect"
 import { describe, expect, test } from "vitest"
-import { RunsClient, RunsRefused } from "./api"
-import { reports, RunReporter } from "./reporter"
+import { RunsClient, RunsRefused } from "./api.vibe"
+import { reports, RunReporter } from "./reporter.vibe"
 import type { Report } from "./schema"
 
 /** The reporter over a client that answers each report with the next of `outcomes` (success when they run out). */

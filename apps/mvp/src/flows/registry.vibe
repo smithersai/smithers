@@ -36,7 +36,7 @@ import {
 import { IssueCommitment, IssueComment, IssueCreate, IssueTriage, TriageEnable, TriagePause, TriageRunAgain } from "../features/issues/flows.vibe"
 import { Classify, Evaluate } from "../features/jev/flows"
 import { Cancel, Inspect, List, RepoRun, Resume, Retry, RetryFrom, Steer } from "../features/runs/flows"
-import { AnswerRun, Ask, Deliver } from "../features/status/flows"
+import { AnswerRun, Ask, Deliver } from "../features/status/flows.vibe"
 import { Ack, WatchSet } from "../features/attention/flows"
 import { AlertChannelSet, SandboxLimitsSet } from "../features/spend/flows"
 import { DomainAdd, DomainRemove } from "../features/domains/flows"
