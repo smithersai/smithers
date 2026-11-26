@@ -1,5 +1,5 @@
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
-import type { TimelineNotice } from "../timeline/notice"
+import type { TimelineNotice } from "../timeline/notice.vibe"
 import type { Effect } from "effect"
 import { COULDNT_ANSWER, MODEL_QUOTA_SPENT } from "./contract"
 import type { Source } from "../repo/gate"

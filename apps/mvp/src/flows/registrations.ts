@@ -1,6 +1,6 @@
 import * as PinSteps from "../features/pins/steps"
 import { FlowRegistry } from "./registry"
-import * as Timeline from "../features/timeline/steps"
+import * as Timeline from "../features/timeline/steps.vibe"
 import { Action } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
 import { Layer } from "effect"

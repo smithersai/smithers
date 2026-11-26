@@ -16,12 +16,13 @@ import { RepoRole, Session } from "../auth/schema"
 import { makeVisibility } from "../repo/gate"
 import { RunPage } from "../runs/schema"
 import { pageShowsAlone, RunsStore } from "../runs/store"
-import { socketUrl } from "./actions"
+import { apply, socketUrl } from "./actions.vibe"
 import { GENESIS, transcribed, transcriptRoute } from "./contract"
 import { chain } from "./digest"
 import { dials, replays } from "./metrics"
 import type { Frame, Row } from "./schema"
-import { Transcript } from "./transcript"
+import { TranscriptStore } from "./store.vibe"
+import { Transcript } from "./transcript.vibe"
 
 const closers: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -345,4 +346,15 @@ test("each live reconnect starts a fresh redial budget", async () => {
     }
   }
   expect(page.count(dials, { outcome: "live" })).toBe(4)
+})
+
+test("applying an event to the idle store leaves the item unattributed", async () => {
+  const items = await Effect.runPromise(Effect.gen(function* () {
+    const store = yield* TranscriptStore
+    yield* apply({ type: "events", events: [said("Before a run is selected")] })
+    return yield* store.items.toArray
+  }).pipe(Effect.provide(TranscriptStore.layer({ origin: "https://transcript.test" }))))
+  expect(items).toHaveLength(1)
+  expect(items[0]).toMatchObject({ kind: "message", text: "Before a run is selected" })
+  expect(items[0]?.runId).toBeUndefined()
 })

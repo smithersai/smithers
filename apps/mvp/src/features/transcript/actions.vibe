@@ -7,7 +7,7 @@ import { chain } from "./digest"
 import { EMPTY, foldAll } from "./fold"
 import { dials, lagMs, replays } from "./metrics"
 import { decodeFrame, type Frame, PANEL, type Panel } from "./schema"
-import { IDLE, TranscriptStore } from "./store"
+import { IDLE, TranscriptStore } from "./store.vibe"
 
 // What the Transcript panel does (decision 0141, docs/features/agent-transcripts.md#the-panel): it holds one socket to
 // the run it shows, replays the run's events from the start, then follows them live. A socket that drops dials again
@@ -33,40 +33,41 @@ const panelNow = Effect.flatMap(TranscriptStore, ({ panel }) => Effect.map(panel
 
 /** Takes one frame: events are folded into the items, counted and chained; `live` checks the chain against the run's. */
 export const apply = (frame: Frame) =>
-  Effect.gen(function* () {
-    const store = yield* TranscriptStore
-    const panel = yield* panelNow
+  effect {
+    const store = (try TranscriptStore)
+    const panel = (try panelNow)
     if (frame.type === "live") {
       const verified = frame.n === panel.last && frame.digest === panel.digest
-      yield* Metric.update(Metric.withAttributes(replays, { verified: String(verified) }), 1)
-      yield* Metric.update(Metric.withAttributes(dials, { outcome: "live" }), 1)
-      yield* Effect.logInfo("transcript.live").pipe(Effect.annotateLogs({ events: panel.events, verified }))
-      return yield* setPanel({ phase: "live", verified })
+      try Metric.update(Metric.withAttributes(replays, { verified: String(verified) }), 1)
+      try Metric.update(Metric.withAttributes(dials, { outcome: "live" }), 1)
+      try (Effect.logInfo("transcript.live").pipe(Effect.annotateLogs({ events: panel.events, verified })))
+      return try setPanel({ phase: "live", verified })
     }
     // A redial replays after the last event held, so nothing arrives twice; anything at or before it is dropped.
     const rows = frame.events.filter((row) => row.n > panel.last)
     if (rows.length === 0) return
-    const folded = foldAll(yield* Ref.get(store.folded), rows)
-    yield* Ref.set(store.folded, folded.state)
+    const previous = try Ref.get(store.folded)
+    const folded = try sync(() => foldAll(previous, rows))
+    try Ref.set(store.folded, folded.state)
     for (const next of folded.changed) {
       // Each item names the panel's run, which its showing joins (store.ts `itemsQuery`).
       const item = panel.runId === null ? next : { ...next, runId: panel.runId }
-      if (Option.isSome(yield* store.items.get(item.id))) {
-        yield* Effect.orDie(store.items.update(item.id, (row) => void Object.assign(row, item)))
+      if (Option.isSome((try store.items.get(item.id)))) {
+        try Effect.orDie(store.items.update(item.id, (row) => void Object.assign(row, item)))
       } else {
-        yield* Effect.orDie(store.items.insert(item))
+        try Effect.orDie(store.items.insert(item))
       }
     }
-    const now = yield* Clock.currentTimeMillis
-    for (const row of rows) yield* Metric.update(lagMs, Math.max(0, now - row.at))
-    yield* setPanel({
+    const now = (try Clock.currentTimeMillis)
+    for (const row of rows) try Metric.update(lagMs, Math.max(0, now - row.at))
+    try setPanel({
       phase: panel.phase === "connecting" ? "replaying" : panel.phase,
       events: panel.events + rows.length,
       last: rows[rows.length - 1]!.n,
       digest: rows.reduce(chain, panel.digest),
       lagMs: Math.max(0, now - rows[rows.length - 1]!.at),
     })
-  })
+  }
 
 /** Why the socket ended: a drop to dial again after, or a refusal that ends the panel. */
 class Dropped {
@@ -76,13 +77,13 @@ class Dropped {
 
 /** One dial of the socket, from the last event held, until it closes: fails `Dropped` with the close's code. */
 const session = (runId: string) =>
-  Effect.scoped(Effect.gen(function* () {
-    const store = yield* TranscriptStore
-    const construct = yield* Socket.WebSocketConstructor
-    const events = yield* Queue.unbounded<{ readonly data: unknown } | { readonly code: number }>()
-    const after = (yield* panelNow).last === 0 ? -1 : (yield* panelNow).last
-    yield* setPanel({ phase: (yield* panelNow).phase === "offline" ? "offline" : "connecting" })
-    yield* Effect.acquireRelease(
+  Effect.scoped(effect {
+    const store = (try TranscriptStore)
+    const construct = (try Socket.WebSocketConstructor)
+    const events = (try Queue.unbounded<{ readonly data: unknown } | { readonly code: number }>())
+    const after = (try panelNow).last === 0 ? -1 : (try panelNow).last
+    try setPanel({ phase: (try panelNow).phase === "offline" ? "offline" : "connecting" })
+    try Effect.acquireRelease(
       Effect.sync(() => {
         const socket = construct(socketUrl(store.origin, runId, after))
         const onMessage = (event: Socket.WebSocketEvent) => Queue.offerUnsafe(events, { data: event.data })
@@ -103,69 +104,70 @@ const session = (runId: string) =>
       const frame = decodeFrame(event.data)
       return Option.isNone(frame) ? Effect.void : Effect.asVoid(apply(frame.value))
     }
-    return yield* Stream.fromQueue(events).pipe(Stream.runForEach(step))
-  }))
+    return try (Stream.fromQueue(events).pipe(Stream.runForEach(step)))
+  })
 
 /** Whether ChatApi refuses the panel run `runId` for good: the route over plain HTTP answers its refusal. */
 const refusalOf = (runId: string) =>
-  Effect.gen(function* () {
-    const store = yield* TranscriptStore
-    const client = yield* HttpClient.HttpClient
-    const response = yield* client.execute(HttpClientRequest.get(`${store.origin}${transcriptRoute(runId)}`)).pipe(
+  effect {
+    const store = (try TranscriptStore)
+    const client = (try HttpClient.HttpClient)
+    const url = try sync(() => `${store.origin}${transcriptRoute(runId)}`)
+    const response = (try (client.execute(HttpClientRequest.get(url)).pipe(
       Effect.timeout("10 seconds"),
       Effect.option,
-    )
+    )))
     return Option.isNone(response) ? undefined : FINAL[response.value.status]
-  })
+  }
 
 /** Empties the panel's items and what folding remembers. */
-const forget = Effect.gen(function* () {
-  const store = yield* TranscriptStore
-  yield* Ref.set(store.folded, EMPTY)
-  const ids = (yield* store.items.toArray).map((item) => item.id)
-  if (ids.length > 0) yield* Effect.orDie(store.items.delete(ids))
-})
+const forget = effect {
+  const store = (try TranscriptStore)
+  try Ref.set(store.folded, EMPTY)
+  const ids = (try store.items.toArray).map((item) => item.id)
+  if (ids.length > 0) try Effect.orDie(store.items.delete(ids))
+}
 
 /**
  * Shows run `runId`'s transcript, or none for `null`: lets go of the socket it held, empties the panel, and holds a
  * socket to the run's until another watch or the store's end.
  */
 export const watch = (runId: string | null) =>
-  Effect.gen(function* () {
-    const store = yield* TranscriptStore
-    if (runId !== null && (yield* panelNow).runId === runId) return
-    yield* FiberHandle.clear(store.socket)
-    yield* forget
-    yield* setPanel({ ...IDLE, runId, phase: runId === null ? "idle" : "connecting", digest: GENESIS })
+  effect {
+    const store = (try TranscriptStore)
+    if (runId !== null && (try panelNow).runId === runId) return
+    try FiberHandle.clear(store.socket)
+    try forget
+    try setPanel({ ...IDLE, runId, phase: runId === null ? "idle" : "connecting", digest: GENESIS })
     if (runId === null) return
     const attempt = (n: number, startedAt: number | undefined): Effect.Effect<void, Dropped, TranscriptStore | HttpClient.HttpClient | Socket.WebSocketConstructor> =>
       session(runId).pipe(
         Effect.catch((dropped: Dropped) =>
-          Effect.gen(function* () {
-            const refused = yield* refusalOf(runId)
+          effect {
+            const refused = (try refusalOf(runId))
             if (refused !== undefined) {
-              yield* Metric.update(Metric.withAttributes(dials, { outcome: refused }), 1)
-              yield* Effect.logWarning("transcript.closed").pipe(Effect.annotateLogs({ outcome: refused }))
+              try Metric.update(Metric.withAttributes(dials, { outcome: refused }), 1)
+              try (Effect.logWarning("transcript.closed").pipe(Effect.annotateLogs({ outcome: refused })))
               // A refusal ends what the panel shows too: the items it held go with the socket (Astra on 0c7b9f01).
-              yield* forget
-              yield* setPanel({ phase: "closed", closed: refused })
+              try forget
+              try setPanel({ phase: "closed", closed: refused })
               return
             }
-            yield* Metric.update(Metric.withAttributes(dials, { outcome: "dropped" }), 1)
-            const wasLive = (yield* panelNow).phase === "live"
-            yield* setPanel({ phase: "offline" })
-            const now = yield* Clock.currentTimeMillis
+            try Metric.update(Metric.withAttributes(dials, { outcome: "dropped" }), 1)
+            const wasLive = (try panelNow).phase === "live"
+            try setPanel({ phase: "offline" })
+            const now = (try Clock.currentTimeMillis)
             const firstFailureAt = wasLive ? now : startedAt ?? now
             const attemptNumber = wasLive ? 1 : n
-            const decision = yield* RetryPolicy.decideEffect(store.redial, {
+            const decision = (try RetryPolicy.decideEffect(store.redial, {
               attempt: attemptNumber,
               error: dropped,
               elapsedMs: now - firstFailureAt,
-            })
-            if (decision._tag === "GiveUp") return yield* Effect.fail(dropped)
-            yield* Effect.sleep(Duration.millis(decision.delayMs))
-            return yield* attempt(attemptNumber + 1, firstFailureAt)
-          })
+            }))
+            if (decision._tag === "GiveUp") return try Effect.fail(dropped)
+            try Effect.sleep(Duration.millis(decision.delayMs))
+            return try attempt(attemptNumber + 1, firstFailureAt)
+          }
         ),
       )
     const follow: Effect.Effect<void, never, TranscriptStore | HttpClient.HttpClient> = attempt(1, undefined).pipe(
@@ -179,5 +181,5 @@ export const watch = (runId: string | null) =>
       Effect.withSpan("transcript.watch"),
       Effect.annotateLogs({ feature: "transcript" }),
     )
-    yield* FiberHandle.run(store.socket, follow)
-  })
+    try FiberHandle.run(store.socket, follow)
+  }

@@ -9,8 +9,8 @@ import { build } from "../../../worker/test/flowHost"
 import { ClientEngine, DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { Message } from "../chat/schema"
 import { Summarize } from "./flow"
-import { registration, SummaryLedger, SummarySeat } from "./steps"
-import { followSummaries, makeLane, revisionOf, STOPPING_FAILURES, summaryStops } from "./store"
+import { registration, SummaryLedger, SummarySeat } from "./steps.vibe"
+import { followSummaries, makeLane, phaseRetry, revisionOf, STOPPING_FAILURES, summaryRetry, summaryStops } from "./store.vibe"
 
 const LONG = "The release retried twice; both recorded attempts kept the missing projection entry."
 /** A finished answer, long enough that its label can't say what it found. */
@@ -127,10 +127,9 @@ test("an idle page whose summary model refuses for credit makes at most two mode
   const { run, dispatch } = await device(scope, memoryLedger().layer, model, fast)
   const messages = await run(Collection.local<Message, Collection.Key>({ id: "refusing-model", schema: Message, getKey: message => message.id }))
   await run(messages.insert(Array.from({ length: 10 }, (_, n) => answer(`m${n}`))))
-  await run(Effect.forkIn(followSummaries(messages, messages, dispatch, await run(makeLane)), scope, { startImmediately: true }))
-  await vi.waitFor(() => expect(calls).toBeGreaterThanOrEqual(1), { timeout: 20_000 })
-  // Long enough for every entry's six attempts at these timings, had the lane gone on.
-  await run(Effect.sleep("500 millis"))
+  const follower = await run(Effect.forkIn(followSummaries(messages, messages, dispatch, await run(makeLane)), scope, { startImmediately: true }))
+  await run(Fiber.join(follower))
+  expect(calls).toBeGreaterThanOrEqual(1)
   expect(calls).toBeLessThanOrEqual(2)
   expect((await run(Metric.value(summaryStops))).count).toBe(1)
 }), 30_000)
@@ -321,3 +320,19 @@ test("an entry waiting for its turn when the role answers it has no model is nev
   await run(followSummaries(shownWindow(["a", "b"]), messages, dispatch, lane))
   expect(dispatched).toEqual(["b"])
 }))
+
+test("retry decisions distinguish released claims, invalid phases, and completed work", () => {
+  const taken = { _tag: "Done", value: { outcome: "taken" } } as const
+  const done = { _tag: "Done", value: { spans: 2 } } as const
+  const failed = (code: string) => ({ _tag: "Failed", error: { code } }) as const
+
+  expect(summaryRetry.when(taken)).toBe(true)
+  expect(summaryRetry.when(done)).toBe(false)
+  expect(summaryRetry.when(failed("unavailable"))).toBe(true)
+  expect(summaryRetry.when(failed("invalid"))).toBe(false)
+
+  expect(phaseRetry.when(taken)).toBe(true)
+  expect(phaseRetry.when(done)).toBe(false)
+  expect(phaseRetry.when(failed("invalid"))).toBe(true)
+  expect(phaseRetry.when(failed("refused"))).toBe(false)
+})

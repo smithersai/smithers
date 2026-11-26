@@ -4,7 +4,7 @@ import { TestClock } from "effect/testing"
 import { expect, test } from "vitest"
 import { TIMELINE_SUMMARIES_ROUTE } from "./contract"
 import { SummaryFailed } from "./flow"
-import { SummaryLedger } from "./steps"
+import { SummaryLedger } from "./steps.vibe"
 
 // The ledger's real HTTP client over an injected HTTP service: the server's answers as worker/TimelineSummaries.ts sends
 // them, and the faults no server can be made to send on demand. The happy path against the real route is in

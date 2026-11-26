@@ -7,7 +7,7 @@ import { FetchHttpClient } from "effect/http"
 import { afterEach, expect, test } from "vitest"
 import { build } from "../../../worker/test/flowHost"
 import { Phases, Summarize, SummaryFailed, type SummaryPayload } from "./flow"
-import { registration, summaryCalls, SummaryLedger, SummarySeat } from "./steps"
+import { registration, summaryCalls, SummaryLedger, SummarySeat } from "./steps.vibe"
 
 const scopes: Scope.Closeable[] = []
 afterEach(async () => { for (const scope of scopes.splice(0)) await Effect.runPromise(Scope.close(scope, Exit.void)) })

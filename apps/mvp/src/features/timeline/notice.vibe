@@ -2,7 +2,7 @@ import type { Collection } from "@smthrs/effect-tanstack-db"
 import { Clock, Deferred, Effect, Option, Schema, Stream } from "effect"
 import { LOCAL_RECIPIENT, HOME_HREF } from "../attention/contract"
 import type { Notice } from "../attention/schema"
-import { STOPPING_FAILURES, type Lane } from "./store"
+import { STOPPING_FAILURES, type Lane } from "./store.vibe"
 
 // Saying so when summaries can't be made (ruling FE-19): "if it's falling back to this because a model is not
 // configured it should say so". One toast per cause per session, on the one stack (decision 0009), and the same words on
@@ -45,23 +45,23 @@ export const noticeRow = (code: string, at: string): Notice => ({
 /** Every preventing cause says so, independently of lane shutdown, once per cause per session. */
 export const followNotice = (lane: Lane, state: Collection.Collection<TimelineNotice, string>, launches: Collection.Collection<Notice, string>) => {
   // The rail's global unavailable state belongs to the stopped lane; later local refusals must not replace its cause.
-  const markRail = (code: string) => Effect.gen(function* () {
+  const markRail = (code: string) => effect {
     const notice = { id: "notice", code, text: noticeText(code) }
-    if (Option.isSome(yield* state.get("notice"))) yield* state.update("notice", draft => { Object.assign(draft, notice) }).pipe(Effect.orDie)
-    else yield* state.insert(notice).pipe(Effect.orDie)
-  })
-  const raise = (code: string) => Effect.gen(function* () {
+    if (Option.isSome((try state.get("notice")))) try (state.update("notice", draft => { Object.assign(draft, notice) }).pipe(Effect.orDie))
+    else try (state.insert(notice).pipe(Effect.orDie))
+  }
+  const raise = (code: string) => effect {
     // The lane replays causes for a late follower; the stack's stable subject also deduplicates follower restarts.
-    const row = noticeRow(code, new Date(yield* Clock.currentTimeMillis).toISOString())
-    if (Option.isSome(yield* launches.get(row.subject))) return
-    yield* launches.insert(row).pipe(Effect.orDie)
-    yield* Effect.logWarning("timeline.summary.notice").pipe(Effect.annotateLogs({ code }))
-  })
-  const failures = lane.failures.pipe(Stream.runForEach(code => Effect.gen(function* () {
+    const row = noticeRow(code, new Date((try Clock.currentTimeMillis)).toISOString())
+    if (Option.isSome((try launches.get(row.subject)))) return
+    try (launches.insert(row).pipe(Effect.orDie))
+    try (Effect.logWarning("timeline.summary.notice").pipe(Effect.annotateLogs({ code })))
+  }
+  const failures = lane.failures.pipe(Stream.runForEach(code => effect {
     // An entry-local failure only prevents that entry's summary; one that stops the lane marks the whole rail.
-    if (STOPPING_FAILURES.includes(code) || lane.stoppedFor() === code) yield* markRail(lane.stoppedFor() ?? code)
-    yield* raise(code)
-  })))
+    if (STOPPING_FAILURES.includes(code) || lane.stoppedFor() === code) try markRail(lane.stoppedFor() ?? code)
+    try raise(code)
+  }))
   // A stopped lane always says why, even when it stopped without a named cause: never nothing (ruling FE-19).
   const stopped = Deferred.await(lane.stopped).pipe(Effect.andThen(Effect.suspend(() => {
     const code = lane.stoppedFor() ?? "unavailable"

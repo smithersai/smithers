@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest"
 import { Schema } from "effect"
-import { cleanSummary } from "./steps"
+import { cleanSummary } from "./steps.vibe"
 import { Summarize, SummaryFailed, SummaryPayload } from "./flow"
-import { revisionOf } from "./store"
+import { revisionOf } from "./store.vibe"
 
 describe("timeline summary contract", () => {
   test("accepts only short plain navigation summaries", () => {

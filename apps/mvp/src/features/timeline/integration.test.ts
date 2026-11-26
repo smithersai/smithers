@@ -6,7 +6,7 @@ import { nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatAp
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
 import { revisionOf } from "./identity"
-import { SUMMARY_TOKENS } from "./steps"
+import { SUMMARY_TOKENS } from "./steps.vibe"
 
 // The timeline followers use a scripted summary seat and ChatApi's real Postgres ledger to deduplicate across devices
 // (docs/features/timeline.md#cost). The questions and answers travel through chat admission and a BYOA attachment.

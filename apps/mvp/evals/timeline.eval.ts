@@ -22,7 +22,7 @@ import { DEFAULT_CHAT_MODEL } from "../worker/ModelRoles.vibe"
 import { build } from "../worker/test/flowHost.ts"
 import { Phases, type SegmentPayload, Summarize, SummaryFailed, type SummaryPayload } from "../src/features/timeline/flow.ts"
 import { checkPlan, exchangeUnits, parseMark, phaseUnits, planOf, readOf, sealSpans, type Level, type SegmentPlan, type StoredSpan } from "../src/features/timeline/marks.ts"
-import { registration, SummaryLedger, SummarySeat } from "../src/features/timeline/steps.ts"
+import { registration, SummaryLedger, SummarySeat } from "../src/features/timeline/steps.vibe"
 import { boundaryF1, TIMELINE_FIXTURES, type TimelineFixture } from "./timelineFixtures"
 import { gateFailures, phaseExchanges } from "./timelineGrades"
 

@@ -80,29 +80,29 @@ export class TranscriptStore extends Context.Service<
   static readonly layer = (config: TranscriptConfig) =>
     Layer.effect(
       TranscriptStore,
-      Effect.gen(function* () {
-        const panel = yield* Collection.local<Panel, string>({
+      effect {
+        const panel = (try Collection.local<Panel, string>({
           id: "transcript-panel",
           schema: Panel,
           getKey: (row) => row.id,
           initialData: [IDLE],
-        })
-        const items = yield* Collection.local<Item, string>({ id: "transcript-items", schema: Item, getKey: (row) => row.id })
+        }))
+        const items = (try Collection.local<Item, string>({ id: "transcript-items", schema: Item, getKey: (row) => row.id }))
         // A tab without the runs' store (a test's) has no run to attribute an item to, so it shows them as they are.
-        const runs = yield* Effect.serviceOption(RunsStore)
+        const runs = (try Effect.serviceOption(RunsStore))
         const shown: Source<Item> = Option.isSome(runs)
-          ? (yield* shownItemsQuery(items, runs.value.shownPages as unknown as Source<RunPage>)) as unknown as Source<Item>
+          ? (try shownItemsQuery(items, runs.value.shownPages as unknown as Source<RunPage>)) as unknown as Source<Item>
           : items
         return TranscriptStore.of({
           origin: config.origin,
           redial: config.redial ?? REDIAL,
           panel,
-          panelState: yield* panelQuery(panel),
+          panelState: (try panelQuery(panel)),
           items,
-          itemsState: yield* itemsQuery(shown),
-          folded: yield* Ref.make(EMPTY),
-          socket: yield* FiberHandle.make<void, never>(),
+          itemsState: (try itemsQuery(shown)),
+          folded: (try Ref.make(EMPTY)),
+          socket: (try FiberHandle.make<void, never>()),
         })
-      }),
+      },
     )
 }

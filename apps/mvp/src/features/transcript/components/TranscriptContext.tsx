@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { TranscriptView } from "../transcript"
+import type { TranscriptView } from "../transcript.vibe"
 
 // What the Transcript panel's components get: its live queries and plain actions (src/features/transcript/transcript.ts).
 

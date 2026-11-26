@@ -1,4 +1,4 @@
-import { SEGMENT_PROMPT } from "./steps"
+import { SEGMENT_PROMPT } from "./steps.vibe"
 import { Option, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { ARCS_FROM, SEGMENT_SPANS, SEGMENT_WINDOW } from "./contract"
