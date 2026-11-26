@@ -32,31 +32,31 @@ type Fields = Record<string, string | number | boolean>
  * branch, the access and the outcome, and a count; never a login.
  */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => (branchId: string) =>
-  Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest
-    const startedAt = yield* Clock.currentTimeMillis
+  effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const startedAt = try Clock.currentTimeMillis
     const fields: Fields = {}
     const refuse = (status: number, code: string) => {
       fields.code = code
       return HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
     }
-    const response = yield* Effect.gen(function* () {
+    const response = try effect {
       if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
-      if (!isUpgrade(request)) return refuse(426, "upgrade")
-      if (!sameOrigin(request)) return refuse(403, "origin")
+      if (!(try Effect.sync(() => isUpgrade(request)))) return refuse(426, "upgrade")
+      if (!(try Effect.sync(() => sameOrigin(request)))) return refuse(403, "origin")
       if (!isUuid(branchId)) return refuse(404, "not_found")
       fields.branchId = branchId.toLowerCase()
-      const actor = yield* (yield* Sessions).resolve
+      const actor = try (try Sessions).resolve
       if (Option.isNone(actor)) return refuse(401, "authentication")
-      const branch = yield* branchAccess(actor, branchId.toLowerCase()).pipe(Effect.provide(database))
+      const branch = try branchAccess(actor, branchId.toLowerCase()).pipe(Effect.provide(database))
       if (branch === undefined) return refuse(404, "not_found")
       if (!canView(branch.access)) return refuse(403, "forbidden")
       fields.access = branch.access
-      const admission = yield* SocketAccess.admit(actor.value, { kind: "branch", branchId: branch.branchId }, branch.access)
+      const admission = try SocketAccess.admit(actor.value, { kind: "branch", branchId: branch.branchId }, branch.access)
         .pipe(Effect.provide(database))
       if (admission._tag === "ended") return refuse(401, "authentication")
       if (admission._tag === "stale") return refuse(503, "unavailable")
-      const joined = yield* (yield* Rooms).join(branch.branchId, {
+      const joined = try (try Rooms).join(branch.branchId, {
         admission: admission.admission,
         principal: actor.value.subject.id,
         name: actor.value.login ?? actor.value.subject.id,
@@ -66,7 +66,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
       })
       fields.outcome = "joined"
       return joined
-    }).pipe(
+    }.pipe(
       Effect.catchCause((cause) =>
         Effect.sync(() => {
           fields.errorCode = codeOf(Cause.squash(cause))
@@ -75,12 +75,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
       ),
     )
     fields.status = response.status
-    fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+    fields.durationMs = (try Clock.currentTimeMillis) - startedAt
     const outcome = String(fields.outcome ?? fields.code ?? "method")
-    yield* Metric.update(Metric.withAttributes(joins, { outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
-    yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+    try Metric.update(Metric.withAttributes(joins, { outcome }), 1)
+    try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+    try Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
       "branch.room",
     ).pipe(Effect.annotateLogs({ ...fields, outcome }))
     return response
-  }).pipe(Effect.withSpan("branch.room", { kind: "server" }))
+  }.pipe(Effect.withSpan("branch.room", { kind: "server" }))

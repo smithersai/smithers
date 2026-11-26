@@ -24,24 +24,24 @@ const isUuid = Schema.is(Schema.String.check(Schema.isUUID()))
 
 /** Reads Electric's connection and returns the shape over `database`; sessions unreadable, 503 (worker/ShapeAccess.ts). */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
-  Effect.gen(function* () {
-    const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+  effect {
+    const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
     return ShapeProxy.make({
       ...connection,
-      shape: Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
+      shape: effect {
+        const request = try HttpServerRequest.HttpServerRequest
         const named = new URL(request.url, "http://localhost").searchParams.get("branch")
-        const actor = yield* ShapeAccess.actor
+        const actor = try ShapeAccess.actor
         const found = named !== null && isUuid(named)
-          ? yield* branchAccess(actor, named.toLowerCase()).pipe(
+          ? try branchAccess(actor, named.toLowerCase()).pipe(
             Effect.provide(database),
             Effect.mapError(() => ShapeAccess.unavailable),
           )
           : undefined
         const branch = found !== undefined && canView(found.access) ? found.branchId : NO_BRANCH
         return { table: PUBLICATIONS_TABLE, where: "branch_id = $1", params: { "1": branch }, columns: PUBLICATION_COLUMNS }
-      }),
+      },
       name: "branch.publications.shape",
       metric: shapes,
     })
-  })
+  }

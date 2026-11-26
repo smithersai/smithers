@@ -1,6 +1,6 @@
 // Publish's, Update branch's and Resync's doors on the server (docs/features/branch-publish.md#routes): the writes route
 // (worker/github/Api.ts) admitting `branch/publish`, `branch/update` and `branch/resync` through its real handler, with
-// flow starts recorded (worker/github/test/harness.ts), and the branch's publication shape (worker/branch/Publications.ts)
+// flow starts recorded (worker/github/test/harness.ts), and the branch's publication shape (worker/branch/Publications.vibe)
 // through the branch workspace's real routes and the compose Electric (worker/test/branch.ts).
 import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
@@ -16,7 +16,7 @@ import { githubHarness, member } from "../github/test/harness.ts"
 import { branchHarness, type BranchHarness, resetBranches, shared, tracked } from "../test/branch.ts"
 import { eventually, testFile } from "../test/harness.ts"
 import * as Conversations from "./Conversations.vibe"
-import * as Publications from "./Publications.ts"
+import * as Publications from "./Publications.vibe"
 
 const runtime = testFile("branch_publish_api")
 

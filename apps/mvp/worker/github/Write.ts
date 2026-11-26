@@ -256,7 +256,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
       // A merge is admitted for `pr/Merge` (worker/github/Merge.ts), which settles it; this flow never runs one.
       if (payload.op === "pr/merge") return yield* settled(write, "none", { status: "refused", failure: "invalid" })
       // Publish, Update branch and Resync are admitted for `branch/Publish`, `branch/Update` and `branch/Resync`
-      // (worker/branch/Publish.ts).
+      // (worker/branch/Publish.vibe).
       if (payload.op === "branch/publish" || payload.op === "branch/update" || payload.op === "branch/resync") {
         return yield* settled(write, "none", { status: "refused", failure: "invalid" })
       }

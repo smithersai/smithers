@@ -10,7 +10,7 @@ import { codeOf } from "../ErrorCode.ts"
 import type { Repository } from "../github/Config.ts"
 import { Forge } from "./Forge.vibe"
 import { Machines } from "./Machines.ts"
-import type { BranchRow, Publication } from "./Publish.ts"
+import type { BranchRow, Publication } from "./Publish.vibe"
 import type { SandboxBranch } from "./Sandboxes.ts"
 
 // Resync (docs/features/branch-publish.md#resync; ruling GH-6, Will, 2026-10-20 06:39: "update branch resync"): a

@@ -1,5 +1,5 @@
 import { TestSchemas } from "@smthrs/database"
-// Publish and Update branch (worker/branch/Publish.ts, docs/features/branch-publish.md) on the Node host against the
+// Publish and Update branch (worker/branch/Publish.vibe, docs/features/branch-publish.md) on the Node host against the
 // scripted GitHub and real sandbox tools over a scratch checkout, both injected Effect services: a write admitted
 // as the writes route admits it, then `branch/Publish` takes the branch's working copy to GitHub as the person who
 // pressed, and `branch/Update` brings the published branch up to date with its base, or settles why not.
@@ -26,7 +26,7 @@ import { machines as todoMachines } from "../test/todoMachines.ts"
 import * as Conversations from "./Conversations.vibe"
 import { Forge } from "./Forge.vibe"
 import { Machines } from "./Machines.ts"
-import * as Publish from "./Publish.ts"
+import * as Publish from "./Publish.vibe"
 
 const runtime = testFile("branch_publish")
 beforeEach(async () => {

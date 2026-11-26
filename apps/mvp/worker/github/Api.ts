@@ -84,7 +84,7 @@ import {
   updateExecutionId,
 } from "../../src/features/branch/contract.ts"
 import { branchAccess, branchAccessAs, canEdit } from "../branch/Access.vibe"
-import { Publish, publishBlocked, Resync, Update } from "../branch/Publish.ts"
+import { Publish, publishBlocked, Resync, Update } from "../branch/Publish.vibe"
 import { type Actor, canAsk, refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"

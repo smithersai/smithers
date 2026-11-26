@@ -1,4 +1,4 @@
-// `GET /api/branches/<id>/room` (worker/branch/Presence.ts, decision 0013 §4) through the branch workspace's real routes
+// `GET /api/branches/<id>/room` (worker/branch/Presence.vibe, decision 0013 §4) through the branch workspace's real routes
 // (worker/test/branch.ts) on this file's schema of the compose Postgres (`pnpm db:up`). The branch's room is a test
 // `Rooms` that records who joined, standing in for the Cloudflare Durable Object (worker/BranchRooms.ts).
 import { Effect, Layer, Redacted } from "effect"
@@ -7,10 +7,11 @@ import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import { roomRoute } from "../../src/features/branch/contract.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
+import { confirmedSession } from "../github/test/fixtures.ts"
 import { branchHarness, type BranchHarness, resetBranches, shared, tracked } from "../test/branch.ts"
 import { recorded, testFile } from "../test/harness.ts"
 import { BranchRoles } from "./Access.vibe"
-import * as Presence from "./Presence.ts"
+import * as Presence from "./Presence.vibe"
 
 const runtime = testFile("presence")
 beforeEach(() => resetBranches(runtime))
@@ -109,6 +110,21 @@ describe("GET /api/branches/<id>/room", () => {
       "not_found",
       "not_found",
     ])
+  })
+
+  test("rechecks the session at admission and refuses a stale role or an ended session", async () => {
+    const actor = { ...maya, subject: { ...maya.subject, id: crypto.randomUUID() }, session: crypto.randomUUID() }
+    await confirmedSession(runtime, actor)
+    const branch = await tracked(runtime, REPO, "feature/admission", "open", actor.subject.id)
+    const h = await open(actor)
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE sessions SET role_verified_at = now() - interval '3 hours' WHERE id = ${actor.session}`))
+    expect(await json(await join(h, branch.branchId))).toEqual([503, { code: "unavailable" }])
+
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`DELETE FROM sessions WHERE id = ${actor.session}`))
+    expect(await json(await join(h, branch.branchId))).toEqual([401, { code: "authentication" }])
+    expect(h.rooms.joined).toEqual([])
   })
 
   test("only this app's own page, asking for a socket with GET: 403 origin, 426 upgrade, 405", async () => {

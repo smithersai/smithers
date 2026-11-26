@@ -16,7 +16,7 @@ import * as SocketChecks from "./SocketChecks.vibe"
 // Durable Object per branch, named by the branch's id, holds the sockets of everyone on the branch and tells each of
 // them who else is there and where (`@smthrs/sync`'s `PresenceRoom`). It hibernates: an idle room bills no duration,
 // keeps every connection in its socket's attachment, and stores nothing, so it never pins the branch's machine. ChatApi
-// hosts it, joins each socket it admitted (worker/branch/Presence.ts), and reaches it through `Rooms`, which this file
+// hosts it, joins each socket it admitted (worker/branch/Presence.vibe), and reaches it through `Rooms`, which this file
 // provides from its namespace. Each member keeps who ChatApi admitted under a lease (worker/SocketAccess.ts): only
 // members under a live lease hear or are heard, the alarm renews leases before they lapse, and a session that ended or
 // access that went (a lower role, a branch removed) ends the lease and closes the socket, as a change of sharing does
