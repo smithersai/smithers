@@ -175,14 +175,24 @@ export const personOnlyRefusals = Metric.counter("smithers_person_only_refusals"
 
 /**
  * Whether person-only `act` must refuse `actor`: anyone acts for the person. A refusal is a log line
- * `auth.person_only` and a count, by the act and who tried; neither carries content.
+ * `auth.person_only` and a count, by the act and who tried; neither carries content. `runId: false` keeps the run's
+ * id out of the log line, for a route where that id is text its caller chose (worker/chat/MessagesShardRoutes.ts).
  */
-export const refusesPersonOnly = (actor: Actor, act: PersonOnlyAct): Effect.Effect<boolean> =>
+export const refusesPersonOnly = (
+  actor: Actor,
+  act: PersonOnlyAct,
+  options: { readonly runId?: boolean } = {},
+): Effect.Effect<boolean> =>
   actor.act === undefined ? Effect.succeed(false) : Effect.gen(function* () {
     const by = actor.act!.kind
     yield* Metric.update(Metric.withAttributes(personOnlyRefusals, { act, by }), 1)
     yield* Effect.logWarning("auth.person_only").pipe(
-      Effect.annotateLogs({ act, by, runId: actor.act!.id, depth: actor.act!.chain?.length ?? 1 }),
+      Effect.annotateLogs({
+        act,
+        by,
+        ...(options.runId === false ? {} : { runId: actor.act!.id }),
+        depth: actor.act!.chain?.length ?? 1,
+      }),
     )
     return true
   })

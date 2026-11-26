@@ -137,16 +137,19 @@ def Selector.rank : Selector → Nat
   | .within .memory => 14
   | .exact .memoryRead => 15
   | .exact .memoryWrite => 16
-  | .within .model => 17
-  | .exact .modelCall => 18
-  | .within .net => 19
-  | .exact .netGet => 20
-  | .exact .netPost => 21
-  | .exact .netPrivate => 22
-  | .within .proc => 23
-  | .exact .procSpawn => 24
-  | .within .remote => 25
-  | .exact .remoteAcquire => 26
+  | .within .messages => 17
+  | .exact .messagesRead => 18
+  | .exact .messagesWrite => 19
+  | .within .model => 20
+  | .exact .modelCall => 21
+  | .within .net => 22
+  | .exact .netGet => 23
+  | .exact .netPost => 24
+  | .exact .netPrivate => 25
+  | .within .proc => 26
+  | .exact .procSpawn => 27
+  | .within .remote => 28
+  | .exact .remoteAcquire => 29
 
 def Selector.ranked : Nat → Selector
   | 1 => .within .fs
@@ -165,16 +168,19 @@ def Selector.ranked : Nat → Selector
   | 14 => .within .memory
   | 15 => .exact .memoryRead
   | 16 => .exact .memoryWrite
-  | 17 => .within .model
-  | 18 => .exact .modelCall
-  | 19 => .within .net
-  | 20 => .exact .netGet
-  | 21 => .exact .netPost
-  | 22 => .exact .netPrivate
-  | 23 => .within .proc
-  | 24 => .exact .procSpawn
-  | 25 => .within .remote
-  | 26 => .exact .remoteAcquire
+  | 17 => .within .messages
+  | 18 => .exact .messagesRead
+  | 19 => .exact .messagesWrite
+  | 20 => .within .model
+  | 21 => .exact .modelCall
+  | 22 => .within .net
+  | 23 => .exact .netGet
+  | 24 => .exact .netPost
+  | 25 => .exact .netPrivate
+  | 26 => .within .proc
+  | 27 => .exact .procSpawn
+  | 28 => .within .remote
+  | 29 => .exact .remoteAcquire
   | _ => .any
 
 theorem Selector.ranked_rank (selector : Selector) : Selector.ranked selector.rank = selector := by

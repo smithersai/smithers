@@ -5,6 +5,9 @@ import type { HttpServerRequest } from "effect/http"
 
 export const MAX_PLAN_MCP_BYTES = 65_536
 
+/** A submit to a conversation's messages shard: one command, its key and its stream (worker/chat/MessagesShardRoutes.ts). */
+export const MAX_MESSAGES_SHARD_BYTES = 65_536
+
 /** Why a body couldn't be read: larger than the route's limit (`too_large`), malformed UTF-8 (`utf8`), or cut off. */
 export error BodyRefused {
   reason: "too_large" | "utf8" | "body"

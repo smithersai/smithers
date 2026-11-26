@@ -23,6 +23,8 @@ export const Action = Schema.Literals(
     "model:call",
     "memory:read",
     "memory:write",
+    "messages:read",
+    "messages:write",
     "proc:spawn",
     "jj:status",
     "jj:diff",

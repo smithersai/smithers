@@ -50,11 +50,12 @@ def endsWith (text ending : Text) : Bool := ending.isSuffixOf text
 /-- The exact actions a capability may name. -/
 def actions : List Text :=
   [ "fs:read", "fs:write", "net:get", "net:post", "net:private", "model:call", "memory:read", "memory:write",
-    "proc:spawn", "jj:status", "jj:diff", "jj:snapshot", "jj:restore", "jj:workspace-add", "jj:workspace-forget",
-    "jj:root", "jj:revert", "jj:op-restore", "remote:acquire" ].map ascii
+    "messages:read", "messages:write", "proc:spawn", "jj:status", "jj:diff", "jj:snapshot", "jj:restore",
+    "jj:workspace-add", "jj:workspace-forget", "jj:root", "jj:revert", "jj:op-restore", "remote:acquire" ].map ascii
 
 /-- The family selectors a pattern may name besides an exact action. -/
-def families : List Text := ["fs:*", "net:*", "model:*", "memory:*", "proc:*", "jj:*", "remote:*", "*"].map ascii
+def families : List Text :=
+  ["fs:*", "net:*", "model:*", "memory:*", "messages:*", "proc:*", "jj:*", "remote:*", "*"].map ascii
 
 def isAction (action : Text) : Bool := actions.contains action
 

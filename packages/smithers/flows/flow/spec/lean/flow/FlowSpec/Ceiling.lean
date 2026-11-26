@@ -34,9 +34,9 @@ def maxResourceLength : Nat := 4096
 /-- The pattern action vocabulary: every exact action, every namespace wildcard, and `*`. -/
 def patternActions : List Text :=
   ["fs:read", "fs:write", "net:get", "net:post", "net:private", "model:call", "memory:read", "memory:write",
-    "proc:spawn", "jj:status", "jj:diff", "jj:snapshot", "jj:restore", "jj:workspace-add", "jj:workspace-forget",
-    "jj:root", "jj:revert", "jj:op-restore", "remote:acquire", "fs:*", "net:*", "model:*", "memory:*", "proc:*",
-    "jj:*", "remote:*", "*"].map utf16
+    "messages:read", "messages:write", "proc:spawn", "jj:status", "jj:diff", "jj:snapshot", "jj:restore",
+    "jj:workspace-add", "jj:workspace-forget", "jj:root", "jj:revert", "jj:op-restore", "remote:acquire", "fs:*",
+    "net:*", "model:*", "memory:*", "messages:*", "proc:*", "jj:*", "remote:*", "*"].map utf16
 
 /-- `text.split(separator)` for a separator of one code unit: at least one piece, empty pieces kept. -/
 def splitOn (separator : Nat) : Text → List Text

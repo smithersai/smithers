@@ -590,6 +590,8 @@ const patternActions = [
   "jj:workspace-add",
   "jj:*",
   "memory:read",
+  "messages:write",
+  "messages:*",
   "remote:acquire"
 ] as const
 

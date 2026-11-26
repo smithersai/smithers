@@ -14,6 +14,7 @@ import * as QuotaPolicy from "../src/QuotaPolicy.ts"
 import materialApproval from "./fixtures/cell-call-material-approval-required.json" with { type: "json" }
 import materialV1 from "./fixtures/cell-call-material-effect-rc115.json" with { type: "json" }
 import materialJudgePermission from "./fixtures/cell-call-material-judge-permission.json" with { type: "json" }
+import materialMessagesActions from "./fixtures/cell-call-material-messages-actions.json" with { type: "json" }
 import materialEncoding3 from "./fixtures/cell-call-material-key-encoding-3.json" with { type: "json" }
 import materialEncoding4 from "./fixtures/cell-call-material-key-encoding-4.json" with { type: "json" }
 import materialModelErrorCause from "./fixtures/cell-call-material-model-error-cause.json" with { type: "json" }
@@ -126,30 +127,39 @@ it("pins the complete canonical material delivered to SHA-256", async () => {
   expect(`key1_${createHash("sha256").update(realmEncoding3).digest("hex")}`).toBe(V1.realmExhaustedEncoding3Key)
   const realmEncoding4 = V1.canonical({ ...materialRealmExhausted, keyEncoding: 4 })
   expect(`key1_${createHash("sha256").update(realmEncoding4).digest("hex")}`).toBe(V1.realmExhaustedEncoding4Key)
-  // The judge permission error declaration (#4727) under key encoding 4 is what
-  // a new record is written under.
+  // The judge permission error declaration (#4727): the preceding preimage.
   expect(`key1_${createHash("sha256").update(V1.canonical(materialJudgePermission)).digest("hex")}`)
     .toBe(V1.judgePermissionKey)
   const judgeEncoding3 = V1.canonical({ ...materialJudgePermission, keyEncoding: 3 })
   expect(`key1_${createHash("sha256").update(judgeEncoding3).digest("hex")}`).toBe(V1.judgePermissionEncoding3Key)
-  const current = V1.canonical({ ...materialJudgePermission, keyEncoding: 4 })
-  expect(`key1_${createHash("sha256").update(current).digest("hex")}`).toBe(V1.judgePermissionEncoding4Key)
+  const judgeEncoding4 = V1.canonical({ ...materialJudgePermission, keyEncoding: 4 })
+  expect(`key1_${createHash("sha256").update(judgeEncoding4).digest("hex")}`).toBe(V1.judgePermissionEncoding4Key)
+  // The `messages:read` / `messages:write` declaration (decision 0170 slice 3)
+  // under key encoding 4 is what a new record is written under.
+  expect(`key1_${createHash("sha256").update(V1.canonical(materialMessagesActions)).digest("hex")}`)
+    .toBe(V1.messagesActionsKey)
+  const messagesEncoding3 = V1.canonical({ ...materialMessagesActions, keyEncoding: 3 })
+  expect(`key1_${createHash("sha256").update(messagesEncoding3).digest("hex")}`).toBe(V1.messagesActionsEncoding3Key)
+  const current = V1.canonical({ ...materialMessagesActions, keyEncoding: 4 })
+  expect(`key1_${createHash("sha256").update(current).digest("hex")}`).toBe(V1.messagesActionsEncoding4Key)
+  expect(V1.messagesActionsKey).not.toBe(V1.judgePermissionKey)
   expect(material).not.toContain(modelErrorCause)
   expect(material).not.toContain(encoding3)
   expect(material).not.toContain(encoding4)
   expect(material).not.toContain(realmEncoding4)
+  expect(material).not.toContain(judgeEncoding4)
   expect(material).toContain(current)
-  expect(observed.value).toBe(V1.judgePermissionEncoding4Key)
+  expect(observed.value).toBe(V1.messagesActionsEncoding4Key)
 })
 
 it("derives the encoding-3 key under key encoding 3, so a recorded call is found again", async () => {
   const { material, observed } = await observe(3)
-  expect(material).toContain(V1.canonical({ ...materialJudgePermission, keyEncoding: 3 }))
-  expect(observed.value).toBe(V1.judgePermissionEncoding3Key)
+  expect(material).toContain(V1.canonical({ ...materialMessagesActions, keyEncoding: 3 }))
+  expect(observed.value).toBe(V1.messagesActionsEncoding3Key)
 })
 
 it("derives the pre-encoding-3 key under key encoding 2, so a recorded call is found again", async () => {
   const { material, observed } = await observe(2)
-  expect(material).toContain(V1.canonical(materialJudgePermission))
-  expect(observed.value).toBe(V1.judgePermissionKey)
+  expect(material).toContain(V1.canonical(materialMessagesActions))
+  expect(observed.value).toBe(V1.messagesActionsKey)
 })

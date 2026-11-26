@@ -11,6 +11,8 @@ const actions = [
   "fs:write",
   "net:get",
   "net:post",
+  "messages:read",
+  "messages:write",
   "proc:spawn",
   "jj:status",
   "jj:diff",
@@ -24,6 +26,7 @@ const patternActions = [
   ...actions,
   "fs:*",
   "net:*",
+  "messages:*",
   "proc:*",
   "jj:*",
   "*"

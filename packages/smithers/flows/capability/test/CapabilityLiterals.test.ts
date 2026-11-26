@@ -311,7 +311,7 @@ describe("HARDEN-2: the sweep sees each staged form and judges it", () => {
   })
 
   it("reads the whole-form vocabulary off the kernel's own selectors", () => {
-    expect(namespacesOf(selectors)).toEqual(["*", "fs", "jj", "memory", "model", "net", "proc", "remote"])
+    expect(namespacesOf(selectors)).toEqual(["*", "fs", "jj", "memory", "messages", "model", "net", "proc", "remote"])
   })
 
   it.each(selectors)("accepts a staged grant for the declared selector %s", (selector) => {

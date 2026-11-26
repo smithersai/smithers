@@ -24,6 +24,8 @@ const exactActions = [
   "model:call",
   "memory:read",
   "memory:write",
+  "messages:read",
+  "messages:write",
   "proc:spawn",
   "jj:status",
   "jj:diff",
@@ -350,7 +352,7 @@ describe("Capability properties", () => {
       if (action === "*") return exactActions[pick % exactActions.length]!
       if (
         action === "fs:*" || action === "net:*" || action === "model:*" || action === "memory:*" ||
-        action === "proc:*" || action === "jj:*" || action === "remote:*"
+        action === "messages:*" || action === "proc:*" || action === "jj:*" || action === "remote:*"
       ) {
         const family = exactActions.filter((exact) => exact.startsWith(action.slice(0, -1)))
         return family[pick % family.length]!

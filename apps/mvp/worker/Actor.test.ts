@@ -90,4 +90,18 @@ describe("credential and person-only refusal", () => {
       expect(log.annotations).toMatchObject({ act: "alert/channel", runId: "run", depth: 2 })
     }
   })
+
+  test("a refusal whose run id is caller-chosen text logs the act, who tried and the depth, never the run id", async () => {
+    const logs: Array<ReturnType<typeof StructuredLogger.formatStructured.log>> = []
+    const logger = Logger.make((entry) => { logs.push(StructuredLogger.formatStructured.log(entry)) })
+    await Effect.runPromise(Effect.gen(function* () {
+      expect(yield* refusesPersonOnly(person("admin", { kind: "agent", id: "chosen/run text" }), "conversation/ask", { runId: false })).toBe(true)
+    }).pipe(
+      Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
+      Effect.provideService(Metric.MetricRegistry, new Map()),
+    ))
+    expect(logs).toHaveLength(1)
+    expect(logs[0]!.annotations).toEqual({ act: "conversation/ask", by: "agent", depth: 1 })
+    expect(JSON.stringify(logs)).not.toContain("chosen/run text")
+  })
 })

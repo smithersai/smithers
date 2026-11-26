@@ -10,6 +10,8 @@ import { withRequestRay } from "./RequestRay.vibe"
 import * as ArtifactRoutes from "./ops/ArtifactRoutes.vibe"
 import * as Waitlist from "./waitlist/Waitlist.vibe"
 import * as PlanTreeRoutes from "./plan/PlanTreeRoutes.ts"
+import * as MessagesShardObject from "./chat/MessagesShardObject.ts"
+import * as MessagesShardRoutes from "./chat/MessagesShardRoutes.ts"
 import * as SshKeyAccess from "./SshKeyAccess.vibe"
 import * as Artifacts from "./branch/Artifacts.ts"
 import { CiArtifacts } from "../infra/GateMachine.ts"
@@ -33,7 +35,7 @@ import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE } from "../src/features/repo/cont
 import * as AgentSandbox from "./AgentSandbox.ts"
 import * as Asks from "./Asks.ts"
 import * as Attach from "./attach/LiveMount.ts"
-import { BranchRoles } from "./branch/Access.ts"
+import { branchAccess, BranchRoles } from "./branch/Access.ts"
 import * as BranchApi from "./branch/BranchApi.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { Forge } from "./branch/Forge.ts"
@@ -425,6 +427,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // creates each one where the deployment places them (`FLOW_EXECUTION_LOCATION`, worker/Placement.ts).
     const executions = Placement.placed(yield* Executions.FlowExecution, yield* Placement.location.pipe(Effect.orDie))
     const planObjects = yield* PlanTreeRoutes.PlanTreeObject
+    // One Durable Object per conversation sequences its messages shard (decision 0170, slice 3).
+    const messageObjects = yield* MessagesShardObject.MessagesShardObject
     const artifactBucket = machines.includes(JobMachines.GATE) ? yield* Cloudflare.R2.ReadWriteBucket(CiArtifacts) : undefined
     const artifactStorage = artifactBucket?.raw as unknown as Effect.Effect<Artifacts.Bucket, never, RuntimeContext> | undefined
     const artifactPolicy = { admins: deploymentAdmins }
@@ -576,6 +580,13 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                   Effect.provideService(RuntimeContext, runtime),
                   Effect.provide(signedIn),
                 )
+              }
+              if (MessagesShardRoutes.handles(path)) {
+                return yield* MessagesShardRoutes.dispatch(
+                  (shard, outgoing) => messageObjects.getByName(shard).fetch(outgoing),
+                  (actor, conversationId) =>
+                    branchAccess(Option.some(actor), conversationId, "conversation").pipe(Effect.provide(database)),
+                ).pipe(Effect.provideService(RuntimeContext, runtime), Effect.provide(signedIn))
               }
               if (ArtifactRoutes.handles(path)) {
                 return yield* ArtifactRoutes.read(roles, artifactPolicy,
@@ -804,6 +815,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     )),
     Effect.provide(BranchRooms.live(DatabaseRoutes.route(pools, "RoomObject"), socketChecks(options))),
     Effect.provide(PlanTreeRoutes.live),
+    Effect.provide(MessagesShardObject.live),
     Effect.provide(RunContent.live(DatabaseRoutes.route(pools, "RunContent"), socketChecks(options))),
     Effect.provide(
       Layer.mergeAll(

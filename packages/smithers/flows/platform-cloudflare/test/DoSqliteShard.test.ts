@@ -13,6 +13,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Exit from "effect/Exit"
 import * as SqlClient from "effect/sql/SqlClient"
+import * as Reactivity from "effect/reactivity/Reactivity"
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -65,6 +66,26 @@ describe("DoSqliteShard", () => {
         yield* Effect.flip(sql`BEGIN IMMEDIATE`)
       })
     ).pipe(Effect.ensuring(Effect.sync(cleanup)))
+  })
+
+  it.effect("reads the receipt of a decided key, and none for a key it never decided", () => {
+    const { path, cleanup } = scratch()
+    const object = openStorage(path)
+    return Effect.scoped(Effect.gen(function*() {
+      const { receipt, shard: journal } = yield* DoSqliteShard.make(object.storage, {
+        shard,
+        decide: (cmd) => cmd.payload === "bad" ? { _tag: "Refused", reason: "bad" } : { _tag: "Accepted", events: [cmd.payload] }
+      })
+      expect(receipt(["a", "1"])).toBeUndefined()
+      yield* journal.submit({ version: 2, shard, epoch: 0, command: command("a", "1", "one") })
+      yield* journal.submit({ version: 2, shard, epoch: 0, command: command("a", "2", "bad") })
+      expect(receipt(["a", "1"])).toMatchObject({ epoch: 0, seq: 1, reason: null })
+      expect(receipt(["a", "2"])).toMatchObject({ epoch: 0, seq: null, reason: "bad" })
+      expect(receipt(["b", "1"])).toBeUndefined()
+    })).pipe(Effect.provide(Reactivity.layer), Effect.ensuring(Effect.sync(() => {
+      object.hibernate()
+      cleanup()
+    })))
   })
 
   it.effect("rolls back a submit whose transaction faults before commit", () => {
@@ -327,4 +348,5 @@ describe("DoSqliteShard", () => {
       })
     ).pipe(Effect.ensuring(Effect.sync(cleanup)))
   })
+
 })

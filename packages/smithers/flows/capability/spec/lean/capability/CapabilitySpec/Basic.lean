@@ -2,7 +2,7 @@
 # Texts and actions
 
 A text is a list of UTF-16 code units, because the implementation matches, splits and orders resources by code unit
-and never decodes them. An action is one of nineteen host operations in seven namespaces; a pattern's action selector
+and never decodes them. An action is one of twenty-one host operations in eight namespaces; a pattern's action selector
 is an exact action, a whole space, or every action.
 -/
 
@@ -21,31 +21,32 @@ def maxResourceLength : Nat := 4096
 def maxMatchWork : Nat := maxResourceLength * maxResourceLength
 
 inductive Namespace where
-  | fs | net | model | memory | proc | jj | remote
+  | fs | net | model | memory | messages | proc | jj | remote
   deriving DecidableEq, Repr
 
 inductive Action where
-  | fsRead | fsWrite | netGet | netPost | netPrivate | modelCall | memoryRead | memoryWrite | procSpawn
-  | jjStatus | jjDiff | jjSnapshot | jjRestore | jjWorkspaceAdd | jjWorkspaceForget | jjRoot | jjRevert
-  | jjOpRestore | remoteAcquire
+  | fsRead | fsWrite | netGet | netPost | netPrivate | modelCall | memoryRead | memoryWrite | messagesRead
+  | messagesWrite | procSpawn | jjStatus | jjDiff | jjSnapshot | jjRestore | jjWorkspaceAdd | jjWorkspaceForget
+  | jjRoot | jjRevert | jjOpRestore | remoteAcquire
   deriving DecidableEq, Repr
 
-def Namespace.all : List Namespace := [.fs, .net, .model, .memory, .proc, .jj, .remote]
+def Namespace.all : List Namespace := [.fs, .net, .model, .memory, .messages, .proc, .jj, .remote]
 
 def Action.all : List Action :=
-  [.fsRead, .fsWrite, .netGet, .netPost, .netPrivate, .modelCall, .memoryRead, .memoryWrite, .procSpawn,
-    .jjStatus, .jjDiff, .jjSnapshot, .jjRestore, .jjWorkspaceAdd, .jjWorkspaceForget, .jjRoot, .jjRevert,
-    .jjOpRestore, .remoteAcquire]
+  [.fsRead, .fsWrite, .netGet, .netPost, .netPrivate, .modelCall, .memoryRead, .memoryWrite, .messagesRead,
+    .messagesWrite, .procSpawn, .jjStatus, .jjDiff, .jjSnapshot, .jjRestore, .jjWorkspaceAdd, .jjWorkspaceForget,
+    .jjRoot, .jjRevert, .jjOpRestore, .remoteAcquire]
 
 def Namespace.name : Namespace → String
   | .fs => "fs" | .net => "net" | .model => "model" | .memory => "memory" | .proc => "proc" | .jj => "jj"
-  | .remote => "remote"
+  | .messages => "messages" | .remote => "remote"
 
 def Action.namespace : Action → Namespace
   | .fsRead | .fsWrite => .fs
   | .netGet | .netPost | .netPrivate => .net
   | .modelCall => .model
   | .memoryRead | .memoryWrite => .memory
+  | .messagesRead | .messagesWrite => .messages
   | .procSpawn => .proc
   | .jjStatus | .jjDiff | .jjSnapshot | .jjRestore | .jjWorkspaceAdd | .jjWorkspaceForget | .jjRoot | .jjRevert
   | .jjOpRestore => .jj
@@ -54,7 +55,8 @@ def Action.namespace : Action → Namespace
 /-- The operation: the text after the namespace and its colon. -/
 def Action.operation : Action → String
   | .fsRead => "read" | .fsWrite => "write" | .netGet => "get" | .netPost => "post" | .netPrivate => "private"
-  | .modelCall => "call" | .memoryRead => "read" | .memoryWrite => "write" | .procSpawn => "spawn"
+  | .modelCall => "call" | .memoryRead => "read" | .memoryWrite => "write" | .messagesRead => "read"
+  | .messagesWrite => "write" | .procSpawn => "spawn"
   | .jjStatus => "status" | .jjDiff => "diff" | .jjSnapshot => "snapshot" | .jjRestore => "restore"
   | .jjWorkspaceAdd => "workspace-add" | .jjWorkspaceForget => "workspace-forget" | .jjRoot => "root"
   | .jjRevert => "revert" | .jjOpRestore => "op-restore" | .remoteAcquire => "acquire"

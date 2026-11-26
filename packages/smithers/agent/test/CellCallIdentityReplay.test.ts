@@ -42,7 +42,7 @@ const proceed = DurableDeferred.make("agent/test/cell-call-v1-proceed", { succes
 
 const reopenDeclaration = async (declaration: "retained-prior" | "current"): Promise<void> => {
   const material = declaration === "retained-prior" ? materialV1 : materialCurrent
-  const expectedKey = declaration === "retained-prior" ? V1.effect115Key : V1.judgePermissionKey
+  const expectedKey = declaration === "retained-prior" ? V1.effect115Key : V1.messagesActionsKey
   const wireError = declaration === "retained-prior" ? HarnessErrorBeforeApproval : HarnessError
   const directory = mkdtempSync(join(tmpdir(), "smithers-m1-cell-key-"))
   const filename = join(directory, "engine.sqlite")
@@ -159,10 +159,12 @@ const reopenDeclaration = async (declaration: "retained-prior" | "current"): Pro
         // carried what a failed reading paid (#3010), and when
         // `HarnessErrorCode` gained `completion_incomplete` (#3009). The
         // current vector moved when it gained `realm_exhausted` (#4829) and
-        // again when `EvaluatorError` gained `permission` (#4727).
+        // again when `EvaluatorError` gained `permission` (#4727), and when
+        // the capability `Action` union gained `messages:read` and
+        // `messages:write` (2026-11-25, decision 0170 slice 3).
         step_key_digest: declaration === "retained-prior"
           ? "324184457f5da0916c2970fdd8d1894ee48713c8042adada8f7620dbfe543a12"
-          : "df5522ad42e1e917a52c4e599a88d75e6fa043493220e35714c3cb374629d8d8",
+          : "c29de8778ec7ed51b652fa3493602a5a4d4d2dc8310993b5148320b27078e920",
         state: "succeeded"
       }])
     } finally {

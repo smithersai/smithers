@@ -131,3 +131,33 @@ describe("remote:acquire", () => {
     expect(grants("proc:*:*")).toBe(false)
   })
 })
+
+describe("messages:read and messages:write", () => {
+  const shard = "conv:3f2b8c1e-5d4a-4b7e-9c1d-2a6f0e8b7c5d"
+  const otherShard = "conv:9a1d7e44-0b2c-4f6e-8d3a-5c7b1e2f0a9d"
+
+  it("reads are sealed and posts are irreversible: a posted message leaves the run's reach", () => {
+    expect(Capability.tierOf(Capability.make("messages:read", shard), { workspaceRoot: "/workspace" }))
+      .toBe("sealed")
+    expect(Capability.tierOf(Capability.make("messages:write", shard), { workspaceRoot: "/workspace" }))
+      .toBe("irreversible")
+    expect(Capability.format(Capability.make("messages:read", shard))).toBe(`messages:read:${shard}`)
+    expect(Capability.format(Capability.make("messages:write", shard))).toBe(`messages:write:${shard}`)
+  })
+
+  it.each(["messages:read", "messages:write"] as const)(
+    "%s is granted by its own name, its family and the whole authority, and by no other shard",
+    (action) => {
+      const request = Capability.make(action, shard)
+      const grants = (text: string) => Capability.matches(Option.getOrThrow(Capability.parsePattern(text)), request)
+      expect(grants(`${action}:${shard}`)).toBe(true)
+      expect(grants(`${action}:conv:*`)).toBe(true)
+      expect(grants(`messages:*:${shard}`)).toBe(true)
+      expect(grants("messages:*:*")).toBe(true)
+      expect(grants("*")).toBe(true)
+      expect(grants(`${action}:${otherShard}`)).toBe(false)
+      expect(grants(`${action === "messages:read" ? "messages:write" : "messages:read"}:${shard}`)).toBe(false)
+      expect(grants(`memory:*:${shard}`)).toBe(false)
+    }
+  )
+})

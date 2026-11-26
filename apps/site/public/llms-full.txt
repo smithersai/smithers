@@ -11757,6 +11757,8 @@ type Action =
   | "model:call"
   | "memory:read"
   | "memory:write"
+  | "messages:read"
+  | "messages:write"
   | "proc:spawn"
   | "jj:status"
   | "jj:diff"
@@ -11792,7 +11794,7 @@ in `S.Remotes`. Its resource is the remote's name, such as `fuzz`, so
 ### Capability.PatternAction
 
 ```ts
-type PatternAction = Action | "fs:*" | "net:*" | "model:*" | "memory:*" | "proc:*" | "jj:*" | "remote:*" | "*"
+type PatternAction = Action | "fs:*" | "net:*" | "model:*" | "memory:*" | "messages:*" | "proc:*" | "jj:*" | "remote:*" | "*"
 
 const PatternAction: Schema.Literals<[...]>
 ```
@@ -12051,9 +12053,9 @@ Classifies an exact capability.
 
 | Tier           | Actions                                                                                                                                      |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sealed`       | `fs:read`, `net:get`, `model:call`, `memory:read`, `jj:status`, `jj:diff`, `jj:root`                                                         |
+| `sealed`       | `fs:read`, `net:get`, `model:call`, `memory:read`, `messages:read`, `jj:status`, `jj:diff`, `jj:root`                                                         |
 | `compensable`  | `jj:snapshot`, `jj:restore`, `jj:workspace-add`, `jj:workspace-forget`, `jj:revert`, `jj:op-restore`, and an `fs:write` inside the workspace |
-| `irreversible` | `net:post`, `net:private`, `proc:spawn`, `memory:write`, `remote:acquire`, and an `fs:write` that escapes the workspace                      |
+| `irreversible` | `net:post`, `net:private`, `proc:spawn`, `memory:write`, `messages:write`, `remote:acquire`, and an `fs:write` that escapes the workspace                      |
 
 Workspace containment is lexical, so symlinks are invisible: a caller that
 materializes workspace snapshots resolves real paths before classifying a
@@ -28677,6 +28679,8 @@ from `Capability.Action.literals` and frozen.
   "model:call:**",
   "memory:read:**",
   "memory:write:**",
+  "messages:read:**",
+  "messages:write:**",
   "proc:spawn:**",
   "jj:status:**",
   "jj:diff:**",
@@ -36919,7 +36923,7 @@ https://smithers.sh/docs/reference/api/platform-cloudflare/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-cloudflare/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-cloudflare/docs)
 
-> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/)
+> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/) · [`@smthrs/sync`](/docs/reference/api/sync/)
 
 ```ts
 import {
@@ -39873,6 +39877,7 @@ import * as Manifest from "@smthrs/plugin/Manifest"
 | `Manifest` and `type Manifest`                                                                                                                              | schema                      | The whole `plugin.json` shape.                                                                                   |
 | `PluginId`, `Qualified`, `FlowTag`, `Version`, `Range`, `Minimum`, `Capability`, `Title`, `Prose`, `When`, `RelativePath`, `JsonSchema`, `QueryRef`, `Args` | schemas                     | The field grammars.                                                                                              |
 | `Event`, `Render`, `View`, `Slot`, `Command`, `Keybinding`, `Card`, `Setting`, `Trigger`, `Hook`, `Tap`, `ModelRole`, `Records`                             | schemas                     | One per contribution entry.                                                                                      |
+| `Egress` and `type Egress`                                                                                                                                  | schema                      | The optional `egress` field: the `secrets` and `origins` a plugin's sandboxes may use, at most 64 each.          |
 | `PLUGIN_API`                                                                                                                                                | `"1.0.0"`                   | The plugin API this loader implements; `requires.api` is a range over it.                                        |
 | `RESERVED`                                                                                                                                                  | frozen array                | First segments only the core uses: `app chat repo run flow ui view system auth secret github issue plugin core`. |
 | `decode(input: unknown)`                                                                                                                                    | `Effect<Manifest, Refusal>` | Admits parsed JSON, refusing `invalid` with the failing field's path.                                            |
@@ -52341,36 +52346,6 @@ Manage your SSH keys
 ```text
 smthrs ssh-key <command>
 ```
-
-### `ssh-key add`
-
-Add an SSH key
-
-```text
-smthrs ssh-key add [options]
-```
-
-| Option | Type | Default | Required | Description |
-| --- | --- | --- | --- | --- |
-| `--title` | string |  | yes | Key title |
-| `--key` | string |  | yes | Public key content |
-| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
-
-### `ssh-key delete`
-
-Delete an SSH key
-
-```text
-smthrs ssh-key delete <id> [options]
-```
-
-| Argument | Type | Default | Required | Description |
-| --- | --- | --- | --- | --- |
-| `id` | string |  | yes | Key ID |
-
-| Option | Type | Default | Required | Description |
-| --- | --- | --- | --- | --- |
-| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
 ### `ssh-key list`
 

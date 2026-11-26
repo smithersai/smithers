@@ -25,7 +25,7 @@ import { MAX_REPORT_BODY_BYTES } from "../src/features/bugs/contract.ts"
 import { MAX_INPUT_BYTES } from "../src/features/actions/contract.ts"
 import { MAX_STEER_BODY_BYTES } from "../src/features/runs/contract.ts"
 import { MAX_SUMMARY_BODY_BYTES } from "../src/features/timeline/contract.ts"
-import { MAX_PLAN_MCP_BYTES } from "./Body.vibe"
+import { MAX_MESSAGES_SHARD_BYTES, MAX_PLAN_MCP_BYTES } from "./Body.vibe"
 import { ATTACH_ROUTE, MCP_MAX_REQUEST_BYTES, MCP_ROUTE } from "../src/features/mcp/contract.ts"
 import { TELEMETRY_LIMITS } from "../src/telemetry.ts"
 import { WAITLIST_JOIN_ROUTE, WAITLIST_MAX_BODY_BYTES } from "../src/features/waitlist/contract.ts"
@@ -78,6 +78,7 @@ export const forRequest = (url: string) => Effect.gen(function* () {
   if (/^\/api\/remote-runs\/[^/]+\/steers$/.test(path)) return MAX_STEER_BODY_BYTES
   if (/^\/api\/remote-runs\/[^/]+\/stop$/.test(path)) return 0
   if (/^\/api\/repos\/[^/]+\/[^/]+\/plan\/mcp$/.test(path)) return MAX_PLAN_MCP_BYTES
+  if (/^\/api\/conversations\/[^/]+\/messages\/submit$/.test(path)) return MAX_MESSAGES_SHARD_BYTES
   if (path === MCP_ROUTE || /^\/api\/repos\/[^/]+\/[^/]+\/mcp$/.test(path)) return MCP_MAX_REQUEST_BYTES
   if (path.startsWith(ATTACH_ROUTE + "/")) return MCP_MAX_REQUEST_BYTES
   if (path.startsWith("/api/mcp/oauth/")) return 16 * 1024

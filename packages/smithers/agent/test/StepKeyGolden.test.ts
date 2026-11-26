@@ -296,9 +296,17 @@ describe("the sealed model step key", () => {
     expect(observed.host).not.toBe("key1_537c51d05dd89569d92aa245f601a345aa0bced59b8a46f82430e53dd8899aea")
     // Moved again, under every key encoding, when `EvaluatorError` gained
     // optional `permission: PermissionError` (02d74dc01bf7, #4727).
-    expect(observed.encoding2).toBe("key1_89d3e90a4d883a6cc3a8b4f0fc6a755e8dd482c28050e44b194619793f8d3092")
-    expect(observed.encoding3).toBe("key1_54e05e9c4d5886acfc07f300e247ff5144d7ca0c8f4477baa0afbb56c59948ce")
-    expect(observed.host).toBe("key1_1a12b9e4f06911a4831938ad5c161e50f49c5eded6f41d0c03c2e146d4c04ee8")
+    expect(observed.encoding2).not.toBe("key1_89d3e90a4d883a6cc3a8b4f0fc6a755e8dd482c28050e44b194619793f8d3092")
+    expect(observed.encoding3).not.toBe("key1_54e05e9c4d5886acfc07f300e247ff5144d7ca0c8f4477baa0afbb56c59948ce")
+    expect(observed.host).not.toBe("key1_1a12b9e4f06911a4831938ad5c161e50f49c5eded6f41d0c03c2e146d4c04ee8")
+    // Moved again on 2026-11-25, under every key encoding, when the `Action`
+    // literal union gained `messages:read` and `messages:write` for the
+    // conversation messages shard (decision 0170 slice 3): the declaration's
+    // capability schema is in this preimage, as it was for `remote:acquire`.
+    // Runs already in flight finish on their original revision.
+    expect(observed.encoding2).toBe("key1_bfa7427118d061e46178de174146cd30f30d000d1ace09ec3383592b5efb65dc")
+    expect(observed.encoding3).toBe("key1_2bc9b1ba6f9fa7033159a771f133e82779034dfc2e3e3d49ef8961ad6ca98084")
+    expect(observed.host).toBe("key1_bb736d50d33a1a6af17032a8f229edfd010eb947ff1622c1d1555627b0e69504")
     // Sealed means content-addressed: the same declaration through a second
     // port of the same composition is one recorded answer, not two calls.
     expect(observed.again).toBe(observed.host)
@@ -356,9 +364,15 @@ describe("the sealed cell-call key", () => {
     // `EvaluatorError` gained optional `permission: PermissionError`
     // (02d74dc01bf7, #4727), moving the error declaration under every key
     // encoding; see `CellCallV1.judgePermissionKey`.
-    expect(observed.encoding2).toBe("key1_65827a85a2d82ccda364b1700f65ed7677ab0bc6fa0ea12df04ee078ae532f10")
-    expect(observed.encoding3).toBe("key1_65e5aef288094587a490ac284eff7776136f0280629a0ef8680fa4bbc6898da4")
-    expect(observed.host).toBe("key1_b52cc5639c33a81a42d5896c84d8f239d417f3af416b5313944f7192ecf119e4")
+    expect(observed.encoding2).not.toBe("key1_65827a85a2d82ccda364b1700f65ed7677ab0bc6fa0ea12df04ee078ae532f10")
+    expect(observed.encoding3).not.toBe("key1_65e5aef288094587a490ac284eff7776136f0280629a0ef8680fa4bbc6898da4")
+    expect(observed.host).not.toBe("key1_b52cc5639c33a81a42d5896c84d8f239d417f3af416b5313944f7192ecf119e4")
+    // Moved again on 2026-11-25, under every key encoding, when `Action`
+    // gained `messages:read` and `messages:write` (decision 0170 slice 3,
+    // conversation messages shard); the capability schema is in the preimage.
+    expect(observed.encoding2).toBe("key1_efdd968d98410c4ec0b7afa60cedd7974712243914e35dcda1539a85c16e22a2")
+    expect(observed.encoding3).toBe("key1_da342b8dc6a4854935cddafc988d05a4adabf245306ff466f431838bfb26e7ae")
+    expect(observed.host).toBe("key1_c4b4c9658f2002949eca94c342087dd1595dd16365ccdc643f32beaf1a35c063")
     // The composition really is in the key: the same call resolved under a
     // different layer set is a different boundary, not a cache hit.
     expect(observed.other).not.toBe(observed.host)

@@ -195,6 +195,14 @@ describe("transported ceilings", () => {
     expect(Flow.intersectCeilings([["*"]], [])).toEqual([["*:**"]])
   })
 
+  it("keeps a conversation shard's messages grants verbatim", () => {
+    const shard = "conv:3f2b8c1e-5d4a-4b7e-9c1d-2a6f0e8b7c5d"
+    expect(Flow.intersectCeilings([], [[`messages:read:${shard}`, `messages:write:${shard}`]]))
+      .toEqual([[`messages:read:${shard}`, `messages:write:${shard}`]])
+    expect(Flow.intersectCeilings([["messages:*:conv:*"]], [[`messages:read:${shard}`]]))
+      .toEqual([["messages:*:conv:*"], [`messages:read:${shard}`]])
+  })
+
   it("proves containment only when it can", () => {
     expect(Flow.ceilingWithin([], [])).toBe(true)
     expect(Flow.ceilingWithin([["fs:read:src/main.ts"]], [["fs:read:src/**"]])).toBe(true)

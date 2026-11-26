@@ -1121,36 +1121,6 @@ Manage your SSH keys
 smthrs ssh-key <command>
 ```
 
-### `ssh-key add`
-
-Add an SSH key
-
-```text
-smthrs ssh-key add [options]
-```
-
-| Option | Type | Default | Required | Description |
-| --- | --- | --- | --- | --- |
-| `--title` | string |  | yes | Key title |
-| `--key` | string |  | yes | Public key content |
-| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
-
-### `ssh-key delete`
-
-Delete an SSH key
-
-```text
-smthrs ssh-key delete <id> [options]
-```
-
-| Argument | Type | Default | Required | Description |
-| --- | --- | --- | --- | --- |
-| `id` | string |  | yes | Key ID |
-
-| Option | Type | Default | Required | Description |
-| --- | --- | --- | --- | --- |
-| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
-
 ### `ssh-key list`
 
 List SSH keys

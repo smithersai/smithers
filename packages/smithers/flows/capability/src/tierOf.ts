@@ -77,6 +77,7 @@ const isInsideWorkspace = (resource: string, workspaceRoot: string): boolean => 
 export const tierOf = (capability: Capability, options: TierOptions): EffectTier => {
   switch (capability.action) {
     case "memory:read":
+    case "messages:read":
     case "fs:read":
     case "net:get":
     case "model:call":
@@ -94,6 +95,7 @@ export const tierOf = (capability: Capability, options: TierOptions): EffectTier
     case "jj:op-restore":
       return "compensable"
     case "memory:write":
+    case "messages:write":
     case "net:post":
     case "net:private":
     case "proc:spawn":

@@ -175,7 +175,16 @@ interface EntryRow {
 export const make: (
   storage: Storage,
   options: Options
-) => Effect.Effect<{ readonly client: SqliteClient.SqliteClient; readonly shard: Service }, never, Scope.Scope | Reactivity.Reactivity> =
+) => Effect.Effect<
+  {
+    readonly client: SqliteClient.SqliteClient
+    readonly shard: Service
+    /** The receipt the sequencer keeps for `key`, if it already decided that key: what a retry is answered from. */
+    readonly receipt: (key: CommandKey) => ShardServer.Receipt | undefined
+  },
+  never,
+  Scope.Scope | Reactivity.Reactivity
+> =
   Effect.fnUntraced(function*(storage: Storage, options: Options) {
   const shard = yield* Schema.decodeUnknownEffect(ShardProtocol.PullRequest.fields.shard)(options.shard).pipe(Effect.orDie)
   const client = yield* SqliteClient.make({ storage })
@@ -262,7 +271,7 @@ export const make: (
     store,
     ...(options.decide === undefined ? {} : { decide: options.decide })
   })
-  return { client, shard: service }
+  return { client, shard: service, receipt: store.receipt }
 })
 
 /**

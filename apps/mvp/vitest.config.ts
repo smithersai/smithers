@@ -131,6 +131,10 @@ export default defineConfig({
         "db/migrations/0028_clone_progress.ts",
         // Who asked each question, which the answer routes require (docs/features/agent.md#the-answer-routes).
         "worker/Messages.ts",
+        // The conversation's messages as a SQLite shard (decision 0170, slice 3). worker/chat/MessagesShardObject.ts, the
+        // Alchemy Durable Object declaration, runs only under Alchemy's bundle; its handler is proved through these two.
+        "worker/chat/MessagesShard.ts",
+        "worker/chat/MessagesShardRoutes.ts",
         "db/migrations/0011_question_askers.ts",
         // The edge throttle on the open routes (docs/features/chat.md#throttling).
         "worker/Throttle.vibe",

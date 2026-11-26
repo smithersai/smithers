@@ -87,6 +87,14 @@ export const judgePermissionKey = "key1_65827a85a2d82ccda364b1700f65ed7677ab0bc6
 export const judgePermissionEncoding3Key = "key1_65e5aef288094587a490ac284eff7776136f0280629a0ef8680fa4bbc6898da4"
 export const judgePermissionEncoding4Key = "key1_b52cc5639c33a81a42d5896c84d8f239d417f3af416b5313944f7192ecf119e4"
 
+// Moved on 2026-11-25 when the capability `Action` union gained `messages:read`
+// and `messages:write` (decision 0170 slice 3, the conversation messages
+// shard): the declaration's capability schema is in the preimage, as it was
+// for `remote:acquire`. Keep the preceding preimages above.
+export const messagesActionsKey = "key1_efdd968d98410c4ec0b7afa60cedd7974712243914e35dcda1539a85c16e22a2"
+export const messagesActionsEncoding3Key = "key1_da342b8dc6a4854935cddafc988d05a4adabf245306ff466f431838bfb26e7ae"
+export const messagesActionsEncoding4Key = "key1_c4b4c9658f2002949eca94c342087dd1595dd16365ccdc643f32beaf1a35c063"
+
 // Independent JSON oracle. This fixture contains only JSON values, no schema
 // classes, undefined, non-finite numbers or other normalization cases.
 export const canonical = (value: unknown): string => {

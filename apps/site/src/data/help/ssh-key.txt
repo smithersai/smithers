@@ -3,9 +3,7 @@ smthrs ssh-key — Manage your SSH keys
 Usage: smthrs ssh-key <command>
 
 Commands:
-  add     Add an SSH key
-  delete  Delete an SSH key
-  list    List SSH keys
+  list  List SSH keys
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
