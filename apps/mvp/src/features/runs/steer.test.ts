@@ -14,7 +14,7 @@ import { describe, expect, test } from "vitest"
 import { deviceRegistry } from "../../device/registry"
 import * as RunCredentials from "../../flows/credentials"
 import { faultyPersistenceOn } from "../../test/deviceFixture"
-import { afterFailedSteer } from "./actions"
+import { afterFailedSteer } from "./actions.vibe"
 import { RemoteRunsClient, SteerFailed } from "./api.vibe"
 import { EXTERNAL_AGENT_ACTION, STEERED_ACTION } from "./contract"
 import { SteerStepRefused } from "./flows"
@@ -28,8 +28,8 @@ import {
   type SteerSent,
   SteerSent as SteerSentRow
 } from "./schema"
-import { queueSteer, TabRuns } from "./steps"
-import { finalReasonOf, keep, send } from "./writes"
+import { queueSteer, TabRuns } from "./steps.vibe"
+import { finalReasonOf, keep, send } from "./writes.vibe"
 
 const RUN = "todo:0b9e6a3c-1f2d-4c5e-8a7b-9c0d1e2f3a4b"
 const value = (text: string, clipped = false) => ({ text, bytes: text.length, clipped })

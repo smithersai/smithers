@@ -12,7 +12,7 @@ import { ChatStore } from "../chat/store"
 import { COMPOSER } from "../chat/schema"
 import { IssuesStore } from "../issues/store"
 import { TodosStore } from "../todos/store.vibe"
-import { SteerWrites } from "../runs/writes"
+import { SteerWrites } from "../runs/writes.vibe"
 import { Commands } from "./commands"
 import { admitCommand } from "./admission.vibe"
 

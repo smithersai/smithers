@@ -75,9 +75,9 @@ const refuse = (act: Act, runId: string, code: RunActRefused["code"]) =>
 
 /** The run's summary, or `not_found`. */
 const summaryOf = (act: Act | undefined, runId: string) =>
-  Effect.gen(function* () {
-    const inspection = yield* EngineStore.RunInspection.RunInspection
-    const read = yield* inspection.inspect(runId, { limit: 1 }).pipe(
+  effect {
+    const inspection = try EngineStore.RunInspection.RunInspection
+    const read = try inspection.inspect(runId, { limit: 1 }).pipe(
       Effect.map(Option.some),
       // expected: a run the engine never held answers not_found, which the act refuses and records below
       Effect.catchTag("@smthrs/engine-store/RunNotFound", () => Effect.succeed(Option.none())),
@@ -85,8 +85,8 @@ const summaryOf = (act: Act | undefined, runId: string) =>
       Effect.orDie,
     )
     if (Option.isSome(read)) return read.value
-    return yield* act === undefined ? Effect.fail(new RunActRefused({ code: "not_found" })) : refuse(act, runId, "not_found")
-  })
+    return try (act === undefined ? Effect.fail(new RunActRefused({ code: "not_found" })) : refuse(act, runId, "not_found"))
+  }
 
 /** The declaration this engine runs `flow` with, or none. */
 const declarationOf = (flow: string) =>
@@ -99,60 +99,60 @@ const declarationOf = (flow: string) =>
  * answer fails the step, and the page says the engine couldn't be reached.
  */
 const cancelCloud = (runId: string) =>
-  Effect.gen(function* () {
-    const answer = yield* Effect.result((yield* RemoteRunsClient).stop(runId))
+  effect {
+    const answer = try Effect.result((try RemoteRunsClient).stop(runId))
     if (answer._tag === "Success") {
-      yield* recordAct("cancel", runId, answer.success.outcome, "remote")
+      try recordAct("cancel", runId, answer.success.outcome, "remote")
       return { outcome: answer.success.outcome }
     }
     const { status } = answer.failure
     if (status === 401 || status === 403) {
-      return yield* Effect.andThen(recordAct("cancel", runId, "forbidden", "remote"), new RunActRefused({ code: "forbidden" }))
+      return try Effect.andThen(recordAct("cancel", runId, "forbidden", "remote"), new RunActRefused({ code: "forbidden" }))
     }
     if (status === 404) {
-      return yield* Effect.andThen(recordAct("cancel", runId, "not_found", "remote"), new RunActRefused({ code: "not_found" }))
+      return try Effect.andThen(recordAct("cancel", runId, "not_found", "remote"), new RunActRefused({ code: "not_found" }))
     }
     // A TODO's external agent that isn't working any more: it ended.
     if (status === 409) {
-      return yield* Effect.andThen(recordAct("cancel", runId, "settled", "remote"), new RunActRefused({ code: "settled" }))
+      return try Effect.andThen(recordAct("cancel", runId, "settled", "remote"), new RunActRefused({ code: "settled" }))
     }
-    yield* recordAct("cancel", runId, "unavailable", "remote")
-    return yield* Effect.die(answer.failure)
-  })
+    try recordAct("cancel", runId, "unavailable", "remote")
+    return try Effect.die(answer.failure)
+  }
 
 /**
  * `run/cancel/request`: Stop. A settled run answers its status; a fence from the future is stale. A run on Cloudflare
  * (`host: "cloud"`) is stopped there.
  */
 export const cancel = ({ runId, seq, host }: { readonly runId: string; readonly seq: number; readonly host?: "cloud" }) =>
-  Effect.gen(function* () {
-    if (host === "cloud") return yield* cancelCloud(runId)
-    const { run } = yield* summaryOf("cancel", runId)
-    if (settled(run.status)) {
-      yield* recordAct("cancel", runId, "settled")
+  effect {
+    if (host === "cloud") return try cancelCloud(runId)
+    const { run } = try summaryOf("cancel", runId)
+    if ((try Effect.sync(() => settled(run.status)))) {
+      try recordAct("cancel", runId, "settled")
       return { outcome: "settled" as const, status: run.status }
     }
-    if (seq > run.lastSeq) return yield* refuse("cancel", runId, "stale")
+    if (seq > run.lastSeq) return try refuse("cancel", runId, "stale")
     const flow = declarationOf(run.flowName)
-    if (flow === undefined) return yield* refuse("cancel", runId, "not_here")
+    if (flow === undefined) return try refuse("cancel", runId, "not_here")
     // A cancellation the store couldn't record leaves the run going: the step fails, and the person sees it.
-    yield* Effect.orDie((yield* FlowRuntime.FlowRuntime).interrupt(flow, runId))
-    yield* recordAct("cancel", runId, "requested")
+    try Effect.orDie((try FlowRuntime.FlowRuntime).interrupt(flow, runId))
+    try recordAct("cancel", runId, "requested")
     return { outcome: "requested" as const, status: run.status }
-  })
+  }
 
 /** `run/resume/drive`: Resume. Only a run that hasn't settled and hasn't moved since the page read it. */
 export const resume = ({ runId, seq }: { readonly runId: string; readonly seq: number }) =>
-  Effect.gen(function* () {
-    const { run } = yield* summaryOf("resume", runId)
-    if (settled(run.status)) return yield* refuse("resume", runId, "settled")
-    if (seq !== run.lastSeq) return yield* refuse("resume", runId, "stale")
+  effect {
+    const { run } = try summaryOf("resume", runId)
+    if ((try Effect.sync(() => settled(run.status)))) return try refuse("resume", runId, "settled")
+    if (seq !== run.lastSeq) return try refuse("resume", runId, "stale")
     const flow = declarationOf(run.flowName)
-    if (flow === undefined) return yield* refuse("resume", runId, "not_here")
-    yield* (yield* FlowRuntime.FlowRuntime).resume(flow, runId)
-    yield* recordAct("resume", runId, "resumed")
+    if (flow === undefined) return try refuse("resume", runId, "not_here")
+    try (try FlowRuntime.FlowRuntime).resume(flow, runId)
+    try recordAct("resume", runId, "resumed")
     return { resumed: true }
-  })
+  }
 
 /** A stored payload with what `version` asks: `current` drops the revision a person's flow pinned. */
 export const versioned = (flow: string, payload: unknown, version: "pinned" | "current"): unknown => {
@@ -175,7 +175,7 @@ const PINNED_CHILDREN: ReadonlyArray<string> = [FLOW_CODE, "flow/run/prompt"]
  * can't be read fails the step, and one whose payload names no revision is refused `not_retryable`.
  */
 const ranRevision = (runId: string, children: ReadonlyArray<{ readonly runId: string; readonly flowName: string }>) =>
-  Effect.gen(function* () {
+  effect {
     const child = children.find((each) => PINNED_CHILDREN.includes(each.flowName))
     if (child === undefined) return undefined
     const unpinned = (outcome: "unread" | "malformed", errorCode?: string) =>
@@ -184,16 +184,19 @@ const ranRevision = (runId: string, children: ReadonlyArray<{ readonly runId: st
       )
     // The child was listed a moment ago: a store that can't read its payload now is a defect, not an answer. The step
     // fails, and the person's page says the engine couldn't be reached.
-    const read = yield* (yield* EngineStore.RunInspection.RunInspection).payload(child.runId).pipe(
-      Effect.tapError((error) => unpinned("unread", codeOf(error))),
+    const read = try (try EngineStore.RunInspection.RunInspection).payload(child.runId).pipe(
+      Effect.tapError((error) => effect {
+        const code = try Effect.sync(() => codeOf(error))
+        try unpinned("unread", code)
+      }),
       Effect.orDie,
     )
     const { flowId, revision } = read.payload as { readonly flowId?: unknown; readonly revision?: unknown }
     if (typeof flowId === "string" && typeof revision === "number") return { flowId, revision }
     // A pinned child whose payload names no revision is history this engine can't run again as it was.
-    yield* unpinned("malformed")
-    return yield* refuse("retry", runId, "not_retryable")
-  })
+    try unpinned("malformed")
+    return try refuse("retry", runId, "not_retryable")
+  }
 
 /** The run id a repository's run started by step `executionId` gets: the same for a step run again. */
 const startIdOf = (executionId: string) => Uuid.v5(REPO_RUN_ID_NAMESPACE, executionId).pipe(Effect.orDie)
@@ -210,11 +213,11 @@ const repoOf = (path: string): RepoName => {
  * `not_found`, `not_settled` or `nothing_failed`; a route that couldn't answer fails the step.
  */
 const retryCloud = (runId: string, repo: string, failed: boolean) =>
-  Effect.gen(function* () {
-    const id = yield* startIdOf((yield* FlowRuntime.FlowInstance).executionId)
-    const answer = yield* Effect.result((yield* RemoteRunsClient).start(repoOf(repo), { id, retryOf: runId, failed }))
+  effect {
+    const id = try startIdOf((try FlowRuntime.FlowInstance).executionId)
+    const answer = try Effect.result((try RemoteRunsClient).start(repoOf(repo), { id, retryOf: runId, failed }))
     if (answer._tag === "Success") {
-      yield* recordAct("retry", runId, "retried", "remote")
+      try recordAct("retry", runId, "retried", "remote")
       return answer.success
     }
     const { code, status } = answer.failure
@@ -225,10 +228,10 @@ const retryCloud = (runId: string, repo: string, failed: boolean) =>
       : status === 404 || status === 409
       ? "not_found" as const
       : undefined
-    yield* recordAct("retry", runId, refusal ?? "unavailable", "remote")
-    if (refusal === undefined) return yield* Effect.die(answer.failure)
-    return yield* new RunActRefused({ code: refusal })
-  })
+    try recordAct("retry", runId, refusal ?? "unavailable", "remote")
+    if (refusal === undefined) return try Effect.die(answer.failure)
+    return try (new RunActRefused({ code: refusal }))
+  }
 
 /** Starts of a repository's flow by hand from this device, by `outcome`. */
 export const repoRunStarts = Metric.counter("smithers_repo_run_requests", {
@@ -246,26 +249,26 @@ export const startRepoRun = (payload: {
   readonly ref: string
   readonly input?: Readonly<Record<string, string | number | boolean>>
 }) =>
-  Effect.gen(function* () {
-    const id = yield* startIdOf((yield* FlowRuntime.FlowInstance).executionId)
-    const answer = yield* Effect.result((yield* RemoteRunsClient).start(repoOf(payload.repo), {
+  effect {
+    const id = try startIdOf((try FlowRuntime.FlowInstance).executionId)
+    const answer = try Effect.result((try RemoteRunsClient).start(repoOf(payload.repo), {
       id,
       flow: payload.flow,
       ref: payload.ref,
       ...(payload.input === undefined ? {} : { input: payload.input }),
     }))
     const outcome = answer._tag === "Success" ? "started" : answer.failure.code ?? "unavailable"
-    yield* Metric.update(Metric.withAttributes(repoRunStarts, { outcome }), 1)
-    yield* Effect.logWithLevel(answer._tag === "Success" ? "Info" : "Warn")("repo.run.start").pipe(
+    try Metric.update(Metric.withAttributes(repoRunStarts, { outcome }), 1)
+    try Effect.logWithLevel(answer._tag === "Success" ? "Info" : "Warn")("repo.run.start").pipe(
       Effect.annotateLogs({ feature: "runs", flow: payload.flow, outcome }),
     )
     if (answer._tag === "Success") return answer.success
     const code = answer.failure.code
     const known = code !== undefined && (RUNS_REFUSALS as ReadonlyArray<string>).includes(code)
     // A refusal is the run's answer; no answer at all fails the step.
-    if (!known || code === "unavailable") return yield* Effect.die(answer.failure)
-    return yield* new RepoRunRefused({ code: code as RepoRunRefused["code"] })
-  }).pipe(Effect.withSpan("repo.run.start"))
+    if (!known || code === "unavailable") return try Effect.die(answer.failure)
+    return try (new RepoRunRefused({ code: code as RepoRunRefused["code"] }))
+  }.pipe(Effect.withSpan("repo.run.start"))
 
 /**
  * `run/retry/start`: Retry. A settled run of a retryable flow, again, as a new run of its own. A repository's run on
@@ -278,31 +281,31 @@ export const retry = ({ failed, host, repo, runId, version }: {
   readonly repo?: string
   readonly failed?: boolean
 }) =>
-  Effect.gen(function* () {
+  effect {
     if (host === "cloud") {
-      if (repo === undefined) return yield* refuse("retry", runId, "not_found")
-      return yield* retryCloud(runId, repo, failed === true)
+      if (repo === undefined) return try refuse("retry", runId, "not_found")
+      return try retryCloud(runId, repo, failed === true)
     }
-    const { run, children } = yield* summaryOf("retry", runId)
-    if (!settled(run.status)) return yield* refuse("retry", runId, "not_settled")
-    if (!retryable(run.flowName)) return yield* refuse("retry", runId, "not_retryable")
+    const { run, children } = try summaryOf("retry", runId)
+    if (!(try Effect.sync(() => settled(run.status)))) return try refuse("retry", runId, "not_settled")
+    if (!(try Effect.sync(() => retryable(run.flowName)))) return try refuse("retry", runId, "not_retryable")
     // A retryable flow is a registered one, so this engine runs it.
-    const flow = declared(run.flowName as FlowName)
+    const flow = (try Effect.sync(() => declared(run.flowName as FlowName)))
     // The run was read a moment ago: a store that can't read it now is a defect, not an answer.
-    const stored = yield* Effect.orDie((yield* EngineStore.RunInspection.RunInspection).payload(runId))
-    const ran = version === "pinned" && run.flowName === "flow/run" ? yield* ranRevision(runId, children) : undefined
+    const stored = try Effect.orDie((try EngineStore.RunInspection.RunInspection).payload(runId))
+    const ran = version === "pinned" && run.flowName === "flow/run" ? try ranRevision(runId, children) : undefined
     const original = ran === undefined ? stored.payload : { ...(stored.payload as object), ...ran }
     // The engine stored the payload encoded by the flow's own schema; a registered flow's schema needs no service.
     const codec = Schema.toCodecJson(flow.payloadSchema) as unknown as Schema.Codec<unknown, unknown>
-    const payload = yield* Schema.decodeUnknownEffect(codec)(versioned(run.flowName, original, version)).pipe(
+    const payload = try Schema.decodeUnknownEffect(codec)(versioned(run.flowName, original, version)).pipe(
       Effect.catch(() => refuse("retry", runId, "not_retryable")),
     )
-    const instance = yield* FlowRuntime.FlowInstance
-    const retried = retriedRunId(instance.executionId)
-    yield* startRoot(flow, retried, payload)
-    yield* recordAct("retry", runId, "retried")
+    const instance = try FlowRuntime.FlowInstance
+    const retried = try Effect.sync(() => retriedRunId(instance.executionId))
+    try startRoot(flow, retried, payload)
+    try recordAct("retry", runId, "retried")
     return { runId: retried }
-  })
+  }
 
 /** What Retry from here answers for each of the engine's refusals (`FlowRuntime.RetryFromRefused`). */
 const retryFromRefusals: Readonly<Record<FlowRuntime.RetryFromRefusalCode, RunActRefused["code"]>> = {
@@ -321,31 +324,32 @@ const retryFromRefusals: Readonly<Record<FlowRuntime.RetryFromRefusalCode, RunAc
  * new run follows the revision the run pinned. The new run is `<act>/run`, so the act run again starts nothing new.
  */
 export const retryFrom = ({ runId, step }: { readonly runId: string; readonly step: string }) =>
-  Effect.gen(function* () {
-    const { run } = yield* summaryOf("retry_from", runId)
-    if (!settled(run.status)) return yield* refuse("retry_from", runId, "not_settled")
-    if (!retryable(run.flowName)) return yield* refuse("retry_from", runId, "not_retryable")
-    const runtime = yield* FlowRuntime.FlowRuntime
-    if (runtime.retryFrom === undefined) return yield* refuse("retry_from", runId, "not_here")
-    const retried = retriedRunId((yield* FlowRuntime.FlowInstance).executionId)
+  effect {
+    const { run } = try summaryOf("retry_from", runId)
+    if (!(try Effect.sync(() => settled(run.status)))) return try refuse("retry_from", runId, "not_settled")
+    if (!(try Effect.sync(() => retryable(run.flowName)))) return try refuse("retry_from", runId, "not_retryable")
+    const runtime = try FlowRuntime.FlowRuntime
+    if (runtime.retryFrom === undefined) return try refuse("retry_from", runId, "not_here")
+    const instance = try FlowRuntime.FlowInstance
+    const retried = try Effect.sync(() => retriedRunId(instance.executionId))
     // A retryable flow is a registered one, so this engine runs it.
-    yield* runtime.retryFrom(declared(run.flowName as FlowName), { source: runId, step, executionId: retried }).pipe(
+    try runtime.retryFrom((try Effect.sync(() => declared(run.flowName as FlowName))), { source: runId, step, executionId: retried }).pipe(
       Effect.catchTag("@smthrs/flow/FlowRuntime/RetryFromRefused", (refused) =>
         refuse("retry_from", runId, retryFromRefusals[refused.code])),
     )
-    yield* recordAct("retry_from", runId, "retried")
+    try recordAct("retry_from", runId, "retried")
     return { runId: retried }
-  })
+  }
 
 /** `run/list/read`: the newest runs a person lists, acts on runs left out. */
 export const list = () =>
-  Effect.gen(function* () {
+  effect {
     // A store that can't be read fails the read: the agent hears it failed, never an empty list.
-    const inspection = yield* EngineStore.RunInspection.RunInspection
+    const inspection = try EngineStore.RunInspection.RunInspection
     const runs: Array<EngineStore.RunInspection.RunList["runs"][number]> = []
     let cursor: string | undefined
     do {
-      const page = yield* Effect.orDie(inspection.list({ limit: RUN_LIST_LIMIT, ...(cursor === undefined ? {} : { cursor }) }))
+      const page = try Effect.orDie(inspection.list({ limit: RUN_LIST_LIMIT, ...(cursor === undefined ? {} : { cursor }) }))
       runs.push(...page.runs.filter((run) => listed(run.flowName)))
       cursor = page.cursor ?? undefined
     } while (runs.length < RUN_LIST_LIMIT && cursor !== undefined)
@@ -359,12 +363,12 @@ export const list = () =>
         seq: run.lastSeq,
       })),
     }
-  })
+  }
 
 /** `run/inspect/read`: one run, compact: its steps by action, and its result's text. */
 export const inspect = ({ runId }: { readonly runId: string }) =>
-  Effect.gen(function* () {
-    const { run, steps } = yield* summaryOf(undefined, runId)
+  effect {
+    const { run, steps } = try summaryOf(undefined, runId)
     return {
       runId: run.runId,
       flow: run.flowName,
@@ -373,7 +377,7 @@ export const inspect = ({ runId }: { readonly runId: string }) =>
       steps: steps.map((step) => ({ nodeId: step.nodeId, action: step.action, status: step.status })),
       result: run.result?.text ?? null,
     }
-  })
+  }
 
 /** The tabs of this browser, as a steer step reaches them: only the tab that started a request answers. */
 export class TabRuns extends Context.Service<
@@ -389,9 +393,9 @@ export class TabRuns extends Context.Service<
   static readonly layerChannel = (options: { readonly name: string; readonly within?: Duration.Input }) =>
     Layer.effect(
       TabRuns,
-      Effect.gen(function* () {
-        const ask = yield* asker<RunsCall, typeof SteerKept>({
-          channel: runsChannel(options.name),
+      effect {
+        const ask = try asker<RunsCall, typeof SteerKept>({
+          channel: try Effect.sync(() => runsChannel(options.name)),
           output: SteerKept,
           within: options.within ?? STEER_QUEUE_WITHIN,
         })
@@ -399,7 +403,7 @@ export class TabRuns extends Context.Service<
           ask: ({ requester, call }) =>
             ask(requester, call).pipe(Effect.map(Option.map(({ door, output }) => ({ door, kept: output.kept })))),
         })
-      }),
+      },
     )
 }
 
@@ -412,15 +416,15 @@ export class TabRuns extends Context.Service<
  * tab gone, an outbox that wouldn't take it, or a run with no credential to send fails `SteerStepRefused`.
  */
 export const queueSteer = (payload: { readonly runId: string; readonly body: string }) =>
-  Effect.gen(function* () {
-    const startedAt = yield* Clock.currentTimeMillis
-    const { executionId } = yield* FlowRuntime.FlowInstance
+  effect {
+    const startedAt = try Clock.currentTimeMillis
+    const { executionId } = try FlowRuntime.FlowInstance
     const requester = requesterOf(executionId)
     const via = executionId !== requester ? "agent" : "person"
-    const steerId = yield* Uuid.v5(STEER_ID_NAMESPACE, executionId).pipe(Effect.orDie)
-    const credential = yield* Effect.result((yield* RunCredentials).bearer)
+    const steerId = try Uuid.v5(STEER_ID_NAMESPACE, executionId).pipe(Effect.orDie)
+    const credential = try Effect.result((try RunCredentials).bearer)
     // A run that has no credential to send queues nothing: its message never goes in the person's session.
-    const reply = credential._tag === "Failure" ? Option.none() : yield* (yield* TabRuns).ask({
+    const reply = credential._tag === "Failure" ? Option.none() : try (try TabRuns).ask({
       requester,
       call: {
         kind: "steer",
@@ -442,22 +446,22 @@ export const queueSteer = (payload: { readonly runId: string; readonly body: str
       : reply.value.kept
       ? "kept" as const
       : "not_kept" as const
-    yield* Metric.update(Metric.withAttributes(steersQueued, { door, outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ steerId, runId: payload.runId, via, door, outcome })
-    yield* Effect.logWithLevel(outcome === "kept" ? "Info" : "Warn")("runs.steer.queue").pipe(
+    try Metric.update(Metric.withAttributes(steersQueued, { door, outcome }), 1)
+    try Effect.annotateCurrentSpan({ steerId, runId: payload.runId, via, door, outcome })
+    try Effect.logWithLevel(outcome === "kept" ? "Info" : "Warn")("runs.steer.queue").pipe(
       Effect.annotateLogs({
         steerId,
         runId: payload.runId,
         via,
         door,
         outcome,
-        durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+        durationMs: (try Clock.currentTimeMillis) - startedAt,
         feature: "runs",
       }),
     )
-    if (outcome !== "kept") return yield* new SteerStepRefused({ reason: outcome })
+    if (outcome !== "kept") return try (new SteerStepRefused({ reason: outcome }))
     return { steerId, status: "requested" as const }
-  }).pipe(Effect.withSpan("runs.steer.queue"))
+  }.pipe(Effect.withSpan("runs.steer.queue"))
 
 /**
  * The acts and reads, registered with their steps, and `run/steer` asking through the host's `TabRuns`. Needs the

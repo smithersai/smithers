@@ -30,10 +30,10 @@ import {
   stop,
   warmList,
   warmRepoRuns,
-} from "./actions"
+} from "./actions.vibe"
 import type { RepoName, RunTab } from "./schema"
-import { RunsStore } from "./store"
-import { SteerWrites } from "./writes"
+import { RunsStore } from "./store.vibe"
+import { SteerWrites } from "./writes.vibe"
 
 // Runs as a frontend sees them (docs/features/runs.md#the-browser): live queries to read and plain functions to act,
 // with no Effect in sight. The routes' loaders call `openList` and `openRun`; the run page renders `page`.

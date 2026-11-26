@@ -13,7 +13,7 @@ import type { TodosStore } from "../todos/store.vibe"
 import type { RunSteers } from "../runs/steers.vibe"
 import type { BranchStore } from "../branch/store.vibe"
 import type { RepoStore } from "../repo/store"
-import type { SteerWrites } from "../runs/writes"
+import type { SteerWrites } from "../runs/writes.vibe"
 
 // Slash commands as a frontend sees them: the menu's live query to read and plain functions to act, with no Effect in
 // sight. React renders the query with `useLiveQuery` and hands the actions to the composer; it holds no state.

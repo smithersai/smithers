@@ -9,8 +9,8 @@ const { BrowserEngine } = await import("@smthrs/platform-browser")
 const { repoAuthority } = await import("../../test/repoAuthority")
 const { FlowDispatch } = await import("../../flows/dispatch")
 const { RemoteRunsClient } = await import("../runs/api.vibe")
-const actions = await import("../runs/actions")
-const { RunsStore } = await import("../runs/store")
+const actions = await import("../runs/actions.vibe")
+const { RunsStore } = await import("../runs/store.vibe")
 const { FORM } = await import("../runs/schema")
 
 type Enter = (load: unknown) => Promise<void>

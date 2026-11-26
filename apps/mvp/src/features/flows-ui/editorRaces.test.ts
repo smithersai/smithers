@@ -4,7 +4,7 @@ import { Deferred, Effect, Layer, ManagedRuntime, Option } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"
-import { RunsNavigation } from "../runs/actions"
+import { RunsNavigation } from "../runs/actions.vibe"
 import { answer, deleteDraft, editCode, openCode, openDraft, openNew, save, saveCode, setAnswer, setForm, startDraft } from "./actions.vibe"
 import { FlowsUiStore, SHOWN } from "./store.vibe"
 

@@ -1,6 +1,6 @@
 import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
-import type { RunsNavigation } from "../runs/actions"
+import type { RunsNavigation } from "../runs/actions.vibe"
 import {
   answer,
   deleteDraft,

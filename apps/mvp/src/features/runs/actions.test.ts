@@ -6,11 +6,11 @@ import { afterEach, expect, test, vi } from "vitest"
 import { repoAuthority } from "../../test/repoAuthority"
 import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { RemoteRunsClient, RepoRunsFailed } from "./api.vibe"
-import * as actions from "./actions"
+import * as actions from "./actions.vibe"
 import { REFUSAL_WORDS } from "./contract"
 import type { Inspection } from "./schema"
 import { VIEW } from "./schema"
-import { RunsStore } from "./store"
+import { RunsStore } from "./store.vibe"
 import { actsOf, placeOf } from "./page"
 import { headerStatusOf } from "./todoRun"
 
@@ -139,6 +139,13 @@ test.each(["invalid", "refused", "interrupted", "unavailable"] as const)("dispat
   expect((await t.view()).refusal).toBe(reason)
   expect(REFUSAL_WORDS[reason]).toBeTruthy()
   expect(new Set(["invalid", "refused", "interrupted", "unavailable"].map((code) => REFUSAL_WORDS[code])).size).toBe(4)
+})
+
+test("a stop returning an uncoded dispatch failure marks the run unavailable", async () => {
+  const t = await setup({ dispatch: Effect.succeed({ _tag: "Failed", error: { _tag: "Interrupted" } }) })
+  await t.runtime.runPromise(actions.stop)
+  expect(await t.view()).toMatchObject({ acting: null, refusal: "unavailable" })
+  expect(t.inspections).toEqual(["a", "a"])
 })
 
 test("local selections, list opening, journal More and returning live use the store", async () => {

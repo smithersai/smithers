@@ -28,7 +28,7 @@ import { TabClipboard } from "../features/repo/copy"
 import { TabSession } from "../features/auth/steps"
 import { TabChat } from "../features/chat/steps"
 import { TabIssues } from "../features/issues/steps"
-import { TabRuns } from "../features/runs/steps"
+import { TabRuns } from "../features/runs/steps.vibe"
 import { TabTodos } from "../features/todos/steps.vibe"
 
 /** ChatApi's origin as the test host reaches it: the harness's in-process handler. */

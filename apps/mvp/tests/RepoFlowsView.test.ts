@@ -9,7 +9,7 @@ import { RepoFlowsView } from "../src/features/runs/components/RepoFlowsView"
 import { RunsProvider } from "../src/features/runs/components/RunsContext"
 import { Runs } from "../src/features/runs/runs.vibe"
 import { FORM } from "../src/features/runs/schema"
-import { RunsStore } from "../src/features/runs/store"
+import { RunsStore } from "../src/features/runs/store.vibe"
 import { openTab, openTestApp, TestChatApi } from "../src/test/chatApi"
 
 Object.assign(globalThis, { self: dom, customElements: dom.customElements, scrollTo: dom.scrollTo.bind(dom) })

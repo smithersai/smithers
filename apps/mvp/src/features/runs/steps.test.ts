@@ -2,7 +2,7 @@ import { EngineStore } from "@smthrs/flows"
 import { Cause, Effect, Exit, Logger } from "effect"
 import { expect, test } from "vitest"
 import { FLOW_CODE } from "../flows-ui/reference"
-import { list, retry, cancel } from "./steps"
+import { list, retry, cancel } from "./steps.vibe"
 import { RemoteReadFailed, RemoteRunsClient, StopFailed, SteerFailed, RepoRunsFailed } from "./api.vibe"
 import { RunActRefused } from "./flows"
 

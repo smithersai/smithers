@@ -1,6 +1,6 @@
 import { FlowRuntime } from "@smthrs/flow"
 import { EngineStore } from "@smthrs/flows"
-import * as RunSteps from "./steps"
+import * as RunSteps from "./steps.vibe"
 import { InspectionJournal } from "@smthrs/gateway"
 // The acts on runs and the run reads (src/features/runs, decision 0014 §2 and §6, docs/features/runs.md#acts), on this
 // device's engine as the browser's engine worker registers them, over the compose Postgres, against ChatApi's real
@@ -15,7 +15,7 @@ import { roundExecutionId } from "../flows-ui/round"
 import { listed, retriedRunId, retryActId, runPath, settled } from "./contract"
 import { retryable } from "./retry"
 import { Cancel, Inspect, List, RepoRun, Resume, Retry, RetryFrom } from "./flows"
-import { versioned } from "./steps"
+import { versioned } from "./steps.vibe"
 
 const runtime = testFile("runs_acts")
 

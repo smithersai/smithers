@@ -13,10 +13,10 @@ import type { CloudRun, Inspection } from "./schema"
 import { VIEW } from "./schema"
 import { AuthStore, SESSION } from "../auth/store"
 import { RepoStore } from "../repo/store"
-import { openList } from "./actions"
+import { openList } from "./actions.vibe"
 import { Runs } from "./runs.vibe"
 import { flowSummary } from "./summary"
-import { followChanges, reads, repoRunsSynced, RunsStore, stateOf } from "./store"
+import { followChanges, reads, repoRunsSynced, RunsStore, stateOf } from "./store.vibe"
 
 /** The tab's reads of results for the list, by outcome. */
 const outcomeReads = (outcome: string) =>
@@ -485,10 +485,11 @@ describe("readList and following the engine", () => {
     const t = open({
       inspect: (id) => {
         asked.push(id)
-        // The run moved on before its result came back: nothing is kept.
+        // One detail read names a different flow at the same journal version. The others moved on.
+        const differentFlow = id === "answer-11"
         return Effect.succeed({
           ...inspection(id, [], false),
-          run: { ...summary(id, { flowName: id === "answer-11" ? "app/theme/set" : "chat/Answer", status: "completed", lastSeq }),
+          run: { ...summary(id, { flowName: differentFlow ? "app/theme/set" : "chat/Answer", status: "completed", lastSeq: differentFlow ? 3 : lastSeq }),
             input: value("{}"), result: value(JSON.stringify({ status: "done" })) },
         })
       },
@@ -897,7 +898,7 @@ test("a followed remote run is ignored while another run is open", async () => {
 test("opening a run returns within five seconds while its inspection is unresolved", async () => {
   const pending = Effect.runSync(Deferred.make<Inspection>())
   const t = open({ inspect: () => Deferred.await(pending), list: () => Effect.succeed({ runs: [], cursor: null }) })
-  const { openRun } = await import("./actions")
+  const { openRun } = await import("./actions.vibe")
   let returned = false
   const startedAt = performance.now()
   const opening = t.run(openRun("slow")).then(() => { returned = true })
@@ -933,7 +934,7 @@ test("reopening a cached run keeps its rows while inspection is held, and a miss
   let hold = false
   const t = open({ inspect: (id) => hold ? Deferred.await(pending) : Effect.succeed(inspection(id, [event(0)], false)),
     list: () => Effect.succeed({ runs: [], cursor: null }) })
-  const { openRun } = await import("./actions")
+  const { openRun } = await import("./actions.vibe")
   await t.run(openRun("cached"))
   const cached = t.page("cached")
   hold = true
@@ -1003,7 +1004,7 @@ test("an older inspection's continuation keeps its route attempt after same-run 
     if (options?.afterSeq === undefined) return Effect.andThen(Deferred.succeed(requested, undefined), Deferred.await(pending))
     return Effect.succeed(inspection("child", [event(1), event(2), event(3)], false))
   }, list: () => Effect.succeed({ runs: [], cursor: null }) })
-  const { openRun } = await import("./actions")
+  const { openRun } = await import("./actions.vibe")
   const opening = t.run(openRun("root"))
   await Effect.runPromise(Deferred.await(requested))
   await t.run(openRun("root"))
