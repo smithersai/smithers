@@ -1,5 +1,6 @@
 import { Effect, Option } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
+import { readDocumentFocusTarget, resolveApprovalFocus } from "./approvalGuard"
 import { type AnswerValue, isOpen, type Local } from "./schema"
 import { StatusStore } from "./store"
 
@@ -55,11 +56,19 @@ export const setDraft = (id: string, text: string) =>
     yield* touch(id, open.value.version, () => ({ draft: text }))
   })
 
-/** Asks run `id`'s card to take focus and come into view, from a toast's or the header's Answer. */
-export const focus = (id: string) =>
+/** Asks run `id`'s card to take focus and come into view, holding focus if the person is typing elsewhere unless `force` is set. */
+export const focus = (id: string, options?: { readonly force?: boolean }) =>
   Effect.gen(function* () {
     const open = yield* openQuestion(id)
     if (Option.isNone(open)) return
+    const decision = resolveApprovalFocus({
+      runId: id,
+      version: open.value.version,
+      execution: open.value.execution,
+      activeTarget: readDocumentFocusTarget(),
+      force: options?.force ?? true,
+    })
+    if (decision.action !== "focus") return
     yield* touch(id, open.value.version, (row) => ({ focus: row.focus + 1 }))
   })
 
