@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { BranchView } from "../branch"
+import type { BranchView } from "../branch.vibe"
 
 // What the branch workspace's components get: its live query and plain actions (src/features/branch/branch.ts).
 

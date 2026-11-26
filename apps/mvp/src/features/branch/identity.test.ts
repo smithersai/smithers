@@ -2,7 +2,7 @@ import { Persistence } from "@smthrs/effect-tanstack-db"
 import { Effect, Fiber, Layer } from "effect"
 import { expect, test } from "vitest"
 import { AuthStore, SESSION } from "../auth/store"
-import { identityReady } from "./identity"
+import { identityReady } from "./identity.vibe"
 
 test.each(["signed_in", "signed_out", "unreachable"] as const)("branch admission waits through loading for %s", async (status) => {
   await Effect.runPromise(Effect.scoped(Effect.gen(function* () {

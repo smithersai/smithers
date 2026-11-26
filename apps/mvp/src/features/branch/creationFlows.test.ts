@@ -11,7 +11,7 @@ import builtin from "../../../plugins/branches/src/create"
 import { CREATION } from "../../plugins/builtinFlows"
 import { BranchClient } from "./api.vibe"
 import { CreationStart } from "./creationFlows"
-import { registration, run } from "./creationSteps"
+import { registration, run } from "./creationSteps.vibe"
 import { TrackFailure } from "./flows"
 import { Tracked } from "./schema"
 

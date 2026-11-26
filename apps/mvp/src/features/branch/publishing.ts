@@ -5,7 +5,7 @@ import type { IssuesStore } from "../issues/store"
 import type { PullsClient } from "../pulls/api"
 import { closeForm, openForm, publish, resync, show, update } from "./publishActions"
 import { type PublishConfig, PublishStore } from "./publishStore"
-import type { BranchStore } from "./store"
+import type { BranchStore } from "./store.vibe"
 
 // Publish, Update branch and Compare as a frontend sees them (docs/features/branch-publish.md#the-branch-page): live
 // queries to read and plain functions to act, with no Effect in sight. The branch layer composes it as

@@ -8,7 +8,7 @@ import { BranchClient, type BranchWrite, BranchWrites, type TrackRefused } from 
 import { CONVERSATION_NAMESPACE } from "./contract"
 import { operationWriteId } from "./writeIdentity"
 import { OPERATION_ACTIONS } from "./creation"
-import { selection } from "./creationSteps"
+import { selection } from "./creationSteps.vibe"
 import { BranchTrackRefused, BranchTrackUnavailable } from "./flows"
 import {
   BranchPublish,

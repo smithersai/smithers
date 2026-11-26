@@ -7,9 +7,9 @@ import { EngineFaults, QuestionFaults } from "../../test/faults"
 import { retry, wentOffline } from "../chat/actions"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
-import { Branch } from "./branch"
+import { Branch } from "./branch.vibe"
 import { open as openBranch } from "./actions.vibe"
-import { BranchStore } from "./store"
+import { BranchStore } from "./store.vibe"
 
 const disposals: Array<() => Promise<void>> = []
 afterEach(async () => {

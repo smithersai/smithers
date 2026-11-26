@@ -1,5 +1,4 @@
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, FiberHandle, Layer, Ref, type Scope } from "effect"
 import { BranchConversationsStore } from "../../device/registry"
 import { CURRENT, Current, type ConversationRoute } from "./schema"
 
@@ -11,10 +10,10 @@ export const currentQuery = (current: Collection.Collection<Current, string>) =>
   LiveQuery.make((q) => q.from({ current: current.tanstack }).findOne())
 
 /** Opens this tab's route again in place, so its loader opens the branch once more: the router's `invalidate`. */
-export class BranchRoute extends Context.Service<BranchRoute, { readonly reopen: Effect.Effect<void> }>()(
+export class BranchRoute extends Context.Service<BranchRoute, { readonly reopen: void!! }>()(
   "@smthrs/mvp/branch/BranchRoute",
 ) {
-  static readonly layer = (reopen: () => void) => Layer.succeed(BranchRoute, BranchRoute.of({ reopen: Effect.sync(reopen) }))
+  static readonly layer = (reopen: () => void) => Layer.succeed(BranchRoute, BranchRoute.of({ reopen: sync(reopen) }))
 }
 
 /**
@@ -36,8 +35,8 @@ export class BranchStore extends Context.Service<
   /** The store; its collection cleaned up when the scope closes. */
   static readonly layer = Layer.effect(
     BranchStore,
-    Effect.gen(function* () {
-      const current = yield* Collection.local<Current, string>({
+    effect {
+      const current = try Collection.local<Current, string>({
         id: "branch-current",
         schema: Current,
         getKey: (row) => row.id,
@@ -54,13 +53,13 @@ export class BranchStore extends Context.Service<
         }],
       })
       return BranchStore.of({
-        generation: yield* Ref.make(0),
-        conversations: yield* Collection.persisted(BranchConversationsStore),
+        generation: try Ref.make(0),
+        conversations: try Collection.persisted(BranchConversationsStore),
         current,
-        currentState: yield* currentQuery(current),
-        follower: yield* FiberHandle.make<void, never>(),
-        scope: yield* Effect.scope,
+        currentState: try currentQuery(current),
+        follower: try FiberHandle.make<void, never>(),
+        scope: try scope,
       })
-    }),
+    },
   )
 }

@@ -10,7 +10,7 @@ import { publishes, resyncs, updates } from "./metrics"
 import type { PressRefusal, PublicationRow, PublishPress } from "./publishSchema"
 import { PublishStore } from "./publishStore"
 import { CURRENT } from "./schema"
-import { BranchStore } from "./store"
+import { BranchStore } from "./store.vibe"
 
 // What a person does about GitHub on a branch's page (docs/features/branch-publish.md#the-branch-page, rulings GH-6 and
 // GH-11): Publish a Smithers-only branch through `branch/publish`, the only way GitHub hears of it, Update branch

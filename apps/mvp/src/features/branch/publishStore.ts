@@ -9,7 +9,7 @@ import { RepoStore } from "../repo/store"
 import { PUBLICATIONS_SHAPE_ROUTE } from "./contract"
 import { PublicationRow, PublishPress, PullTitle } from "./publishSchema"
 import type { Current } from "./schema"
-import { BranchStore } from "./store"
+import { BranchStore } from "./store.vibe"
 
 // Publish and Update branch on this tab (docs/features/branch-publish.md#the-branch-page): the shown branch's
 // publication, synced from Postgres by Electric while its page shows it and mirrored into `shown`; this tab's presses;

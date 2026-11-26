@@ -1,6 +1,6 @@
 import { Effect, Option } from "effect"
 import { CURRENT } from "../branch/schema"
-import { BranchStore } from "../branch/store"
+import { BranchStore } from "../branch/store.vibe"
 
 /**
  * `payload` with the branch this tab's route shows pinned in it (its repository and name), as `/publish` and

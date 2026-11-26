@@ -1,4 +1,4 @@
-import type { BranchView } from "./branch"
+import type { BranchView } from "./branch.vibe"
 import { isMarkdownPath } from "../repo/paths"
 import type { TerminalView } from "../terminal/terminal"
 

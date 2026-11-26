@@ -12,7 +12,7 @@ import { asPerson, failingWorker, member, nodeDevice, openTab, openTestApp, Test
 import { FlowDispatch, type Dispatched } from "../../flows/dispatch"
 import { change as changeSharing } from "./actions"
 import { AuthStore, SESSION } from "../auth/store"
-import { Branch } from "../branch/branch"
+import { Branch } from "../branch/branch.vibe"
 import { ShareClient, ShareRefused } from "./api"
 import { SharingStore } from "./store"
 import { BranchShareRefused, BranchShareUnavailable } from "./flows"

@@ -1,0 +1,110 @@
+import { digestSync, Uuid } from "@smthrs/crypto"
+import { FlowRuntime, Interpreter } from "@smthrs/flow"
+import { RealmFlow } from "@smthrs/harness"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { codeOf } from "../../errorCode"
+import { CREATION_ROUTE, CreationSelection } from "./creation"
+import { BranchClient, TRACK_WITHIN } from "./api.vibe"
+import { CONVERSATION_NAMESPACE, isBranchName } from "./contract"
+import { BranchTrackRefused, BranchTrackUnavailable } from "./flows"
+import { CallCreation, CreationProgram, type CreationRequest, CreationStart, EvaluateCreation, SelectCreation } from "./creationFlows"
+import { Tracked } from "./schema"
+
+const invalid = () => new BranchTrackRefused({ reason: "invalid" })
+export const executions = Metric.counter("smithers_branch_creation_steps", { incremental: true })
+
+/**
+ * The authenticated route resolves the repository's manifest and source at one commit, for the operation `query` names
+ * (creation unless it names one; docs/features/branch-publish.md), and the home repository unless it names one.
+ */
+export const selection = (origin: string, query: Readonly<Record<string, string>>) => timeoutOrElse(effect {
+  const client = try HttpClient.HttpClient
+  const response = try client.execute(HttpClientRequest.get(`${origin}${CREATION_ROUTE}`).pipe(
+    HttpClientRequest.setUrlParams(query),
+  )).pipe(mapError(() => new BranchTrackUnavailable()))
+  if (response.status === 401) throw new BranchTrackRefused({ reason: "sign_in" })
+  if (response.status === 403) throw new BranchTrackRefused({ reason: "forbidden" })
+  if (response.status === 404) throw new BranchTrackRefused({ reason: "not_found" })
+  if (response.status === 400 || response.status === 413) throw new BranchTrackRefused({ reason: "invalid" })
+  if (response.status !== 200) throw new BranchTrackUnavailable()
+  return try response.json.pipe(flatMap(Schema.decodeUnknownEffect(CreationSelection)), mapError(() => new BranchTrackUnavailable()))
+}, {
+  duration: TRACK_WITHIN,
+  orElse: effect () => { throw new BranchTrackUnavailable() },
+})
+
+/** Creation's selection: the request's repository, the home one when it names none. */
+export const select = (origin: string) => (request: CreationRequest) =>
+  selection(origin, request.owner === undefined ? {} : { owner: request.owner, name: request.name! })
+
+/** No output is accepted as a created conversation without a matching host write receipt. */
+export const evaluate = (state: typeof EvaluateCreation.payloadSchema.Type) => withSpan(effect {
+  if (state.selection.runtime !== RealmFlow.version) throw invalid()
+  const digest = try orDie(Effect.try({
+    try: () => digestSync(state.selection.source),
+    catch: (cause) => cause,
+  }))
+  if (digest !== state.selection.digest || state.receipts.length > 1) throw invalid()
+  const result = try RealmFlow.step({
+    source: state.selection.source, expectedTag: state.selection.tag, payload: { ref: state.request.ref },
+    allowedActions: state.selection.allowed, receipts: state.receipts,
+  }).pipe(mapError(invalid))
+  try Metric.update(Metric.withAttributes(executions, { outcome: result._tag }), 1)
+  try logInfo("branch.creation.evaluate").pipe(annotateLogs({ outcome: result._tag }))
+  if (result._tag === "Action") {
+    if (state.receipts.length !== 0) throw invalid()
+    return result
+  }
+  const receipt = state.receipts[0]
+  if (receipt?.outcome._tag !== "Success") throw invalid()
+  const recorded = try Schema.decodeUnknownEffect(Tracked)(receipt.outcome.value).pipe(mapError(invalid))
+  const value = try Schema.decodeUnknownEffect(Tracked)(result.value).pipe(mapError(invalid))
+  if (Object.keys(Tracked.fields).some((key) => value[key as keyof Tracked] !== recorded[key as keyof Tracked])) throw invalid()
+  return { _tag: "Complete" as const, value }
+}, "branch.creation.evaluate")
+
+/** The plugin supplies a branch name; the host fixes repository, request identity and permissions. */
+export const call = effect ({ state, call }: typeof CallCreation.payloadSchema.Type) => {
+  const payload = try Schema.decodeUnknownEffect(Schema.Struct({ ref: Schema.String }))(call.payload).pipe(mapError(invalid))
+  if (!(try sync(() => isBranchName(payload.ref))) || !state.selection.allowed.includes(call.name) || (call.name !== "branches/ephemeral" && call.name !== "branches/github")) throw invalid()
+  const made = try (try BranchClient).track({
+    owner: state.selection.owner, name: state.selection.name, ref: payload.ref, create: true,
+    request: state.request.request, ...(call.name === "branches/github" ? { provider: "github" as const } : {}), ...(state.request.openedAt === undefined ? {} : { openedAt: state.request.openedAt }),
+  }).pipe(mapError((error) => error.status === 403 ? new BranchTrackRefused({ reason: "forbidden" })
+    : error.status === 404 ? new BranchTrackRefused({ reason: "not_found" })
+    : error.status === 401 ? new BranchTrackRefused({ reason: "sign_in" })
+    : error.status === 409 ? new BranchTrackRefused({ reason: "exists" })
+    : error.status === 400 || error.status === 413 ? invalid()
+    : error.code === "not_configured" ? new BranchTrackRefused({ reason: "not_configured" })
+    : new BranchTrackUnavailable()))
+  return { ...call, outcome: { _tag: "Success" as const, value: made } }
+}
+
+export const registration = (origin: string) => Layer.mergeAll(
+  Layer.unwrap(map(HttpClient.HttpClient, (client) => Interpreter.layerWithImplementations(CreationStart,
+    SelectCreation.toLayer((request) => select(origin)(request).pipe(provideService(HttpClient.HttpClient, client))),
+  ))),
+  Interpreter.layerWithImplementations(CreationProgram, Layer.mergeAll(
+    EvaluateCreation.toLayer(evaluate).pipe(Layer.provide(RealmFlow.layerDefaultVariant)),
+    CallCreation.toLayer(call),
+  )),
+)
+
+/**
+ * A defect in the creation's child run: logged once at Error by its name, never its message, and turned into
+ * `BranchTrackUnavailable`, which the page shows as failed.
+ */
+const creationDefect = effect (defect: unknown) => {
+  const errorCode = try sync(() => codeOf(defect))
+  try logError("branch.creation.defect").pipe(
+    annotateLogs({ feature: "branch", outcome: "defect", errorCode }),
+  )
+  throw new BranchTrackUnavailable()
+}
+
+/** Run as a child of the caller's durable step, with a stable identity across its retries. */
+export const run = effect (request: Omit<CreationRequest, "request"> & { readonly request?: string }) => {
+  const { executionId } = try FlowRuntime.FlowInstance
+  const requestId = request.request ?? (try Uuid.v5(CONVERSATION_NAMESPACE, executionId).pipe(orDie))
+  return try (try FlowRuntime.FlowRuntime).execute(CreationStart, { executionId: `branch-creation:${requestId}`, payload: { ...request, request: requestId } }).pipe(catchDefect(creationDefect), mapError((error) => error instanceof BranchTrackRefused || error instanceof BranchTrackUnavailable ? error : new BranchTrackUnavailable()))
+}

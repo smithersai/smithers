@@ -1,7 +1,7 @@
-import { digestSync, WebCrypto } from "@smthrs/crypto"
+import { digestSync, Sha256Error, WebCrypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { RealmFlow } from "@smthrs/harness"
-import { Context, Deferred, Effect, Exit, Fiber, Latch, Layer, Logger, References, Schema, Scope } from "effect"
+import { Cause, Context, Deferred, Effect, Exit, Fiber, Latch, Layer, Logger, References, Schema, Scope } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
@@ -11,7 +11,7 @@ import { CREATION } from "../../plugins/builtinFlows"
 import { BranchClient, TrackRefused } from "./api.vibe"
 import { type CreationSelection } from "./creation"
 import { CreationRequest, CreationStart, type RealmRequest, type State } from "./creationFlows"
-import { call, evaluate, registration, run, select } from "./creationSteps"
+import { call, evaluate, registration, run, select } from "./creationSteps.vibe"
 import { BranchTrackRefused, BranchTrackUnavailable, TrackFailure } from "./flows"
 import { Tracked } from "./schema"
 import { Node } from "@smthrs/plan"
@@ -105,6 +105,13 @@ describe("pinned branch creation realm admission", () => {
       await failure(drive({ ...state(), receipts: [receipt(requested), receipt({ ...requested, key: "other" })] })),
       "invalid"
     )
+  })
+  test("preserves the digest defect for source text that cannot be encoded", async () => {
+    const result = await Effect.runPromise(Effect.exit(drive(state({ ...selection(), source: "\uD800" }))))
+    expect(Exit.isFailure(result) && result.cause.reasons).toMatchObject([
+      { _tag: "Die", defect: expect.any(Sha256Error) },
+    ])
+    expect(Exit.isFailure(result) && Cause.squash(result.cause)).toMatchObject({ code: "invalid_text" })
   })
   test("rejects fabricated completion without any host write and realm/source errors", async () => {
     const fake = `import {Flow} from '@smthrs/flow';import {Node} from '@smthrs/plan';import {Schema} from 'effect';

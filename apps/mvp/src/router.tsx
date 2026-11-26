@@ -1,7 +1,7 @@
 import { ROUTE_PATHS } from "./routePaths"
 import { openBranchPage } from "./features/branch/navigation"
 import { createRootRouteWithContext, createRoute, createRouter, notFound, redirect, type AnyRouter, type RouterHistory } from "@tanstack/react-router"
-import type { BranchView } from "./features/branch/branch"
+import type { BranchView } from "./features/branch/branch.vibe"
 import type { DomainsView } from "./features/domains/domains"
 import type { FlowsUiView } from "./features/flows-ui/flowsUi"
 import { pathOfSplat } from "./features/docs/contract"

@@ -11,7 +11,7 @@ import type { Plugins } from "../../plugins/plugins"
 import type { IssuesStore } from "../issues/store"
 import type { TodosStore } from "../todos/store"
 import type { RunSteers } from "../runs/steers"
-import type { BranchStore } from "../branch/store"
+import type { BranchStore } from "../branch/store.vibe"
 import type { RepoStore } from "../repo/store"
 import type { SteerWrites } from "../runs/writes"
 

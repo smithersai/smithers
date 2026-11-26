@@ -1,4 +1,3 @@
-import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
 import { ChatStore } from "../chat/store"
 import { FlowDispatch } from "../../flows/dispatch"
@@ -10,7 +9,7 @@ import { Sharing, type SharingView } from "../sharing/sharing"
 import { SharingStore } from "../sharing/store"
 import { leave, open, writable } from "./actions.vibe"
 import { Publishing, type PublishingView } from "./publishing"
-import { BranchRoute, BranchStore } from "./store"
+import { BranchRoute, BranchStore } from "./store.vibe"
 
 // The branch workspace as a frontend sees it (docs/features/branch-workspace.md#the-page): a live query to read and
 // plain functions to act, with no Effect in sight, and the workspace's live parts beside it: who it is shared with
@@ -61,10 +60,10 @@ export class Branch extends Context.Service<
   static readonly layer = (config: { readonly origin: string; readonly reopenRoute: () => void }) =>
     Layer.effect(
       Branch,
-      Effect.gen(function* () {
-        const store = yield* BranchStore
-        const context = yield* Effect.context<BranchRoute | BranchStore | ChatStore | ConversationsStore | FlowDispatch | SharingStore>()
-        const { runPromise: run, runSync } = runners(context, "branch")
+      effect {
+        const store = try BranchStore
+        const services = try context<BranchRoute | BranchStore | ChatStore | ConversationsStore | FlowDispatch | SharingStore>()
+        const { runPromise: run, runSync } = runners(services, "branch")
         return Branch.of({
           queries: { current: store.currentState.tanstack },
           actions: {
@@ -72,13 +71,13 @@ export class Branch extends Context.Service<
             leave: () => run(leave),
             writable: () => runSync(writable),
           },
-          sharing: yield* Sharing,
-          presence: yield* Presence,
-          coedit: yield* Coedit,
-          conversations: yield* Conversations,
-          publishing: yield* Publishing,
+          sharing: try Sharing,
+          presence: try Presence,
+          coedit: try Coedit,
+          conversations: try Conversations,
+          publishing: try Publishing,
         })
-      }),
+      },
     ).pipe(
       Layer.provideMerge(BranchRoute.layer(config.reopenRoute)),
       Layer.provideMerge(Sharing.layer(config)),

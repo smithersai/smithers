@@ -9,9 +9,9 @@ import { SharingStore } from "../sharing/store"
 import { isBranchName } from "./contract"
 import { opens, reopens } from "./metrics"
 import { CURRENT, type Current } from "./schema"
-import { BranchRoute, BranchStore } from "./store"
+import { BranchRoute, BranchStore } from "./store.vibe"
 import { writes } from "./view"
-import { identityReady } from "./identity"
+import { identityReady } from "./identity.vibe"
 
 // What opening a branch's page does (docs/features/branch-workspace.md#the-page): it runs `branch/track` and, once it
 // answers, shows the branch's conversation in this tab (decision 0013 §1), so the composer asks there, in the branch's
