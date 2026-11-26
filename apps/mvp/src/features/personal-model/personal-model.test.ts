@@ -29,12 +29,12 @@ import {
 import { EngineFaults } from "../../test/faults"
 import { AuthStore, SESSION } from "../auth/store"
 import { MODEL_TIERS } from "../model/contract"
-import { save } from "./actions"
-import { ModelNotTaken, PersonalModelClient } from "./api"
+import { save } from "./actions.vibe"
+import { ModelNotTaken, PersonalModelClient } from "./api.vibe"
 import { keyTail, MAX_CONNECTIONS, PERSONAL_MODEL_SHAPE_ROUTE, resolveTier } from "./contract"
 import { writes } from "./metrics"
-import { PersonalModel } from "./personalModel"
-import { PersonalModelStore } from "./store"
+import { PersonalModel } from "./personalModel.vibe"
+import { PersonalModelStore } from "./store.vibe"
 import { answers, listOf, rowStatusOf, type SaveForm, statusOf } from "./view"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []

@@ -8,7 +8,7 @@ import { PersonalModelProvider } from "../src/features/personal-model/components
 import { PersonalModelSettings } from "../src/features/personal-model/components/PersonalModelSettings"
 import type { ConnectionPut } from "../src/features/personal-model/contract"
 import { CLAUDE_COMMAND, KIND_LABEL } from "../src/features/personal-model/copy"
-import type { PersonalModelView } from "../src/features/personal-model/personalModel"
+import type { PersonalModelView } from "../src/features/personal-model/personalModel.vibe"
 import { addQuery, formQuery, linkQuery, rowsQuery, testQuery } from "../src/features/personal-model/queries"
 import { ADD, AddRow, type AddView, Form, LinkRow, PersonalModelRow, TestRow } from "../src/features/personal-model/schema"
 

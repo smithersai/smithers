@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { PersonalModelView } from "../personalModel"
+import type { PersonalModelView } from "../personalModel.vibe"
 
 // What React components get: a person's own model's live queries to render and plain actions to call
 // (features/personal-model/personalModel.ts).

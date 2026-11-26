@@ -1,6 +1,6 @@
 import { Interpreter } from "@smthrs/flow"
 import { Effect, Layer } from "effect"
-import { type ModelNotTaken, PersonalModelClient } from "./api"
+import { type ModelNotTaken, PersonalModelClient } from "./api.vibe"
 import { type ModelFailure, ModelRefused, ModelRemove, ModelTest, ModelUnsent, RemoveRequestStep, TestRequestStep } from "./flows"
 import { record } from "./metrics"
 
@@ -25,14 +25,14 @@ const fieldsOf = (refused: ModelNotTaken) => ({
 })
 
 /** A request as a step: its record by outcome, `sent`, `refused` or `unsent`; then its success, or its failure. */
-const request = <A>(op: "delete" | "test", send: (client: PersonalModelClient["Service"]) => Effect.Effect<A, ModelNotTaken>) =>
-  Effect.gen(function* () {
-    const answer = yield* Effect.result(send(yield* PersonalModelClient))
+const request = <A>(op: "delete" | "test", send: (client: PersonalModelClient["Service"]) => A!ModelNotTaken) =>
+  effect {
+    const answer = try Effect.result(send(try PersonalModelClient))
     if (answer._tag === "Success") return answer.success
     const failure = failureOf(answer.failure)
-    yield* record(op, failure._tag === "@smthrs/mvp/personal-model/ModelRefused" ? "refused" : "unsent", fieldsOf(answer.failure))
-    return yield* Effect.fail(failure)
-  })
+    try record(op, failure._tag === "@smthrs/mvp/personal-model/ModelRefused" ? "refused" : "unsent", fieldsOf(answer.failure))
+    throw failure
+  }
 
 /**
  * `model/test/request`: one `POST /api/me/model/test`, of `connection` when it names one. A test that went through is

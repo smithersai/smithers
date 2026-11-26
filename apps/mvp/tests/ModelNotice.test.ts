@@ -10,7 +10,7 @@ import { AuthStore, SESSION } from "../src/features/auth/store"
 import { Attention } from "../src/features/attention/attention"
 import { AttentionProvider } from "../src/features/attention/components/AttentionContext"
 import { Notices } from "../src/features/attention/components/Notices"
-import { PersonalModel } from "../src/features/personal-model/personalModel"
+import { PersonalModel } from "../src/features/personal-model/personalModel.vibe"
 import { PersonalModelProvider } from "../src/features/personal-model/components/PersonalModelContext"
 import { nodeDevice, openTestApp } from "../src/test/chatApi"
 

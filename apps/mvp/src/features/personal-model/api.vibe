@@ -15,7 +15,7 @@ import { CodexLinkStart, TestResult } from "./schema"
 // through Effect's HttpClient, with one deadline covering each whole exchange. Save is sent from the person's own tab,
 // at once and never queued: the device's outbox and a browser flow would keep the key on the device (IndexedDB, the
 // engine's journal). The key is `Redacted` until the request body is made, here, and nothing records a body: each
-// request's span carries its op and status. Remove and Test are their flows' steps' calls (steps.ts).
+// request's span carries its op and status. Remove and Test are their flows' steps' calls (steps.vibe).
 
 /** How long a save or a remove gets to answer: each answers once its flow has started. */
 export const MODEL_WITHIN: Duration.Input = "15 seconds"
@@ -51,13 +51,13 @@ export class PersonalModelClient extends Context.Service<
   PersonalModelClient,
   {
     /** `PUT /api/me/model`: `202` took it. */
-    readonly put: (put: ModelPut) => Effect.Effect<void, ModelNotTaken>
+    readonly put: (put: ModelPut) => void!ModelNotTaken
     /** `DELETE /api/me/model`: `202` took it. */
-    readonly remove: Effect.Effect<void, ModelNotTaken>
+    readonly remove: void!ModelNotTaken
     /** `POST /api/me/model/test`: `200` with how `connection`, or else every active one, answered. */
-    readonly test: (connection?: string) => Effect.Effect<TestResult, ModelNotTaken>
+    readonly test: (connection?: string) => TestResult!ModelNotTaken
     /** `POST /api/me/model/codex`: `202` with the code the person types at OpenAI. */
-    readonly link: Effect.Effect<CodexLinkStart, ModelNotTaken>
+    readonly link: CodexLinkStart!ModelNotTaken
   }
 >()("@smthrs/mvp/personal-model/PersonalModelClient") {
   /** The real client: ChatApi at `origin`, with `within` for a save or a remove and `testWithin` for a test. */
@@ -68,7 +68,8 @@ export class PersonalModelClient extends Context.Service<
   }) =>
     Layer.effect(
       PersonalModelClient,
-      Effect.map(HttpClient.HttpClient, (client) => {
+      effect {
+        const client = try HttpClient.HttpClient
         /**
          * Sends `request`, answering what `read` makes of the response when its status is `expected`. Any other status
          * is a refusal with the body's code when it names one; a failure of the request itself names the request, body
@@ -78,20 +79,20 @@ export class PersonalModelClient extends Context.Service<
           op: keyof typeof RECORD,
           request: HttpClientRequest.HttpClientRequest,
           expected: number,
-          read: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, unknown>,
+          read: (response: HttpClientResponse.HttpClientResponse) => A!unknown,
           within: Duration.Input,
         ) =>
-          Effect.gen(function* () {
-            const response = yield* client.execute(request).pipe(Effect.mapError(() => new ModelNotTaken({})))
-            yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+          (effect {
+            const response = try client.execute(request).pipe(Effect.mapError(() => new ModelNotTaken({})))
+            try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
             if (response.status !== expected) {
-              const refused = yield* response.json.pipe(Effect.flatMap(decodeRefused), Effect.option)
-              return yield* new ModelNotTaken({
+              const refused = try response.json.pipe(Effect.flatMap(decodeRefused), Effect.option)
+              throw new ModelNotTaken({
                 status: response.status,
                 ...Option.match(refused, { onNone: () => ({}), onSome: ({ code }) => ({ code }) }),
               })
             }
-            return yield* read(response).pipe(Effect.mapError(() => new ModelNotTaken({ status: response.status })))
+            return try read(response).pipe(Effect.mapError(() => new ModelNotTaken({ status: response.status })))
           }).pipe(
             // Interrupting the request aborts its fetch, so a stalled body stops too.
             Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new ModelNotTaken({})) }),
@@ -136,6 +137,6 @@ export class PersonalModelClient extends Context.Service<
             within,
           ),
         })
-      }),
+      },
     )
 }

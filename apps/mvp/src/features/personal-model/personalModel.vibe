@@ -1,11 +1,11 @@
 import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { add, link, move, remove, removeAll, save, setActive, showAdd, test } from "./actions"
-import type { PersonalModelClient } from "./api"
+import { add, link, move, remove, removeAll, save, setActive, showAdd, test } from "./actions.vibe"
+import type { PersonalModelClient } from "./api.vibe"
 import type { ConnectionPut } from "./contract"
 import type { AddView } from "./schema"
-import { PersonalModelStore } from "./store"
+import { PersonalModelStore } from "./store.vibe"
 import type { SaveForm } from "./view"
 
 // A person's own models as a frontend sees them (docs/features/personal-model.md#the-settings-section): live queries to
@@ -57,9 +57,10 @@ export class PersonalModel extends Context.Service<
   /** Binds the store's queries and the actions for frontends, run with the services this layer was built with. */
   static readonly layer = Layer.effect(
     PersonalModel,
-    Effect.gen(function* () {
-      const store = yield* PersonalModelStore
-      const { runSync: run } = runners(yield* Effect.context<PersonalModelStore | PersonalModelClient | FlowDispatch>(), "personal-model")
+    effect {
+      const store = try PersonalModelStore
+      const context = try Effect.context<PersonalModelStore | PersonalModelClient | FlowDispatch>()
+      const { runSync: run } = runners(context, "personal-model")
       return PersonalModel.of({
         queries: {
           saved: store.saved.tanstack,
@@ -80,7 +81,7 @@ export class PersonalModel extends Context.Service<
           link: () => run(link),
         },
       })
-    }),
+    },
   )
 }
 

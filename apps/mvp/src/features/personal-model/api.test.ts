@@ -5,12 +5,12 @@
 import { Cause, Effect, Exit, Layer, Metric, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
-import { MODEL_WITHIN, ModelNotTaken, PersonalModelClient, TEST_WITHIN } from "./api"
+import { MODEL_WITHIN, ModelNotTaken, PersonalModelClient, TEST_WITHIN } from "./api.vibe"
 import { REFUSAL_COPY } from "./copy"
 import { ModelRefused, ModelUnsent } from "./flows"
 import { type Op, type Outcome, writes } from "./metrics"
 import type { TestResult } from "./schema"
-import { failureOf, requestRemove, requestTest } from "./steps"
+import { failureOf, requestRemove, requestTest } from "./steps.vibe"
 
 const KEY = "sk-test-SENTINEL/+=\"key\""
 
