@@ -1,10 +1,11 @@
 import { type Cause, Deferred, Effect, type Fiber, Queue, type Scope } from "effect"
 import { HttpBody, HttpServerResponse } from "effect/http"
 import { coalesced } from "../SocketAccess.ts"
+import { randomTicket, upgradeResponse } from "./SocketPumpsWeb.ts"
 
 // Durable Object instance-owned socket pump coordination (BranchSandboxes): the object's one fiber that runs what a
 // socket's own event asks for, and the order a viewer is registered and its pump started in. Like
-// worker/durable/SocketHost.ts, these hold per-object waits, so stateless Workers must never import this module
+// worker/durable/SocketHost.vibe, these hold per-object waits, so stateless Workers must never import this module
 // (worker/BranchSandboxes.test.ts enforces that).
 
 /**
@@ -14,19 +15,15 @@ import { coalesced } from "../SocketAccess.ts"
  * context outlives its request. A burst of frames on lapsed leases asks for one renewal (`SocketAccess.coalesced`); a
  * renewal that dies is handed to `died` and the next one still runs.
  */
-export const lapsedRenewals = <R, RD>(
+export const lapsedRenewals = effect <R, RD>(
   renewDue: Effect.Effect<void, never, R>,
   scope: Scope.Scope,
   died: (cause: Cause.Cause<never>) => Effect.Effect<void, never, RD>,
-) =>
-  Effect.gen(function* () {
-    const asked = yield* Queue.unbounded<Effect.Effect<void, never, R>>()
-    yield* Effect.forkIn(
-      Effect.forever(Effect.flatMap(Queue.take(asked), (renewal) => Effect.catchCause(renewal, died))),
-      scope,
-    )
-    return coalesced<R>(renewDue, (renewal) => Queue.offerUnsafe(asked, renewal))
-  })
+) => {
+  const asked = try Queue.unbounded<Effect.Effect<void, never, R>>()
+  fork.in(scope) Effect.forever(Effect.flatMap(Queue.take(asked), (renewal) => Effect.catchCause(renewal, died)))
+  return try sync(() => coalesced<R>(renewDue, (renewal) => Queue.offerUnsafe(asked, renewal)))
+}
 
 /**
  * Starts a socket's pump in `scope` only once its viewer is registered: `run` is given the effect that waits for the
@@ -39,13 +36,13 @@ export const attachRegistered = <A, E, R>(
   register: (fiber: Fiber.Fiber<A, E>) => void,
   scope: Scope.Scope,
 ) =>
-  Effect.uninterruptible(Effect.gen(function* () {
+  Effect.uninterruptible(effect {
     const registered = Deferred.makeUnsafe<void>()
-    const fiber = yield* Effect.forkIn(Effect.interruptible(run(Deferred.await(registered))), scope)
+    const fiber = fork.in(scope) Effect.interruptible(run(Deferred.await(registered)))
     register(fiber)
     Deferred.doneUnsafe(registered, Effect.void)
     return fiber
-  }))
+  })
 
 /** The terminal keeps its server socket active while its pump is attached. */
 export const openTerminalSocket = Effect.sync(() => {
@@ -60,9 +57,9 @@ export const terminalSocketResponse = (client: WebSocket) =>
   Effect.sync(() =>
     HttpServerResponse.setBody(
       HttpServerResponse.empty({ status: 101 }),
-      HttpBody.raw(new Response(null, { status: 101, webSocket: client })),
+      HttpBody.raw(upgradeResponse(client)),
     )
   )
 
 /** A one-use ticket for attaching a terminal socket. */
-export const newTerminalTicket = Effect.sync(() => crypto.randomUUID())
+export const newTerminalTicket = sync(() => randomTicket())

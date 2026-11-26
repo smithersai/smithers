@@ -32,9 +32,9 @@ import {
   type AttachRefusal,
   type AttachState,
   type Target,
-} from "./Attach.ts"
+} from "./Attach.vibe"
 import * as MessagesShardBridge from "../chat/MessagesShardBridge.ts"
-import { defineTool, makeMcpRoute, readBody, targetOf } from "./McpRoute.ts"
+import { defineTool, makeMcpRoute, readBody, targetOf } from "./McpRoute.vibe"
 
 const Uuid = Schema.String.check(Schema.isUUID())
 const postgresText = Schema.makeFilter((value: string) => !value.includes("\0") && value.isWellFormed())

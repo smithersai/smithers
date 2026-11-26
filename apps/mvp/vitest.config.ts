@@ -264,6 +264,8 @@ export default defineConfig({
         "infra/ElectricRelay.ts",
         // A shape request the server can't decide is refused, never narrowed (docs/features/chat.md).
         "worker/ShapeAccess.vibe",
+        "worker/durable/{SocketHost,SocketPumps}.vibe",
+        "worker/attach/{Attach,McpRoute}.vibe",
         // The agent evals' cases, checks, judge and report (docs/features/agent-evals.md). evals/session.ts and
         // evals/agent.eval.ts are the program, which `pnpm eval` runs against the real model.
         "evals/cases.ts",

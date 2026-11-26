@@ -1,3 +1,4 @@
+import { digest, randomBytes } from "./AttachCrypto.ts"
 import { Effect, Exit, Result } from "effect"
 import type { Actor } from "../Actor.vibe"
 import { timingSafeEqualString, validateCodeVerifier } from "../mcp/Pkce.ts"
@@ -191,7 +192,7 @@ const base64Url = (bytes: Uint8Array): string =>
   btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")
 
 export const hashCredential = async (text: string): Promise<string> =>
-  base64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(text))))
+  base64Url(new Uint8Array(await digest(encoder.encode(text))))
 
 export const bearerHash = (authorization: string | null): Promise<string | undefined> => {
   const token = /^Bearer (smat_[A-Za-z0-9_-]{43})$/.exec(authorization ?? "")?.[1]
@@ -227,7 +228,7 @@ export const freezeGrant = (grant: Grant, ceiling: ReadonlyArray<string> = grant
  */
 export const makeAttach = <E, R>(options: AttachOptions<E, R>) => {
   const now = options.now ?? Date.now
-  const random = options.random ?? ((bytes: Uint8Array<ArrayBuffer>) => crypto.getRandomValues(bytes))
+  const random = options.random ?? randomBytes
   const limits: AttachLimits = { ...ATTACH_LIMITS, ...options.limits }
   const intents = new Map(options.state?.intents)
   const claims = new Map<string, string>()
@@ -299,29 +300,28 @@ export const makeAttach = <E, R>(options: AttachOptions<E, R>) => {
    * Step 1, in the person's own session on the host origin: a reference for the copied prompt. The target is read
    * field by field, and the ceiling kept is the requested one narrowed to the person's permissions on that target.
    */
-  const mintIntent = (input: PersonRequest & {
+  const mintIntent = effect (input: PersonRequest & {
     readonly repo: string
     readonly branch: string
     readonly conversation: string
     readonly ceiling: ReadonlyArray<string>
-  }): Effect.Effect<Result.Result<{ readonly reference: string; readonly expiresAt: number; readonly ceiling: ReadonlyArray<string> }, AttachRefusal>, E, R> =>
-    Effect.gen(function* () {
-      const person = personOf(input)
-      if (Result.isFailure(person)) return Result.fail(person.failure)
-      const target: Target = { repo: input.repo, branch: input.branch, conversation: input.conversation }
-      const ceiling = yield* allowed(input.actor, target, input.ceiling)
-      if (ceiling === undefined) return Result.fail("forbidden")
-      const at = now()
-      sweep(at)
-      if (intents.size >= limits.intents) return Result.fail("too_many")
-      let held = 0
-      for (const intent of intents.values()) if (intent.person === person.success) held += 1
-      if (held >= limits.intentsPerPerson) return Result.fail("too_many")
-      const reference = newReference()
-      const expiresAt = at + INTENT_TTL_MS
-      intents.set(reference, { ...target, person: person.success, ceiling: Object.freeze(ceiling), reference, expiresAt })
-      return Result.succeed({ reference, expiresAt, ceiling })
-    })
+  }): Effect.Effect<Result.Result<{ readonly reference: string; readonly expiresAt: number; readonly ceiling: ReadonlyArray<string> }, AttachRefusal>, E, R> => {
+    const person = personOf(input)
+    if (Result.isFailure(person)) return Result.fail(person.failure)
+    const target: Target = { repo: input.repo, branch: input.branch, conversation: input.conversation }
+    const ceiling = try allowed(input.actor, target, input.ceiling)
+    if (ceiling === undefined) return Result.fail("forbidden")
+    const at = now()
+    sweep(at)
+    if (intents.size >= limits.intents) return Result.fail("too_many")
+    let held = 0
+    for (const intent of intents.values()) if (intent.person === person.success) held += 1
+    if (held >= limits.intentsPerPerson) return Result.fail("too_many")
+    const reference = newReference()
+    const expiresAt = at + INTENT_TTL_MS
+    intents.set(reference, { ...target, person: person.success, ceiling: Object.freeze(ceiling), reference, expiresAt })
+    return Result.succeed({ reference, expiresAt, ceiling })
+  }
 
   /**
    * Step 2, from the agent: claims a reference with a PKCE S256 challenge. The first claim wins. The answer is an
@@ -376,72 +376,71 @@ export const makeAttach = <E, R>(options: AttachOptions<E, R>) => {
    * grant's ceiling is narrowed again to the person's permissions at this moment. A claim is approved at most once:
    * the reservation is taken before the first await, so of two concurrent approvals exactly one issues a code.
    */
-  const approveIntent = (input: PersonRequest & { readonly claim: string; readonly pairing: string }):
-    Effect.Effect<Result.Result<{ readonly code: string; readonly grant: string }, AttachRefusal>, E, R> =>
-    Effect.gen(function* () {
-      const person = personOf(input)
-      if (Result.isFailure(person)) return Result.fail(person.failure)
-      const at = now()
-      sweep(at)
-      const intent = intents.get(claims.get(input.claim) ?? "")
-      if (intent === undefined || intent.claim === undefined || intent.claim.id !== input.claim) {
-        return Result.fail("unknown_reference")
-      }
-      if (intent.person !== person.success) return Result.fail("wrong_person")
-      if (intent.approval !== undefined) return Result.fail("already_claimed")
-      if (intent.consentUntil === undefined || intent.consentUntil <= at) return Result.fail("consent_expired")
-      // Reserved synchronously, before the first await: a concurrent approval of this claim now reads `already_claimed`.
-      intent.approval = "pending"
-      const claim = intent.claim
-      if (!PAIRING_PATTERN.test(input.pairing) || !timingSafeEqualString(input.pairing, claim.pairing)) {
-        delete intent.approval
-        claim.attempts += 1
-        if (claim.attempts >= MAX_PAIRING_ATTEMPTS) dropIntent(intent)
-        return Result.fail("wrong_pairing")
-      }
-      const code = opaque(32)
-      const { key, ceiling } = yield* Effect.gen(function* () {
-        const key = yield* Effect.promise(() => hashCredential(code))
-        const ceiling = yield* allowed(input.actor, targetOf(intent), intent.ceiling)
-        return { key, ceiling }
-      }).pipe(Effect.onExit((exit) => Effect.sync(() => {
-        if (Exit.isFailure(exit)) dropIntent(intent)
-      })))
-      const settled = now()
-      if (intents.get(intent.reference) !== intent || intent.expiresAt <= settled) {
-        dropIntent(intent)
-        return Result.fail("unknown_reference")
-      }
-      if (ceiling === undefined) {
-        dropIntent(intent)
-        return Result.fail("forbidden")
-      }
-      // Consumed for good: nothing resets `approved`, and the intent goes when its code is redeemed or goes stale.
-      intent.approval = "approved"
-      intent.code = key
-      const grant = freezeGrant({
-        id: opaque(12),
-        person: intent.person,
-        repo: intent.repo,
-        branch: intent.branch,
-        conversation: intent.conversation,
-        ceiling,
-        act: "agent",
-        client: claim.client,
-        expiresAt: at + GRANT_TTL_MS,
-      })
-      const { subject, role, session, alias, cookieKey } = input.actor
-      codes.set(key, {
-        reference: intent.reference,
-        claim: claim.id,
-        challenge: claim.challenge,
-        grant,
-        issuer: { subject, role, session, alias, cookieKey },
-        // A code never outlives the reference that issued it.
-        expiresAt: Math.min(at + CODE_TTL_MS, intent.expiresAt),
-      })
-      return Result.succeed({ code, grant: grant.id })
+  const approveIntent = effect (input: PersonRequest & { readonly claim: string; readonly pairing: string }):
+    Effect.Effect<Result.Result<{ readonly code: string; readonly grant: string }, AttachRefusal>, E, R> => {
+    const person = personOf(input)
+    if (Result.isFailure(person)) return Result.fail(person.failure)
+    const at = now()
+    sweep(at)
+    const intent = intents.get(claims.get(input.claim) ?? "")
+    if (intent === undefined || intent.claim === undefined || intent.claim.id !== input.claim) {
+      return Result.fail("unknown_reference")
+    }
+    if (intent.person !== person.success) return Result.fail("wrong_person")
+    if (intent.approval !== undefined) return Result.fail("already_claimed")
+    if (intent.consentUntil === undefined || intent.consentUntil <= at) return Result.fail("consent_expired")
+    // Reserved synchronously, before the first await: a concurrent approval of this claim now reads `already_claimed`.
+    intent.approval = "pending"
+    const claim = intent.claim
+    if (!PAIRING_PATTERN.test(input.pairing) || !timingSafeEqualString(input.pairing, claim.pairing)) {
+      delete intent.approval
+      claim.attempts += 1
+      if (claim.attempts >= MAX_PAIRING_ATTEMPTS) dropIntent(intent)
+      return Result.fail("wrong_pairing")
+    }
+    const code = opaque(32)
+    const { key, ceiling } = try Effect.onExit(effect {
+      const key = try Effect.promise(() => hashCredential(code))
+      const ceiling = try allowed(input.actor, targetOf(intent), intent.ceiling)
+      return { key, ceiling }
+    }, (exit) => Effect.sync(() => {
+      if (Exit.isFailure(exit)) dropIntent(intent)
+    }))
+    const settled = now()
+    if (intents.get(intent.reference) !== intent || intent.expiresAt <= settled) {
+      dropIntent(intent)
+      return Result.fail("unknown_reference")
+    }
+    if (ceiling === undefined) {
+      dropIntent(intent)
+      return Result.fail("forbidden")
+    }
+    // Consumed for good: nothing resets `approved`, and the intent goes when its code is redeemed or goes stale.
+    intent.approval = "approved"
+    intent.code = key
+    const grant = freezeGrant({
+      id: opaque(12),
+      person: intent.person,
+      repo: intent.repo,
+      branch: intent.branch,
+      conversation: intent.conversation,
+      ceiling,
+      act: "agent",
+      client: claim.client,
+      expiresAt: at + GRANT_TTL_MS,
     })
+    const { subject, role, session, alias, cookieKey } = input.actor
+    codes.set(key, {
+      reference: intent.reference,
+      claim: claim.id,
+      challenge: claim.challenge,
+      grant,
+      issuer: { subject, role, session, alias, cookieKey },
+      // A code never outlives the reference that issued it.
+      expiresAt: Math.min(at + CODE_TTL_MS, intent.expiresAt),
+    })
+    return Result.succeed({ code, grant: grant.id })
+  }
 
   /**
    * Step 4, from the agent: trades the code and its PKCE verifier for the grant's bearer token, once. The store is
@@ -503,28 +502,27 @@ export const makeAttach = <E, R>(options: AttachOptions<E, R>) => {
    * token from another deployment reads as `unauthenticated`. The grant returned is a fresh frozen copy whose ceiling
    * is narrowed to what the person holds now, and `forbidden` when the person no longer holds anything there.
    */
-  const verifyBearer = (authorization: string | null, target: Omit<Target, "conversation">):
-    Effect.Effect<Result.Result<Grant, AttachRefusal>, E, R> =>
-    Effect.gen(function* () {
-      const key = yield* Effect.promise(() => bearerHash(authorization))
-      if (key === undefined) return Result.fail("unauthenticated")
-      const at = now()
-      const until = revoked.get(key)
-      if (until !== undefined && until > at) return Result.fail("revoked")
-      const issued = tokens.get(key)
-      if (issued === undefined) return Result.fail("unauthenticated")
-      const { grant, issuer } = issued
-      if (grant.expiresAt <= at) {
-        tokens.delete(key)
-        return Result.fail("expired")
-      }
-      if (grant.repo !== target.repo || grant.branch !== target.branch) return Result.fail("wrong_target")
-      const ceiling = yield* allowed(issuer, targetOf(grant), grant.ceiling)
-      // A revocation during the permission lookup wins: the token must still be live after the await.
-      if (tokens.get(key) !== issued) return Result.fail(revoked.has(key) ? "revoked" : "unauthenticated")
-      if (ceiling === undefined) return Result.fail("forbidden")
-      return Result.succeed(freezeGrant(grant, ceiling))
-    })
+  const verifyBearer = effect (authorization: string | null, target: Omit<Target, "conversation">):
+    Effect.Effect<Result.Result<Grant, AttachRefusal>, E, R> => {
+    const key = try Effect.promise(() => bearerHash(authorization))
+    if (key === undefined) return Result.fail("unauthenticated")
+    const at = now()
+    const until = revoked.get(key)
+    if (until !== undefined && until > at) return Result.fail("revoked")
+    const issued = tokens.get(key)
+    if (issued === undefined) return Result.fail("unauthenticated")
+    const { grant, issuer } = issued
+    if (grant.expiresAt <= at) {
+      tokens.delete(key)
+      return Result.fail("expired")
+    }
+    if (grant.repo !== target.repo || grant.branch !== target.branch) return Result.fail("wrong_target")
+    const ceiling = try allowed(issuer, targetOf(grant), grant.ceiling)
+    // A revocation during the permission lookup wins: the token must still be live after the await.
+    if (tokens.get(key) !== issued) return Result.fail(revoked.has(key) ? "revoked" : "unauthenticated")
+    if (ceiling === undefined) return Result.fail("forbidden")
+    return Result.succeed(freezeGrant(grant, ceiling))
+  }
 
   /** How many entries each store holds, for tests and metrics. It carries no content. */
   const sizes = () => ({

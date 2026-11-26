@@ -46,7 +46,7 @@ import { join } from "node:path"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as LiveMount from "../../worker/attach/LiveMount.ts"
-import { challengeFor } from "../../worker/attach/Attach.ts"
+import { challengeFor } from "../../worker/attach/Attach.vibe"
 import {
   ATTACH_APPROVALS_ROUTE,
   ATTACH_CAPABILITIES,

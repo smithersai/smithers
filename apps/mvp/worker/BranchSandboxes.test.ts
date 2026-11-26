@@ -1,5 +1,5 @@
 // The branch object's socket plumbing that needs no container (worker/BranchSandboxes.vibe over
-// worker/durable/SocketPumps.ts): the lapsed-lease notifier the object builds once, and the order a viewer is
+// worker/durable/SocketPumps.vibe): the lapsed-lease notifier the object builds once, and the order a viewer is
 // registered and its terminal started in. The object itself, over its real container, runs under `alchemy dev`.
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy"
@@ -28,7 +28,7 @@ import * as PersonalStore from "./personal/Store.vibe"
 import { admissionOf, forward } from "./SocketAccess.ts"
 import { memory } from "./test/box.ts"
 import { connection, objectRegistration, objectRuntime, unusedDatabase } from "./test/durableObject.ts"
-import * as SocketPumps from "./durable/SocketPumps.ts"
+import * as SocketPumps from "./durable/SocketPumps.vibe"
 import * as SocketAccess from "./SocketAccess.ts"
 import { type ContainerExec, withDockerSandbox } from "./test/branchContainer.ts"
 
@@ -119,7 +119,7 @@ describe("the object's lapsed-lease notifier", () => {
     const source = sourceText(new URL("./BranchSandboxes.vibe", import.meta.url))
     for (const banned of ["runForkWith", "Effect.runFork", "Effect.runPromise", "Effect.runSync", "Effect.clockWith"]) {
       expect(source).not.toContain(banned)
-      expect(sourceText(new URL("./durable/SocketPumps.ts", import.meta.url))).not.toContain(banned)
+      expect(sourceText(new URL("./durable/SocketPumps.vibe", import.meta.url))).not.toContain(banned)
     }
     // The object's own notifier and registration order are the ones it attaches sockets with.
     expect(source).toContain("SocketPumps.lapsedRenewals(")
@@ -186,7 +186,7 @@ describe("attaching a socket", () => {
   })
 })
 
-// worker/durable/SocketPumps.ts holds per-object waits, as worker/durable/SocketHost.ts does
+// worker/durable/SocketPumps.vibe holds per-object waits, as worker/durable/SocketHost.vibe does
 // (worker/durable/boundary.test.ts): only the Durable Object that owns the sockets, and tests, may import it.
 test("only the branch object imports the socket pump coordinators", () => {
   const root = import.meta.dirname

@@ -26,7 +26,7 @@ import * as Messages from "../Messages.ts"
 import { RunCredentials } from "../RunCredentials.vibe"
 import { testFile } from "../test/harness.ts"
 import { cookie, signInHarness } from "../test/signIn.ts"
-import { challengeFor } from "./Attach.ts"
+import { challengeFor } from "./Attach.vibe"
 import * as LiveMount from "./LiveMount.ts"
 
 const runtime = testFile("attach_live")

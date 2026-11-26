@@ -9,7 +9,7 @@ import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.vibe
 import { type Member, Rooms, RoomUnavailable } from "./branch/Rooms.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import * as SocketAccess from "./SocketAccess.ts"
-import * as SocketHost from "./durable/SocketHost.ts"
+import * as SocketHost from "./durable/SocketHost.vibe"
 import * as SocketChecks from "./SocketChecks.vibe"
 
 // Branch rooms on Cloudflare (decision 0013 §4 and §10, docs/features/branch-workspace.md#presence): `RoomObject`, one

@@ -72,22 +72,20 @@ export const renewalLoop = <R, RE>(
     next: (now: number) => number,
     act: Effect.Effect<void, never, R | RE>,
   ) => {
-    let owner: object | undefined
+    const owners = new Set<object>()
     const run = (me: object) => {
-      const free = () => {
-        if (owner === me) owner = undefined
-      }
-      return Effect.gen(function* () {
+      const free = () => void owners.delete(me)
+      return (effect {
         for (;;) {
-          const empty = yield* Effect.sync(() => {
+          const empty = try Effect.sync(() => {
             if (leases().length > 0) return false
             free()
             return true
           })
           if (empty) return
-          const now = yield* Clock.currentTimeMillis
-          yield* timed.sleep(next(now), now)
-          yield* act
+          const now = try Clock.currentTimeMillis
+          try timed.sleep(next(now), now)
+          try act
         }
       }).pipe(
         Effect.onError((cause) =>
@@ -108,9 +106,9 @@ export const renewalLoop = <R, RE>(
     /** Starts the child in `scope` unless one owns the slot; answers whether it did. */
     const start = (scope: Scope.Scope) =>
       Effect.uninterruptible(Effect.suspend(() => {
-        if (owner !== undefined) return Effect.succeed(false)
+        if (owners.size !== 0) return Effect.succeed(false)
         const me = {}
-        owner = me
+        owners.add(me)
         return Effect.as(Effect.forkIn(run(me), scope), true)
       }))
     return start
@@ -125,10 +123,9 @@ export const renewalLoop = <R, RE>(
    * After a socket attaches: starts whichever child isn't running, in `scope`, and wakes a running one sooner for
    * `lease`. Emptying the host retires both; attaching always leaves both running.
    */
-  const ensure = (scope: Scope.Scope, lease: { readonly admission: Admission; readonly leaseUntil: number }) =>
-    Effect.gen(function* () {
-      if (!(yield* startRenewal(scope))) renewal.wakeIf(actAt(lease.admission, lease.leaseUntil))
-      if (!(yield* startExpiry(scope)) && lease.admission.expiresAt !== null) expiry.wakeIf(lease.admission.expiresAt)
-    })
+  const ensure = effect (scope: Scope.Scope, lease: { readonly admission: Admission; readonly leaseUntil: number }) => {
+    if (!(try startRenewal(scope))) try sync(() => renewal.wakeIf(actAt(lease.admission, lease.leaseUntil)))
+    if (!(try startExpiry(scope)) && lease.admission.expiresAt !== null) expiry.wakeIf(lease.admission.expiresAt)
+  }
   return { ensure }
 }

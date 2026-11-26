@@ -1,6 +1,6 @@
 import { Result, Schema } from "effect"
-import type { Attach } from "./Attach.ts"
-import { attachMcpPath, readBody } from "./McpRoute.ts"
+import type { Attach } from "./Attach.vibe"
+import { attachMcpPath, readBody } from "./McpRoute.vibe"
 
 const claim = Schema.decodeUnknownOption(Schema.Struct({
   reference: Schema.String,

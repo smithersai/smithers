@@ -48,8 +48,8 @@ import * as Overflow from "./runners/Overflow.vibe"
 import { SecretKeys } from "./secrets/Keys.vibe"
 import * as SandboxEgress from "./secrets/SandboxEgress.vibe"
 import * as SocketAccess from "./SocketAccess.ts"
-import * as SocketHost from "./durable/SocketHost.ts"
-import * as SocketPumps from "./durable/SocketPumps.ts"
+import * as SocketHost from "./durable/SocketHost.vibe"
+import * as SocketPumps from "./durable/SocketPumps.vibe"
 import * as SocketChecks from "./SocketChecks.vibe"
 
 // Branch sandboxes on Cloudflare (decision 0013 §3, decision 0005 §2, docs/features/branch-workspace.md#the-machine):

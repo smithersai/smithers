@@ -7,7 +7,7 @@ import { expect, test } from "vitest"
 import * as BranchRooms from "./BranchRooms.vibe"
 import { type Member, Rooms } from "./branch/Rooms.vibe"
 import * as SocketAccess from "./SocketAccess.ts"
-import { RoomUpgrade } from "./durable/SocketHost.ts"
+import { RoomUpgrade } from "./durable/SocketHost.vibe"
 import { memory } from "./test/box.ts"
 import { connection, objectRegistration, objectRuntime, unusedDatabase } from "./test/durableObject.ts"
 
@@ -24,6 +24,10 @@ const admissionOf = (principal: string): SocketAccess.Admission => ({
   role: "member",
   basis: { kind: "branch", branchId: "branch-1" },
   access: "edit",
+})
+
+test("the room uses the Cloudflare upgrade effect by default", () => {
+  expect(Effect.isEffect(Effect.runSync(RoomUpgrade))).toBe(true)
 })
 
 test("the room namespace forwards only the admitted identity and maps unavailable RPCs", async () => {

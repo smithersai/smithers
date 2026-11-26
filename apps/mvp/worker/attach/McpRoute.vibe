@@ -1,7 +1,8 @@
 import { Effect, Option, Result, Schema } from "effect"
+import { invalidTool, webResponse } from "./McpRouteSync.ts"
 import { isBranchName } from "../../src/features/branch/contract.ts"
 import { isRepository } from "../../src/features/repo/contract.ts"
-import { type Attach, freezeGrant, type Grant, REFUSAL_STATUS } from "./Attach.ts"
+import { type Attach, freezeGrant, type Grant, REFUSAL_STATUS } from "./Attach.vibe"
 
 // The `/mcp/<owner>/<repo>/<branch>` route (decision 0173, Gate 4): MCP over Streamable HTTP for an attached agent.
 // Every request carries a grant's bearer token and is verified again, including `initialize`, so a revoked or expired
@@ -75,14 +76,14 @@ export const inputSchemaOf = (name: string, input: Schema.Top): McpInputSchema =
   if (isEmptyStruct(input)) return Object.freeze({ type: "object", properties: {}, additionalProperties: false })
   const document = Schema.toJsonSchemaDocument(input, { onExcessProperty: "error" })
   const root: unknown = document.schema
-  if (!isRecord(root) || root.type !== "object") throw new TypeError(`MCP tool ${name} input must be an object schema`)
+  if (!isRecord(root) || root.type !== "object") return invalidTool(`MCP tool ${name} input must be an object schema`)
   const definitions = Object.keys(document.definitions).length === 0 ? {} : { $defs: document.definitions }
   return Object.freeze({ ...root, ...definitions, type: "object" as const })
 }
 
 /** Registers a tool. Throws when the definition names no policy, so an untyped caller cannot default one open. */
 export const defineTool = <S extends Schema.Top, E, R>(definition: McpToolDefinition<S, E, R>): McpTool<E, R> => {
-  if (!isPolicy(definition.policy)) throw new TypeError(`MCP tool ${definition.name} must declare its policy`)
+  if (!isPolicy(definition.policy)) invalidTool(`MCP tool ${definition.name} must declare its policy`)
   const inputSchema = inputSchemaOf(definition.name, definition.input)
   const empty = isEmptyStruct(definition.input)
   // The JSON codec is the schema the advertised JSON Schema describes, so a value one admits the other decodes.
@@ -95,17 +96,18 @@ export const defineTool = <S extends Schema.Top, E, R>(definition: McpToolDefini
     inputSchema,
     capability: definition.capability,
     policy: definition.policy,
-    invoke: (grant: Grant, args: unknown) => Effect.gen(function* () {
+    invoke: effect (grant: Grant, args: unknown) => {
       if (!isRecord(args) || (empty && Object.keys(args).length > 0)) return Result.fail("invalid_arguments" as const)
       const decoded = decode(args)
       if (Option.isNone(decoded)) return Result.fail("invalid_arguments" as const)
       // The tool's own frozen copy: nothing it does reaches the grant the verifier holds or another tool's copy.
       const own = freezeGrant(grant)
       const decision = definition.authorize?.(own, decoded.value) ?? true
-      const allowed = typeof decision === "boolean" ? decision : yield* decision
-      if (!allowed) return Result.fail("forbidden" as const)
-      return Result.succeed(yield* definition.call(own, decoded.value))
-    }),
+      const allowed = typeof decision === "boolean" ? decision : try decision
+      return try (allowed
+        ? map(definition.call(own, decoded.value), Result.succeed)
+        : succeed(Result.fail("forbidden" as const)))
+    },
   })
   defined.add(tool)
   return tool
@@ -120,8 +122,10 @@ export interface McpRouteOptions<AE, AR, TE, TR> {
 
 type Id = string | number | null
 
+const accepted = () => webResponse(null, { status: 202 })
+
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store", ...headers } })
+  webResponse(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store", ...headers } })
 
 const rpcError = (status: number, id: Id, code: number, reason: string, headers?: Record<string, string>) =>
   json(status, { jsonrpc: "2.0", id, error: { code, message: reason, data: { reason } } }, headers)
@@ -177,14 +181,14 @@ export const makeMcpRoute = <AE, AR, TE, TR>(options: McpRouteOptions<AE, AR, TE
   const byName = new Map<string, McpTool<TE, TR>>()
   for (const tool of options.tools) {
     // Fail closed while building: a hand-built tool skips argument decoding, and a missing policy would read as open.
-    if (!defined.has(tool) || !isPolicy(tool.policy)) throw new TypeError(`MCP tool ${String(tool.name)} is not from defineTool`)
-    if (byName.has(tool.name)) throw new TypeError(`MCP tool ${tool.name} is registered twice`)
+    if (!defined.has(tool) || !isPolicy(tool.policy)) invalidTool(`MCP tool ${String(tool.name)} is not from defineTool`)
+    if (byName.has(tool.name)) invalidTool(`MCP tool ${tool.name} is registered twice`)
     byName.set(tool.name, tool)
   }
   const visible = (grant: Grant) =>
     options.tools.filter((tool) => tool.policy === "agent" && grant.ceiling.includes(tool.capability))
 
-  return (request: Request, body: Result.Result<string, "too_large" | "body">) => Effect.gen(function* () {
+  return effect (request: Request, body: Result.Result<string, "too_large" | "body">) => {
     const url = new URL(request.url)
     const target = targetOf(url, options.pathPrefix ?? "/mcp")
     if (target === undefined) return json(404, { error: "not_found" })
@@ -194,7 +198,7 @@ export const makeMcpRoute = <AE, AR, TE, TR>(options: McpRouteOptions<AE, AR, TE
     if (origin !== null && origin !== options.hostOrigin) return rpcError(403, null, -32001, "wrong_origin")
     // The bounded body first, then the grant: a grant revoked while the body streams in is refused here, so the
     // grant a tool runs with was verified after the last byte arrived.
-    const verified = yield* options.attach.verifyBearer(request.headers.get("authorization"), target)
+    const verified = try options.attach.verifyBearer(request.headers.get("authorization"), target)
     if (Result.isFailure(verified)) {
       const challenge = { "www-authenticate": `Bearer realm="smithers", error="invalid_token"` }
       return rpcError(REFUSAL_STATUS[verified.failure], null, -32001, verified.failure, REFUSAL_STATUS[verified.failure] === 401 ? challenge : {})
@@ -204,17 +208,14 @@ export const makeMcpRoute = <AE, AR, TE, TR>(options: McpRouteOptions<AE, AR, TE
     if (Result.isFailure(body)) {
       return body.failure === "too_large" ? rpcError(413, null, -32600, "too_large") : rpcError(400, null, -32700, "parse_error")
     }
-    let message: unknown
-    try {
-      message = JSON.parse(body.success)
-    } catch {
-      return rpcError(400, null, -32700, "parse_error")
-    }
+    const parsed = try Effect.result(Effect.try((): unknown => JSON.parse(body.success)))
+    if (Result.isFailure(parsed)) return rpcError(400, null, -32700, "parse_error")
+    const message = parsed.success
     if (!isRecord(message) || message.jsonrpc !== "2.0" || typeof message.method !== "string") {
       return rpcError(400, null, -32600, "invalid_request")
     }
     const id: Id = typeof message.id === "string" || typeof message.id === "number" ? message.id : null
-    if (message.id === undefined) return new Response(null, { status: 202 })
+    if (message.id === undefined) return accepted()
     const params = isRecord(message.params) ? message.params : {}
     const ok = (result: unknown) => json(200, { jsonrpc: "2.0", id, result })
 
@@ -241,7 +242,7 @@ export const makeMcpRoute = <AE, AR, TE, TR>(options: McpRouteOptions<AE, AR, TE
         for (const key of ["repo", "branch", "conversation"] as const) {
           if (Object.hasOwn(args, key) && args[key] !== grant[key]) return rpcError(403, id, -32001, "wrong_target")
         }
-        const outcome = yield* tool.invoke(grant, args)
+        const outcome = try tool.invoke(grant, args)
         if (Result.isFailure(outcome)) {
           return outcome.failure === "forbidden"
             ? rpcError(403, id, -32001, "forbidden")
@@ -257,5 +258,5 @@ export const makeMcpRoute = <AE, AR, TE, TR>(options: McpRouteOptions<AE, AR, TE
       default:
         return rpcError(200, id, -32601, "method_not_found")
     }
-  })
+  }
 }

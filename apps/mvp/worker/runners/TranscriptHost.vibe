@@ -4,7 +4,7 @@ import { RETENTION_MS } from "../../src/features/transcript/contract.ts"
 import type { Frame } from "../../src/features/transcript/schema.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as SocketAccess from "../SocketAccess.ts"
-import * as SocketHost from "../durable/SocketHost.ts"
+import * as SocketHost from "../durable/SocketHost.vibe"
 import * as Store from "./RunContent.vibe"
 
 // What a run's `RunContent` Durable Object does (worker/RunContent.vibe), over ports a test fills: its SQLite, its

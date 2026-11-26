@@ -21,7 +21,7 @@ import * as Store from "./runners/RunContent.vibe"
 import * as TranscriptHost from "./runners/TranscriptHost.vibe"
 import * as SessionStore from "./SessionStore.vibe"
 import * as SocketAccess from "./SocketAccess.ts"
-import * as SocketHost from "./durable/SocketHost.ts"
+import * as SocketHost from "./durable/SocketHost.vibe"
 import * as SocketChecks from "./SocketChecks.vibe"
 import { resetBranches, shared, tracked } from "./test/branch.ts"
 import { branchRoles, testFile } from "./test/harness.ts"
@@ -1274,6 +1274,31 @@ describe("a host that never hibernates", () => {
     )
     return { loop, renewedAt, expiredAt }
   }
+
+  test("the renewal timer uses a lease interval when a viewer detaches before scheduling", async () => {
+    let renewed = 0
+    await runtime.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const scope = yield* Effect.scope
+        const start = yield* now
+        const viewer = lease(start, null, LEASE_MS)
+        let reads = 0
+        const host = SocketHost.renewalLoop(
+          () => reads++ === 0 ? [viewer] : [],
+          Effect.sync(() => void renewed++),
+          Effect.void,
+          "terminal",
+        )
+        yield* host.ensure(scope, viewer)
+        yield* settle
+        yield* TestClock.adjust(LEASE_MS - 1)
+        expect(renewed).toBe(0)
+        yield* TestClock.adjust(1)
+        yield* settle
+        expect(renewed).toBe(1)
+      })).pipe(Effect.provide(TestClock.layer()))
+    )
+  })
 
   test("a lease acted on before the loop's wake wakes it then; a later one doesn't move it", async () => {
     const { renewedAt } = await runtime.runPromise(

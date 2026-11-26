@@ -4,6 +4,7 @@ import { MCP_MAX_REQUEST_BYTES } from "../../src/features/mcp/contract.ts"
 import type { Actor } from "../Actor.vibe"
 import {
   type AttachLimits,
+  type AttachState,
   challengeFor,
   CODE_TTL_MS,
   CONSENT_TTL_MS,
@@ -15,9 +16,9 @@ import {
   PAIRING_PATTERN,
   REFERENCE_PATTERN,
   type Target,
-} from "./Attach.ts"
+} from "./Attach.vibe"
 import { handleAttachAgent } from "./AttachAgentRoutes.ts"
-import { defineTool, inputSchemaOf, makeMcpRoute, type McpTool, readBody } from "./McpRoute.ts"
+import { defineTool, inputSchemaOf, makeMcpRoute, type McpTool, readBody, targetOf } from "./McpRoute.vibe"
 
 const HOST = "https://smithers.sh"
 const target = { repo: "evmts/voltaire", branch: "main", conversation: "c_1" }
@@ -1027,4 +1028,184 @@ describe("M4: fresh grant at dispatch, nested authorization, one schema", () => 
       call: () => Effect.succeed({}),
     })).toThrow("must be an object schema")
   })
+})
+
+describe("attachment state recovery", () => {
+  const options = { hostOrigin: HOST, permissions: () => Effect.succeed(["flows:run"]) }
+  const mintInput = { ...as("will"), ...target, ceiling: ["flows:run"] }
+
+  test("restores claims, retries random collisions and drops an orphaned code", async () => {
+    const references = [0, 0, 1]
+    const pairing = [0xff, 0]
+    const attach = makeAttach({
+      ...options,
+      random: (bytes) => bytes.length === 8
+        ? bytes.fill(references.shift()!)
+        : bytes.length === 4 ? bytes.fill(pairing.shift()!) : crypto.getRandomValues(bytes),
+    })
+    const first = unwrap(await Effect.runPromise(attach.mintIntent(mintInput)))
+    const second = unwrap(await Effect.runPromise(attach.mintIntent(mintInput)))
+    expect(second.reference).not.toBe(first.reference)
+    const claim = unwrap(attach.claimIntent({ reference: first.reference, client: "agent", challenge: CHALLENGE }))
+    expect(claim.pairing).toBe("000000")
+
+    const restored = makeAttach({ ...options, state: attach.snapshot() })
+    expect(restored.sizes().claims).toBe(1)
+    unwrap(restored.consentFor({ ...as("will"), reference: first.reference }))
+    const { code } = unwrap(await Effect.runPromise(restored.approveIntent({ ...as("will"), ...claim })))
+    const state: AttachState = { ...restored.snapshot(), intents: [] }
+    const orphan = makeAttach({ ...options, state })
+    expect(failure(await orphan.redeemCode({ code, claim: claim.claim, verifier: VERIFIER }))).toBe("invalid_code")
+    expect(orphan.sizes().codes).toBe(0)
+  })
+
+  test("refuses an empty person identity", async () => {
+    const attach = makeAttach(options)
+    const result = await Effect.runPromise(attach.mintIntent({ ...mintInput, ...as("") }))
+    expect(failure(result)).toBe("unauthenticated")
+  })
+
+  test.each(["failure", "expired", "forbidden"] as const)(
+    "releases the approval reservation when the permission check is %s",
+    async (outcome) => {
+      let clock = 1_000_000
+      let permissions = Effect.succeed(["flows:run"]) as Effect.Effect<Array<string> | undefined, string>
+      const attach = makeAttach({ ...options, now: () => clock, permissions: () => permissions })
+      const { reference } = unwrap(await Effect.runPromise(attach.mintIntent(mintInput)))
+      const claim = unwrap(attach.claimIntent({ reference, client: "agent", challenge: CHALLENGE }))
+      unwrap(attach.consentFor({ ...as("will"), reference }))
+      permissions = outcome === "failure"
+        ? Effect.fail("lookup_failed")
+        : outcome === "forbidden"
+        ? Effect.succeed(undefined)
+        : Effect.sync(() => {
+          clock += INTENT_TTL_MS
+          return ["flows:run"]
+        })
+      const approval = Effect.runPromise(attach.approveIntent({ ...as("will"), ...claim }))
+      if (outcome === "failure") await expect(approval).rejects.toBe("lookup_failed")
+      else expect(failure(await approval)).toBe(outcome === "expired" ? "unknown_reference" : "forbidden")
+      expect(attach.sizes()).toMatchObject({ intents: 0, claims: 0, codes: 0 })
+    },
+  )
+
+  test("revocation checks the owner of an approved code before redemption", async () => {
+    const env = setup()
+    const first = await claimed(env)
+    const second = await claimed(env)
+    unwrap(await approve(env, first.reference, first.pairing))
+    const { code, grant } = unwrap(await approve(env, second.reference, second.pairing))
+    expect(failure(env.attach.revokeGrant({ ...as("mallory"), grant }))).toBe("wrong_person")
+    unwrap(env.attach.revokeGrant({ ...as("will"), grant }))
+    expect(failure(await env.attach.redeemCode({ code, claim: second.claim, verifier: VERIFIER }))).toBe("invalid_code")
+    expect(env.attach.sizes().codes).toBe(1)
+  })
+
+  test("rechecks a pending code when it is revoked during redemption", async () => {
+    const env = setup()
+    const { reference, claim, pairing } = await claimed(env)
+    const { code, grant } = unwrap(await approve(env, reference, pairing))
+    const result = await env.attach.redeemCode({
+      code,
+      verifier: VERIFIER,
+      get claim() {
+        unwrap(env.attach.revokeGrant({ ...as("will"), grant }))
+        return claim
+      },
+    })
+    expect(failure(result)).toBe("invalid_code")
+    expect(env.attach.sizes()).toMatchObject({ intents: 0, claims: 0, codes: 0, tokens: 0 })
+  })
+
+  test("revoking a pending code tolerates its intent already being removed", async () => {
+    const env = setup()
+    const { reference, pairing } = await claimed(env)
+    const { grant } = unwrap(await approve(env, reference, pairing))
+    const request = {
+      ...as("will"),
+      get grant() {
+        unwrap(env.attach.revokeGrant({ ...as("will"), grant }))
+        return grant
+      },
+    }
+    unwrap(env.attach.revokeGrant(request))
+    expect(env.attach.sizes()).toMatchObject({ intents: 0, claims: 0, codes: 0 })
+  })
+
+  test.each([false, true])("rechecks the token after permissions resolve (evicted: %s)", async (evict) => {
+    const env = setup()
+    const first = await attachAgent(env)
+    const second = await attachAgent(env)
+    const attach = makeAttach({
+      ...options,
+      state: env.attach.snapshot(),
+      now: () => 1_000_000,
+      limits: { revocations: 1 },
+      permissions: () => Effect.sync(() => {
+        unwrap(attach.revokeGrant({ ...as("will"), grant: first.grant.id }))
+        if (evict) unwrap(attach.revokeGrant({ ...as("will"), grant: second.grant.id }))
+        return ["flows:run"]
+      }),
+    })
+    const result = await Effect.runPromise(attach.verifyBearer(`Bearer ${first.token}`, target))
+    expect(failure(result)).toBe(evict ? "unauthenticated" : "revoked")
+  })
+})
+
+test("MCP validates paths and malformed RPC envelopes and runs effectful authorization", async () => {
+  expect(targetOf(new URL(`${HOST}/mcp/evmts`), "/mcp")).toBeUndefined()
+  expect(targetOf(new URL(`${HOST}/mcp/evmts/voltaire/%ZZ`), "/mcp")).toBeUndefined()
+  expect(targetOf(new URL(`${HOST}/mcp/%21/voltaire/main`), "/mcp")).toBeUndefined()
+
+  const env = setup()
+  const { grant } = await attachAgent(env)
+  const tool = defineTool({
+    name: "count",
+    description: "Count",
+    input: Schema.Struct({}),
+    capability: "flows:run",
+    policy: "agent",
+    authorize: () => Effect.succeed(true),
+    call: () => Effect.succeed(3),
+  })
+  const handle = makeMcpRoute({
+    attach: { verifyBearer: () => Effect.succeed(Result.succeed(grant)) },
+    hostOrigin: HOST,
+    tools: [tool],
+  })
+  const route = async (request: Request) => Effect.runPromise(handle(request, await readBody(request, MCP_MAX_REQUEST_BYTES)))
+  expect(await reason(rpc(route, undefined, { jsonrpc: "1.0", id: 1, method: "ping" }))).toBe("invalid_request")
+  expect(await reason(rpc(route, undefined, { jsonrpc: "2.0", id: 1, method: "tools/call", params: {} }))).toBe("unknown_tool")
+  const result = (await read(rpc(route, undefined, {
+    jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "count" },
+  }))).result
+  expect(result).toEqual({ content: [{ type: "text", text: "3" }], isError: false })
+  const unreadable = await Effect.runPromise(handle(
+    new Request(`${HOST}/mcp/evmts/voltaire/main`, { method: "POST" }),
+    Result.fail("body"),
+  ))
+  expect(await reason(unreadable)).toBe("parse_error")
+})
+
+test("MCP advertises definitions referenced by the tool's input", () => {
+  const entry = Schema.Struct({ name: Schema.String }).annotate({ identifier: "Entry" })
+  expect(inputSchemaOf("named", Schema.Struct({ entry }))).toMatchObject({
+    properties: { entry: { $ref: "#/$defs/Entry" } },
+    $defs: { Entry: { type: "object" } },
+  })
+})
+
+test("bounded bodies reject invalid UTF-8 and stay oversized when cancellation fails", async () => {
+  const invalidUtf8 = new Request(HOST, { method: "POST", body: new Uint8Array([0xff]) })
+  expect(failure(await readBody(invalidUtf8, 1))).toBe("body")
+
+  const oversized = new Request(HOST, {
+    method: "POST",
+    body: new ReadableStream({
+      start: (controller) => controller.enqueue(new Uint8Array(2)),
+      cancel: () => Promise.reject(new Error("cancel failed")),
+    }),
+    duplex: "half",
+  } as RequestInit)
+  expect(failure(await readBody(oversized, 1))).toBe("too_large")
 })
