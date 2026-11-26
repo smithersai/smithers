@@ -6,7 +6,7 @@
 import { FlowRuntime } from "@smthrs/flow"
 import { ModelError } from "@smthrs/model"
 import { Cause, Effect, Exit, Redacted, Stream } from "effect"
-import * as SessionStore from "../SessionStore.ts"
+import * as SessionStore from "../SessionStore.vibe"
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import {

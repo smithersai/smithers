@@ -7,7 +7,7 @@ import * as Conversations from "./branch/Conversations.vibe"
 import { scopeAccess } from "./branch/Texts.vibe"
 import * as GitHubConfig from "./github/Config.vibe"
 import * as RepoRoles from "./github/RepoRoles.vibe"
-import * as SessionStore from "./SessionStore.ts"
+import * as SessionStore from "./SessionStore.vibe"
 import { type Admission, type Checked, configuredRoleFreshMs, LEASE_MS, roleFresh } from "./SocketAccess.ts"
 import { mayRead } from "./stack/Access.vibe"
 

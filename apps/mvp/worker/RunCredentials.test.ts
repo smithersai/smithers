@@ -21,7 +21,7 @@ import {
 } from "./Actor.vibe"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import * as Database from "../db/Database.ts"
-import * as RunCredentials from "./RunCredentials.ts"
+import * as RunCredentials from "./RunCredentials.vibe"
 import * as SessionKeys from "./SessionKeys.vibe"
 import * as SignIn from "./SignIn.ts"
 import { harness, RUN_CREDENTIAL_SECRET, testFile } from "./test/harness.ts"

@@ -2,7 +2,7 @@ import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import type { Actor } from "./Actor.vibe"
 import * as RepoRoles from "./github/RepoRoles.vibe"
-import { authority, roleFresh, RoleFreshMs } from "./SessionStore.ts"
+import { authority, roleFresh, RoleFreshMs } from "./SessionStore.vibe"
 import { mayRead } from "./stack/Access.vibe"
 
 /** Inside a run start or stop transaction: lock the authority's rows, then judge them by Postgres' current clock. */

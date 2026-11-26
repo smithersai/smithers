@@ -6,7 +6,7 @@ import * as TestDatabase from "../db/TestDatabase.ts"
 import { AUTH_ROUTE } from "../src/features/auth/contract.ts"
 import * as Actor from "./Actor.vibe"
 import * as Page from "./GitHubConnectionsPage.vibe"
-import * as SessionStore from "./SessionStore.ts"
+import * as SessionStore from "./SessionStore.vibe"
 
 // The Disconnect page against the real `people` table; the person's Durable Object is the injected seam.
 const database = TestDatabase.layer("connect_page")

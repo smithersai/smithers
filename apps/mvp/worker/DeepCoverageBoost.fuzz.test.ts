@@ -2,7 +2,7 @@ import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Clock, Effect, Option, Redacted, Schema } from "effect"
 import { expect, test } from "vitest"
 import type { Actor } from "./Actor.vibe"
-import * as RunCredentials from "./RunCredentials.ts"
+import * as RunCredentials from "./RunCredentials.vibe"
 import * as SessionKeys from "./SessionKeys.vibe"
 
 test("signed run credentials preserve the principal and renew only for the issuing person, session and run", async () => {

@@ -6,7 +6,7 @@ import type { Actor } from "../Actor.vibe"
 import { testFile } from "../test/harness.ts"
 import { stackHarness, runs } from "./test/stack.ts"
 import * as Stack from "./Stack.vibe"
-import * as SessionStore from "../SessionStore.ts"
+import * as SessionStore from "../SessionStore.vibe"
 import * as WriteAuthority from "../WriteAuthority.ts"
 
 const runtime = testFile("stack_commit_authority")

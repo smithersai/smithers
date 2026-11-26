@@ -3,7 +3,7 @@ import { SqlClient } from "effect/sql"
 import type { Actor } from "./Actor.vibe"
 import { ROLES } from "../src/features/auth/contract.ts"
 import type * as RepoRoles from "./github/RepoRoles.vibe"
-import { sessionDeadline, sessionLive } from "./SessionStore.ts"
+import { sessionDeadline, sessionLive } from "./SessionStore.vibe"
 
 /** The sign-in authority retained by a write, including an alias when it came through one. */
 export const Session = Schema.Struct({

@@ -4,7 +4,7 @@ import { Sessions } from "./Actor.vibe"
 import { readBounded } from "./Body.vibe"
 import { GitHub } from "@smthrs/integrations"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import * as SessionStore from "./SessionStore.ts"
+import * as SessionStore from "./SessionStore.vibe"
 
 export const ROUTE = "/api/auth/connections"
 export const handles = (url: string) => new URL(url, "https://broker.invalid").pathname === ROUTE

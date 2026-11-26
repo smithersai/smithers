@@ -17,7 +17,7 @@ import {
 import { isRepository, repoId as repoIdOf } from "../../src/features/repo/contract.ts"
 import { UPDATE_METHODS } from "../../src/features/branch/contract.ts"
 import { MERGE_METHODS, type MergeFlow } from "../../src/features/pulls/contract.ts"
-import { Sealed, sessionLive } from "../SessionStore.ts"
+import { Sealed, sessionLive } from "../SessionStore.vibe"
 import * as Metrics from "./Metrics.vibe"
 
 // The git loop's rows in Postgres (docs/features/issues.md#postgres, migration 0016_github_issues). GitHub is the truth:

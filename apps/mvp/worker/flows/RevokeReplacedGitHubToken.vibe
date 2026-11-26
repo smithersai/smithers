@@ -7,7 +7,7 @@ import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.vibe"
 import { GitHubRefused } from "../GitHubAuth.ts"
 import type { Services } from "./RevokeGitHubToken.vibe"
-import * as SessionStore from "../SessionStore.ts"
+import * as SessionStore from "../SessionStore.vibe"
 import * as SessionEnds from "../SessionEnds.vibe"
 
 // Replacement cleanup owns only cleanup rows. It must never end or read a session.

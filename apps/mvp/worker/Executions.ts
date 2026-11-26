@@ -50,7 +50,7 @@ import * as RepoRuns from "./RepoRuns.ts"
 import * as Fleet from "./runners/Fleet.vibe"
 import * as Overflow from "./runners/Overflow.vibe"
 import { SecretKeys } from "./secrets/Keys.vibe"
-import * as SessionStore from "./SessionStore.ts"
+import * as SessionStore from "./SessionStore.vibe"
 import * as SignIn from "./SignIn.ts"
 import * as TodoRuns from "./stack/TodoRuns.vibe"
 

@@ -1,7 +1,7 @@
 import { GitHub } from "@smthrs/integrations"
 import { Effect, Option } from "effect"
 import { HttpClient } from "effect/http"
-import * as SessionStore from "../../SessionStore.ts"
+import * as SessionStore from "../../SessionStore.vibe"
 import { roleOf } from "../../GitHubAuth.ts"
 import type { Services } from "../Apply.vibe"
 import { withToken } from "../Calls.ts"

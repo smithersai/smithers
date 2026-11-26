@@ -1,6 +1,6 @@
 import { Otlp } from "@smthrs/observability"
 import { Effect, Metric, Result } from "effect"
-import * as RunCredentials from "../worker/RunCredentials.ts"
+import * as RunCredentials from "../worker/RunCredentials.vibe"
 import { testFile, recorded } from "../worker/test/harness.ts"
 import { signInHarness } from "../worker/test/signIn.ts"
 import { SqlClient } from "effect/sql"

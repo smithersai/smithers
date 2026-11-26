@@ -8,7 +8,7 @@ import { base64Bytes, LEASE_SECONDS, MAX_RUNNER_BODY_BYTES } from "../../src/fea
 import { SUMMARY_EVERY_SECONDS } from "../../src/features/transcript/contract.ts"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
-import { bearerOf } from "../RunCredentials.ts"
+import { bearerOf } from "../RunCredentials.vibe"
 import * as Fleet from "./Fleet.vibe"
 import { SETTLE_GRACE_SECONDS } from "./Jobs.vibe"
 import { Transcripts } from "./RunContent.vibe"

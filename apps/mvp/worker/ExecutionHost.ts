@@ -50,7 +50,7 @@ import * as Fleet from "./runners/Fleet.vibe"
 import * as RunnerAdmin from "./runners/AdminFlows.vibe"
 import * as GitHubHost from "./github/Host.vibe"
 import type * as Triage from "./github/Triage.vibe"
-import { RoleFreshMs, SigningKeyIds } from "./SessionStore.ts"
+import { RoleFreshMs, SigningKeyIds } from "./SessionStore.vibe"
 
 // What a remote flow execution runs on Cloudflare (docs/features/remote-flows.md): `@smthrs/platform-cloudflare`'s
 // per-execution Durable Object functions over the engine's Postgres schema. worker/Executions.ts hands it the Durable

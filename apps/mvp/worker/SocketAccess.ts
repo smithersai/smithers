@@ -4,7 +4,7 @@ import { ACCESSES } from "../src/features/branch/contract.ts"
 import { ROLES } from "../src/features/auth/contract.ts"
 import type { Actor } from "./Actor.vibe"
 import { codeOf } from "./ErrorCode.ts"
-import * as SessionStore from "./SessionStore.ts"
+import * as SessionStore from "./SessionStore.vibe"
 import { ROLE_RECHECK_MINUTES } from "./SignIn.ts"
 
 // Every socket host's lease on who it admitted (docs/observability.md#socket-leases). A route authorizes a socket once,

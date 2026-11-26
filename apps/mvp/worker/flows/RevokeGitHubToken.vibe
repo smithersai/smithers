@@ -6,7 +6,7 @@ import type { SqlError } from "effect/sql/SqlError"
 import { codeOf } from "../ErrorCode.ts"
 import { type GitHubAuth, GitHubRefused } from "../GitHubAuth.ts"
 import type { SessionKeys } from "../SessionKeys.vibe"
-import * as SessionStore from "../SessionStore.ts"
+import * as SessionStore from "../SessionStore.vibe"
 import * as Cleanup from "./RevokeReplacedGitHubToken.vibe"
 import { SqlClient as Sql } from "effect/sql"
 

@@ -8,7 +8,7 @@ import * as TestDatabase from "../db/TestDatabase.ts"
 import { MAX_RUN_BODY_BYTES } from "../src/features/status/contract.ts"
 import type { Report } from "../src/features/status/schema.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "./Actor.vibe"
-import * as Runs from "./Runs.ts"
+import * as Runs from "./Runs.vibe"
 import { eventually, harness, testFile } from "./test/harness.ts"
 
 const runtime = testFile("runs")

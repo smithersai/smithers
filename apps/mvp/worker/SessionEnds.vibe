@@ -1,7 +1,7 @@
 import { Effect, Metric, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import type { SqlError } from "effect/sql/SqlError"
-import { cleanupId, digestEffect } from "./SessionCrypto.ts"
+import { cleanupId, digestEffect } from "./SessionCrypto.vibe"
 
 export type Reason = "sign_out" | "github_refused" | "unreadable" | "expired" | "compromised"
 export const ends = Metric.counter("smithers_auth_session_ends", { incremental: true })

@@ -8,7 +8,7 @@ import * as Flows from "./Flows.vibe"
 import { readBounded } from "./Body.vibe"
 import { testFile } from "./test/harness.ts"
 import { cookie, signInHarness } from "./test/signIn.ts"
-import { MAX_TOKEN_LENGTH } from "./RunCredentials.ts"
+import { MAX_TOKEN_LENGTH } from "./RunCredentials.vibe"
 import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../src/features/auth/contract.ts"
 
 const runtime = testFile("session_admission")

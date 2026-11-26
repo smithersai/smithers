@@ -1,7 +1,7 @@
 import { Effect, Option, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
-import * as Store from "./SessionStore.ts"
+import * as Store from "./SessionStore.vibe"
 import * as Keys from "./SessionKeys.vibe"
 import * as Notifications from "./Notifications.ts"
 import * as GitHubStore from "./github/Store.vibe"

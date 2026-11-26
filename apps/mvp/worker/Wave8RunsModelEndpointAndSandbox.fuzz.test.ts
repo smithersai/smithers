@@ -32,8 +32,8 @@ import * as ModelSpend from "./ModelSpend.vibe"
 import * as PersonalModels from "./personal/Models.vibe"
 import * as PersonalUsage from "./personal/Usage.vibe"
 import * as RepoRuns from "./RepoRuns.ts"
-import * as RunCredentials from "./RunCredentials.ts"
-import * as Runs from "./Runs.ts"
+import * as RunCredentials from "./RunCredentials.vibe"
+import * as Runs from "./Runs.vibe"
 
 const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")
 const execs = Math.max(20, Math.min(Math.ceil(baseExecs / 3), 50))
@@ -225,66 +225,64 @@ const mockFlowStarter = (mode: "ok" | "conflict" | "unavailable" = "ok") =>
     }),
   )
 
-describe("Wave8: worker/Runs.ts", () => {
+describe("Wave8: worker/Runs.vibe", () => {
   it("fuzzes report, answer, addressedAnswer, credential mint/renew, and shape", async () => {
-    const modeArb = Arbitrary.schema(
-      Schema.Literals([
-        "bad_route_404",
-        "bad_uuid_404",
-        "bad_cred_segment_404",
-        "method_405",
-        "unauth_401",
-        "asking_forbidden_403",
-        "answer_person_only_403",
-        "other_run_403",
-        "report_too_large",
-        "report_bad_json",
-        "report_404",
-        "report_not_launcher",
-        "report_working_ok",
-        "report_waiting_ok",
-        "report_needs_you_question_ok",
-        "report_needs_you_approval_ok",
-        "report_done_ok",
-        "report_idempotent",
-        "report_settled_409",
-        "report_other_launcher_409",
-        "answer_too_large",
-        "answer_bad_json",
-        "answer_404",
-        "answer_not_launcher",
-        "answer_invalid_fit",
-        "answer_question_ok",
-        "answer_approval_bool_ok",
-        "answer_approval_decision_ok",
-        "answer_idempotent_string",
-        "answer_idempotent_decision",
-        "answer_not_open_409",
-        "addr_not_addressee",
-        "addr_role_503",
-        "addr_not_maintainer",
-        "addr_no_repo_role_fn",
-        "addr_invalid_fit",
-        "addr_ok",
-        "addr_idempotent",
-        "addr_not_waiting_503",
-        "addr_not_open_409",
-        "cred_too_large",
-        "cred_bad_json",
-        "cred_renew_ok",
-        "cred_renew_refused",
-        "cred_agent_404",
-        "cred_agent_not_launcher",
-        "cred_agent_ok",
-        "cred_person_only_403",
-        "cred_flow_ok",
-        "db_503",
-        "shape_in",
-        "shape_out",
-      ]),
-    )
+    const Mode = Schema.Literals([
+      "bad_route_404",
+      "bad_uuid_404",
+      "bad_cred_segment_404",
+      "method_405",
+      "unauth_401",
+      "asking_forbidden_403",
+      "answer_person_only_403",
+      "other_run_403",
+      "report_too_large",
+      "report_bad_json",
+      "report_404",
+      "report_not_launcher",
+      "report_working_ok",
+      "report_waiting_ok",
+      "report_needs_you_question_ok",
+      "report_needs_you_approval_ok",
+      "report_done_ok",
+      "report_idempotent",
+      "report_settled_409",
+      "report_other_launcher_409",
+      "answer_too_large",
+      "answer_bad_json",
+      "answer_404",
+      "answer_not_launcher",
+      "answer_invalid_fit",
+      "answer_question_ok",
+      "answer_approval_bool_ok",
+      "answer_approval_decision_ok",
+      "answer_idempotent_string",
+      "answer_idempotent_decision",
+      "answer_not_open_409",
+      "addr_not_addressee",
+      "addr_role_503",
+      "addr_not_maintainer",
+      "addr_no_repo_role_fn",
+      "addr_invalid_fit",
+      "addr_ok",
+      "addr_idempotent",
+      "addr_not_waiting_503",
+      "addr_not_open_409",
+      "cred_too_large",
+      "cred_bad_json",
+      "cred_renew_ok",
+      "cred_renew_refused",
+      "cred_agent_404",
+      "cred_agent_not_launcher",
+      "cred_agent_ok",
+      "cred_person_only_403",
+      "cred_flow_ok",
+      "db_503",
+      "shape_in",
+      "shape_out",
+    ])
 
-    await holds(modeArb, Math.max(execs * 2, 75), (mode) =>
+    const scenario = (mode: typeof Mode.Type) =>
       Effect.gen(function* () {
         const db = makeSqlLayer((q) => {
           if (mode === "db_503") return new Error("db_down")
@@ -464,8 +462,10 @@ describe("Wave8: worker/Runs.ts", () => {
             ? 503
             : 200
         expect(res.status).toBe(expected)
-      }),
-    )
+      })
+    // The ingress handler can refuse this first. Exercise the route's own streaming limit too.
+    await Effect.runPromise(scenario("answer_too_large"))
+    await holds(Arbitrary.schema(Mode), Math.max(execs * 2, 75), scenario)
   }, 60_000)
 })
 

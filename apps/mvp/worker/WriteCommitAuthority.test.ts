@@ -21,7 +21,7 @@ import * as GitHubWrite from "./github/Write.vibe"
 import * as Triage from "./github/TriageStore.vibe"
 import { TokenUnavailable } from "./github/Tokens.vibe"
 import * as GitHubMetrics from "./github/Metrics.vibe"
-import { SigningKeyIds } from "./SessionStore.ts"
+import { SigningKeyIds } from "./SessionStore.vibe"
 import * as ProtectedAuthority from "./ProtectedAuthority.ts"
 
 const runtime = testFile("write_commit_authority")

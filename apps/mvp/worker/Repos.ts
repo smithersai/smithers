@@ -2,7 +2,7 @@ import { Config, Data, Effect, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import type { CapacityReason, Failure, Status } from "../src/features/repo/contract.ts"
 import * as CloneFeed from "./CloneFeed.vibe"
-import { deploymentMember } from "./SessionStore.ts"
+import { deploymentMember } from "./SessionStore.vibe"
 
 // The `repositories` table and Code Storage's spend (docs/features/repo.md, decision 0006 "Capacity and spend"): asking
 // for a clone, admission, settling, and metering what Code Storage serves. Code Storage bills usage above its minimum

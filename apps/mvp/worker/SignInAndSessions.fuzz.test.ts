@@ -13,7 +13,7 @@ import {
 } from "../src/features/auth/contract.ts"
 import * as Flows from "./Flows.vibe"
 import * as SessionEnds from "./SessionEnds.vibe"
-import * as SessionStore from "./SessionStore.ts"
+import * as SessionStore from "./SessionStore.vibe"
 import * as SignIn from "./SignIn.ts"
 import { scriptedGitHub } from "./test/github.ts"
 
@@ -104,7 +104,7 @@ const flatten = (strings: TemplateStringsArray, values: ReadonlyArray<unknown>):
   return { text: text.replace(/\s+/g, " ").trim(), vals }
 }
 
-const createMemorySessionDb = (activeKey = "legacy") => {
+const createMemorySessionDb = (activeKey = "legacy", historyVisible = true) => {
   let nowMs = Date.UTC(2026, 10, 22, 12, 0, 0)
   let obsSeq = 1
   const people = new Map<string, PersonRow>()
@@ -245,7 +245,7 @@ const createMemorySessionDb = (activeKey = "legacy") => {
         return (s ? [{ personId: s.personId }] : []) as unknown as ReadonlyArray<A>
       }
       if (q.includes("afterRevocation") || q.includes("hourlyTokens")) {
-        return [{ afterRevocation: false, hourlyTokens: 1 }] as unknown as ReadonlyArray<A>
+        return (historyVisible ? [{ afterRevocation: false, hourlyTokens: 1 }] : []) as unknown as ReadonlyArray<A>
       }
       if (q.startsWith("SELECT EXISTS (")) {
         return [{ stale: false }] as unknown as ReadonlyArray<A>
@@ -365,6 +365,12 @@ const createMemorySessionDb = (activeKey = "legacy") => {
     }
   }
 }
+
+it("defaults token history to no revocations or hourly tokens when the SQL adapter returns no row", async () => {
+  const { database } = createMemorySessionDb("legacy", false)
+  const history = await Effect.runPromise(SessionStore.tokenHistory("person-1", "sess-1").pipe(Effect.provide(database)))
+  expect(history).toEqual({ afterRevocation: false, hourlyTokens: 0 })
+})
 
 describe("apps/mvp SignIn, SessionStore & SessionEnds deep fuzz invariants", () => {
   it("SessionStore & SessionEnds exercise full session lifecycle, host aliases, handoffs, staleness & sweeps", async () => {

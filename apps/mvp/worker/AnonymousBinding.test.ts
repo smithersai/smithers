@@ -2,7 +2,7 @@ import { Effect, Metric, Option, Redacted } from "effect"
 import { HttpServerRequest } from "effect/http"
 import { expect, test } from "vitest"
 import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract.ts"
-import * as Credentials from "./RunCredentials.ts"
+import * as Credentials from "./RunCredentials.vibe"
 import * as Keys from "./SessionKeys.vibe"
 
 const keys = await Effect.runPromise(Keys.make(Redacted.make("anonymous-test-signing-secret".padEnd(64, "7"))))

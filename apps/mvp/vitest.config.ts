@@ -97,6 +97,8 @@ export default defineConfig({
         // Sign-in (docs/features/sign-in.md).
         "worker/GitHubAuth.ts",
         "worker/SessionKeys.vibe",
+        "worker/SessionCrypto.vibe",
+        "worker/SessionCryptoSync.ts",
         "worker/SessionEnds.vibe",
         "worker/SessionPrior.vibe",
         "worker/SocketChecks.vibe",
@@ -104,8 +106,8 @@ export default defineConfig({
         "worker/RequestRay.vibe",
         "worker/RequestBackground.vibe",
         "worker/SessionSigningKeys.vibe",
-        "worker/SessionStore.ts",
-        "worker/RunCredentials.ts",
+        "worker/SessionStore.vibe",
+        "worker/RunCredentials.vibe",
         "worker/SignIn.ts",
         "db/migrations/0005_sign_in.ts",
         // Remote flow starts and request admission (docs/features/remote-flows.md).
@@ -178,7 +180,7 @@ export default defineConfig({
         "worker/AlertChannels.vibe",
         "db/migrations/0029_alert_channels.ts",
         // Agent status: the runs routes and table (docs/features/agent-status.md).
-        "worker/Runs.ts",
+        "worker/Runs.vibe",
         "db/migrations/0013_runs.ts",
         // An agent's question to one person and its addressed wait (docs/features/agent-status.md#addressed-waits).
         "worker/Asks.vibe",

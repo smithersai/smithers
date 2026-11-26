@@ -20,7 +20,7 @@ import * as Flows from "./Flows.vibe"
 import * as Ask from "./flows/Ask.vibe"
 import * as RepoRoles from "./github/RepoRoles.vibe"
 import { rowIdOf } from "./RepoRuns.ts"
-import * as Runs from "./Runs.ts"
+import * as Runs from "./Runs.vibe"
 import { engineSchema, executions } from "./test/executions.ts"
 import { eventually, harness, signedIn, testFile } from "./test/harness.ts"
 

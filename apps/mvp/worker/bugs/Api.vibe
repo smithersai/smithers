@@ -22,7 +22,7 @@ import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.vibe"
 import { BugReport } from "../flows/BugReport.vibe"
-import { bearerOf } from "../RunCredentials.ts"
+import { bearerOf } from "../RunCredentials.vibe"
 import * as ShapeAccess from "../ShapeAccess.vibe"
 
 // Bug reports' routes (docs/features/bugs.md).

@@ -5,7 +5,7 @@ import { beforeEach, expect, test } from "vitest"
 import { ACCEPTS_HEADER, ACCEPTS_CREDENTIAL_STALE } from "../src/features/auth/contract.ts"
 import { Sessions } from "./Actor.vibe"
 import * as Keys from "./SessionKeys.vibe"
-import * as Store from "./SessionStore.ts"
+import * as Store from "./SessionStore.vibe"
 import * as Rotation from "./SessionSigningKeys.vibe"
 import * as SignIn from "./SignIn.ts"
 import { testFile } from "./test/harness.ts"
@@ -260,6 +260,28 @@ test("issuance applies server timeouts, including transaction_timeout on Postgre
     const values = await runtime.runPromise(Store.issuance(Effect.flatMap(SqlClient.SqlClient, sql => sql<{ timeout: string }>`SELECT current_setting('transaction_timeout') AS timeout`)))
     expect(values[0]!.timeout).toBe("15s")
   }
+})
+
+test("unreadable signing key configuration supplies no accepted keys", async () => {
+  expect(await keyIdsOf({ SESSION_SECRETS: "{invalid json" })).toEqual([])
+})
+
+test("issuance keeps the supported timeouts when the server reports PostgreSQL 16", async () => {
+  const settings = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql.withTransaction(Effect.gen(function* () {
+    // Use a transaction-local search path to supply an older version while executing the real timeout statements.
+    yield* sql`CREATE SCHEMA old_server`
+    yield* sql`CREATE FUNCTION old_server.current_setting(text) RETURNS text LANGUAGE sql
+      AS $$ SELECT CASE WHEN $1 = 'server_version_num' THEN '160000' ELSE pg_catalog.current_setting($1) END $$`
+    yield* sql`SET LOCAL search_path = old_server, pg_catalog`
+    const [row] = yield* Store.issuance(sql<{
+      statement: string; lock: string; idle: string; transaction: string;
+    }>`SELECT pg_catalog.current_setting('statement_timeout') AS statement, pg_catalog.current_setting('lock_timeout') AS lock,
+      pg_catalog.current_setting('idle_in_transaction_session_timeout') AS idle,
+      pg_catalog.current_setting('transaction_timeout') AS transaction`)
+    yield* sql`DROP SCHEMA old_server CASCADE`
+    return row
+  }))))
+  expect(settings).toEqual({ statement: "5s", lock: "2s", idle: "10s", transaction: "0" })
 })
 
 test("short-lived proofs stop issuing under the old key at promotion too", async () => {

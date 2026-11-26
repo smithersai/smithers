@@ -3,7 +3,7 @@ import { SqlClient } from "effect/sql"
 import { ROLES } from "../../src/features/auth/contract.ts"
 import * as RepoRoles from "../github/RepoRoles.vibe"
 import * as WriteAuthority from "../WriteAuthority.ts"
-import { latestRole } from "../SessionStore.ts"
+import { latestRole } from "../SessionStore.vibe"
 
 // The fence every Admin action on a repository's runners, agents and overflow carries (decision 0148,
 // docs/features/agent-runners.md#admin). The route reads the request's body first, then the authority it admits the

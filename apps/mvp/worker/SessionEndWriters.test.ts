@@ -7,7 +7,7 @@ import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
 import { isSource, typeScriptOf } from "../../../packages/repo-targets/test-utils/source-readers.mjs"
 import * as Database from "../db/Database.ts"
-import * as Store from "./SessionStore.ts"
+import * as Store from "./SessionStore.vibe"
 import * as Prior from "./SessionPrior.vibe"
 import * as Rotation from "./SessionSigningKeys.vibe"
 import * as Keys from "./SessionKeys.vibe"
@@ -65,12 +65,12 @@ const allowed: Readonly<Record<string, string>> = {
   "worker/SessionEnds.vibe#sweep:DELETE_FROM:host_sessions:1": "Erase aliases of a home ended over thirty days ago, after their receipts exist.",
   "worker/SessionEnds.vibe#sweep:DELETE_FROM:host_sessions:2": "Erase an independently ended alias only after its thirty-day row retention.",
   "worker/SessionEnds.vibe#sweep:DELETE_FROM:sessions:1": "Erase an ended home after thirty days and after preserving its newest role receipt.",
-  "worker/SessionStore.ts#createHostSession:INSERT_INTO:host_sessions:1": "Insert a fresh alias only under a locked live parent, with its own start and issuer.",
-  "worker/SessionStore.ts#createSession:INSERT_INTO:sessions:1": "Insert a new home with bounded sliding expiry and an absolute start under its issuer.",
-  "worker/SessionStore.ts#reauthenticate:UPDATE:sessions:1": "Restart the locked eligible home in place while explicitly refusing revoked or expired rows.",
-  "worker/SessionStore.ts#reauthenticateHost:INSERT_INTO:host_sessions:1": "Insert a replacement alias when the locked held alias is ineligible.",
-  "worker/SessionStore.ts#reauthenticateHost:UPDATE:host_sessions:1": "Restart the locked eligible alias in place while refusing revoked rows.",
-  "worker/SessionStore.ts#renew:UPDATE:sessions:1": "Extend sliding expiry only after parent and alias locks and post-lock clock checks.",
+  "worker/SessionStore.vibe#createHostSession:INSERT_INTO:host_sessions:1": "Insert a fresh alias only under a locked live parent, with its own start and issuer.",
+  "worker/SessionStore.vibe#createSession:INSERT_INTO:sessions:1": "Insert a new home with bounded sliding expiry and an absolute start under its issuer.",
+  "worker/SessionStore.vibe#reauthenticate:UPDATE:sessions:1": "Restart the locked eligible home in place while explicitly refusing revoked or expired rows.",
+  "worker/SessionStore.vibe#reauthenticateHost:INSERT_INTO:host_sessions:1": "Insert a replacement alias when the locked held alias is ineligible.",
+  "worker/SessionStore.vibe#reauthenticateHost:UPDATE:host_sessions:1": "Restart the locked eligible alias in place while refusing revoked rows.",
+  "worker/SessionStore.vibe#renew:UPDATE:sessions:1": "Extend sliding expiry only after parent and alias locks and post-lock clock checks.",
 }
 
 test("every session lifetime writer in worker and migrations is explicitly allowed with a reason", () => {
@@ -140,6 +140,13 @@ for (const path of ["sign_out", "alias_sign_out", "github_refused", "unreadable"
   }
   expect(await runtime.runPromise(Prior.read(f.aliasTag))).toBe("ended")
   expect(await runtime.runPromise(Prior.read(f.tag))).toBe(["alias_sign_out", "alias_deadline"].includes(path) ? "live" : "ended")
+})
+
+test("forgetting tokens preserves a live session's sealed GitHub access", async () => {
+  const f = await fixture()
+  await runtime.runPromise(Store.forgetTokens(f.id))
+  expect(await runtime.runPromise(Prior.read(f.tag))).toBe("live")
+  expect(await query(sql => sql`SELECT id FROM sessions WHERE id = ${f.id} AND github_access IS NOT NULL`)).toEqual([{ id: f.id }])
 })
 
 test("a raw live row stays live under missing cookies, failed signatures, missing key configuration and old starts", async () => {

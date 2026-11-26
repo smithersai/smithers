@@ -16,7 +16,7 @@ import * as MigrationReauthorization from "../../db/migrations/0095_runner_reaut
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../Actor.vibe"
 import { codeOf } from "../ErrorCode.ts"
-import * as SessionStore from "../SessionStore.ts"
+import * as SessionStore from "../SessionStore.vibe"
 import * as WriteAuthority from "../WriteAuthority.ts"
 import { afterBody } from "../WriteAdmission.ts"
 import { BranchRoles } from "../branch/Access.vibe"

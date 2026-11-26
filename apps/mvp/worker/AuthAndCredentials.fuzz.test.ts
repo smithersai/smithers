@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest"
 import * as Actor from "./Actor.vibe"
 import * as appRoute from "./appRoute.ts"
 import * as RepoRoles from "./github/RepoRoles.vibe"
-import * as RunCredentials from "./RunCredentials.ts"
+import * as RunCredentials from "./RunCredentials.vibe"
 import * as SessionKeys from "./SessionKeys.vibe"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "120"))

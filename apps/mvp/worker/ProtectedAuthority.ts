@@ -3,7 +3,7 @@ import { SqlClient } from "effect/sql"
 import type { Role } from "./Actor.vibe"
 import * as WriteAuthority from "./WriteAuthority.ts"
 import * as RepoRoles from "./github/RepoRoles.vibe"
-import { latestRole, latestRoleVerifiedAt, RoleFreshMs } from "./SessionStore.ts"
+import { latestRole, latestRoleVerifiedAt, RoleFreshMs } from "./SessionStore.vibe"
 import type { Session } from "./WriteAuthority.ts"
 
 export const checks = Metric.counter("smithers_protected_authority_checks", {

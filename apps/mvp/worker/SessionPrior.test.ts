@@ -2,7 +2,7 @@ import { Effect, Layer, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
 import * as Prior from "./SessionPrior.vibe"
-import * as Store from "./SessionStore.ts"
+import * as Store from "./SessionStore.vibe"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { testFile } from "./test/harness.ts"
 import { configured, signInHarness } from "./test/signIn.ts"
@@ -48,6 +48,12 @@ test("expiry confirmation is final, transfers credentials and leaves receipts af
   expect(Option.isSome(candidate) && candidate.value.eligible).toBe(false)
   await runtime.runPromise(Store.sweepEnds())
   for (const tag of [f.tag, f.aliasTag]) expect(await prior(f.h, tag)).toMatchObject({ prior: "ended" })
+})
+
+test("an unconfigured signing key cannot nominate a live session for reauthentication", async () => {
+  const f = await fixture()
+  const [row] = await query(sql => sql<{ person: string }>`SELECT person_id AS person FROM sessions WHERE id = ${f.id}`)
+  expect(await runtime.runPromise(Store.reauthCandidate(f.digest, row!.person, "removed", ["legacy"]))).toEqual(Option.none())
 })
 
 test("an alias's own deadline ends only that alias", async () => {

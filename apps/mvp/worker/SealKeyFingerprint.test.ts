@@ -3,7 +3,7 @@ import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
 import * as Rotation from "./SessionSigningKeys.vibe"
-import * as Store from "./SessionStore.ts"
+import * as Store from "./SessionStore.vibe"
 import { testFile } from "./test/harness.ts"
 import { SECRET, signInHarness } from "./test/signIn.ts"
 

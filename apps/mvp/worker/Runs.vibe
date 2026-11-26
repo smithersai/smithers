@@ -20,7 +20,7 @@ import { TaskAnswers } from "./Flows.vibe"
 import { ASK_TASK } from "./flows/Ask.vibe"
 import { withAnswerConversation } from "./Messages.ts"
 import * as Notifications from "./Notifications.ts"
-import * as RunCredentials from "./RunCredentials.ts"
+import * as RunCredentials from "./RunCredentials.vibe"
 import * as ShapeAccess from "./ShapeAccess.vibe"
 
 // Agent status in ChatApi (decision 0015, docs/features/agent-status.md#the-routes): the `runs` rows a run's own steps
@@ -108,13 +108,13 @@ const ok = (txid: number | null) => HttpServerResponse.jsonUnsafe({ txid }, { he
 
 /** Who asked the question of the answer `runId`: `undefined` when it isn't an answer, `null` for an unknown asker. */
 const askerOf = (runId: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly askedBy: string | null }>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [row] = try sql<{ readonly askedBy: string | null }>`
       SELECT q.asked_by AS "askedBy" FROM messages a JOIN messages q ON q.id = a.question_id
       WHERE a.id = ${runId} AND a.role = 'assistant'`
     return row === undefined ? undefined : row.askedBy
-  })
+  }
 
 /**
  * Writes `report` to the run's row for `launchedBy`: its transaction, or `undefined` when the row is settled, belongs
@@ -122,14 +122,14 @@ const askerOf = (runId: string) =>
  * question: `version` goes up and the last answer is cleared. The same question reported again never reopens it.
  */
 const applyReport = (runId: string, launchedBy: string, report: Report) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
+  effect {
+    const sql = try SqlClient.SqlClient
     const waiting = report.status === "waiting" ? report.waiting : report.status === "needs_you"
       ? report.wait.kind === "approval" ? "approval" : "input"
       : null
     const wait = report.status === "needs_you" ? JSON.stringify(report.wait) : null
     // The run works where its answer is (decision 0009 §2): the answer's conversation, its branch and repository.
-    const [row] = yield* sql<{ readonly txid: string }>`
+    const [row] = try sql<{ readonly txid: string }>`
       INSERT INTO runs AS r (id, flow, status, waiting, wait, version, launched_by, conversation_id, branch_id, repo_id)
       SELECT ${runId}, ${AGENT_RUN_FLOW}, ${report.status}, ${waiting}, ${wait}::jsonb,
         ${report.status === "needs_you" ? 1 : 0}, ${launchedBy}, m.conversation_id, c.branch_id, c.repo_id
@@ -152,7 +152,7 @@ const applyReport = (runId: string, launchedBy: string, report: Report) =>
         AND NOT (EXCLUDED.wait IS NOT NULL AND r.wait->>'execution' = EXCLUDED.wait->>'execution' AND r.answer IS NOT NULL)
       RETURNING pg_current_xact_id()::xid::text AS txid`
     return row === undefined ? undefined : Number(row.txid)
-  })
+  }
 
 /** Why a report for `launchedBy` wrote nothing to run `runId`'s row, when it isn't a report already landed. */
 export type NotWritable = "settled" | "other_launcher"
@@ -163,16 +163,16 @@ export type NotWritable = "settled" | "other_launcher"
  * (`messages.conversation_id` is required), so the report made the row if there was none.
  */
 const unwrittenBecause = (runId: string, launchedBy: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly reason: NotWritable | null }>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [row] = try sql<{ readonly reason: NotWritable | null }>`
       SELECT CASE
           WHEN launched_by <> ${launchedBy} THEN 'other_launcher'
           WHEN status IN ('done', 'failed') THEN 'settled'
         END AS reason
       FROM runs WHERE id = ${runId}`
     return row!.reason ?? undefined
-  })
+  }
 
 /** A run's row as the answer route reads it. `execution` is the run its open question waits in. */
 interface RunRow {
@@ -188,14 +188,14 @@ interface RunRow {
 
 /** The run's row as the answer route reads it. */
 const runOf = (runId: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<RunRow>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [row] = try sql<RunRow>`
       SELECT launched_by AS "launchedBy", addressed_to AS "addressedTo", COALESCE(repo_id, '') AS "repoId",
         COALESCE(wait->>'execution', '') AS execution, status, version, wait->>'kind' AS kind, answer
       FROM runs WHERE id = ${runId}`
     return row
-  })
+  }
 
 /**
  * Whether `value` answers a question of `kind`: words for a question; for an approval, a yes or no, or a decision with
@@ -222,38 +222,38 @@ const same = (stored: unknown, value: RunAnswer["value"]) =>
 
 /** Records the answer to the open question `version` names, for `launchedBy`: its transaction, or `undefined`. */
 const applyAnswer = (runId: string, launchedBy: string, answer: RunAnswer) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
+  effect {
+    const sql = try SqlClient.SqlClient
     const value = kept(answer.value)
-    const [row] = yield* sql<{ readonly txid: string }>`
+    const [row] = try sql<{ readonly txid: string }>`
       UPDATE runs SET answer = jsonb_build_object('value', ${JSON.stringify(value)}::jsonb), answered_at = now(),
         updated_at = now()
       WHERE id = ${runId} AND launched_by = ${launchedBy} AND status = 'needs_you' AND version = ${answer.version}
         AND answer IS NULL
       RETURNING pg_current_xact_id()::xid::text AS txid`
     return row === undefined ? undefined : Number(row.txid)
-  })
+  }
 
 /**
  * Records the answer the parked run took on the row addressed to `person`, for the question `version` names: its
  * transaction, or `undefined` when the row holds an answer already (the run's own settle may have written it first).
  */
 const applyAddressedAnswer = (runId: string, person: string, version: number, value: RunAnswer["value"]) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly txid: string }>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [row] = try sql<{ readonly txid: string }>`
       UPDATE runs SET answer = jsonb_build_object('value', ${JSON.stringify(value)}::jsonb), answered_at = now(),
         updated_at = now()
       WHERE id = ${runId} AND addressed_to = ${person} AND version = ${version} AND answer IS NULL
       RETURNING pg_current_xact_id()::xid::text AS txid`
     return row === undefined ? undefined : Number(row.txid)
-  })
+  }
 
 /**
  * Runs `write` and, when it wrote, the feed's fold of the run (worker/Notifications.ts), in one transaction: the run's
  * row and its recipients' rows land together or not at all.
  */
-const withFold = <E, R>(write: Effect.Effect<number | undefined, E, R>, runId: string, login: string | undefined) =>
+const withFold = <E, R>(write: (number | undefined)!E!R, runId: string, login: string | undefined) =>
   withAnswerConversation(runId,
     Effect.tap(write, (txid) => (txid === undefined ? Effect.void : Notifications.foldRun(runId, login))),
   )
@@ -265,8 +265,8 @@ const withFold = <E, R>(write: Effect.Effect<number | undefined, E, R>, runId: s
  * `database` opens a Postgres client for the scope of each request.
  */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
-  Effect.gen(function* () {
-    const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+  effect {
+    const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
 
     /** `POST /api/runs/<id>`: the run's step reports its status. */
     const report = (
@@ -276,26 +276,26 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       login: string | undefined,
       fields: Fields,
     ) =>
-      Effect.gen(function* () {
-        const body = yield* readBounded(request, MAX_RUN_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(Effect.result)
+      effect {
+        const body = try readBounded(request, MAX_RUN_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(Effect.result)
         if (body._tag === "Failure") {
           return body.failure.reason === "too_large" ? refusal(413, "too_large") : refusal(400, "invalid")
         }
-        const decoded = yield* decodeReport(body.success).pipe(Effect.option)
+        const decoded = try decodeReport(body.success).pipe(Effect.option)
         if (Option.isNone(decoded)) return refusal(400, "invalid")
         fields.report = decoded.value.status
-        const askedBy = yield* askerOf(runId)
+        const askedBy = try askerOf(runId)
         if (askedBy === undefined) return refusal(404, "not_found")
         if (askedBy !== actorId) {
           fields.errorCode = "not_launcher"
           return refusal(403, "forbidden")
         }
         // The feed folds the report in its own transaction (decision 0009 decision 2): a report that lands routes.
-        const txid = yield* withFold(applyReport(runId, actorId, decoded.value), runId, login)
+        const txid = try withFold(applyReport(runId, actorId, decoded.value), runId, login)
         if (txid !== undefined) return ok(txid)
         // Nothing written: a report already landed is taken as landed; any other is refused with its reason, so the
         // run never goes on as if the person could see a question nobody shows.
-        const reason = yield* unwrittenBecause(runId, actorId)
+        const reason = try unwrittenBecause(runId, actorId)
         if (reason === undefined) {
           fields.existing = true
           return ok(null)
@@ -303,7 +303,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         fields.errorCode = "not_writable"
         fields.reason = reason
         return refusal(409, "not_writable", { reason })
-      })
+      }
 
     /**
      * `POST /api/runs/<id>/answer` on a row addressed to a person: `actor` must be that person, a Maintainer or Admin of
@@ -311,15 +311,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
      * while its row is still open is not parked yet, or took it already and is settling: `503`, sent again later.
      */
     const addressedAnswer = (row: RunRow, runId: string, actor: Actor, answer: RunAnswer, fields: Fields) =>
-      Effect.gen(function* () {
+      effect {
         fields.addressed = true
         if (row.addressedTo !== actor.subject.id) {
           fields.errorCode = "not_addressee"
           return refusal(403, "forbidden")
         }
         // The role is GitHub's on the row's repository, read now, as a feed's answer reads it (worker/feeds/Api.ts).
-        const roles = yield* BranchRoles
-        const role = yield* Effect.result(
+        const roles = try BranchRoles
+        const role = try Effect.result(
           roles.repoRoleOn === undefined
             ? Effect.succeed(null)
             : Effect.map(roles.repoRoleOn(actor, row.repoId), (resolved) => resolved.role),
@@ -335,11 +335,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         if (!fits(row.kind, answer.value)) return refusal(400, "invalid")
         const value = kept(answer.value)
         const open = row.status === "needs_you" && row.version === answer.version && row.answer === null
-        if (open && (yield* (yield* TaskAnswers).answer(row.execution, ASK_TASK, value))) {
-          const txid = yield* applyAddressedAnswer(runId, actor.subject.id, answer.version, value)
+        if (open && (try (try TaskAnswers).answer(row.execution, ASK_TASK, value))) {
+          const txid = try applyAddressedAnswer(runId, actor.subject.id, answer.version, value)
           if (txid !== undefined) return ok(txid)
         }
-        const now = (yield* runOf(runId))!
+        const now = (try runOf(runId))!
         if (now.version === answer.version && same(now.answer?.value, value)) {
           fields.existing = true
           return ok(null)
@@ -349,7 +349,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           return refusal(503, "unavailable")
         }
         return refusal(409, "not_open")
-      })
+      }
 
     /** `POST /api/runs/<id>/answer`: the person answers the open question. */
     const answer = (
@@ -358,44 +358,44 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       actor: Actor,
       fields: Fields,
     ) =>
-      Effect.gen(function* () {
+      effect {
         const actorId = actor.subject.id
-        const body = yield* readBounded(request, MAX_RUN_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(Effect.result)
+        const body = try readBounded(request, MAX_RUN_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(Effect.result)
         if (body._tag === "Failure") {
           return body.failure.reason === "too_large" ? refusal(413, "too_large") : refusal(400, "invalid")
         }
-        const decoded = yield* decodeAnswer(body.success).pipe(Effect.option)
+        const decoded = try decodeAnswer(body.success).pipe(Effect.option)
         if (Option.isNone(decoded)) return refusal(400, "invalid")
         fields.version = decoded.value.version
-        const row = yield* runOf(runId)
+        const row = try runOf(runId)
         if (row === undefined) return refusal(404, "not_found")
-        if (row.addressedTo !== null) return yield* addressedAnswer(row, runId, actor, decoded.value, fields)
+        if (row.addressedTo !== null) return try addressedAnswer(row, runId, actor, decoded.value, fields)
         if (row.launchedBy !== actorId) {
           fields.errorCode = "not_launcher"
           return refusal(403, "forbidden")
         }
         if (!fits(row.kind, decoded.value.value)) return refusal(400, "invalid")
         // An answered question closes for every recipient in the answer's transaction.
-        const txid = yield* withFold(applyAnswer(runId, actorId, decoded.value), runId, actor.login)
+        const txid = try withFold(applyAnswer(runId, actorId, decoded.value), runId, actor.login)
         if (txid !== undefined) return ok(txid)
         if (row.version === decoded.value.version && same(row.answer?.value, kept(decoded.value.value))) {
           fields.existing = true
           return ok(null)
         }
         return refusal(409, "not_open")
-      })
+      }
 
     const route = (rest: string) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
         const [segment = "", tail, ...more] = rest.split("/")
         const kind = tail === undefined ? "report" : tail === "credential" ? "credential" : "answer"
         // A credential's run is any execution id, so its segment is percent-encoded; a report's and an answer's is an
         // answer's id.
         const runId = kind === "credential" ? decodedRun(segment) : segment
-        const startedAt = yield* Clock.currentTimeMillis
+        const startedAt = try Clock.currentTimeMillis
         const fields: Fields = { runId: runId ?? "" }
-        const response = yield* Effect.gen(function* () {
+        const response = try effect {
           if (
             (tail !== undefined && tail !== "answer" && tail !== "credential") || more.length > 0 || runId === undefined ||
             (kind !== "credential" && !isUuid(runId))
@@ -403,20 +403,20 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
             return refusal(404, "not_found")
           }
           if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
-          const actor = yield* (yield* Sessions).resolve
+          const actor = try (try Sessions).resolve
           if (Option.isNone(actor)) return refusal(401, "authentication")
-          if (kind === "credential") return yield* credential(request, runId, actor.value, fields).pipe(Effect.provide(database))
+          if (kind === "credential") return try credential(request, runId, actor.value, fields).pipe(Effect.provide(database))
           const id = runId.toLowerCase()
           // A run is its answer's (decision 0009 §2): only a Member or above on that conversation's repository who may
           // edit its branch asks there, so reports or answers its runs (ruling AUTH-8).
-          const asking = yield* askingOnAnswer(actor.value, id).pipe(Effect.provide(database))
+          const asking = try askingOnAnswer(actor.value, id).pipe(Effect.provide(database))
           if (asking !== undefined && asking !== "ask") {
             fields.errorCode = asking
             return refusal(403, "forbidden")
           }
           if (actor.value.act !== undefined) fields.act = actor.value.act.kind
           // Only the person answers what the agent asked them (decision 0017 slice 0).
-          if (kind === "answer" && (yield* refusesPersonOnly(actor.value, "run/answer"))) {
+          if (kind === "answer" && (try refusesPersonOnly(actor.value, "run/answer"))) {
             return refusal(403, "person_only")
           }
           // A run's credential reports only for the run its chain started from.
@@ -424,8 +424,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           const handled = kind === "report"
             ? report(request, id, actor.value.subject.id, actor.value.login, fields)
             : answer(request, id, actor.value, fields)
-          return yield* handled.pipe(Effect.provide(database))
-        }).pipe(
+          return try handled.pipe(Effect.provide(database))
+        }.pipe(
           Effect.catchCause((cause) =>
             Effect.sync(() => {
               fields.errorCode = codeOf(Cause.squash(cause))
@@ -434,14 +434,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           ),
         )
         fields.status = response.status
-        fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
-        yield* Metric.update(Metric.withAttributes(requests, { route: kind, status: String(response.status) }), 1)
-        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+        fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+        try Metric.update(Metric.withAttributes(requests, { route: kind, status: String(response.status) }), 1)
+        try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+        try Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
           kind === "credential" ? "auth.credential" : `agent.status.${kind}`,
         ).pipe(Effect.annotateLogs(fields))
         return response
-      }).pipe(Effect.withSpan("agent.status.request", { kind: "server", attributes: { "smithers.run.id": rest.split("/")[0] } }))
+      }.pipe(Effect.withSpan("agent.status.request", { kind: "server", attributes: { "smithers.run.id": rest.split("/")[0] } }))
 
     /**
      * `POST /api/runs/<run>/credential`: the run credential of run `runId` for `actor`. The person's agent run is their
@@ -449,40 +449,40 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
      * `auth.credential` and a count, with the flow, the act and the depth, never the payload.
      */
     const credential = (request: HttpServerRequest.HttpServerRequest, runId: string, actor: Actor, fields: Fields) =>
-      Effect.gen(function* () {
-        const body = yield* readBounded(request, MAX_CREDENTIAL_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
+      effect {
+        const body = try readBounded(request, MAX_CREDENTIAL_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
           Effect.result,
         )
         if (body._tag === "Failure") {
           return body.failure.reason === "too_large" ? refusal(413, "too_large") : refusal(400, "invalid")
         }
-        const decoded = yield* decodeMint(body.success).pipe(Effect.option)
+        const decoded = try decodeMint(body.success).pipe(Effect.option)
         if (Option.isNone(decoded)) return refusal(400, "invalid")
         const { flow, renew } = decoded.value
         if (renew !== undefined) {
-          const service = yield* RunCredentials.RunCredentials
-          const renewed = yield* service.renew(renew, actor, runId)
+          const service = try RunCredentials.RunCredentials
+          const renewed = try service.renew(renew, actor, runId)
           const outcome = Option.isSome(renewed) ? "renewed" : "renewal_refused"
-          yield* Metric.update(Metric.withAttributes(RunCredentials.credentials, { op: "renew", outcome, act: Option.isSome(renewed) ? renewed.value.act : "none" }), 1)
+          try Metric.update(Metric.withAttributes(RunCredentials.credentials, { op: "renew", outcome, act: Option.isSome(renewed) ? renewed.value.act : "none" }), 1)
           if (Option.isNone(renewed)) return refusal(403, "renewal_refused")
           fields.flow = renewed.value.chain.at(-1)!
           fields.act = renewed.value.act
           fields.depth = renewed.value.chain.length
-          return HttpServerResponse.jsonUnsafe({ token: yield* service.sign(renewed.value), act: renewed.value.act, expiresAt: renewed.value.exp }, { headers: noStore })
+          return HttpServerResponse.jsonUnsafe({ token: try service.sign(renewed.value), act: renewed.value.act, expiresAt: renewed.value.exp }, { headers: noStore })
         }
         fields.flow = flow
         fields.by = actor.act?.kind ?? "person"
         if (actor.act === undefined && flow === AGENT_RUN_FLOW) {
-          const askedBy = isUuid(runId) ? yield* askerOf(runId.toLowerCase()) : undefined
+          const askedBy = isUuid(runId) ? try askerOf(runId.toLowerCase()) : undefined
           if (askedBy === undefined) return refusal(404, "not_found")
           if (askedBy !== actor.subject.id) {
             fields.errorCode = "not_launcher"
             return refusal(403, "forbidden")
           }
         }
-        const claims = RunCredentials.claimsFor(actor, runId, decoded.value, yield* Clock.currentTimeMillis)
+        const claims = RunCredentials.claimsFor(actor, runId, decoded.value, try Clock.currentTimeMillis)
         if (Result.isFailure(claims)) {
-          yield* Metric.update(
+          try Metric.update(
             Metric.withAttributes(RunCredentials.credentials, { op: "mint", outcome: claims.failure, act: "none" }),
             1,
           )
@@ -490,8 +490,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         }
         fields.act = claims.success.act
         fields.depth = claims.success.chain.length
-        const token = yield* (yield* RunCredentials.RunCredentials).sign(claims.success)
-        yield* Metric.update(
+        const token = try (try RunCredentials.RunCredentials).sign(claims.success)
+        try Metric.update(
           Metric.withAttributes(RunCredentials.credentials, { op: "mint", outcome: "minted", act: claims.success.act }),
           1,
         )
@@ -499,7 +499,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           { token, act: claims.success.act, expiresAt: claims.success.exp },
           { headers: noStore },
         )
-      })
+      }
 
     /**
      * `GET /api/shapes/runs`: the signed-in person's rows and those addressed to them; signed out, none; sessions
@@ -521,6 +521,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
     })
 
     return { route, shape }
-  })
+  }
 
 export { MAX_CREDENTIAL_BODY_BYTES } from "../src/features/status/contract.ts"

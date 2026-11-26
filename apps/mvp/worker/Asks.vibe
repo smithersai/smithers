@@ -11,7 +11,7 @@ import { Ask, ASK_FLOW, askExecutionId, AskId } from "./flows/Ask.vibe"
 import { repositoryOf } from "./github/Config.vibe"
 import { type Machine, machineOf, type MachineScope } from "./github/MachineWrite.vibe"
 import { rowIdOf } from "./RepoRuns.ts"
-import { bearerOf } from "./RunCredentials.ts"
+import { bearerOf } from "./RunCredentials.vibe"
 
 // An agent asks a person (decision 0031, docs/features/agent-status.md#addressed-waits). With a machine token holding
 // `ask/create` on the repository, and no person behind it:

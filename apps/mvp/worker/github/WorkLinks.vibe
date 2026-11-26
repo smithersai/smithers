@@ -19,7 +19,7 @@ import {
   type WorkStatus,
 } from "../../src/features/issues/work.ts"
 import * as WriteAuthority from "../WriteAuthority.ts"
-import { bearerOf } from "../RunCredentials.ts"
+import { bearerOf } from "../RunCredentials.vibe"
 
 // Work links' server side (decision 0147, docs/features/work-links.md): decoding a post, who may post (a Member or
 // above on the repository, in their session or a run's credential, or a runner registered on that repository with its

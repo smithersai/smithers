@@ -5,7 +5,7 @@ import { testFile } from "./test/harness.ts"
 import * as Personal from "./personal/Store.vibe"
 import * as Secrets from "./secrets/Store.vibe"
 import * as WriteAuthority from "./WriteAuthority.ts"
-import { SigningKeyIds } from "./SessionStore.ts"
+import { SigningKeyIds } from "./SessionStore.vibe"
 
 const runtime = testFile("durable_authority")
 const sql = (query: string) => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe(query)))

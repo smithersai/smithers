@@ -23,7 +23,7 @@ import {
 } from "../src/features/pulls/contract.ts"
 import { repoId } from "../src/features/repo/contract.ts"
 import * as SessionKeys from "./SessionKeys.vibe"
-import * as SessionStore from "./SessionStore.ts"
+import * as SessionStore from "./SessionStore.vibe"
 import { testFile } from "./test/harness.ts"
 import { answer, assertBodiesConsumed, bundle, COMPATIBILITY } from "./test/workerd/bundle.ts"
 import { REPOSITORY, SESSION_SECRET } from "./test/workerd/shapesFixture.ts"

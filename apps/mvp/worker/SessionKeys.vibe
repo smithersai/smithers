@@ -1,7 +1,7 @@
 import { CredentialCipher, WebCryptoCipher } from "@smthrs/control"
 import { Core } from "@smthrs/integrations"
 import { Effect, Option, Redacted } from "effect"
-import { digestEffect, digestSessionValue } from "./SessionCrypto.ts"
+import { digestEffect, digestSessionValue } from "./SessionCrypto.vibe"
 
 export const MIN_SECRET_LENGTH = 32
 export const LEGACY_KEY = "legacy"

@@ -1,0 +1,9 @@
+import { digestSessionValue, randomSessionUuid } from "./SessionCryptoSync.ts"
+
+export { digestSessionValue }
+
+export const cleanupId = effect { return try sync(randomSessionUuid) }
+
+export const digestEffect = effect (value: string) => {
+  return try sync(() => digestSessionValue(value))
+}

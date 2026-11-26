@@ -3,7 +3,7 @@ import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
 import * as Ends from "./SessionEnds.vibe"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import * as Store from "./SessionStore.ts"
+import * as Store from "./SessionStore.vibe"
 import { testFile } from "./test/harness.ts"
 import { signInHarness } from "./test/signIn.ts"
 
