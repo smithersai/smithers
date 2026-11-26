@@ -1,7 +1,7 @@
 // Generated properties with an oracle of their own for the branch machines' routing and a CI job's machine
 // (worker/branch/Machines.ts, worker/flows/CiJobMachine.ts), work links' authority and writes
 // (worker/github/WorkLinks.ts), a write's notice (worker/github/WriteFeed.ts), how a session ends
-// (worker/SessionPrior.vibe, worker/SessionEnds.vibe), the request ray (worker/RequestRay.ts) and Electric's object and
+// (worker/SessionPrior.vibe, worker/SessionEnds.vibe), the request ray (worker/RequestRay.vibe) and Electric's object and
 // gateway (infra/ElectricAwake.ts, infra/ElectricRelay.ts). Everything that reads or writes rows runs on this file's
 // schema of the compose Postgres, and each property reads the rows back.
 import { digestSync } from "@smthrs/crypto"
@@ -15,7 +15,7 @@ import * as ElectricAwake from "../infra/ElectricAwake.ts"
 import * as ElectricRelay from "../infra/ElectricRelay.ts"
 import { workStatusOf } from "../src/features/issues/work.ts"
 import { RAY_HEADER } from "../src/requestRay.ts"
-import * as RequestRay from "./RequestRay.ts"
+import * as RequestRay from "./RequestRay.vibe"
 import * as SessionEnds from "./SessionEnds.vibe"
 import * as SessionPrior from "./SessionPrior.vibe"
 import * as SessionStore from "./SessionStore.ts"

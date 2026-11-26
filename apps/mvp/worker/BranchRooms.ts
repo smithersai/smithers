@@ -10,7 +10,7 @@ import { type Member, Rooms, RoomUnavailable } from "./branch/Rooms.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as SocketAccess from "./SocketAccess.ts"
 import * as SocketHost from "./durable/SocketHost.ts"
-import * as SocketChecks from "./SocketChecks.ts"
+import * as SocketChecks from "./SocketChecks.vibe"
 
 // Branch rooms on Cloudflare (decision 0013 §4 and §10, docs/features/branch-workspace.md#presence): `RoomObject`, one
 // Durable Object per branch, named by the branch's id, holds the sockets of everyone on the branch and tells each of

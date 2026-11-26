@@ -1,4 +1,4 @@
-import { withRequestRay } from "./RequestRay.ts"
+import { withRequestRay } from "./RequestRay.vibe"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import * as Visibility from "./github/Visibility.ts"
 import { BranchRoles, installedOn, readsCopy } from "./branch/Access.ts"

@@ -7,7 +7,7 @@ import type { SqlClient } from "effect/sql"
 import * as Store from "./runners/RunContent.ts"
 import * as TranscriptHost from "./runners/TranscriptHost.ts"
 import * as SocketAccess from "./SocketAccess.ts"
-import * as SocketChecks from "./SocketChecks.ts"
+import * as SocketChecks from "./SocketChecks.vibe"
 
 // Runs' transcripts on Cloudflare (decision 0141, docs/features/agent-transcripts.md): `RunContent`, one Durable Object
 // per run, named by the run's id, keeps its external agent's transcript in its own SQLite (worker/runners/RunContent.ts)

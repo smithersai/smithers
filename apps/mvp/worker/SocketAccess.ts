@@ -12,7 +12,7 @@ import { ROLE_RECHECK_MINUTES } from "./SignIn.ts"
 // hands over an `Admission`: the person, their sign-in session (and the alias session it came through), its end, and
 // the basis they were let in on (a run's repository, a branch, a run's text). The host keeps it with the socket under a
 // lease: an expiry at most `LEASE_MS` ahead and never past the session's end. Every frame, out and in, checks the lease
-// where it is, with no query. Only a good check renews it (`renew`, by the rules the route used, worker/SocketChecks.ts):
+// where it is, with no query. Only a good check renews it (`renew`, by the rules the route used, worker/SocketChecks.vibe):
 // the session and the alias live, the role confirmed by GitHub within `roleFreshMs`, and the role or the branch's
 // sharing still letting them in. Anything else, a failed or slow check included, ends it: every socket that lost its
 // lease leaves its host's sending set before any of them closes, with `4401` (session), `1008` (no access) or `1012`

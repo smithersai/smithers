@@ -50,7 +50,7 @@ import * as SandboxEgress from "./secrets/SandboxEgress.ts"
 import * as SocketAccess from "./SocketAccess.ts"
 import * as SocketHost from "./durable/SocketHost.ts"
 import * as SocketPumps from "./durable/SocketPumps.ts"
-import * as SocketChecks from "./SocketChecks.ts"
+import * as SocketChecks from "./SocketChecks.vibe"
 
 // Branch sandboxes on Cloudflare (decision 0013 §3, decision 0005 §2, docs/features/branch-workspace.md#the-machine):
 // `SandboxObject`, one Durable Object per branch, named by the branch's id, owns that branch's container

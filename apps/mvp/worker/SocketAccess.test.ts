@@ -1,11 +1,11 @@
-// Socket leases (worker/SocketAccess.ts, worker/SocketChecks.ts): the transcript host (worker/runners/TranscriptHost.ts,
+// Socket leases (worker/SocketAccess.ts, worker/SocketChecks.vibe): the transcript host (worker/runners/TranscriptHost.ts,
 // what `RunContent` runs), the room (worker/BranchRooms.ts `room`, what `RoomObject` runs) and the terminal's gate, each
 // over in-memory sockets and an in-memory storage whose alarm the test fires when the host armed it, on the test clock,
 // against this file's schema of the compose Postgres (`pnpm db:up`).
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { PresenceRoom } from "@smthrs/sync"
-import { ConfigProvider, Deferred, Effect, Fiber, Logger, Metric, Option, Redacted } from "effect"
+import { ConfigProvider, Deferred, Effect, Fiber, Logger, Metric, Option, Redacted, Tracer } from "effect"
 import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 import { beforeEach, describe, expect, test } from "vitest"
@@ -22,7 +22,7 @@ import * as TranscriptHost from "./runners/TranscriptHost.ts"
 import * as SessionStore from "./SessionStore.ts"
 import * as SocketAccess from "./SocketAccess.ts"
 import * as SocketHost from "./durable/SocketHost.ts"
-import * as SocketChecks from "./SocketChecks.ts"
+import * as SocketChecks from "./SocketChecks.vibe"
 import { resetBranches, shared, tracked } from "./test/branch.ts"
 import { branchRoles, testFile } from "./test/harness.ts"
 import { sqliteStore } from "./test/runContent.ts"
@@ -155,7 +155,10 @@ test.each(["home", "alias"] as const)(
     url.searchParams.set("options", `-c search_path=${scratch.name}`)
     // The host binding points at the real test database; the production checker and all authority reads run unchanged.
     const checker = await runtime.runPromise(
-      SocketChecks.checker(Effect.succeed({ LogicalId: "TestDatabase" } as Cloudflare.Hyperdrive.Connection)).pipe(
+      SocketChecks.checker(
+        Effect.succeed({ LogicalId: "TestDatabase" } as Cloudflare.Hyperdrive.Connection),
+        boundary === "home" ? { local: true, localRoles: () => "member" } : undefined,
+      ).pipe(
         Effect.provideService(Cloudflare.Hyperdrive.Connect, () =>
           Effect.succeed({
             connectionString: Effect.succeed(Redacted.make(url.toString())),
@@ -177,15 +180,76 @@ test.each(["home", "alias"] as const)(
     )
     const check = () =>
       runtime.runPromise(
-        checker.check(admission.admission).pipe(
+        checker.within(checker.check(admission.admission)).pipe(
           Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({}))
         )
       )
     expect(await check()).toMatchObject({ verdict: "keep" })
+    const tracer = Tracer.make({
+      span(options) {
+        if (options.name === "socket.verdict") throw new Error("tracing failed")
+        return new Tracer.NativeSpan(options)
+      },
+    })
+    expect(await runtime.runPromise(checker.within(checker.check(admission.admission)).pipe(
+      Effect.provideService(Tracer.Tracer, tracer),
+    ))).toBe("unverified")
     await sql`UPDATE sessions SET cookie_key = 'removed' WHERE id = ${actor.session}`
     expect(await check()).toBe("session")
   }
 )
+
+test("run renewal distinguishes repository refusals from unavailable role checks and defects", async () => {
+  const actor = await signIn("member")
+  const admission = { ...await admit(actor), session: null }
+  const repository = repositoryOf(HOME)
+  const scratch = await runtime.runPromise(TestDatabase.Scratch)
+  const check = (resolve: RepoRoles.RepoRoles["resolve"]) =>
+    runtime.runPromise(SocketChecks.verdict({ repository, resolve }, admission, HOUR).pipe(
+      Effect.provide(branchRoles(scratch.database)),
+    ))
+  expect(await check((requester) => {
+    expect(requester.session).toBeUndefined()
+    return Effect.succeed({ role: requester.role, held: Option.none() })
+  })).toMatchObject({ verdict: "keep", capped: false, expiresAt: null })
+  for (const [code, expected] of [
+    ["unavailable", "unverified"],
+    ["rate_limited", "unverified"],
+    ["not_found", "revoked"],
+  ] as const) {
+    expect(await check(() => Effect.fail(new RepoRoles.RoleRefused({ code })))).toBe(expected)
+  }
+  expect(await check(() => Effect.die("role reader failed"))).toBe("unverified")
+})
+
+test("terminal renewal keeps read-only access, detects an access change and revokes a guest", async () => {
+  const owner = await signIn("member")
+  const reader = await signIn("member")
+  const branch = await tracked(runtime, BRANCH_REPO, "feature/terminal-read", "open", owner.subject.id)
+  await shared(runtime, branch.branchId, reader.subject.id, "view")
+  const admission = await admit(reader, { kind: "terminal", branchId: branch.branchId }, "read")
+  const check = await checks()
+  expect(await runtime.runPromise(check(admission))).toMatchObject({ verdict: "keep" })
+  expect(await runtime.runPromise(check({ ...admission, access: "write" }))).toBe("changed")
+  await sql`UPDATE sessions SET role = 'guest' WHERE id = ${reader.session}`
+  expect(await runtime.runPromise(check(admission))).toBe("revoked")
+})
+
+test("run-text renewal checks the run still exists and remains in the person's scope", async () => {
+  const owner = await signIn("member")
+  const other = await signIn("member")
+  const branch = await tracked(runtime, BRANCH_REPO, "feature/run-text", "open", owner.subject.id)
+  const run = crypto.randomUUID()
+  const basis = { kind: "text", run } as const
+  const admission = await admit(owner, basis, "owner")
+  const check = await checks()
+  expect(await runtime.runPromise(check(admission))).toBe("revoked")
+  await sql`INSERT INTO runs (id, flow, status, launched_by, branch_id)
+    VALUES (${run}, 'chat/Answer', 'working', ${owner.subject.id}, ${branch.branchId})`
+  expect(await runtime.runPromise(check(admission))).toMatchObject({ verdict: "keep" })
+  expect(await runtime.runPromise(check({ ...admission, access: "view" }))).toBe("changed")
+  expect(await runtime.runPromise(check(await admit(other, basis, "owner")))).toBe("revoked")
+})
 
 type Check = Awaited<ReturnType<typeof checks>>
 

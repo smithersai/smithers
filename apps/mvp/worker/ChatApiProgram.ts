@@ -3,14 +3,14 @@ import * as AuthBroker from "./AuthBroker.vibe"
 import * as GitHubConnection from "./GitHubConnection.vibe"
 import * as GitHubConnectionsPage from "./GitHubConnectionsPage.vibe"
 import * as PublicReads from "./PublicReads.vibe"
-import { withRequestRay } from "./RequestRay.ts"
+import { withRequestRay } from "./RequestRay.vibe"
 // ChatApi's program (worker/ChatApi.ts): everything ChatApi serves and hosts. worker/ChatApi.ts loads this module when
 // the Worker first builds its program, not when Cloudflare starts the Worker, so its modules are evaluated then and
 // count against the first request's CPU instead of the Worker's startup limit (docs/infrastructure.md#limits).
 import * as ArtifactRoutes from "./ops/ArtifactRoutes.vibe"
 import * as Waitlist from "./waitlist/Waitlist.vibe"
 import * as PlanTreeRoutes from "./plan/PlanTreeRoutes.ts"
-import * as SshKeyAccess from "./SshKeyAccess.ts"
+import * as SshKeyAccess from "./SshKeyAccess.vibe"
 import * as Artifacts from "./branch/Artifacts.ts"
 import { CiArtifacts } from "../infra/GateMachine.ts"
 import * as Cloudflare from "@alchemy.run/cloudflare"
@@ -83,7 +83,7 @@ import * as ProfileStore from "./profile/Store.ts"
 import * as RemoteRuns from "./RemoteRuns.ts"
 import * as RepoApi from "./RepoApi.ts"
 import * as RepoConfig from "./RepoConfig.vibe"
-import * as RequestBackground from "./RequestBackground.ts"
+import * as RequestBackground from "./RequestBackground.vibe"
 import * as RunContent from "./RunContent.ts"
 import * as RunnerAdmin from "./runners/Admin.ts"
 import * as RunnersApi from "./runners/Api.ts"
@@ -96,7 +96,7 @@ import * as SecretsApi from "./secrets/Api.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as SignIn from "./SignIn.ts"
 import * as SocketAccess from "./SocketAccess.ts"
-import * as SocketChecks from "./SocketChecks.ts"
+import * as SocketChecks from "./SocketChecks.vibe"
 import type { Sessions } from "./Actor.ts"
 import * as StackApi from "./stack/Api.ts"
 import * as IssueRead from "./stack/IssueRead.ts"
@@ -201,7 +201,7 @@ export const program = (options: ProgramOptions = {}) =>
   })
 
 /** All deployment choices below are already captured before Alchemy builds the handlers. */
-/** How the socket hosts' rechecks read roles in local development, as `RepoRoles` does here (worker/SocketChecks.ts). */
+/** How the socket hosts' rechecks read roles in local development, as `RepoRoles` does here (worker/SocketChecks.vibe). */
 const socketChecks = (options: ProgramOptions): SocketChecks.Options => ({
   local: options.fallback !== undefined,
   ...(options.localRoles === undefined ? {} : { localRoles: options.localRoles })

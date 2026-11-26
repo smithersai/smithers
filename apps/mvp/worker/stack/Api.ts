@@ -1,4 +1,4 @@
-import { withRequestRay } from "../RequestRay.ts"
+import { withRequestRay } from "../RequestRay.vibe"
 import * as ProtectedAuthority from "../ProtectedAuthority.ts"
 import * as WriteAuthority from "../WriteAuthority.ts"
 import { canAsk } from "../Actor.ts"

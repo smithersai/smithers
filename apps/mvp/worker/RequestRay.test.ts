@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { HttpEffect, HttpServerResponse } from "effect/http"
 import { expect, test } from "vitest"
 import { RAY_HEADER, rayOf } from "../src/requestRay.ts"
-import { withRequestRay } from "./RequestRay.ts"
+import { withRequestRay } from "./RequestRay.vibe"
 
 const ray = "0123456789abcdef-SJC"
 

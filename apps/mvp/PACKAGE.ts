@@ -204,7 +204,7 @@ export const importRules: ReadonlyArray<ImportRule> = [
   },
   {
     kind: "forbidCalls",
-    // worker/RequestBackground.ts is the single Cloudflare WorkerExecutionContext adapter (injected by worker/ChatApiProgram.ts).
+    // worker/RequestBackground.vibe is the single Cloudflare WorkerExecutionContext adapter (injected by worker/ChatApiProgram.ts).
     files: [
       ...appSources.map((glob) =>
         glob === "worker/!(*.test).{ts,vibe}" ? "worker/!(RequestBackground|*.test).{ts,vibe}" : glob
@@ -213,7 +213,7 @@ export const importRules: ReadonlyArray<ImportRule> = [
     ],
     callees: ["*.waitUntil"],
     because: "durable.no-hand-rolled-durability: background work runs through the @smthrs/flow engine, never bare " +
-      "waitUntil outside worker/RequestBackground.ts. See \"Everything is a durable flow\" in the root AGENTS.md and " +
+      "waitUntil outside worker/RequestBackground.vibe. See \"Everything is a durable flow\" in the root AGENTS.md and " +
       "apps/mvp/docs/rules.md."
   },
   {

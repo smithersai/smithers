@@ -5,7 +5,7 @@
 // database read (box admission and release, a person's subscription, an overflow box's model, the box's egress) serves
 // a box the engine woke. Socket authorization stays on the request path: ChatApi checks the session and the branch's
 // sharing before it hands a socket to its object, and each socket host renews that socket's lease by the same rules
-// (worker/SocketChecks.ts) through `ChatDatabase`: the transcript's `RunContent`, the rooms' `RoomObject`, and the
+// (worker/SocketChecks.vibe) through `ChatDatabase`: the transcript's `RunContent`, the rooms' `RoomObject`, and the
 // sandbox objects' terminal sockets (`SocketChecks`).
 
 /** The two configs: `request` is `ChatDatabase`, `engine` is `EngineDatabase`. */

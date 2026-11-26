@@ -6,7 +6,7 @@
 import { Effect, Metric, Option, Stream } from "effect"
 import { HttpEffect, HttpServerResponse } from "effect/http"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import * as SshKeyAccess from "./SshKeyAccess.ts"
+import * as SshKeyAccess from "./SshKeyAccess.vibe"
 import * as Flows from "./Flows.ts"
 import * as RunnerAdmin from "./runners/Admin.ts"
 import { describe, expect, test } from "vitest"

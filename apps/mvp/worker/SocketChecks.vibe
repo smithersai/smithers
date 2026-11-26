@@ -1,5 +1,4 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Clock, Effect, Layer, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
 import { type Actor, canAsk } from "./Actor.ts"
@@ -22,8 +21,8 @@ import { mayRead } from "./stack/Access.ts"
  * `roles` is the `RepoRoles` the route asked. Anything that fails is `unverified`.
  */
 export const verdict = <R>(roles: RepoRoles.RepoRoles<R>, admission: Admission, roleFreshMs: number) =>
-  Effect.gen(function*() {
-    const now = yield* Clock.currentTimeMillis
+  effect {
+    const now = try Clock.currentTimeMillis
     // A kept lease's window starts when this check started, on this Worker's clock, and runs `LEASE_MS`, never past
     // what the database said was left of the session then (decision 0151 rule 9).
     let until = now + LEASE_MS
@@ -32,11 +31,11 @@ export const verdict = <R>(roles: RepoRoles.RepoRoles<R>, admission: Admission, 
     let capped = false
     let role = admission.role
     if (admission.session !== null) {
-      const live = yield* SessionStore.authority(admission.session, admission.alias, admission.cookieKey ?? "legacy")
+      const live = try SessionStore.authority(admission.session, admission.alias, admission.cookieKey ?? "legacy")
       if (Option.isNone(live) || live.value.personId !== admission.principal) return "session" as const
       // A role GitHub hasn't confirmed lately renews nothing; the page's reconnect through the route starts its check.
       // Both times are the database's: a Worker clock skewed from it neither stretches nor cuts the freshness.
-      if (!roleFresh(live.value.roleVerifiedAt, live.value.serverNow, roleFreshMs)) return "unverified" as const
+      if (!(try sync(() => roleFresh(live.value.roleVerifiedAt, live.value.serverNow, roleFreshMs)))) return "unverified" as const
       role = live.value.role
       const left = live.value.expiresAt - live.value.serverNow
       serverExpiresAt = live.value.expiresAt
@@ -54,47 +53,41 @@ export const verdict = <R>(roles: RepoRoles.RepoRoles<R>, admission: Admission, 
     const basis = admission.basis
     switch (basis.kind) {
       case "run": {
-        const resolved = yield* roles.resolve(actor, GitHubConfig.repositoryOf(basis.repoId.replace(/^github\//, "")))
-          .pipe(
-            Effect.map((resolved) => Option.some(resolved.role)),
-            // As the route: a refusal that says the deployment can't act there is no; GitHub or Postgres down is unknown.
-            Effect.catch((error) =>
-              RepoRoles.REFUSALS[error.code] === 503 || error.code === "rate_limited"
-                ? Effect.succeed(Option.none<null>())
-                : Effect.succeed(Option.some(null))
-            )
-          )
+        // As the route: a refusal that says the deployment can't act there is no; GitHub or Postgres down is unknown.
+        const repository = try sync(() => GitHubConfig.repositoryOf(basis.repoId.replace(/^github\//, "")))
+        const resolved = map(roles.resolve(actor, repository), (resolved) => Option.some(resolved.role))
+          catch (error) =>
+            RepoRoles.REFUSALS[error.code] === 503 || error.code === "rate_limited"
+              ? Option.none<null>()
+              : Option.some(null)
         if (Option.isNone(resolved)) return "unverified" as const
-        return mayRead(Option.some({ ...actor, role: resolved.value }))
+        return (try sync(() => mayRead(Option.some({ ...actor, role: resolved.value }))))
           ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const)
           : "revoked" as const
       }
       case "branch":
       case "terminal": {
-        const branch = yield* branchAccess(Option.some(actor), basis.branchId)
-        if (branch === undefined || !canView(branch.access)) return "revoked" as const
+        const branch = try branchAccess(Option.some(actor), basis.branchId)
+        if (branch === undefined || !(try sync(() => canView(branch.access)))) return "revoked" as const
         if (basis.kind === "branch") {
           return branch.access === admission.access
             ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const)
             : "changed" as const
         }
-        if (!canAsk(actor)) return "revoked" as const
-        return (canEdit(branch.access) ? "write" : "read") === admission.access
+        if (!(try sync(() => canAsk(actor)))) return "revoked" as const
+        return ((try sync(() => canEdit(branch.access))) ? "write" : "read") === admission.access
           ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const)
           : "changed" as const
       }
       case "text": {
-        const scoped = yield* scopeAccess(Option.some(actor), { run: basis.run })
-        if (scoped === undefined || !canView(scoped.access)) return "revoked" as const
+        const scoped = try scopeAccess(Option.some(actor), { run: basis.run })
+        if (scoped === undefined || !(try sync(() => canView(scoped.access)))) return "revoked" as const
         return scoped.access === admission.access
           ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const)
           : "changed" as const
       }
     }
-  }).pipe(
-    Effect.catchCause(() => Effect.succeed<Checked>("unverified")),
-    Effect.withSpan("socket.verdict")
-  )
+  } |> catchCause(%, () => succeed<Checked>("unverified")) |> withSpan(%, "socket.verdict")
 
 /** Local development's roles, as ChatApi's `RepoRoles` takes them (worker/ChatApiProgram.ts). */
 export interface Options {
@@ -107,37 +100,36 @@ export interface Options {
  * Inside a Durable Object: `check`, an admission's verdict now, and `within`, which runs one renewal with one Postgres
  * client, the one `RepoRoles` reads through too.
  */
-export const checker = <E, R>(
-  connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
+export const checker = effect <E, R>(
+  connection: Cloudflare.Hyperdrive.Connection!E!R,
   options: Options = {}
-) =>
-  Effect.gen(function*() {
-    const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(connection)
-    const database = Database.layer(hyperdrive.connectionString)
-    const repository = yield* GitHubConfig.repository.pipe(Effect.orDie)
-    const app = yield* GitHubConfig.configured.pipe(Effect.orDie)
-    const allowed = yield* RepoRoles.allowed.pipe(Effect.orDie)
-    const home = yield* Conversations.configuredHomeRepositoryNames.pipe(Effect.orDie)
-    const roleFreshMs = yield* configuredRoleFreshMs.pipe(Effect.orDie)
-    const signingKeyIds = yield* SessionStore.configuredKeyIds.pipe(Effect.orDie)
-    // `RepoRoles` reads through the client `within` opened for the renewal, not one of its own per read.
-    const roles = yield* RepoRoles.make(Layer.effect(SqlClient.SqlClient, Effect.service(SqlClient.SqlClient)), {
-      repository,
-      app,
-      allowed,
-      local: options.local === true && Option.isNone(app),
-      ...(options.localRoles === undefined ? {} : { localRoles: options.localRoles })
-    })
-    const branchRoles = BranchRoles.layer(roles)
-    return {
-      check: (admission: Admission) =>
-        verdict(roles, admission, roleFreshMs).pipe(
-          Effect.provide(branchRoles),
-          Effect.provideService(Conversations.homeRepositoryNames, home),
-          Effect.provideService(SessionStore.SigningKeyIds, signingKeyIds),
-          Effect.catchCause(() => Effect.succeed<Checked>("unverified"))
-        ),
-      within: <A, R2>(renewal: Effect.Effect<A, never, R2>) =>
-        renewal.pipe(Effect.provide(database)) as Effect.Effect<A, unknown, Exclude<R2, SqlClient.SqlClient>>
-    }
+) => {
+  const hyperdrive = try Cloudflare.Hyperdrive.Connect(connection)
+  const database = Database.layer(hyperdrive.connectionString)
+  const repository = try orDie(GitHubConfig.repository)
+  const app = try orDie(GitHubConfig.configured)
+  const allowed = try orDie(RepoRoles.allowed)
+  const home = try orDie(Conversations.configuredHomeRepositoryNames)
+  const roleFreshMs = try orDie(configuredRoleFreshMs)
+  const signingKeyIds = try orDie(SessionStore.configuredKeyIds)
+  // `RepoRoles` reads through the client `within` opened for the renewal, not one of its own per read.
+  const roles = try RepoRoles.make(Layer.effect(SqlClient.SqlClient, SqlClient.SqlClient), {
+    repository,
+    app,
+    allowed,
+    local: options.local === true && Option.isNone(app),
+    ...(options.localRoles === undefined ? {} : { localRoles: options.localRoles })
   })
+  const branchRoles = BranchRoles.layer(roles)
+  return {
+    check: (admission: Admission) =>
+      verdict(roles, admission, roleFreshMs).pipe(
+        Effect.provide(branchRoles),
+        provideService(Conversations.homeRepositoryNames, home),
+        provideService(SessionStore.SigningKeyIds, signingKeyIds),
+        catchCause(() => succeed<Checked>("unverified"))
+      ),
+    within: <A, R2>(renewal: A!never!R2) =>
+      renewal.pipe(Effect.provide(database)) as (A!unknown!Exclude<R2, SqlClient.SqlClient>)
+  }
+}

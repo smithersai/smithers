@@ -1,4 +1,4 @@
-import { withRequestRay } from "../RequestRay.ts"
+import { withRequestRay } from "../RequestRay.vibe"
 import { Home } from "@smthrs/views"
 import { Clock, Effect, Metric, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"

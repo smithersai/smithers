@@ -2,7 +2,7 @@ import { Clock, Effect, Metric } from "effect"
 import { type HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { isProfileOwner, PROFILE_ROUTE, type ProfileRefusal } from "../../src/features/profile/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
-import { withRequestRay } from "../RequestRay.ts"
+import { withRequestRay } from "../RequestRay.vibe"
 import * as ProfileMetrics from "./Metrics.ts"
 import * as ProfileSource from "./Source.ts"
 

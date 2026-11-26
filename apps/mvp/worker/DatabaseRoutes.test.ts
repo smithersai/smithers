@@ -58,7 +58,7 @@ describe("database routes", () => {
     const sandboxes = source("BranchSandboxes.ts")
     expect(sandboxes.match(/implementation\(connection, checks, checkConnection, \{/g)).toHaveLength(2)
     expect(sandboxes.match(/SocketChecks\.checker\(([A-Za-z]+),/g)).toEqual(["SocketChecks.checker(checkConnection,"])
-    expect(connecting()).toEqual(["BranchSandboxes.ts", "ChatApiProgram.ts", "Executions.ts", "SocketChecks.ts"])
+    expect(connecting()).toEqual(["BranchSandboxes.ts", "ChatApiProgram.ts", "Executions.ts", "SocketChecks.vibe"])
   })
 
   test("finds a module converted to VibeLang that opens a config, as it finds its TypeScript twin", () => {

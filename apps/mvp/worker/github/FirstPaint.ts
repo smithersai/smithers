@@ -29,7 +29,7 @@ export const FIRST_PAINT_DEADLINE_MS = 2_500
 export const BEHIND_WITHIN = Duration.seconds(15)
 
 /**
- * Work a request leaves to run after its response (worker/RequestBackground.ts). A first paint past its deadline leaves
+ * Work a request leaves to run after its response (worker/RequestBackground.vibe). A first paint past its deadline leaves
  * its role read here, so the person's next read finds it fresh. Absent, as in a test that gives none, nothing runs.
  */
 export class Behind extends Context.Service<Behind, { readonly run: (work: Effect.Effect<void>) => Effect.Effect<void> }>()(

@@ -61,7 +61,7 @@ test("the final write checks use the shared absolute deadline", () => {
   expect(text).not.toContain("WriteAuthority.holds(")
 })
 
-test.each(["./Executions.ts", "./SocketChecks.ts"])("%s captures signing key IDs for its runtime authority checks", path => {
+test.each(["./Executions.ts", "./SocketChecks.vibe"])("%s captures signing key IDs for its runtime authority checks", path => {
   const source = sourceText(new URL(path, import.meta.url))
   expect(source).toContain("signingKeyIds")
   expect(source).toMatch(/(?:SigningKeyIds|keyIds|configuredKeyIds)/)
