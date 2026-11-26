@@ -12,7 +12,7 @@ import { fixture, shaOf } from "../test/codeStorage.ts"
 import { build, runFlow } from "../test/flowHost.ts"
 import { recorded, testFile } from "../test/harness.ts"
 import { repoHarness, repositoryRow, resetRepos } from "../test/repos.ts"
-import * as Refresh from "./RepoRefresh.ts"
+import * as Refresh from "./RepoRefresh.vibe"
 
 const runtime = testFile("repo_refresh")
 beforeEach(() => resetRepos(runtime))

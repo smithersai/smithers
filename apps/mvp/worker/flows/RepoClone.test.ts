@@ -19,7 +19,7 @@ import { fixture, type Scripted, scripted } from "../test/codeStorage.ts"
 import { build, runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import { notificationRow, repositoryRow, resetRepos, usageRow } from "../test/repos.ts"
-import * as RepoClone from "./RepoClone.ts"
+import * as RepoClone from "./RepoClone.vibe"
 
 const runtime = testFile("repo_clone")
 
@@ -431,6 +431,9 @@ describe("the steps alone", () => {
     )
     // Not pulled yet: the branch isn't there, so it waits, with no wait of Code Storage's.
     expect(failureOf(await Effect.runPromiseExit(steps.awaitSync(sync)))).toEqual(new RepoClone.SyncPending({}))
+    provider.fail("listCommits", provider.error("listCommits", "sync_in_progress", 409, { retryAfterMillis: 750 }))
+    expect(failureOf(await Effect.runPromiseExit(steps.awaitSync(sync))))
+      .toEqual(new RepoClone.SyncPending({ retryAfterMillis: 750 }))
     provider.fail("listCommits", provider.error("listCommits", "forbidden", 403))
     expect(failureOf(await Effect.runPromiseExit(steps.awaitSync(sync)))).toBeInstanceOf(RepoClone.CloneRefused)
     // A branch with no commits listed yet waits too.

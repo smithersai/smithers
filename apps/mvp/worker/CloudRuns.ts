@@ -14,7 +14,7 @@ import * as GitHubHost from "./github/Host.ts"
 import * as Dispatch from "./ci/Dispatch.vibe"
 import * as Checks from "./flows/Checks.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
-import * as RepoClone from "./flows/RepoClone.ts"
+import * as RepoClone from "./flows/RepoClone.vibe"
 import * as SpendAlert from "./flows/SpendAlert.ts"
 import { mayRead } from "./stack/Access.vibe"
 

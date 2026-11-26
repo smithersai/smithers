@@ -248,19 +248,22 @@ export interface Services<E = unknown, R = never> {
    * Reads `owner/name`'s file list at `sha` into the shared cache, as RepoApi's tree read does, and answers how many
    * files it has.
    */
-  readonly index: (owner: string, name: string, sha: string) => Effect.Effect<number, CloneUnavailable, R>
+  readonly index: (owner: string, name: string, sha: string) => number!CloneUnavailable!R
   /** Whether the Smithers GitHub App is installed on `owner/name`: `false` for a deployment without the App. */
-  readonly installed: (owner: string, name: string) => Effect.Effect<boolean, CloneUnavailable>
+  readonly installed: (owner: string, name: string) => boolean!CloneUnavailable
 }
 
 /** Reads `REPO_CLONE_DEADLINE`. */
 export const deadline = Config.Duration("REPO_CLONE_DEADLINE").pipe(Config.withDefault(Duration.minutes(10)))
 
 /** A Code Storage failure as a step reports it: transient ones retried after its wait, the rest refused. */
-const fromCodeStorage = (error: CodeStorage.CodeStorageError) =>
-  CodeStorage.isTransient(error)
-    ? new CloneUnavailable(error.retryAfterMillis === undefined ? {} : { retryAfterMillis: error.retryAfterMillis })
-    : new CloneRefused()
+const fromCodeStorage = effect (error: CodeStorage.CodeStorageError) => {
+  const transient = try Effect.sync(() => CodeStorage.isTransient(error))
+  if (transient) {
+    throw new CloneUnavailable(error.retryAfterMillis === undefined ? {} : { retryAfterMillis: error.retryAfterMillis })
+  }
+  throw new CloneRefused()
+}
 
 /** Code Storage's codes while a new mirror's first sync hasn't produced the branch yet. */
 const NOT_YET = new Set(["sync_in_progress", "not_found", "repository_not_found", "ref_not_found", "branch_not_found"])
@@ -272,20 +275,20 @@ export const steps = <E, R>(services: Services<E, R>) => {
     Effect.logInfo("repo.clone.step").pipe(Effect.annotateLogs({ step, ...fields }))
 
   const inspect = (request: typeof Inspect.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const head = yield* upstream.head(request.owner, request.name).pipe(Effect.result)
+    effect {
+      const head = try Effect.result(upstream.head(request.owner, request.name))
       if (head._tag === "Failure") {
         const code = head.failure.code
         if (code === "not_found" || code === "empty") return failed(code)
-        return yield* new CloneUnavailable()
+        throw new CloneUnavailable()
       }
       const branch = head.success.branch
       if (branch === undefined) return failed("unavailable")
-      const size = yield* upstream.size(request.owner, request.name).pipe(
+      const size = try upstream.size(request.owner, request.name).pipe(
         Effect.mapError((error) => new CloneUnavailable(error.retryAfterMillis === undefined ? {} : { retryAfterMillis: error.retryAfterMillis })),
       )
       if ("missing" in size) return failed("not_found")
-      const admission = yield* Repos.admit({ id: request.id, cloneId: request.cloneId }, size, budgets).pipe(
+      const admission = try Repos.admit({ id: request.id, cloneId: request.cloneId }, size, budgets).pipe(
         Effect.provide(database),
         // A stale attempt imports nothing: Try again's attempt owns the row.
         Effect.mapError((error) => error instanceof Repos.AdmissionLost ? new CloneRefused() : new CloneUnavailable()),
@@ -307,7 +310,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
           retryAt: admission.retryAt,
           failure: null,
         } satisfies Inspection
-    }).pipe(
+    }.pipe(
       Effect.tap((inspection) =>
         record("inspect", {
           id: request.id,
@@ -316,79 +319,73 @@ export const steps = <E, R>(services: Services<E, R>) => {
           reason: inspection.capacity ?? inspection.failure ?? "none",
         })
       ),
-      Effect.withSpan("repo.clone.inspect", { attributes: { "smithers.repo.id": request.id } }),
+      withSpan("repo.clone.inspect", { attributes: { "smithers.repo.id": request.id } }),
     )
 
   const importRepo = (payload: typeof Import.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      if (payload.defaultBranch === null) return yield* new CloneRefused()
-      const created = yield* codeStorage.createRepo({
+    effect {
+      if (payload.defaultBranch === null) throw new CloneRefused()
+      const created = try codeStorage.createRepo({
         name: payload.id,
         defaultBranch: payload.defaultBranch,
         github: { owner: payload.owner, name: payload.name },
-      }).pipe(Effect.mapError((error) => fromCodeStorage(error)))
-      yield* record("import", { id: payload.id, created: created.created })
+      }).pipe(Effect.catch(fromCodeStorage))
+      try record("import", { id: payload.id, created: created.created })
       return { created: created.created }
-    }).pipe(Effect.withSpan("repo.clone.import", { attributes: { "smithers.repo.id": payload.id } }))
+    }.pipe(withSpan("repo.clone.import", { attributes: { "smithers.repo.id": payload.id } }))
 
   const pull = (payload: { readonly id: string }) =>
     codeStorage.pullUpstream(payload.id).pipe(
       Effect.catchIf((error) => error.code === "sync_in_progress", () => Effect.void),
-      Effect.mapError((error) => fromCodeStorage(error)),
+      Effect.catch(fromCodeStorage),
       Effect.tap(() => record("pull", { id: payload.id })),
       Effect.as({}),
-      Effect.withSpan("repo.clone.pull", { attributes: { "smithers.repo.id": payload.id } }),
+      withSpan("repo.clone.pull", { attributes: { "smithers.repo.id": payload.id } }),
     )
 
   const awaitSync = (payload: typeof AwaitSync.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      if (payload.defaultBranch === null) return yield* new CloneRefused()
-      const listed = yield* codeStorage.listCommits(payload.id, { ref: payload.defaultBranch, limit: 1 }).pipe(
-        Effect.result,
-      )
+    effect {
+      if (payload.defaultBranch === null) throw new CloneRefused()
+      const listed = try Effect.result(codeStorage.listCommits(payload.id, { ref: payload.defaultBranch, limit: 1 }))
       const commit = listed._tag === "Success" ? listed.success.commits[0] : undefined
       if (commit !== undefined) {
-        yield* record("await_sync", { id: payload.id, outcome: "ready" })
+        try record("await_sync", { id: payload.id, outcome: "ready" })
         const head = { sha: commit.sha, message: commit.message, author: commit.authorName, at: commit.date }
         return { status: "ready", head } satisfies Synced
       }
       if (listed._tag === "Failure" && !NOT_YET.has(listed.failure.code)) {
-        return yield* fromCodeStorage(listed.failure)
+        return try fromCodeStorage(listed.failure)
       }
-      const elapsed = (yield* Clock.currentTimeMillis) - payload.requestedAt
+      const elapsed = (try Clock.currentTimeMillis) - payload.requestedAt
       if (elapsed >= Duration.toMillis(services.deadline)) {
-        yield* record("await_sync", { id: payload.id, outcome: "timed_out" })
+        try record("await_sync", { id: payload.id, outcome: "timed_out" })
         return { status: "timed_out", head: null } satisfies Synced
       }
       const wait = listed._tag === "Failure" ? listed.failure.retryAfterMillis : undefined
-      return yield* new SyncPending(wait === undefined ? {} : { retryAfterMillis: wait })
-    }).pipe(Effect.withSpan("repo.clone.await_sync", { attributes: { "smithers.repo.id": payload.id } }))
+      throw new SyncPending(wait === undefined ? {} : { retryAfterMillis: wait })
+    }.pipe(withSpan("repo.clone.await_sync", { attributes: { "smithers.repo.id": payload.id } }))
 
   const index = (payload: typeof Index.payloadSchema.Type) =>
-    Effect.gen(function* () {
+    effect {
       const head = payload.synced.head
       if (payload.synced.status !== "ready" || head === null) return NOT_INDEXED
-      const owned = yield* Repos.indexing({ id: payload.id, cloneId: payload.cloneId }).pipe(
+      const owned = try Repos.indexing({ id: payload.id, cloneId: payload.cloneId }).pipe(
         Effect.provide(database),
         Effect.mapError(() => new CloneUnavailable()),
       )
       if (!owned) return NOT_INDEXED
       // Best effort: a list that can't be read now is read by the first visit instead.
-      const files = yield* services.index(payload.owner, payload.name, head.sha).pipe(
-        Effect.catch(() => Effect.succeed(null)),
-      )
+      const files = services.index(payload.owner, payload.name, head.sha) catch () => null
       // Optional metadata must not hold a ready clone through the step's retry policy. Unknown is never reclaimable.
-      const installed = yield* services.installed(payload.owner, payload.name).pipe(
-        Effect.catch(() => Effect.succeed(null)),
-      )
-      yield* record("index", { id: payload.id, files: files ?? -1, installed: installed ?? "unknown" })
+      const installed = services.installed(payload.owner, payload.name) catch () => null
+      try record("index", { id: payload.id, files: files ?? -1, installed: installed ?? "unknown" })
       return { files, installed } satisfies Indexed
-    }).pipe(Effect.withSpan("repo.clone.index", { attributes: { "smithers.repo.id": payload.id } }))
+    }.pipe(withSpan("repo.clone.index", { attributes: { "smithers.repo.id": payload.id } }))
 
   const settle = (payload: typeof Settle.payloadSchema.Type) =>
-    Effect.gen(function* () {
+    effect {
       const outcome = outcomeOf(payload.inspection, payload.synced, payload.indexed)
-      const written = yield* Repos.settle({ id: payload.id, cloneId: payload.cloneId }, outcome, budgets).pipe(
+      const written = try Repos.settle({ id: payload.id, cloneId: payload.cloneId }, outcome, budgets).pipe(
         Effect.provide(database),
         Effect.tapError((error) =>
           Effect.logWarning("repo.clone.settle").pipe(
@@ -403,13 +400,13 @@ export const steps = <E, R>(services: Services<E, R>) => {
         ? outcome.capacity
         : "none"
       if (written.settled) {
-        yield* Metric.update(Metric.withAttributes(RepoMetrics.clones, { outcome: outcome.status, reason }), 1)
+        try Metric.update(Metric.withAttributes(RepoMetrics.clones, { outcome: outcome.status, reason }), 1)
         if (outcome.status === "capacity") {
-          yield* Metric.update(Metric.withAttributes(RepoMetrics.capacity, { reason }), 1)
+          try Metric.update(Metric.withAttributes(RepoMetrics.capacity, { reason }), 1)
         }
       }
-      if (written.spend !== null) yield* RepoMetrics.recordSpend(written.spend)
-      yield* Effect.logWithLevel(outcome.status === "failed" ? "Warn" : "Info")("repo.clone.settle").pipe(
+      if (written.spend !== null) try RepoMetrics.recordSpend(written.spend)
+      try Effect.logWithLevel(outcome.status === "failed" ? "Warn" : "Info")("repo.clone.settle").pipe(
         Effect.annotateLogs({
           id: payload.id,
           cloneId: payload.cloneId,
@@ -419,7 +416,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
         }),
       )
       return { status: outcome.status, settled: written.settled }
-    }).pipe(Effect.withSpan("repo.clone.settle", { attributes: { "smithers.repo.id": payload.id } }))
+    }.pipe(withSpan("repo.clone.settle", { attributes: { "smithers.repo.id": payload.id } }))
 
   return { inspect, importRepo, pull, awaitSync, index, settle }
 }

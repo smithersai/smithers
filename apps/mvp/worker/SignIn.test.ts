@@ -14,7 +14,7 @@ import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA, type SessionState } from "../src/
 import * as Flows from "./Flows.ts"
 import * as ReplacedTokens from "./flows/RevokeReplacedGitHubToken.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
-import * as RecheckRole from "./flows/RecheckRole.ts"
+import * as RecheckRole from "./flows/RecheckRole.vibe"
 import * as ShapeAccess from "./ShapeAccess.vibe"
 import * as HomeApi from "./home/Api.vibe"
 import { repoHarness, resetRepos } from "./test/repos.ts"

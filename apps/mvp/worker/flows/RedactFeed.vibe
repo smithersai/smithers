@@ -194,31 +194,30 @@ const change = (sql: SqlClient.SqlClient, phase: Phase, keys: ReadonlyArray<Key>
  * phase from its start once this one has nothing left; or, after the last, the barrier's pass recorded completed and
  * `done`. Without its barrier, `no_barrier`, and nothing touched.
  */
-export const batch = (round: Round, size: number = BATCH) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [barrier] = yield* sql`SELECT 1 FROM feed_barriers WHERE id = ${round.barrier}`
-    if (barrier === undefined) return { ...round, outcome: "no_barrier" } satisfies Round
-    const keys = yield* sql<Key>`
-      SELECT n.recipient, n.subject, n.repo_id AS "repoId" FROM notifications n
-      WHERE ${sql.literal(FILTER[round.phase])} AND (n.recipient, n.subject) > (${round.recipient}, ${round.subject})
-      ORDER BY n.recipient, n.subject LIMIT ${size}`
-    if (keys.length === 0) {
-      const next = PHASES[PHASES.indexOf(round.phase) + 1]
-      if (next !== undefined) return { ...round, phase: next, recipient: "", subject: "" } satisfies Round
-      yield* sql`UPDATE feed_barriers SET completed_at = now() WHERE id = ${round.barrier} AND completed_at IS NULL`
-      return { ...round, outcome: "done" } satisfies Round
-    }
-    const changed = yield* sql.withTransaction(Effect.gen(function* () {
-      yield* FeedLocks.lock(sql, keys.map((key) => ({ repoId: key.repoId, personId: key.recipient })))
-      return (yield* change(sql, round.phase, keys)).length
-    }))
-    if (changed > 0) yield* Metric.update(Metric.withAttributes(redacted, { phase: round.phase }), changed)
-    // When the pass last moved, for whoever watches it.
-    yield* sql`UPDATE feed_barriers SET progressed_at = now() WHERE id = ${round.barrier}`
-    const last = keys[keys.length - 1]!
-    return { ...round, recipient: last.recipient, subject: last.subject } satisfies Round
+export const batch = effect (round: Round, size: number = BATCH) => {
+  const sql = try SqlClient.SqlClient
+  const [barrier] = try sql`SELECT 1 FROM feed_barriers WHERE id = ${round.barrier}`
+  if (barrier === undefined) return { ...round, outcome: "no_barrier" } satisfies Round
+  const keys = try sql<Key>`
+    SELECT n.recipient, n.subject, n.repo_id AS "repoId" FROM notifications n
+    WHERE ${sql.literal(FILTER[round.phase])} AND (n.recipient, n.subject) > (${round.recipient}, ${round.subject})
+    ORDER BY n.recipient, n.subject LIMIT ${size}`
+  if (keys.length === 0) {
+    const next = PHASES[PHASES.indexOf(round.phase) + 1]
+    if (next !== undefined) return { ...round, phase: next, recipient: "", subject: "" } satisfies Round
+    try sql`UPDATE feed_barriers SET completed_at = now() WHERE id = ${round.barrier} AND completed_at IS NULL`
+    return { ...round, outcome: "done" } satisfies Round
+  }
+  const changed = try sql.withTransaction(effect {
+    try FeedLocks.lock(sql, keys.map((key) => ({ repoId: key.repoId, personId: key.recipient })))
+    return (try change(sql, round.phase, keys)).length
   })
+  if (changed > 0) try Metric.update(Metric.withAttributes(redacted, { phase: round.phase }), changed)
+  // When the pass last moved, for whoever watches it.
+  try sql`UPDATE feed_barriers SET progressed_at = now() WHERE id = ${round.barrier}`
+  const last = keys[keys.length - 1]!
+  return { ...round, recipient: last.recipient, subject: last.subject } satisfies Round
+}
 
 /** The batch step over `database`, `size` rows a batch, with its `feed.redact` line and span: never who. */
 export const observedBatch = <E, R>(round: Round, database: Layer.Layer<SqlClient.SqlClient, E, R>, size: number = BATCH) =>
@@ -235,7 +234,7 @@ export const observedBatch = <E, R>(round: Round, database: Layer.Layer<SqlClien
         Effect.annotateLogs({ barrier: round.barrier, phase: next.phase, outcome: next.outcome }),
       )
     ),
-    Effect.withSpan("feed.redact", { attributes: { "smithers.feed_redact.barrier": round.barrier } }),
+    withSpan("feed.redact", { attributes: { "smithers.feed_redact.barrier": round.barrier } }),
   )
 
 /** Registers `ops/RedactFeed` over `database`, `size` rows a batch. */
@@ -252,15 +251,14 @@ const decodeRound = (value: unknown): Round | undefined => {
  * Records, on its barrier, the round a pass handed off to and the execution it runs as, when `intent` is a round of
  * `ops/RedactFeed`: where the pass stands. Anything else changes nothing.
  */
-export const recordHandoff = (intent: { readonly flow: string; readonly executionId: string; readonly payload: unknown }) =>
-  Effect.gen(function* () {
-    if (intent.flow !== RedactFeed._tag) return
-    const round = decodeRound(intent.payload)
-    if (round === undefined) return
-    const sql = yield* SqlClient.SqlClient
-    yield* sql`UPDATE feed_barriers SET current_execution = ${intent.executionId}, current_round = ${JSON.stringify(round)}::jsonb
-      WHERE id = ${round.barrier} AND completed_at IS NULL`
-  })
+export const recordHandoff = effect (intent: { readonly flow: string; readonly executionId: string; readonly payload: unknown }) => {
+  if (intent.flow !== RedactFeed._tag) return
+  const round = decodeRound(intent.payload)
+  if (round === undefined) return
+  const sql = try SqlClient.SqlClient
+  try sql`UPDATE feed_barriers SET current_execution = ${intent.executionId}, current_round = ${JSON.stringify(round)}::jsonb
+    WHERE id = ${round.barrier} AND completed_at IS NULL`
+}
 
 /**
  * A host's router `start` that, once a round's own execution has its intent, records the handoff on the barrier
@@ -274,7 +272,7 @@ export const recordingHandoffs = <
   DE,
   DR,
 >(
-  start: (intent: I) => Effect.Effect<void, E, R>,
+  start: (intent: I) => void!E!R,
   database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
 ) =>
 (intent: I) =>
@@ -306,14 +304,14 @@ export const launches = Metric.counter("smithers_feed_redact_launches", {
  * start or the acknowledgement failed, counted and logged `not_started`.
  */
 const start = (barrier: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const starter = yield* Flows.FlowStarter
-    yield* starter.start(RedactFeed, { executionId: executionIdOf(barrier), payload: startOf(barrier) })
-    yield* sql`UPDATE feed_barriers SET launched_at = now() WHERE id = ${barrier} AND launched_at IS NULL`
-    yield* Metric.update(Metric.withAttributes(launches, { outcome: "launched" }), 1)
-    yield* Effect.logInfo("feed.redact").pipe(Effect.annotateLogs({ barrier, outcome: "launched" }))
-  }).pipe(
+  effect {
+    const sql = try SqlClient.SqlClient
+    const starter = try Flows.FlowStarter
+    try starter.start(RedactFeed, { executionId: executionIdOf(barrier), payload: startOf(barrier) })
+    try sql`UPDATE feed_barriers SET launched_at = now() WHERE id = ${barrier} AND launched_at IS NULL`
+    try Metric.update(Metric.withAttributes(launches, { outcome: "launched" }), 1)
+    try Effect.logInfo("feed.redact").pipe(Effect.annotateLogs({ barrier, outcome: "launched" }))
+  }.pipe(
     Effect.tapCause((cause) =>
       Effect.andThen(
         Metric.update(Metric.withAttributes(launches, { outcome: "not_started" }), 1),
@@ -322,21 +320,20 @@ const start = (barrier: string) =>
         ),
       )
     ),
-    Effect.withSpan("feed.redact.start", { attributes: { "smithers.feed_redact.barrier": barrier } }),
+    withSpan("feed.redact.start", { attributes: { "smithers.feed_redact.barrier": barrier } }),
   )
 
 /** Starts only the barrier the database owner confirmed. Its capability cannot create a barrier or select another flow. */
-export const confirm = (method: string, path: string, authorization: string | undefined) =>
-  Effect.gen(function* () {
-    if (method !== "POST") return 405
-    const id = path.slice(CONFIRM_ROUTE.length)
-    const token = /^Bearer ([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/.exec(authorization ?? "")?.[1]
-    if (!path.startsWith(CONFIRM_ROUTE) || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(id) || token === undefined) return 403
-    const sql = yield* SqlClient.SqlClient
-    const [barrier] = yield* sql<{ held: boolean }>`
-      SELECT launched_at IS NOT NULL OR completed_at IS NOT NULL AS held FROM feed_barriers
-      WHERE id = ${id} AND launch_token = ${token}::uuid`
-    if (barrier === undefined) return 403
-    if (!barrier.held) yield* start(id)
-    return 204
-  })
+export const confirm = effect (method: string, path: string, authorization: string | undefined) => {
+  if (method !== "POST") return 405
+  const id = path.slice(CONFIRM_ROUTE.length)
+  const token = /^Bearer ([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/.exec(authorization ?? "")?.[1]
+  if (!path.startsWith(CONFIRM_ROUTE) || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(id) || token === undefined) return 403
+  const sql = try SqlClient.SqlClient
+  const [barrier] = try sql<{ held: boolean }>`
+    SELECT launched_at IS NOT NULL OR completed_at IS NOT NULL AS held FROM feed_barriers
+    WHERE id = ${id} AND launch_token = ${token}::uuid`
+  if (barrier === undefined) return 403
+  if (!barrier.held) try start(id)
+  return 204
+}

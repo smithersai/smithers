@@ -15,7 +15,8 @@ import { OutboxWrites } from "../src/outbox.ts"
 import { Sessions } from "./Actor.ts"
 import { BranchRoles } from "./branch/Access.ts"
 import * as Flows from "./Flows.ts"
-import * as RecheckRole from "./flows/RecheckRole.ts"
+import { GitHubRefused } from "./GitHubAuth.ts"
+import * as RecheckRole from "./flows/RecheckRole.vibe"
 import * as Keys from "./SessionKeys.vibe"
 import * as Rotation from "./SessionSigningKeys.vibe"
 import * as Store from "./SessionStore.ts"
@@ -549,6 +550,9 @@ describe("fenced redemption storage and cleanup", () => {
     if (b.kind !== "redeemed") throw new Error("expected a redemption")
     const { pairDigest: _pair, ...tokens } = b.tokens
     const legacy = { kind: "redeemed" as const, presented: b.presented, tokens }
+    expect(await step(s, RecheckRole.store(s.id, legacy).pipe(Effect.flip)))
+      .toEqual(new RecheckRole.RoleCheckFailed({ reason: "database" }))
+    expect(await cleanups()).toEqual([])
     expect(await step(s, RecheckRole.store(s.id, legacy, s.services))).toMatchObject({ outcome: "stored" })
     await query(sql => sql`UPDATE sessions SET github_pair_digest = NULL WHERE id = ${s.id}`)
     expect(await step(s, RecheckRole.store(s.id, legacy, s.services))).toMatchObject({ outcome: "installed_replay" })
@@ -618,7 +622,7 @@ describe("fenced redemption storage and cleanup", () => {
     expect((await query(sql => sql<{ role: string; checked: string }>`SELECT role, role_checked_at::text AS checked FROM sessions WHERE id = ${s.id}`))[0]).toEqual(before)
   })
 
-  test("a permission check paused across renewal cannot overwrite the new generation's role", async () => {
+  test.each(["admin", "rejected"] as const)("a permission check returning %s after renewal cannot change the new generation", async outcome => {
     const s = await setup()
     const redemption = await step(s, RecheckRole.redeem(s.id, s.services))
     const reached = Deferred.makeUnsafe<void>()
@@ -626,13 +630,19 @@ describe("fenced redemption storage and cleanup", () => {
     const services = { ...s.services, github: { ...s.services.github, permission: () => Effect.gen(function* () {
       yield* Deferred.succeed(reached, undefined)
       yield* Deferred.await(release)
-      return "admin" as const
+      return outcome === "rejected"
+        ? yield* Effect.fail(new GitHubRefused({ step: "permission", reason: "rejected" }))
+        : outcome
     }) } }
     const checking = step(s, RecheckRole.check(s.id, redemption, services))
     await Effect.runPromise(Deferred.await(reached))
-    await (await prepare(s.h, s.first.cookies))()
-    Effect.runSync(Deferred.succeed(release, undefined))
-    await checking
+    try {
+      await (await prepare(s.h, s.first.cookies))()
+    } finally {
+      Effect.runSync(Deferred.succeed(release, undefined))
+    }
+    expect(await checking).toMatchObject({ outcome: outcome === "rejected" ? "kept" : "checked" })
+    expect((await rows())[0]!.revoked).toBe(false)
     expect((await query(sql => sql<{ role: string }>`SELECT role FROM sessions WHERE id = ${s.id}`))[0]!.role).toBe("member")
     expect((await rows())[0]!.gen).toBe(1)
   })

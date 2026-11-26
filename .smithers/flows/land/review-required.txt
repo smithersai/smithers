@@ -48,8 +48,8 @@ apps/mvp/worker/domains/Api.ts
 apps/mvp/worker/feeds/Api.ts
 apps/mvp/worker/flows/BugReport.vibe
 apps/mvp/worker/flows/FleetAlert.ts
-apps/mvp/worker/flows/RecheckRole.ts
-apps/mvp/worker/flows/RedactFeed.ts
+apps/mvp/worker/flows/RecheckRole.vibe
+apps/mvp/worker/flows/RedactFeed.vibe
 
 # Stored credentials
 apps/mvp/worker/secrets/*.ts

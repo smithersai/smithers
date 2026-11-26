@@ -1,7 +1,7 @@
 import { Flow } from "@smthrs/flow"
 import { Context } from "effect"
 import { expect, test } from "vitest"
-import * as Recheck from "./RecheckRole.ts"
+import * as Recheck from "./RecheckRole.vibe"
 import * as Revoke from "./RevokeGitHubToken.ts"
 import * as Cleanup from "./RevokeReplacedGitHubToken.ts"
 import * as Keys from "./SessionSigningKeys.ts"

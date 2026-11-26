@@ -17,7 +17,7 @@ import { build, runFlow } from "../test/flowHost.ts"
 import { type ScriptedGitHub, scriptedGitHub } from "../test/github.ts"
 import { homeConversation, testFile } from "../test/harness.ts"
 import { SECRET, signInHarness } from "../test/signIn.ts"
-import * as RecheckRole from "./RecheckRole.ts"
+import * as RecheckRole from "./RecheckRole.vibe"
 
 const runtime = testFile("recheck_role")
 
@@ -292,6 +292,21 @@ describe("auth/RecheckRole", () => {
     await sql(`UPDATE sessions SET github_refresh = '{"ciphertext":"AAAA","nonce":"AAAAAAAAAAAAAAAA"}' WHERE id = '${t.id}'`)
     expect(await checkOnce(t)).toEqual(Exit.succeed({ outcome: "revoked", role: null }))
     expect((await session(t.id)).revokedReason).toBe("github_refused")
+    const u = await signedIn()
+    await expiring(u.id)
+    await sql(`UPDATE sessions SET github_refresh_digest = NULL WHERE id = '${u.id}'`)
+    expect(await checkOnce(u)).toEqual(Exit.succeed({ outcome: "revoked", role: null }))
+    expect((await session(u.id)).revokedReason).toBe("github_refused")
+    expect(u.github.calls.filter((step) => step === "refresh")).toEqual([])
+  })
+
+  test("a live legacy session with no access token never calls GitHub", async () => {
+    const s = await signedIn()
+    await sql(`UPDATE sessions SET github_access = NULL WHERE id = '${s.id}'`)
+    const checks = s.github.calls.length
+    expect(await checkOnce(s)).toEqual(Exit.succeed({ outcome: "ended", role: null }))
+    expect(s.github.calls).toHaveLength(checks)
+    expect((await session(s.id)).revokedReason).toBeNull()
   })
 
   test("sealed tokens that no longer open (SESSION_SECRET changed) end the session", async () => {
@@ -567,9 +582,9 @@ describe("one check of a session at a time", () => {
     await sql(`UPDATE sessions SET role_checked_at = now() - interval '2 hours'`)
     const logs: Array<ReturnType<typeof StructuredLogger.formatStructured.log>> = []
     const logger = Logger.make((options) => void logs.push(StructuredLogger.formatStructured.log(options)))
-    const keep = (database: typeof s.database) =>
+    const keep = (database: typeof s.database, sessionId = s.id) =>
       Effect.runPromiseExit(
-        RecheckRole.steps(database, s.services).keep(s.id).pipe(
+        RecheckRole.steps(database, s.services).keep(sessionId).pipe(
           Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
         ),
       )
@@ -583,6 +598,10 @@ describe("one check of a session at a time", () => {
     await sql(`UPDATE sessions SET role_checked_at = now() - interval '2 hours'`)
     await keep(s.database)
     expect((await session(s.id)).age).toBeGreaterThan(3600)
+    const absent = crypto.randomUUID()
+    expect(await keep(s.database, absent)).toEqual(Exit.succeed({ outcome: "kept", role: null }))
+    expect(await session(absent)).toBeUndefined()
+    expect(logs.at(-1)?.annotations).toMatchObject({ sessionId: absent, step: "keep", outcome: "kept" })
     const down = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
     expect(reasonOf(await keep(down))).toBe("database")
   })

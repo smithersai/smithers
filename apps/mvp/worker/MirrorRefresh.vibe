@@ -1,6 +1,6 @@
 import { isRepository, repoId } from "../src/features/repo/contract.ts"
 import { FlowStarter } from "./Flows.ts"
-import { Refresh } from "./flows/RepoRefresh.ts"
+import { Refresh } from "./flows/RepoRefresh.vibe"
 
 schema Push {
   readonly repository: { readonly full_name: string }

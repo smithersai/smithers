@@ -4,7 +4,8 @@
 // unrelated request. Repeating the command recovers an interrupted start.
 import { TestSchemas } from "@smthrs/database"
 import { Action, Interpreter } from "@smthrs/flow"
-import { Effect, Exit, Fiber, Layer, Metric } from "effect"
+import { Logger as StructuredLogger } from "@smthrs/observability"
+import { Effect, Exit, Fiber, Layer, Logger, Metric } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, onTestFinished, test } from "vitest"
 import * as Command from "../../ops/feed-barrier/confirm.ts"
@@ -15,7 +16,7 @@ import * as FeedLocks from "../FeedLocks.vibe"
 import * as Flows from "../Flows.ts"
 import { incarnation, runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
-import * as RedactFeed from "./RedactFeed.ts"
+import * as RedactFeed from "./RedactFeed.vibe"
 
 const runtime = testFile("redact_feed")
 const query = (text: string, ...params: ReadonlyArray<unknown>) =>
@@ -164,6 +165,39 @@ test(
   },
   60_000
 )
+
+test("a failed SQL batch reports a database error and can retry the same rows", async () => {
+  await seed()
+  const round = RedactFeed.startOf("retry-batch")
+  await barrier(round.barrier)
+  const db = await database()
+  const before = await feed()
+  const logs: Array<ReturnType<typeof StructuredLogger.formatStructured.log>> = []
+  const logger = Logger.make((options) => void logs.push(StructuredLogger.formatStructured.log(options)))
+  const batch = RedactFeed.observedBatch(round, db, 2).pipe(
+    Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
+  )
+  await query(`CREATE FUNCTION reject_batch() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN RAISE EXCEPTION 'test-only SQL error details'; END $$`)
+  await query(`CREATE TRIGGER reject_batch BEFORE UPDATE OF title ON notifications
+    FOR EACH ROW EXECUTE FUNCTION reject_batch()`)
+  try {
+    expect(await Effect.runPromise(Effect.flip(batch))).toEqual(new RedactFeed.RedactUnavailable({ reason: "database" }))
+    expect(await feed()).toEqual(before)
+    expect(await query("SELECT progressed_at FROM feed_barriers WHERE id = $1", round.barrier))
+      .toEqual([{ progressed_at: null }])
+    expect(logs.map((log) => log.annotations)).toEqual([
+      expect.objectContaining({ barrier: round.barrier, phase: "fleet", errorCode: expect.stringMatching(/^sql:/) }),
+    ])
+    expect(JSON.stringify(logs)).not.toContain("test-only SQL error details")
+  } finally {
+    await query("DROP TRIGGER reject_batch ON notifications")
+    await query("DROP FUNCTION reject_batch()")
+  }
+  expect(await Effect.runPromise(batch)).toMatchObject({ phase: "fleet", recipient: "p2", subject: "fleet:a2" })
+  expect(await query("SELECT progressed_at IS NOT NULL AS progressed FROM feed_barriers WHERE id = $1", round.barrier))
+    .toEqual([{ progressed: true }])
+})
 
 test(
   "a pass whose incarnation crashed mid-way is resumed by the next from its journal, redoing no committed batch",
@@ -429,10 +463,14 @@ test("only the confirmed barrier can start and retrying the command recovers a f
     const refused = await host.run(RedactFeed.confirm(method, CONFIRM_ROUTE + id, credential))
     expect(Exit.isSuccess(refused) && refused.value).toBe(expected)
   }
+  const wrongPath = await host.run(RedactFeed.confirm("POST", "/other/" + CONFIRM_ROUTE + "b21", token))
+  expect(wrongPath).toEqual(Exit.succeed(403))
   expect(host.starts).toEqual([])
   expect((await command(host.starter, true)).code).toBe(1)
   expect(host.starts).toEqual([RedactFeed.executionIdOf("b21")])
   expect((await command()).code).toBe(0)
+  const alreadyHeld = await host.run(RedactFeed.confirm("POST", CONFIRM_ROUTE + "b21", token))
+  expect(alreadyHeld).toEqual(Exit.succeed(204))
   expect(host.starts).toEqual([RedactFeed.executionIdOf("b21")])
   expect(await host.drive("b21")).toBe(true)
   expect(await shown()).toEqual(EXPECTED)
@@ -458,6 +496,25 @@ test("retry after the host accepted the start but its database receipt failed re
   expect([...host.objects.keys()]).toEqual([id])
   expect(await host.drive("b22")).toBe(true)
 }, 120_000)
+
+test("a handoff requires a valid redaction round and cannot replace a completed barrier's receipt", async () => {
+  const id = "receipt"
+  await barrier(id)
+  const round = RedactFeed.startOf(id)
+  const intent = { flow: RedactFeed.RedactFeed._tag, executionId: "next-round", payload: round }
+  const receipt = () => query("SELECT current_execution, current_round FROM feed_barriers WHERE id = $1", id)
+  await runtime.runPromise(RedactFeed.recordHandoff({ ...intent, flow: "ops/Other" }))
+  await runtime.runPromise(RedactFeed.recordHandoff({ ...intent, payload: { ...round, phase: "unknown" } }))
+  expect(await receipt()).toEqual([{ current_execution: null, current_round: null }])
+
+  await runtime.runPromise(RedactFeed.recordHandoff(intent))
+  expect(await receipt()).toEqual([{ current_execution: intent.executionId, current_round: round }])
+  await query("UPDATE feed_barriers SET completed_at = now() WHERE id = $1", id)
+  await runtime.runPromise(RedactFeed.recordHandoff({
+    ...intent, executionId: "late-round", payload: { ...round, phase: "denied" },
+  }))
+  expect(await receipt()).toEqual([{ current_execution: intent.executionId, current_round: round }])
+})
 
 test("a failed successor receipt keeps the predecessor retryable before it settles", async () => {
   await barrier("handoff-fault")
