@@ -1,4 +1,3 @@
-import { Config, Data, Duration, Effect, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 
 // Hyperdrive's pools as Cloudflare's GraphQL Analytics API reports them (`hyperdrivePoolSizesAdaptiveGroups`): each
@@ -54,7 +53,7 @@ export interface Options {
 }
 
 /** A pool read over a time span. */
-export type Reader = (from: Date, to: Date) => Effect.Effect<Reading, ReadFailed>
+export type Reader = (from: Date, to: Date) => Reading!ReadFailed
 
 const MINUTE_MS = 60_000
 
@@ -134,45 +133,47 @@ export const minutesOf = (body: unknown): Array<Minute> | undefined => {
 
 /** The reader over the `HttpClient` in context. */
 export const make = (options: Options) =>
-  Effect.map(HttpClient.HttpClient, (http): Reader => (from, to) => {
-    const variables = {
-      account: options.accountId,
-      from: from.toISOString(),
-      to: to.toISOString(),
-      ...(options.configIds.length === 0 ? {} : { configs: options.configIds }),
-    }
-    const request = HttpClientRequest.post(`${options.apiUrl ?? API_URL}/graphql`).pipe(
-      HttpClientRequest.bodyJsonUnsafe({ query: options.configIds.length === 0 ? QUERY_EVERY_CONFIG : QUERY, variables }),
-      HttpClientRequest.bearerToken(Redacted.value(options.token)),
-    )
-    return http.execute(request).pipe(
-      Effect.mapError(() => new ReadFailed({ code: "unreachable" })),
-      Effect.flatMap((response) =>
-        response.status !== 200
-          ? Effect.fail(new ReadFailed({ code: `http_${response.status}` }))
-          : Effect.mapError(response.json, () => new ReadFailed({ code: "malformed" }))
-      ),
-      Effect.flatMap((body) => {
-        const minutes = minutesOf(body)
-        return minutes === undefined ? Effect.fail(new ReadFailed({ code: "malformed" })) : Effect.succeed(judge(minutes))
-      }),
-      Effect.timeoutOrElse({ duration: REQUEST_TIMEOUT, orElse: () => Effect.fail(new ReadFailed({ code: "timeout" })) }),
-    )
-  })
+  map(HttpClient.HttpClient, (http): Reader => (from, to) =>
+    effect {
+      const everyConfig = options.configIds.length === 0
+      const request = try sync(() =>
+        HttpClientRequest.post(`${options.apiUrl ?? API_URL}/graphql`)
+          |> HttpClientRequest.bodyJsonUnsafe(%, {
+            query: everyConfig ? QUERY_EVERY_CONFIG : QUERY,
+            variables: {
+              account: options.accountId,
+              from: from.toISOString(),
+              to: to.toISOString(),
+              ...(everyConfig ? {} : { configs: options.configIds }),
+            },
+          })
+          |> HttpClientRequest.bearerToken(%, Redacted.value(options.token))
+      )
+      const response = http.execute(request) catch effect () => {
+        throw new ReadFailed({ code: "unreachable" })
+      }
+      if (response.status !== 200) throw new ReadFailed({ code: `http_${response.status}` })
+      const body = response.json catch effect () => {
+        throw new ReadFailed({ code: "malformed" })
+      }
+      const minutes = minutesOf(body)
+      if (minutes === undefined) throw new ReadFailed({ code: "malformed" })
+      return judge(minutes)
+    } |> timeoutOrElse(%, { duration: REQUEST_TIMEOUT, orElse: () => fail(new ReadFailed({ code: "timeout" })) }))
 
 /**
  * The deployment's reader from its environment, or none: `HYPERDRIVE_METRICS_TOKEN` (a Cloudflare API token with
  * Account Analytics: Read), `CLOUDFLARE_ACCOUNT_ID`, and `HYPERDRIVE_CONFIG_IDS`, the configs to watch, comma-separated
  * (none: every config of the account). Without a token or an account the pools aren't read.
  */
-export const fromConfig = Effect.gen(function* () {
-  const token = yield* Config.option(Config.Redacted("HYPERDRIVE_METRICS_TOKEN"))
-  const accountId = yield* Config.option(Config.NonEmptyString("CLOUDFLARE_ACCOUNT_ID"))
-  const configIds = yield* Config.String("HYPERDRIVE_CONFIG_IDS").pipe(Config.withDefault(""))
+export const fromConfig = effect {
+  const token = try Config.option(Config.Redacted("HYPERDRIVE_METRICS_TOKEN"))
+  const accountId = try Config.option(Config.NonEmptyString("CLOUDFLARE_ACCOUNT_ID"))
+  const configIds = try Config.withDefault(Config.String("HYPERDRIVE_CONFIG_IDS"), "")
   if (Option.isNone(token) || Option.isNone(accountId)) return Option.none<Options>()
   return Option.some<Options>({
     token: token.value,
     accountId: accountId.value,
     configIds: configIds.split(",").map((id) => id.trim()).filter((id) => id !== ""),
   })
-})
+}

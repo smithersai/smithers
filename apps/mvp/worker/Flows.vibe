@@ -1,5 +1,4 @@
 import type { Flow } from "@smthrs/flow"
-import { Cause, Clock, Context, Duration, Effect, Ref, Schema } from "effect"
 import { codeOf } from "./ErrorCode.ts"
 
 // Where a remote flow starts (docs/features/remote-flows.md#starting-an-execution). A route that admits a remote flow
@@ -25,7 +24,7 @@ export class FlowStarter extends Context.Service<
     readonly start: (
       flow: Flow.Any,
       options: { readonly executionId: string; readonly payload: unknown },
-    ) => Effect.Effect<void, StartConflict | StartUnavailable>
+    ) => void!(StartConflict | StartUnavailable)
   }
 >()("@smthrs/mvp/flows/FlowStarter") {}
 
@@ -47,7 +46,7 @@ export class TaskAnswers extends Context.Service<
       executionId: string,
       task: string,
       value: typeof Schema.Json.Type,
-    ) => Effect.Effect<boolean, AnswerUnavailable>
+    ) => boolean!AnswerUnavailable
   }
 >()("@smthrs/mvp/flows/TaskAnswers") {}
 
@@ -82,20 +81,22 @@ export interface WindowStart {
 export const startEachWindow = (
   length: Duration.Duration,
   start: (window: Window) => WindowStart,
-  notStarted: (errorCode: string) => Effect.Effect<void>,
+  notStarted: (errorCode: string) => void!!,
 ) =>
-  Effect.map(
+  map(
     Ref.make<number | undefined>(undefined),
-    (started): Effect.Effect<void, never, FlowStarter> =>
-      Effect.gen(function* () {
-        const window = windowAt(yield* Clock.currentTimeMillis, length)
-        if ((yield* Ref.get(started)) === window.from) return
+    (started): void!!FlowStarter =>
+      effect {
+        const window = windowAt(try Clock.currentTimeMillis, length)
+        if ((try Ref.get(started)) === window.from) return
         const { flow, executionId, payload } = start(window)
-        yield* (yield* FlowStarter).start(flow, { executionId, payload }).pipe(
-          Effect.catchTag("@smthrs/mvp/flows/StartConflict", () => Effect.void),
-        )
-        yield* Ref.set(started, window.from)
-      }).pipe(Effect.catchCause((cause) => notStarted(startCodeOf(Cause.squash(cause))))),
+        const starter = try FlowStarter
+        starter.start(flow, { executionId, payload }) catch effect (error) => {
+          if (error instanceof StartConflict) return
+          throw error
+        }
+        try Ref.set(started, window.from)
+      } |> catchCause(%, (cause) => notStarted(startCodeOf(Cause.squash(cause)))),
   )
 
 /** A failed start's code: the host's, or the failure's own. */

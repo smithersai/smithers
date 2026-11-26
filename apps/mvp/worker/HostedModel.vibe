@@ -1,12 +1,12 @@
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, Clock, Config, Effect, Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { MAX_HOSTED_MODEL_BODY_BYTES } from "../src/features/auth/contract.ts"
 import { type Actor, CurrentActor, Sessions } from "./Actor.vibe"
 import { readBounded } from "./Body.vibe"
 import { codeOf } from "./ErrorCode.ts"
+import { invocationKey } from "./HostedModelCrypto.ts"
 import { NoInvocationKey, NotAllowed } from "./SetModel.vibe"
 
 // Hosted inference (docs/features/model-endpoint.md#hosted-inference, decision 0099): whether the deployment's own model
@@ -21,38 +21,36 @@ import { NoInvocationKey, NotAllowed } from "./SetModel.vibe"
  * deploy, on under `alchemy dev` (worker/DevChatApi.ts), so a laptop and the scripted end-to-end tests answer.
  */
 export const hostedModelDefault = (fallback = false) =>
-  Config.Boolean("HOSTED_MODEL_ENABLED").pipe(Config.withDefault(fallback))
+  Config.withDefault(Config.Boolean("HOSTED_MODEL_ENABLED"), fallback)
 
 /** Whether the deployment's model answers now: the Admin's `hosted_model` row, else `fallback` (the Worker's default). */
 export const enabled = (fallback: boolean) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly enabled: boolean }>`SELECT enabled FROM hosted_model`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [row] = try sql<{ readonly enabled: boolean }>`SELECT enabled FROM hosted_model`
     return row === undefined ? fallback : row.enabled
-  })
+  }
 
 /**
  * Sets whether the deployment's model answers, and records the change, in one transaction. `invocationKey` names the
  * step that made the change, so a replayed step changes neither the setting nor its audit.
  */
 export const set = (on: boolean, by: { readonly actorId: string; readonly invocationKey: string }) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    yield* sql.withTransaction(
-      Effect.gen(function* () {
-        const inserted = yield* sql`
-          INSERT INTO hosted_model_changes (invocation_key, enabled, changed_by)
-          VALUES (${by.invocationKey}, ${on}, ${by.actorId})
-          ON CONFLICT (invocation_key) DO NOTHING
-          RETURNING invocation_key`
-        if (inserted.length === 0) return
-        yield* sql`
-          INSERT INTO hosted_model (id, enabled, updated_by, updated_at) VALUES (true, ${on}, ${by.actorId}, now())
-          ON CONFLICT (id) DO UPDATE SET enabled = EXCLUDED.enabled, updated_by = EXCLUDED.updated_by,
-            updated_at = EXCLUDED.updated_at`
-      }),
-    )
-  })
+  effect {
+    const sql = try SqlClient.SqlClient
+    try sql.withTransaction(effect {
+      const inserted = try sql`
+        INSERT INTO hosted_model_changes (invocation_key, enabled, changed_by)
+        VALUES (${by.invocationKey}, ${on}, ${by.actorId})
+        ON CONFLICT (invocation_key) DO NOTHING
+        RETURNING invocation_key`
+      if (inserted.length === 0) return
+      try sql`
+        INSERT INTO hosted_model (id, enabled, updated_by, updated_at) VALUES (true, ${on}, ${by.actorId}, now())
+        ON CONFLICT (id) DO UPDATE SET enabled = EXCLUDED.enabled, updated_by = EXCLUDED.updated_by,
+          updated_at = EXCLUDED.updated_at`
+    })
+  }
 
 const payload = { enabled: Schema.Boolean }
 const Changed = Schema.Struct({ enabled: Schema.Boolean })
@@ -87,36 +85,29 @@ export const write = <E, R>(
   invocationKey: string | undefined,
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
 ) =>
-  Effect.gen(function* () {
-    if (actor.act !== undefined) return yield* new NotAllowed({ reason: "delegated" })
-    if (actor.role !== "admin") return yield* new NotAllowed({ reason: "not_admin" })
-    if (invocationKey === undefined) return yield* Effect.die(new NoInvocationKey())
-    yield* set(change.enabled, { actorId: actor.subject.id, invocationKey }).pipe(
-      Effect.provide(database),
-      Effect.tapError((error) =>
-        Effect.logError("admin.set_hosted_model").pipe(Effect.annotateLogs({ outcome: "error", errorCode: codeOf(error) }))
-      ),
-      Effect.orDie,
-    )
-    yield* Effect.logInfo("admin.set_hosted_model").pipe(Effect.annotateLogs({ outcome: "set", enabled: change.enabled }))
+  effect {
+    if (actor.act !== undefined) throw new NotAllowed({ reason: "delegated" })
+    if (actor.role !== "admin") throw new NotAllowed({ reason: "not_admin" })
+    if (invocationKey === undefined) return try die(new NoInvocationKey())
+    try (set(change.enabled, { actorId: actor.subject.id, invocationKey })
+      |> Effect.provide(%, database)
+      |> tapError(%, (error) =>
+        annotateLogs(logError("admin.set_hosted_model"), { outcome: "error", errorCode: codeOf(error) }))
+      |> orDie(%))
+    try annotateLogs(logInfo("admin.set_hosted_model"), { outcome: "set", enabled: change.enabled })
     return { enabled: change.enabled }
-  }).pipe(
-    Effect.tapError((error) =>
-      Effect.logWarning("admin.set_hosted_model").pipe(Effect.annotateLogs({ outcome: "refused", reason: error.reason }))
-    ),
-    Effect.withSpan("admin.set_hosted_model"),
-  )
+  }
+  |> tapError(%, (error) => annotateLogs(logWarning("admin.set_hosted_model"), { outcome: "refused", reason: error.reason }))
+  |> withSpan(%, "admin.set_hosted_model")
 
 /** Registers `admin/SetHostedModel` with its step, writing through `database` as the `CurrentActor` the host provides. */
 export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   Interpreter.layerWithImplementations(
     SetHostedModel,
-    WriteHostedModel.toLayer((change) =>
-      Effect.gen(function* () {
-        return yield* write(change, yield* CurrentActor, yield* Action.CurrentInvocationKey, database)
-      })
-    ),
-  ).pipe(Layer.provideMerge(Action.layerImplementations))
+    WriteHostedModel.toLayer(effect (change) => {
+      return try write(change, try CurrentActor, try Action.CurrentInvocationKey, database)
+    }),
+  ) |> Layer.provideMerge(%, Action.layerImplementations)
 
 /** `POST /api/hosted-model` requests, by `status`. */
 export const requests = Metric.counter("smithers_hosted_model_requests", {
@@ -134,40 +125,35 @@ const refusal = (status: number, code: string) => HttpServerResponse.jsonUnsafe(
  * `forbidden`; bodies over {@link MAX_HOSTED_MODEL_BODY_BYTES} are 413; invalid JSON/payload is 400; DB failures 503.
  */
 export const route = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
-  Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest
-    const startedAt = yield* Clock.currentTimeMillis
+  effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const startedAt = try Clock.currentTimeMillis
     const fields: Record<string, string | number | boolean> = {}
-    const response = yield* Effect.gen(function* () {
+    const response = try (effect {
       if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
-      const actor = yield* (yield* Sessions).resolve
+      const actor = try (try Sessions).resolve
       if (Option.isNone(actor)) return refusal(401, "authentication")
-      const body = yield* readBounded(request, MAX_HOSTED_MODEL_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
-        Effect.result,
-      )
+      const body = try result(readBounded(request, MAX_HOSTED_MODEL_BODY_BYTES, (bytes) => (fields.bytes = bytes)))
       if (body._tag === "Failure") {
         return body.failure.reason === "too_large" ? refusal(413, "too_large") : refusal(400, "invalid")
       }
-      const change = yield* decodeChange(body.success).pipe(Effect.option)
-      if (Option.isNone(change)) return refusal(400, "invalid")
-      fields.enabled = change.value.enabled
-      const saved = yield* write(change.value, actor.value, crypto.randomUUID(), database).pipe(Effect.result)
+      const change = decodeChange(body.success) catch () => undefined
+      if (change === undefined) return refusal(400, "invalid")
+      fields.enabled = change.enabled
+      const saved = try result(write(change, actor.value, try invocationKey, database))
       if (saved._tag === "Failure") {
         return saved.failure.reason === "delegated" ? refusal(403, "person_only") : refusal(403, "forbidden")
       }
       return HttpServerResponse.jsonUnsafe(saved.success, { headers: noStore })
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.sync(() => {
-          fields.errorCode = codeOf(Cause.squash(cause))
-          return refusal(503, "unavailable")
-        }),
-      ),
-    )
+    } |> catchCause(%, (cause) =>
+      sync(() => {
+        fields.errorCode = codeOf(Cause.squash(cause))
+        return refusal(503, "unavailable")
+      })))
     fields.status = response.status
-    fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
-    yield* Metric.update(Metric.withAttributes(requests, { status: String(response.status) }), 1)
-    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-    yield* Effect.logInfo("hosted_model.route").pipe(Effect.annotateLogs(fields))
+    fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+    try Metric.update(Metric.withAttributes(requests, { status: String(response.status) }), 1)
+    try annotateCurrentSpan({ "http.response.status_code": response.status })
+    try annotateLogs(logInfo("hosted_model.route"), fields)
     return response
-  }).pipe(Effect.withSpan("hosted_model.route"))
+  } |> withSpan(%, "hosted_model.route")

@@ -20,7 +20,7 @@ import {
   TERMINALS_SHAPE_ROUTE,
 } from "../../src/features/terminal/contract.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.vibe"
-import * as Flows from "../Flows.ts"
+import * as Flows from "../Flows.vibe"
 import { confirmedSession } from "../github/test/fixtures.ts"
 import {
   branchHarness,

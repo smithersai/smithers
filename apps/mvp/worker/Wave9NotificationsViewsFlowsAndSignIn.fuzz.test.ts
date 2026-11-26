@@ -23,7 +23,7 @@ import * as PersonalFlows from "./PersonalFlows.ts"
 import * as RunCredentials from "./RunCredentials.ts"
 import * as Runs from "./Runs.ts"
 import * as SetModel from "./SetModel.vibe"
-import { TaskAnswers } from "./Flows.ts"
+import { TaskAnswers } from "./Flows.vibe"
 import * as H from "./test/harness.ts"
 import * as Views from "./Views.ts"
 

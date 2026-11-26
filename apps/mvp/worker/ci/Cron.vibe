@@ -6,7 +6,7 @@ import { Scheduler, SqlTriggerStore, Trigger, TriggerError, TriggerStore } from 
 import { Cause, Duration, Effect, Layer, Metric, Option, Result, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
-import * as Flows from "../Flows.ts"
+import * as Flows from "../Flows.vibe"
 import * as RepoRuns from "../RepoRuns.ts"
 import * as Dispatch from "./Dispatch.vibe"
 import * as RepoFlow from "./RepoFlow.vibe"

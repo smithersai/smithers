@@ -1,10 +1,10 @@
-// The windows remote flows start in, and their once-a-window start (worker/Flows.ts), which `ops/SpendAlert`
+// The windows remote flows start in, and their once-a-window start (worker/Flows.vibe), which `ops/SpendAlert`
 // (worker/ModelSpend.ts) and `ops/DatabaseLoad` (worker/flows/DatabaseLoad.ts) use. Starts go to a `FlowStarter` that
 // records each one, or fails as the host refusing it; the clock is `TestClock`.
 import { Duration, Effect } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
-import * as Flows from "./Flows.ts"
+import * as Flows from "./Flows.vibe"
 import * as Pause from "./flows/Pause.vibe"
 
 describe("windows", () => {

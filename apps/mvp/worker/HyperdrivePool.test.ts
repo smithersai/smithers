@@ -1,10 +1,10 @@
-// Hyperdrive's pools read from Cloudflare's GraphQL Analytics API (worker/HyperdrivePool.ts, decision 0150): what a
+// Hyperdrive's pools read from Cloudflare's GraphQL Analytics API (worker/HyperdrivePool.vibe, decision 0150): what a
 // saturated pool is, and one read against a fake API that records what it was sent.
-import { Effect, Fiber, Redacted } from "effect"
+import { ConfigProvider, Effect, Fiber, Option, Redacted } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
-import * as HyperdrivePool from "./HyperdrivePool.ts"
+import * as HyperdrivePool from "./HyperdrivePool.vibe"
 
 const at = (minute: number) => new Date(Date.UTC(2026, 10, 2, 19, minute)).toISOString()
 
@@ -126,4 +126,47 @@ describe("make", () => {
       expect(JSON.stringify(result)).not.toContain("secret-token")
     }
   })
+})
+
+describe("fromConfig", () => {
+  const read = (env: Record<string, string>) =>
+    Effect.runPromise(HyperdrivePool.fromConfig.pipe(
+      Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(env)),
+    ))
+
+  test("without a token or an account the pools aren't read", async () => {
+    expect(await read({ CLOUDFLARE_ACCOUNT_ID: "account" })).toEqual(Option.none())
+    expect(await read({ HYPERDRIVE_METRICS_TOKEN: "secret-token" })).toEqual(Option.none())
+  })
+
+  test("a token and an account read every config, or the listed ones trimmed, never an empty id", async () => {
+    const every = await read({ HYPERDRIVE_METRICS_TOKEN: "secret-token", CLOUDFLARE_ACCOUNT_ID: "account" })
+    expect(Option.map(every, ({ accountId, configIds }) => ({ accountId, configIds }))).toEqual(
+      Option.some({ accountId: "account", configIds: [] }),
+    )
+    const listed = await read({
+      HYPERDRIVE_METRICS_TOKEN: "secret-token",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+      HYPERDRIVE_CONFIG_IDS: " c1, ,c2 ,",
+    })
+    expect(Option.map(listed, (options) => options.configIds)).toEqual(Option.some(["c1", "c2"]))
+    expect(Option.map(listed, (options) => Redacted.value(options.token))).toEqual(Option.some("secret-token"))
+  })
+})
+
+test("without another origin a read goes to Cloudflare's API", async () => {
+  const urls: Array<string> = []
+  const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    urls.push(new Request(input, init).url)
+    return pools([])
+  }) as typeof globalThis.fetch
+  const result = await Effect.runPromise(
+    HyperdrivePool.make({ accountId: "account", configIds: [], token: Redacted.make("secret-token") }).pipe(
+      Effect.flatMap((read) => read(new Date(at(0)), new Date(at(7)))),
+      Effect.provide(FetchHttpClient.layer),
+      Effect.provideService(FetchHttpClient.Fetch, fetch),
+    ),
+  )
+  expect(result).toEqual({ peak: 0, sustainedMinutes: 0, saturated: false })
+  expect(urls).toEqual([`${HyperdrivePool.API_URL}/graphql`])
 })

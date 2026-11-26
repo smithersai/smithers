@@ -24,7 +24,7 @@ import { DomainProvider } from "./domains/Provider.vibe"
 import { recorded } from "./DurableObjectFailure.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
-import * as Flows from "./Flows.ts"
+import * as Flows from "./Flows.vibe"
 import * as DatabaseLoad from "./flows/DatabaseLoad.vibe"
 import * as FleetAlert from "./flows/FleetAlert.vibe"
 import { recheckExecutionId, RecheckRole } from "./flows/RecheckRole.vibe"
@@ -40,7 +40,7 @@ import * as TodoMachine from "./flows/TodoMachine.vibe"
 import { pullClosed } from "./flows/TodoWait.vibe"
 import * as GitHubApply from "./github/Apply.vibe"
 import * as GitHubHost from "./github/Host.vibe"
-import * as HyperdrivePool from "./HyperdrivePool.ts"
+import * as HyperdrivePool from "./HyperdrivePool.vibe"
 import * as ModelSeats from "./ModelSeats.ts"
 import * as ModelFlows from "./personal/ModelFlows.vibe"
 import { PersonalModels } from "./personal/Models.vibe"
@@ -88,7 +88,7 @@ export interface Objects {
 }
 
 /**
- * Where a request's or an alarm's code starts a remote flow (worker/Flows.ts): its own Durable Object, named by the
+ * Where a request's or an alarm's code starts a remote flow (worker/Flows.vibe): its own Durable Object, named by the
  * execution id, with the runtime of the request or alarm that builds it. The same intent again is a no-op; another
  * payload under the id is `StartConflict`; any other failure, the payload's encoding or the object's RPC, is
  * `StartUnavailable` with its code.
@@ -122,7 +122,7 @@ export interface Answerers {
 }
 
 /**
- * Where a person's answer reaches a remote run parked on a human task (worker/Flows.ts `TaskAnswers`): the execution's
+ * Where a person's answer reaches a remote run parked on a human task (worker/Flows.vibe `TaskAnswers`): the execution's
  * own Durable Object, with the runtime of the request that builds it. A failed RPC is `AnswerUnavailable` with its code.
  */
 export const answerer = (objects: Answerers) =>

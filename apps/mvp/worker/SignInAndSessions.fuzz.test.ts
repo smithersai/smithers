@@ -11,7 +11,7 @@ import {
   SIGN_IN_ROUTE,
   SIGN_OUT_ROUTE
 } from "../src/features/auth/contract.ts"
-import * as Flows from "./Flows.ts"
+import * as Flows from "./Flows.vibe"
 import * as SessionEnds from "./SessionEnds.vibe"
 import * as SessionStore from "./SessionStore.ts"
 import * as SignIn from "./SignIn.ts"

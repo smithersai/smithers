@@ -1,6 +1,6 @@
 import { SqlClient } from "effect/sql"
 import { applyExecutionId, itemId, reconcileBucketStart } from "../../src/features/issues/contract.ts"
-import { FlowStarter } from "../Flows.ts"
+import { FlowStarter } from "../Flows.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { Apply } from "./Apply.vibe"
 import type { Repository } from "./Config.vibe"

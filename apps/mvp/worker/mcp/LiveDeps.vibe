@@ -9,7 +9,7 @@ import { agentAttribution, writeExecutionId } from "../../src/features/issues/co
 import { repoId, textOf } from "../../src/features/repo/contract.ts"
 import { TreeListing as RepoTreeListing } from "../../src/features/repo/schema.ts"
 import type { DocsSource } from "../docs/Source.vibe"
-import type { FlowStarter } from "../Flows.ts"
+import type { FlowStarter } from "../Flows.vibe"
 import * as IssueList from "../github/IssueList.vibe"
 import type * as ReadToken from "../github/ReadToken.vibe"
 import * as Store from "../github/Store.vibe"

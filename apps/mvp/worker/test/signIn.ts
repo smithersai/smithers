@@ -9,7 +9,7 @@ import { Clock, ConfigProvider, Effect, Layer, Logger, Metric, Tracer } from "ef
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import * as Flows from "../Flows.ts"
+import * as Flows from "../Flows.vibe"
 import * as SignIn from "../SignIn.ts"
 import { type ScriptedGitHub, scriptedGitHub } from "./github.ts"
 import type { testFile } from "./harness.ts"

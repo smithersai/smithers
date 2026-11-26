@@ -64,7 +64,7 @@ export default defineConfig({
         "worker/DurableObjectFailure.vibe",
         "worker/index.ts",
         // Injected development-host fault boundaries used by old and new browser builds.
-        "worker/DevFaults.ts",
+        "worker/DevFaults.vibe",
         "worker/ci/*.{ts,vibe}",
         "worker/flows/**/*.{ts,vibe}",
         // External agents on runners (docs/features/agent-runners.md): their routes, store and Admin writes.
@@ -87,7 +87,8 @@ export default defineConfig({
         "worker/ModelTiers.vibe",
         "worker/ModelUsage.vibe",
         "worker/SetModel.vibe",
-        "worker/HostedModel.ts",
+        "worker/HostedModel.vibe",
+        "worker/HostedModelCrypto.ts",
         "db/migrations/0004_model_roles.ts",
         "db/migrations/0057_model_usage_outcome.ts",
         "db/migrations/0058_hosted_model.ts",
@@ -108,7 +109,7 @@ export default defineConfig({
         "db/migrations/0005_sign_in.ts",
         // Remote flow starts and request admission (docs/features/remote-flows.md).
         "worker/Body.vibe",
-        "worker/Flows.ts",
+        "worker/Flows.vibe",
         "db/migrations/0006_answer_parts.ts",
         // ChatApi stops answering: the browser's agent answers (docs/features/agent.md).
         "db/migrations/0008_browser_answering.ts",

@@ -17,7 +17,7 @@ import { flowInputsRoute, manualExecutionId, repoFlowsRoute, repoRunsRoute } fro
 import * as Actor from "../Actor.vibe"
 import { Machines } from "../branch/Machines.vibe"
 import * as ExecutionHost from "../ExecutionHost.ts"
-import { FlowStarter, StartConflict, StartUnavailable } from "../Flows.ts"
+import { FlowStarter, StartConflict, StartUnavailable } from "../Flows.vibe"
 import { repositoryOf } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.vibe"
 import { REPOSITORY, reset, services as githubServices } from "../github/test/fixtures.ts"

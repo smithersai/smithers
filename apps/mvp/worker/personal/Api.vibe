@@ -29,7 +29,7 @@ import {
 import { refusesPersonOnly, Sessions } from "../Actor.vibe"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
-import * as Flows from "../Flows.ts"
+import * as Flows from "../Flows.vibe"
 import { SecretKeys } from "../secrets/Keys.vibe"
 import * as ShapeAccess from "../ShapeAccess.vibe"
 import { checkConnectionSave, randomUuid } from "./ApiBoundary.ts"

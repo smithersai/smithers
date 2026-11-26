@@ -30,7 +30,7 @@ import {
 import { type Actor, canClone, Sessions } from "./Actor.vibe"
 import { readBounded } from "./Body.vibe"
 import { codeOf } from "./ErrorCode.ts"
-import { FlowStarter } from "./Flows.ts"
+import { FlowStarter } from "./Flows.vibe"
 import { Clone } from "./flows/RepoClone.vibe"
 import * as AboutStore from "./about/Store.vibe"
 import * as RepoAbout from "./RepoAbout.ts"

@@ -22,7 +22,7 @@ import type { BranchRoles, Policy } from "../branch/Access.vibe"
 import { Directory, type Person } from "../branch/People.vibe"
 import { type Member, RoomUnavailable, Rooms } from "../branch/Rooms.vibe"
 import { type Attachment, type Revoked, SandboxUnavailable, TerminalSockets } from "../branch/Sandboxes.vibe"
-import * as Flows from "../Flows.ts"
+import * as Flows from "../Flows.vibe"
 import { branchRoles, signedIn, type testFile } from "./harness.ts"
 
 type Runtime = ReturnType<typeof testFile>

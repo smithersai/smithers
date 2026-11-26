@@ -62,7 +62,7 @@ import * as Executions from "./Executions.ts"
 import * as FeedsApi from "./feeds/Api.ts"
 import { CONFIRM_ROUTE } from "../ops/feed-barrier/Route.ts"
 import * as RedactFeed from "./flows/RedactFeed.vibe"
-import * as Flows from "./Flows.ts"
+import * as Flows from "./Flows.vibe"
 import { recheckExecutionId, RecheckRole } from "./flows/RecheckRole.vibe"
 import * as Todo from "./flows/Todo.vibe"
 import * as TodoSession from "./flows/TodoSession.vibe"
@@ -220,7 +220,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     yield* Electric.bind
     yield* SignInSecret.bind
     yield* SecretsInfra.bind
-    // The configs `ops/DatabaseLoad` watches for saturated pools (worker/HyperdrivePool.ts, decision 0150).
+    // The configs `ops/DatabaseLoad` watches for saturated pools (worker/HyperdrivePool.vibe, decision 0150).
     const configs = Output.all((yield* ChatDatabase).hyperdriveId, (yield* EngineDatabase).hyperdriveId)
     yield* Output.named(Output.map(configs, (ids) => ids.join(",")), "HYPERDRIVE_CONFIG_IDS")
     // Captured here: a socket's admission reads it for each request (worker/SocketAccess.ts).
@@ -496,9 +496,9 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       })
     })
 
-    /** Where ChatApi's routes start a remote flow (worker/Flows.ts): its own Durable Object, named by the execution id. */
+    /** Where ChatApi's routes start a remote flow (worker/Flows.vibe): its own Durable Object, named by the execution id. */
     const flowStarter = Executions.starter(executions)
-    /** Where a person's answer reaches a remote run parked on it (worker/Flows.ts `TaskAnswers`): its own object. */
+    /** Where a person's answer reaches a remote run parked on it (worker/Flows.vibe `TaskAnswers`): its own object. */
     const taskAnswerer = Executions.answerer(executions)
     // An agent's questions to people (worker/Asks.ts), started on `FlowExecution` as `queue/ask`.
     const asks = Asks.make(database, options.askToken === undefined ? {} : { developmentToken: options.askToken })

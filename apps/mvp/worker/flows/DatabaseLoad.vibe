@@ -4,8 +4,8 @@ import { Clock, Duration, Effect, Layer, Metric, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { ALERT_PERCENT } from "../../infra/Connections.ts"
 import { codeOf } from "../ErrorCode.ts"
-import * as Flows from "../Flows.ts"
-import * as HyperdrivePool from "../HyperdrivePool.ts"
+import * as Flows from "../Flows.vibe"
+import * as HyperdrivePool from "../HyperdrivePool.vibe"
 import * as AlertDelivery from "./AlertDelivery.vibe"
 
 import {
@@ -195,7 +195,7 @@ export const observedDeliver = <E, R>(request: DeliverRequest, database: Layer.L
 /**
  * Registers `ops/DatabaseLoad` (v1, for runs in flight) and `ops/DatabaseLoad/v2` with their steps, reaching Postgres through `database`, sending through `channels`
  * (worker/AlertChannels.ts `channelsConfig`; none by default), and alerting once `percent` of `max_connections` is in
- * use (`ALERT_PERCENT` unless set), or once `pool` (worker/HyperdrivePool.ts; unread without one) finds a config's
+ * use (`ALERT_PERCENT` unless set), or once `pool` (worker/HyperdrivePool.vibe; unread without one) finds a config's
  * pool saturated (decision 0150).
  */
 export const registration = <E, R>(

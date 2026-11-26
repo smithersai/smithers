@@ -23,7 +23,7 @@ import {
 import * as Actor from "../Actor.vibe"
 import * as RepoRuns from "../RepoRuns.ts"
 import * as Database from "../../db/Database.ts"
-import { FlowStarter, StartUnavailable } from "../Flows.ts"
+import { FlowStarter, StartUnavailable } from "../Flows.vibe"
 import * as PullRefresh from "./PullRefresh.vibe"
 import { refreshingSource } from "../../src/features/pulls/refresh.ts"
 import { PullsView, VIEW } from "../../src/features/pulls/schema.ts"
