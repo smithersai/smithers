@@ -1,9 +1,9 @@
-import { Context, Effect, Option, type Scope } from "effect"
+import type { Scope } from "effect"
 import { type Door, FlowDispatch } from "../../flows/dispatch"
 import { PLACE } from "../chat/schema"
 import { ChatStore } from "../chat/store"
 import type { WebMode, WebOutcome } from "./contract"
-import { recordOpening, withOpenSpan } from "./metrics"
+import { recordOpening, withOpenSpan } from "./metrics.vibe"
 import { checkUrl, type Policy, type Refusal } from "./url"
 
 // What a person's door does with a web page (docs/features/web-pages.md#a-persons-door): `/web <url> [embed|tab]` in
@@ -29,15 +29,15 @@ export class WebTab extends Context.Service<WebTab, WebHost>()("@smthrs/mvp/web/
  * the line and says why, and nothing runs. Nothing without a browser to ask; the flow checks again either way.
  */
 export const refusedPage = (page: { readonly url: string; readonly mode?: WebMode | undefined }, door: Door) =>
-  Effect.gen(function* () {
-    const host = yield* Effect.serviceOption(WebTab)
+  effect {
+    const host = try serviceOption(WebTab)
     if (Option.isNone(host)) return Option.none<Refusal>()
     const mode = page.mode ?? "embed"
-    const checked = checkUrl(page.url, mode, host.value.policy)
+    const checked = try sync(() => checkUrl(page.url, mode, host.value.policy))
     if (checked.ok) return Option.none<Refusal>()
-    yield* recordOpening({ mode, door, outcome: "refused", reason: checked.reason }).pipe(withOpenSpan(mode))
+    try recordOpening({ mode, door, outcome: "refused", reason: checked.reason }).pipe(withOpenSpan(mode))
     return Option.some(checked.reason)
-  })
+  }
 
 /** The doors that are a person's own click or key, from which a browser may let a page open a tab. */
 const GESTURES: ReadonlySet<Door> = new Set(["slash", "button"])
@@ -47,14 +47,16 @@ const GESTURES: ReadonlySet<Door> = new Set(["slash", "button"])
  * allows and a browser that says it opened it. Synchronous, so it runs inside the gesture. Answers whether it opened.
  */
 export const openFromGesture = (page: { readonly url: string; readonly mode: WebMode }, door: Door) =>
-  Effect.gen(function* () {
-    const host = yield* Effect.serviceOption(WebTab)
+  effect {
+    const host = try serviceOption(WebTab)
     if (page.mode !== "tab" || !GESTURES.has(door) || Option.isNone(host)) return false
-    const checked = checkUrl(page.url, "tab", host.value.policy)
-    if (!checked.ok || !host.value.openTab(checked.page.href)) return false
-    yield* recordOpening({ mode: "tab", door, outcome: "opened" }).pipe(withOpenSpan("tab"))
+    const checked = try sync(() => checkUrl(page.url, "tab", host.value.policy))
+    if (!checked.ok) return false
+    const opened = try sync(() => host.value.openTab(checked.page.href))
+    if (!opened) return false
+    try recordOpening({ mode: "tab", door, outcome: "opened" }).pipe(withOpenSpan("tab"))
     return true
-  })
+  }
 
 /** How a declared failure of the flow counts. */
 const failedAs = (tag: string): WebOutcome =>
@@ -70,17 +72,18 @@ const failedAs = (tag: string): WebOutcome =>
  * `unavailable` for anything else.
  */
 export const dispatchOpen = (page: { readonly url: string; readonly mode: WebMode }, door: Door, askedIn?: string | null) =>
-  Effect.gen(function* () {
+  effect {
     // The conversation this tab shows now is where the person asked: pinned in the payload, so switching branches
     // before the step runs, or a run resumed later, still adds the view there (decision 0013 §1).
-    const chat = yield* Effect.serviceOption(ChatStore)
-    const place = Option.isSome(chat) ? Option.getOrUndefined(yield* chat.value.place.get(PLACE)) : undefined
+    const chat = try serviceOption(ChatStore)
+    const place = Option.isSome(chat) ? Option.getOrUndefined(try chat.value.place.get(PLACE)) : undefined
     const conversationId = (askedIn === undefined ? place?.conversationId : askedIn) ?? undefined
-    const dispatched = yield* (yield* FlowDispatch).dispatch(
+    const dispatcher = try FlowDispatch
+    const dispatched = try result(dispatcher.dispatch(
       "app/web/open",
       conversationId === undefined ? page : { ...page, conversationId },
       { door },
-    ).pipe(Effect.result)
+    ))
     const opened = dispatched._tag === "Success" && dispatched.success._tag === "Done" ? dispatched.success.value : undefined
     const outcome: WebOutcome = dispatched._tag === "Failure"
       ? dispatched.failure.reason === "invalid" ? "refused" : "unavailable"
@@ -89,8 +92,8 @@ export const dispatchOpen = (page: { readonly url: string; readonly mode: WebMod
       : opened?.shown === "page"
       ? "embedded"
       : "card"
-    yield* recordOpening({ mode: page.mode, door, outcome, ...(opened === undefined ? {} : { framing: opened.framing }) })
-  }).pipe(withOpenSpan(page.mode))
+    try recordOpening({ mode: page.mode, door, outcome, ...(opened === undefined ? {} : { framing: opened.framing }) })
+  }.pipe(withOpenSpan(page.mode))
 
 /**
  * A person's `app/web/open { url, mode? }` through `door`: a `tab` page opens straight from their gesture when the
@@ -103,11 +106,11 @@ export const openWebPage = (
   scope: Scope.Scope,
   askedIn?: string | null,
 ) =>
-  Effect.gen(function* () {
+  effect {
     const shown = { url: page.url, mode: page.mode ?? "embed" }
-    if (yield* openFromGesture(shown, door)) return
-    yield* dispatchOpen(shown, door, askedIn).pipe(Effect.forkIn(scope))
-  })
+    if (try openFromGesture(shown, door)) return
+    fork.in(scope) dispatchOpen(shown, door, askedIn)
+  }
 
 /** A person opened a card's page in a new tab: their click on its Open button, door `view`. */
 export const cardOpened = recordOpening({ mode: "tab", door: "view", outcome: "opened" }).pipe(withOpenSpan("tab"))

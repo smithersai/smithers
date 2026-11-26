@@ -18,8 +18,8 @@ import { REFUSALS } from "./url"
 //
 // Browsers open a tab only from a person's click or key, and this flow runs in the engine worker, so `tab` is a card. A
 // person's own `/web … tab` opens the tab straight from their keypress when the browser still allows it, and runs this
-// flow only when it doesn't (src/features/web/actions.ts). What the steps run on is injected
-// (src/features/web/steps.ts), so only an engine's host imports that; the tab dispatches by this declaration.
+// flow only when it doesn't (src/features/web/actions.vibe). What the steps run on is injected
+// (src/features/web/steps.vibe), so only an engine's host imports that; the tab dispatches by this declaration.
 
 /** How the page is shown. */
 export const Mode = Schema.Literals(WEB_MODES)
@@ -68,7 +68,7 @@ const payload = {
   url: Schema.String.check(Schema.isMaxLength(MAX_URL_LENGTH)),
   mode: Schema.optional(Mode),
   // The branch conversation the person's tab showed when they asked (decision 0013 §1); the home conversation when
-  // absent. An agent's call goes to its answer's conversation instead, whatever this says (src/features/web/steps.ts).
+  // absent. An agent's call goes to its answer's conversation instead, whatever this says (src/features/web/steps.vibe).
   conversationId: Schema.optional(Schema.String.check(Schema.isUUID())),
 }
 

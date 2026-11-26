@@ -117,8 +117,8 @@ import { Theme, type ThemeView } from "./features/theme/theme.vibe"
 import { embedsLayer } from "./features/views/embeds"
 import { ViewsStore } from "./features/views/store"
 import { Views, type ViewsView } from "./features/views/views"
-import { type WebHost, WebTab } from "./features/web/actions"
-import { Web, type WebView } from "./features/web/web"
+import { type WebHost, WebTab } from "./features/web/actions.vibe"
+import { Web, type WebView } from "./features/web/web.vibe"
 import { type ClientEngine, FlowDispatch } from "./flows/dispatch"
 import { TabErrors } from "./flows/errors"
 import { failFastOnEngine, tabAnswers, tabEngine } from "./flows/engine"
@@ -179,7 +179,7 @@ export interface Host extends ChatHost {
   readonly build?: string
   /** The browser and the window's size, as `1280x800`, which a bug report carries. */
   readonly screen?: () => { readonly browser: string; readonly viewport: string }
-  /** Which outside pages open, and a tab opened from the person's own click or key (src/features/web/actions.ts). */
+  /** Which outside pages open, and a tab opened from the person's own click or key (src/features/web/actions.vibe). */
   readonly web: WebHost
   /**
    * Starts a language server's worker (src/features/code-intel/language.worker.ts) for the repository view's code; a

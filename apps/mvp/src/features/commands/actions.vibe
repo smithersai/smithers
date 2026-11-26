@@ -15,7 +15,7 @@ import { pinBranch } from "../conversations/pin"
 import { ACTION_FAILED } from "../home/contract"
 import { RepoName } from "../repo/flows"
 import { pinConversation } from "../sandbox/actions.vibe"
-import { openWebPage, refusedPage } from "../web/actions"
+import { openWebPage, refusedPage } from "../web/actions.vibe"
 import { CANT_OPEN } from "../web/contract"
 import { Plugins } from "../../plugins/plugins"
 import { COMMANDS as COMMAND_LIST, type Command, commandsFor, pluginCommands, viewerOf } from "./catalog"
@@ -112,7 +112,7 @@ const PINNED_FLOWS: ReadonlySet<string> = new Set(["app/docs/search", "ui/repo",
 
 /** Runs `command`'s flow with `payload` through dispatch, door `slash`, in the background; the composer clears at once. */
 const run = effect (command: Command, payload: Readonly<Record<string, unknown>>, draft: string) => {
-  // `/web` names a page the app won't open: the line stays, saying why, and nothing runs (src/features/web/actions.ts).
+  // `/web` names a page the app won't open: the line stays, saying why, and nothing runs (src/features/web/actions.vibe).
   if (command.flow === "app/web/open") {
     const refused = try refusedPage(payload as never, "slash")
     if (Option.isSome(refused)) return try refuse("invalid", CANT_OPEN[refused.value], command)

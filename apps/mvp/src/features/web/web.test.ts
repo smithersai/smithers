@@ -18,12 +18,12 @@ import { BROWSER_TELEMETRY } from "../../telemetry"
 import { COMMANDS } from "../commands/catalog"
 import { ViewRefused, ViewsClient } from "../views/api"
 import { DispatchFailed, type Dispatched, FlowDispatch } from "../../flows/dispatch"
-import { dispatchOpen, openFromGesture, refusedPage, WebTab } from "./actions"
-import { PreviewClient, PreviewRefused } from "./api"
+import { dispatchOpen, openFromGesture, refusedPage, WebTab } from "./actions.vibe"
+import { PreviewClient, PreviewRefused } from "./api.vibe"
 import { WEB_TELEMETRY } from "./contract"
 import { OpenWebPage, WebPageForbidden, WebPageRefused, WebPageUnavailable } from "./flows"
-import { pagesOpened } from "./metrics"
-import { registration, WebPolicy } from "./steps"
+import { pagesOpened } from "./metrics.vibe"
+import { registration, WebPolicy } from "./steps.vibe"
 
 const runtime = testFile("web")
 
@@ -466,6 +466,10 @@ describe("the preview client", () => {
     expect(await client(() => new Promise(() => {}), "50 millis")).toEqual(new PreviewRefused({}))
     expect(await client(async () => new Response("busy", { status: 503 }))).toEqual(new PreviewRefused({ status: 503 }))
     expect(await client(async () => Response.json({ framing: "maybe" }))).toEqual(new PreviewRefused({ status: 200 }))
+    // A 200 whose body isn't JSON is no answer either.
+    expect(await client(async () => new Response("<html></html>", { status: 200 }))).toEqual(
+      new PreviewRefused({ status: 200 }),
+    )
     expect(await client(async () => Response.json({ framing: "refused", reason: "x_frame_options", status: 200 }))).toEqual({
       framing: "refused",
       reason: "x_frame_options",
@@ -508,6 +512,32 @@ describe("a person's door", () => {
     expect(["refused", "forbidden", "unavailable"].map((outcome) => count(outcome))).toEqual([2, 1, 2])
     expect(count("embedded", "allowed")).toBe(1)
     expect(count("card", "refused")).toBe(1)
+  })
+
+  test("a person's dispatch pins the conversation they asked in, and names none when they asked in none", async () => {
+    const payloads: Array<unknown> = []
+    const dispatching = (askedIn?: string | null) =>
+      Effect.runPromise(
+        dispatchOpen({ url: "https://example.com/", mode: "tab" }, "slash", askedIn).pipe(
+          Effect.provideService(
+            FlowDispatch,
+            FlowDispatch.of({
+              dispatch: (_flow, payload) => {
+                payloads.push(payload)
+                return Effect.fail(new DispatchFailed({ flow: "app/web/open", reason: "unavailable" })) as never
+              },
+            }),
+          ),
+        ),
+      )
+    await dispatching("conversation-1")
+    await dispatching(null)
+    await dispatching()
+    expect(payloads).toEqual([
+      { url: "https://example.com/", mode: "tab", conversationId: "conversation-1" },
+      { url: "https://example.com/", mode: "tab" },
+      { url: "https://example.com/", mode: "tab" },
+    ])
   })
 
   test("/web <url> [embed|tab] is a Member's command over the flow's own arguments", () => {

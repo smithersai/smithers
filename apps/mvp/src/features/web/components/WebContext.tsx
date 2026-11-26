@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { WebView } from "../web"
+import type { WebView } from "../web.vibe"
 
 // What React components get: the web pages layer's plain actions to call (features/web/web.ts).
 

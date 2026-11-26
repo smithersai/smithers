@@ -1,6 +1,5 @@
-import { Effect, Metric } from "effect"
-import type { Door } from "../../flows/dispatch"
 import type { WebPage } from "@smthrs/views"
+import type { Door } from "../../flows/dispatch"
 import type { WebMode, WebOutcome } from "./contract"
 import type { Refusal } from "./url"
 
@@ -32,29 +31,26 @@ export interface Opening {
  * Records one opening: a count of `pagesOpened`, the log line `web.page.open` (Warn when nothing was shown) and the
  * outcome on the current span.
  */
-export const recordOpening = (opening: Opening) =>
-  Effect.gen(function* () {
-    const { mode, door, outcome, reason, framing } = opening
-    const checked: Record<string, string> = framing === undefined ? {} : { web_framing: framing }
-    // `web_mode`, not `mode`: the relay keeps a field by name for every record, and `mode` is the theme flow's input.
-    yield* Metric.update(Metric.withAttributes(pagesOpened, { web_mode: mode, door, outcome, ...checked }), 1)
-    yield* Effect.annotateCurrentSpan({
-      "smithers.web.outcome": outcome,
-      ...(framing === undefined ? {} : { "smithers.web.framing": framing }),
-    })
-    const shown = outcome === "embedded" || outcome === "card" || outcome === "opened"
-    yield* Effect.logWithLevel(shown ? "Info" : "Warn")("web.page.open").pipe(
-      Effect.annotateLogs({
-        web_mode: mode,
-        door,
-        outcome,
-        ...(reason === undefined ? {} : { reason }),
-        ...checked,
-        feature: "web",
-      }),
-    )
+export const recordOpening = effect (opening: Opening) => {
+  const { mode, door, outcome, reason, framing } = opening
+  const checked: Record<string, string> = framing === undefined ? {} : { web_framing: framing }
+  // `web_mode`, not `mode`: the relay keeps a field by name for every record, and `mode` is the theme flow's input.
+  try Metric.update(Metric.withAttributes(pagesOpened, { web_mode: mode, door, outcome, ...checked }), 1)
+  try annotateCurrentSpan({
+    "smithers.web.outcome": outcome,
+    ...(framing === undefined ? {} : { "smithers.web.framing": framing }),
   })
+  const shown = outcome === "embedded" || outcome === "card" || outcome === "opened"
+  try annotateLogs(logWithLevel(shown ? "Info" : "Warn")("web.page.open"), {
+    web_mode: mode,
+    door,
+    outcome,
+    ...(reason === undefined ? {} : { reason }),
+    ...checked,
+    feature: "web",
+  })
+}
 
 /** Runs `effect` inside the span `web.page.open`, with the opening's mode. */
-export const withOpenSpan = (mode: WebMode) => <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  Effect.withSpan(effect, "web.page.open", { attributes: { "smithers.web.mode": mode } })
+export const withOpenSpan = (mode: WebMode) => <A, E, R>(effect: A!E!R) =>
+  withSpan(effect, "web.page.open", { attributes: { "smithers.web.mode": mode } })

@@ -37,8 +37,8 @@ import * as Theme from "../features/theme/flows.vibe"
 import * as TodoSteps from "../features/todos/steps"
 import { ViewsClient } from "../features/views/api"
 import * as ViewSteps from "../features/views/steps"
-import { PreviewClient } from "../features/web/api"
-import * as WebPages from "../features/web/steps"
+import { PreviewClient } from "../features/web/api.vibe"
+import * as WebPages from "../features/web/steps.vibe"
 import { DocsClient } from "../features/docs/api.vibe"
 import * as DocsSearch from "../features/docs/steps.vibe"
 import * as RunCredentials from "./credentials"
@@ -57,7 +57,7 @@ export const repoFlows = (origin: string) =>
   Repo.registration.pipe(Layer.provide(RepoClient.layer({ origin, within: REQUEST_WITHIN })))
 
 /**
- * `app/web/open`, checking each page and adding its views through ChatApi on `origin` (src/features/web/api.ts,
+ * `app/web/open`, checking each page and adding its views through ChatApi on `origin` (src/features/web/api.vibe,
  * src/features/views/api.ts) and opening only what the policy allows: `http:` on this machine only when `localHttp`
  * (development), never the app's own origin.
  */

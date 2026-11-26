@@ -144,7 +144,7 @@ export const registry = {
   "file/open": { flow: OpenFile, changes: "opens a file as a tab in the person's tab" },
   "file/close": { flow: CloseFile, changes: "closes a file's tab in the person's tab" },
   // Adding a view writes the shared conversation, which only a Member or above may (decision 0007).
-  // The tab pins the conversation it shows into the payload (src/features/web/actions.ts); a person never types it.
+  // The tab pins the conversation it shows into the payload (src/features/web/actions.vibe); a person never types it.
   "app/web/open": {
     flow: OpenWebPage,
     changes: "adds a page to the chat",
