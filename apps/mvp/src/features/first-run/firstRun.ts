@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { press } from "./actions"
 import type { ShownStep } from "./contract"
 import { FirstRunStore } from "./store"

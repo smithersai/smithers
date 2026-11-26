@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { hide, setChannel, setLimits } from "./actions"
 import type { AlertChannelName, SandboxLimitsRequest } from "./schema"
 import { FlowDispatch } from "../../flows/dispatch"

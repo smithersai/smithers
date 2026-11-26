@@ -1,6 +1,6 @@
 import type { Outbox } from "@smthrs/effect-tanstack-db"
 import { Clock, Deferred, Effect, Metric, Option, Ref, type Types } from "effect"
-import { Clipboard } from "../../clipboard"
+import { Clipboard } from "../../clipboard.vibe"
 import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import { MAX_QUESTION_LENGTH } from "./contract"

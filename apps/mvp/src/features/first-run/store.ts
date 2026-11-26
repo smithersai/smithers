@@ -1,6 +1,6 @@
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Layer, Metric, Option, type Scope, Stream } from "effect"
-import { recordUnhandled } from "../../boundary"
+import { recordUnhandled } from "../../boundary.vibe"
 import { composerAccess } from "../auth/contract"
 import { AuthStore, SESSION } from "../auth/store"
 import { COMPOSER } from "../chat/schema"

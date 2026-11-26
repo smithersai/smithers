@@ -1,5 +1,5 @@
 import type { FileTabsFocusEvent } from "@smthrs/ui"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { Context, Effect, Layer, Metric } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { closeTab, FilesPage, openTab } from "./actions"

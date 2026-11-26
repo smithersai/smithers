@@ -1,5 +1,5 @@
 import { Effect, Metric } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 
 // One-key shortcuts (docs/features/todos.md#from-an-issue), as GitHub's single letters: a key presses the button on the
 // page that declares it in `aria-keyshortcuts`, such as Make TODO's `t` on an issue's page, or focuses the field that

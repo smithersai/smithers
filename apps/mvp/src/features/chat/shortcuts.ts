@@ -1,5 +1,5 @@
 import { Effect, Option } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { closeComposer, setDraft, toggleComposer } from "./actions"
 import { ChatStore } from "./store"
 import { COMPOSER } from "./schema"

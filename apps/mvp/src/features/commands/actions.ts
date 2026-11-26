@@ -1,4 +1,4 @@
-import { clearComposerSource } from "../../admissionSource"
+import { clearComposerSource } from "../../admissionSource.vibe"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { admissionReceipt, beginAdmission, executionOf, finishAdmission, identifyAdmission } from "../../writeAdmission"
 import { slashMenu, slashSubmit } from "@smthrs/ui"

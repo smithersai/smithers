@@ -1,5 +1,5 @@
 import { Cause, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Schema, Scope } from "effect"
-import { runners } from "../boundary"
+import { runners } from "../boundary.vibe"
 import { codeOf } from "../errorCode"
 
 // The engine worker's line to its own tab (docs/features/flows.md#the-tab-port). The leader tab's dedicated worker

@@ -26,7 +26,7 @@ import { olderLeader, watchLeader } from "./device/olderLeader"
 import { deviceRegistry } from "./device/registry"
 import { awaitEditorWrites, hasFailedEditorWrite, hasPendingEditorWrites } from "./features/flows-ui/editorWrites"
 import "./styles/fonts.css"
-import { markStage } from "./bootStages"
+import { markStage } from "./bootStages.vibe"
 import { followingOutbox } from "./outboxFollower"
 import { followRoute, takeShell, verifyingFetch } from "./firstPaint/page"
 

@@ -1,5 +1,5 @@
 import { Effect, FiberHandle, Option, Stream } from "effect"
-import { Clipboard } from "../../clipboard"
+import { Clipboard } from "../../clipboard.vibe"
 import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import { repoId } from "../repo/contract"

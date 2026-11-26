@@ -1,6 +1,6 @@
 import { Effect, Logger, Metric } from "effect"
 import { afterEach, expect, test } from "vitest"
-import { BOOT_STAGES, bootStageTime, markStage, recordStages, STAGE_MARK, stageTimes } from "./bootStages"
+import { BOOT_STAGES, bootStageTime, markStage, recordStages, STAGE_MARK, stageTimes } from "./bootStages.vibe"
 
 // The boot's stages on a real timeline: Node's `performance`, as the page's.
 

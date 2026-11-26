@@ -2,7 +2,7 @@ import { RunSteers } from "./steers"
 import { LiveQuery } from "@smthrs/effect-tanstack-db"
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Effect, Layer } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
 import {
   chooseRepoFlow,

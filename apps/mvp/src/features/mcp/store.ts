@@ -1,7 +1,7 @@
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
 import { Context, Data, type Duration, Effect, Layer, Option, Schema, type Scope } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { ROLES } from "../auth/contract"
 import { MCP_CLIENTS, MCP_OAUTH_AUTHORIZE_ROUTE, MCP_SCOPES, MCP_TOKENS_ROUTE, type McpClientId } from "./contract"
 import { searchOf, verifiedRedirect } from "./view"

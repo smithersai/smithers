@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Stream } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { attach, configureStack, retryChange, retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setAfter, setAttachmentIssue, setIssue, setPrompt, setTitle, warm } from "./actions"
 import type { StackClient } from "./api"

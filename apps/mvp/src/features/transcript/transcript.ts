@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import type { HttpClient } from "effect/http"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { watch } from "./actions"
 import { TranscriptStore, type TranscriptConfig } from "./store"
 

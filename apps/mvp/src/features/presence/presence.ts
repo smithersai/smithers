@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { at, join, leave } from "./actions"
 import type { Where } from "./schema"
 import { type PresenceConfig, PresenceStore } from "./store"

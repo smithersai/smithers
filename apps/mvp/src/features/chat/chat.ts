@@ -1,5 +1,5 @@
 import { postgresTime } from "./view"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { Clock, Option } from "effect"
 import { Context, Data, Effect, Layer, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"

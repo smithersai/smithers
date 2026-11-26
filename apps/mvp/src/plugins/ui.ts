@@ -1,6 +1,6 @@
 import { type Contribution, Host } from "@smthrs/plugin"
 import { Context, Effect, Layer, Scope } from "effect"
-import { runners } from "../boundary"
+import { runners } from "../boundary.vibe"
 import { codeOf } from "../errorCode"
 import { FlowDispatch } from "../flows/dispatch"
 import { rankOf, type Viewer } from "../features/commands/catalog"

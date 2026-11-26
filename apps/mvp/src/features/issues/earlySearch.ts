@@ -1,6 +1,6 @@
 import { repoId } from "../repo/contract"
 import { Clock, Effect, Fiber, Metric, Result, SubscriptionRef } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import type { IssuesClient, SearchNotAnswered } from "./api"
 import type { ListedIssue } from "./schema"
 import type { FirstPaintIssue } from "./contract"

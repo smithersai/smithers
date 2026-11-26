@@ -1,6 +1,6 @@
 import type { Home as HomeDocument } from "@smthrs/views"
 import { Context, Effect, Layer, Option } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import type { RepoClient } from "../repo/api"
 import type { RepoStore } from "../repo/store"
 import { IssuesStore, type RepoIssues } from "../issues/store"

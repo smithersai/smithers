@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Option, Ref, Stream } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { RepoClient } from "../repo/api"
 import { RepoStore } from "../repo/store"

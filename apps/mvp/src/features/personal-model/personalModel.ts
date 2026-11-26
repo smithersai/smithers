@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { add, link, move, remove, removeAll, save, setActive, showAdd, test } from "./actions"
 import type { PersonalModelClient } from "./api"

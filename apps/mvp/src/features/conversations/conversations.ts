@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { archive, resume, search, showArchived } from "./actions"
 import { type ConversationsConfig, ConversationsStore } from "./store"

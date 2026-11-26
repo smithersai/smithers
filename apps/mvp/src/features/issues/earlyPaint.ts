@@ -1,5 +1,5 @@
 import { Effect, FiberHandle, Layer, Metric, Stream, SubscriptionRef } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { RepoStore } from "../repo/store"
 import { repoId } from "../repo/contract"
 import { IssuesClient } from "./api"

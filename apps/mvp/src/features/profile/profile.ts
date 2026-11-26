@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { knownLogin, load, open, type ProfileSearch, retry, warm } from "./actions"
 import type { ProfileClient } from "./api"
 import { ProfileStore } from "./store"

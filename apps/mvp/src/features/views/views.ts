@@ -1,6 +1,6 @@
 import type { Interactions } from "@smthrs/views"
 import { Context, Effect, Layer } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { FlowDispatch } from "../../flows/dispatch"
 import type { AppTemplate } from "./contract"
 import { type Minimized, minimize, opened } from "./minimize"

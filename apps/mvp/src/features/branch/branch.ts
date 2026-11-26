@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { ChatStore } from "../chat/store"
 import { FlowDispatch } from "../../flows/dispatch"
 import { Coedit, type CoeditView } from "../coedit/coedit"

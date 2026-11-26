@@ -4,7 +4,7 @@ import { Cache, Context, Effect, Fiber, Layer, Metric, Option, Scope, Stream } f
 import type { Source } from "../repo/gate"
 import { RepoStore } from "../repo/store"
 import { shapeRefusals } from "../issues/source"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { feedDocumentId, FEEDS_SHAPE_ROUTE } from "./contract"
 import { FeedDocument } from "./schema"
 

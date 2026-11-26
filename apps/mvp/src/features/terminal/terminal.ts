@@ -1,5 +1,5 @@
 import { Cause, Context, Effect, FiberHandle, Layer, Scope } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { codeOf } from "../../errorCode"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { AuthStore } from "../auth/store"

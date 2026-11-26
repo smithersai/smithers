@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect"
-import { Clipboard } from "../../clipboard"
+import { Clipboard } from "../../clipboard.vibe"
 import { answerAskingTab } from "../../flows/askingTab"
 import { clipboardChannel } from "./contract"
 import { CopyCall } from "./schema"

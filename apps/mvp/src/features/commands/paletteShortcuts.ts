@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { togglePalette } from "./actions"
 import type { CommandsStore } from "./store"
 

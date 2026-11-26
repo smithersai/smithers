@@ -1,6 +1,6 @@
 import { TerminalSocket } from "@smthrs/platform-browser"
 import { Cause, Clock, Effect, FiberHandle, Metric, Option, Ref, Stream } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import { mayAsk, type Role } from "../auth/contract"

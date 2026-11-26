@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { cardOpened } from "./actions"
 
 // Web pages as a frontend sees them: plain functions to act, with no Effect in sight. A page's view and card render

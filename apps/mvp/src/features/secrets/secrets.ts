@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { cancel, open, put, remove, startDelete, startRotate, warm } from "./actions"
 import { SecretsClient } from "./api"
 import { SecretsStore } from "./store"

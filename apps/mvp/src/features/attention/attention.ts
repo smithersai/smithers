@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { answer, closePanel, dismiss, expand, hide, open, openPanel, read, retry, togglePanel } from "./actions"
 import type { PanelVia, Surface } from "./contract"
 import { AttentionStore } from "./store"

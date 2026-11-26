@@ -318,7 +318,7 @@ test("a refused TODO Drop or Retry remains visibly Not sent and retries the same
 })
 
 for (const state of ["matching", "new_generation", "new_unstored_generation", "restore_failure", "delete_failure"] as const) test(`Retry composer cleanup respects its ${state} source receipt`, async () => {
-  const { clearComposerSource, clearWriteComposer } = await import("./admissionSource")
+  const { clearComposerSource, clearWriteComposer } = await import("./admissionSource.vibe")
   expect(await Effect.runPromise(clearWriteComposer("absent"))).toBe(true)
   expect(await Effect.runPromise(clearComposerSource({ conversationId: null, text: "source" }))).toBe(false)
   const tab = await opening()
@@ -337,7 +337,7 @@ for (const state of ["matching", "new_generation", "new_unstored_generation", "r
 })
 
 test("an unsaved replacement composer keeps the earlier input cleanup pending", async () => {
-  const { clearComposerSource } = await import("./admissionSource")
+  const { clearComposerSource } = await import("./admissionSource.vibe")
   const tab = await opening()
   await tab.app.runPromise(tab.chat.composer.update(COMPOSER, composer => { composer.draft = "New text"; composer.generation = "new"; composer.saved = false }))
   expect(await tab.app.runPromise(clearComposerSource({ conversationId: null, text: "Earlier", generation: "earlier" }))).toBe(false)
@@ -345,7 +345,7 @@ test("an unsaved replacement composer keeps the earlier input cleanup pending", 
 })
 
 for (const replacement of [false, true]) test(`a pending source deletion cannot confirm cleanup after navigation (${replacement})`, async () => {
-  const { clearComposerSource } = await import("./admissionSource")
+  const { clearComposerSource } = await import("./admissionSource.vibe")
   const { ChatDraft } = await import("./features/chat/schema")
   const { setDraft } = await import("./features/chat/actions")
   const tab = await opening()

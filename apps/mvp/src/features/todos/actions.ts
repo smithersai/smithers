@@ -1,4 +1,4 @@
-import { clearWriteComposer } from "../../admissionSource"
+import { clearWriteComposer } from "../../admissionSource.vibe"
 import { keep } from "./writes"
 import { admissionReceipt, beginAdmission, executionOf, finishAdmission, finishRetainedAdmission, whileAdmitting, forgetAdmission, forgetDraftAdmissions, identifyAdmission } from "../../writeAdmission"
 import { Uuid, WebCrypto } from "@smthrs/crypto"

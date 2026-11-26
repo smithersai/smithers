@@ -1,6 +1,6 @@
 import { Data, Effect, Fiber, Logger, References } from "effect"
 import { describe, expect, it } from "vitest"
-import { runners } from "./boundary"
+import { runners } from "./boundary.vibe"
 
 class Refused extends Data.TaggedError("Refused")<{}> {}
 

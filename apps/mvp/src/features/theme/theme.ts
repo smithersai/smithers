@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Metric } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import { toggleTheme } from "./actions"

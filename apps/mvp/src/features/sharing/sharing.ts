@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { ShareAccess } from "../branch/contract"
 import { add, closeDialog, openDialog, set } from "./actions"

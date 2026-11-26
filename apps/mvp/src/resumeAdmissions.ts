@@ -1,4 +1,4 @@
-import { clearComposerSource } from "./admissionSource"
+import { clearComposerSource } from "./admissionSource.vibe"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Clock, Effect, Exit, Fiber, Option, type Scope } from "effect"
 import type { DispatchFailed } from "./flows/dispatch"

@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import { IssuesStore } from "../issues/store"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { closeFiles, loadFiles, merge, open, retry, review, warm } from "./actions"

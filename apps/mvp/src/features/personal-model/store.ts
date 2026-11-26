@@ -1,7 +1,7 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Context, type Duration, Effect, Layer, type Scope, Stream } from "effect"
-import { recordUnhandled } from "../../boundary"
+import { recordUnhandled } from "../../boundary.vibe"
 import { AuthStore } from "../auth/store"
 import { PERSONAL_MODEL_SHAPE_ROUTE } from "./contract"
 import { record } from "./metrics"

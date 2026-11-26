@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import type { AuthStore } from "../auth/store"
-import { runners } from "../../boundary"
+import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
 import {
   setCommitment,
