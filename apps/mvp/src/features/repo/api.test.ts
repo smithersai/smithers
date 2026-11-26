@@ -175,6 +175,16 @@ describe("RepoClient against a gateway", () => {
     expect(failureOf(await withClient(s.origin, (client) => client.blob("o", "n", SHA, ".smithers/home.json")))).toMatchObject({ status: 404, code: "not_found" })
   })
 
+  test("a successful transport can still report an oversized optional file", async () => {
+    const s = await serve((_request, response) => {
+      response.writeHead(200, { "x-file-state": "too_large", "content-type": "application/json" })
+        .end(JSON.stringify({ code: "too_large", size: 600_000 }))
+    })
+    expect(failureOf(await withClient(s.origin, (client) => client.blob("o", "n", SHA, "large.md")))).toMatchObject({
+      status: 413, code: "too_large", size: 600_000,
+    })
+  })
+
   test("a file's bytes arrive as they were sent", async () => {
     const bytes = new Uint8Array([0, 1, 2, 255])
     const s = await serve((_request, response) => response.writeHead(200).end(bytes))

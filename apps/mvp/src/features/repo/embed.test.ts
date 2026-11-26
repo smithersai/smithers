@@ -3,7 +3,7 @@
 // layer's embeds query and shown as `embedShown` shows it. The tab reaches RepoApi's real handler over the compose
 // Postgres and Electric; Code Storage and GitHub are the scripted providers (worker/test/codeStorage.ts). Faults come
 // from a faulty `RepoClient` (test.faults-by-injection).
-import { Effect, Layer } from "effect"
+import { Deferred, Effect, Layer, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { fixture, shaOf } from "../../../worker/test/codeStorage"
@@ -15,6 +15,7 @@ import { BUSY, NOT_CLONED, NOT_FOUND, READING_PAUSED } from "./contract"
 import { embed, type EmbedTarget } from "./embed"
 import { embedShown, fullScreenHref } from "./embedView"
 import { embedLoadMs } from "./metrics"
+import { RepoStore } from "./store"
 
 const server = testFile("repo_embed")
 beforeEach(() => resetRepos(server))
@@ -37,6 +38,7 @@ const load = async (tab: Tab, viewId: string, target: EmbedTarget) => {
   await tab.runtime.runPromise(embed(viewId, target))
   return waitFor(() => {
     const row = tab.repo.queries.embeds.toArray.find((each) => each.embed.key === viewId)
+    expect(row).toBeDefined()
     expect(row?.embed.state).not.toBe("loading")
     return row!
   })
@@ -115,6 +117,42 @@ describe("a cloned repository's view", () => {
     expect(fullScreenHref(target, before)).toBe(fullScreenHref(target, after))
   })
 
+  test("a pending load cannot restore a removed view, and a refused repository starts no new load", async () => {
+    const h = await repoHarness(server)
+    const { id, headSha } = await h.seed("octocat", "Spoon-Knife")
+    const started = Effect.runSync(Deferred.make<void>())
+    const release = Effect.runSync(Deferred.make<void>())
+    const delayed = Layer.effect(
+      RepoClient,
+      Effect.map(RepoClient, (client) => RepoClient.of({
+        ...client,
+        tree: (owner, name, sha) => Deferred.succeed(started, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+          Effect.andThen(client.tree(owner, name, sha)),
+        ),
+      })),
+    ).pipe(
+      Layer.provide(RepoClient.layer({ origin: h.origin, within: "10 seconds" })),
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, h.fetch)),
+    )
+    const tab = await open(h, delayed)
+    await waitFor(() => expect(tab.repo.lookups.repository(id)?.status).toBe("ready"))
+    const store = await tab.runtime.runPromise(RepoStore)
+    await tab.runtime.runPromise(embed("v-removed", { repo: SPOON, ref: headSha }))
+    await Effect.runPromise(Deferred.await(started).pipe(Effect.timeout("10 seconds")))
+    await tab.runtime.runPromise(store.embeds.delete("v-removed"))
+    await Effect.runPromise(Deferred.succeed(release, undefined))
+
+    expect((await load(tab, "v-kept", { repo: SPOON, ref: headSha })).embed.state).toBe("ready")
+    expect(await tab.runtime.runPromise(store.embeds.get("v-removed"))).toEqual(Option.none())
+    expect(tab.histogramCount(embedLoadMs, { outcome: "ready" })).toBe(1)
+
+    await tab.runtime.runPromise(store.refuse(id))
+    await tab.runtime.runPromise(embed("v-refused", { repo: SPOON }))
+    expect(await tab.runtime.runPromise(store.embeds.get("v-refused"))).toEqual(Option.none())
+  })
+
   test("a ref whose branches Code Storage couldn't list says why", async () => {
     const h = await repoHarness(server)
     await h.seed("octocat", "Spoon-Knife", fixture({
@@ -132,12 +170,19 @@ describe("a cloned repository's view", () => {
 
   test("a file list Code Storage couldn't give: the view says why in the list's place", async () => {
     const h = await repoHarness(server)
-    // The clone's Index lists the head's files first and shrugs its failure off; the second failure is the tab's.
-    const failure = h.scripted.error("listFiles", "internal_error", 500)
-    h.scripted.fail("listFiles", failure, failure)
-    await h.seed("octocat", "Spoon-Knife")
-    const tab = await open(h)
-    const row = await load(tab, "v-list", { repo: SPOON, path: "README.md" })
+    const { id, headSha } = await h.seed("octocat", "Spoon-Knife")
+    const unavailable = Layer.effect(
+      RepoClient,
+      Effect.map(RepoClient, (client) =>
+        RepoClient.of({ ...client, tree: () => Effect.fail(new RepoRefused({ status: 503 })) })),
+    ).pipe(
+      Layer.provide(RepoClient.layer({ origin: h.origin, within: "10 seconds" })),
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, h.fetch)),
+    )
+    const tab = await open(h, unavailable)
+    await waitFor(() => expect(tab.repo.lookups.repository(id)?.status).toBe("ready"))
+    const row = await load(tab, "v-list", { repo: SPOON, ref: headSha, path: "README.md" })
     // Without the list, a path the row doesn't kind opens as a directory.
     expect(row.embed).toMatchObject({ state: "ready", kind: "tree", path: "README.md", bodyPath: null })
     await waitFor(() =>

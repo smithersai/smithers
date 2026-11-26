@@ -1,5 +1,5 @@
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
-import { Effect, Option } from "effect"
+import { Option } from "effect"
 import { blobKey, readmeOf, treeKey } from "./paths"
 import type { AboutRow, BlobRow, CloneRow, EmbedRow, RefsRow, TreeRow, ViewRow } from "./rows"
 import type { Gated, Source } from "./gate"
@@ -121,15 +121,23 @@ export const reads = (store: {
   readonly shownTrees: Gated<TreeRow>
   readonly shownBlobs: Gated<BlobRow>
 }) => {
-  const tree = (id: string, sha: string) => shownAt(store.shownTrees, treeKey(id, sha))
+  const tree = effect (id: string, sha: string) => {
+    const key = try sync(() => treeKey(id, sha))
+    return try shownAt(store.shownTrees, key)
+  }
   return {
     repository: (id: string) => shownAt(store.shownRepositories, id),
     tree,
-    file: (id: string, sha: string, path: string) => shownAt(store.shownBlobs, blobKey(id, sha, path)),
-    readme: (id: string, sha: string, dir: string) =>
-      Effect.flatMap(tree(id, sha), (found) => {
-        const path = Option.isSome(found) && found.value.state === "ready" ? readmeOf(found.value.paths, dir) : undefined
-        return path === undefined ? Effect.succeedNone : shownAt(store.shownBlobs, blobKey(id, sha, path))
-      }),
+    file: effect (id: string, sha: string, path: string) => {
+      const key = try sync(() => blobKey(id, sha, path))
+      return try shownAt(store.shownBlobs, key)
+    },
+    readme: effect (id: string, sha: string, dir: string) => {
+      const found = try tree(id, sha)
+      const path = Option.isSome(found) && found.value.state === "ready" ? try sync(() => readmeOf(found.value.paths, dir)) : undefined
+      if (path === undefined) return Option.none()
+      const key = try sync(() => blobKey(id, sha, path))
+      return try shownAt(store.shownBlobs, key)
+    },
   }
 }

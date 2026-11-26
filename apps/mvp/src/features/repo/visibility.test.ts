@@ -1,10 +1,10 @@
 import { join, resolve } from "node:path"
-import { Collection } from "@smthrs/effect-tanstack-db"
+import { Collection, Query } from "@smthrs/effect-tanstack-db"
 import { Deferred, Effect, Schema } from "effect"
 import { expect, test } from "vitest"
 import { RepoRole, Session as SessionRow, type Session } from "../auth/schema"
 import { ROLES } from "../auth/contract"
-import { makeVisibility } from "./gate"
+import { anyOf, makeVisibility } from "./gate"
 import { repoVisibility } from "./visibility"
 import { sourceText } from "../../../../../packages/repo-targets/test-utils/source-readers.mjs"
 
@@ -162,5 +162,54 @@ test("a gate observer gives synchronous decisions, stays closed before restorati
     const stopAbsent = gate.observe("", show => { absent.push(show) })
     expect(absent).toEqual([false])
     stopAbsent()
+  })))
+})
+
+test("the gate follows repository names and keeps only explicitly allowed unattributed rows", async () => {
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const roles = yield* Collection.local<RepoRole, string | number>({
+      id: "named-gate-roles",
+      schema: RepoRole,
+      getKey: (row) => row.id === "numeric" ? 1 : row.id,
+      initialData: [
+        { id: "numeric", role: null, own: false },
+        { id: "github/acme/untracked", role: null, own: false },
+      ],
+    })
+    const sessions = yield* Collection.local({ id: "named-gate-session", schema: SessionRow, getKey: (row) => row.id })
+    const Row = Schema.Struct({
+      id: Schema.String,
+      repo: Schema.NullOr(Schema.String),
+      repoId: Schema.optionalKey(Schema.String),
+    })
+    const rows = yield* Collection.local({
+      id: "named-gate-rows",
+      schema: Row,
+      getKey: (row) => row.id,
+      initialData: [
+        { id: "named", repo: "acme/repo" },
+        { id: "local", repo: null },
+        { id: "anonymous", repo: "" },
+      ],
+    })
+    const visibility = yield* makeVisibility(roles, sessions)
+    const named = yield* visibility.gate(rows, "repo")
+    const withLocal = yield* visibility.gate(rows, "repo", (row) => anyOf([Query.eq(row.id, "local")]))
+    const withAnonymous = yield* visibility.gate(rows, "repo", (row) => anyOf([
+      Query.eq(row.id, "local"), Query.eq(row.id, "anonymous"),
+    ]))
+    named.tanstack.startSyncImmediate()
+    withLocal.tanstack.startSyncImmediate()
+    withAnonymous.tanstack.startSyncImmediate()
+    expect((yield* named.toArray).map((row) => row.id)).toEqual(["named"])
+    expect((yield* withLocal.toArray).map((row) => row.id).sort()).toEqual(["local", "named"])
+    expect((yield* withAnonymous.toArray).map((row) => row.id).sort()).toEqual(["anonymous", "local", "named"])
+
+    yield* sessions.insert(session("signed_in", undefined))
+    yield* roles.insert({ id: "github/acme/repo", role: null, own: false, refused: "forbidden" })
+    expect(yield* named.toArray).toEqual([])
+    expect((yield* withLocal.toArray).map((row) => row.id)).toEqual(["local"])
+    yield* rows.delete("local")
+    expect(yield* withLocal.toArray).toEqual([])
   })))
 })
