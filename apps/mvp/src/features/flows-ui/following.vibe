@@ -1,5 +1,4 @@
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Effect, Option } from "effect"
 import { roundExecutionId, type RunStatus } from "./round"
 
 // How the flows tab follows a draft's rounds on this device's engine (docs/features/flows.md#why-a-draft-failed): what
@@ -24,16 +23,16 @@ export const refusedRead = (failure: unknown): Option.Option<RunStatus> =>
  * delivered yet, so a second press starts nothing; `Unreadable` when the engine can't be read.
  */
 export const nextRound = (
-  statusOf: (runId: string) => Effect.Effect<Option.Option<RunStatus>>,
+  statusOf: (runId: string) => Option.Option<RunStatus>!!,
   draftId: string,
   after: number,
-): Effect.Effect<NextRound> => {
-  const probe = (round: number): Effect.Effect<NextRound> =>
-    Effect.flatMap(statusOf(roundExecutionId(draftId, round)), (status) => {
-      if (Option.isNone(status)) return Effect.succeed<NextRound>({ _tag: "Unreadable" })
-      if (status.value === "absent") return Effect.succeed<NextRound>({ _tag: "Start", round })
-      if (status.value === "failed" || status.value === "cancelled") return probe(round + 1)
-      return Effect.succeed<NextRound>({ _tag: "Pending", round })
+): NextRound!! => {
+  const probe = (round: number): NextRound!! =>
+    flatMap(statusOf(roundExecutionId(draftId, round)), effect (status): NextRound!! => {
+      if (Option.isNone(status)) return { _tag: "Unreadable" }
+      if (status.value === "absent") return { _tag: "Start", round }
+      if (status.value === "failed" || status.value === "cancelled") return try probe(round + 1)
+      return { _tag: "Pending", round }
     })
   return probe(after + 1)
 }
@@ -43,15 +42,14 @@ export const nextRound = (
  * of it. An engine that can't be read leaves the last read standing, and a read for a round the card no longer shows
  * (another draft opened, or a newer round arrived, while it waited) is dropped.
  */
-export const readRound = (options: {
-  readonly shownRunId: Effect.Effect<string | null>
-  readonly statusOf: (runId: string) => Effect.Effect<Option.Option<RunStatus>>
-  readonly write: (runId: string | null, status: RunStatus) => Effect.Effect<void>
-}) =>
-  Effect.gen(function* () {
-    const runId = yield* options.shownRunId
-    const status = runId === null ? Option.some<RunStatus>("absent") : yield* options.statusOf(runId)
-    if (Option.isNone(status)) return
-    if ((yield* options.shownRunId) !== runId) return
-    yield* options.write(runId, status.value)
-  })
+export const readRound = effect (options: {
+  readonly shownRunId: (string | null)!!
+  readonly statusOf: (runId: string) => Option.Option<RunStatus>!!
+  readonly write: (runId: string | null, status: RunStatus) => void!!
+}) => {
+  const runId = try options.shownRunId
+  const status = runId === null ? Option.some<RunStatus>("absent") : try options.statusOf(runId)
+  if (Option.isNone(status)) return
+  if ((try options.shownRunId) !== runId) return
+  try options.write(runId, status.value)
+}

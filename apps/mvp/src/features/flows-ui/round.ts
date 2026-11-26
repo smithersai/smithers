@@ -4,6 +4,7 @@
 // side can.
 
 /** `<draftId>:<round>`: the execution id a draft's round runs under. */
+/** @throws {never} */
 export const roundExecutionId = (draftId: string, round: number): string => `${draftId}:${round}`
 
 const ROUND = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):(0|[1-9][0-9]{0,5})$/i

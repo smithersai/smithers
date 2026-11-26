@@ -6,7 +6,7 @@ import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"
 import { RunsNavigation } from "../runs/actions"
 import { answer, deleteDraft, editCode, openCode, openDraft, openNew, save, saveCode, setAnswer, setForm, startDraft } from "./actions.vibe"
-import { FlowsUiStore, SHOWN } from "./store"
+import { FlowsUiStore, SHOWN } from "./store.vibe"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -176,7 +176,7 @@ test("a late draft save and a refused deletion leave the next draft's refusal al
 test("a refused form write keeps its pending snapshot for reload", async () => {
   const t = await open()
   const { PendingSnapshot } = await import("@smthrs/platform-browser")
-  const { FlowsUi } = await import("./flowsUi")
+  const { FlowsUi } = await import("./flowsUi.vibe")
   const { awaitEditorWrites } = await import("./editorWrites.vibe")
   const values = new Map<string, string>()
   const snapshot = PendingSnapshot.make({

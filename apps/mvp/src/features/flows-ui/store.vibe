@@ -3,11 +3,12 @@ import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Deferred, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
+import { WebCrypto } from "effect/crypto/WebCrypto"
 import { codeOf } from "../../errorCode"
 import { signedInShapeSource } from "../auth/source"
 import { AuthStore } from "../auth/store"
 import { FLOW_DRAFTS_SHAPE_ROUTE, FLOWS_SHAPE_ROUTE } from "./contract"
-import * as Following from "./following"
+import * as Following from "./following.vibe"
 import { restoreEditorCollection } from "./editorStorage.vibe"
 import { roundExecutionId, type RunStatus } from "./round"
 import { AnswerRow, Code, CODE, Draft, FlowRow, Form, FORM } from "./schema"
@@ -134,7 +135,7 @@ export class FlowsUiStore extends Context.Service<
      * Waits for the editors' rows to be restored and answers whether the editors may write. Unavailable device storage
      * disables them; retained rows are never overwritten.
      */
-    readonly editorReady: Effect.Effect<boolean>
+    readonly editorReady: boolean!!
     readonly form: Collection.Collection<Form, string>
     readonly answers: Collection.Collection<AnswerRow, string>
     readonly shown: Collection.Collection<Shown, string>
@@ -150,13 +151,13 @@ export class FlowsUiStore extends Context.Service<
     readonly roundRow: Live<typeof roundQuery>
     readonly confirmWithin: Duration.Input
     /** Reads the shown draft's round from this device's engine again. */
-    readonly readRound: Effect.Effect<void>
+    readonly readRound: void!!
     /**
      * What Draft again does after the draft's round `round`: start the first later round this device's engine holds
      * no run of, skipping rounds whose runs here failed or stopped; nothing when a later round started here is still
      * going or done but not delivered yet (`Pending`); or say the engine can't be read (`Unreadable`).
      */
-    readonly nextRound: (draftId: string, round: number) => Effect.Effect<Following.NextRound>
+    readonly nextRound: (draftId: string, round: number) => Following.NextRound!!
   }
 >()("@smthrs/mvp/flows/FlowsUiStore") {
   /**
@@ -166,16 +167,16 @@ export class FlowsUiStore extends Context.Service<
   static readonly layer = (config: FlowsUiConfig) =>
     Layer.effect(
       FlowsUiStore,
-      Effect.gen(function* () {
-        const engine = yield* BrowserEngine.BrowserEngine
-        const persistence = yield* Persistence.Persistence
+      effect {
+        const engine = try BrowserEngine.BrowserEngine
+        const persistence = try Persistence.Persistence
         const storageAvailable = Option.isSome(persistence.persistence)
         const editorPersistence = config.editorTabPersistent ? persistence : { ...persistence, persistence: Option.none() }
-        if (!storageAvailable) yield* Effect.logWarning("flows.editor.storage").pipe(
+        if (!storageAvailable) try Effect.logWarning("flows.editor.storage").pipe(
           Effect.annotateLogs({ collection: "device", outcome: "unavailable" }),
         )
         // An unretained tab uses session-only editors; record why without user content.
-        if (!config.editorTabPersistent) yield* Effect.logWarning("flows.editor.storage").pipe(
+        if (!config.editorTabPersistent) try Effect.logWarning("flows.editor.storage").pipe(
           Effect.annotateLogs({
             feature: "flows",
             collection: "editor-tab",
@@ -195,8 +196,10 @@ export class FlowsUiStore extends Context.Service<
           },
         })
         // A person's own flows and drafts: a tab signed out never asks for them.
-        const personal = signedInShapeSource(yield* ShapeSource.ShapeSource, yield* AuthStore)
-        const flows = yield* ElectricCollection.make<FlowRow>({
+        const source = try ShapeSource.ShapeSource
+        const auth = try AuthStore
+        const personal = try sync(() => signedInShapeSource(source, auth))
+        const flows = try ElectricCollection.make<FlowRow>({
           id: "flows",
           schema: FlowRow,
           getKey: (row) => row.id,
@@ -205,7 +208,7 @@ export class FlowsUiStore extends Context.Service<
           persist: { schemaVersion: 2 },
           shape: shape(FLOWS_SHAPE_ROUTE),
         }).pipe(Effect.provideService(ShapeSource.ShapeSource, personal))
-        const drafts = yield* ElectricCollection.make<Draft>({
+        const drafts = try ElectricCollection.make<Draft>({
           id: "flow-drafts",
           schema: Draft,
           getKey: (row) => row.id,
@@ -213,14 +216,14 @@ export class FlowsUiStore extends Context.Service<
           persist: { schemaVersion: 1 },
           shape: shape(FLOW_DRAFTS_SHAPE_ROUTE),
         }).pipe(Effect.provideService(ShapeSource.ShapeSource, personal))
-        const formSeed = (): Form => ({ id: formId, name: "", request: "", draftId: crypto.randomUUID(), seeded: false })
-        const form = yield* Collection.persisted<Form, string>({
+        const formSeed = (): Form => ({ id: formId, name: "", request: "", draftId: WebCrypto.defaultValue().randomUUID(), seeded: false })
+        const form = try Collection.persisted<Form, string>({
           id: "flow-form",
           schema: Form,
           getKey: (row) => row.id,
           schemaVersion: 1,
         }).pipe(Effect.provideService(Persistence.Persistence, editorPersistence))
-        const answers = yield* Collection.persisted<AnswerRow, string>({
+        const answers = try Collection.persisted<AnswerRow, string>({
           id: "flow-answers",
           schema: AnswerRow,
           getKey: answerKey,
@@ -229,7 +232,7 @@ export class FlowsUiStore extends Context.Service<
         const codeSeed = (): Code => ({
           id: codeId, name: "", state: "loading", revision: 0, source: "", text: "", busy: false, refusal: null,
         })
-        const code = yield* Collection.persisted<Code, string>({
+        const code = try Collection.persisted<Code, string>({
           id: "flow-code",
           schema: Code,
           getKey: (row) => row.id,
@@ -238,51 +241,51 @@ export class FlowsUiStore extends Context.Service<
         // The editors' rows restore in the background, each with its own deadline, so the app renders without waiting
         // for them; the editors write only once all three are back.
         const retained = config.editorTabPersistent && storageAvailable
-        const editor = yield* Collection.local<Editor, string>({
+        const editor = try Collection.local<Editor, string>({
           id: "flow-editor",
           schema: Editor,
           getKey: (row) => row.id,
           initialData: [{ id: EDITOR, state: "restoring" }],
         })
-        const verdict = yield* Deferred.make<boolean>()
-        const restore = Effect.gen(function* () {
-          const [formReady, answersReady, codeReady] = yield* Effect.all([
-            restoreEditorCollection("flow-form", Effect.gen(function* () {
-              yield* form.restored
-              const staged = config.formSnapshot?.read()
+        const verdict = try Deferred.make<boolean>()
+        const restore = effect {
+          const [formReady, answersReady, codeReady] = try Effect.all([
+            restoreEditorCollection("flow-form", effect {
+              try form.restored
+              const staged = try sync(() => config.formSnapshot?.read())
               const recovered = staged === undefined ? Option.none() : Schema.decodeUnknownOption(Form)(staged.value)
               if (Option.isSome(recovered) && recovered.value.id === formId) {
-                const existing = yield* form.get(formId)
-                yield* Effect.flatMap(Option.isNone(existing)
+                const existing = try form.get(formId)
+                try Effect.flatMap(Option.isNone(existing)
                   ? form.insert(recovered.value)
                   : form.update(formId, (row) => void Object.assign(row, recovered.value)), (write) => write.persisted)
-                config.formSnapshot!.acknowledge(staged!.token)
+                try sync(() => config.formSnapshot!.acknowledge(staged!.token))
               }
-              if (Option.isNone(yield* form.get(formId))) {
-                yield* Effect.flatMap(form.insert(formSeed()), (write) => write.persisted)
+              if (Option.isNone(try form.get(formId))) {
+                try Effect.flatMap(form.insert(formSeed()), (write) => write.persisted)
               }
-            }), EDITOR_RESTORE_WITHIN),
+            }, EDITOR_RESTORE_WITHIN),
             restoreEditorCollection("flow-answers", answers.restored, EDITOR_RESTORE_WITHIN),
-            restoreEditorCollection("flow-code", Effect.gen(function* () {
-              yield* code.restored
-              if (Option.isNone(yield* code.get(codeId))) {
-                yield* Effect.flatMap(code.insert(codeSeed()), (write) => write.persisted)
+            restoreEditorCollection("flow-code", effect {
+              try code.restored
+              if (Option.isNone(try code.get(codeId))) {
+                try Effect.flatMap(code.insert(codeSeed()), (write) => write.persisted)
               }
-            }), EDITOR_RESTORE_WITHIN),
+            }, EDITOR_RESTORE_WITHIN),
           ] as const, { concurrency: 3 })
           const available = formReady._tag === "Success" && answersReady._tag === "Success" && codeReady._tag === "Success"
           // A local collection refuses only a row its own schema rejects, which a state never is.
-          yield* Effect.orDie(editor.update(EDITOR, (row) => void (row.state = available ? (retained ? "available" : "session") : "unavailable")))
-          yield* Deferred.succeed(verdict, available)
-        })
-        yield* Effect.forkScoped(restore)
-        const shown = yield* Collection.local<Shown, string>({
+          try Effect.orDie(editor.update(EDITOR, (row) => void (row.state = available ? (retained ? "available" : "session") : "unavailable")))
+          try Deferred.succeed(verdict, available)
+        }
+        fork.scoped restore
+        const shown = try Collection.local<Shown, string>({
           id: "flow-shown",
           schema: Shown,
           getKey: (row) => row.id,
           initialData: [{ id: SHOWN, draftId: null, refusal: null, busy: false }],
         })
-        const round = yield* Collection.local<RoundRun, string>({
+        const round = try Collection.local<RoundRun, string>({
           id: "flow-round",
           schema: RoundRun,
           getKey: (row) => row.id,
@@ -290,29 +293,26 @@ export class FlowsUiStore extends Context.Service<
         })
 
         /** How this engine holds `runId`: its status, `absent` when it doesn't hold it, or none when it can't be read. */
-        const statusOf = (runId: string) =>
-          engine.inspect(runId, { limit: 1 }).pipe(
-            Effect.map((inspection): Option.Option<RoundStatus> => Option.some(inspection.run.status)),
-            Effect.catch((failure): Effect.Effect<Option.Option<RunStatus>> => {
+        const statusOf = effect (runId: string): Option.Option<RunStatus>!! => {
+          return map(engine.inspect(runId, { limit: 1 }), (inspection) => Option.some<RunStatus>(inspection.run.status))
+            catch effect (failure) => {
               const status = Following.refusedRead(failure)
               // A run the engine never held is `absent`; any other refusal is unreadable, logged by the engine's code.
-              return Option.isSome(status) ? Effect.succeed(status) : Effect.logWarning("flows.round.inspect").pipe(
-                Effect.annotateLogs({
-                  feature: "flows",
-                  outcome: "unreadable",
-                  errorCode: failure instanceof BrowserEngine.RequestRefused ? codeOf({ code: failure.error }) : codeOf(failure),
-                }),
-                Effect.as(status),
+              if (Option.isSome(status)) return status
+              const errorCode = try sync(() =>
+                failure instanceof BrowserEngine.RequestRefused ? codeOf({ code: failure.error }) : codeOf(failure)
               )
-            }),
-          )
+              try annotateLogs(logWarning("flows.round.inspect"), { feature: "flows", outcome: "unreadable", errorCode })
+              return status
+            }
+        }
 
         const readRound = Following.readRound({
-          shownRunId: Effect.gen(function* () {
-            const showing = Option.getOrThrow(yield* shown.get(SHOWN))
-            const draft = showing.draftId === null ? Option.none() : yield* drafts.get(showing.draftId)
+          shownRunId: effect {
+            const showing = Option.getOrThrow(try shown.get(SHOWN))
+            const draft = showing.draftId === null ? Option.none() : try drafts.get(showing.draftId)
             return Option.match(draft, { onNone: () => null, onSome: (row) => roundExecutionId(row.id, row.round) })
-          }),
+          },
           statusOf,
           write: (runId, status) =>
             Effect.asVoid(round.update(ROUND, (row) => {
@@ -324,20 +324,18 @@ export class FlowsUiStore extends Context.Service<
         const nextRound = (draftId: string, after: number) => Following.nextRound(statusOf, draftId, after)
 
         // Every batch of the engine's events for the shown draft, and every change of the drafts, reads the round again.
-        yield* Stream.merge(
+        const follow = Stream.merge(
           engine.events.pipe(Stream.map((event) => event.executionId)),
           drafts.changes().pipe(Stream.as("")),
         ).pipe(
           Stream.groupedWithin(Number.MAX_SAFE_INTEGER, FOLLOW_EVERY),
-          Stream.runForEach((ids) =>
-            Effect.gen(function* () {
-              const { draftId } = Option.getOrThrow(yield* shown.get(SHOWN))
-              if (draftId === null) return
-              if (ids.some((id) => id === "" || id.startsWith(`${draftId}:`))) yield* readRound
-            })
-          ),
-          Effect.forkScoped,
+          Stream.runForEach(effect (ids) => {
+            const { draftId } = Option.getOrThrow(try shown.get(SHOWN))
+            if (draftId === null) return
+            if (ids.some((id) => id === "" || id.startsWith(`${draftId}:`))) try readRound
+          }),
         )
+        fork.scoped follow
 
         return FlowsUiStore.of({
           flows,
@@ -356,16 +354,16 @@ export class FlowsUiStore extends Context.Service<
           round,
           readRound,
           nextRound,
-          draft: yield* draftQuery(shown, drafts),
-          flowList: yield* flowsQuery(flows),
-          draftList: yield* draftsQuery(drafts),
-          formRow: yield* formQuery(form, formId),
-          answerList: yield* answersQuery(answers, editorTabId),
-          codeRow: yield* codeQuery(code, codeId),
-          editorRow: yield* editorQuery(editor),
-          roundRow: yield* roundQuery(round),
+          draft: try draftQuery(shown, drafts),
+          flowList: try flowsQuery(flows),
+          draftList: try draftsQuery(drafts),
+          formRow: try formQuery(form, formId),
+          answerList: try answersQuery(answers, editorTabId),
+          codeRow: try codeQuery(code, codeId),
+          editorRow: try editorQuery(editor),
+          roundRow: try roundQuery(round),
           confirmWithin: config.confirmWithin ?? Duration.seconds(15),
         })
-      }),
+      },
     )
 }

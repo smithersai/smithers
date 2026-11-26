@@ -3,7 +3,7 @@
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Effect, Option } from "effect"
 import { describe, expect, test } from "vitest"
-import { nextRound, readRound, refusedRead } from "./following"
+import { nextRound, readRound, refusedRead } from "./following.vibe"
 import type { RunStatus } from "./round"
 
 /** An engine that holds `runs` by id, and can't be read for the ids in `unreadable`. */

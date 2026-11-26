@@ -1,0 +1,15 @@
+import { Seat, SeatResolver } from "@smthrs/agent"
+import type { Model } from "@smthrs/model"
+import { clientSeat } from "../model/clientSeat"
+import { DRAFT_MODEL_ROLE, FLOW_MODEL_ROLE } from "./contract"
+
+/** Resolves the model roles used to draft and run a person's flow. */
+export const promptSeats = (origin: string, model: Model.Model) =>
+  SeatResolver.layer({
+    resolve: effect (id) => {
+      if (id === FLOW_MODEL_ROLE || id === DRAFT_MODEL_ROLE) {
+        return try sync(() => Seat.make({ id, modelId: id, contextWindowTokens: 32_768, ...clientSeat(origin, id, model) }))
+      }
+      throw new Seat.SeatUnresolved({ seat: id, message: "No model seat is configured." })
+    },
+  })

@@ -1,4 +1,3 @@
-import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { RunsNavigation } from "../runs/actions"
@@ -19,7 +18,7 @@ import {
   setForm,
   startDraft,
 } from "./actions.vibe"
-import { FlowsUiStore } from "./store"
+import { FlowsUiStore } from "./store.vibe"
 
 // Your own flows as a frontend sees them (docs/features/flows.md#the-browser): live queries to read and plain functions
 // to act, with no Effect in sight. The routes' loaders call `openNew` and `openDraft`.
@@ -72,12 +71,12 @@ export class FlowsUi extends Context.Service<
   /** Binds the store's queries and the actions, run with the services this layer was built with. */
   static readonly layer = Layer.effect(
     FlowsUi,
-    Effect.gen(function* () {
-      const store = yield* FlowsUiStore
-      const context = yield* Effect.context<Services>()
+    effect {
+      const store = try FlowsUiStore
+      const context = try Effect.context<Services>()
       const { runPromise: promise, runFork } = runners(context, "flows")
-      const fork = (effect: Effect.Effect<void, never, Services>) => void runFork(effect)
-      const editor = (effect: Effect.Effect<void, never, Services>): Promise<void> => {
+      const dispatch = (effect: void!never!Services) => void runFork(effect)
+      const editor = (effect: void!never!Services): Promise<void> => {
         return promise(effect)
       }
       const changeForm = (fields: Parameters<typeof setForm>[0]) => {
@@ -107,20 +106,20 @@ export class FlowsUi extends Context.Service<
           startDraft: () => void editor(startDraft),
           setAnswer: (draftId, questionId, value) => void editor(setAnswer(draftId, questionId, value)),
           answer: () => void editor(answer),
-          draftAgain: () => fork(draftAgain),
-          deleteDraft: (draftId) => fork(deleteDraft(draftId)),
-          save: () => fork(save),
+          draftAgain: () => dispatch(draftAgain),
+          deleteDraft: (draftId) => dispatch(deleteDraft(draftId)),
+          save: () => dispatch(save),
           editCode: (name, text) => {
             const epoch = store.codeEpoch.current
             void editor(editCode(name, text, epoch))
           },
           saveCode: (confirmStale) => editor(saveCode(confirmStale)),
-          run: (name, revision) => fork(run(name, revision)),
-          edit: (name) => fork(edit(name)),
-          remove: (flowId) => fork(remove(flowId)),
+          run: (name, revision) => dispatch(run(name, revision)),
+          edit: (name) => dispatch(edit(name)),
+          remove: (flowId) => dispatch(remove(flowId)),
         },
       })
-    }),
+    },
   )
 }
 

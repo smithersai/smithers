@@ -1,5 +1,3 @@
-import { Effect, Metric } from "effect"
-
 // What your own flows count and log in the engine (docs/observability.md#your-own-flows, decision 0014 §7): one line,
 // one count and the outcome on the span per draft round, per save, per write and per load, and per realm evaluation and
 // host call of a run. Ids, counts and codes only: never a request, a file, a question, an answer, a description, a
@@ -51,78 +49,73 @@ export interface Round {
 }
 
 /** Records a finished round: `flow.author`, Warn when it failed, and its count. */
-export const recordRound = (round: Round) =>
-  Effect.gen(function* () {
-    yield* Metric.update(
-      Metric.withAttributes(authorRounds, {
-        scope: "person",
-        outcome: round.outcome,
-        ...(round.failure === null ? {} : { failure: round.failure }),
-      }),
-      1,
-    )
-    yield* Effect.annotateCurrentSpan({
-      "smithers.flow.outcome": round.outcome,
-      ...(round.failure === null ? {} : { "smithers.flow.failure": round.failure }),
-    })
-    yield* Effect.logWithLevel(round.outcome === "failed" ? "Warn" : "Info")("flow.author").pipe(
-      Effect.annotateLogs({
-        feature: "flows",
-        draftId: round.draftId,
-        round: round.round,
-        scope: "person",
-        target: "flow",
-        outcome: round.outcome,
-        ...(round.failure === null ? {} : { failure: round.failure }),
-        checks: round.checks.join(","),
-        questions: round.questions,
-        durationMs: round.durationMs,
-      }),
-    )
+export const recordRound = effect (round: Round) => {
+  try Metric.update(
+    Metric.withAttributes(authorRounds, {
+      scope: "person",
+      outcome: round.outcome,
+      ...(round.failure === null ? {} : { failure: round.failure }),
+    }),
+    1,
+  )
+  try annotateCurrentSpan({
+    "smithers.flow.outcome": round.outcome,
+    ...(round.failure === null ? {} : { "smithers.flow.failure": round.failure }),
   })
+  try (logWithLevel(round.outcome === "failed" ? "Warn" : "Info")("flow.author").pipe(
+    annotateLogs({
+      feature: "flows",
+      draftId: round.draftId,
+      round: round.round,
+      scope: "person",
+      target: "flow",
+      outcome: round.outcome,
+      ...(round.failure === null ? {} : { failure: round.failure }),
+      checks: round.checks.join(","),
+      questions: round.questions,
+      durationMs: round.durationMs,
+    }),
+  ))
+}
 
 /** Records a save: `flow.save` with its outcome, and its count. */
-export const recordSave = (draftId: string, outcome: string) =>
-  Effect.gen(function* () {
-    yield* Metric.update(Metric.withAttributes(saves, { outcome }), 1)
-    yield* Effect.logWithLevel(outcome === "saved" ? "Info" : "Warn")("flow.save").pipe(
-      Effect.annotateLogs({ feature: "flows", draftId, outcome }),
-    )
-  })
+export const recordSave = effect (draftId: string, outcome: string) => {
+  try Metric.update(Metric.withAttributes(saves, { outcome }), 1)
+  try (logWithLevel(outcome === "saved" ? "Info" : "Warn")("flow.save").pipe(
+    annotateLogs({ feature: "flows", draftId, outcome }),
+  ))
+}
 
 /** Records a write of a flow's code: `flow.write` with its outcome and where the code runs, and its count. */
-export const recordWrite = (outcome: string, placement: string) =>
-  Effect.gen(function* () {
-    yield* Metric.update(Metric.withAttributes(writes, { outcome, placement }), 1)
-    yield* Effect.logWithLevel(outcome === "written" ? "Info" : "Warn")("flow.write").pipe(
-      Effect.annotateLogs({ feature: "flows", outcome, placement }),
-    )
-  })
+export const recordWrite = effect (outcome: string, placement: string) => {
+  try Metric.update(Metric.withAttributes(writes, { outcome, placement }), 1)
+  try (logWithLevel(outcome === "written" ? "Info" : "Warn")("flow.write").pipe(
+    annotateLogs({ feature: "flows", outcome, placement }),
+  ))
+}
 
 /**
  * Records a load: `flow.run.load` with `realm` when the revision runs in the QuickJS realm, `sandbox` when it needs a
  * machine, or the failing check's code.
  */
 export const recordLoad = (outcome: string) =>
-  Effect.logWithLevel(outcome === "realm" ? "Debug" : "Warn")("flow.run.load").pipe(
-    Effect.annotateLogs({ feature: "flows", outcome }),
+  logWithLevel(outcome === "realm" ? "Debug" : "Warn")("flow.run.load").pipe(
+    annotateLogs({ feature: "flows", outcome }),
   )
 
 /** Records one realm evaluation: `flow.run.evaluate` with its outcome and the receipts it replayed, and its count. */
-export const recordEvaluate = (outcome: string, receipts: number) =>
-  Effect.gen(function* () {
-    yield* Metric.update(Metric.withAttributes(realmEvaluations, { outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ "smithers.flow.outcome": outcome })
-    yield* Effect.logWithLevel(["call", "agent", "complete"].includes(outcome) ? "Debug" : "Warn")("flow.run.evaluate").pipe(
-      Effect.annotateLogs({ feature: "flows", outcome, receipts }),
-    )
-  })
+export const recordEvaluate = effect (outcome: string, receipts: number) => {
+  try Metric.update(Metric.withAttributes(realmEvaluations, { outcome }), 1)
+  try annotateCurrentSpan({ "smithers.flow.outcome": outcome })
+  try (logWithLevel(["call", "agent", "complete"].includes(outcome) ? "Debug" : "Warn")("flow.run.evaluate").pipe(
+    annotateLogs({ feature: "flows", outcome, receipts }),
+  ))
+}
 
 /** Records one host call: `flow.run.call` with its kind and outcome, and its count. */
-export const recordCall = (kind: "agent" | "flow", outcome: string) =>
-  Effect.gen(function* () {
-    yield* Metric.update(Metric.withAttributes(realmCalls, { kind, outcome }), 1)
-    yield* Effect.logWithLevel(outcome === "ok" ? "Debug" : "Warn")("flow.run.call").pipe(
-      Effect.annotateLogs({ feature: "flows", kind, outcome }),
-    )
-  })
+export const recordCall = effect (kind: "agent" | "flow", outcome: string) => {
+  try Metric.update(Metric.withAttributes(realmCalls, { kind, outcome }), 1)
+  try (logWithLevel(outcome === "ok" ? "Debug" : "Warn")("flow.run.call").pipe(
+    annotateLogs({ feature: "flows", kind, outcome }),
+  ))
+}

@@ -17,11 +17,11 @@ import { Runs } from "../runs/runs"
 import { codeSaveable, formReady, savedRefusal, writtenRefusal } from "./actions.vibe"
 import { codePath, draftFailureWords, draftPath, FLOWS_PATH, NEW_FLOW_PATH, writeRefusalWords } from "./contract"
 import { type RunStatus, shownRound } from "./round"
-import { FlowsUi } from "./flowsUi"
+import { FlowsUi } from "./flowsUi.vibe"
 import { FORM } from "./schema"
 import { awaitEditorWrites, hasPendingEditorWrites } from "./editorWrites.vibe"
 import { placementOf, renderSource, SOURCE_PATH } from "./source"
-import { FlowsUiStore } from "./store"
+import { FlowsUiStore } from "./store.vibe"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {

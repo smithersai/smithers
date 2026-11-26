@@ -39,7 +39,7 @@ import { renderSource, SOURCE_PATH } from "./source"
 import { Retry } from "../runs/flows"
 import { FlowsClient } from "./api.vibe"
 import { FlowsRefused } from "./reference"
-import { call, evaluate, removeDraft, writeOutcome } from "./steps"
+import { call, evaluate, removeDraft, writeOutcome } from "./steps.vibe"
 
 const runtime = testFile("flows_ui")
 
@@ -952,6 +952,14 @@ describe("flow/run/evaluate and flow/run/call", () => {
     const exit = await evaluated(state(), broken)
     failedWith(exit, "FlowCodeFailed", "runtime_failed")
     expect(JSON.stringify(exit)).not.toContain("private-host-path")
+  })
+
+  test("malformed source text remains a digest defect", async () => {
+    const exit = await evaluated({ ...state(), source: "\ud800" })
+    expect(exit).toMatchObject({
+      _tag: "Failure",
+      cause: { reasons: [{ _tag: "Die", defect: { code: "invalid_text" } }] },
+    })
   })
 
   test("asks for the agent on the prompt the code rendered, and ends a run past its host calls", async () => {

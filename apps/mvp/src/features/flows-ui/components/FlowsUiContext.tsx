@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { FlowsUiView } from "../flowsUi"
+import type { FlowsUiView } from "../flowsUi.vibe"
 
 // What React components get: your own flows' live queries to render and plain actions to call
 // (features/flows-ui/flowsUi.ts).

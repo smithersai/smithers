@@ -7,7 +7,7 @@ import { runPath } from "../runs/contract"
 import { codePath, draftPath, FLOWS_PATH, MAX_REQUEST_CHARS, NAME_PATTERN, NEW_FLOW_PATH, RESERVED_NAMES } from "./contract"
 import { trackEditorPersistence } from "./editorWrites.vibe"
 import { roundExecutionId } from "./round"
-import { type Code, FlowsUiStore, type Form, SHOWN, type Shown } from "./store"
+import { type Code, FlowsUiStore, type Form, SHOWN, type Shown } from "./store.vibe"
 
 // What a person does with their own flows (decision 0014 §2 and §5, docs/features/flows.md#the-browser): the new-flow
 // form, a draft's answers, Save, Run, Edit, Code and Delete. Every act runs its flow through `FlowDispatch`, door

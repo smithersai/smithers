@@ -12,8 +12,8 @@ import { dispatches } from "../../flows/dispatch"
 import { Runs } from "../runs/runs"
 import { codePath, draftPath, FLOWS_PATH, SAVE_REFUSALS } from "./contract"
 import { draftAgain } from "./actions.vibe"
-import { FlowsUiStore, SHOWN } from "./store"
-import { FlowsUi } from "./flowsUi"
+import { FlowsUiStore, SHOWN } from "./store.vibe"
+import { FlowsUi } from "./flowsUi.vibe"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
