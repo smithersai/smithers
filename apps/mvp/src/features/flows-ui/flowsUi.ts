@@ -18,7 +18,7 @@ import {
   setAnswer,
   setForm,
   startDraft,
-} from "./actions"
+} from "./actions.vibe"
 import { FlowsUiStore } from "./store"
 
 // Your own flows as a frontend sees them (docs/features/flows.md#the-browser): live queries to read and plain functions

@@ -1,0 +1,423 @@
+import { answersToSend } from "@smthrs/ui"
+import { Deferred, Effect, Option, Stream } from "effect"
+import { WebCrypto } from "effect/crypto/WebCrypto"
+import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
+import { RunsNavigation } from "../runs/actions"
+import { runPath } from "../runs/contract"
+import { codePath, draftPath, FLOWS_PATH, MAX_REQUEST_CHARS, NAME_PATTERN, NEW_FLOW_PATH, RESERVED_NAMES } from "./contract"
+import { trackEditorPersistence } from "./editorWrites.vibe"
+import { roundExecutionId } from "./round"
+import { type Code, FlowsUiStore, type Form, SHOWN, type Shown } from "./store"
+
+// What a person does with their own flows (decision 0014 §2 and §5, docs/features/flows.md#the-browser): the new-flow
+// form, a draft's answers, Save, Run, Edit, Code and Delete. Every act runs its flow through `FlowDispatch`, door
+// `button`, the same declarations the agent and the slash commands run. A flow that takes a while (a draft round, a
+// run) is started and left to run: the page goes where it shows once the engine has recorded the run.
+
+/** Whether the form can start a draft: a name a person's flow may take, and something it should do. */
+export const formReady = (form: Pick<Form, "name" | "request">): boolean =>
+  NAME_PATTERN.test(form.name) &&
+  !(RESERVED_NAMES as ReadonlyArray<string>).includes(form.name) &&
+  form.request.trim().length > 0 &&
+  form.request.trim().length <= MAX_REQUEST_CHARS
+
+/** Changes the form's row in one transaction, so `change` reads the row the write replaces. */
+const changeForm = effect (change: (draft: Form) => void) => {
+  const { form, formId, editorReady } = try FlowsUiStore
+  // Tracked from the keystroke, through the editor's restore, to its receipt: an update never reloads in between.
+  try orDie(trackEditorPersistence(effect {
+    if (!(try editorReady)) return
+    const write = try form.update(formId, change)
+    try write.persisted
+  }))
+}
+
+/** Sets fields of the form. */
+export const setForm = (fields: Partial<Omit<Form, "id">>) => changeForm((draft) => void Object.assign(draft, fields))
+
+/** Sets fields of the shown draft's row. */
+const setShown = effect (fields: Partial<Omit<Shown, "id">>) => {
+  const { shown } = try FlowsUiStore
+  try orDie(shown.update(SHOWN, (draft) => void Object.assign(draft, fields)))
+}
+
+/** A slow action on one draft must not mark the next draft's card. */
+const setShownFor = effect (draftId: string, fields: Partial<Omit<Shown, "id">>) => {
+  const { shown } = try FlowsUiStore
+  try orDie(shown.update(SHOWN, (draft) => {
+    if (draft.draftId === draftId) Object.assign(draft, fields)
+  }))
+}
+
+/** Goes to `path` in this tab. */
+const go = effect (path: string) => {
+  const { navigate } = try RunsNavigation
+  return try sync(() => navigate(path))
+}
+
+/** A background draft action may navigate only while its card is still the page. */
+const onDraftPage = effect (draftId: string) => {
+  const { pathname } = try RunsNavigation
+  return try sync(() => pathname === undefined || pathname() === draftPath(draftId))
+}
+
+/**
+ * Starts `run` in the background and waits only until the engine has recorded it: `true` once it has, `false` when
+ * the engine refused it.
+ */
+const started = effect (run: (admitted: Deferred.Deferred<void, DispatchFailed>) => unknown!unknown) => {
+  const admitted = try Deferred.make<void, DispatchFailed>()
+  fork.detached ignore(run(admitted))
+  return as(Deferred.await(admitted), true) catch () => false
+}
+
+/** The new-flow route's loader: keep typed text; clear only an untouched name supplied by an Edit link. */
+export const openNew = effect (name: string | undefined) => {
+  const { form, formId, editorReady } = try FlowsUiStore
+  if (!(try editorReady)) return
+  const current = Option.getOrThrow(try form.get(formId))
+  if (name === undefined) {
+    if (current.seeded && current.request === "") try setForm({ name: "", seeded: false })
+    return
+  }
+  // A typed request belongs to the person, not to the next Edit link they happen to open.
+  if (current.request !== "") return
+  if (current.name !== name) try setForm({ name, request: "", seeded: true })
+  else if (current.request === "" && !current.seeded) try setForm({ seeded: true })
+}
+
+/**
+ * Draft: round 0 of a new draft, from the form; its card opens once the engine has the round. The draft's id is the
+ * form's, so a second press before the first is admitted starts the same execution, which the engine runs once; the
+ * form then takes a new one. It clears only the fields still holding the text it sent: what the person typed while the
+ * engine admitted the round stays in the form.
+ */
+export const startDraft = effect {
+  const store = try FlowsUiStore
+  if (!(try store.editorReady)) return
+  const form = Option.getOrThrow(try store.form.get(store.formId))
+  if (!formReady(form)) return
+  const { draftId } = form
+  const flows = try FlowDispatch
+  const admitted = try started(effect (admitted) =>
+    try flows.dispatch("flow/new", { name: form.name, request: form.request.trim() }, {
+      door: "button",
+      executionId: try sync(() => roundExecutionId(draftId, 0)),
+      admitted,
+    })
+  )
+  if (!admitted) return
+  try changeForm((draft) => {
+    if (draft.draftId !== draftId) return
+    Object.assign(draft, { draftId: WebCrypto.defaultValue().randomUUID() })
+    if (draft.name === form.name) Object.assign(draft, { name: "", seeded: false })
+    if (draft.request === form.request) Object.assign(draft, { request: "" })
+  })
+  try go(try sync(() => draftPath(draftId)))
+}
+
+/** The draft route's loader: shows `draftId`, with no refusal, and reads its round from this device's engine. */
+export const openDraft = effect (draftId: string) => {
+  try setShown({ draftId, refusal: null, busy: false })
+  return try (try FlowsUiStore).readRound
+}
+
+/** An answer typed into a question's field. */
+export const setAnswer = effect (draftId: string, questionId: string, value: string) => {
+  const { answers, editorTabId, editorReady } = try FlowsUiStore
+  const id = `${editorTabId}:${draftId}:${questionId}`
+  try orDie(trackEditorPersistence(effect {
+    if (!(try editorReady)) return
+    const current = try answers.get(id)
+    const write = try (Option.isNone(current)
+      ? answers.insert({ id, tabId: editorTabId, draftId, questionId, value })
+      : answers.update(id, (draft) => void (draft.value = value)))
+    try write.persisted
+  }))
+}
+
+/** The shown draft and the person's unsent answers to it, by question id, with the rows they were read from. */
+const shownDraft = effect {
+  const store = try FlowsUiStore
+  const shown = Option.getOrThrow(try store.shown.get(SHOWN))
+  if (shown.draftId === null) return Option.none()
+  const draft = try store.drafts.get(shown.draftId)
+  const answers = (try store.answers.toArray).filter((answer) => answer.tabId === store.editorTabId && answer.draftId === shown.draftId)
+  return Option.map(draft, (draft) => ({
+    draft,
+    answers: Object.fromEntries(answers.map((answer) => [answer.questionId, answer.value])),
+    rows: answers,
+  }))
+}
+
+/**
+ * Answer: the changed answers, and each blocking question nobody answered at the value its field shows (its default
+ * until the person types), start the draft's next round. Once the engine admits it, it deletes only the answer rows
+ * still holding the value it sent: a correction typed meanwhile stays in its field.
+ */
+export const answer = effect {
+  if (!(try (try FlowsUiStore).editorReady)) return
+  const shown = try shownDraft
+  if (Option.isNone(shown)) return
+  const { draft, answers, rows } = shown.value
+  const changed = try sync(() => answersToSend(draft.questions, answers))
+  if (changed.length === 0) return
+  const flows = try FlowDispatch
+  const admitted = try started((admitted) =>
+    flows.dispatch("flow/answer", { draftId: draft.id, round: draft.round, answers: changed }, { door: "button", admitted })
+  )
+  if (!admitted || rows.length === 0) return
+  const store = try FlowsUiStore
+  const sent = new Map(rows.map((row) => [row.id, row.value]))
+  const unchanged = (try store.answers.toArray).filter((row) => sent.get(row.id) === row.value).map((row) => row.id)
+  if (unchanged.length > 0) try orDie(trackEditorPersistence(effect {
+    const write = try store.answers.delete(unchanged)
+    try write.persisted
+  }))
+}
+
+/**
+ * Draft again: the shown draft's next round, from its request and what it drafted so far, at the first round after its
+ * own that this device's engine holds no run of; a round already started here is left to run. Its card follows the
+ * new round once the device has its row.
+ */
+export const draftAgain = effect {
+  const shown = try shownDraft
+  if (Option.isNone(shown)) return
+  const { draft } = shown.value
+  const store = try FlowsUiStore
+  const next = try store.nextRound(draft.id, draft.round)
+  // A round started here already, its row on the way: a second press starts nothing.
+  if (next._tag === "Pending") return
+  if (next._tag === "Unreadable") return try setShownFor(draft.id, { refusal: "again_unavailable" })
+  const flows = try FlowDispatch
+  const admitted = try started(effect (admitted) =>
+    // `flow/new` names every draft it writes.
+    try flows.dispatch("flow/new", { name: draft.name!, request: draft.request }, {
+      door: "button",
+      executionId: try sync(() => roundExecutionId(draft.id, next.round)),
+      admitted,
+    })
+  )
+  if (!admitted) try setShownFor(draft.id, { refusal: "again_unavailable" })
+}
+
+/** Delete: the draft `draftId`, its round stopped here; the list of flows opens once it is gone. */
+export const deleteDraft = effect (draftId: string) => {
+  const dispatched = try result((try FlowDispatch).dispatch("flow/draft/delete", { draftId }, { door: "button" }))
+  if (dispatched._tag === "Success" && dispatched.success._tag === "Done") {
+    if (try onDraftPage(draftId)) try go(FLOWS_PATH)
+    return
+  }
+  const { draftId: showing } = Option.getOrThrow(try (try FlowsUiStore).shown.get(SHOWN))
+  if (showing === draftId) try setShownFor(draftId, { refusal: "delete_unavailable" })
+}
+
+/** What `flow/save` refused, as the code the card shows: `name_taken`, the refusal's own code, else `unavailable`. */
+export const savedRefusal = (error: { readonly _tag: string; readonly code?: string }) =>
+  error._tag === "@smthrs/mvp/flows/NameTaken" ? "name_taken" : error.code ?? "unavailable"
+
+/** Save: the shown draft becomes the person's flow; the list of flows opens. */
+export const save = effect {
+  const shown = try shownDraft
+  if (Option.isNone(shown)) return
+  const draftId = shown.value.draft.id
+  try setShownFor(draftId, { busy: true, refusal: null })
+  const dispatched = try result((try FlowDispatch).dispatch("flow/save", { draftId }, { door: "button" }))
+  if (dispatched._tag === "Failure") return try setShownFor(draftId, { busy: false, refusal: "unavailable" })
+  const ended = dispatched.success
+  if (ended._tag === "Failed") return try setShownFor(draftId, { busy: false, refusal: savedRefusal(ended.error) })
+  try synced(ended.value)
+  try setShownFor(draftId, { busy: false })
+  if (try onDraftPage(draftId)) try go(FLOWS_PATH)
+}
+
+/**
+ * Waits until this device has the saved revision, so the list Save opens shows it: Electric delivers it, or the device
+ * has it. One Electric doesn't deliver within the store's `confirmWithin` is logged `flow.save.unconfirmed`, and the
+ * list opens anyway: the save is done, and the row follows.
+ */
+const synced = effect (saved: { readonly flowId: string; readonly revision: number }) => {
+  const { flows, confirmWithin } = try FlowsUiStore
+  // With the rows the device has as the first batch, so a row that arrived before the wait isn't missed.
+  const delivered = try (flows.changes({ initial: true })
+    |> Stream.mapEffect(%, () => flows.get(saved.flowId))
+    |> Stream.filter(%, (row) => Option.isSome(row) && row.value.revision >= saved.revision)
+    |> Stream.runHead(%)
+    |> timeoutOption(%, confirmWithin))
+  if (Option.isNone(delivered)) {
+    try annotateLogs(logWarning("flow.save.unconfirmed"), { feature: "flows" })
+  }
+}
+
+/** Applies a result only while the same opening still owns the editor. */
+const changeCodeIf = effect (epoch: number, name: string | undefined, change: (draft: Code) => void) => {
+  const { code, codeId, codeEpoch, editorReady } = try FlowsUiStore
+  try orDie(trackEditorPersistence(effect {
+    if (!(try editorReady)) return
+    const write = try code.update(codeId, (draft) => {
+      if (codeEpoch.current === epoch && (name === undefined || draft.name === name)) change(draft)
+    })
+    try write.persisted
+  }))
+}
+
+const setCodeIf = (epoch: number, name: string | undefined, fields: Partial<Omit<Code, "id">>) =>
+  changeCodeIf(epoch, name, (draft) => void Object.assign(draft, fields))
+
+/** The code row. */
+const codeRow = effect {
+  const { code, codeId } = try FlowsUiStore
+  return Option.getOrThrow(try code.get(codeId))
+}
+
+/**
+ * The code route's loader: reads the flow `name`'s latest code through `flow/read` and shows it. A read that ends after
+ * the tab moved on to another flow's code changes nothing.
+ */
+export const openCode = effect (name: string, expectedEpoch?: number) => {
+  const store = try FlowsUiStore
+  if (!(try store.editorReady)) return
+  if (expectedEpoch !== undefined && store.codeEpoch.current !== expectedEpoch) return
+  const epoch = ++store.codeEpoch.current
+  let before = try codeRow
+  if (before.name !== name) {
+    if (before.name !== "" && before.state === "read") {
+      // Hide the outgoing editor before the SQLite stash waits. A last keystroke before this write is read below;
+      // one after it cannot edit a page the person is leaving.
+      try setCodeIf(epoch, before.name, { state: "loading" })
+      if (store.codeEpoch.current !== epoch) return
+      before = try codeRow
+    }
+    if (before.name !== "" && before.text !== before.source) {
+      const id = `${store.codeId}:draft:${before.name}`
+      const kept = { ...before, id, state: "read" as const, busy: false }
+      const existing = try store.code.get(id)
+      try orDie(trackEditorPersistence(effect {
+        const write = try (Option.isNone(existing)
+          ? store.code.insert(kept)
+          : store.code.update(id, (row) => void Object.assign(row, kept)))
+        try write.persisted
+      }))
+      if (store.codeEpoch.current !== epoch) return
+    }
+    const stashId = `${store.codeId}:draft:${name}`
+    const stashed = try store.code.get(stashId)
+    if (store.codeEpoch.current !== epoch) return
+    if (Option.isSome(stashed)) {
+      const saved = stashed.value
+      try setCodeIf(epoch, undefined, {
+        name, state: saved.state, revision: saved.revision, source: saved.source,
+        text: saved.text, busy: false, refusal: saved.refusal,
+      })
+      if (store.codeEpoch.current !== epoch) return
+      try orDie(trackEditorPersistence(effect {
+        const write = try store.code.delete(stashId)
+        try write.persisted
+      }))
+      if (store.codeEpoch.current !== epoch) return
+      before = { ...saved, id: store.codeId }
+    }
+  }
+  if (store.codeEpoch.current !== epoch) return
+  const editing = before.name === name && before.text !== before.source
+  if (editing) try setCodeIf(epoch, name, { busy: false })
+  else try setCodeIf(epoch, undefined, { name, state: "loading", revision: 0, source: "", text: "", busy: false, refusal: null })
+  if (store.codeEpoch.current !== epoch) return
+  const dispatched = try result((try FlowDispatch).dispatch("flow/read", { name }, { door: "button" }))
+  if (store.codeEpoch.current !== epoch || (try codeRow).name !== name) return
+  const ended = dispatched._tag === "Success" ? dispatched.success : undefined
+  if (ended?._tag !== "Done") {
+    // The engine refused the read, or ChatApi did: the flow isn't the person's, or the read failed.
+    const notFound = ended?._tag === "Failed" && ended.error._tag === "@smthrs/mvp/flows/FlowNotFound"
+    return try setCodeIf(epoch, name, editing
+      ? { state: "read", busy: false, refusal: notFound ? "not_found" : "unavailable" }
+      : { state: notFound ? "not_found" : "unavailable" })
+  }
+  if (editing) {
+    // Keep unsaved text across a reload. Adopt the current server revision but require an explicit overwrite press
+    // before that text can replace a newer revision.
+    return try changeCodeIf(epoch, name, (draft) => {
+      const unchanged = draft.revision === ended.value.revision && draft.source === ended.value.source
+      const alreadySaved = draft.text === ended.value.source
+      const wasStale = draft.refusal === "stale"
+      Object.assign(draft, {
+        state: "read",
+        busy: false,
+        revision: ended.value.revision,
+        source: ended.value.source,
+        refusal: alreadySaved || (unchanged && !wasStale) ? null : "stale",
+      })
+    })
+  }
+  try setCodeIf(epoch, name, { state: "read", revision: ended.value.revision, source: ended.value.source, text: ended.value.source })
+}
+
+/** A keystroke from an earlier code page cannot edit the flow opened after it. */
+export const editCode = (name: string, text: string, epoch: number) =>
+  changeCodeIf(epoch, name, (draft) => {
+    if (draft.state === "read") Object.assign(draft, { text })
+  })
+
+/** What `flow/write` refused, as the code the page shows: a check as `check:<check>`, ChatApi's code, else `unavailable`. */
+export const writtenRefusal = (error: { readonly _tag: string; readonly code?: string; readonly check?: string }) =>
+  error.check !== undefined
+    ? `check:${error.check}`
+    : error.code ?? (error._tag === "@smthrs/mvp/flows/FlowNotFound" ? "not_found" : "unavailable")
+
+/** Whether the shown code can be saved: read, changed, not empty, and no write in flight. */
+export const codeSaveable = (code: Pick<Code, "state" | "busy" | "text" | "source">): boolean =>
+  code.state === "read" && !code.busy && code.text !== code.source && code.text.trim() !== ""
+
+/** Save: the edited code becomes the flow's next revision through `flow/write`; the list of flows opens. */
+export const saveCode = effect (confirmStale = false) => {
+  const store = try FlowsUiStore
+  if (!(try store.editorReady)) return
+  const epoch = store.codeEpoch.current
+  const code = try codeRow
+  if (store.codeEpoch.current !== epoch) return
+  if (!codeSaveable(code)) return
+  if (code.refusal === "stale" && !confirmStale) return
+  try setCodeIf(epoch, code.name, { busy: true, refusal: null })
+  if (store.codeEpoch.current !== epoch) return
+  const dispatched = try result((try FlowDispatch).dispatch(
+    "flow/write",
+    { name: code.name, revision: code.revision, source: code.text },
+    { door: "button" },
+  ))
+  if (store.codeEpoch.current !== epoch || (try codeRow).name !== code.name) return
+  if (dispatched._tag === "Failure") return try setCodeIf(epoch, code.name, { busy: false, refusal: "unavailable" })
+  const ended = dispatched.success
+  if (ended._tag === "Failed") {
+    const refusal = writtenRefusal(ended.error)
+    try setCodeIf(epoch, code.name, { busy: false, refusal })
+    if (refusal === "stale" && store.codeEpoch.current === epoch && (try codeRow).name === code.name) try openCode(code.name, epoch)
+    return
+  }
+  try synced(ended.value)
+  if (store.codeEpoch.current !== epoch || (try codeRow).name !== code.name) return
+  try setCodeIf(epoch, code.name, { busy: false, revision: ended.value.revision, source: code.text })
+  const current = try codeRow
+  const route = try RunsNavigation
+  if (store.codeEpoch.current === epoch && current.name === code.name && current.text === code.text &&
+      (try sync(() => route.pathname === undefined || route.pathname() === codePath(code.name)))) try go(FLOWS_PATH)
+}
+
+/** Run: a run of the person's flow `name` at `revision`, whose page opens once the engine has it. */
+export const run = effect (name: string, revision: number) => {
+  const runId = try sync(() => WebCrypto.defaultValue().randomUUID())
+  const flows = try FlowDispatch
+  const admitted = try started((admitted) =>
+    flows.dispatch("flow/run", { name, revision }, { door: "button", executionId: runId, admitted })
+  )
+  if (admitted) try go(try sync(() => runPath(runId)))
+}
+
+/** Edit: a new draft of the flow `name`, from its latest revision. */
+export const edit = (name: string) => go(`${NEW_FLOW_PATH}?name=${encodeURIComponent(name)}`)
+
+/** Delete: the person's flow `flowId`. */
+export const remove = effect (flowId: string) => {
+  const flows = try FlowDispatch
+  try ignore(flows.dispatch("flow/delete", { flowId }, { door: "button" }))
+}

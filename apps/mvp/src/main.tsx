@@ -24,7 +24,7 @@ import { failedWorker, memoryStorage, pageWipe, SIGN_OUT_LOCK, unwiped } from ".
 import { claimEditorTabId } from "./device/editorTab"
 import { olderLeader, watchLeader } from "./device/olderLeader"
 import { deviceRegistry } from "./device/registry"
-import { awaitEditorWrites, hasFailedEditorWrite, hasPendingEditorWrites } from "./features/flows-ui/editorWrites"
+import { awaitEditorWrites, hasFailedEditorWrite, hasPendingEditorWrites } from "./features/flows-ui/editorWrites.vibe"
 import "./styles/fonts.css"
 import { markStage } from "./bootStages.vibe"
 import { followingOutbox } from "./outboxFollower"

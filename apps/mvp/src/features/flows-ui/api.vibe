@@ -29,7 +29,7 @@ const decodeRefusal = Schema.decodeUnknownOption(Schema.fromJsonString(FlowsRefu
 export class FlowsClient extends Context.Service<
   FlowsClient,
   {
-    readonly list: Effect.Effect<FlowList, FlowsUnavailable | FlowsRefused>
+    readonly list: FlowList!(FlowsUnavailable | FlowsRefused)
     /**
      * One revision of the flow `name`, the latest unless `revision`, of the flow `flowId` when set (deleted or not);
      * `FlowNotFound` when there is none.
@@ -38,26 +38,26 @@ export class FlowsClient extends Context.Service<
       name: string,
       revision?: number,
       flowId?: string,
-    ) => Effect.Effect<FlowSource, FlowsUnavailable | FlowsRefused | FlowNotFound>
-    readonly draft: (draftId: string) => Effect.Effect<Draft, FlowsUnavailable | FlowsRefused>
+    ) => FlowSource!(FlowsUnavailable | FlowsRefused | FlowNotFound)
+    readonly draft: (draftId: string) => Draft!(FlowsUnavailable | FlowsRefused)
     /** The person's drafts not saved yet, newest first. */
-    readonly drafts: Effect.Effect<DraftList, FlowsUnavailable | FlowsRefused>
-    readonly writeDraft: (draftId: string, write: DraftWrite) => Effect.Effect<void, FlowsUnavailable | FlowsRefused>
-    readonly answer: (draftId: string, answers: DraftAnswers) => Effect.Effect<void, FlowsUnavailable | FlowsRefused>
-    readonly save: (request: SaveRequest) => Effect.Effect<Saved, FlowsUnavailable | FlowsRefused>
+    readonly drafts: DraftList!(FlowsUnavailable | FlowsRefused)
+    readonly writeDraft: (draftId: string, write: DraftWrite) => void!(FlowsUnavailable | FlowsRefused)
+    readonly answer: (draftId: string, answers: DraftAnswers) => void!(FlowsUnavailable | FlowsRefused)
+    readonly save: (request: SaveRequest) => Saved!(FlowsUnavailable | FlowsRefused)
     /** Code the person wrote as their flow's next revision; `FlowNotFound` when they have no such flow. */
-    readonly write: (request: WriteRequest) => Effect.Effect<Saved, FlowsUnavailable | FlowsRefused | FlowNotFound>
-    readonly remove: (flowId: string) => Effect.Effect<boolean, FlowsUnavailable | FlowsRefused>
+    readonly write: (request: WriteRequest) => Saved!(FlowsUnavailable | FlowsRefused | FlowNotFound)
+    readonly remove: (flowId: string) => boolean!(FlowsUnavailable | FlowsRefused)
     /** Deletes the draft `draftId`: `false` when it isn't the person's or is gone already. */
-    readonly deleteDraft: (draftId: string) => Effect.Effect<boolean, FlowsUnavailable | FlowsRefused>
+    readonly deleteDraft: (draftId: string) => boolean!(FlowsUnavailable | FlowsRefused)
   }
 >()("@smthrs/mvp/flows/FlowsClient") {
   /** The client over the host's `HttpClient`, each request answered within `within`. */
   static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
     Layer.effect(
       FlowsClient,
-      Effect.gen(function* () {
-        const client = yield* HttpClient.HttpClient
+      effect {
+        const client = try HttpClient.HttpClient
         const within = options.within ?? REQUEST_WITHIN
 
         /** One exchange: `request`'s answer decoded by `schema`, a 404 as `notFound` when given. */
@@ -65,36 +65,34 @@ export class FlowsClient extends Context.Service<
           request: HttpClientRequest.HttpClientRequest,
           schema: Schema.Decoder<A>,
           notFound?: E,
-        ): Effect.Effect<A, FlowsUnavailable | FlowsRefused | E> =>
-          // Every route answers JSON: a `{ code }` refusal, or the value `schema` reads.
-          Effect.gen(function* () {
-            const response = yield* client.execute(request).pipe(Effect.mapError(() => new FlowsUnavailable({})))
-            yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-            if (response.status === 404 && notFound !== undefined) return yield* Effect.fail(notFound)
+        ): A!(FlowsUnavailable | FlowsRefused | E) =>
+          // Interrupting the request aborts its fetch, so a stalled body stops too.
+          timeoutOrElse(effect {
+            // Every route answers JSON: a `{ code }` refusal, or the value `schema` reads.
+            const response = try mapError(client.execute(request), () => new FlowsUnavailable({}))
+            try annotateCurrentSpan({ "http.response.status_code": response.status })
+            if (response.status === 404 && notFound !== undefined) throw notFound
             if (response.status >= 400 && response.status < 500) {
               // A body that can't be read reads as no code.
-              const body = decodeRefusal(Option.getOrUndefined(yield* Effect.option(response.text)))
-              return yield* new FlowsRefused({
+              const body = decodeRefusal(Option.getOrUndefined(try option(response.text)))
+              throw new FlowsRefused({
                 status: response.status,
-                code: Option.match(body, { onNone: () => "refused", onSome: ({ code }) => code }),
+                code: Option.isNone(body) ? "refused" : body.value.code,
               })
             }
-            if (response.status !== 200) return yield* new FlowsUnavailable({ status: response.status })
-            return yield* response.json.pipe(
-              Effect.flatMap(Schema.decodeUnknownEffect(schema)),
-              Effect.mapError(() => new FlowsUnavailable({ status: response.status })),
-            )
-          }).pipe(
-            // Interrupting the request aborts its fetch, so a stalled body stops too.
-            Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new FlowsUnavailable({})) }),
-          )
+            if (response.status !== 200) throw new FlowsUnavailable({ status: response.status })
+            return try mapError(effect {
+              const json = try response.json
+              return try Schema.decodeUnknownEffect(schema)(json)
+            }, () => new FlowsUnavailable({ status: response.status }))
+          }, { duration: within, orElse: () => fail(new FlowsUnavailable({})) })
 
         const post = (path: string, body: unknown) =>
           HttpClientRequest.post(`${options.origin}${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body))
         const get = (path: string) => HttpClientRequest.get(`${options.origin}${path}`)
 
         return FlowsClient.of({
-          list: exchange(get(FLOWS_ROUTE), FlowList).pipe(Effect.withSpan("flow.client.list")),
+          list: withSpan(exchange(get(FLOWS_ROUTE), FlowList), "flow.client.list"),
           source: (name, revision, flowId) =>
             exchange(
               get(
@@ -104,41 +102,41 @@ export class FlowsClient extends Context.Service<
               ),
               FlowSource,
               new FlowNotFound(),
-            ).pipe(Effect.withSpan("flow.client.source")),
-          draft: (draftId) => exchange(get(`${FLOW_DRAFTS_ROUTE}/${draftId}`), Draft).pipe(Effect.withSpan("flow.client.draft")),
-          drafts: exchange(get(FLOW_DRAFTS_ROUTE), DraftList).pipe(Effect.withSpan("flow.client.drafts")),
+            ).pipe(withSpan("flow.client.source")),
+          draft: (draftId) => exchange(get(`${FLOW_DRAFTS_ROUTE}/${draftId}`), Draft).pipe(withSpan("flow.client.draft")),
+          drafts: withSpan(exchange(get(FLOW_DRAFTS_ROUTE), DraftList), "flow.client.drafts"),
           writeDraft: (draftId, write) =>
             exchange(post(`${FLOW_DRAFTS_ROUTE}/${draftId}`, write), Written).pipe(
-              Effect.asVoid,
-              Effect.withSpan("flow.client.write_draft"),
+              asVoid,
+              withSpan("flow.client.write_draft"),
             ),
           answer: (draftId, answers) =>
             exchange(post(`${FLOW_DRAFTS_ROUTE}/${draftId}/answers`, answers), Written).pipe(
-              Effect.asVoid,
-              Effect.withSpan("flow.client.answer"),
+              asVoid,
+              withSpan("flow.client.answer"),
             ),
-          save: (request) => exchange(post(`${FLOWS_ROUTE}/save`, request), Saved).pipe(Effect.withSpan("flow.client.save")),
+          save: (request) => exchange(post(`${FLOWS_ROUTE}/save`, request), Saved).pipe(withSpan("flow.client.save")),
           write: (request) =>
             exchange(post(`${FLOWS_ROUTE}/write`, request), Saved, new FlowNotFound()).pipe(
-              Effect.withSpan("flow.client.write"),
+              withSpan("flow.client.write"),
             ),
           remove: (flowId) =>
             exchange(post(`${FLOWS_ROUTE}/${flowId}/delete`, {}), Written, new FlowNotFound()).pipe(
-              Effect.as(true),
+              as(true),
               // Not the person's, or deleted already: nothing to delete.
               // expected: a flow already gone answers false
-              Effect.catchTag("@smthrs/mvp/flows/FlowNotFound", () => Effect.succeed(false)),
-              Effect.withSpan("flow.client.delete"),
+              catchTag("@smthrs/mvp/flows/FlowNotFound", () => Effect.succeed(false)),
+              withSpan("flow.client.delete"),
             ),
           deleteDraft: (draftId) =>
             exchange(post(`${FLOW_DRAFTS_ROUTE}/${draftId}/delete`, {}), Written, new FlowNotFound()).pipe(
-              Effect.as(true),
+              as(true),
               // Gone already, or never the person's to read.
               // expected: a draft already gone answers false
-              Effect.catchTag("@smthrs/mvp/flows/FlowNotFound", () => Effect.succeed(false)),
-              Effect.withSpan("flow.client.delete_draft"),
+              catchTag("@smthrs/mvp/flows/FlowNotFound", () => Effect.succeed(false)),
+              withSpan("flow.client.delete_draft"),
             ),
         })
-      }),
+      },
     )
 }

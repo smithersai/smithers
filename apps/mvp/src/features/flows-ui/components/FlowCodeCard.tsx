@@ -1,6 +1,6 @@
 import { Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Skeleton, Textarea } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { codeSaveable } from "../actions"
+import { codeSaveable } from "../actions.vibe"
 import { COULDNT_READ_FLOW, DEVICE_STORAGE_UNAVAILABLE, SESSION_STORAGE, NEEDS_SANDBOX, NO_SUCH_FLOW, SAVE, writeRefusalWords } from "../contract"
 import { placementOf, SOURCE_PATH } from "../source"
 import { useFlowsUi } from "./FlowsUiContext"

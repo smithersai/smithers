@@ -37,7 +37,7 @@ import { DRAFT_ID_NAMESPACE, MAX_REALM_CALLS } from "./contract"
 import { roundExecutionId, roundOf } from "./round"
 import { renderSource, SOURCE_PATH } from "./source"
 import { Retry } from "../runs/flows"
-import { FlowsClient } from "./api"
+import { FlowsClient } from "./api.vibe"
 import { FlowsRefused } from "./reference"
 import { call, evaluate, removeDraft, writeOutcome } from "./steps"
 

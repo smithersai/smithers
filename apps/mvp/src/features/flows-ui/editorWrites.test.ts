@@ -1,6 +1,6 @@
 import { Effect, Fiber, Latch } from "effect"
 import { expect, test, vi } from "vitest"
-import { awaitEditorWrites, hasFailedEditorWrite, hasPendingEditorWrites, trackEditorPersistence } from "./editorWrites"
+import { awaitEditorWrites, hasFailedEditorWrite, hasPendingEditorWrites, trackEditorPersistence } from "./editorWrites.vibe"
 
 test("a PWA update waits for an editor persistence receipt and parks after one fails", async () => {
   const held = await Effect.runPromise(Latch.make(false))

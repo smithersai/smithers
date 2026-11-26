@@ -6,17 +6,19 @@ const pending = new Set<Promise<void>>()
 let failed = false
 
 /** Keeps a page alive through one SQLite receipt, and remembers a receipt that rejected. */
-export const trackEditorPersistence = <A, E, R>(write: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-  Effect.gen(function* () {
+export const trackEditorPersistence = effect <A, E, R>(write: A!E!R): A!E!R => {
+  const { receipt, release } = try sync(() => {
     let release!: () => void
     const receipt = new Promise<void>((resolve) => { release = resolve })
-    pending.add(receipt)
-    return yield* write.pipe(Effect.onExit((exit) => Effect.sync(() => {
-      if (Exit.isFailure(exit) && !Exit.hasInterrupts(exit)) failed = true
-      pending.delete(receipt)
-      release()
-    })))
+    return { receipt, release }
   })
+  pending.add(receipt)
+  return try onExit(write, (exit) => sync(() => {
+    if (Exit.isFailure(exit) && !Exit.hasInterrupts(exit)) failed = true
+    pending.delete(receipt)
+    release()
+  }))
+}
 
 /** A PWA update's reload barrier; it cannot run between a keystroke and that keystroke's durable receipt. */
 export const awaitEditorWrites = async (): Promise<void> => {

@@ -1,6 +1,6 @@
 import { EmptyState, FlowDraftView, Skeleton } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { formReady } from "../actions"
+import { formReady } from "../actions.vibe"
 import { DEVICE_STORAGE_UNAVAILABLE, SESSION_STORAGE, MINE } from "../contract"
 import { nameHint, requestHint } from "../hints"
 import { useFlowsUi } from "./FlowsUiContext"

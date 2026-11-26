@@ -1,6 +1,6 @@
 import { Effect, Logger } from "effect"
 import { expect, test } from "vitest"
-import { restoreEditorCollection } from "./editorStorage"
+import { restoreEditorCollection } from "./editorStorage.vibe"
 
 test.each(["flow-form", "flow-answers", "flow-code"] as const)("%s records success, error and timeout without content", async (collection) => {
   const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []

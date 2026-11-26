@@ -5,7 +5,7 @@ import { afterEach, expect, test, vi } from "vitest"
 import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"
 import { RunsNavigation } from "../runs/actions"
-import { answer, deleteDraft, editCode, openCode, openDraft, openNew, save, saveCode, setAnswer, setForm, startDraft } from "./actions"
+import { answer, deleteDraft, editCode, openCode, openDraft, openNew, save, saveCode, setAnswer, setForm, startDraft } from "./actions.vibe"
 import { FlowsUiStore, SHOWN } from "./store"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -177,7 +177,7 @@ test("a refused form write keeps its pending snapshot for reload", async () => {
   const t = await open()
   const { PendingSnapshot } = await import("@smthrs/platform-browser")
   const { FlowsUi } = await import("./flowsUi")
-  const { awaitEditorWrites } = await import("./editorWrites")
+  const { awaitEditorWrites } = await import("./editorWrites.vibe")
   const values = new Map<string, string>()
   const snapshot = PendingSnapshot.make({
     getItem: (key) => values.get(key) ?? null,

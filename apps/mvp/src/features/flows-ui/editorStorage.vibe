@@ -1,0 +1,21 @@
+import { Duration, Effect } from "effect"
+import { codeOf } from "../../errorCode"
+
+/** Restore receipts distinguish a slow device from a refused read without recording stored content. */
+export const restoreEditorCollection = effect <A, E, R>(
+  collection: "flow-form" | "flow-answers" | "flow-code",
+  restore: A!E!R,
+  within: Duration.Input,
+) => {
+  const ready = try result(timeout(restore, within))
+  if (ready._tag === "Failure") {
+    try annotateLogs(logWarning("flows.editor.storage"), {
+      feature: "flows", collection, outcome: "failed", errorCode: try sync(() => codeOf(ready.failure)),
+    })
+  } else {
+    try annotateLogs(logInfo("flows.editor.storage"), {
+      feature: "flows", collection, outcome: "restored",
+    })
+  }
+  return ready
+}
