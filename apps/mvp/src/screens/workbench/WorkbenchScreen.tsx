@@ -13,6 +13,7 @@ import {
   workbenchShortcutAction,
   type WorkbenchAction,
 } from "../../features/workbench/layout"
+import { effectivePaneSize } from "../../features/workbench/conversationState"
 import { attachPromptFor, roleToAudience } from "../../features/workbench/store"
 import { useWorkbenchOptional } from "../../features/workbench/WorkbenchContext"
 import { WorkbenchShell } from "../../features/workbench/WorkbenchShell"
@@ -42,13 +43,19 @@ export function WorkbenchScreen() {
   const answer = useRepoAnswer(owner, repo)
   const workbench = useWorkbenchOptional()
   const maxRole = roleToAudience(answer?.role)
-  const layout = parseWorkbenchSearch(search, maxRole)
+  const repoSlug = `${owner}/${repo}`
+  const rawLayout = workbench !== null
+    ? workbench.actions.restoreConversation(repoSlug, search, maxRole).layout
+    : parseWorkbenchSearch(search, maxRole)
+  const viewportWidth = typeof window === "undefined" ? 1280 : window.innerWidth
+  const layout = { ...rawLayout, size: effectivePaneSize(rawLayout.size, viewportWidth) }
   const branch = repoData?.repository?.defaultBranch ?? "main"
   const fork = exampleForkOf(owner, repo)
   const origin = typeof window === "undefined" ? "https://smithers.sh" : window.location.origin
 
   const handleDispatch = (action: WorkbenchAction) => {
     const next = reduceWorkbenchLayout(layout, action)
+    workbench?.actions.saveConversation(repoSlug, next)
     const serialized = serializeWorkbenchSearch(next, maxRole)
     void navigate({
       to: ROUTE_PATHS.workbench,

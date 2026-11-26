@@ -11,6 +11,7 @@ import {
   roleToAudience,
   WAITLIST_ROW_ID,
   Workbench,
+  WorkbenchClient,
   WorkbenchStore,
 } from "./store.ts"
 
@@ -313,5 +314,48 @@ describe("workbench store boundary and failure cases", () => {
         }).pipe(Effect.provide(layer)),
       ),
     )
+  })
+
+  test("saves and restores distinct pane state and drafts per conversation across A -> B -> Back", async () => {
+    const wb = await Effect.runPromise(
+      Effect.scoped(
+        Workbench.pipe(
+          Effect.provide(Workbench.layer),
+          Effect.provide(
+            Layer.succeed(WorkbenchClient, {
+              fetchPlan: () => Effect.succeed({ hubSeq: 1, tree: null }),
+              joinWaitlist: () => Effect.succeed({ position: 1 }),
+            }),
+          ),
+        ),
+      ),
+    )
+
+    wb.actions.saveConversation(
+      "evmts/voltaire",
+      { pane: "diff", size: "side", frame: 3, audience: "maintainer", diffScope: "branch" },
+      "Draft A",
+      "conv-a",
+    )
+    wb.actions.saveConversation(
+      "evmts/voltaire",
+      { pane: "attach", size: "full", frame: "live", audience: "maintainer", diffScope: "turn" },
+      "Draft B",
+      "conv-b",
+    )
+    wb.actions.saveConversation(
+      "evmts/voltaire",
+      { pane: "workflow", size: "side", frame: 3, audience: "maintainer", diffScope: "branch" },
+      undefined,
+      "conv-a",
+    )
+
+    const backToA = wb.actions.restoreConversation("evmts/voltaire", {}, "maintainer", "conv-a")
+    expect(backToA.layout.pane).toBe("workflow")
+    expect(backToA.draft).toBe("Draft A")
+
+    const atB = wb.actions.restoreConversation("evmts/voltaire", {}, "maintainer", "conv-b")
+    expect(atB.layout.pane).toBe("attach")
+    expect(atB.draft).toBe("Draft B")
   })
 })

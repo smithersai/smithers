@@ -6,6 +6,8 @@ import { HttpClient, HttpClientRequest } from "effect/http"
 import { runners } from "../../boundary"
 import type { Role } from "../auth/contract"
 import { submitWaitlist as submitWaitlistRequest, waitlistErrorMessage } from "../waitlist/api"
+import { conversationStateKey, restoreConversationSnapshot, saveConversationSnapshot, type ConversationPaneSnapshot, type ConversationPaneStore } from "./conversationState"
+import type { WorkbenchLayout } from "./layout"
 
 // Workbench state on this tab: three local-only TanStack DB collections of one row each, kept strictly in memory
 // (never persisted on disk). Layout state (pane, size, frame, node, cause, audience, diffScope) stays in the URL
@@ -349,6 +351,8 @@ export interface WorkbenchQueries {
 }
 
 export interface WorkbenchActions {
+  readonly saveConversation: (repoSlug: string, layout: WorkbenchLayout, draft?: string, conversationId?: string | null) => void
+  readonly restoreConversation: (repoSlug: string, search: URLSearchParams | string | Record<string, unknown>, maxRole: AudienceRole, conversationId?: string | null) => ConversationPaneSnapshot
   readonly loadPlan: (owner: string, repo: string) => Promise<void>
   readonly setTransport: (mode: AttachTransportMode) => void
   readonly markCopied: () => void
@@ -367,6 +371,7 @@ export class Workbench extends Context.Service<
       const store = yield* WorkbenchStore
       const context = yield* Effect.context<WorkbenchStore | WorkbenchClient>()
       const { runSync: run, runPromise: promise } = runners(context, "workbench")
+      let conversationSnapshots: ConversationPaneStore = new Map()
       return Workbench.of({
         queries: {
           plan: store.planState.tanstack,
@@ -374,6 +379,22 @@ export class Workbench extends Context.Service<
           waitlist: store.waitlistState.tanstack,
         },
         actions: {
+          saveConversation: (repoSlug, layout, draft, conversationId) => {
+            const key = conversationStateKey(repoSlug, conversationId)
+            const previousDraft = conversationSnapshots.get(key)?.draft ?? ""
+            conversationSnapshots = saveConversationSnapshot(conversationSnapshots, {
+              conversationKey: key,
+              layout,
+              draft: draft ?? previousDraft,
+            })
+          },
+          restoreConversation: (repoSlug, search, maxRole, conversationId) =>
+            restoreConversationSnapshot({
+              store: conversationSnapshots,
+              conversationKey: conversationStateKey(repoSlug, conversationId),
+              search,
+              maxRole,
+            }),
           loadPlan: (owner, repo) => promise(loadPlan(owner, repo)),
           setTransport: (mode) => run(setAttach({ mode, copied: false })),
           markCopied: () => run(setAttach({ copied: true })),
