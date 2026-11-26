@@ -8,7 +8,7 @@ import { ACCESSES } from "../src/features/branch/contract.ts"
 import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.vibe"
 import { type Member, Rooms, RoomUnavailable } from "./branch/Rooms.vibe"
 import { codeOf } from "./ErrorCode.ts"
-import * as SocketAccess from "./SocketAccess.ts"
+import * as SocketAccess from "./SocketAccess.vibe"
 import * as SocketHost from "./durable/SocketHost.vibe"
 import * as SocketChecks from "./SocketChecks.vibe"
 

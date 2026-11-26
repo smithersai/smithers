@@ -29,7 +29,7 @@ import { registration as summaries, SummaryLedger, SummarySeat } from "../src/fe
 import { build, runFlow } from "./test/flowHost.ts"
 import { delta, eventually, harness, recorded, stop, testFile, usage } from "./test/harness.ts"
 import { cookie, signInHarness } from "./test/signIn.ts"
-import * as SignIn from "./SignIn.ts"
+import * as SignIn from "./SignIn.vibe"
 import { credentialRoute } from "../src/flows/contract.ts"
 import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract.ts"
 

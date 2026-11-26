@@ -13,7 +13,7 @@ const fixture = worker + "__config_fixture.ts"
 const source = `
 import { Config as Settings, Effect, Layer } from "effect"
 import { HttpServerRequest } from "effect/http"
-import { configuredRoleFreshMs as roleFreshConfig } from "./SocketAccess.ts"
+import { configuredRoleFreshMs as roleFreshConfig } from "./SocketAccess.vibe"
 const configured = Settings.String("SETTING")
 const lazy = Layer.effectDiscard(configured)
 export const steps = () => ({ run: () => configured })
@@ -40,12 +40,13 @@ export const make = Effect.gen(function* () {
 
 const config = ts.readConfigFile(worker + "tsconfig.json", ts.sys.readFile)
 const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, worker)
-const host = ts.createCompilerHost(parsed.options)
+const compilerOptions = { ...parsed.options, allowArbitraryExtensions: true }
+const host = ts.createCompilerHost(compilerOptions)
 const original = host.getSourceFile.bind(host)
 host.getSourceFile = (name, language, error, fresh) => name === fixture
   ? ts.createSourceFile(name, source, language, true)
   : original(name, language, error, fresh)
-const program = ts.createProgram([...files, fixture], parsed.options, host)
+const program = ts.createProgram([...files, fixture], compilerOptions, host)
 const checker = program.getTypeChecker()
 const owned = new Set([...files, fixture])
 

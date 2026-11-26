@@ -14,7 +14,7 @@ import {
 import * as Flows from "./Flows.vibe"
 import * as SessionEnds from "./SessionEnds.vibe"
 import * as SessionStore from "./SessionStore.vibe"
-import * as SignIn from "./SignIn.ts"
+import * as SignIn from "./SignIn.vibe"
 import { scriptedGitHub } from "./test/github.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "250" : "100"))

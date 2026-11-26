@@ -2,7 +2,7 @@ import { runFlow } from "./test/flowHost.ts"
 import wasmfile from "@jitl/quickjs-wasmfile-release-sync"
 import { QuickJSVariant } from "@smthrs/harness"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
-import * as ViewRealm from "./ViewRealm.ts"
+import * as ViewRealm from "./ViewRealm.vibe"
 import { SandboxTools } from "@smthrs/sandbox"
 import { Cause, Duration, Effect, Exit, Layer, Logger, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -25,7 +25,7 @@ import * as Runs from "./Runs.vibe"
 import * as SetModel from "./SetModel.vibe"
 import { TaskAnswers } from "./Flows.vibe"
 import * as H from "./test/harness.ts"
-import * as Views from "./Views.ts"
+import * as Views from "./Views.vibe"
 
 const silent = Logger.layer([])
 

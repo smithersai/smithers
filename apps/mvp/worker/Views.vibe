@@ -4,7 +4,6 @@ import { isRepository } from "../src/features/repo/contract.ts"
 import type { ViewProps } from "../src/features/views/schema.ts"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { type PresentationRealm, ViewCode } from "@smthrs/views"
-import { Cause, Clock, Config, Data, Effect, type Layer, Metric, Option, Redacted, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
@@ -38,7 +37,7 @@ import { DocsSource } from "./docs/Source.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import * as Messages from "./Messages.ts"
 import * as ShapeAccess from "./ShapeAccess.vibe"
-import * as ViewRealm from "./ViewRealm.ts"
+import * as ViewRealm from "./ViewRealm.vibe"
 
 // The conversation's views in ChatApi (docs/features/web-pages.md#the-views-table, decision 0004 §8): `POST /api/views`
 // adds one, and `GET /api/shapes/views` is Electric's `views`, which every device syncs like the messages. Only a
@@ -99,28 +98,31 @@ const decodeState = Schema.decodeUnknownEffect(Schema.fromJsonString(StateWrite)
 const jsonBytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length
 
 /** A module that failed its check or its render: what went wrong, for the renderer to correct. Never logged. */
-class NotRendered extends Data.TaggedError("NotRendered")<{ readonly reason: string; readonly detail: string }> {}
+error NotRendered {
+  reason: string
+  detail: string
+}
 
 /**
  * Checks `code` and renders it with `props` and `state` in `realm`: the checked module and its HTML. A failed check or
  * render is `NotRendered`, with the redacted detail unwrapped for the renderer, and a state over the bound is too.
  */
 const render = (realm: PresentationRealm.Realm, code: string, props: unknown, state: unknown) =>
-  Effect.gen(function* () {
+  effect {
     if (jsonBytes(state) > MAX_VIEW_JSON_BYTES) {
-      return yield* new NotRendered({ reason: "state", detail: `The state is over ${MAX_VIEW_JSON_BYTES} bytes as JSON.` })
+      throw new NotRendered({ reason: "state", detail: `The state is over ${MAX_VIEW_JSON_BYTES} bytes as JSON.` })
     }
-    const module = yield* ViewCode.check(code, { components: realm.components }).pipe(
-      Effect.mapError((error) => new NotRendered({ reason: error.reason, detail: Redacted.value(error.detail) })),
+    const module = try ViewCode.check(code, { components: realm.components }).pipe(
+      mapError((error) => new NotRendered({ reason: error.reason, detail: Redacted.value(error.detail) })),
     )
-    const html = yield* realm.render({ module, props, state }).pipe(
-      Effect.mapError((error) => new NotRendered({ reason: error.limit ?? error.reason, detail: Redacted.value(error.detail) })),
+    const html = try realm.render({ module, props, state }).pipe(
+      mapError((error) => new NotRendered({ reason: error.limit ?? error.reason, detail: Redacted.value(error.detail) })),
     )
     if (new TextEncoder().encode(html).length > MAX_VIEW_HTML_BYTES) {
-      return yield* new NotRendered({ reason: "html", detail: `The view renders more than ${MAX_VIEW_HTML_BYTES} bytes of HTML.` })
+      throw new NotRendered({ reason: "html", detail: `The view renders more than ${MAX_VIEW_HTML_BYTES} bytes of HTML.` })
     }
     return { module, html }
-  })
+  }
 
 /**
  * `WEB_PAGES_LOCAL_HTTP`: whether a `link` to an `http:` page on `localhost` is kept. `localHttp` unless set, which only
@@ -177,48 +179,48 @@ const columnsOf = (view: Stored) =>
 
 /** Adds the view to conversation `conversationId` unless its id is taken: the transaction it added it in, or nothing. */
 const insert = (view: Stored, conversationId: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
+  effect {
+    const sql = try SqlClient.SqlClient
     const columns = columnsOf(view)
-    const [row] = yield* sql<{ readonly txid: string }>`
+    const [row] = try sql<{ readonly txid: string }>`
       INSERT INTO views (id, template, props, conversation_id, title, size, state, code, html, interactions)
       VALUES (${view.id}, ${view.template}, ${JSON.stringify(view.props)}::jsonb, ${conversationId}, ${columns.title},
         ${columns.size}, ${columns.state}::jsonb, ${columns.code}, ${columns.html}, ${columns.interactions}::jsonb)
       ON CONFLICT (id) DO NOTHING
       RETURNING pg_current_xact_id()::xid::text AS txid`
     return row === undefined ? undefined : Number(row.txid)
-  })
+  }
 
 /** The reply fields for the same add, landed before in this conversation; nothing when the id holds another view. */
 const landed = (view: Stored, conversationId: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
+  effect {
+    const sql = try SqlClient.SqlClient
     if (view.template === "generated") {
-      const interactions = yield* keptEvents(view, conversationId)
+      const interactions = try keptEvents(view, conversationId)
       return interactions === undefined ? undefined : { interactions }
     }
     // Every stored docs row is built from docsTarget, which requires its repository and path.
     const [row] = view.template === "docs"
-      ? yield* sql<{ readonly same: boolean }>`
+      ? try sql<{ readonly same: boolean }>`
         SELECT template = 'docs' AND props->>'repository' = ${view.props.repository as string}
           AND props->>'path' = ${view.props.path as string} AND conversation_id = ${conversationId} AS same
         FROM views WHERE id = ${view.id}`
-      : yield* sql<{ readonly same: boolean }>`
+      : try sql<{ readonly same: boolean }>`
         SELECT template = ${view.template} AND props = ${JSON.stringify(view.props)}::jsonb
           AND conversation_id = ${conversationId} AS same
         FROM views WHERE id = ${view.id}`
     return row?.same === true ? {} : undefined
-  })
+  }
 
 /** Whether a `docs` view of the same repository's same page is already under `id`. */
 const addedDocs = (id: string, docs: { readonly owner: string; readonly name: string; readonly path: string }) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly id: string }>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [row] = try sql<{ readonly id: string }>`
       SELECT id FROM views WHERE id = ${id} AND template = 'docs'
         AND props->>'repository' = ${`${docs.owner}/${docs.name}`} AND props->>'path' = ${docs.path}`
     return row !== undefined
-  })
+  }
 
 /** The repository and page a `docs` write names: `owner/name` GitHub could have, and a path; none otherwise. */
 const docsTarget = (props: PageWrite["props"]) => {
@@ -233,24 +235,24 @@ const keptEvents = (
   view: { readonly id: string; readonly props: unknown; readonly code: string },
   conversationId: string,
 ) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly interactions: unknown }>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [row] = try sql<{ readonly interactions: unknown }>`
       SELECT interactions FROM views
       WHERE id = ${view.id} AND template = 'generated' AND props = ${JSON.stringify(view.props)}::jsonb
         AND conversation_id = ${conversationId} AND code = ${view.code}`
     return row?.interactions
-  })
+  }
 
 /** The conversation of answer `answerId` when `askedBy` asked its question: where its agent's views go. */
 const answerConversation = (answerId: string, askedBy: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly conversationId: string }>`
+  effect {
+    const sql = try SqlClient.SqlClient
+    const [row] = try sql<{ readonly conversationId: string }>`
       SELECT a.conversation_id AS "conversationId" FROM messages a JOIN messages q ON q.id = a.question_id
       WHERE a.id = ${answerId} AND a.role = 'assistant' AND q.asked_by = ${askedBy}`
     return row?.conversationId
-  })
+  }
 
 /** What a shape filters on for someone who may not watch a conversation: no conversation's id, so it holds no rows. */
 const NO_CONVERSATION = "00000000-0000-0000-0000-000000000000"
@@ -299,30 +301,30 @@ export const stateViewId = (path: string): string | undefined => {
  * its state or its HTML. `database` opens a Postgres client for the scope of each request.
  */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, options: Options) =>
-  Effect.gen(function* () {
-    const localHttp = yield* localHttpConfig(options.localHttp ?? false)
+  effect {
+    const localHttp = try localHttpConfig(options.localHttp ?? false)
     const realm = ViewRealm.once(options.realm)
     // GET /api/shapes/views?conversation=<id>: one conversation's views (decision 0013 §1), the home conversation's
     // when it names none. Anyone who may not watch the branch gets a shape with no rows; a request the server can't
     // decide, because sessions or the home conversation can't be read, is 503 (worker/ShapeAccess.ts).
-    const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+    const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
     const shape = ShapeProxy.make({
       ...connection,
-      shape: Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
+      shape: effect {
+        const request = try HttpServerRequest.HttpServerRequest
         const named = new URL(request.url, "http://localhost").searchParams.get("conversation")
         const conversation = named !== null && isUuid(named)
           ? named.toLowerCase()
           : named === null
-          ? yield* Conversations.home.pipe(Effect.provide(database), Effect.mapError(() => ShapeAccess.unavailable))
+          ? try Conversations.home.pipe(Effect.provide(database), mapError(() => ShapeAccess.unavailable))
           : undefined
-        const actor = yield* ShapeAccess.actor
+        const actor = try ShapeAccess.actor
         // Only someone who may view the conversation's branch gets its views (worker/branch/Access.ts).
         const found = conversation === undefined
           ? undefined
-          : yield* branchAccess(actor, conversation, "conversation").pipe(
+          : try branchAccess(actor, conversation, "conversation").pipe(
             Effect.provide(database),
-            Effect.mapError(() => ShapeAccess.unavailable),
+            mapError(() => ShapeAccess.unavailable),
           )
         return {
           table: VIEWS_TABLE,
@@ -330,7 +332,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           where: "conversation_id = $1",
           params: { "1": found !== undefined && canView(found.access) ? found.conversationId : NO_CONVERSATION },
         }
-      }),
+      },
       name: "chat.views.shape",
       metric: shapes,
     })
@@ -347,23 +349,23 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       return { id: write.id, template: write.template, props: { url: page.page.href, ...preview } } satisfies Stored
     }
 
-    const add = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      const startedAt = yield* Clock.currentTimeMillis
+    const add = effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      const startedAt = try Clock.currentTimeMillis
       const fields: Fields = {}
-      const response = yield* Effect.gen(function* () {
+      const response = try effect {
         if (request.method !== "POST") {
           return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
         }
-        const actor = yield* (yield* Sessions).resolve
+        const actor = try (try Sessions).resolve
         if (Option.isNone(actor)) return refusal(401, "authentication")
-        const body = yield* readBounded(request, MAX_GENERATED_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
-          Effect.result,
+        const body = try readBounded(request, MAX_GENERATED_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
+          result,
         )
         if (body._tag === "Failure") {
           return body.failure.reason === "too_large" ? refusal(413, "too_large") : refusal(400, "invalid")
         }
-        const decoded = yield* decodeWrite(body.success).pipe(Effect.option)
+        const decoded = try decodeWrite(body.success).pipe(option)
         if (Option.isNone(decoded)) return refusal(400, "invalid")
         // Lowercase, as Postgres prints a uuid: one view has one id in rows, logs and the browser.
         const write = { ...decoded.value, id: decoded.value.id.toLowerCase() }
@@ -376,7 +378,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           return refusal(413, "too_large")
         }
         if (write.template === "form") {
-          const refused = formRefusal(write.props.schema)
+          const schema = write.props.schema
+          const refused = try sync(() => formRefusal(schema))
           if (refused !== undefined) {
             fields.reason = refused
             return refusal(400, "refused")
@@ -389,14 +392,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         // answer's conversation, only for the person who asked it; a person's names its conversation, which must
         // exist; neither means the home conversation.
         const named = write.answerId !== undefined
-          ? yield* answerConversation(write.answerId.toLowerCase(), actor.value.subject.id).pipe(Effect.provide(database))
+          ? try answerConversation(write.answerId.toLowerCase(), actor.value.subject.id).pipe(Effect.provide(database))
           : write.conversationId === undefined
-          ? yield* Conversations.home.pipe(Effect.provide(database))
+          ? try Conversations.home.pipe(Effect.provide(database))
           : write.conversationId.toLowerCase()
         // Only a Member or above on the conversation's repository who may edit its branch adds to it (ruling AUTH-8),
         // decided before a docs page is read from its site, and again under the conversation's lock below.
-        const asking = named === undefined ? undefined : yield* branchAccess(actor, named, "conversation").pipe(
-          Effect.map((found) => (found === undefined ? undefined : askingOf(found))),
+        const asking = named === undefined ? undefined : try branchAccess(actor, named, "conversation").pipe(
+          map((found) => (found === undefined ? undefined : askingOf(found))),
           Effect.provide(database),
         )
         if (asking !== undefined && asking !== "ask") {
@@ -405,7 +408,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         }
         // What the row keeps, decided before the conversation's lock is taken: a docs page is read from its site.
         let docsStored: Stored | undefined
-        if (docs !== undefined && (yield* addedDocs(write.id, docs).pipe(Effect.provide(database)))) {
+        if (docs !== undefined && (try addedDocs(write.id, docs).pipe(Effect.provide(database)))) {
           // The same page under the same id, added before: a resend whose answer was lost. The site isn't asked again,
           // so it lands as before even once the site dropped the page; the conversation is still checked below.
           docsStored = {
@@ -415,7 +418,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           }
         } else if (docs !== undefined) {
           // The page as the repository's own docs index lists it, and its Markdown as the docs site answers it now.
-          const read = yield* (yield* DocsSource).page(docs.owner, docs.name, docs.path)
+          const read = try (try DocsSource).page(docs.owner, docs.name, docs.path)
           if (read._tag === "Refused") {
             fields.reason = read.code
             return read.code === "unavailable"
@@ -424,12 +427,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               ? refusal(502, "docs_unreachable")
               : refusal(400, "refused")
           }
-          const site = checkUrl(read.page.url, "tab", policyFor(request, localHttp))
+          const site = try sync(() => checkUrl(read.page.url, "tab", policyFor(request, localHttp)))
           if (!site.ok) {
             fields.reason = site.reason
             return refusal(400, "refused")
           }
-          const text = cutText(read.text, MAX_VIEW_TEXT_BYTES)
+          const text = try sync(() => cutText(read.text, MAX_VIEW_TEXT_BYTES))
           fields.truncated = text.truncated
           docsStored = {
             id: write.id,
@@ -444,16 +447,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             },
           }
         }
-        return yield* Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient
-          return yield* sql.withTransaction(Effect.gen(function* () {
+        return try effect {
+          const sql = try SqlClient.SqlClient
+          return try sql.withTransaction(effect {
             // Shares.write holds this same row lock. Read policy only after acquiring it, and keep it through insert.
-            if (named !== undefined) yield* sql`
+            if (named !== undefined) try sql`
               SELECT b.id FROM branches b JOIN conversations c ON c.branch_id = b.id
               WHERE c.id = ${named} FOR UPDATE OF b`
             const found = named === undefined
               ? undefined
-              : yield* branchAccess(actor, named, "conversation")
+              : try branchAccess(actor, named, "conversation")
             if (found === undefined) return refusal(404, "conversation_not_found")
             // Only a Member or above there who may edit the branch adds to its conversation (worker/branch/Access.ts).
             if (askingOf(found) !== "ask") return refusal(403, "forbidden")
@@ -471,14 +474,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             } else if (write.template === "generated") {
               // The same add again is answered from the row, without rendering the module a second time.
               const again = { id: write.id, template: "generated", props: write.props, code: write.code } as const
-              const kept = yield* keptEvents(again, conversationId)
+              const kept = try keptEvents(again, conversationId)
               if (kept !== undefined) {
                 fields.existing = true
                 return HttpServerResponse.jsonUnsafe({ txid: null, interactions: kept }, { status: 200, headers: noStore })
               }
               // The module runs here, never on a device: the HTML kept is the realm's own.
-              const rendered = yield* render(yield* realm, write.code, write.props, write.state).pipe(Effect.result)
-              yield* Metric.update(
+              const rendered = try render(try realm, write.code, write.props, write.state).pipe(result)
+              try Metric.update(
                 Metric.withAttributes(renders, {
                   outcome: rendered._tag === "Success" ? "rendered" : "not_rendered",
                   door: "add",
@@ -508,36 +511,36 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               if (page === undefined) return refusal(400, "refused")
               stored = page
             }
-            const txid = yield* insert(stored, conversationId)
+            const txid = try insert(stored, conversationId)
             const events = stored.template === "generated" ? { interactions: stored.interactions } : {}
             if (txid !== undefined) {
               return HttpServerResponse.jsonUnsafe({ txid, ...events }, { status: 202, headers: noStore })
             }
-            const existing = yield* landed(stored, conversationId)
+            const existing = try landed(stored, conversationId)
             if (existing !== undefined) {
               fields.existing = true
               return HttpServerResponse.jsonUnsafe({ txid: null, ...existing }, { status: 200, headers: noStore })
             }
             return refusal(409, "id_taken")
-          }))
-        }).pipe(Effect.provide(database))
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.sync(() => {
+          })
+        }.pipe(Effect.provide(database))
+      }.pipe(
+        catchCause((cause) =>
+          sync(() => {
             fields.errorCode = codeOf(Cause.squash(cause))
             return refusal(503, "unavailable")
           })
         ),
       )
       fields.status = response.status
-      fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
-      yield* Metric.update(Metric.withAttributes(requests, { status: String(response.status) }), 1)
-      yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-      yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+      fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+      try Metric.update(Metric.withAttributes(requests, { status: String(response.status) }), 1)
+      try annotateCurrentSpan({ "http.response.status_code": response.status })
+      try logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
         "chat.view.add",
-      ).pipe(Effect.annotateLogs(fields))
+      ).pipe(annotateLogs(fields))
       return response
-    }).pipe(Effect.withSpan("chat.view.request", { kind: "server" }))
+    }.pipe(withSpan("chat.view.request", { kind: "server" }))
 
     /**
      * `POST /api/views/<viewId>/state { revision, event }`: one move in a generated view. Only someone who may edit the
@@ -547,32 +550,32 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * is kept by its id with the revision it made, in its transaction: the same move again answers that revision.
      */
     const state = (viewId: string) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        const startedAt = yield* Clock.currentTimeMillis
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const startedAt = try Clock.currentTimeMillis
         const fields: Fields = { viewId }
-        const response = yield* Effect.gen(function* () {
+        const response = try effect {
           if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
-          const actor = yield* (yield* Sessions).resolve
+          const actor = try (try Sessions).resolve
           if (Option.isNone(actor)) return refusal(401, "authentication")
-          const body = yield* readBounded(request, MAX_VIEW_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
-            Effect.result,
+          const body = try readBounded(request, MAX_VIEW_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
+            result,
           )
           if (body._tag === "Failure") {
             return body.failure.reason === "too_large" ? refusal(413, "too_large") : refusal(400, "invalid")
           }
-          const move = yield* decodeState(body.success).pipe(Effect.option)
+          const move = try decodeState(body.success).pipe(option)
           if (Option.isNone(move)) return refusal(400, "invalid")
-          return yield* Effect.gen(function* () {
-                const sql = yield* SqlClient.SqlClient
-                return yield* sql.withTransaction(Effect.gen(function* () {
+          return try effect {
+                const sql = try SqlClient.SqlClient
+                return try sql.withTransaction(effect {
                   // Shares.write holds this same row lock. Take it before the view's, as an add does, so a move reads
                   // policy only after a share change commits and keeps it through the move.
-                  yield* sql`
+                  try sql`
                     SELECT b.id FROM branches b JOIN conversations c ON c.branch_id = b.id
                       JOIN views v ON v.conversation_id = c.id
                     WHERE v.id = ${viewId} FOR UPDATE OF b`
-                  const [view] = yield* sql<{
+                  const [view] = try sql<{
                     readonly template: string
                     readonly conversationId: string
                     readonly code: string | null
@@ -587,10 +590,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                     return refusal(404, "not_found")
                   }
                   // A Member or above on the view's repository who may edit its branch moves it (ruling AUTH-8).
-                  const found = yield* branchAccess(actor, view.conversationId, "conversation")
+                  const found = try branchAccess(actor, view.conversationId, "conversation")
                   if (found === undefined || askingOf(found) !== "ask") return refusal(403, "forbidden")
                   // The same move again, whose answer was lost: what it made, never a stale board.
-                  const [made] = yield* sql<{ readonly revision: number }>`
+                  const [made] = try sql<{ readonly revision: number }>`
                     SELECT revision FROM view_moves WHERE view_id = ${viewId} AND move_id = ${move.value.moveId}`
                   if (made !== undefined) {
                     fields.existing = true
@@ -606,28 +609,28 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                       { status: 409, headers: noStore },
                     )
                   }
-                  const loaded = yield* realm
-                  const checked = yield* ViewCode.check(view.code, { components: loaded.components }).pipe(Effect.option)
-                  const moved = Option.isNone(checked) ? undefined : yield* loaded.interact({
+                  const loaded = try realm
+                  const checked = try ViewCode.check(view.code, { components: loaded.components }).pipe(option)
+                  const moved = Option.isNone(checked) ? undefined : try loaded.interact({
                     module: checked.value,
                     props: view.props,
                     state: view.state,
                     event: move.value.event,
-                  }).pipe(Effect.option, Effect.map(Option.getOrUndefined))
+                  }).pipe(option, map(Option.getOrUndefined))
                   const kept = moved !== undefined && jsonBytes(moved.state) <= MAX_VIEW_JSON_BYTES &&
                     new TextEncoder().encode(moved.html).length <= MAX_VIEW_HTML_BYTES
-                  yield* Metric.update(
+                  try Metric.update(
                     Metric.withAttributes(renders, { outcome: kept ? "rendered" : "not_rendered", door: "state" }),
                     1,
                   )
                   // A move the module can't make, or whose state is over the bound, changes nothing.
                   if (!kept) return refusal(422, "not_rendered")
-                  const [changed] = yield* sql<{ readonly txid: string; readonly revision: number }>`
+                  const [changed] = try sql<{ readonly txid: string; readonly revision: number }>`
                     UPDATE views SET state = ${JSON.stringify(moved.state)}::jsonb, html = ${moved.html},
                       revision = revision + 1, updated_at = now()
                     WHERE id = ${viewId}
                     RETURNING pg_current_xact_id()::xid::text AS txid, revision`
-                  yield* sql`
+                  try sql`
                     INSERT INTO view_moves (view_id, move_id, revision)
                     VALUES (${viewId}, ${move.value.moveId}, ${changed!.revision})`
                   fields.revision = changed!.revision
@@ -635,31 +638,34 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                     { txid: Number(changed!.txid), revision: changed!.revision },
                     { status: 200, headers: noStore },
                   )
-                }))
-              }).pipe(Effect.provide(database))
-        }).pipe(
-          Effect.catchCause((cause) =>
-            Effect.sync(() => {
+                })
+              }.pipe(Effect.provide(database))
+        }.pipe(
+          catchCause((cause) =>
+            sync(() => {
               fields.errorCode = codeOf(Cause.squash(cause))
               return refusal(503, "unavailable")
             })
           ),
         )
         fields.status = response.status
-        fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
-        yield* Metric.update(Metric.withAttributes(states, { status: String(response.status) }), 1)
-        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+        fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+        try Metric.update(Metric.withAttributes(states, { status: String(response.status) }), 1)
+        try annotateCurrentSpan({ "http.response.status_code": response.status })
+        try logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
           "chat.view.state",
-        ).pipe(Effect.annotateLogs(fields))
+        ).pipe(annotateLogs(fields))
         return response
-      }).pipe(Effect.withSpan("chat.view.state.request", { kind: "server" }))
+      }.pipe(withSpan("chat.view.state.request", { kind: "server" }))
 
     return { add, state, shape }
-  })
+  }
 
 /** A question from a view that ChatApi won't take: its status and code. */
-export class SourceRefused extends Data.TaggedError("SourceRefused")<{ readonly status: number; readonly code: string }> {}
+export error SourceRefused {
+  status: number
+  code: string
+}
 
 /** Where a question came from: the view, and the event it sent. */
 export interface Source {
@@ -680,10 +686,10 @@ export const askFrom = (
   source: Source,
   data: FormValues | undefined,
 ) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    return yield* sql.withTransaction(Effect.gen(function* () {
-      const [view] = yield* sql<{
+  effect {
+    const sql = try SqlClient.SqlClient
+    return try sql.withTransaction(effect {
+      const [view] = try sql<{
         readonly template: string
         readonly conversationId: string
         readonly props: { readonly schema: Readonly<Record<string, unknown>> }
@@ -694,20 +700,20 @@ export const askFrom = (
         FROM views WHERE id = ${source.viewId} FOR UPDATE`
       if (view === undefined || view.conversationId !== question.conversationId) {
         // 400, not 404: the outbox keeps a refused question as Not sent, where a 404 is sent again forever.
-        return yield* new SourceRefused({ status: 400, code: "view_not_found" })
+        throw new SourceRefused({ status: 400, code: "view_not_found" })
       }
       if (view.template === "form") {
-        if (source.event !== SUBMIT_EVENT) return yield* new SourceRefused({ status: 400, code: "undeclared" })
+        if (source.event !== SUBMIT_EVENT) throw new SourceRefused({ status: 400, code: "undeclared" })
         const values = data ?? {}
-        if (acceptedValues(view.props.schema, values) === undefined) {
-          return yield* new SourceRefused({ status: 400, code: "invalid_values" })
+        if ((try sync(() => acceptedValues(view.props.schema, values))) === undefined) {
+          throw new SourceRefused({ status: 400, code: "invalid_values" })
         }
         if (view.state?.submitted === true && view.state.questionId !== question.id) {
-          return yield* new SourceRefused({ status: 409, code: "submitted" })
+          throw new SourceRefused({ status: 409, code: "submitted" })
         }
-        const asked = yield* Messages.ask({ ...question, source, data: values })
+        const asked = try Messages.ask({ ...question, source, data: values })
         if (asked.txid !== null) {
-          yield* sql`
+          try sql`
             UPDATE views SET state = ${JSON.stringify({ submitted: true, values, questionId: question.id })}::jsonb,
               revision = revision + 1, updated_at = now()
             WHERE id = ${source.viewId}`
@@ -715,8 +721,8 @@ export const askFrom = (
         return asked
       }
       if (view.template === "generated" && view.interactions?.[source.event]?.kind === "message") {
-        return yield* Messages.ask({ ...question, source, ...(data === undefined ? {} : { data }) })
+        return try Messages.ask({ ...question, source, ...(data === undefined ? {} : { data }) })
       }
-      return yield* new SourceRefused({ status: 400, code: "undeclared" })
-    }))
-  })
+      throw new SourceRefused({ status: 400, code: "undeclared" })
+    })
+  }

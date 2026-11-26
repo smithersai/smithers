@@ -12,7 +12,7 @@ import { describe, expect, test } from "vitest"
 import * as RunContent from "./RunContent.vibe"
 import * as Store from "./runners/RunContent.vibe"
 import { RETAIN_KEY } from "./runners/TranscriptHost.vibe"
-import * as SocketAccess from "./SocketAccess.ts"
+import * as SocketAccess from "./SocketAccess.vibe"
 import { RoomUpgrade } from "./durable/SocketHost.vibe"
 import { connection, objectRegistration, objectRuntime, unusedDatabase } from "./test/durableObject.ts"
 

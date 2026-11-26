@@ -8,7 +8,7 @@ import { scopeAccess } from "./branch/Texts.vibe"
 import * as GitHubConfig from "./github/Config.vibe"
 import * as RepoRoles from "./github/RepoRoles.vibe"
 import * as SessionStore from "./SessionStore.vibe"
-import { type Admission, type Checked, configuredRoleFreshMs, LEASE_MS, roleFresh } from "./SocketAccess.ts"
+import { type Admission, type Checked, configuredRoleFreshMs, LEASE_MS, roleFresh } from "./SocketAccess.vibe"
 import { mayRead } from "./stack/Access.vibe"
 
 // The rules a socket host renews a lease by (worker/SocketAccess.ts): the same ones its route admitted it with.

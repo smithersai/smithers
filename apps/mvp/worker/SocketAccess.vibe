@@ -1,11 +1,10 @@
-import { Cause, Clock, Config, Context, Effect, Metric, Option, Schema } from "effect"
 import { Headers, type HttpServerRequest } from "effect/http"
 import { ACCESSES } from "../src/features/branch/contract.ts"
 import { ROLES } from "../src/features/auth/contract.ts"
 import type { Actor } from "./Actor.vibe"
 import { codeOf } from "./ErrorCode.ts"
 import * as SessionStore from "./SessionStore.vibe"
-import { ROLE_RECHECK_MINUTES } from "./SignIn.ts"
+import { ROLE_RECHECK_MINUTES } from "./SignIn.vibe"
 
 // Every socket host's lease on who it admitted (docs/observability.md#socket-leases). A route authorizes a socket once,
 // at connect, then hands it to a Durable Object that streams to it for as long as it stays open. So the route also
@@ -106,11 +105,7 @@ const decode = Schema.decodeUnknownOption(Admission)
 /** `admission` decoded from a value a host kept, or `undefined`. */
 export const admissionFrom = (value: unknown): Admission | undefined => Option.getOrUndefined(decode(value))
 
-/**
- * The admission ChatApi set on a request it handed a host, or `undefined`.
- *
- * @throws {never}
- */
+/** The admission ChatApi set on a request it handed a host, or `undefined`. */
 export const admissionOf = (request: HttpServerRequest.HttpServerRequest): Admission | undefined =>
   Option.getOrUndefined(decodeJson(request.headers[ADMISSION_HEADER] ?? ""))
 
@@ -142,15 +137,15 @@ export const roleFresh = (verifiedAt: number | null, now: number, freshMs: numbe
  * `roleFreshMs` (`stale`): the route's own `Sessions.resolve` has started that check, so the page's retry admits.
  */
 export const admit = (actor: Actor, basis: Basis, access: Admission["access"]) =>
-  Effect.gen(function* () {
-    const now = yield* Clock.currentTimeMillis
+  effect {
+    const now = try Clock.currentTimeMillis
     let expiresAt: number | null = null
     let serverExpiresAt: number | undefined
     if (actor.session !== undefined) {
-      const found = yield* SessionStore.authority(actor.session, actor.alias ?? null, actor.cookieKey ?? "legacy")
+      const found = try SessionStore.authority(actor.session, actor.alias ?? null, actor.cookieKey ?? "legacy")
       if (Option.isNone(found) || found.value.personId !== actor.subject.id) return { _tag: "ended" } as Admitted
       // Both times are the database's, so a Worker clock skewed from it decides nothing (decision 0151 rule 9).
-      if (!roleFresh(found.value.roleVerifiedAt, found.value.serverNow, yield* roleFreshMs)) return { _tag: "stale" } as Admitted
+      if (!roleFresh(found.value.roleVerifiedAt, found.value.serverNow, try roleFreshMs)) return { _tag: "stale" } as Admitted
       // The end on this Worker's clock: the lookup started at `now`, and the database said how long was left then
       // (decision 0151 rule 9), so a Worker clock skewed from the database's never lengthens the lease.
       serverExpiresAt = found.value.expiresAt
@@ -171,7 +166,7 @@ export const admit = (actor: Actor, basis: Basis, access: Admission["access"]) =
         access,
       },
     } as Admitted
-  })
+  }
 
 /**
  * Whether a socket opened for `expected` (the person a page names when it dials; not sent yet) may be `actor`'s: no
@@ -258,27 +253,27 @@ const authorityOf = (admission: Admission): string =>
 export const renew = <RC, R>(
   host: string,
   admissions: ReadonlyArray<Admission>,
-  check: (admission: Admission) => Effect.Effect<Checked, never, RC>,
-  within: <A>(effect: Effect.Effect<A, never, RC | R>) => Effect.Effect<A, unknown, R>,
+  check: (admission: Admission) => Checked!never!RC,
+  within: <A>(effect: Effect.Effect<A, never, RC | R>) => A!unknown!R,
 ) =>
-  Effect.gen(function* () {
+  effect {
     const asked = new Map<string, Admission>()
     for (const admission of admissions) asked.set(authorityOf(admission), admission)
-    const checked = yield* within(Effect.forEach(
+    const checked = try within(forEach(
       [...asked],
       ([key, admission]) =>
         check(admission).pipe(
-          Effect.timeoutOrElse({ duration: CHECK_TIMEOUT_MS, orElse: () => Effect.succeed<Checked>("unverified") }),
-          Effect.map((verdict) => [key, verdict] as const),
+          timeoutOrElse({ duration: CHECK_TIMEOUT_MS, orElse: () => succeed<Checked>("unverified") }),
+          map((verdict) => [key, verdict] as const),
         ),
       { concurrency: CHECK_CONCURRENCY },
     )).pipe(
-      Effect.timeoutOrElse({ duration: RENEW_DEADLINE_MS, orElse: () => Effect.succeed([]) }),
-      Effect.catchCause(() => Effect.succeed([])),
+      timeoutOrElse({ duration: RENEW_DEADLINE_MS, orElse: () => succeed([]) }),
+      catchCause(() => succeed([])),
     )
     const verdicts = new Map<string, Checked>(checked)
     // Only the authoritative result may advance a cached end. An elapsed result grants no lease.
-    const after = yield* Clock.currentTimeMillis
+    const after = try Clock.currentTimeMillis
     const answers = admissions.map((admission): Renewed => {
       const answer = verdicts.get(authorityOf(admission)) ?? "unverified"
       if (typeof answer === "string") return {
@@ -293,13 +288,13 @@ export const renew = <RC, R>(
     const counts: Record<Verdict, number> = { keep: 0, session: 0, revoked: 0, changed: 0, unverified: 0 }
     for (const { verdict: outcome } of answers) {
       counts[outcome]++
-      yield* Metric.update(Metric.withAttributes(leases, { host, outcome }), 1)
+      try Metric.update(Metric.withAttributes(leases, { host, outcome }), 1)
     }
-    yield* Effect.logWithLevel(counts.unverified > 0 ? "Warn" : "Info")("socket.lease").pipe(
-      Effect.annotateLogs({ host, sockets: admissions.length, checks: asked.size, ...counts }),
+    try logWithLevel(counts.unverified > 0 ? "Warn" : "Info")("socket.lease").pipe(
+      annotateLogs({ host, sockets: admissions.length, checks: asked.size, ...counts }),
     )
     return answers
-  }).pipe(Effect.withSpan("socket.lease", { attributes: { "smithers.socket.host": host } }))
+  }.pipe(withSpan("socket.lease", { attributes: { "smithers.socket.host": host } }))
 
 /** Counts a socket from before leases, which its host closes with `CLOSES.legacy` before anything else. */
 export const countLegacy = (host: string, count: number) =>
@@ -329,27 +324,7 @@ export const nextRenewal = (
     ? undefined
     : Math.max(Math.min(...leases.map((lease) => actAt(lease.admission, lease.leaseUntil))), now + 1)
 
-/**
- * A notification from outside any effect (a socket's own event) that starts `renewal` through `fork` unless the one it
- * started is still running: a burst of frames on a lapsed lease costs one fiber, never one each.
- */
-export const coalesced = <R>(
-  renewal: Effect.Effect<void, never, R>,
-  fork: (effect: Effect.Effect<void, never, R>) => unknown,
-): () => void => {
-  let pending = false
-  return () => {
-    if (pending) return
-    pending = true
-    try {
-      fork(Effect.ensuring(renewal, Effect.sync(() => void (pending = false))))
-    } catch (error) {
-      pending = false
-      throw error
-    }
-  }
-}
-
+export { coalesced } from "./SocketRenewal.ts"
 
 /** Whether `principal` already holds `MAX_SOCKETS_PER_PERSON` of these admissions. */
 export const crowded = (admissions: ReadonlyArray<Admission | undefined>, principal: string): boolean =>
@@ -358,25 +333,25 @@ export const crowded = (admissions: ReadonlyArray<Admission | undefined>, princi
 /** The storage a hibernating host keeps its alarm in: a Durable Object's, or a test's. */
 export interface Storage<R = never> {
   readonly get: <T>(key: string) => Effect.Effect<T | undefined, never, R>
-  readonly put: <T>(key: string, value: T) => Effect.Effect<void, never, R>
+  readonly put: <T>(key: string, value: T) => void!never!R
   readonly getAlarm: () => Effect.Effect<number | null, never, R>
-  readonly setAlarm: (at: number) => Effect.Effect<void, never, R>
+  readonly setAlarm: (at: number) => void!never!R
 }
 
 /** Arms `storage`'s alarm for `next` unless one is due sooner; nothing with no `next`. */
 export const armAt = <R>(storage: Storage<R>, next: number | undefined) =>
-  Effect.gen(function* () {
+  effect {
     if (next === undefined) return
-    const alarm = yield* storage.getAlarm()
-    if (alarm === null || alarm > next) yield* storage.setAlarm(next)
-  })
+    const alarm = try storage.getAlarm()
+    if (alarm === null || alarm > next) try storage.setAlarm(next)
+  }
 
 /**
  * Runs a send or a close on a socket that may have closed: workerd throws there, and Alchemy's socket turns the throw
  * into a defect that `Effect.ignore` lets through. One socket's end never stops the rest of its host's work.
  */
-export const safely = <R>(effect: Effect.Effect<unknown, unknown, R>): Effect.Effect<void, never, R> =>
-  Effect.asVoid(Effect.exit(effect))
+export const safely = <R>(effect: unknown!unknown!R): void!never!R =>
+  asVoid(exit(effect))
 
 /** A hibernatable socket as a host holds it: Alchemy's `Cloudflare.WebSocket`, or a test's. */
 export interface HostSocket {

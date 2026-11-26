@@ -1,6 +1,6 @@
 import { type Cause, Deferred, Effect, type Fiber, Queue, type Scope } from "effect"
 import { HttpBody, HttpServerResponse } from "effect/http"
-import { coalesced } from "../SocketAccess.ts"
+import { coalesced } from "../SocketAccess.vibe"
 import { randomTicket, upgradeResponse } from "./SocketPumpsWeb.ts"
 
 // Durable Object instance-owned socket pump coordination (BranchSandboxes): the object's one fiber that runs what a

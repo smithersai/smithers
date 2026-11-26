@@ -7,7 +7,7 @@ import { DEV_ASK_TOKEN } from "./AsksDev.ts"
 import { DEV_FEED_KEY } from "./feeds/dev.ts"
 import { repositoryOf } from "./github/Config.vibe"
 import type * as RepoRoles from "./github/RepoRoles.vibe"
-import type { Signed } from "./SignIn.ts"
+import type { Signed } from "./SignIn.vibe"
 
 // ChatApi under `alchemy dev` (alchemy.run.ts picks it only then): the same program with real sign-in once the GitHub
 // App's client id and secret are in the environment, and until then a local developer signed in as an Admin, so the

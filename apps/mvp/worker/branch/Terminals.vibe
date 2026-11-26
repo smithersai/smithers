@@ -21,7 +21,7 @@ import * as ShapeAccess from "../ShapeAccess.vibe"
 import { branchAccess, canEdit, canView } from "./Access.vibe"
 import { TerminalSockets } from "./Sandboxes.vibe"
 import { isUpgrade, sameOrigin } from "./Upgrade.ts"
-import * as SocketAccess from "../SocketAccess.ts"
+import * as SocketAccess from "../SocketAccess.vibe"
 
 // The terminal routes (decision 0013 §2-§3, docs/features/branch-workspace.md#the-terminal):
 //

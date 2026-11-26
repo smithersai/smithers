@@ -22,11 +22,13 @@ apps/mvp/worker/SessionCryptoSync.ts
 apps/mvp/worker/SessionKeys.vibe
 apps/mvp/worker/SessionStore.vibe
 apps/mvp/worker/ShapeAccess.ts
-apps/mvp/worker/SignIn.ts
+apps/mvp/worker/SignIn.vibe
+apps/mvp/worker/SignInPlatform.ts
 apps/mvp/worker/flows/RevokeGitHubToken.vibe
 
 # Sockets and the hosts that hold them
-apps/mvp/worker/SocketAccess.ts
+apps/mvp/worker/SocketAccess.vibe
+apps/mvp/worker/SocketRenewal.ts
 apps/mvp/worker/SocketChecks.ts
 apps/mvp/worker/BranchRooms.vibe
 apps/mvp/worker/BranchSandboxes.vibe
@@ -43,7 +45,7 @@ apps/mvp/worker/RepoAbout.vibe
 apps/mvp/worker/RepoApi.vibe
 apps/mvp/worker/RepoRuns.vibe
 apps/mvp/worker/RunContent.vibe
-apps/mvp/worker/Views.ts
+apps/mvp/worker/Views.vibe
 apps/mvp/worker/WebPreview.ts
 apps/mvp/worker/bugs/Api.ts
 apps/mvp/worker/domains/Api.ts

@@ -25,11 +25,11 @@ import * as SandboxEgress from "./secrets/SandboxEgress.vibe"
 import * as Overflow from "./runners/Overflow.vibe"
 import { sealContext } from "./personal/Models.vibe"
 import * as PersonalStore from "./personal/Store.vibe"
-import { admissionOf, forward } from "./SocketAccess.ts"
+import { admissionOf, forward } from "./SocketAccess.vibe"
 import { memory } from "./test/box.ts"
 import { connection, objectRegistration, objectRuntime, unusedDatabase } from "./test/durableObject.ts"
 import * as SocketPumps from "./durable/SocketPumps.vibe"
-import * as SocketAccess from "./SocketAccess.ts"
+import * as SocketAccess from "./SocketAccess.vibe"
 import { type ContainerExec, withDockerSandbox } from "./test/branchContainer.ts"
 
 /** A renewal that dies is counted here, as the object logs it. */

@@ -51,7 +51,7 @@ import * as Fleet from "./runners/Fleet.vibe"
 import * as Overflow from "./runners/Overflow.vibe"
 import { SecretKeys } from "./secrets/Keys.vibe"
 import * as SessionStore from "./SessionStore.vibe"
-import * as SignIn from "./SignIn.ts"
+import * as SignIn from "./SignIn.vibe"
 import * as TodoRuns from "./stack/TodoRuns.vibe"
 
 // The Durable Object that runs remote flows on Cloudflare (docs/features/remote-flows.md): one object per execution,

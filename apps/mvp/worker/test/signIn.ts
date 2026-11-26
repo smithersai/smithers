@@ -10,7 +10,7 @@ import { FetchHttpClient, HttpEffect } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Flows from "../Flows.vibe"
-import * as SignIn from "../SignIn.ts"
+import * as SignIn from "../SignIn.vibe"
 import { type ScriptedGitHub, scriptedGitHub } from "./github.ts"
 import type { testFile } from "./harness.ts"
 

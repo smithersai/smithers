@@ -5,7 +5,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import * as Store from "./runners/RunContent.vibe"
 import * as TranscriptHost from "./runners/TranscriptHost.vibe"
-import * as SocketAccess from "./SocketAccess.ts"
+import * as SocketAccess from "./SocketAccess.vibe"
 import * as SocketHost from "./durable/SocketHost.vibe"
 import * as SocketChecks from "./SocketChecks.vibe"
 

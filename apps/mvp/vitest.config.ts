@@ -108,7 +108,10 @@ export default defineConfig({
         "worker/SessionSigningKeys.vibe",
         "worker/SessionStore.vibe",
         "worker/RunCredentials.vibe",
-        "worker/SignIn.ts",
+        "worker/SignIn.vibe",
+        "worker/SignInPlatform.ts",
+        "worker/SocketAccess.vibe",
+        "worker/SocketRenewal.ts",
         "db/migrations/0005_sign_in.ts",
         // Remote flow starts and request admission (docs/features/remote-flows.md).
         "worker/Body.vibe",
@@ -149,7 +152,8 @@ export default defineConfig({
         "worker/waitlist/Waitlist.vibe",
         "worker/ops/ArtifactRoutes.vibe",
         // The conversation's views and web pages (docs/features/web-pages.md).
-        "worker/Views.ts",
+        "worker/ViewRealm.vibe",
+        "worker/Views.vibe",
         "worker/WebPreview.vibe",
         "db/migrations/0010_views.ts",
         // A repository's docs and the docs view (docs/features/docs.md).

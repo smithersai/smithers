@@ -10,7 +10,7 @@ import * as Database from "../db/Database.ts"
 import type { Actor } from "./Actor.vibe"
 import { shared, tracked } from "./test/branch.ts"
 import { eventually, harness, recorded, testFile } from "./test/harness.ts"
-import * as Views from "./Views.ts"
+import * as Views from "./Views.vibe"
 
 const runtime = testFile("agent-views")
 

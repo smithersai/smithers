@@ -13,7 +13,7 @@ import { shared, tracked } from "./test/branch.ts"
 import type { CuratedFile } from "./home/Curated.ts"
 import { eventually, harness, recorded, testFile } from "./test/harness.ts"
 import { markdown, outsideWeb, type Page } from "./test/pages.ts"
-import * as Views from "./Views.ts"
+import * as Views from "./Views.vibe"
 
 const runtime = testFile("views")
 

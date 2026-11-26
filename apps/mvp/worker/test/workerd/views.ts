@@ -6,7 +6,7 @@
 import { ViewCode } from "@smthrs/views"
 import { Effect } from "effect"
 import { TIC_TAC_TOE, TIC_TAC_TOE_STATE } from "../../../src/features/views/renderer.ts"
-import * as ViewRealm from "../../ViewRealm.ts"
+import * as ViewRealm from "../../ViewRealm.vibe"
 
 const play = Effect.gen(function* () {
   const realm = yield* ViewRealm.load

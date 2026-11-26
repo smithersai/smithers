@@ -2,7 +2,7 @@ import { Context, type Effect, Schema } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Access } from "../../src/features/branch/contract.ts"
 import type { Role } from "../Actor.vibe"
-import type { Admission } from "../SocketAccess.ts"
+import type { Admission } from "../SocketAccess.vibe"
 import type { Policy } from "./Access.vibe"
 
 // A branch's room as the routes reach it (decision 0013 §4, docs/features/branch-workspace.md#presence): who is on the

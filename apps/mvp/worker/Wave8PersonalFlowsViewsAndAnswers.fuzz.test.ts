@@ -26,7 +26,7 @@ import { DocsSource } from "./docs/Source.vibe"
 import * as PersonalModels from "./personal/Models.vibe"
 import * as PersonalFlows from "./PersonalFlows.vibe"
 import { SecretKeys } from "./secrets/Keys.vibe"
-import * as Views from "./Views.ts"
+import * as Views from "./Views.vibe"
 
 const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")
 const execs = Math.max(20, Math.min(Math.ceil(baseExecs / 3), 50))

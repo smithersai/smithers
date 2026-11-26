@@ -1,5 +1,5 @@
 import { repoId } from "../../src/features/repo/contract.ts"
-import { DEFAULT_REPOSITORY } from "../SignIn.ts"
+import { DEFAULT_REPOSITORY } from "../SignIn.vibe"
 
 // The GitHub App's settings for the git loop (docs/features/issues.md#configuration, decision 0012 question 2): its ID
 // and private key, which mint installation tokens, and the webhook's secret. G0 syncs one repository, the one sign-in

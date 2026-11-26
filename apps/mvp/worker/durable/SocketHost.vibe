@@ -1,7 +1,7 @@
 import { upgrade } from "@alchemy.run/cloudflare"
 import { Cause, Clock, Context, Deferred, Effect, type Scope } from "effect"
 import { codeOf } from "../ErrorCode.ts"
-import { actAt, type Admission, LEASE_MS, nextRenewal } from "../SocketAccess.ts"
+import { actAt, type Admission, LEASE_MS, nextRenewal } from "../SocketAccess.vibe"
 
 // Durable Object instance-owned socket lease coordination (BranchRooms, BranchSandboxes, RunContent).
 // Stateless Workers must never import this module; worker/durable/boundary.test.ts enforces that rule.

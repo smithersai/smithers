@@ -35,7 +35,7 @@ import { stillAdmitted } from "./RunAuthority.vibe"
 import * as RepoRoles from "./github/RepoRoles.vibe"
 import { repositoryOf } from "./github/Config.vibe"
 import { mayRead } from "./stack/Access.vibe"
-import * as SocketAccess from "./SocketAccess.ts"
+import * as SocketAccess from "./SocketAccess.vibe"
 import { isUpgrade, sameOrigin } from "./branch/Upgrade.ts"
 
 // Runs Smithers runs on Cloudflare, read from the browser (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare), and

@@ -24,7 +24,7 @@ import { askingOf, branchAccess, canEdit, canView, installedOn, isMember, roleOn
 import * as Conversations from "./Conversations.vibe"
 import { Rooms } from "./Rooms.vibe"
 import { isUpgrade, sameOrigin } from "./Upgrade.ts"
-import * as SocketAccess from "../SocketAccess.ts"
+import * as SocketAccess from "../SocketAccess.vibe"
 import * as WriteAuthority from "../WriteAuthority.ts"
 
 // Co-editing's routes (decision 0013 §4, docs/features/coedit.md): every input two people see at once is a text they

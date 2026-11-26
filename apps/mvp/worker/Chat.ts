@@ -54,7 +54,7 @@ import * as AlertChannels from "./AlertChannels.vibe"
 import * as BudgetApi from "./branch/BudgetApi.vibe"
 import * as HostedModel from "./HostedModel.vibe"
 import * as SpendAlerts from "./SpendAlerts.vibe"
-import * as Views from "./Views.ts"
+import * as Views from "./Views.vibe"
 import * as WebPreview from "./WebPreview.vibe"
 
 // ChatApi's routes (docs/features/chat.md#contract). ChatApi.ts runs them on Cloudflare; the tests run them as they

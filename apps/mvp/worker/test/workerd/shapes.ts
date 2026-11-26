@@ -15,7 +15,7 @@ import * as GitHubApi from "../../github/Api.vibe"
 import * as GitHubConfig from "../../github/Config.vibe"
 import * as RepoRoles from "../../github/RepoRoles.vibe"
 import { APP_ID, appKey, SCRIPTED_API, type ScriptedGitHub, scriptedGitHub } from "../../github/test/scriptedGitHub.ts"
-import * as SignIn from "../../SignIn.ts"
+import * as SignIn from "../../SignIn.vibe"
 import { REPOSITORY, SESSION_SECRET } from "./shapesFixture.ts"
 
 interface Env {

@@ -21,8 +21,8 @@ import * as RevokeReplaced from "./flows/RevokeReplacedGitHubToken.vibe"
 import * as RunCredentials from "./RunCredentials.vibe"
 import * as SessionKeys from "./SessionKeys.vibe"
 import * as SessionStore from "./SessionStore.vibe"
-import * as SignIn from "./SignIn.ts"
-import * as SocketAccess from "./SocketAccess.ts"
+import * as SignIn from "./SignIn.vibe"
+import * as SocketAccess from "./SocketAccess.vibe"
 import { scriptedGitHub } from "./test/github.ts"
 
 const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")

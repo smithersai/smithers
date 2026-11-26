@@ -1,7 +1,7 @@
 import { Fault } from "@smthrs/flow"
 import { Context, Schema } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/http"
-import type { Admission } from "../SocketAccess.ts"
+import type { Admission } from "../SocketAccess.vibe"
 import type { Role } from "../Actor.vibe"
 import type { Policy } from "./Access.vibe"
 

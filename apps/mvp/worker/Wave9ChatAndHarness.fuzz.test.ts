@@ -27,7 +27,7 @@ import * as BranchAccess from "./branch/Access.vibe"
 import * as Conversations from "./branch/Conversations.vibe"
 import * as ChatMetrics from "./ChatMetrics.vibe"
 import * as Messages from "./Messages.ts"
-import * as Views from "./Views.ts"
+import * as Views from "./Views.vibe"
 import * as H from "./test/harness.ts"
 
 const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")

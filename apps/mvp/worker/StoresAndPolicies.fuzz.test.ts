@@ -22,7 +22,7 @@ import * as RunnersOverflow from "./runners/Overflow.vibe"
 import * as RunnersStore from "./runners/Store.vibe"
 import * as SessionStore from "./SessionStore.vibe"
 import * as SetModel from "./SetModel.vibe"
-import * as SocketAccess from "./SocketAccess.ts"
+import * as SocketAccess from "./SocketAccess.vibe"
 import * as WriteAuthority from "./WriteAuthority.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "250" : "100"))

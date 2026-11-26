@@ -11,7 +11,7 @@ import { Effect, Exit, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { GitHubAuth, GitHubRefused, roleOf } from "./GitHubAuth.ts"
-import { DEFAULT_REPOSITORY } from "./SignIn.ts"
+import { DEFAULT_REPOSITORY } from "./SignIn.vibe"
 
 const clientId = process.env.GITHUB_APP_CLIENT_ID
 const clientSecret = process.env.GITHUB_APP_CLIENT_SECRET

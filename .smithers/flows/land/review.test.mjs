@@ -949,8 +949,10 @@ test("the shipped list covers the access areas and spares tests, generated files
   const required = requiredMatcher(readFileSync(join(import.meta.dirname, "review-required.txt"), "utf8"))
   for (
     const path of [
-      "apps/mvp/worker/SignIn.ts",
-      "apps/mvp/worker/SocketAccess.ts",
+      "apps/mvp/worker/SignIn.vibe",
+      "apps/mvp/worker/SignInPlatform.ts",
+      "apps/mvp/worker/SocketAccess.vibe",
+      "apps/mvp/worker/SocketRenewal.ts",
       "apps/mvp/worker/runners/Fence.ts",
       "apps/mvp/worker/runners/GitCredential.ts",
       "apps/mvp/worker/github/RepoRoles.ts",
@@ -981,7 +983,7 @@ test("the shipped list covers the access areas and spares tests, generated files
       "apps/mvp/worker/RunAuthority.ts",
       "apps/mvp/worker/WriteAuthority.ts",
       "apps/mvp/worker/Chat.ts",
-      "apps/mvp/worker/Views.ts",
+      "apps/mvp/worker/Views.vibe",
       "apps/mvp/worker/WebPreview.ts",
       "apps/mvp/worker/Notifications.vibe",
       "apps/mvp/src/wipe.ts",
