@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { HomeView } from "../home"
+import type { HomeView } from "../home.vibe"
 
 // What React components get: the home layer's live queries to render (features/home/home.ts).
 

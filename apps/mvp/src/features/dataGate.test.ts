@@ -11,7 +11,7 @@ const source = `
   import { Layer } from "effect"
   import { RepoStore } from "./repo/store"
   import { Plugins } from "../plugins/plugins"
-  import { HomeStore } from "./home/store"
+  import { HomeStore } from "./home/store.vibe"
   import { FilesStore } from "./files/store.vibe"
   import { DomainsStore } from "./domains/store.vibe"
   import { SecretsStore } from "./secrets/store"

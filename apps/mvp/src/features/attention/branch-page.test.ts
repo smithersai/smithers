@@ -1,4 +1,4 @@
-import { Home } from "../home/home"
+import { Home } from "../home/home.vibe"
 import { Files } from "../files/files.vibe"
 // Render the real branch screen over the app's real Effect services and live collections, through the same providers
 // as the branch page's other render tests (src/screens/branch/offline-render.tsx). No React hooks or views are

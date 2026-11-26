@@ -10,8 +10,8 @@ import { scriptedGitHub, spoonKnife } from "../../../worker/test/githubRest"
 import { RepoClient } from "../repo/api"
 import { replaceRole, RepoStore } from "../repo/store"
 import { repoId } from "../repo/contract"
-import { HomeClient, HomeRefused } from "./api"
-import { HomeStore } from "./store"
+import { HomeClient, HomeRefused } from "./api.vibe"
+import { HomeStore } from "./store.vibe"
 import { HOME_FILE, HOME_INVALID, HOME_UNREADABLE } from "./contract"
 import { answers, resolves } from "./metrics"
 import { homePageOf, tabsOf } from "./view"
@@ -704,4 +704,42 @@ test("a preview delayed at its write cannot replace the clone's default branch",
     await Effect.runPromise(Deferred.succeed(cloneRelease, undefined))
     await Effect.runPromise(Deferred.succeed(previewRelease, undefined))
   }
+})
+
+test("a refusal during the manifest read prevents its Markdown files from being requested", async () => {
+  const h = await repoHarness(server)
+  await seeded(h, {
+    [HOME_FILE]: JSON.stringify({ blocks: [{ type: "markdown", path: "intro.md" }] }),
+    "intro.md": "Introduction",
+  })
+  const id = repoId("maya", "tinyhttp")
+  const refusing = Deferred.makeUnsafe<Effect.Effect<void>>()
+  const blobPaths: string[] = []
+  const client = Layer.effect(RepoClient, Effect.map(RepoClient, (real) => RepoClient.of({
+    ...real,
+    blob: (owner, name, sha, path) => Effect.gen(function* () {
+      blobPaths.push(path)
+      const blob = yield* real.blob(owner, name, sha, path)
+      if (path === HOME_FILE) yield* Effect.flatten(Deferred.await(refusing))
+      return blob
+    }),
+  }))).pipe(Layer.provide(RepoClient.layer({ origin: h.origin, within: "10 seconds" })), Layer.provide(fetchLayer(h)))
+  const storeReady = Deferred.makeUnsafe<HomeStore["Service"]>()
+  const homeStore = Layer.effect(HomeStore, Effect.tap(HomeStore, (store) => Deferred.succeed(storeReady, store))).pipe(
+    Layer.provide(HomeStore.layer),
+  )
+  const tab = await openTab({ origin: h.origin, fetch: h.fetch, client, homeStore, pageWait: "30 seconds" })
+  tabs.push(tab)
+
+  const [repos, store] = await tab.runtime.runPromise(Effect.all([RepoStore, Deferred.await(storeReady)]))
+  await tab.runtime.runPromise(Effect.all([repos.firstSync, repos.refusalsKnown]))
+  await waitFor(() => expect(tab.repo.lookups.repository(id)?.status).toBe("ready"))
+  await tab.runtime.runPromise(Deferred.succeed(refusing, repos.refuse(id)))
+
+  await tab.home.actions.warm("maya", "tinyhttp")
+
+  expect(repos.isRefused(id)).toBe(true)
+  expect(blobPaths).toEqual([HOME_FILE])
+  expect(await tab.runtime.runPromise(store.files.toArray)).toEqual([])
+  expect(await tab.runtime.runPromise(store.homes.toArray)).toEqual([])
 })

@@ -2,11 +2,12 @@ import { Deferred, Effect, Layer, ManagedRuntime } from "effect"
 import { expect, test } from "vitest"
 import { repoAuthority } from "../../test/repoAuthority"
 import { Persistence } from "@smthrs/effect-tanstack-db"
-import { FlowDispatch } from "../../flows/dispatch"
+import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { BranchTrackRefused, BranchTrackUnavailable } from "../branch/flows"
-import { runAction } from "./actions"
+import { RepoStore } from "../repo/store"
+import { runAction } from "./actions.vibe"
 import { CURRENT } from "./rows"
-import { HomeStore } from "./store"
+import { HomeStore } from "./store.vibe"
 
 // A home opened without the optional feature stores still exposes usable empty live blocks.
 test("standalone homes have empty issues, sync, runs, stack and access blocks", async () => {
@@ -22,6 +23,9 @@ test("standalone homes have empty issues, sync, runs, stack and access blocks", 
 
     await runtime.runPromise(store.files.insert({ key: "repo@sha:README.md", repoId: "repo", home: "repo@sha", path: "README.md", state: "text", text: "Home" }))
     expect(await runtime.runPromise(store.files.get("repo@sha:README.md"))).toMatchObject({ value: { text: "Home" } })
+
+    await runtime.runPromise(store.current.delete(CURRENT))
+    expect(await runtime.runPromise(store.homeState.toArray)).toEqual([])
   } finally {
     await runtime.dispose()
   }
@@ -75,4 +79,54 @@ test.each(["failed", "done"] as const)("an action finishing after navigation can
     expect(await pending).toBeUndefined()
     expect(await runtime.runPromise(store.current.get(CURRENT))).toMatchObject({ value: { running: ["branch.new"], failure: null } })
   } finally { await runtime.dispose() }
+})
+
+
+test("a refusal removes only that repository's home, curated answer and Markdown files", async () => {
+  const runtime = ManagedRuntime.make(HomeStore.layer.pipe(Layer.provideMerge(repoAuthority), Layer.provide(Persistence.memory)))
+  try {
+    const [store, repos] = await runtime.runPromise(Effect.all([HomeStore, RepoStore]))
+    for (const id of ["acme/widgets", "acme/other"]) {
+      const key = `${id}@sha`
+      await runtime.runPromise(store.homes.insert({ key, state: "absent", sections: [], contributors: "role", skipped: 0, reason: null }))
+      await runtime.runPromise(store.curated.insert({ key: id, state: "absent", defaultBranch: "main", sections: [] }))
+      await runtime.runPromise(store.files.insert({ key: `${key}:README.md`, repoId: id, home: key, path: "README.md", state: "text", text: id }))
+    }
+
+    await runtime.runPromise(repos.refuse("acme/widgets"))
+    await runtime.runPromise(repos.wiped("acme/widgets"))
+
+    const [homes, curated, files] = await runtime.runPromise(Effect.all([
+      store.homes.toArray, store.curated.toArray, store.files.toArray,
+    ]))
+    expect(homes.map((row) => row.key)).toEqual(["acme/other@sha"])
+    expect(curated.map((row) => row.key)).toEqual(["acme/other"])
+    expect(files.map((row) => row.repoId)).toEqual(["acme/other"])
+  } finally {
+    await runtime.dispose()
+  }
+})
+
+test("an engine refusal clears the action without a destination", async () => {
+  const runtime = ManagedRuntime.make(HomeStore.layer.pipe(Layer.provide(repoAuthority), Layer.provide(Persistence.memory)))
+  try {
+    const store = await runtime.runPromise(Effect.service(HomeStore))
+    await runtime.runPromise(store.current.update(CURRENT, (row) => {
+      row.owner = "acme"
+      row.name = "widgets"
+      row.repoId = "acme/widgets"
+    }))
+
+    const failure = new DispatchFailed({ flow: "branch/create", reason: "unavailable" })
+    const destination = await runtime.runPromise(runAction("branch.new", null).pipe(
+      Effect.provideService(FlowDispatch, { dispatch: () => Effect.fail(failure) }),
+    ))
+
+    expect(destination).toBeUndefined()
+    expect(await runtime.runPromise(store.current.get(CURRENT))).toMatchObject({
+      value: { running: [], failure: "unavailable" },
+    })
+  } finally {
+    await runtime.dispose()
+  }
 })

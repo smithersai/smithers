@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net"
 import { type Duration, Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test } from "vitest"
-import { HomeClient } from "./api"
+import { HomeClient } from "./api.vibe"
 
 // The real home client from the browser's side, against a local HTTP server that plays a gateway: real sockets, so a
 // stalled answer, a body outside the contract and an unreachable server are what a browser would meet. Every answer

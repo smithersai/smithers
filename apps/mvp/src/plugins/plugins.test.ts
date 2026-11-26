@@ -10,7 +10,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import queue from "../../plugins/queue/plugin.json" with { type: "json" }
 import type { QueueTab } from "../../plugins/queue/src/tab"
 import { Chat } from "../features/chat/chat"
-import { Home } from "../features/home/home"
+import { Home } from "../features/home/home.vibe"
 import { Repo } from "../features/repo/repo"
 import type { Need } from "../features/status/schema"
 import { StatusStore } from "../features/status/store"

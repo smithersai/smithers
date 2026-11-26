@@ -95,6 +95,7 @@ export const SyncRow = Schema.Struct({
 export type SyncRow = typeof SyncRow.Type
 
 /** A sync row's key: `<repoId>/<stream>`. */
+/** @throws {never} */
 export const syncKey = (row: SyncRow): string => `${row.repoId}/${row.stream}`
 
 /** One row of Postgres `triage_settings` (`TRIAGE_SETTINGS_COLUMNS`): whether triage runs on a repository. */

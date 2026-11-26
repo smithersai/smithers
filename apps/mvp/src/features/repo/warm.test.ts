@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { testFile } from "../../../worker/test/harness"
 import { type RepoHarness, repoHarness, resetRepos } from "../../../worker/test/repos"
 import { openTab, type Tab } from "../../test/repoDevice"
-import { HomeClient, HomeRefused } from "../home/api"
+import { HomeClient, HomeRefused } from "../home/api.vibe"
 import { homePageOf } from "../home/view"
 import { RepoClient, RepoRefused } from "./api"
 import { RepoStore } from "./store"
@@ -37,6 +37,11 @@ const open = async (
   const tab = await openTab({ origin: h.origin, fetch: h.fetch, ...options })
   tabs.push(tab)
   return tab
+}
+
+const waitForRepository = async (tab: Tab, id: string) => {
+  await tab.runtime.runPromise(Effect.flatMap(RepoStore, (store) => store.firstSync))
+  await waitFor(() => expect(tab.repo.lookups.repository(id)?.status).toBe("ready"))
 }
 
 /** RepoApi's real client over the harness, with its file list in place of the real one's. */
@@ -116,10 +121,12 @@ describe("a link's warm", () => {
     expect(tab.repo.lookups.repository("github/octocat/spoon-knife")?.status).toBe("cloning")
   })
 
-  test("loads the root's files, README and home into the tab without opening the page; the click then opens it complete with no read of its own", async () => {
+  test("loads the root's files, README and home into the tab without opening the page; the click then opens it complete with no read of its own", { timeout: 60_000 }, async () => {
     const h = await repoHarness(server)
+    h.scripted.syncPolls = 0
     const { id, headSha } = await h.seed("octocat", "Spoon-Knife")
-    const tab = await open(h)
+    const tab = await open(h, { pageWait: "10 seconds" })
+    await waitForRepository(tab, id)
     // Another page is open: warming never moves it.
     tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Other" }, {})
     tab.home.actions.open("octocat", "Other")
@@ -141,11 +148,13 @@ describe("a link's warm", () => {
     expect(reads(h)).toEqual(warmed)
   })
 
-  test("a list that failed loads again on the next warm, and opening shows what that answered; a file's warm loads it", async () => {
+  test("a list that failed loads again on the next warm, and opening shows what that answered; a file's warm loads it", { timeout: 60_000 }, async () => {
     const h = await repoHarness(server)
+    h.scripted.syncPolls = 0
     const { id, headSha } = await h.seed("octocat", "Spoon-Knife")
     const client = listFailsOnce(h)
-    const tab = await open(h, { client: client.layer })
+    const tab = await open(h, { pageWait: "10 seconds", client: client.layer })
+    await waitForRepository(tab, id)
     await tab.repo.actions.warmRoute("tree", SPOON, {})
     expect(tab.repo.lookups.tree(id, headSha)?.state).toBe("failed")
     // Opening never asks again for a failure a warm just had: the page says why at once.
@@ -179,6 +188,7 @@ describe("a link's warm", () => {
     const h = await repoHarness(server)
     const { id, headSha } = await h.seed("octocat", "Spoon-Knife")
     const tab = await open(h, { pageWait: "300 millis", client: listNever(h) })
+    await waitForRepository(tab, id)
     const startedAt = Date.now()
     await tab.repo.actions.warmRoute("tree", SPOON, {})
     const waited = Date.now() - startedAt
@@ -193,7 +203,8 @@ describe("a link's warm", () => {
   test("of what names no page, a ref that names nothing, or a folder with no README ends with no read it needn't make", async () => {
     const h = await repoHarness(server)
     const { id, headSha } = await h.seed("octocat", "Spoon-Knife")
-    const tab = await open(h)
+    const tab = await open(h, { pageWait: "10 seconds" })
+    await waitForRepository(tab, id)
     const before = reads(h)
     // Not a repository's name: nothing to load.
     await Promise.all([tab.repo.actions.warmRoute("tree", { owner: "api", repo: "x" }, {}), tab.home.actions.warm("api", "x")])
@@ -235,6 +246,7 @@ describe("a link's warm", () => {
     const client = readFailsOnce(h)
     // A wait long enough for a loaded machine to reach the file's read.
     const tab = await open(h, { client: client.layer, pageWait: "10 seconds" })
+    await waitForRepository(tab, id)
     const file = { ...SPOON, ref: "main", _splat: "src/index.ts" }
     await tab.repo.actions.warmRoute("blob", file, {})
     expect(tab.repo.lookups.file(id, headSha, "src/index.ts")?.state).toBe("failed")

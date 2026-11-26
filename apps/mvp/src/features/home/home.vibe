@@ -6,9 +6,9 @@ import type { RepoStore } from "../repo/store"
 import { IssuesStore, type RepoIssues } from "../issues/store"
 import { TodosStore } from "../todos/store"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { open, runAction, view, warm, watch } from "./actions"
-import type { HomeClient } from "./api"
-import { HomeStore } from "./store"
+import { open, runAction, view, warm, watch } from "./actions.vibe"
+import type { HomeClient } from "./api.vibe"
+import { HomeStore } from "./store.vibe"
 
 // A repository's home as a frontend sees it: live queries to read and a plain function to act, with no Effect in
 // sight. React renders the queries with `useLiveQuery`, and a repository route's loader calls `open`.
@@ -65,12 +65,12 @@ export class Home extends Context.Service<Home, { readonly queries: HomeQueries;
   /** Binds the store's queries and the action, which runs with the services this layer was built with. */
   static readonly layer = Layer.effect(
     Home,
-    Effect.gen(function* () {
-      const store = yield* HomeStore
-      const todos = yield* Effect.serviceOption(TodosStore)
-      const issues = yield* Effect.serviceOption(IssuesStore)
+    effect {
+      const store = try HomeStore
+      const todos = try Effect.serviceOption(TodosStore)
+      const issues = try Effect.serviceOption(IssuesStore)
       const opened = (repoId: string) => (Option.isSome(issues) ? issues.value.opened(repoId) : undefined)
-      const context = yield* Effect.context<HomeStore | HomeClient | RepoStore | RepoClient | FlowDispatch>()
+      const context = try Effect.context<HomeStore | HomeClient | RepoStore | RepoClient | FlowDispatch>()
       const { runSync: run, runPromise: promise } = runners(context, "home")
       return Home.of({
         queries: {
@@ -94,7 +94,7 @@ export class Home extends Context.Service<Home, { readonly queries: HomeQueries;
           watch: (what, started) => void promise(watch(what, started)),
         },
       })
-    }),
+    },
   )
 }
 

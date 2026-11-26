@@ -1,4 +1,4 @@
-import { Context, Data, type Duration, Effect, Layer, Schema } from "effect"
+import { Context, type Duration, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { homeRoute } from "./contract"
 import { HomeAnswer } from "./schema"
@@ -7,25 +7,28 @@ import { HomeAnswer } from "./schema"
 // one deadline over the whole exchange.
 
 /** ChatApi didn't answer as the contract says: no network or no whole answer in time (no `status`), or another status. */
-export class HomeRefused extends Data.TaggedError("HomeRefused")<{ readonly status?: number }> {}
+export error HomeRefused {
+  status?: number
+}
 
 /** Who the asker is on `owner/name`, and Smithers' curated home for it. */
-export const getHome = Effect.fn("home.answer.get")(function* (
+export const getHome = Effect.fn("home.answer.get")(effect (
   origin: string,
   repository: { readonly owner: string; readonly name: string },
   within: Duration.Input,
-) {
-  const client = yield* HttpClient.HttpClient
-  return yield* Effect.gen(function* () {
-    const response = yield* client.execute(HttpClientRequest.get(`${origin}${homeRoute(repository.owner, repository.name)}`))
+) => {
+  const client = try HttpClient.HttpClient
+  return try (effect {
+    const url = try sync(() => `${origin}${homeRoute(repository.owner, repository.name)}`)
+    const response = try client.execute(HttpClientRequest.get(url))
       .pipe(Effect.mapError(() => new HomeRefused({})))
-    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-    if (response.status !== 200) return yield* new HomeRefused({ status: response.status })
-    return yield* response.json.pipe(
+    try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+    if (response.status !== 200) throw new HomeRefused({ status: response.status })
+    return try response.json.pipe(
       Effect.flatMap(Schema.decodeUnknownEffect(HomeAnswer)),
       Effect.mapError(() => new HomeRefused({ status: response.status })),
     )
-  }).pipe(Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new HomeRefused({})) }))
+  }.pipe(Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new HomeRefused({})) })))
 })
 
 /**
@@ -34,7 +37,7 @@ export const getHome = Effect.fn("home.answer.get")(function* (
  */
 export class HomeClient extends Context.Service<
   HomeClient,
-  { readonly answer: (owner: string, name: string) => Effect.Effect<HomeAnswer, HomeRefused> }
+  { readonly answer: (owner: string, name: string) => HomeAnswer!HomeRefused }
 >()("@smthrs/mvp/home/HomeClient") {
   /** The real client: ChatApi at `origin`, with `within` for each whole request. */
   static readonly layer = (options: { readonly origin: string; readonly within: Duration.Input }) =>

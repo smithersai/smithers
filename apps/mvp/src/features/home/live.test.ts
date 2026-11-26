@@ -9,7 +9,7 @@ import { repoId } from "../repo/contract"
 import { Repo } from "../repo/repo"
 import type { Todo } from "../todos/schema"
 import { Todos } from "../todos/todos"
-import { Home } from "./home"
+import { Home } from "./home.vibe"
 import { homePageOf, issuesOf, stackOf } from "./view"
 
 // A repository's curated home in the whole browser app (`appLayer`), against ChatApi's real routes, the compose
