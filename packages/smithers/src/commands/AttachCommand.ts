@@ -1,7 +1,14 @@
+/**
+ * `smthrs attach`: redeems a one-time attach intent over PKCE and bridges the
+ * granted agent MCP endpoint to stdio.
+ *
+ * @since 1.0.0
+ */
+
+import { Cli, z } from "incur"
 import { createHash, randomBytes } from "node:crypto"
 import { createInterface } from "node:readline/promises"
-import { Cli, z } from "incur"
-import { normalizeOrigin, serveMcpStdioBridge, type McpServeOptions } from "../cli/McpRemote.ts"
+import { type McpServeOptions, normalizeOrigin, serveMcpStdioBridge } from "../cli/McpRemote.ts"
 
 interface AttachOptions {
   readonly intent: string
@@ -17,6 +24,11 @@ const redeemResponse = z.object({
   grant: z.object({ act: z.literal("agent"), expiresAt: z.number() })
 })
 
+/**
+ * Claims the intent, asks for the approval code and redeems it for an agent grant on the same origin.
+ * @category constructors
+ * @since 1.0.0
+ */
 export const redeem = async (options: AttachOptions) => {
   const intent = options.intent.trim().toUpperCase()
   if (!/^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/.test(intent)) {
@@ -36,15 +48,23 @@ export const redeem = async (options: AttachOptions) => {
   }
   const verifier = randomBytes(32).toString("base64url")
   const challenge = createHash("sha256").update(verifier).digest("base64url")
-  const claim = claimResponse.safeParse(await post("/api/attach/claim", {
-    reference: intent, client: "smthrs attach", challenge
-  }))
+  const claim = claimResponse.safeParse(
+    await post("/api/attach/claim", {
+      reference: intent,
+      client: "smthrs attach",
+      challenge
+    })
+  )
   if (!claim.success) throw new Error("Invalid attach claim")
   const code = (await options.approve(claim.data.pairing)).trim()
   if (code === "") throw new Error("Attach approval code is required")
-  const result = redeemResponse.safeParse(await post("/api/attach/redeem", {
-    claim: claim.data.claim, code, verifier
-  }))
+  const result = redeemResponse.safeParse(
+    await post("/api/attach/redeem", {
+      claim: claim.data.claim,
+      code,
+      verifier
+    })
+  )
   if (!result.success || result.data.grant.expiresAt <= Date.now()) throw new Error("Invalid or expired agent grant")
   const endpoint = new URL(result.data.mcpPath, origin)
   if (endpoint.origin !== origin || endpoint.pathname !== result.data.mcpPath) {
@@ -53,6 +73,11 @@ export const redeem = async (options: AttachOptions) => {
   return { token: result.data.token, endpoint }
 }
 
+/**
+ * Redeems the intent and serves the granted MCP endpoint over stdio.
+ * @category constructors
+ * @since 1.0.0
+ */
 export const attach = async (
   options: AttachOptions & Pick<McpServeOptions, "input" | "output" | "stderr" | "signal">
 ): Promise<void> => {
@@ -79,8 +104,14 @@ interface AttachHost extends Pick<McpServeOptions, "input" | "output" | "signal"
   readonly approve?: AttachOptions["approve"] | undefined
 }
 
-export const registerAttach = (host: AttachHost = {}) => Cli.create("attach", {
-  description: "Attach an agent via a one-time intent",
-  options: z.object({ intent: z.string(), origin: z.string().optional() }),
-  run: ({ options }) => attach({ ...options, ...host, approve: host.approve ?? approveInTerminal })
-})
+/**
+ * The `attach` command, approving from the controlling terminal unless `host.approve` is given.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const registerAttach = (host: AttachHost = {}) =>
+  Cli.create("attach", {
+    description: "Attach an agent via a one-time intent",
+    options: z.object({ intent: z.string(), origin: z.string().optional() }),
+    run: ({ options }) => attach({ ...options, ...host, approve: host.approve ?? approveInTerminal })
+  })

@@ -6,7 +6,7 @@ test.each([
   ["missing path", {}],
   ["foreign origin", { mcpPath: "https://other.example/mcp/acme/project/main" }],
   ["network-path reference", { mcpPath: "//other.example/mcp/acme/project/main" }],
-  ["unscoped path", { mcpPath: "/mcp" }],
+  ["unscoped path", { mcpPath: "/mcp" }]
 ])("attach refuses an agent grant with %s", async (_description, path) => {
   const server = createServer((request, response) => {
     const body = request.url === "/api/attach/claim"
@@ -23,7 +23,9 @@ test.each([
     const address = server.address()
     if (address === null || typeof address === "string") throw new Error("Expected a TCP address")
     await expect(redeem({
-      intent: "ABCD-EFGH", origin: "http://127.0.0.1:" + address.port, approve: async () => "code"
+      intent: "ABCD-EFGH",
+      origin: "http://127.0.0.1:" + address.port,
+      approve: async () => "code"
     })).rejects.toThrow(/Invalid/)
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))

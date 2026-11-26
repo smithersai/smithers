@@ -11,15 +11,7 @@
  */
 import * as Schema from "effect/Schema"
 import { canonicalHash, canonicalJson } from "./Canonical.ts"
-import {
-  Chat,
-  ChatCommand,
-  ChatEvent,
-  type ChatRefusal,
-  decideChat,
-  emptyChat,
-  evolveChat
-} from "./Chat.ts"
+import { Chat, ChatCommand, ChatEvent, type ChatRefusal, decideChat, emptyChat, evolveChat } from "./Chat.ts"
 import type { Decision } from "./Decision.ts"
 import {
   decidePlan,

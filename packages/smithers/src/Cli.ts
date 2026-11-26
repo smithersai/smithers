@@ -776,9 +776,14 @@ export const makeCli = (
   const delegateHelp = makeHelpCli()
   const delegateHelpTree = Cli.toCommands.get(delegateHelp as never)!
   delegateHelpTree.clear()
-  project(Cli.toCommands.get(cli as never)!, delegateHelpTree, [], [...libraryDoors, ...doors].filter((door) =>
-    !personOnlyCommands.some((path) => door === path || door.startsWith(path + " "))
-  ))
+  project(
+    Cli.toCommands.get(cli as never)!,
+    delegateHelpTree,
+    [],
+    [...libraryDoors, ...doors].filter((door) =>
+      !personOnlyCommands.some((path) => door === path || door.startsWith(path + " "))
+    )
+  )
 
   const invoke = cli.serve.bind(cli)
   const serve: typeof cli.serve = async (argv = [], serveOptions) => {
@@ -837,7 +842,9 @@ export const makeCli = (
       ) {
         await RetiredSkills.register(homedir(), process.env.XDG_DATA_HOME || resolve(homedir(), ".local/share"))
       }
-      return (rootDiscovery || delegatedGroupHelp) && !explicitHiddenHelp ? helpDiscovery.serve(argv, options) : invoke(argv, options)
+      return (rootDiscovery || delegatedGroupHelp) && !explicitHiddenHelp
+        ? helpDiscovery.serve(argv, options)
+        : invoke(argv, options)
     }
     // Incur selects stdio before help/schema/manifests/version, but after
     // update checks and a requested update (unless help suppresses it).
@@ -970,9 +977,11 @@ export const makeCli = (
       DidYouMean.didYouMean(
         typed,
         [],
-        DidYouMean.commands(documentation.humanHelp && !served && Delegate.principalOf(environment) === "person"
-          ? humanDiscovery
-          : discovery)
+        DidYouMean.commands(
+          documentation.humanHelp && !served && Delegate.principalOf(environment) === "person"
+            ? humanDiscovery
+            : discovery
+        )
       ).pipe(
         Effect.provide(evaluator(environment))
       ),

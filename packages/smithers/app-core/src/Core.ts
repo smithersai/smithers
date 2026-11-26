@@ -365,7 +365,12 @@ const copyOf = (value: unknown): unknown => {
         const member: unknown = (value as { readonly [key: string]: unknown })[key]
         if (member === undefined) continue
         // An own data property, whatever the key: `__proto__` is a field, not a prototype.
-        Object.defineProperty(copy, key, { value: copyOf(member), enumerable: true, writable: true, configurable: true })
+        Object.defineProperty(copy, key, {
+          value: copyOf(member),
+          enumerable: true,
+          writable: true,
+          configurable: true
+        })
       }
       return Object.freeze(copy)
     }
@@ -506,13 +511,16 @@ export const make = (options: {
           })
           // Frozen, and the handler is called without it as `this`: a flow
           // cannot reach, let alone edit, the facts that authorize it.
-          flows.set(tag, Object.freeze({
-            entry,
-            run: item.run,
-            personOnly: item.personOnly === undefined ? undefined : entry.personOnly,
-            protected: isProtected,
-            private: item.private === true
-          }))
+          flows.set(
+            tag,
+            Object.freeze({
+              entry,
+              run: item.run,
+              personOnly: item.personOnly === undefined ? undefined : entry.personOnly,
+              protected: isProtected,
+              private: item.private === true
+            })
+          )
         } else {
           const entry = immutable<Entry>({
             kind: "query",
@@ -599,12 +607,11 @@ export const make = (options: {
     }
 
     // Run the flow on a private draft. Publish only once its output is durable.
-    const draftRun = ({ facts, flow, payload }: Prepared, promptHash: string):
-      {
-        readonly output: Json
-        readonly atSequence: (journalSeq: number) => Requested
-        readonly publish: (requested: Requested) => void
-      } | CoreError => {
+    const draftRun = ({ facts, flow, payload }: Prepared, promptHash: string): {
+      readonly output: Json
+      readonly atSequence: (journalSeq: number) => Requested
+      readonly publish: (requested: Requested) => void
+    } | CoreError => {
       const tag = flow.entry.tag
       const draft = new Map<string, Map<string, Json>>()
       const cause: { plan?: Cause.PlanRef } = {}

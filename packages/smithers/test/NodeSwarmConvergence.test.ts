@@ -17,7 +17,10 @@ const sync = `shard:sync:${shard}`
 const replicate = `shard:replicate:${shard}`
 const appendToken = "test-only-swarm-append-token-never-deployed"
 const syncToken = "test-only-swarm-sync-token-never-deployed"
-const peerToken = { "peer-a": "test-only-peer-a-replication-never-deployed", "peer-b": "test-only-peer-b-replication-never-deployed" }
+const peerToken = {
+  "peer-a": "test-only-peer-a-replication-never-deployed",
+  "peer-b": "test-only-peer-b-replication-never-deployed"
+}
 type Peer = keyof typeof peerToken
 
 /** A peer's link to the hub: `online` cuts it, `loseAck` drops the next answer after the hub commits, `twice` resends. */
@@ -62,8 +65,14 @@ const headers = (bearer: string) => ({ authorization: `Bearer ${bearer}`, "conte
 /** Appends a Plan Tree event through the node's own MCP, as a local agent does. */
 const append = async (origin: string, payload: PlanEvent) => {
   const response = await fetch(new URL("/mcp", origin), {
-    method: "POST", headers: headers(appendToken),
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "shard__append", arguments: payload } })
+    method: "POST",
+    headers: headers(appendToken),
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "shard__append", arguments: payload }
+    })
   })
   const reply = await response.json() as { result?: { isError?: boolean; structuredContent: { output: unknown } } }
   expect(response.status).toBe(200)
@@ -73,9 +82,15 @@ const append = async (origin: string, payload: PlanEvent) => {
 
 /** Every entry a node serves, read through its loopback shard API. */
 const entriesOf = async (origin: string) => {
-  const reply = await Effect.runPromise(httpTransport(origin, syncToken).pull({
-    version: ShardProtocol.protocolVersion, shard, epoch: 0, after: 0, limit: 10_000
-  }))
+  const reply = await Effect.runPromise(
+    httpTransport(origin, syncToken).pull({
+      version: ShardProtocol.protocolVersion,
+      shard,
+      epoch: 0,
+      after: 0,
+      limit: 10_000
+    })
+  )
   if (reply._tag !== "Page") throw new Error("Node answered Resync")
   expect(reply.done).toBe(true)
   return reply
@@ -102,23 +117,36 @@ const planTree = (entries: ReadonlyArray<ShardProtocol.Entry>) => {
 
 test("two peers append offline, reconnect in reverse order over duplicated deliveries, and converge with the hub", async () => {
   const dir = mkdtempSync(join(tmpdir(), "smithers-swarm-"))
-  const sessions = (node: string, extra: Record<string, Principal.Grant> = {}) => Principal.sessions({
-    [appendToken]: { kind: "mcp", subject: node, session: `${node}-append`, capabilities: ["shard:append"] },
-    [syncToken]: { kind: "mcp", subject: node, session: `${node}-sync`, capabilities: [read, sync] },
-    ...extra
-  })
+  const sessions = (node: string, extra: Record<string, Principal.Grant> = {}) =>
+    Principal.sessions({
+      [appendToken]: { kind: "mcp", subject: node, session: `${node}-append`, capabilities: ["shard:append"] },
+      [syncToken]: { kind: "mcp", subject: node, session: `${node}-sync`, capabilities: [read, sync] },
+      ...extra
+    })
   const hub = await startNode({
-    file: join(dir, "hub.sqlite"), shard, node: "hub", token: appendToken,
-    verify: sessions("hub", Object.fromEntries((Object.keys(peerToken) as Array<Peer>).map((peer) => [
-      peerToken[peer], { kind: "mcp", subject: peer, session: `${peer}-replication`, capabilities: [replicate, read] }
-    ])))
+    file: join(dir, "hub.sqlite"),
+    shard,
+    node: "hub",
+    token: appendToken,
+    verify: sessions(
+      "hub",
+      Object.fromEntries((Object.keys(peerToken) as Array<Peer>).map((peer) => [
+        peerToken[peer],
+        { kind: "mcp", subject: peer, session: `${peer}-replication`, capabilities: [replicate, read] }
+      ]))
+    )
   })
   const links = {
     "peer-a": link(httpTransport(hub.origin, peerToken["peer-a"])),
     "peer-b": link(httpTransport(hub.origin, peerToken["peer-b"]))
   }
   const options = (peer: Peer) => ({
-    file: join(dir, `${peer}.sqlite`), shard, node: peer, token: appendToken, verify: sessions(peer), hub: links[peer]
+    file: join(dir, `${peer}.sqlite`),
+    shard,
+    node: peer,
+    token: appendToken,
+    verify: sessions(peer),
+    hub: links[peer]
   })
   const peers = { "peer-a": await startNode(options("peer-a")), "peer-b": await startNode(options("peer-b")) }
   try {

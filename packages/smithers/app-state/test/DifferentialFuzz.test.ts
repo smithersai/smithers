@@ -33,7 +33,7 @@ import {
   type ShardState,
   walk
 } from "../src/index.ts"
-import { FNV_INIT, fnv, foldDigest, initialWorld, type Op, runOp, type World } from "./harness.ts"
+import { fnv, FNV_INIT, foldDigest, initialWorld, type Op, runOp, type World } from "./harness.ts"
 
 const TRACES = 500
 const STEPS = 36
@@ -260,9 +260,11 @@ const simulate = (seed: number): Trace => {
           if (was.role === "user") fail(`question ${was.id} changed its body`)
           if (isTerminal(was.status)) fail(`terminal message ${was.id} changed its body`)
           const by = op.command
-          if (by._tag !== "UpdateMessageBody" || by.messageId !== was.id) fail(`${by._tag} changed the body of ${was.id}`)
-          else if (by.author !== was.author) fail(`${by.author} changed the body of ${was.author}'s message ${was.id}`)
-          else if (by.body !== now.body) fail(`message ${was.id} holds a body no command carried`)
+          if (by._tag !== "UpdateMessageBody" || by.messageId !== was.id) {
+            fail(`${by._tag} changed the body of ${was.id}`)
+          } else if (by.author !== was.author) {
+            fail(`${by.author} changed the body of ${was.author}'s message ${was.id}`)
+          } else if (by.body !== now.body) fail(`message ${was.id} holds a body no command carried`)
           if (now.status !== was.status || canonicalJson(metadataOf(now)) !== canonicalJson(metadataOf(was))) {
             fail(`a body update moved the status or the metadata of ${was.id}`)
           }
@@ -413,7 +415,10 @@ const simulate = (seed: number): Trace => {
         }))
       })),
       ...maybe(run * 0.15, () => ({ failure: pick(FAILURES) })),
-      ...maybe(run * 0.2, () => ({ modelId: pick(["m-small", "m-large"]), stopReason: pick(["end_turn", "max_tokens"]) })),
+      ...maybe(
+        run * 0.2,
+        () => ({ modelId: pick(["m-small", "m-large"]), stopReason: pick(["end_turn", "max_tokens"]) })
+      ),
       ...maybe(run * 0.3, () => ({ inputTokens: int(3), outputTokens: int(3) })),
       ...maybe(0.3, () => ({ summary: pick(TITLES), summaryRevision: `rev${int(2)}` })),
       ...maybe(0.15, () => ({ phase: "{\"title\":\"plan\"}" })),
@@ -435,7 +440,9 @@ const simulate = (seed: number): Trace => {
       const newParent = below.length > 0 && rng() < 0.35 ? pick(below) : rng() < 0.15 ? null : node()
       return { _tag: "MovePlanNode", id, newParent, order: int(4), expectedRevision: expected(view) }
     }
-    if (roll < 0.58) return { _tag: "ToggleAssumption", nodeId: node(), index: int(3), expectedRevision: expected(view) }
+    if (roll < 0.58) {
+      return { _tag: "ToggleAssumption", nodeId: node(), index: int(3), expectedRevision: expected(view) }
+    }
     if (roll < 0.66) {
       return { _tag: "SetNodeStatus", nodeId: node(), status: pick(NODE_STATUSES), expectedRevision: expected(view) }
     }
@@ -523,8 +530,9 @@ const simulate = (seed: number): Trace => {
     const cursor = world.replicas[index]!.cursor
     const roll = rng()
     if (roll < 0.6) exec({ op: "deliver", replica: index, from: cursor, count: 1 + int(6) })
-    else if (roll < 0.85) exec({ op: "deliver", replica: index, from: Math.max(0, cursor - 1 - int(4)), count: 1 + int(6) })
-    else exec({ op: "deliver", replica: index, from: cursor + 1 + int(3), count: 1 + int(3) })
+    else if (roll < 0.85) {
+      exec({ op: "deliver", replica: index, from: Math.max(0, cursor - 1 - int(4)), count: 1 + int(6) })
+    } else exec({ op: "deliver", replica: index, from: cursor + 1 + int(3), count: 1 + int(3) })
   }
 
   for (let step = 0; step < STEPS; step++) {
@@ -600,7 +608,9 @@ describe("differential fuzz", () => {
       for (const key of Object.keys(sum) as Array<keyof Stats>) sum[key] += trace.stats[key]
       return sum
     }, emptyStats())
-    console.log(`fuzz ${JSON.stringify({ traces: TRACES, ops: traces.reduce((n, t) => n + t.results.length, 0), ...total })}`)
+    console.log(
+      `fuzz ${JSON.stringify({ traces: TRACES, ops: traces.reduce((n, t) => n + t.results.length, 0), ...total })}`
+    )
     expect(total.duplicateRows).toBe(0)
     for (const key of Object.keys(total) as Array<keyof Stats>) {
       if (key !== "duplicateRows") expect(total[key], `the fuzz never exercised ${key}`).toBeGreaterThan(0)

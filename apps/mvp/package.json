@@ -12,7 +12,7 @@
     "plan": "node infra/deploy/run.mjs plan",
     "deploy": "node infra/deploy/run.mjs deploy",
     "destroy": "NODE_OPTIONS=\"${NODE_OPTIONS:-} --import=vibelang/register\" alchemy destroy --stage prod",
-    "typecheck": "vibelang -p tsconfig.json && vibelang -p worker/tsconfig.json && vibelang -p infra/tsconfig.json && vibelang -p evals/tsconfig.json",
+    "typecheck": "vibelang -p tsconfig.json && vibelang -p worker/tsconfig.json && vibelang -p worker/attach/tsconfig.node.json && vibelang -p infra/tsconfig.json && vibelang -p evals/tsconfig.json",
     "e2e": "playwright test",
     "e2e:prod": "node e2e/prod.mjs",
     "e2e:gifs": "node e2e/gifs.mjs",

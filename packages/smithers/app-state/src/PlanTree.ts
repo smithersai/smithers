@@ -166,8 +166,7 @@ export const walk = (tree: PlanTree, target: string, fuel: number, start: string
   return null
 }
 
-const revisionOk = (tree: PlanTree, expected: number | null): boolean =>
-  expected === null || expected === tree.revision
+const revisionOk = (tree: PlanTree, expected: number | null): boolean => expected === null || expected === tree.revision
 
 export const decidePlan = (tree: PlanTree, command: PlanCommand): Decision<PlanEvent, PlanRefusal> => {
   if (!revisionOk(tree, command.expectedRevision)) return refused("revision_mismatch")

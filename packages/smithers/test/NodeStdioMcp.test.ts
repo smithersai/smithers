@@ -44,14 +44,29 @@ test("smthrs node serve answers a stdio MCP client from its SQLite shard and ref
   const file = join(dir, "node.sqlite")
   try {
     const child = spawn(process.execPath, [
-      "--no-warnings", "--import", scriptedHost, executable,
-      "node", "serve", "--file", file, "--shard", shard, "--node", "local"
+      "--no-warnings",
+      "--import",
+      scriptedHost,
+      executable,
+      "node",
+      "serve",
+      "--file",
+      file,
+      "--shard",
+      shard,
+      "--node",
+      "local"
     ], {
-      cwd: dir, stdio: "pipe", timeout: 90_000, killSignal: "SIGKILL",
+      cwd: dir,
+      stdio: "pipe",
+      timeout: 90_000,
+      killSignal: "SIGKILL",
       env: { ...process.env, HOME: dir, SMITHERS_NODE_AGENT_TOKEN: token }
     })
     let stderr = ""
-    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString() })
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
     const closed = once(child, "close")
     const next = replies(child.stdout)
 
@@ -67,11 +82,15 @@ test("smthrs node serve answers a stdio MCP client from its SQLite shard and ref
     child.stdin.write(frame(3, "tools/call", { name: "shard__append", arguments: { side: "local" } }))
     const appended = await next()
     expect(appended).toMatchObject({
-      id: 3, result: { structuredContent: { output: { side: "local" }, cause: { nodeId: "shard/append" } } }
+      id: 3,
+      result: { structuredContent: { output: { side: "local" }, cause: { nodeId: "shard/append" } } }
     })
     const ref = appended.result.structuredContent.outputRef as string
     child.stdin.write(frame(4, "tools/call", { name: "ref__cause", arguments: { ref } }))
-    expect(await next()).toMatchObject({ id: 4, result: { structuredContent: { rows: [{ outputRef: ref, nodeId: "shard/append" }] } } })
+    expect(await next()).toMatchObject({
+      id: 4,
+      result: { structuredContent: { rows: [{ outputRef: ref, nodeId: "shard/append" }] } }
+    })
 
     // An unterminated frame past the 10 MiB bound ends the session with a typed JSON-RPC refusal and a clean exit.
     child.stdin.write(Buffer.alloc(10 * 1024 * 1024 + 1, 0x20))
@@ -99,7 +118,10 @@ test("smthrs node serve answers a stdio MCP client from its SQLite shard and ref
 test("a stdio agent never sees or runs a person-only flow the node hosts", async () => {
   const dir = mkdtempSync(join(tmpdir(), "smithers-node-stdio-person-"))
   const node = await startNode({
-    file: join(dir, "node.sqlite"), shard, node: "local", token,
+    file: join(dir, "node.sqlite"),
+    shard,
+    node: "local",
+    token,
     flows: [{
       tag: "approval/decide",
       title: "Decide an approval",
@@ -119,7 +141,8 @@ test("a stdio agent never sees or runs a person-only flow the node hosts", async
     expect(listed.result.tools.map((tool: { name: string }) => tool.name)).toEqual(["ref__cause", "shard__append"])
     input.write(frame(2, "tools/call", { name: "approval__decide", arguments: { decision: "approve" } }))
     expect(await next()).toMatchObject({
-      id: 2, result: { isError: true, structuredContent: { code: "person_only", cause: "agent" } }
+      id: 2,
+      result: { isError: true, structuredContent: { code: "person_only", cause: "agent" } }
     })
     expect(await node.sync()).toMatchObject({ position: { seq: 0 } })
     input.write("x".repeat(4_097))

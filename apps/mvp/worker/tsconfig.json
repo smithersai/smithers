@@ -24,5 +24,10 @@
   "include": [
     ".",
     "../db"
+  ],
+  // A Node-hosted test that drives `smthrs node serve` and `smthrs attach` from @smthrs/cli's Node source; it
+  // compiles under attach/tsconfig.node.json instead of workers-types.
+  "exclude": [
+    "attach/NodeServeAndAttach.test.ts"
   ]
 }

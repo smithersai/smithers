@@ -233,9 +233,10 @@ describe("High 2: the door class and the plugin come from the verified credentia
       verify: () => Effect.succeed({ subject: "will", session: "s", capabilities: everything })
     })
     for (const door of ["strip", "frame"] as const) {
-      expect(await refusal(silent.mint({ kind: "gui", door, session: "x", plugin: "plan-tree" } as never))).toMatchObject({
-        reason: "door_mismatch"
-      })
+      expect(await refusal(silent.mint({ kind: "gui", door, session: "x", plugin: "plan-tree" } as never)))
+        .toMatchObject({
+          reason: "door_mismatch"
+        })
     }
     // A GUI credential does not open a delegate door.
     const guiOnly = Principal.make({
@@ -401,12 +402,14 @@ describe("High 4: the catalog exposes copies of registration metadata, deeply fr
       personOnly: "the person decides",
       run: function(this: unknown, fields, tx) {
         receivers.push(this)
-        for (const edit of [
-          (self: Record<string, unknown>) => (self["personOnly"] = undefined),
-          (self: Record<string, unknown>) => (self["protected"] = false),
-          (self: Record<string, unknown>) => (self["private"] = false),
-          (self: Record<string, unknown>) => (self["run"] = () => ({}))
-        ]) {
+        for (
+          const edit of [
+            (self: Record<string, unknown>) => (self["personOnly"] = undefined),
+            (self: Record<string, unknown>) => (self["protected"] = false),
+            (self: Record<string, unknown>) => (self["private"] = false),
+            (self: Record<string, unknown>) => (self["run"] = () => ({}))
+          ]
+        ) {
           try {
             edit(this as Record<string, unknown>)
             attempts.push("changed")
@@ -697,9 +700,10 @@ it("publishes a durable flow only after its persistence succeeds", async () => {
       }
     }],
     projections: [{ name: "plan/read", title: "Read plan", collection: "plan" }],
-    persist: () => unavailable
-      ? Effect.fail(new Core.CoreError({ reason: "operation_failed", target: tag, detail: "Disk unavailable" }))
-      : Effect.void
+    persist: () =>
+      unavailable
+        ? Effect.fail(new Core.CoreError({ reason: "operation_failed", target: tag, detail: "Disk unavailable" }))
+        : Effect.void
   }))
   const api = await run(engine.open(evidence.strip))
   expect(await refusal(api.submit({ operation: tag }))).toMatchObject({ reason: "operation_failed" })

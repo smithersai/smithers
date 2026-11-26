@@ -588,11 +588,14 @@ export const serveMcpStdioBridge = async (options: McpServeOptions = {}): Promis
     if (response.status === 202) return
     if (response.status === 401 && options.agentGrant !== undefined) {
       if (parsed.id !== undefined) {
-        await writeLine(output, JSON.stringify({
-          jsonrpc: "2.0",
-          id: parsed.id ?? null,
-          error: { code: -32001, message: "Agent grant refused" }
-        }))
+        await writeLine(
+          output,
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: parsed.id ?? null,
+            error: { code: -32001, message: "Agent grant refused" }
+          })
+        )
       }
       return
     }
