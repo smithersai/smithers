@@ -1,7 +1,7 @@
 import { Clock, Effect, Option, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { codingChoice, type CodingAgent } from "../../src/features/personal-model/contract.ts"
-import type { Keys } from "../secrets/Keys.ts"
+import type { Keys } from "../secrets/Keys.vibe"
 import * as Agents from "./Agents.ts"
 import * as Codex from "./Codex.ts"
 import { sealContext } from "./Models.ts"

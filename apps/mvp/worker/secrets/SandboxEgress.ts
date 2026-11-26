@@ -10,7 +10,7 @@ import * as RegistryEgress from "../branch/RegistryEgress.ts"
 import * as Store_ from "../personal/Store.ts"
 import * as Subscriptions from "../personal/Subscriptions.ts"
 import * as Overflow from "../runners/Overflow.ts"
-import { type Keys, SecretKeys } from "./Keys.ts"
+import { type Keys, SecretKeys } from "./Keys.vibe"
 import * as Store from "./Store.ts"
 
 // A branch sandbox's egress (decision 0005 §4, docs/features/secrets.md#the-egress): what the box's outbound HTTP

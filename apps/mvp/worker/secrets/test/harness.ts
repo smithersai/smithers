@@ -17,7 +17,7 @@ import * as Flows from "../../Flows.ts"
 import * as FlowHost from "../../test/flowHost.ts"
 import { signedIn, type testFile } from "../../test/harness.ts"
 import * as SecretsApi from "../Api.ts"
-import { SecretKeys } from "../Keys.ts"
+import { SecretKeys } from "../Keys.vibe"
 import * as SandboxEgress from "../SandboxEgress.ts"
 import * as SecretFlows from "../SecretFlows.ts"
 

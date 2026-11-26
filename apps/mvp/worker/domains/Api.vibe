@@ -22,9 +22,10 @@ import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import * as ShapeAccess from "../ShapeAccess.vibe"
 import * as WriteAuthority from "../WriteAuthority.ts"
-import * as DomainFlows from "./DomainFlows.ts"
+import * as DomainFlows from "./DomainFlows.vibe"
 import { DomainProvider } from "./Provider.vibe"
 import * as Store from "./Store.vibe"
+import { randomExecutionKey } from "./ExecutionKey.ts"
 
 // The custom-domain routes (decision 0039, docs/features/domains.md#routes). Every one is a Maintainer's or an Admin's,
 // acting in person, on the repository sign-in reads roles on (`GITHUB_REPOSITORY`, since a session carries one role):
@@ -76,84 +77,89 @@ type Fields = Record<string, string | number | boolean>
  * the flows through `Flows.FlowStarter`.
  */
 export const make = <E, R>(repository: { readonly id: string }, database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
-  Effect.gen(function* () {
-    const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+  effect {
+    const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
 
     /** `GET /api/shapes/domains?repo=<repo id>`. */
     const shape = ShapeProxy.make({
       ...connection,
-      shape: Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
+      shape: effect {
+        const request = try HttpServerRequest.HttpServerRequest
         const named = new URL(request.url, "http://localhost").searchParams.get("repo") ?? NO_REPO
-        const actor = yield* ShapeAccess.actor
+        const actor = try ShapeAccess.actor
         const repo = Option.isSome(actor) && mayManage(actor.value) && named.toLowerCase() === repository.id
           ? repository.id
           : NO_REPO
         return { table: DOMAINS_TABLE, where: "repo_id = $1", params: { "1": repo }, columns: [...DOMAINS_SHAPE_COLUMNS] }
-      }),
+      },
       name: "domain.shape",
       metric: shapes,
     })
 
     /** `POST` and `DELETE`. */
-    const write = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      const startedAt = yield* Clock.currentTimeMillis
-      const route = parseDomainRoute(request.url.split("?")[0]!)!
+    const write = effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      const startedAt = try Clock.currentTimeMillis
+      const route = (try Effect.sync(() => parseDomainRoute(request.url.split("?")[0]!)))!
       const op = request.method === "DELETE" ? "remove" : "add"
       const fields: Fields = { op }
       const refuse = (status: number, code: Refusal) => {
         fields.code = code
         return HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
       }
-      const response = yield* Effect.gen(function* () {
+      const response = try Effect.catchCause(effect {
         const allowed = route.hostname === undefined ? "POST" : "DELETE"
         if (request.method !== allowed) return HttpServerResponse.empty({ status: 405, headers: { allow: allowed } })
-        const actor = yield* (yield* Sessions).resolve
+        const sessions = try Sessions
+        const actor = try sessions.resolve
         if (Option.isNone(actor)) return refuse(401, "authentication")
         // A domain points the world at the repository: anyone acting for the person is refused (decision 0017).
-        if (yield* refusesPersonOnly(actor.value, op === "add" ? "domain/add" : "domain/remove")) {
+        if (try refusesPersonOnly(actor.value, op === "add" ? "domain/add" : "domain/remove")) {
           return refuse(403, "person_only")
         }
         if (!mayManage(actor.value)) return refuse(403, "forbidden")
         // Only a Maintainer learns whether custom domains are configured.
-        const provider = yield* DomainProvider
+        const provider = try DomainProvider
         if (Option.isNone(provider)) return refuse(503, "off")
-        const repo = repoId(route.owner, route.name)
+        const repo = try Effect.sync(() => repoId(route.owner, route.name))
         if (repo !== repository.id) return refuse(404, "not_found")
         fields.repoId = repo
-        const starter = yield* Flows.FlowStarter
-        const executionId = writeExecutionId(op, crypto.randomUUID())
+        const starter = try Flows.FlowStarter
+        const key = try randomExecutionKey
+        const executionId = try Effect.sync(() => writeExecutionId(op, key))
         if (route.hostname !== undefined) {
-          const hostname = normalizeHostname(route.hostname)
+          const rawHostname = route.hostname
+          const hostname = try Effect.sync(() => normalizeHostname(rawHostname))
           if (hostname === undefined) return refuse(400, "invalid_hostname")
-          const row = yield* Store.read(hostname).pipe(Effect.provide(database))
+          const row = try Store.read(hostname).pipe(Effect.provide(database))
           const pollId = Option.isSome(row) && row.value.repoId === repo ? row.value.pollId : null
-          const started = yield* starter.start(DomainFlows.Remove, {
+          const authority = try Effect.sync(() => WriteAuthority.protectedOf(actor.value))
+          const started = try starter.start(DomainFlows.Remove, {
             executionId,
-            // The flow asks again before it touches the provider or the row (DomainFlows.ts).
-            payload: { authority: WriteAuthority.protectedOf(actor.value), repoId: repo, hostname, actorId: actor.value.subject.id, pollId },
+            // The flow asks again before it touches the provider or the row (DomainFlows.vibe).
+            payload: { authority, repoId: repo, hostname, actorId: actor.value.subject.id, pollId },
           }).pipe(Effect.result)
           if (started._tag === "Failure") return refuse(503, "unavailable")
           fields.outcome = "removing"
           return HttpServerResponse.jsonUnsafe({ hostname }, { status: 202, headers: noStore })
         }
-        const body = yield* readBounded(request, MAX_DOMAIN_BODY_BYTES).pipe(Effect.result)
+        const body = try readBounded(request, MAX_DOMAIN_BODY_BYTES).pipe(Effect.result)
         if (body._tag === "Failure") {
           return body.failure.reason === "too_large" ? refuse(413, "too_large") : refuse(400, "invalid")
         }
-        const decoded = yield* decodeAdd(body.success).pipe(Effect.option)
+        const decoded = try decodeAdd(body.success).pipe(Effect.option)
         if (Option.isNone(decoded)) return refuse(400, "invalid")
-        const hostname = normalizeHostname(decoded.value.hostname)
+        const hostname = try Effect.sync(() => normalizeHostname(decoded.value.hostname))
         if (hostname === undefined) return refuse(400, "invalid_hostname")
         const ownHost = new URL(request.originalUrl, "http://localhost").hostname
-        if (isUnder(hostname, provider.value.zone) || hostname === ownHost) return refuse(400, "reserved")
-        const holder = yield* Store.holder(hostname).pipe(Effect.provide(database))
+        if ((try Effect.sync(() => isUnder(hostname, provider.value.zone))) || hostname === ownHost) return refuse(400, "reserved")
+        const holder = try Store.holder(hostname).pipe(Effect.provide(database))
         if (Option.isSome(holder) && holder.value !== repo) return refuse(409, "taken")
-        const started = yield* starter.start(DomainFlows.Verify, {
+        const authority = try Effect.sync(() => WriteAuthority.protectedOf(actor.value))
+        const started = try starter.start(DomainFlows.Verify, {
           executionId,
           payload: {
-            authority: WriteAuthority.protectedOf(actor.value),
+            authority,
             repoId: repo,
             hostname,
             actorId: actor.value.subject.id,
@@ -164,44 +170,42 @@ export const make = <E, R>(repository: { readonly id: string }, database: Layer.
         if (started._tag === "Failure") return refuse(503, "unavailable")
         fields.outcome = Option.isSome(holder) ? "refreshing" : "adding"
         return HttpServerResponse.jsonUnsafe({ hostname }, { status: 202, headers: noStore })
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.sync(() => {
-            fields.errorCode = codeOf(Cause.squash(cause))
-            return refuse(503, "unavailable")
-          })
-        ),
+      }, (cause) =>
+        Effect.sync(() => {
+          fields.errorCode = codeOf(Cause.squash(cause))
+          return refuse(503, "unavailable")
+        })
       )
       fields.status = response.status
-      fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+      fields.durationMs = (try Clock.currentTimeMillis) - startedAt
       const outcome = String(fields.outcome ?? fields.code ?? "refused")
-      yield* Metric.update(Metric.withAttributes(requests, { op, outcome }), 1)
-      yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
-      yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+      try Metric.update(Metric.withAttributes(requests, { op, outcome }), 1)
+      try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+      try Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
         "domain.request",
       ).pipe(Effect.annotateLogs({ ...fields, outcome }))
       return response
-    }).pipe(Effect.withSpan("domain.request", { kind: "server" }))
+    }.pipe(Effect.withSpan("domain.request", { kind: "server" }))
 
     /**
      * `GET /api/domains/resolve?host=<hostname>`: resolves an active custom domain to its repository path. Every answer
      * is one `domain.resolve` span, log line and `smithers_domain_resolves` count by outcome. They carry the repository
      * of a hit and codes, never the hostname asked for: a pending domain is its Maintainer's until it is published.
      */
-    const resolve = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      const startedAt = yield* Clock.currentTimeMillis
+    const resolve = effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      const startedAt = try Clock.currentTimeMillis
       const fields: Fields = {}
       const refuse = (status: number, outcome: "method" | "invalid" | "unavailable" | "not_found") => {
         fields.outcome = outcome
         return HttpServerResponse.empty({ status, headers: noStore })
       }
-      const response = yield* Effect.gen(function* () {
+      const response = try effect {
         if (request.method !== "GET") return refuse(405, "method")
         const raw = new URL(request.url, "http://localhost").searchParams.get("host")
-        const hostname = raw === null ? undefined : normalizeHostname(raw)
+        const hostname = raw === null ? undefined : try Effect.sync(() => normalizeHostname(raw))
         if (hostname === undefined) return refuse(400, "invalid")
-        const row = yield* Store.read(hostname).pipe(
+        const row = try Store.read(hostname).pipe(
           Effect.provide(database),
           Effect.map((found) => ({ ok: true as const, found })),
           Effect.catchCause((cause) =>
@@ -221,26 +225,26 @@ export const make = <E, R>(repository: { readonly id: string }, database: Layer.
           { path: `/${row.found.value.repoId.slice("github/".length)}` },
           { status: 200, headers: { "cache-control": "public, max-age=60" } },
         )
-      })
+      }
       const outcome = String(fields.outcome)
       fields.status = response.status
-      fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
-      yield* Metric.update(Metric.withAttributes(resolves, { outcome }), 1)
-      yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+      fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+      try Metric.update(Metric.withAttributes(resolves, { outcome }), 1)
+      try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
       // A miss or a malformed host is the caller's ordinary answer; only a database failure is the route's fault.
-      yield* Effect.logWithLevel(response.status >= 500 ? "Error" : "Info")("domain.resolve").pipe(
+      try Effect.logWithLevel(response.status >= 500 ? "Error" : "Info")("domain.resolve").pipe(
         Effect.annotateLogs(fields),
       )
       return response
-    }).pipe(Effect.withSpan("domain.resolve", { kind: "server" }))
+    }.pipe(Effect.withSpan("domain.resolve", { kind: "server" }))
 
-    const fetch = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
+    const fetch = effect {
+      const request = try HttpServerRequest.HttpServerRequest
       const path = request.url.split("?")[0]
-      if (path === DOMAINS_SHAPE_ROUTE) return yield* shape
-      if (path === DOMAIN_RESOLVE_ROUTE) return yield* resolve
-      return yield* write
-    })
+      if (path === DOMAINS_SHAPE_ROUTE) return try shape
+      if (path === DOMAIN_RESOLVE_ROUTE) return try resolve
+      return try write
+    }
 
     return { fetch }
-  })
+  }

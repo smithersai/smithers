@@ -25,7 +25,7 @@ import * as BranchAccess from "./branch/Access.ts"
 import { DocsSource } from "./docs/Source.vibe"
 import * as PersonalModels from "./personal/Models.ts"
 import * as PersonalFlows from "./PersonalFlows.ts"
-import { SecretKeys } from "./secrets/Keys.ts"
+import { SecretKeys } from "./secrets/Keys.vibe"
 import * as Views from "./Views.ts"
 
 const baseExecs = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")

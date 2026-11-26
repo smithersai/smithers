@@ -5,7 +5,7 @@ import { Clock, type Config, Effect, Layer, Metric, Option, Redacted, Schema } f
 import type { SqlClient } from "effect/sql"
 import { CONNECTION_KINDS, PROTOCOLS } from "../../src/features/personal-model/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
-import { SecretKeys } from "../secrets/Keys.ts"
+import { SecretKeys } from "../secrets/Keys.vibe"
 import * as Codex from "./Codex.ts"
 import * as Store from "./Store.ts"
 

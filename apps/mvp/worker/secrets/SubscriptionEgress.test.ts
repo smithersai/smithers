@@ -13,7 +13,7 @@ import * as SecretsStore from "./Store.ts"
 import { dump, engine, KEY, leaks, personalHarness, resetModels, rows, seedKeys } from "../personal/test/harness.ts"
 import { CODEX_ACCESS, CODEX_REFRESH } from "../personal/test/provider.ts"
 import { testFile } from "../test/harness.ts"
-import { SecretKeys } from "./Keys.ts"
+import { SecretKeys } from "./Keys.vibe"
 import * as SandboxEgress from "./SandboxEgress.ts"
 
 const runtime = testFile("subscription_egress")

@@ -16,7 +16,7 @@ import { CONNECTION_KINDS, PROTOCOLS } from "../../src/features/personal-model/c
 import * as Actor from "../Actor.ts"
 import * as Flows from "../Flows.ts"
 import { KEY, resetModels, seedKeys, VALUE as API_KEY } from "../personal/test/harness.ts"
-import { SecretKeys } from "../secrets/Keys.ts"
+import { SecretKeys } from "../secrets/Keys.vibe"
 import * as SandboxEgress from "../secrets/SandboxEgress.ts"
 import * as FlowHost from "../test/flowHost.ts"
 import * as RunContentTest from "../test/runContent.ts"

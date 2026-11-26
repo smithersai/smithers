@@ -8,7 +8,7 @@ import type { ModelTier } from "../../src/features/model/contract.ts"
 import { hostOf, type Protocol, resolveTier } from "../../src/features/personal-model/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { acceptsEffort } from "../ModelTiers.vibe"
-import { SecretKeys } from "../secrets/Keys.ts"
+import { SecretKeys } from "../secrets/Keys.vibe"
 import * as Store from "./Store.ts"
 
 // A person's own model, opened for one call (decisions 0096, 0107 and 0132, docs/features/personal-model.md#answering).

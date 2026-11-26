@@ -5,7 +5,7 @@
 import { Effect, Option, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
-import * as Cloudflare from "./Cloudflare.ts"
+import * as Cloudflare from "./Cloudflare.vibe"
 
 const zone = process.env.DOMAINS_ZONE
 const zoneId = process.env.DOMAINS_ZONE_ID

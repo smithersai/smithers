@@ -2,7 +2,7 @@
 import { Effect, Layer, Option } from "effect"
 import { expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { SecretKeys } from "../secrets/Keys.ts"
+import { SecretKeys } from "../secrets/Keys.vibe"
 import { testFile } from "../test/harness.ts"
 import { PersonalModels } from "./Models.ts"
 import { KEY, seedKeys } from "./test/harness.ts"

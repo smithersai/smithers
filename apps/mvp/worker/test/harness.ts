@@ -44,7 +44,7 @@ import * as DocsSource from "../docs/Source.vibe"
 import * as Flows from "../Flows.ts"
 import { PersonalModels } from "../personal/Models.ts"
 import * as RepoAbout from "../RepoAbout.ts"
-import { SecretKeys } from "../secrets/Keys.ts"
+import { SecretKeys } from "../secrets/Keys.vibe"
 import type { CuratedFile } from "../home/Curated.ts"
 
 /**

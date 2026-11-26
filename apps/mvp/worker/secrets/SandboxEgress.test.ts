@@ -6,7 +6,7 @@ import { Effect, Logger, Redacted } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
-import { SecretKeys } from "./Keys.ts"
+import { SecretKeys } from "./Keys.vibe"
 import * as SandboxEgress from "./SandboxEgress.ts"
 
 const KEY = Redacted.make("0123456789abcdef".repeat(4))

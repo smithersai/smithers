@@ -190,7 +190,7 @@ export default defineConfig({
         // Issue triage: its settings, decisions and pins (docs/features/issues.md#triage).
         "db/migrations/0018_triage.ts",
         // Repository secrets: the write routes, the flows, the shape and the sandbox egress (docs/features/secrets.md).
-        "worker/secrets/*.ts",
+        "worker/secrets/*.{ts,vibe}",
         "db/migrations/0021_secrets.ts",
         // A person's own model: the routes, the flows, the shape, opening it and its ledger (docs/features/personal-model.md).
         "worker/personal/*.ts",

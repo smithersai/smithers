@@ -180,11 +180,11 @@ const recorded = <A, E, R>(
   )
 
 /** A database failure as the step's retried failure, recorded by its code. */
-const unavailable = (error: unknown) =>
-  Effect.andThen(
-    Effect.logWarning("domain.step").pipe(Effect.annotateLogs({ outcome: "unavailable", errorCode: codeOf(error) })),
-    Effect.fail(new StoreUnavailable()),
-  )
+const unavailable = effect (error: unknown) => {
+  const errorCode = try Effect.sync(() => codeOf(error))
+  try Effect.logWarning("domain.step").pipe(Effect.annotateLogs({ outcome: "unavailable", errorCode }))
+  throw new StoreUnavailable()
+}
 
 /** A registration's verdict as the row's state: active once verified with a certificate (or none to manage). */
 export const stateOf = (registration: Registration): DomainState =>
@@ -195,11 +195,11 @@ export const stateOf = (registration: Registration): DomainState =>
     ? "active"
     : "pending"
 
-const invocationKey = Effect.gen(function* () {
-  const key = yield* Action.CurrentInvocationKey
-  if (key === undefined) return yield* Effect.die(new NoInvocationKey())
+const invocationKey = effect {
+  const key = try Action.CurrentInvocationKey
+  if (key === undefined) return try Effect.die(new NoInvocationKey())
   return key
-})
+}
 
 /** The steps over `database`, reaching the provider through `DomainProvider`. */
 export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
@@ -207,15 +207,15 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
     effect.pipe(Effect.provide(database), Effect.catch(unavailable))
 
   const claim = (input: typeof Claim.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const key = yield* invocationKey
-      const change = yield* store(Store.claim({ ...input, invocationKey: key }))
+    effect {
+      const key = try invocationKey
+      const change = try store(Store.claim({ ...input, invocationKey: key }))
       return { change }
-    }).pipe((effect) => recorded("claim", input.repoId, ({ change }) => change, effect))
+    }.pipe((effect) => recorded("claim", input.repoId, ({ change }) => change, effect))
 
   const check = (input: typeof Check.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const row = yield* store(Store.read(input.hostname))
+    effect {
+      const row = try store(Store.read(input.hostname))
       // Removed, refreshed by a newer poll, or another repository's: this poll is over.
       if (
         Option.isNone(row) || row.value.pollId !== input.pollId || row.value.state === "removing" ||
@@ -225,50 +225,50 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       // Confirmed demotion ends the poll; an expired session or role observation only skips this attempt.
       const refused = (held: "unavailable" | "denied") => ({ satisfied: held === "denied" || last, output: "unauthorized" })
       // Before the provider is asked to register anything: the person must still hold what the route admitted.
-      const held = yield* store(Store.authorizedNow(input.authority))
+      const held = try store(Store.authorizedNow(input.authority))
       if (held !== "held") return refused(held)
-      const provider = yield* DomainProvider
+      const provider = try DomainProvider
       const providerId = row.value.providerId
-      const write = (found: Omit<Store.Check, "hostname" | "pollId" | "authority">) =>
-        Effect.gen(function* () {
-          const recorded = yield* store(
-            Store.record({ ...found, hostname: input.hostname, pollId: input.pollId, authority: input.authority }),
-          )
-          if (recorded === "written") return { satisfied: found.state !== "pending", output: found.state }
-          if (recorded === "denied" || recorded === "unavailable") {
-            const verdict = refused(recorded)
-            return verdict.satisfied && found.providerId !== undefined && found.providerId !== providerId
-              ? { ...verdict, cleanupId: found.providerId }
-              : verdict
-          }
-          // Removal knew only the old id. Seal the new id before a separate durable step forgets it.
-          if (recorded === "removed" && found.providerId !== undefined && found.providerId !== providerId) {
-            return { satisfied: true, output: "superseded", cleanupId: found.providerId }
-          }
-          return { satisfied: true, output: "superseded" }
-        })
+      const write = effect (found: Omit<Store.Check, "hostname" | "pollId" | "authority">) => {
+        const recorded = try store(
+          Store.record({ ...found, hostname: input.hostname, pollId: input.pollId, authority: input.authority }),
+        )
+        if (recorded === "written") return { satisfied: found.state !== "pending", output: found.state }
+        if (recorded === "denied" || recorded === "unavailable") {
+          const verdict = refused(recorded)
+          return verdict.satisfied && found.providerId !== undefined && found.providerId !== providerId
+            ? { ...verdict, cleanupId: found.providerId }
+            : verdict
+        }
+        // Removal knew only the old id. Seal the new id before a separate durable step forgets it.
+        if (recorded === "removed" && found.providerId !== undefined && found.providerId !== providerId) {
+          return { satisfied: true, output: "superseded", cleanupId: found.providerId }
+        }
+        return { satisfied: true, output: "superseded" }
+      }
       if (Option.isNone(provider)) {
-        return yield* write(last ? { state: "failed", problem: "timed_out" } : { state: "pending", problem: "unreachable" })
+        return try write(last ? { state: "failed", problem: "timed_out" } : { state: "pending", problem: "unreachable" })
       }
       // A registration the provider forgot (Cloudflare deletes one that didn't validate in its window) is made anew.
-      const looked = yield* (providerId === null
+      const lookup = providerId === null
         ? provider.value.ensure(input.hostname)
         : Effect.flatMap(
           provider.value.status(providerId, input.hostname),
           Option.match({ onNone: () => provider.value.ensure(input.hostname), onSome: Effect.succeed }),
-        )).pipe(Effect.result)
+        )
+      const looked = try Effect.result(lookup)
       if (looked._tag === "Failure") {
         const failure = looked.failure
-        if (failure._tag === "@smthrs/mvp/domains/HostnameTaken") return yield* write({ state: "failed", problem: "taken" })
-        if (failure._tag === "@smthrs/mvp/domains/HostnameRejected") return yield* write({ state: "failed", problem: failure.reason })
-        yield* Effect.logWarning("domain.step").pipe(
+        if (failure._tag === "@smthrs/mvp/domains/HostnameTaken") return try write({ state: "failed", problem: "taken" })
+        if (failure._tag === "@smthrs/mvp/domains/HostnameRejected") return try write({ state: "failed", problem: failure.reason })
+        try Effect.logWarning("domain.step").pipe(
           Effect.annotateLogs({ op: "check", repoId: input.repoId, outcome: "unreachable", errorCode: failure.code }),
         )
-        return yield* write(last ? { state: "failed", problem: "timed_out" } : { state: "pending", problem: "unreachable" })
+        return try write(last ? { state: "failed", problem: "timed_out" } : { state: "pending", problem: "unreachable" })
       }
       const registration = looked.success
       const state = stateOf(registration)
-      return yield* write({
+      return try write({
         providerId: registration.id,
         state: state === "pending" && last ? "failed" : state,
         verification: registration.verification,
@@ -276,41 +276,42 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         records: registration.records,
         problem: state === "pending" && last ? "timed_out" : registration.problem ?? null,
       })
-    }).pipe((effect) => recorded("check", input.repoId, ({ output }) => output, effect))
+    }.pipe((effect) => recorded("check", input.repoId, ({ output }) => output, effect))
 
   const cleanup = (input: typeof Cleanup.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const provider = yield* DomainProvider
+    effect {
+      const provider = try DomainProvider
       const forget = Option.isNone(provider)
         ? Effect.fail(new ProviderUnavailable({ code: "off" }))
         : provider.value.remove(input.providerId)
-      const outcome = yield* Store.cleanup(input, forget).pipe(Effect.provide(database))
-      if (outcome === "pending") return yield* Effect.fail(new ProviderUnavailable({ code: "ownership_pending" }))
+      const outcome = try Store.cleanup(input, forget).pipe(Effect.provide(database))
+      if (outcome === "pending") throw new ProviderUnavailable({ code: "ownership_pending" })
       return outcome
-    }).pipe(
-      Effect.catch((error) => Effect.gen(function* () {
-        yield* Metric.update(Metric.withAttributes(steps_, { op: "cleanup", outcome: "unavailable" }), 1)
-        yield* Effect.logWarning("domain.step").pipe(
-          Effect.annotateLogs({ op: "cleanup", repoId: input.repoId, outcome: "unavailable", errorCode: codeOf(error) }),
+    }.pipe(
+      Effect.catch(effect (error) => {
+        try Metric.update(Metric.withAttributes(steps_, { op: "cleanup", outcome: "unavailable" }), 1)
+        const errorCode = try Effect.sync(() => codeOf(error))
+        try Effect.logWarning("domain.step").pipe(
+          Effect.annotateLogs({ op: "cleanup", repoId: input.repoId, outcome: "unavailable", errorCode }),
         )
-        return yield* Effect.fail(new ReleaseUnavailable())
-      })),
+        throw new ReleaseUnavailable()
+      }),
       (effect) => recorded("cleanup", input.repoId, (outcome) => outcome, effect),
       Effect.as({ satisfied: true, output: "superseded" }),
     )
 
   const release = (input: typeof Release.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const key = yield* invocationKey
+    effect {
+      const key = try invocationKey
       // Asked again on every try: a retry a day later never reaches the provider for someone demoted meanwhile.
-      const withdrawn = yield* store(Store.withdraw({ ...input, invocationKey: key }))
+      const withdrawn = try store(Store.withdraw({ ...input, invocationKey: key }))
       if (withdrawn === "stale") return { change: "stale" as const }
       if (Option.isNone(withdrawn)) return { change: "missing" as const }
-      const provider = yield* DomainProvider
+      const provider = try DomainProvider
       if (withdrawn.value.providerId !== null) {
         // With the provider off, its registration can't be forgotten: the step waits for it rather than orphan it.
-        if (Option.isNone(provider)) return yield* Effect.fail(new ReleaseUnavailable())
-        yield* provider.value.remove(withdrawn.value.providerId).pipe(
+        if (Option.isNone(provider)) throw new ReleaseUnavailable()
+        try provider.value.remove(withdrawn.value.providerId).pipe(
           Effect.catch((error) =>
             Effect.andThen(
               Effect.logWarning("domain.step").pipe(
@@ -321,9 +322,9 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           ),
         )
       }
-      const erased = yield* store(Store.erase({ hostname: input.hostname, ...withdrawn.value }, input.authority))
+      const erased = try store(Store.erase({ hostname: input.hostname, ...withdrawn.value }, input.authority))
       return { change: erased === "erased" ? "released" as const : erased }
-    }).pipe((effect) => recorded("release", input.repoId, ({ change }) => change, effect))
+    }.pipe((effect) => recorded("release", input.repoId, ({ change }) => change, effect))
 
   return { claim, check, cleanup, release }
 }

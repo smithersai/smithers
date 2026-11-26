@@ -2,7 +2,7 @@ import { Effect, Fiber, Option, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { expect, test } from "vitest"
-import * as Cf from "./Cloudflare.ts"
+import * as Cf from "./Cloudflare.vibe"
 import { HostnameRejected, HostnameTaken, ProviderUnavailable, type Provider } from "./Provider.vibe"
 
 const token = "private-test-token"

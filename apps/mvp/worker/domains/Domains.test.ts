@@ -17,8 +17,8 @@ import { type Actor, personOnlyRefusals } from "../Actor.ts"
 import * as WriteAuthority from "../WriteAuthority.ts"
 import { eventually, testFile } from "../test/harness.ts"
 import { incarnation } from "../test/flowHost.ts"
-import * as DomainsApi from "./Api.ts"
-import * as DomainFlows from "./DomainFlows.ts"
+import * as DomainsApi from "./Api.vibe"
+import * as DomainFlows from "./DomainFlows.vibe"
 import { DomainProvider, HostnameRejected, HostnameTaken, ProviderUnavailable } from "./Provider.vibe"
 import * as Store from "./Store.vibe"
 import {
@@ -963,6 +963,29 @@ describe("authority held through the flows", () => {
     expect(await keyed(check({ ...verify(who), attempt: 3 }))).toEqual({ satisfied: true, output: "active" })
     expect(calls.ensure).toBe(1)
     expect(await rows(runtime)).toMatchObject([{ state: "active", providerId: `cf-${hostname}` }])
+  })
+
+  test("sign-out during registration skips the write and a later authorized check adopts the registration", async () => {
+    const who = await person("admin")
+    const { claim, check } = DomainFlows.steps(await database())
+    const input = verify(who)
+    expect(await keyed(claim(input))).toEqual({ change: "add" })
+    const registration = { id: "cf-resumable", records: [], verification: "active", certificate: "active" } as const
+    const forgotten: Array<string> = []
+    provider.use({
+      ensure: () => Effect.as(Effect.promise(() => signOut(who)), registration),
+      remove: (id) => Effect.sync(() => void forgotten.push(id)),
+    })
+
+    expect(await keyed(check({ ...input, attempt: 1 }))).toEqual({ satisfied: false, output: "unauthorized" })
+    expect(await rows(runtime)).toMatchObject([{ state: "pending", providerId: null, checkedAt: null }])
+    expect((await events(runtime)).map((event) => event.action)).toEqual(["add"])
+
+    await signBackIn(who)
+    provider.use({ ensure: () => Effect.succeed(registration) })
+    expect(await keyed(check({ ...input, attempt: 2 }))).toEqual({ satisfied: true, output: "active" })
+    expect(await rows(runtime)).toMatchObject([{ state: "active", providerId: registration.id }])
+    expect(forgotten).toEqual([])
   })
 
   test.each([false, true])("demotion during ensure cleans up unless another poll adopts the registration (adopt=%s)", async (adopt) => {

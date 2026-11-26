@@ -19,7 +19,7 @@ import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import * as ShapeAccess from "../ShapeAccess.vibe"
-import { SecretKeys } from "./Keys.ts"
+import { SecretKeys } from "./Keys.vibe"
 import * as SecretFlows from "./SecretFlows.ts"
 
 // The secrets routes (decision 0005 §4, docs/features/secrets.md#routes). Values are write-only: no route answers one.

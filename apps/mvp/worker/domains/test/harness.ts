@@ -14,9 +14,9 @@ import * as Actor from "../../Actor.ts"
 import * as Flows from "../../Flows.ts"
 import * as FlowHost from "../../test/flowHost.ts"
 import { signedIn, type testFile } from "../../test/harness.ts"
-import * as DomainsApi from "../Api.ts"
+import * as DomainsApi from "../Api.vibe"
 import * as Dns from "../Dns.vibe"
-import * as DomainFlows from "../DomainFlows.ts"
+import * as DomainFlows from "../DomainFlows.vibe"
 import { DomainProvider, type Provider } from "../Provider.vibe"
 
 type Runtime = ReturnType<typeof testFile>

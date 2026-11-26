@@ -139,8 +139,8 @@ const parse = (text: string): Envelope => {
 
 /** The adapter over the `HttpClient` in context. */
 export const make = (options: Options) =>
-  Effect.gen(function* () {
-    const http = yield* HttpClient.HttpClient
+  effect {
+    const http = try HttpClient.HttpClient
     const base = `${options.apiUrl ?? API_URL}/zones/${encodeURIComponent(options.zoneId)}/custom_hostnames`
 
     /** One request: its status and body, or `ProviderUnavailable` when Cloudflare didn't answer in time. */
@@ -177,22 +177,21 @@ export const make = (options: Options) =>
         ),
       )
 
-    const ensure: Provider["ensure"] = (hostname) =>
-      Effect.gen(function* () {
-        const found = yield* find(hostname)
-        if (Option.isSome(found)) return registrationOf(found.value, options.target)
-        const created = yield* create(hostname)
-        if (created.status === 200 || created.status === 201) {
-          return registrationOf(created.body.result as CustomHostname, options.target)
-        }
-        if (created.status === 429 || created.status >= 500) return yield* unavailable(created.status)
-        // An earlier attempt may have created it and lost the answer: look again before calling it someone else's.
-        const again = yield* find(hostname)
-        if (Option.isSome(again)) return registrationOf(again.value, options.target)
-        const message = created.body.errors?.[0]?.message ?? `http_${created.status}`
-        if (created.status === 409 || /already|exists|duplicate/i.test(message)) return yield* new HostnameTaken()
-        return yield* new HostnameRejected({ reason: message.slice(0, MAX_PROBLEM_LENGTH) })
-      })
+    const ensure: Provider["ensure"] = effect (hostname) => {
+      const found = try find(hostname)
+      if (Option.isSome(found)) return registrationOf(found.value, options.target)
+      const created = try create(hostname)
+      if (created.status === 200 || created.status === 201) {
+        return registrationOf(created.body.result as CustomHostname, options.target)
+      }
+      if (created.status === 429 || created.status >= 500) return try unavailable(created.status)
+      // An earlier attempt may have created it and lost the answer: look again before calling it someone else's.
+      const again = try find(hostname)
+      if (Option.isSome(again)) return registrationOf(again.value, options.target)
+      const message = created.body.errors?.[0]?.message ?? `http_${created.status}`
+      if (created.status === 409 || /already|exists|duplicate/i.test(message)) throw new HostnameTaken()
+      throw new HostnameRejected({ reason: message.slice(0, MAX_PROBLEM_LENGTH) })
+    }
 
     const status: Provider["status"] = (id) =>
       send(HttpClientRequest.get(`${base}/${encodeURIComponent(id)}`)).pipe(
@@ -211,4 +210,4 @@ export const make = (options: Options) =>
       )
 
     return { name: "cloudflare", target: options.target, zone: options.zone, ensure, status, remove } satisfies Provider
-  })
+  }

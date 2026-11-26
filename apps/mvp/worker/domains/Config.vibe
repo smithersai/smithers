@@ -1,5 +1,5 @@
 import type { HttpClient } from "effect/http"
-import * as Cloudflare from "./Cloudflare.ts"
+import * as Cloudflare from "./Cloudflare.vibe"
 import * as Dns from "./Dns.vibe"
 import { DomainProvider, type Provider } from "./Provider.vibe"
 
