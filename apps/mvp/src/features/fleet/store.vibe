@@ -96,12 +96,13 @@ const refusable = <A extends object>(
   id: string,
   make: Effect.Effect<ElectricCollection.ElectricCollection<A>, never, Scope.Scope>,
 ) =>
-  Effect.gen(function* () {
-    const source = yield* ShapeSource.ShapeSource
-    const running = yield* Latch.make(true)
-    let collection: ElectricCollection.ElectricCollection<A> | undefined
-    const stop = Effect.andThen(running.close, Effect.suspend(() => collection?.evict ?? Effect.void))
-    collection = yield* make.pipe(Effect.provideService(ShapeSource.ShapeSource, {
+  effect {
+    const source = try ShapeSource.ShapeSource
+    const running = try Latch.make(true)
+    // Sync starts on a read, after the collection is assigned.
+    let collection!: ElectricCollection.ElectricCollection<A>
+    const stop = Effect.andThen(running.close, Effect.suspend(() => collection.evict))
+    collection = try make.pipe(Effect.provideService(ShapeSource.ShapeSource, {
       cacheNamespace: source.cacheNamespace,
       request: (url, init) => Effect.andThen(running.await, Effect.tap(source.request(url, init), (response) => {
         if (response.status === 401) return Effect.andThen(running.close, Option.isSome(auth) ? auth.value.askCheck : Effect.void)
@@ -110,29 +111,29 @@ const refusable = <A extends object>(
       })),
     }))
     // Only while the repository may show (`repoVisibility`): a failed verification or a refusal starts nothing.
-    const again = Effect.gen(function* () {
+    const again = effect {
       if (Option.isSome(auth)) {
-        const session = yield* auth.value.session.get(SESSION)
-        const row = Option.getOrUndefined(yield* repos.roles.get(id))
-        if (Option.isSome(session) && repoVisibility(session.value, row) !== "show") return
+        const session = try auth.value.session.get(SESSION)
+        const row = Option.getOrUndefined(try repos.roles.get(id))
+        if (Option.isSome(session) && (try sync(() => repoVisibility(session.value, row))) !== "show") return
       }
-      yield* running.open
-      yield* collection!.reconnect
-    })
+      try running.open
+      try collection.reconnect
+    }
     if (Option.isSome(auth)) {
-      yield* auth.value.sessionState.rows.pipe(
+      try auth.value.sessionState.rows.pipe(
         // Signed out: the rows go. What shows while the session can't be verified is the plugin host's gate (`gateLive`).
         Stream.runForEach((sessions) => sessions[0]?.status === "signed_out" ? stop : Effect.void),
         Effect.forkIn(scope, { startImmediately: true }),
       )
-      yield* auth.value.confirmations.pipe(
+      try auth.value.confirmations.pipe(
         Stream.mapEffect(() => Effect.map(auth.value.session.get(SESSION), (row) => Option.isSome(row) && row.value.status === "signed_in")),
         Stream.filter((signedIn) => signedIn),
         Stream.runForEach(() => again),
         Effect.forkIn(scope, { startImmediately: true }),
       )
     }
-    yield* repos.rolesState.rows.pipe(
+    try repos.rolesState.rows.pipe(
       Stream.map((rows) => rows.find((row) => row.id === id)),
       // Each answer that grants something, by what it grants: Member to Maintainer starts machines again.
       Stream.map((row) => row === undefined || row.refused !== undefined || row.failure !== undefined
@@ -144,7 +145,7 @@ const refusable = <A extends object>(
       Effect.forkIn(scope, { startImmediately: true }),
     )
     return { collection, stop }
-  })
+  }
 
 export class FleetStore extends Context.Service<
   FleetStore,
@@ -167,54 +168,54 @@ export class FleetStore extends Context.Service<
   static readonly layer = (config: FleetConfig) =>
     Layer.effect(
       FleetStore,
-      Effect.gen(function* () {
-        const scope = yield* Effect.scope
-        const auth = yield* Effect.serviceOption(AuthStore)
-        const repos = yield* RepoStore
+      effect {
+        const scope = try Effect.scope
+        const auth = try Effect.serviceOption(AuthStore)
+        const repos = try RepoStore
         // Each shape opened, by repository id: a repository's refusal stops it and drops its rows until authority returns.
         const stops = new Map<string, Array<Effect.Effect<void>>>()
         const registered = <A extends object>(repo: string, make: Effect.Effect<ElectricCollection.ElectricCollection<A>, never, Scope.Scope>) =>
-          Effect.gen(function* () {
+          effect {
             const [owner, name] = repo.split("/") as [string, string]
             const id = repoId(owner, name)
-            const { collection, stop } = yield* refusable(scope, auth, repos, id, make)
+            const { collection, stop } = try refusable(scope, auth, repos, id, make)
             stops.set(id, [...(stops.get(id) ?? []), stop])
-            if (repos.isRefused(id)) yield* stop
+            if (try sync(() => repos.isRefused(id))) try stop
             return collection
-          })
-        yield* repos.registerCache(["agent-runs", "machines"], (id) =>
+          }
+        try repos.registerCache(["agent-runs", "machines"], (id) =>
           Effect.suspend(() => Effect.all(stops.get(id) ?? [], { discard: true })))
         // What shows of a repository's rows: only through the data gate (repo/gate.ts), so a refusal or a session a
         // reached server couldn't verify drops them in the change that hides the repository, before any eviction.
         const shown = <A extends object & { readonly repoId: string }>(collection: ElectricCollection.ElectricCollection<A>) =>
           repos.gate(collection)
         // Opening a repository twice at once opens it once: each cache runs one lookup per repository and keeps it.
-        const runs = yield* Cache.make({
+        const runs = try Cache.make({
           lookup: (repo: string) =>
-            Effect.gen(function* () {
-              const collection = yield* registered(repo, ElectricCollection.make<AgentRun>({
+            effect {
+              const collection = try registered(repo, ElectricCollection.make<AgentRun>({
                 id: `agent-runs:${repo}`,
                 schema: AgentRun,
                 getKey: (row) => row.key,
                 syncMode: "eager",
                 shape: shapeOf(config.origin, AGENT_RUNS_SHAPE_ROUTE, repo),
               }))
-              return yield* runsQuery(yield* shown(collection))
-            }).pipe(Scope.provide(scope), Effect.orDie),
+              return try runsQuery(try shown(collection))
+            }.pipe(Scope.provide(scope), Effect.orDie),
           capacity: Number.MAX_SAFE_INTEGER,
         })
-        const machines = yield* Cache.make({
+        const machines = try Cache.make({
           lookup: (repo: string) =>
-            Effect.gen(function* () {
-              const collection = yield* registered(repo, ElectricCollection.make<Machine>({
+            effect {
+              const collection = try registered(repo, ElectricCollection.make<Machine>({
                 id: `machines:${repo}`,
                 schema: Machine,
                 getKey: (row) => row.id,
                 syncMode: "eager",
                 shape: shapeOf(config.origin, MACHINES_SHAPE_ROUTE, repo),
               }))
-              return yield* machinesQuery(yield* shown(collection))
-            }).pipe(Scope.provide(scope), Effect.orDie),
+              return try machinesQuery(try shown(collection))
+            }.pipe(Scope.provide(scope), Effect.orDie),
           capacity: Number.MAX_SAFE_INTEGER,
         })
         // Deployment-wide authority, per shape (Astra-D4-003): what a shape synced shows only while nothing put its
@@ -251,7 +252,7 @@ export class FleetStore extends Context.Service<
           getKey: (row: A) => string,
           route: string,
         ) =>
-          Effect.gen(function* () {
+          effect {
             const gate = gates[shape]
             const tell = () => { for (const listener of gate.listeners) listener() }
             /** Hides the rows now: every answer to a request already sent is void. */
@@ -260,28 +261,29 @@ export class FleetStore extends Context.Service<
               gate.generation += 1
               tell()
             })
-            const running = yield* Latch.make(true)
-            let collection: ElectricCollection.ElectricCollection<A> | undefined
+            const running = try Latch.make(true)
+            // Shape requests and session followers start after the collection is assigned.
+            let collection!: ElectricCollection.ElectricCollection<A>
             /** Whether the last 2xx answer said the shape is caught up: the batch it carried completes a snapshot. */
             let caughtUp = false
             const stop = Effect.suspend(() =>
               Effect.andThen(
                 Effect.andThen(reject, Effect.sync(() => { gate.synced = false; caughtUp = false })),
-                Effect.andThen(running.close, collection === undefined ? Effect.void : collection.evict),
+                Effect.andThen(running.close, collection.evict),
               )
             ).pipe(Effect.orDie)
             const start = Effect.suspend(() =>
-              Effect.andThen(running.open, collection === undefined ? Effect.void : collection.reconnect)
+              Effect.andThen(running.open, collection.reconnect)
             )
-            const source = yield* ShapeSource.ShapeSource
-            collection = yield* ElectricCollection.make<A>({
+            const source = try ShapeSource.ShapeSource
+            collection = try ElectricCollection.make<A>({
               id,
               schema,
               getKey,
               syncMode: "eager",
               shape: {
                 url: `${config.origin}${route}`,
-                columnMapper: ElectricCollection.snakeCamelMapper(),
+                columnMapper: try sync(() => ElectricCollection.snakeCamelMapper()),
                 parser,
               },
             }).pipe(
@@ -310,7 +312,7 @@ export class FleetStore extends Context.Service<
               })
             )
             const synced = collection
-            yield* synced.sync.pipe(
+            try synced.sync.pipe(
               Stream.runForEach((event) => {
                 // A shape Electric gave up on delivers nothing more: its rows are no evidence of the fleet now.
                 if (event._tag === "Stopped") return gate.rejected ? Effect.void : reject
@@ -326,7 +328,7 @@ export class FleetStore extends Context.Service<
               Effect.forkIn(scope, { startImmediately: true }),
             )
             if (Option.isSome(auth)) {
-              yield* auth.value.sessionState.rows.pipe(
+              try auth.value.sessionState.rows.pipe(
                 Stream.runForEach((sessions) => Effect.suspend(() => {
                   const session = sessions[0]
                   if (session?.status === "signed_out") {
@@ -344,7 +346,7 @@ export class FleetStore extends Context.Service<
                 })),
                 Effect.forkIn(scope, { startImmediately: true }),
               )
-              yield* auth.value.confirmations.pipe(
+              try auth.value.confirmations.pipe(
                 Stream.mapEffect(() =>
                   Effect.map(auth.value.session.get(SESSION), (row) => Option.isSome(row) && row.value.status === "signed_in")
                 ),
@@ -354,29 +356,29 @@ export class FleetStore extends Context.Service<
               )
             }
             return collection
-          })
-        const nodesCache = yield* Cache.make({
+          }
+        const nodesCache = try Cache.make({
           lookup: (_key: string) =>
-            Effect.gen(function* () {
-              const c = yield* adminShape<HostNode>("nodes", "fleet-global-nodes", HostNode, (r) => r.nodeId, FLEET_NODES_SHAPE_ROUTE)
-              return yield* globalNodesQuery(c)
-            }).pipe(Scope.provide(scope), Effect.orDie),
+            effect {
+              const c = try adminShape<HostNode>("nodes", "fleet-global-nodes", HostNode, (r) => r.nodeId, FLEET_NODES_SHAPE_ROUTE)
+              return try globalNodesQuery(c)
+            }.pipe(Scope.provide(scope), Effect.orDie),
           capacity: 1,
         })
-        const sessionsCache = yield* Cache.make({
+        const sessionsCache = try Cache.make({
           lookup: (_key: string) =>
-            Effect.gen(function* () {
-              const c = yield* adminShape<ObservedSession>("sessions", "fleet-global-sessions", ObservedSession, (r) => r.sessionKey, FLEET_SESSIONS_SHAPE_ROUTE)
-              return yield* globalSessionsQuery(c)
-            }).pipe(Scope.provide(scope), Effect.orDie),
+            effect {
+              const c = try adminShape<ObservedSession>("sessions", "fleet-global-sessions", ObservedSession, (r) => r.sessionKey, FLEET_SESSIONS_SHAPE_ROUTE)
+              return try globalSessionsQuery(c)
+            }.pipe(Scope.provide(scope), Effect.orDie),
           capacity: 1,
         })
-        const accountsCache = yield* Cache.make({
+        const accountsCache = try Cache.make({
           lookup: (_key: string) =>
-            Effect.gen(function* () {
-              const c = yield* adminShape<ProviderAccount>("accounts", "fleet-global-accounts", ProviderAccount, (r) => r.accountKey, FLEET_ACCOUNTS_SHAPE_ROUTE)
-              return yield* globalAccountsQuery(c)
-            }).pipe(Scope.provide(scope), Effect.orDie),
+            effect {
+              const c = try adminShape<ProviderAccount>("accounts", "fleet-global-accounts", ProviderAccount, (r) => r.accountKey, FLEET_ACCOUNTS_SHAPE_ROUTE)
+              return try globalAccountsQuery(c)
+            }.pipe(Scope.provide(scope), Effect.orDie),
           capacity: 1,
         })
         return FleetStore.of({
@@ -387,6 +389,6 @@ export class FleetStore extends Context.Service<
           globalAccounts: Cache.get(accountsCache, "all"),
           global,
         })
-      }),
+      },
     )
 }

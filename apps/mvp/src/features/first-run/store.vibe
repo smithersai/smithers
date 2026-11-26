@@ -31,48 +31,51 @@ export class FirstRunStore extends Context.Service<
   /** The store, `wait` until the follower has read the rows it needs; its follower running until the scope closes. */
   static readonly layer = Layer.effect(
     FirstRunStore,
-    Effect.gen(function* () {
-      const scope = yield* Effect.scope
-      const auth = yield* AuthStore
-      const conversations = yield* ConversationsStore
-      const chat = yield* ChatStore
-      const row = yield* Collection.local<FirstRunRow, string>({
+    effect {
+      const scope = try Effect.scope
+      const auth = try AuthStore
+      const conversations = try ConversationsStore
+      const chat = try ChatStore
+      const row = try Collection.local<FirstRunRow, string>({
         id: "first-run",
         schema: FirstRunRow,
         getKey: (each) => each.id,
-        initialData: [rowOf(WAITING)],
+        initialData: [try sync(() => rowOf(WAITING))],
       })
 
       let shown: FirstRun = WAITING
       const write = (next: FirstRun) =>
         row.update(FIRST_RUN, (draft) => void Object.assign(draft, { show: next.show, at: next.at, steps: [...next.steps] }))
 
-      const work = Effect.gen(function* () {
-        const session = Option.getOrThrow(yield* auth.session.get(SESSION))
-        const [confirmed] = yield* auth.confirmed.toArray
-        const search = (yield* conversations.search.toArray)[0]
-        const composer = yield* chat.composer.get(COMPOSER)
-        const next = firstRunOf({
-          access: composerAccess(session, confirmed),
-          conversations: conversationsOf(yield* conversations.mine.toArray, search?.loaded === true),
-          hasHistory: (yield* chat.messages.toArray).length > 0,
+      const work = effect {
+        const session = Option.getOrThrow(try auth.session.get(SESSION))
+        const [confirmed] = try auth.confirmed.toArray
+        const search = (try conversations.search.toArray)[0]
+        const composer = try chat.composer.get(COMPOSER)
+        const access = try sync(() => composerAccess(session, confirmed))
+        const mine = try conversations.mine.toArray
+        const conversationsState = try sync(() => conversationsOf(mine, search?.loaded === true))
+        const hasHistory = (try chat.messages.toArray).length > 0
+        const next = try sync(() => firstRunOf({
+          access,
+          conversations: conversationsState,
+          hasHistory,
           composerOpen: Option.isSome(composer) && composer.value.open,
-        })
-        if (sameFirstRun(next, shown)) return
-        const before = shown
+        }))
+        if (try sync(() => sameFirstRun(next, shown))) return
         shown = next
-        yield* write(next)
-        if (next.show !== "steps" || (before.show === "steps" && before.at === next.at)) return
+        try write(next)
+        if (next.show !== "steps") return
         const fields = { step: next.at!, steps: next.steps.length }
-        yield* Effect.gen(function* () {
-          yield* Metric.update(Metric.withAttributes(steps, { step: fields.step }), 1)
-          yield* Effect.annotateCurrentSpan(fields)
-          yield* Effect.logInfo("first_run.step").pipe(Effect.annotateLogs(fields))
-        }).pipe(Effect.withSpan("first_run.step"))
-      })
+        try effect {
+          try Metric.update(Metric.withAttributes(steps, { step: fields.step }), 1)
+          try Effect.annotateCurrentSpan(fields)
+          try Effect.logInfo("first_run.step").pipe(Effect.annotateLogs(fields))
+        }.pipe(Effect.withSpan("first_run.step"))
+      }
 
       const changed = <A>(stream: Stream.Stream<A>) => Stream.map(stream, () => undefined)
-      yield* Stream.mergeAll(
+      try Stream.mergeAll(
         [
           changed(auth.session.changes({ initial: true })),
           changed(auth.confirmed.changes({ initial: true })),
@@ -90,7 +93,7 @@ export class FirstRunStore extends Context.Service<
         Effect.forkIn(scope, { startImmediately: true }),
       )
 
-      return FirstRunStore.of({ row, state: yield* firstRunQuery(row), scope })
-    }).pipe(Effect.annotateLogs({ feature: "first-run" })),
+      return FirstRunStore.of({ row, state: try firstRunQuery(row), scope })
+    }.pipe(Effect.annotateLogs({ feature: "first-run" })),
   )
 }

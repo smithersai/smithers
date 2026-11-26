@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { FirstRunView } from "../firstRun"
+import type { FirstRunView } from "../firstRun.vibe"
 
 // What React components get: the first run's live row to render and the list's press to call
 // (features/first-run/firstRun.ts).

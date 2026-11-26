@@ -12,7 +12,7 @@ import { member, nodeDevice, openTab, openTestApi, TestChatApi } from "../../tes
 import { read } from "../../test/otlp"
 import { AuthStore, SESSION } from "../auth/store"
 import { Chat } from "../chat/chat"
-import { FirstRun } from "./firstRun"
+import { FirstRun } from "./firstRun.vibe"
 import { presses, steps } from "./metrics"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []

@@ -15,7 +15,7 @@ import { FirstRunAccount } from "../src/features/first-run/components/FirstRunAc
 import { FirstRunProvider } from "../src/features/first-run/components/FirstRunContext"
 import { FirstRunGate } from "../src/features/first-run/components/FirstRunGate"
 import { FirstRunSteps } from "../src/features/first-run/components/FirstRunSteps"
-import { FirstRun } from "../src/features/first-run/firstRun"
+import { FirstRun } from "../src/features/first-run/firstRun.vibe"
 import { openTestApp } from "../src/test/chatApi"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []

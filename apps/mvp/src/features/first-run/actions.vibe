@@ -8,8 +8,8 @@ import { presses } from "./metrics"
 
 /** A press of the first run's button for `step`: a log line, a span and a count, before the link it is goes. */
 export const press = (step: ShownStep) =>
-  Effect.gen(function* () {
-    yield* Metric.update(Metric.withAttributes(presses, { step }), 1)
-    yield* Effect.annotateCurrentSpan({ step })
-    yield* Effect.logInfo("first_run.press").pipe(Effect.annotateLogs({ step }))
-  }).pipe(Effect.withSpan("first_run.press"), Effect.annotateLogs({ feature: "first-run" }))
+  effect {
+    try Metric.update(Metric.withAttributes(presses, { step }), 1)
+    try Effect.annotateCurrentSpan({ step })
+    try Effect.logInfo("first_run.press").pipe(Effect.annotateLogs({ step }))
+  }.pipe(Effect.withSpan("first_run.press"), Effect.annotateLogs({ feature: "first-run" }))

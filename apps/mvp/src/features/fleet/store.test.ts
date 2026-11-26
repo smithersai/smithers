@@ -1,6 +1,6 @@
 // The browser fleet store over the real route and Electric, with live Postgres changes and shared cached queries.
-import { ShapeSource } from "@smthrs/effect-electric"
-import { Effect, Layer, ManagedRuntime, Stream } from "effect"
+import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
+import { Effect, Fiber, Latch, Layer, ManagedRuntime, Metric, Option, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
@@ -10,8 +10,8 @@ import { replaceRole, RepoStore } from "../repo/store"
 import { maintainer } from "../../../worker/feeds/test/harness.ts"
 import { testFile } from "../../../worker/test/harness.ts"
 import { fleetHarness } from "../../../worker/runners/test/fleet.ts"
-import { isLive, RUN_STATES } from "./contract"
-import { FleetStore } from "./store"
+import { AGENT_RUNS_SHAPE_ROUTE, isLive, RUN_STATES } from "./contract"
+import { FleetStore } from "./store.vibe"
 import { repoAuthority } from "../../test/repoAuthority"
 
 const server = testFile("fleet_browser")
@@ -144,6 +144,11 @@ test("a stopped shape starts again once authority may have returned", async () =
     await runtime.runPromise(auth.sessionConfirmed)
     await Effect.runPromise(Effect.sleep(1_000))
     expect(await runtime.runPromise(runs.toArray)).toHaveLength(0)
+    await runtime.runPromise(auth.session.update(SESSION, (row) => { row.status = "signed_in"; delete row.unverifiable }))
+    await runtime.runPromise(auth.sessionConfirmed)
+    await expect.poll(async () => (await runtime.runPromise(runs.toArray)).length, { timeout: 20_000 }).toBe(1)
+    await runtime.runPromise(auth.session.update(SESSION, (row) => { row.status = "signed_out" }))
+    await expect.poll(async () => (await runtime.runPromise(runs.toArray)).length, { timeout: 20_000 }).toBe(0)
   } finally {
     await runtime.dispose()
     await sql((sql) => sql`DELETE FROM agent_runs WHERE key = ${key}`)
@@ -243,3 +248,125 @@ test("its runs and machines drop a repository's rows in the change that hides it
     ], { discard: true }))
   }
 }, 60_000)
+
+test("a role grant retries a stopped shape and repository refusal holds opened shapes", async () => {
+  const origin = "https://fleet.test"
+  const stops = Metric.withAttributes(ElectricCollection.stops, { collection: "agent-runs", status: "400" })
+  const runtime = ManagedRuntime.make(FleetStore.layer({ origin }).pipe(
+    Layer.provideMerge(repoAuthority),
+    Layer.provide(Persistence.memory),
+    Layer.provide(Layer.succeed(ShapeSource.ShapeSource, {
+      request: (url: string) => new URL(url).pathname === AGENT_RUNS_SHAPE_ROUTE
+        ? Effect.succeed(new Response(null, { status: 400 }))
+        : Effect.never,
+    })),
+  ))
+  try {
+    const store = await runtime.runPromise(Effect.service(FleetStore))
+    const repos = await runtime.runPromise(Effect.service(RepoStore))
+    await runtime.runPromise(repos.refusalsKnown)
+    const open = "octo/open"
+    const held = "octo/held"
+    const runs = await runtime.runPromise(store.runs(open))
+    const count = async () => (await runtime.runPromise(Metric.value(stops))).count
+    const before = await count()
+    const reading = runtime.runFork(Effect.ignore(runs.preload))
+    await expect.poll(count, { timeout: 5_000 }).toBeGreaterThan(before)
+    await runtime.runPromise(replaceRole(repos, { id: "github/octo/open", role: "maintainer", own: false }))
+    await expect.poll(count, { timeout: 5_000 }).toBeGreaterThan(before + 1)
+    await runtime.runPromise(repos.refuse("github/octo/open"))
+    await runtime.runPromise(Fiber.interrupt(reading))
+    await runtime.runPromise(repos.refuse("github/octo/held"))
+    const machines = await runtime.runPromise(store.machines(held))
+    expect(repos.isRefused("github/octo/open")).toBe(true)
+    expect(repos.isRefused("github/octo/held")).toBe(true)
+    expect(await runtime.runPromise(runs.toArray)).toEqual([])
+    expect(await runtime.runPromise(machines.toArray)).toEqual([])
+  } finally { await runtime.dispose() }
+})
+
+test.each([400, 401])("a global fleet without an auth store notifies subscribers when sync stops with %s", async (status) => {
+  const origin = "https://fleet.test"
+  const runtime = ManagedRuntime.make(FleetStore.layer({ origin }).pipe(
+    Layer.provide(repoAuthority),
+    Layer.provide(Persistence.memory),
+    Layer.provide(Layer.succeed(ShapeSource.ShapeSource, {
+      request: () => Effect.succeed(new Response(null, { status })),
+    })),
+  ))
+  try {
+    const store = await runtime.runPromise(Effect.service(FleetStore))
+    const seen: string[] = []
+    const stop = store.global.subscribe("nodes", () => seen.push(store.global.availability("nodes")))
+    expect(store.global.visible("nodes")).toBe(true)
+    const nodes = await runtime.runPromise(store.globalNodes)
+    const reading = runtime.runFork(Effect.ignore(nodes.preload))
+    await expect.poll(() => store.global.availability("nodes"), { timeout: 5_000 }).toBe("unavailable")
+    await runtime.runPromise(Fiber.interrupt(reading))
+    expect(seen).toContain("unavailable")
+    stop()
+  } finally { await runtime.dispose() }
+})
+
+test("a repository shape's 401 asks the auth store for a session check", async () => {
+  const origin = "https://fleet.test"
+  const runtime = ManagedRuntime.make(FleetStore.layer({ origin }).pipe(
+    Layer.provide(repoAuthority),
+    Layer.provideMerge(AuthStore.layer),
+    Layer.provide(Persistence.memory),
+    Layer.provide(Layer.succeed(ShapeSource.ShapeSource, {
+      request: () => Effect.succeed(new Response(null, { status: 401 })),
+    })),
+  ))
+  try {
+    const store = await runtime.runPromise(Effect.service(FleetStore))
+    const auth = await runtime.runPromise(Effect.service(AuthStore))
+    await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const check = yield* auth.checksAsked.pipe(Stream.runHead, Effect.forkScoped({ startImmediately: true }))
+      const runs = yield* store.runs("octo/session")
+      yield* runs.preload.pipe(Effect.ignore, Effect.forkScoped({ startImmediately: true }))
+      expect(Option.isSome(yield* Fiber.join(check).pipe(Effect.timeout("5 seconds")))).toBe(true)
+    })))
+  } finally { await runtime.dispose() }
+})
+
+test("a fleet snapshot awaiting application cannot certify a later session", async () => {
+  const origin = "https://fleet.test"
+  const nextSession = Latch.makeUnsafe(false)
+  let requests = 0
+  const headers = {
+    "electric-handle": "nodes",
+    "electric-offset": "0_1",
+    "electric-schema": "{}",
+    "electric-up-to-date": "",
+  }
+  const runtime = ManagedRuntime.make(FleetStore.layer({ origin }).pipe(
+    Layer.provide(repoAuthority),
+    Layer.provideMerge(AuthStore.layer),
+    Layer.provide(Persistence.memory),
+    Layer.provide(Layer.succeed(ShapeSource.ShapeSource, {
+      request: (url: string) => Effect.suspend(() => {
+        requests += 1
+        if (requests === 1) return Effect.succeed(Response.json([], { headers }))
+        if (new URL(url).searchParams.get("live") === "true") return Effect.never
+        return Effect.as(nextSession.await, Response.json([{ headers: { control: "up-to-date" } }], { headers }))
+      }),
+    })),
+  ))
+  try {
+    const store = await runtime.runPromise(Effect.service(FleetStore))
+    const auth = await runtime.runPromise(Effect.service(AuthStore))
+    await runtime.runPromise(auth.session.update(SESSION, (row) => { row.status = "signed_in"; row.login = "first-admin" }))
+    const nodes = await runtime.runPromise(store.globalNodes)
+    const reading = runtime.runFork(Effect.ignore(nodes.preload))
+    await expect.poll(() => requests, { timeout: 5_000 }).toBeGreaterThan(1)
+    expect(store.global.availability("nodes")).toBe("loading")
+
+    await runtime.runPromise(auth.session.update(SESSION, (row) => { row.login = "second-admin" }))
+    await expect.poll(() => store.global.availability("nodes")).toBe("unavailable")
+    await expect.poll(() => requests, { timeout: 5_000 }).toBeGreaterThan(2)
+    await runtime.runPromise(nextSession.open)
+    await expect.poll(() => store.global.availability("nodes"), { timeout: 5_000 }).toBe("ready")
+    await runtime.runPromise(Fiber.interrupt(reading))
+  } finally { await runtime.dispose() }
+})

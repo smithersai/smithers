@@ -4,7 +4,7 @@ import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
 import { AuthStore, SESSION } from "../../../src/features/auth/store"
-import { FleetStore } from "../../../src/features/fleet/store"
+import { FleetStore } from "../../../src/features/fleet/store.vibe"
 import { PluginsUi } from "../../../src/plugins/ui"
 import { member, openFaultyApp, openTestApp, TestChatApi } from "../../../src/test/chatApi"
 import type { FleetTab, Watched } from "./tab"
@@ -187,6 +187,11 @@ test("a 401 hides the synced fleet at once, keeps it hidden for another person, 
     await app.runPromise(auth.sessionConfirmed)
     await changed(nodes, (value) => value._tag === "Ready" && value.rows.some((row) => row.name === "Host one renamed"), signal)
     expect(store.global.visible("nodes")).toBe(true)
+    await app.runPromise(auth.session.update(SESSION, (row) => { row.unverifiable = true }))
+    expect(store.global.visible("nodes")).toBe(false)
+    await app.runPromise(auth.session.update(SESSION, (row) => { delete row.unverifiable; row.status = "signed_out" }))
+    await expect.poll(() => store.global.visible("nodes")).toBe(false)
+    await expect.poll(async () => (await app.runPromise(cached.toArray)).length, { timeout: 20_000 }).toBe(0)
   } finally { await app.dispose() }
 }, 90_000)
 

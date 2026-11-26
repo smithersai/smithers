@@ -4,7 +4,7 @@ import { Deferred, Effect, Fiber, Layer, type Scope, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
 import { availabilityOf, type FleetAvailability } from "../features/fleet/globalContract"
-import type { FleetStore } from "../features/fleet/store"
+import type { FleetStore } from "../features/fleet/store.vibe"
 import { Plugins, queryOf } from "./plugins"
 
 type Row = { readonly key: string }
