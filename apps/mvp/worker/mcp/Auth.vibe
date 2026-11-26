@@ -13,7 +13,7 @@ import { type Actor, rankOf, type Role, Sessions } from "../Actor.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { type Repository, repositoryOf } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.vibe"
-import * as GitHubStore from "../github/Store.ts"
+import * as GitHubStore from "../github/Store.vibe"
 import * as SessionStore from "../SessionStore.ts"
 import {
   type McpAuthResult,

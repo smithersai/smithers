@@ -20,7 +20,7 @@ import * as Reconcile from "./Reconcile.vibe"
 import * as Relations from "./Relations.vibe"
 import { admit, database, judgeSeat, judging, keys, reset, signedIn, writeRow } from "./test/fixtures.ts"
 import { APP_ID, appKey, SCRIPTED_API, scriptedGitHub } from "./test/scriptedGitHub.ts"
-import * as Triage from "./Triage.ts"
+import * as Triage from "./Triage.vibe"
 import * as MachineWrite from "./MachineWrite.vibe"
 import * as Write from "./Write.vibe"
 

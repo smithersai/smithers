@@ -8,12 +8,12 @@ import { DEVICE_PERSON_HEADER, type SessionState } from "../src/features/auth/co
 import * as Rotation from "./SessionSigningKeys.vibe"
 import { SigningKeyIds } from "./SessionStore.ts"
 import { repositoryOf } from "./github/Config.vibe"
-import * as Writes from "./github/Store.ts"
+import * as Writes from "./github/Store.vibe"
 import * as Write from "./github/Write.vibe"
 import * as Metrics from "./github/Metrics.vibe"
 import * as RepoRoles from "./github/RepoRoles.vibe"
-import * as Triage from "./github/TriageStore.ts"
-import { TokenUnavailable } from "./github/Tokens.ts"
+import * as Triage from "./github/TriageStore.vibe"
+import { TokenUnavailable } from "./github/Tokens.vibe"
 import { githubHarness } from "./github/test/harness.ts"
 import { testFile } from "./test/harness.ts"
 import { holdSql } from "./test/sqlWait.ts"
@@ -214,3 +214,26 @@ test.each(["allowed", "denied", "app absent", "settled"] as const)(
     expect(await attempt()).toMatchObject({ _tag: "Success", success: { status: "done" } })
     expect(await query(sql => sql`SELECT paused FROM triage_settings WHERE repo_id = ${repo.id}`)).toEqual([{ paused: true }])
   })
+
+test("a resubmission renews a pending triage write only with the same payload, its own repository and a role that allows it", async () => {
+  const auth = await signInHarness(runtime, { config })
+  auth.github.permission = "write"
+  expect((await auth.signInAs()).response.status).toBe(303)
+  const [person] = await query(sql => sql<{ id: string; session: string }>`SELECT person_id::text AS id, id::text AS session FROM sessions`)
+  const id = crypto.randomUUID()
+  const authority = { personId: person!.id, sessionId: person!.session, scope: { _tag: "Deployment" as const } }
+  const insert = (payload: Writes.WritePayload, reauthorize: boolean) => runtime.runPromise(Writes.insertWrite({
+    id, repoId: repo.id, actorId: person!.id, sessionId: person!.session, via: "person", payload, payloadHash: digestSync("triage/enable"),
+    reauthorize,
+  }))
+  const recorded = { op: "triage/enable" as const, dailyTokens: 10, authority: { ...authority, cookieKey: "legacy" } }
+  expect(await insert(recorded, false)).toMatchObject({ kind: "inserted" })
+  // Another payload under the same hash is another write, whatever authority it brings.
+  expect(await insert({ ...recorded, dailyTokens: 20, authority }, true)).toEqual({ kind: "taken" })
+  // A role on another repository renews nothing here.
+  expect(await insert({ ...recorded, authority: { ...authority, scope: { _tag: "Repo", held: {
+    repoId: "github/smithersai/another", personId: person!.id, role: "admin" } } } }, true)).toEqual({ kind: "taken" })
+  // The person's own live session, but a Member: the write stays as it was admitted.
+  expect(await insert({ ...recorded, authority }, true)).toEqual({ kind: "stale" })
+  expect(Option.getOrThrow(await runtime.runPromise(Writes.writeOf(id))).payload).toEqual(recorded)
+})

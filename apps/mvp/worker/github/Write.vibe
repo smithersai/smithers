@@ -24,9 +24,9 @@ import { repositoryOf } from "./Config.vibe"
 import * as Metrics from "./Metrics.vibe"
 import { fetchIssue, project } from "./Project.vibe"
 import { CANT_ACT, permissionOf, RoleRefused } from "./RepoRoles.vibe"
-import * as Store from "./Store.ts"
-import type { TokenUnavailable } from "./Tokens.ts"
-import * as TriageStore from "./TriageStore.ts"
+import * as Store from "./Store.vibe"
+import type { TokenUnavailable } from "./Tokens.vibe"
+import * as TriageStore from "./TriageStore.vibe"
 
 // `github/Write { writeId }` (decision 0012 §4, docs/features/issues.md#writes): the one remote flow behind every git
 // write. The writes route admitted the write and recorded it in `github_writes`; this calls GitHub once and settles the

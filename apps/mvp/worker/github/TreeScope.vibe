@@ -1,4 +1,3 @@
-import { Effect } from "effect"
 import { SqlClient } from "effect/sql"
 import { RELATIONS_STALE_MS, RELATIONS_STREAM, TREE_SCOPE_MAX_REPOSITORIES, TREE_SCOPE_SEGMENT, ISSUES_SEGMENT, type TreeScope } from "../../src/features/issues/contract.ts"
 import { isRepository, REPOS_ROUTE } from "../../src/features/repo/contract.ts"
@@ -28,24 +27,22 @@ export const parseTreeScopePath = (path: string): { readonly owner: string; read
  * keeps a sub-issue under its parent's owner, so another owner's can't be reached, and asking about them would only cost
  * a role read each. A repository nobody has opened on this deployment isn't a candidate until someone does.
  */
-export const candidates = (owner: string, allowed: ReadonlyArray<string>) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const rows = yield* sql<{ readonly repoId: string }>`
+export const candidates = effect (owner: string, allowed: ReadonlyArray<string>) => {
+  const sql = try SqlClient.SqlClient
+  const rows = try sql<{ readonly repoId: string }>`
       SELECT repo_id AS "repoId" FROM github_repositories WHERE split_part(repo_id, '/', 2) = ${owner.toLowerCase()}`
-    const listed = allowed.filter((id) => id.split("/")[1] === owner.toLowerCase())
-    return [...new Set([...rows.map((row) => row.repoId), ...listed])].sort()
-  })
+  const listed = allowed.filter((id) => id.split("/")[1] === owner.toLowerCase())
+  return [...new Set([...rows.map((row) => row.repoId), ...listed])].sort()
+}
 
 /**
  * Which readable repositories each edge joins, within the components that hold an issue of `repoId`. `UNION` is the
  * visited set, so a cycle in stale rows ends; there is no hop limit, since leaves of an eight-level tree are up to 14
  * edges apart. The work is bounded by the issues of repositories the reader may read.
  */
-export const reachedPairs = (repoId: string, readable: ReadonlyArray<string>) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    return yield* sql<{ readonly child: string; readonly parent: string }>`
+export const reachedPairs = effect (repoId: string, readable: ReadonlyArray<string>) => {
+  const sql = try SqlClient.SqlClient
+  return try sql<{ readonly child: string; readonly parent: string }>`
       WITH RECURSIVE reach(id) AS (
         SELECT child_id FROM issue_relations WHERE child_repo_id = ${repoId} AND parent_repo_id = ANY(${readable}::text[])
         UNION
@@ -59,7 +56,7 @@ export const reachedPairs = (repoId: string, readable: ReadonlyArray<string>) =>
       SELECT DISTINCT e.child_repo_id AS child, e.parent_repo_id AS parent FROM issue_relations e
       WHERE e.child_id IN (SELECT id FROM reach)
         AND e.child_repo_id = ANY(${readable}::text[]) AND e.parent_repo_id = ANY(${readable}::text[])`
-  })
+}
 
 /** The repositories from `repoId` outward over `pairs`: nearest first, then by id, the tree's own always first. */
 export const byDistance = (repoId: string, pairs: ReadonlyArray<{ readonly child: string; readonly parent: string }>) => {
@@ -85,15 +82,14 @@ export const byDistance = (repoId: string, pairs: ReadonlyArray<{ readonly child
 export const nameOf = (id: string) => id.replace(/^github\//, "")
 
 /** The repositories of `ids` whose relations walk is complete and current. */
-export const currentRelations = (ids: ReadonlyArray<string>, nowMs: number) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const rows = yield* sql<{ readonly repoId: string }>`
+export const currentRelations = effect (ids: ReadonlyArray<string>, nowMs: number) => {
+  const sql = try SqlClient.SqlClient
+  const rows = try sql<{ readonly repoId: string }>`
       SELECT repo_id AS "repoId" FROM github_sync
       WHERE repo_id = ANY(${ids}::text[]) AND stream = ${RELATIONS_STREAM} AND complete
         AND synced_at > ${new Date(nowMs - RELATIONS_STALE_MS).toISOString()}::timestamptz`
-    return new Set(rows.map((row) => row.repoId))
-  })
+  return new Set(rows.map((row) => row.repoId))
+}
 
 /** The answer: the first `TREE_SCOPE_MAX_REPOSITORIES` of `ordered` with whether each is `synced`, and the rest named. */
 export const answer = (ordered: ReadonlyArray<string>, synced: ReadonlySet<string>): TreeScope => ({

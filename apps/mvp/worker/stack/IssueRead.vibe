@@ -5,7 +5,7 @@ import type { SqlClient } from "effect/sql"
 import { withToken } from "../github/Calls.ts"
 import type { GitHubApp, Repository } from "../github/Config.vibe"
 import { readIssue } from "../github/Project.vibe"
-import * as Tokens from "../github/Tokens.ts"
+import * as Tokens from "../github/Tokens.vibe"
 
 // One issue read from GitHub into the projection, for `attach`'s live check (decision 0153): GitHub's answer, under the
 // projection's newer-than guard, so an issue a missed webhook hid as deleted is tombstoned before the writer decides.

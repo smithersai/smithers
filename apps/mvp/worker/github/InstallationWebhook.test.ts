@@ -3,7 +3,7 @@ import { GITHUB_WEBHOOK_ROUTE } from "../../src/features/issues/contract.ts"
 import { testFile } from "../test/harness.ts"
 import { installationChangesOf } from "./Api.vibe"
 import { repositoryOf } from "./Config.vibe"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 import { reset, sql } from "./test/fixtures.ts"
 import { delivery, githubHarness, WEBHOOK_SECRET } from "./test/harness.ts"
 

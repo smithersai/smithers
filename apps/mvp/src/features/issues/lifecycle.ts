@@ -3,11 +3,17 @@ export const NEEDS_REPRO_LABEL = "smithers:needs-repro"
 export const NEEDS_REPRO_COMMENT = "Please add a minimal reproduction: a short repository snippet or a failing test."
 export const REPRO_COMMENT_NAMESPACE = "830b60db-6016-453a-8b4b-e40dcf152aac"
 
-/** Labels are authoritative; explicit bug titles also cover repositories without a bug label. */
+/**
+ * Labels are authoritative; explicit bug titles also cover repositories without a bug label.
+ * @throws {never}
+ */
 export const isBug = (title: string, labels: ReadonlyArray<string>): boolean =>
   labels.some((label) => /^(?:type[:/]\s*)?bug$/i.test(label)) || /^\s*(?:\[bug\]|bug\s*:)/i.test(title)
 
-/** A candidate snippet is not a verified reproduction; verification requires sandbox execution on main. */
+/**
+ * A candidate snippet is not a verified reproduction; verification requires sandbox execution on main.
+ * @throws {never}
+ */
 export const hasReproCandidate = (texts: ReadonlyArray<string>): boolean =>
   texts.some((text) => {
     let fence: string | undefined
@@ -35,6 +41,7 @@ export const COMMITMENT_COPY: Readonly<Record<Commitment, string>> = {
   now: "Now", next: "Next", later: "Later", none: "Unscheduled",
 }
 export const commitmentLabel = (commitment: Commitment): string => `smithers:commit-${commitment}`
+/** @throws {never} */
 export const commitmentOf = (labels: ReadonlyArray<string>): Commitment | "conflict" | null => {
   const names = new Set(labels.map((name) => name.toLowerCase()))
   const found = COMMITMENTS.filter((commitment) => names.has(commitmentLabel(commitment)))

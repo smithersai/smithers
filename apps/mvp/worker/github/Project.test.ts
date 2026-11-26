@@ -6,7 +6,7 @@ import { Effect } from "effect"
 import { HttpClient } from "effect/http"
 import { withToken } from "./Calls.ts"
 import { project, readIssue } from "./Project.vibe"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 import { admit, comments, REPOSITORY, reset, items, services, writeRow } from "./test/fixtures.ts"
 import { scriptedGitHub } from "./test/scriptedGitHub.ts"
 

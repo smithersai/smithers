@@ -4,7 +4,7 @@ import { itemId } from "../../src/features/issues/contract.ts"
 import { reviewId } from "../../src/features/pulls/contract.ts"
 import type { Repository } from "./Config.vibe"
 import { type Fetched, fetchIssue, project } from "./Project.vibe"
-import { commitCursor, finishSync, markedWrite, shownBody, syncState } from "./Store.ts"
+import { commitCursor, finishSync, markedWrite, shownBody, syncState } from "./Store.vibe"
 
 // Re-reading one pull request from GitHub into the projection (decision 0012 §2 and §6, docs/features/pulls.md): its
 // `items` row and comments as an issue's (GitHub numbers both in one sequence), plus its `pulls` row, its commits and its

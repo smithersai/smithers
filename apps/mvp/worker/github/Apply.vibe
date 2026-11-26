@@ -9,9 +9,9 @@ import { repositoryOf } from "./Config.vibe"
 import * as Metrics from "./Metrics.vibe"
 import { type Fetched, fetchIssue, project } from "./Project.vibe"
 import { fetchPull, projectPull } from "./Pulls.vibe"
-import * as Store from "./Store.ts"
-import { candidates } from "./TreeScope.ts"
-import type { GitHubTokens } from "./Tokens.ts"
+import * as Store from "./Store.vibe"
+import { candidates } from "./TreeScope.vibe"
+import type { GitHubTokens } from "./Tokens.vibe"
 import type { RepoRoles } from "./RepoRoles.vibe"
 
 // `github/Apply { deliveryId, repo, number, event }` (decision 0012 §2, docs/features/issues.md#the-webhook):

@@ -9,9 +9,9 @@ import type { Services } from "./Apply.vibe"
 import { classify, isRateLimited, statusOf, withToken } from "./Calls.ts"
 import { repositoryOf, type Repository } from "./Config.vibe"
 import * as Metrics from "./Metrics.vibe"
-import * as Store from "./Store.ts"
-import { candidates } from "./TreeScope.ts"
-import { TokenUnavailable } from "./Tokens.ts"
+import * as Store from "./Store.vibe"
+import { candidates } from "./TreeScope.vibe"
+import { TokenUnavailable } from "./Tokens.vibe"
 
 // `github/Relations { repo, requestedAtMs }` (decision 0153, docs/features/issues.md#the-tree): GitHub's relations, on
 // the path that works with no webhook. A relation change need not move an issue's `updated_at`, so Reconcile's change-time

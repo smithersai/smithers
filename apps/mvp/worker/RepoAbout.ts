@@ -11,7 +11,7 @@ import { appSlug, GITHUB_WEB } from "./GitHubAuth.ts"
 import * as GitHubConfig from "./github/Config.vibe"
 import * as ReadToken from "./github/ReadToken.vibe"
 import { allowed as allowedRepositories } from "./github/RepoRoles.vibe"
-import * as Tokens from "./github/Tokens.ts"
+import * as Tokens from "./github/Tokens.vibe"
 import * as Curated from "./home/Curated.ts"
 import * as RepoMetrics from "./RepoMetrics.vibe"
 

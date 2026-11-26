@@ -959,7 +959,7 @@ test("the shipped list covers the access areas and spares tests, generated files
       "apps/mvp/worker/branch/Upgrade.ts",
       "apps/mvp/worker/flows/RecheckRole.vibe",
       "apps/mvp/worker/flows/RevokeGitHubToken.vibe",
-      "apps/mvp/worker/github/Tokens.ts",
+      "apps/mvp/worker/github/Tokens.vibe",
       "apps/mvp/worker/domains/Api.ts",
       "apps/mvp/worker/feeds/Api.ts",
       "apps/mvp/worker/secrets/Store.ts",

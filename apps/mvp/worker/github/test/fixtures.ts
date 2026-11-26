@@ -17,9 +17,9 @@ import * as ModelSeats from "../../ModelSeats.ts"
 import { PersonalModels } from "../../personal/Models.vibe"
 import type { Repository } from "../Config.vibe"
 import type * as RepoRoles from "../RepoRoles.vibe"
-import * as Store from "../Store.ts"
-import * as Tokens from "../Tokens.ts"
-import type * as Triage from "../Triage.ts"
+import * as Store from "../Store.vibe"
+import * as Tokens from "../Tokens.vibe"
+import type * as Triage from "../Triage.vibe"
 import { appKey, BOT_LOGIN, SCRIPTED_API, type ScriptedGitHub, scriptedApp } from "./scriptedGitHub.ts"
 
 type Runtime = ReturnType<typeof testFile>

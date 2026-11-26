@@ -40,9 +40,9 @@ import {
 } from "./test/fixtures.ts"
 import { delivery, githubHarness, member } from "./test/harness.ts"
 import { BOT_LOGIN, scriptedGitHub } from "./test/scriptedGitHub.ts"
-import { TokenUnavailable } from "./Tokens.ts"
-import * as Triage from "./Triage.ts"
-import * as TriageStore from "./TriageStore.ts"
+import { TokenUnavailable } from "./Tokens.vibe"
+import * as Triage from "./Triage.vibe"
+import * as TriageStore from "./TriageStore.vibe"
 import * as Write from "./Write.vibe"
 
 const runtime = testFile("github_triage")

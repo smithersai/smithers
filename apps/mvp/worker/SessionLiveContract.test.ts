@@ -45,7 +45,7 @@ test("every SessionStore table reader is classified, and live readers use sessio
 
 // These authority paths consume session rows outside SessionStore, so the export inventory alone cannot see them.
 test("token use and notification audiences share the absolute session bound", () => {
-  for (const path of ["./github/Store.ts", "./Notifications.ts", "./flows/SandboxSpend.vibe", "./WriteAuthority.ts"]) {
+  for (const path of ["./github/Store.vibe", "./Notifications.ts", "./flows/SandboxSpend.vibe", "./WriteAuthority.ts"]) {
     const source = sourceText(new URL(path, import.meta.url))
     expect(source, path).toContain("sessionLive(")
     expect(source, path).not.toMatch(/revoked_at IS NULL AND (?:live\.)?expires_at > now\(\)/)

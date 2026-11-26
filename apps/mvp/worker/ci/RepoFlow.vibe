@@ -12,7 +12,7 @@ import { statusContextOf } from "../../src/features/pulls/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { classify, withToken } from "../github/Calls.ts"
 import { type Repository, repositoryOf } from "../github/Config.vibe"
-import type { GitHubTokens } from "../github/Tokens.ts"
+import type { GitHubTokens } from "../github/Tokens.vibe"
 import * as Realm from "./Realm.vibe"
 
 // A repository's own flow on Smithers (docs/features/ci.md#repository-flows): a workflow entry point at the

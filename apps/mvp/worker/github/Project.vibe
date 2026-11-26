@@ -1,7 +1,7 @@
 import { GitHub } from "@smthrs/integrations"
 import { statusOf } from "./Calls.ts"
 import type { Repository } from "./Config.vibe"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 
 // Re-reading one issue from GitHub into the projection (decision 0012 §2): a webhook only names its subject, and a write
 // reads back what it made, so both come here. GitHub is the truth, so the row is what GitHub answers now, under the

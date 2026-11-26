@@ -49,7 +49,7 @@ import * as RedactFeed from "./flows/RedactFeed.vibe"
 import * as Fleet from "./runners/Fleet.vibe"
 import * as RunnerAdmin from "./runners/AdminFlows.vibe"
 import * as GitHubHost from "./github/Host.vibe"
-import type * as Triage from "./github/Triage.ts"
+import type * as Triage from "./github/Triage.vibe"
 import { RoleFreshMs, SigningKeyIds } from "./SessionStore.ts"
 
 // What a remote flow execution runs on Cloudflare (docs/features/remote-flows.md): `@smthrs/platform-cloudflare`'s

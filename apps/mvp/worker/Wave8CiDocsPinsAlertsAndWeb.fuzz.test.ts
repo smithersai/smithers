@@ -32,7 +32,7 @@ import * as AlertDelivery from "./flows/AlertDelivery.vibe"
 import * as AskFlow from "./flows/Ask.vibe"
 import * as SandboxCallFlow from "./flows/SandboxCall.vibe"
 import * as SpendAlertFlow from "./flows/SpendAlert.vibe"
-import * as GitHubTokens from "./github/Tokens.ts"
+import * as GitHubTokens from "./github/Tokens.vibe"
 import * as Pins from "./Pins.vibe"
 import * as WebPreview from "./WebPreview.vibe"
 

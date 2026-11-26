@@ -52,10 +52,10 @@ import { FetchHttpClient, HttpClient } from "effect/http"
 import { digestSync } from "@smthrs/crypto"
 import * as SessionStore from "./SessionStore.ts"
 import * as GitHubWrite from "./github/Write.vibe"
-import * as GitHubStore from "./github/Store.ts"
-import * as TriageStore from "./github/TriageStore.ts"
+import * as GitHubStore from "./github/Store.vibe"
+import * as TriageStore from "./github/TriageStore.vibe"
 import * as SecretStore from "./secrets/Store.vibe"
-import { TokenUnavailable } from "./github/Tokens.ts"
+import { TokenUnavailable } from "./github/Tokens.vibe"
 import * as ProtectedAuthority from "./ProtectedAuthority.ts"
 
 // The deployed flows' app database, on this file's own schema.

@@ -1,11 +1,11 @@
 import { Core, GitHub } from "@smthrs/integrations"
-import { Clock, Effect, Metric, Option, type Redacted, Schema } from "effect"
+import type { Redacted } from "effect"
 import type { SqlClient } from "effect/sql"
 import type { SessionKeys } from "../SessionKeys.vibe"
 import { classify, isRateLimited, statusOf } from "./Calls.ts"
 import type { Repository } from "./Config.vibe"
 import * as Metrics from "./Metrics.vibe"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 
 // `GitHubTokens` (decision 0012 §3, docs/features/issues.md#tokens): the two tokens a GitHub step acts with.
 // - `forSession`: a person's own GitHub user token (`ghu_`), opened from their session, so GitHub shows the person and
@@ -51,7 +51,7 @@ export interface Services {
   /** Sign-in's keys, which open a session's sealed token; none without sign-in, and no person's write can run. */
   readonly keys: Option.Option<SessionKeys>
   /** Starts `auth/RecheckRole` for `sessionId`, named after the check it replaces (`generation`); never waits. */
-  readonly refresh: (sessionId: string, generation: number) => Effect.Effect<void>
+  readonly refresh: (sessionId: string, generation: number) => void!!
 }
 
 /**
@@ -84,8 +84,7 @@ export const permissionsOf = (access: Access): Readonly<Record<string, "read" | 
 }
 
 /** How long GitHub asked a rate-limited caller to wait, uncapped: `Retry-After`, else the spent limit's reset. */
-const fullWaitOf = (error: unknown): number | undefined => {
-  if (!Core.IntegrationError.isIntegrationError(error)) return undefined
+const fullWaitOf = (error: Core.IntegrationError.IntegrationError): number | undefined => {
   const named = error.details?.["retryAfterUncappedMillis"]
   if (typeof named === "number") return named
   const reset = error.details?.["rateLimitResetAt"]
@@ -106,9 +105,13 @@ const headerLimitOf = (error: unknown): { readonly headerLimited?: true; readonl
   return {}
 }
 
+/** The full wait of a failure GitHub refused for its rate limit; none for any other failure. */
+const limitWaitOf = (error: unknown): number | undefined =>
+  Core.IntegrationError.isIntegrationError(error) && isRateLimited(error) ? fullWaitOf(error) : undefined
+
 const unavailable = (error: unknown) => {
   const classified = classify(error)
-  const fullWait = isRateLimited(error) ? fullWaitOf(error) : undefined
+  const fullWait = limitWaitOf(error)
   return new TokenUnavailable({
     reason: "unavailable",
     ...(statusOf(error) === undefined ? {} : { upstreamStatus: statusOf(error) }),
@@ -130,48 +133,43 @@ const counted = (kind: "user" | "app", outcome: string, fields: Record<string, s
     ),
   )
 
-/** The two tokens over `services`, each reading Postgres through the `SqlClient` in context.
- * @throws {never}
- */
+/** The two tokens over `services`, each reading Postgres through the `SqlClient` in context. */
 export const make = (services: Services) => {
   /** Session `sessionId`'s GitHub user token. */
-  const forSession = (sessionId: string): Effect.Effect<Redacted.Redacted<string>, TokenUnavailable, SqlClient.SqlClient> =>
-    Effect.gen(function* () {
+  const forSession = (sessionId: string): Redacted.Redacted<string>!TokenUnavailable!SqlClient.SqlClient =>
+    withSpan(effect {
       const signInRequired = (reason: string) =>
         Effect.andThen(counted("user", "sign_in_required", { reason }), new TokenUnavailable({ reason: "sign_in_required" }))
-      if (Option.isNone(services.keys)) return yield* signInRequired("sign_in_off")
-      const held = yield* Store.sessionToken(sessionId).pipe(
+      if (Option.isNone(services.keys)) return try signInRequired("sign_in_off")
+      const held = try Store.sessionToken(sessionId).pipe(
         Effect.mapError(() => new TokenUnavailable({ reason: "unavailable" })),
       )
-      if (Option.isNone(held) || !held.value.live || held.value.access === null) return yield* signInRequired("ended")
+      if (Option.isNone(held) || !held.value.live || held.value.access === null) return try signInRequired("ended")
       const session = held.value
-      const now = yield* Clock.currentTimeMillis
+      const now = try Clock.currentTimeMillis
       if (session.accessExpiresAt !== null && session.accessExpiresAt - now < REFRESH_MARGIN_MS) {
-        yield* services.refresh(sessionId, session.roleCheckedAt)
-        yield* counted("user", "refreshing")
-        return yield* new TokenUnavailable({ reason: "refreshing", retryAfterMillis: REFRESH_WAIT_MS })
+        try services.refresh(sessionId, session.roleCheckedAt)
+        try counted("user", "refreshing")
+        throw new TokenUnavailable({ reason: "refreshing", retryAfterMillis: REFRESH_WAIT_MS })
       }
-      const opened = yield* Effect.option(
-        services.keys.value.open(session.access!, { id: sessionId, name: "github_access", version: 1 }),
-      )
-      if (Option.isNone(opened)) return yield* signInRequired("unreadable")
-      yield* counted("user", "opened")
+      const opened = try option(services.keys.value.open(session.access!, { id: sessionId, name: "github_access", version: 1 }))
+      if (Option.isNone(opened)) return try signInRequired("unreadable")
+      try counted("user", "opened")
       return opened.value
-    }).pipe(Effect.withSpan("github.token.mint", { attributes: { "smithers.github.token": "user" } }))
+    }, "github.token.mint", { attributes: { "smithers.github.token": "user" } })
 
   /** The installation the App has on `repository`: remembered, or asked of GitHub and remembered. */
-  const installation = (repository: Repository) =>
-    Effect.gen(function* () {
-      const known = yield* Store.installationOf(repository.id).pipe(Effect.mapError(unavailable))
-      if (Option.isSome(known)) return known.value
-      const found = yield* services.app.installation(repository.owner, repository.name).pipe(
-        Effect.mapError((error) =>
-          statusOf(error) === 404 ? new TokenUnavailable({ reason: "app_not_installed", upstreamStatus: 404 }) : unavailable(error)
-        ),
-      )
-      yield* Store.rememberInstallation(repository.id, found.id).pipe(Effect.mapError(unavailable))
-      return found.id
-    })
+  const installation = effect (repository: Repository) => {
+    const known = try Store.installationOf(repository.id).pipe(Effect.mapError(unavailable))
+    if (Option.isSome(known)) return known.value
+    const found = try services.app.installation(repository.owner, repository.name).pipe(
+      Effect.mapError((error) =>
+        statusOf(error) === 404 ? new TokenUnavailable({ reason: "app_not_installed", upstreamStatus: 404 }) : unavailable(error)
+      ),
+    )
+    try Store.rememberInstallation(repository.id, found.id).pipe(Effect.mapError(unavailable))
+    return found.id
+  }
 
   /**
    * An installation token for `repository`, minted with only `access` (`permissionsOf`). `also` names other repositories
@@ -181,35 +179,35 @@ export const make = (services: Services) => {
     repository: Repository,
     access: Access,
     also: ReadonlyArray<Repository> = [],
-  ): Effect.Effect<Redacted.Redacted<string>, TokenUnavailable, SqlClient.SqlClient> =>
-    Effect.gen(function* () {
-      const installationId = yield* installation(repository)
+  ): Redacted.Redacted<string>!TokenUnavailable!SqlClient.SqlClient =>
+    withSpan(effect {
+      const installationId = try installation(repository)
       const names = [repository.name, ...also.map((other) => other.name).filter((name) => name.toLowerCase() !== repository.name.toLowerCase())]
-      const minted = yield* services.app.installationToken({
+      const minted = try services.app.installationToken({
         installationId,
         repositories: names,
         permissions: permissionsOf(access),
       }).pipe(Effect.result)
       if (minted._tag === "Success") {
-        yield* counted("app", "minted", { access })
+        try counted("app", "minted", { access })
         return minted.success.token
       }
       const status = statusOf(minted.failure)
       // The installation is gone, or no longer covers the repository: forget it, so the next step asks again.
       if (status === 404) {
-        yield* Store.forgetInstallation(repository.id).pipe(Effect.mapError(unavailable))
-        yield* counted("app", "app_not_installed", { access })
-        return yield* new TokenUnavailable({ reason: "app_not_installed", upstreamStatus: 404 })
+        try Store.forgetInstallation(repository.id).pipe(Effect.mapError(unavailable))
+        try counted("app", "app_not_installed", { access })
+        throw new TokenUnavailable({ reason: "app_not_installed", upstreamStatus: 404 })
       }
       // The App wasn't granted the permission (decision 0012 question 2): Will adds it in the App's settings. A 403
       // for GitHub's rate limit is no refusal: it passes on, retried.
       if (status === 422 || (status === 403 && !isRateLimited(minted.failure))) {
-        yield* counted("app", "not_allowed", { access, status })
-        return yield* new TokenUnavailable({ reason: "not_allowed", upstreamStatus: status, ...headerLimitOf(minted.failure) })
+        try counted("app", "not_allowed", { access, status })
+        throw new TokenUnavailable({ reason: "not_allowed", upstreamStatus: status, ...headerLimitOf(minted.failure) })
       }
-      yield* counted("app", "unavailable", { access, ...(status === undefined ? {} : { status }) })
-      return yield* unavailable(minted.failure)
-    }).pipe(Effect.withSpan("github.token.mint", { attributes: { "smithers.github.token": "app", "smithers.github.access": access } }))
+      try counted("app", "unavailable", { access, ...(status === undefined ? {} : { status }) })
+      throw unavailable(minted.failure)
+    }, "github.token.mint", { attributes: { "smithers.github.token": "app", "smithers.github.access": access } })
 
   return { forSession, forInstallation }
 }

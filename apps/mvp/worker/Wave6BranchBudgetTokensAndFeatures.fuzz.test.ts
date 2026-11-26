@@ -16,8 +16,8 @@ import type { Actor, Role } from "./Actor.ts"
 import * as Access from "./branch/Access.vibe"
 import * as Budget from "./branch/Budget.vibe"
 import * as Conversations from "./branch/Conversations.vibe"
-import * as GitHubStore from "./github/Store.ts"
-import * as GitHubTokens from "./github/Tokens.ts"
+import * as GitHubStore from "./github/Store.vibe"
+import * as GitHubTokens from "./github/Tokens.vibe"
 import { testFile } from "./test/harness.ts"
 
 const runtime = testFile("generated_budget_access")

@@ -19,7 +19,7 @@ import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.vibe"
 import * as Metrics from "./Metrics.vibe"
 import { fetchPull, liveBaseHeadOf, moveBase, projectPull } from "./Pulls.vibe"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 
 // `pr/Merge { writeId }` (decision 0012 decision 6, docs/features/pulls.md#merge): a person's merge, and only a
 // person's. The writes route admitted it from the person's own session (never a run credential, never the agent),

@@ -1,7 +1,7 @@
 import { ShapeSource } from "@smthrs/effect-electric"
 import { Effect, Layer, Option } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
-import * as GitHubStore from "../../../worker/github/Store.ts"
+import * as GitHubStore from "../../../worker/github/Store.vibe"
 import { openTestApp, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { IssuesStore } from "../issues/store"
 import { Runs } from "../runs/runs"

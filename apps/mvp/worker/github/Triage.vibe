@@ -1,10 +1,10 @@
 import { ModelStep } from "@smthrs/agent"
-import { digestSync, Uuid, WebCrypto } from "@smthrs/crypto"
+import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { GitHub } from "@smthrs/integrations"
 import { Classifier, Evaluator } from "@smthrs/model"
 import { Node, type Planned } from "@smthrs/plan"
-import { Clock, Effect, Layer, Metric, Option, type Redacted, Schema } from "effect"
+import type { Redacted } from "effect"
 import { HttpClient } from "effect/http"
 import {
   ACCEPTED_LABEL,
@@ -32,9 +32,10 @@ import type { Services as GitHubServices } from "./Apply.vibe"
 import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.vibe"
 import * as Metrics from "./Metrics.vibe"
+import { inputDigest } from "./InputDigest.ts"
 import { fetchIssue, project } from "./Project.vibe"
-import * as Store from "./Store.ts"
-import * as TriageStore from "./TriageStore.ts"
+import * as Store from "./Store.vibe"
+import * as TriageStore from "./TriageStore.vibe"
 
 // `triage/Run { repo, number, trigger, key }` (decision 0012 §5, docs/features/issues.md#triage): a repository's triage
 // flow decides one issue, and a system step writes the decision to GitHub as the App. `issues.opened` starts it while
@@ -107,8 +108,7 @@ const Input = Schema.Struct({
 })
 type Input = typeof Input.Type
 
-const ReadOut = Schema.Union([Skipped, Input])
-type ReadOut = typeof ReadOut.Type
+schema ReadOut = Skipped | Input
 
 /** A decision, recorded as `decisionId`, with what it read: the label step compares them with GitHub before writing. */
 const DecidedOne = Schema.Struct({
@@ -122,16 +122,14 @@ const DecidedOne = Schema.Struct({
   inputDigest: Schema.String,
   triage: TriageState,
 })
-const Decided = Schema.Union([Skipped, DecidedOne])
-type Decided = typeof Decided.Type
+schema Decided = Skipped | DecidedOne
 
 /** What the label step did: nothing to write (`abstained`), nothing written (`dropped`), or one label on. */
 const LabeledOne = Schema.Struct({
   ...DecidedOne.fields,
   status: Schema.Literals(["abstained", "dropped", "labeled"]),
 })
-const Labeled = Schema.Union([Skipped, LabeledOne])
-type Labeled = typeof Labeled.Type
+schema Labeled = Skipped | LabeledOne
 
 /** How the run ended. */
 export const Ran = Schema.Struct({
@@ -270,8 +268,7 @@ export interface Services<E = unknown, R = never> extends GitHubServices<E, R> {
 
 const cut = (text: string, max: number) => (text.length <= max ? text : text.slice(0, max))
 
-/** What the decision reads of an issue, digested: an edit to its title or body after the read drops the decision. */
-export const inputDigest = (title: string, body: string | null) => digestSync(JSON.stringify([title, body ?? ""]))
+export { inputDigest }
 
 /** The labels an issue has, by name. */
 const labelsOf = (issue: GitHub.Issues.Issue) => issue.labels.map((label) => label.name)
@@ -287,8 +284,8 @@ const unavailableFrom = (error: unknown) => {
 
 /** The steps over `services`, each recording what it did: never a title, a body, a comment, a login or a token. */
 export const steps = <E, R>(services: Services<E, R>) => {
-  const provided = <A, Err, Req>(effect: Effect.Effect<A, Err, Req>, span: string, attributes: Record<string, unknown>) =>
-    effect.pipe(
+  const provided = <A, Err, Req>(program: A!Err!Req, span: string, attributes: Record<string, unknown>) =>
+    withSpan(program.pipe(
       Effect.provideService(HttpClient.HttpClient, services.http),
       Effect.provide(services.database),
       Effect.catch((error) =>
@@ -299,8 +296,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
             Effect.andThen(Effect.fail(unavailableFrom(error))),
           )
       ),
-      Effect.withSpan(span, { attributes }),
-    )
+    ), span, { attributes })
 
   /** An installation token for `repository`, or why the step can't have one: not installed, else retried. */
   const token = (repository: ReturnType<typeof repositoryOf>, access: "read" | "write" | "contents") =>
@@ -323,85 +319,87 @@ export const steps = <E, R>(services: Services<E, R>) => {
    * Whether `login` still maintains `repository`, as GitHub says now, with the App's token in context: Maintainer or
    * Admin. No login, or one GitHub doesn't list, is not.
    */
-  const maintains = (repository: ReturnType<typeof repositoryOf>, login: string | null) =>
-    Effect.gen(function* () {
-      if (login === null) return false
-      const permission = yield* GitHub.Collaborators.permission(repository.owner, repository.name, login)
-      const role = Option.match(permission, { onNone: () => null, onSome: (found) => roleOf(permissionOf(found)) })
-      return role === "admin" || role === "maintainer"
-    })
+  const maintains = effect (repository: ReturnType<typeof repositoryOf>, login: string | null) => {
+    if (login === null) return false
+    const permission = try GitHub.Collaborators.permission(repository.owner, repository.name, login)
+    const role = match (permission) {
+      when { _tag: "Some", let value }: roleOf(permissionOf(value));
+      default: null;
+    }
+    return role === "admin" || role === "maintainer"
+  }
 
   const read = (request: typeof Read.payloadSchema.Type) =>
     provided(
-      Effect.gen(function* () {
+      effect {
         const repository = repositoryOf(request.repo)
         const fields = { repoId: repository.id, number: request.number, trigger: request.trigger }
-        const skip = (why: typeof Skipped.Type["why"]) =>
-          Effect.gen(function* () {
-            yield* Effect.logInfo("triage.read").pipe(Effect.annotateLogs({ ...fields, outcome: "skipped", why }))
-            return { status: "skipped", why } satisfies ReadOut
-          })
+        const skip = effect (why: typeof Skipped.Type["why"]) => {
+          try Effect.logInfo("triage.read").pipe(Effect.annotateLogs({ ...fields, outcome: "skipped", why }))
+          return { status: "skipped", why } satisfies ReadOut
+        }
         // A person's Run triage again: the issue is theirs to hand back to the flow, whatever runs next.
         if (request.trigger === "again") {
-          yield* TriageStore.pin(repository.id, request.number, false)
-          yield* Store.settleWrite(request.key, { status: "done", itemNumber: request.number, githubId: null }, Effect.void)
+          try TriageStore.pin(repository.id, request.number, false)
+          try Store.settleWrite(request.key, { status: "done", itemNumber: request.number, githubId: null }, Effect.void)
         }
-        const settings = yield* TriageStore.settingsOf(repository.id)
-        if (Option.isNone(settings)) return yield* skip("off")
-        if (settings.value.paused) return yield* skip("paused")
-        const item = yield* TriageStore.itemTriage(repository.id, request.number)
-        if (Option.isSome(item) && item.value.pinned) return yield* skip("pinned")
-        const issueToken = yield* token(repository, "read")
-        if (Option.isNone(issueToken)) return yield* skip("not_installed")
-        const fetched = yield* fetchIssue(repository, request.number).pipe(withToken(issueToken.value, services.apiBaseUrl))
-        if (fetched.kind === "gone") return yield* skip("gone")
+        const settings = try TriageStore.settingsOf(repository.id)
+        if (Option.isNone(settings)) return try skip("off")
+        if (settings.value.paused) return try skip("paused")
+        const item = try TriageStore.itemTriage(repository.id, request.number)
+        if (Option.isSome(item) && item.value.pinned) return try skip("pinned")
+        const issueToken = try token(repository, "read")
+        if (Option.isNone(issueToken)) return try skip("not_installed")
+        const fetched = try fetchIssue(repository, request.number).pipe(withToken(issueToken.value, services.apiBaseUrl))
+        if (fetched.kind === "gone") return try skip("gone")
         // A missing reproduction never reaches the judge. This is a sealed flow action; the marker belongs to the
         // issue rather than the run, so a new delivery, rerun or lost answer cannot ask the same question twice.
         if (isBug(fetched.issue.title, labelsOf(fetched.issue)) &&
           !hasReproCandidate([fetched.issue.body ?? "", ...fetched.comments.map((comment) => comment.body ?? "")])) {
-          const writeToken = yield* token(repository, "write")
-          if (Option.isNone(writeToken)) return yield* skip("not_installed")
-          yield* Effect.gen(function* () {
-            if (!(yield* maintains(repository, settings.value.enabledLogin))) {
-              yield* TriageStore.pause(repository.id, "enabler_demoted")
+          const writeToken = try token(repository, "write")
+          if (Option.isNone(writeToken)) return try skip("not_installed")
+          try withToken(writeToken.value, services.apiBaseUrl)(effect {
+            if (!(try maintains(repository, settings.value.enabledLogin))) {
+              try TriageStore.pause(repository.id, "enabler_demoted")
               return
             }
             // Re-read before writing: an edited issue may already contain the requested snippet.
-            const current = yield* fetchIssue(repository, request.number)
+            const current = try fetchIssue(repository, request.number)
             if (current.kind === "gone" || !isBug(current.issue.title, labelsOf(current.issue)) ||
               hasReproCandidate([current.issue.body ?? "", ...current.comments.map((comment) => comment.body ?? "")])) return
-            yield* GitHub.Issues.createLabel(repository.owner, repository.name, { name: NEEDS_REPRO_LABEL, color: "d4c5f9" })
-            yield* GitHub.Issues.addLabels(repository.owner, repository.name, request.number, [NEEDS_REPRO_LABEL])
+            try GitHub.Issues.createLabel(repository.owner, repository.name, { name: NEEDS_REPRO_LABEL, color: "d4c5f9" })
+            try GitHub.Issues.addLabels(repository.owner, repository.name, request.number, [NEEDS_REPRO_LABEL])
             // One request per issue, keyed by the issue: a new delivery, a rerun or a lost answer finds it in the
             // thread instead of asking twice. A thread too long to read fails rather than post a second.
-            const marker = yield* Uuid.v5(REPRO_COMMENT_NAMESPACE, `${repository.id}#${request.number}`).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
-            yield* Action.once(
+            const marker = try Uuid.v5(REPRO_COMMENT_NAMESPACE, `${repository.id}#${request.number}`).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+            try Action.once(
               "repro",
-              GitHub.Once.comment(repository.owner, repository.name, request.number, NEEDS_REPRO_COMMENT),
+              try sync(() => GitHub.Once.comment(repository.owner, repository.name, request.number, NEEDS_REPRO_COMMENT)),
               { key: marker },
             )
-            yield* project(repository, request.number, yield* fetchIssue(repository, request.number))
-          }).pipe(withToken(writeToken.value, services.apiBaseUrl))
-          return yield* skip("needs_repro")
+            try project(repository, request.number, try fetchIssue(repository, request.number))
+          })
+          return try skip("needs_repro")
         }
         if (labelsOf(fetched.issue).some((label) => label.toLowerCase() === NEEDS_REPRO_LABEL) &&
           hasReproCandidate([fetched.issue.body ?? "", ...fetched.comments.map((comment) => comment.body ?? "")])) {
-          const writeToken = yield* token(repository, "write")
-          if (Option.isSome(writeToken)) yield* Effect.gen(function* () {
-            if (yield* maintains(repository, settings.value.enabledLogin))
-              yield* GitHub.Issues.removeLabel(repository.owner, repository.name, request.number, NEEDS_REPRO_LABEL)
-          }).pipe(withToken(writeToken.value, services.apiBaseUrl))
+          const writeToken = try token(repository, "write")
+          if (Option.isSome(writeToken)) try withToken(writeToken.value, services.apiBaseUrl)(effect {
+            if (try maintains(repository, settings.value.enabledLogin))
+              try GitHub.Issues.removeLabel(repository.owner, repository.name, request.number, NEEDS_REPRO_LABEL)
+          })
         }
         // The guidelines are data at the default branch's head. Without the Contents permission, or without the file,
         // the decision reads none.
-        const contentsToken = yield* token(repository, "contents")
+        const contentsToken = try token(repository, "contents")
         const guidelines = Option.isNone(contentsToken)
           ? Option.none<{ readonly sha: string; readonly text: string }>()
-          : yield* GitHub.Contents.getText(repository.owner, repository.name, GUIDELINES_PATH).pipe(
+          : try GitHub.Contents.getText(repository.owner, repository.name, GUIDELINES_PATH).pipe(
             withToken(contentsToken.value, services.apiBaseUrl),
           )
-        const { executionId } = yield* FlowRuntime.FlowInstance
+        const { executionId } = try FlowRuntime.FlowInstance
         const issue = fetched.issue
+        const digest = try sync(() => inputDigest(issue.title, issue.body))
         const input: Input = {
           status: "ready",
           runId: executionId,
@@ -413,15 +411,21 @@ export const steps = <E, R>(services: Services<E, R>) => {
             author: comment.user?.login ?? "",
             body: cut(Store.shownBody(comment.body), MAX_TRIAGE_COMMENT_CHARS),
           })),
-          guidelines: Option.match(guidelines, { onNone: () => null, onSome: (file) => cut(file.text, MAX_TRIAGE_TEXT_CHARS) }),
-          guidelinesSha: Option.match(guidelines, { onNone: () => null, onSome: (file) => file.sha }),
-          inputDigest: inputDigest(issue.title, issue.body),
+          guidelines: match (guidelines) {
+            when { _tag: "Some", let value }: cut(value.text, MAX_TRIAGE_TEXT_CHARS);
+            default: null;
+          },
+          guidelinesSha: match (guidelines) {
+            when { _tag: "Some", let value }: value.sha;
+            default: null;
+          },
+          inputDigest: digest,
           triage: triageOf(labelsOf(issue)),
           enabledBy: settings.value.enabledBy,
           enabledLogin: settings.value.enabledLogin,
           dailyTokens: settings.value.dailyTokens,
         }
-        yield* Effect.logInfo("triage.read").pipe(
+        try Effect.logInfo("triage.read").pipe(
           Effect.annotateLogs({
             ...fields,
             runId: executionId,
@@ -431,23 +435,23 @@ export const steps = <E, R>(services: Services<E, R>) => {
           }),
         )
         return input
-      }),
+      },
       "triage.read",
       { "smithers.github.number": request.number, "smithers.triage.trigger": request.trigger },
     )
 
   const decide = ({ read: input }: typeof Decide.payloadSchema.Type) =>
     input.status === "skipped" ? Effect.succeed(input satisfies Decided) : provided(
-      Effect.gen(function* () {
+      effect {
         const repository = repositoryOf(input.repo)
-        const started = yield* Clock.currentTimeMillis
-        const decisionId = yield* Uuid.v5(TRIAGE_DECISION_NAMESPACE, input.runId).pipe(Effect.orDie)
-        const spent = yield* TriageStore.spentToday(repository.id)
+        const started = try Clock.currentTimeMillis
+        const decisionId = try Uuid.v5(TRIAGE_DECISION_NAMESPACE, input.runId).pipe(Effect.orDie)
+        const spent = try TriageStore.spentToday(repository.id)
         // Abstaining writes nothing: the issue stays proposed.
         const judged = spent >= input.dailyTokens
           ? { decision: "abstain" as const, reason: null, abstained: "budget", tokens: 0 }
-          : yield* judge(input)
-        yield* TriageStore.recordDecision({
+          : try judge(input)
+        try TriageStore.recordDecision({
           id: decisionId,
           repoId: repository.id,
           number: input.number,
@@ -463,9 +467,9 @@ export const steps = <E, R>(services: Services<E, R>) => {
           abstained: judged.abstained,
           tokens: judged.tokens,
         })
-        yield* Metric.update(Metric.withAttributes(Metrics.triageDecisions, { decision: judged.decision, via: "flow" }), 1)
-        yield* Metric.update(Metrics.triageTokens, judged.tokens)
-        yield* Effect.logWithLevel(judged.decision === "abstain" ? "Warn" : "Info")("triage.decide").pipe(
+        try Metric.update(Metric.withAttributes(Metrics.triageDecisions, { decision: judged.decision, via: "flow" }), 1)
+        try Metric.update(Metrics.triageTokens, judged.tokens)
+        try Effect.logWithLevel(judged.decision === "abstain" ? "Warn" : "Info")("triage.decide").pipe(
           Effect.annotateLogs({
             repoId: repository.id,
             number: input.number,
@@ -475,7 +479,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
             ...(judged.decision === "reject" && judged.reason !== null ? { reason: judged.reason } : {}),
             ...(judged.abstained === null ? {} : { abstained: judged.abstained }),
             tokens: judged.tokens,
-            durationMs: (yield* Clock.currentTimeMillis) - started,
+            durationMs: (try Clock.currentTimeMillis) - started,
           }),
         )
         return {
@@ -489,7 +493,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
           inputDigest: input.inputDigest,
           triage: input.triage,
         } satisfies Decided
-      }),
+      },
       "triage.decide",
       { "smithers.github.number": input.number },
     )
@@ -498,10 +502,9 @@ export const steps = <E, R>(services: Services<E, R>) => {
    * One judgment through the `judge` seat, as one sealed model step: the decision when the judge is sure enough, else
    * abstain with why. A failed, invalid or refused judgment abstains too; the tokens it spent count all the same.
    */
-  const judge = (input: Input) =>
-    Effect.gen(function* () {
-      const model = yield* ModelStep.model({ name: "triage/Decide/model", ...services.judge(input.enabledBy) })
-      const reading = yield* TriageClassifier.read({
+  const judge = effect (input: Input) => {
+      const model = try ModelStep.model({ name: "triage/Decide/model", ...services.judge(input.enabledBy) })
+      const reading = try TriageClassifier.read({
         repository: input.repo,
         guidelines: input.guidelines,
         issue: { title: input.title, body: input.body, comments: input.comments },
@@ -517,12 +520,12 @@ export const steps = <E, R>(services: Services<E, R>) => {
       }
       const { answers, usage } = reading.success
       const tokens = usage === undefined ? 0 : usage.inputTokens + usage.outputTokens
-      const sure = Classifier.confident(answers.decision, TRIAGE_SURE)
+      const sure = try sync(() => Classifier.confident(answers.decision, TRIAGE_SURE))
       if (Option.isNone(sure) || sure.value === "abstain") {
         return { decision: "abstain" as const, reason: null, abstained: Option.isNone(sure) ? "unsure" : "judge", tokens }
       }
       return { decision: sure.value, reason: answers.reason.value, abstained: null, tokens }
-    })
+  }
 
   const label = ({ decided }: typeof Label.payloadSchema.Type) => {
     if (decided.status === "skipped") return Effect.succeed(decided satisfies Labeled)
@@ -530,41 +533,40 @@ export const steps = <E, R>(services: Services<E, R>) => {
     if (decided.decision === "abstain") return Effect.succeed(outcome("abstained"))
     const decision: TriageDecision = decided.decision
     return provided(
-      Effect.gen(function* () {
+      effect {
         const repository = repositoryOf(decided.repo)
         const fields = { repoId: repository.id, number: decided.number, decisionId: decided.decisionId, decision }
-        const found = yield* TriageStore.decisionOf(decided.decisionId)
+        const found = try TriageStore.decisionOf(decided.decisionId)
         // A step run again after it settled the receipt answers what it did.
         if (Option.isSome(found) && found.value.labeled) return outcome("labeled")
         if (Option.isSome(found) && found.value.dropped !== null) return outcome("dropped")
-        const dropped = (why: TriageStore.Dropped) =>
-          Effect.gen(function* () {
-            yield* TriageStore.drop(decided.decisionId, why)
-            yield* Metric.update(Metric.withAttributes(Metrics.triageDropped, { reason: why }), 1)
-            yield* Effect.logWithLevel(why === "enabler_demoted" ? "Error" : "Info")("triage.apply").pipe(
-              Effect.annotateLogs({ ...fields, outcome: "dropped", dropped: why }),
-            )
-            return outcome("dropped")
-          })
+        const dropped = effect (why: TriageStore.Dropped) => {
+          try TriageStore.drop(decided.decisionId, why)
+          try Metric.update(Metric.withAttributes(Metrics.triageDropped, { reason: why }), 1)
+          try Effect.logWithLevel(why === "enabler_demoted" ? "Error" : "Info")("triage.apply").pipe(
+            Effect.annotateLogs({ ...fields, outcome: "dropped", dropped: why }),
+          )
+          return outcome("dropped")
+        }
         // Recorded before the pin is checked: a person admitted after the check waits for this label to land.
-        yield* TriageStore.startLabel(decided.decisionId)
-        const settings = yield* TriageStore.settingsOf(repository.id)
-        if (Option.isNone(settings)) return yield* dropped("off")
-        if (settings.value.paused) return yield* dropped("paused")
-        const item = yield* TriageStore.itemTriage(repository.id, decided.number)
-        if (Option.isSome(item) && item.value.pinned) return yield* dropped("pinned")
-        const writeToken = yield* token(repository, "write")
+        try TriageStore.startLabel(decided.decisionId)
+        const settings = try TriageStore.settingsOf(repository.id)
+        if (Option.isNone(settings)) return try dropped("off")
+        if (settings.value.paused) return try dropped("paused")
+        const item = try TriageStore.itemTriage(repository.id, decided.number)
+        if (Option.isSome(item) && item.value.pinned) return try dropped("pinned")
+        const writeToken = try token(repository, "write")
         // The App lost the installation or its permission between the read and now: nothing is written.
-        if (Option.isNone(writeToken)) return yield* dropped("off")
-        return yield* Effect.gen(function* () {
+        if (Option.isNone(writeToken)) return try dropped("off")
+        return try (effect {
           // The flow writes under the role of the person who enabled it, re-checked at every write (0007 decision 6).
-          if (!(yield* maintains(repository, settings.value.enabledLogin))) {
-            yield* TriageStore.pause(repository.id, "enabler_demoted")
-            return yield* dropped("enabler_demoted")
+          if (!(try maintains(repository, settings.value.enabledLogin))) {
+            try TriageStore.pause(repository.id, "enabler_demoted")
+            return try dropped("enabler_demoted")
           }
           // What the decision read must still be what GitHub has: a person relabeling the issue, or editing it, since
           // supersedes the decision.
-          const current = yield* GitHub.Issues.getIssue(repository.owner, repository.name, decided.number).pipe(
+          const current = try GitHub.Issues.getIssue(repository.owner, repository.name, decided.number).pipe(
             Effect.map(Option.some),
             Effect.catch((error) => {
               const status = classify(error)
@@ -573,30 +575,30 @@ export const steps = <E, R>(services: Services<E, R>) => {
                 : Effect.fail(error)
             }),
           )
-          if (Option.isNone(current)) return yield* dropped("gone")
+          if (Option.isNone(current)) return try dropped("gone")
           // A retry after this step began writing labels, and lost an answer, sees its own label on GitHub: it finishes
           // the write rather than drop it as a person's relabel.
           if (Option.isNone(found) || !found.value.labelWritten) {
-            if (triageOf(labelsOf(current.value)) !== decided.triage) return yield* dropped("relabeled")
-            if (inputDigest(current.value.title, current.value.body) !== decided.inputDigest) return yield* dropped("edited")
+            if (triageOf(labelsOf(current.value)) !== decided.triage) return try dropped("relabeled")
+            if ((try sync(() => inputDigest(current.value.title, current.value.body))) !== decided.inputDigest) return try dropped("edited")
           }
           const add = labelOf(decision)
           const remove = add === ACCEPTED_LABEL ? NOT_ACCEPTED_LABEL : ACCEPTED_LABEL
-          yield* GitHub.Issues.createLabel(repository.owner, repository.name, { name: add, color: TRIAGE_LABEL_COLORS[add]! })
-          yield* TriageStore.writeLabel(decided.decisionId)
-          yield* GitHub.Issues.addLabels(repository.owner, repository.name, decided.number, [add])
-          yield* GitHub.Issues.removeLabel(repository.owner, repository.name, decided.number, remove)
-          const fetched = yield* fetchIssue(repository, decided.number)
-          yield* TriageStore.labeled(decided.decisionId)
-          yield* project(repository, decided.number, fetched)
-          yield* Effect.logInfo("triage.apply").pipe(Effect.annotateLogs({ ...fields, outcome: "labeled" }))
+          try GitHub.Issues.createLabel(repository.owner, repository.name, { name: add, color: TRIAGE_LABEL_COLORS[add]! })
+          try TriageStore.writeLabel(decided.decisionId)
+          try GitHub.Issues.addLabels(repository.owner, repository.name, decided.number, [add])
+          try GitHub.Issues.removeLabel(repository.owner, repository.name, decided.number, remove)
+          const fetched = try fetchIssue(repository, decided.number)
+          try TriageStore.labeled(decided.decisionId)
+          try project(repository, decided.number, fetched)
+          try Effect.logInfo("triage.apply").pipe(Effect.annotateLogs({ ...fields, outcome: "labeled" }))
           return outcome("labeled")
         }).pipe(
           withToken(writeToken.value, services.apiBaseUrl),
           // GitHub refused a read or a label (a 403, 404 or 422): trying again changes nothing, so nothing is written.
           Effect.catch((error) => (classify(error).kind === "refused" ? dropped("refused") : Effect.fail(error))),
         )
-      }),
+      },
       "triage.apply",
       { "smithers.github.number": decided.number, "smithers.triage.decision": decision },
     )
@@ -608,71 +610,70 @@ export const steps = <E, R>(services: Services<E, R>) => {
     // An acceptance only labels.
     if (labeled.decision !== "reject") return ended({ outcome: "labeled", decisionId: labeled.decisionId })
     return provided(
-      Effect.gen(function* () {
+      effect {
         const repository = repositoryOf(labeled.repo)
         const fields = { repoId: repository.id, number: labeled.number, decisionId: labeled.decisionId }
-        const found = yield* TriageStore.decisionOf(labeled.decisionId)
+        const found = try TriageStore.decisionOf(labeled.decisionId)
         if (Option.isSome(found) && found.value.commentGithubId !== null) {
-          return yield* ended({ outcome: "commented", decisionId: labeled.decisionId })
+          return try ended({ outcome: "commented", decisionId: labeled.decisionId })
         }
         // A person triaged the issue since the label landed, or is triaging it: their decision supersedes the flow's,
         // so its reason is never posted under theirs. Recorded before the pin is checked: a person admitted after the
         // check waits for this comment to land.
-        yield* TriageStore.startComment(labeled.decisionId)
-        const item = yield* TriageStore.itemTriage(repository.id, labeled.number)
+        try TriageStore.startComment(labeled.decisionId)
+        const item = try TriageStore.itemTriage(repository.id, labeled.number)
         if (Option.isSome(item) && item.value.pinned) {
-          yield* TriageStore.skipComment(labeled.decisionId)
-          yield* Effect.logInfo("triage.comment").pipe(Effect.annotateLogs({ ...fields, outcome: "superseded" }))
-          return yield* ended({ outcome: "labeled", decisionId: labeled.decisionId })
+          try TriageStore.skipComment(labeled.decisionId)
+          try Effect.logInfo("triage.comment").pipe(Effect.annotateLogs({ ...fields, outcome: "superseded" }))
+          return try ended({ outcome: "labeled", decisionId: labeled.decisionId })
         }
         /** The comment can't be posted: the label receipt stands, and nothing claims the author was told. */
-        const failed = (why: Record<string, unknown>) =>
-          Effect.gen(function* () {
-            yield* TriageStore.commentFailed(labeled.decisionId)
-            yield* Effect.logWarning("triage.comment").pipe(
-              Effect.annotateLogs({ ...fields, ...why, outcome: "comment_failed" }),
-            )
-            return yield* ended({ outcome: "comment_failed", decisionId: labeled.decisionId })
-          })
-        const writeToken = yield* token(repository, "write")
+        const failed = effect (why: Record<string, unknown>) => {
+          try TriageStore.commentFailed(labeled.decisionId)
+          try Effect.logWarning("triage.comment").pipe(
+            Effect.annotateLogs({ ...fields, ...why, outcome: "comment_failed" }),
+          )
+          return try ended({ outcome: "comment_failed", decisionId: labeled.decisionId })
+        }
+        const writeToken = try token(repository, "write")
         // The App lost the installation or its permission since it labeled: trying again changes nothing.
-        if (Option.isNone(writeToken)) return yield* failed({ reason: "not_installed" })
-        const attempt = yield* Effect.gen(function* () {
+        if (Option.isNone(writeToken)) return try failed({ reason: "not_installed" })
+        const attempt = try (effect {
           // The comment is a write too: the enabler must still be a Maintainer.
-          if (!(yield* maintains(repository, labeled.enabledLogin))) return Option.none()
+          if (!(try maintains(repository, labeled.enabledLogin))) return Option.none()
           // One comment per decision, keyed by the decision: an attempt after a lost answer finds it in the whole
           // thread, never only a window back from now (docs/proposals/durable-external-effects.md). A thread too long
           // to read fails rather than post a second.
-          return Option.some(yield* Action.once(
+          return Option.some(try Action.once(
             "rejection",
             // Decide gives every rejection a reason, and the label step labels only for an enabler with a login.
-            GitHub.Once.comment(
+            try sync(() => GitHub.Once.comment(
               repository.owner,
               repository.name,
               labeled.number,
               rejectionComment(labeled.reason!, labeled.enabledLogin!),
-            ),
+            )),
             { key: labeled.decisionId },
           ))
         }).pipe(withToken(writeToken.value, services.apiBaseUrl), Effect.result)
         if (attempt._tag === "Failure") {
           const classified = classify(attempt.failure)
           // GitHub refused the comment: trying again changes nothing.
-          if (classified.kind === "refused") return yield* failed({ status: classified.status })
-          return yield* Effect.fail(attempt.failure)
+          if (classified.kind === "refused") return try failed({ status: classified.status })
+          throw attempt.failure
         }
         if (Option.isNone(attempt.success)) {
-          yield* TriageStore.pause(repository.id, "enabler_demoted")
-          yield* Effect.logError("triage.apply").pipe(
+          try TriageStore.pause(repository.id, "enabler_demoted")
+          try Effect.logError("triage.apply").pipe(
             Effect.annotateLogs({ ...fields, outcome: "dropped", dropped: "enabler_demoted" }),
           )
-          return yield* failed({ reason: "enabler_demoted" })
+          return try failed({ reason: "enabler_demoted" })
         }
         const posted = attempt.success.value
-        yield* TriageStore.commented(labeled.decisionId, posted.id)
-        yield* Effect.logInfo("triage.comment").pipe(Effect.annotateLogs({ ...fields, outcome: "commented" }))
-        return yield* ended({ outcome: "commented", decisionId: labeled.decisionId })
-      }),
+        try TriageStore.commented(labeled.decisionId, posted.id)
+        try Effect.logInfo("triage.comment").pipe(Effect.annotateLogs({ ...fields, outcome: "commented" }))
+        return try ended({ outcome: "commented", decisionId: labeled.decisionId })
+      },
       "triage.comment",
       { "smithers.github.number": labeled.number },
     )
@@ -680,12 +681,12 @@ export const steps = <E, R>(services: Services<E, R>) => {
 
   const commentFailed = ({ labeled }: typeof CommentFailed.payloadSchema.Type) =>
     provided(
-      Effect.gen(function* () {
+      effect {
         const decisionId = labeled.status === "skipped" ? null : labeled.decisionId
-        if (decisionId !== null) yield* TriageStore.commentFailed(decisionId)
-        yield* Effect.logError("triage.comment").pipe(Effect.annotateLogs({ decisionId, outcome: "comment_failed" }))
-        return yield* ended({ outcome: "comment_failed", decisionId })
-      }),
+        if (decisionId !== null) try TriageStore.commentFailed(decisionId)
+        try Effect.logError("triage.comment").pipe(Effect.annotateLogs({ decisionId, outcome: "comment_failed" }))
+        return try ended({ outcome: "comment_failed", decisionId })
+      },
       "triage.comment",
       {},
     )

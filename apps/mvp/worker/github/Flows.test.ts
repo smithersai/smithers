@@ -18,10 +18,10 @@ import * as Metrics from "./Metrics.vibe"
 import * as Reconcile from "./Reconcile.vibe"
 import * as RepoRoles from "./RepoRoles.vibe"
 import { repositoryOf } from "./Config.vibe"
-import * as Store from "./Store.ts"
+import * as Store from "./Store.vibe"
 import { admit, comments, database, items, keys, REPOSITORY, reset, services, signedIn, sql, writeRow } from "./test/fixtures.ts"
 import { BOT_LOGIN, scriptedApp, scriptedGitHub, appKey } from "./test/scriptedGitHub.ts"
-import * as Tokens from "./Tokens.ts"
+import * as Tokens from "./Tokens.vibe"
 import * as Write from "./Write.vibe"
 
 const runtime = testFile("github_flows")

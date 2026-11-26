@@ -169,6 +169,7 @@ export const RELATIONS_STREAM = "relations"
  * @throws {never}
  */
 export const itemId = (repoId: string, number: number): string => `${repoId}#${number}`
+/** @throws {never} */
 export const commentId = (repoId: string, githubId: number): string => `${repoId}/comment/${githubId}`
 
 /**
@@ -471,7 +472,10 @@ export const TRIAGE_LABEL_COLORS: Readonly<Record<string, string>> = {
 export const TRIAGE_STATES = ["proposed", "accepted", "not_accepted", "conflict"] as const
 export type TriageState = (typeof TRIAGE_STATES)[number]
 
-/** The triage state GitHub's `labels` say, comparing names without case as GitHub does. */
+/**
+ * The triage state GitHub's `labels` say, comparing names without case as GitHub does.
+ * @throws {never}
+ */
 export const triageOf = (labels: ReadonlyArray<string>): TriageState => {
   const names = new Set(labels.map((label) => label.toLowerCase()))
   const accepted = names.has(ACCEPTED_LABEL)
@@ -483,7 +487,10 @@ export const triageOf = (labels: ReadonlyArray<string>): TriageState => {
 export const TRIAGE_DECISIONS = ["accept", "reject"] as const
 export type TriageDecision = (typeof TRIAGE_DECISIONS)[number]
 
-/** The label a decision adds; it removes the other. */
+/**
+ * The label a decision adds; it removes the other.
+ * @throws {never}
+ */
 export const labelOf = (decision: TriageDecision): string => (decision === "accept" ? ACCEPTED_LABEL : NOT_ACCEPTED_LABEL)
 
 /**
@@ -502,7 +509,10 @@ export const TRIAGE_REASON_COPY: Readonly<Record<TriageReason, string>> = {
   other: "Doesn't fit this repository's triage guidelines.",
 }
 
-/** The App's comment on an issue the flow didn't accept, attributed to the flow and the person who enabled it. */
+/**
+ * The App's comment on an issue the flow didn't accept, attributed to the flow and the person who enabled it.
+ * @throws {never}
+ */
 export const rejectionComment = (reason: TriageReason, enablerLogin: string): string =>
   `Not accepted: ${TRIAGE_REASON_COPY[reason]}\n\nTriaged by Smithers for @${enablerLogin} (triage).`
 

@@ -5,7 +5,7 @@ import { SqlClient } from "effect/sql"
 import { describe, expect, test, vi } from "vitest"
 import { MAX_LISTED } from "../../src/features/docs/contract.ts"
 import { StartUnavailable } from "../Flows.ts"
-import * as Store from "../github/Store.ts"
+import * as Store from "../github/Store.vibe"
 import * as RepoReads from "../RepoReads.ts"
 import { makeLiveDeps } from "./LiveDeps.vibe"
 
