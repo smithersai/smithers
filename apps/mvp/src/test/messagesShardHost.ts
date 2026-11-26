@@ -78,12 +78,15 @@ export const shardHost = Effect.fnUntraced(function* (options: { readonly path?:
   const faults: Array<{ readonly fault: NetworkFault; readonly matches: (request: string) => boolean; times: number }> = []
   let access: (actor: Actor, conversationId: string) => BranchAccess | undefined = (_, conversationId) => branchOf(conversationId)
 
+  /** How the Worker reaches a conversation's object: what its binding's `getByName(shard).fetch` does. */
+  const forward: Routes.Forward = (shard, forwarded) =>
+    Effect.flatMap(wake(shard), ({ handler }) =>
+      handler.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, forwarded)))
+
   const serve = (actor: Actor | null, request: Request) =>
     Effect.runPromise(
       Routes.dispatch(
-        (shard, forwarded) =>
-          Effect.flatMap(wake(shard), ({ handler }) =>
-            handler.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, forwarded))),
+        forward,
         (who, conversationId) => Effect.sync(() => access(who, conversationId)),
       ).pipe(
         Effect.provide(actor === null ? signedOut : signedIn(actor)),
@@ -126,6 +129,8 @@ export const shardHost = Effect.fnUntraced(function* (options: { readonly path?:
 
   return {
     fetchAs,
+    /** The Worker's own way to each object, for what ChatApi writes itself (worker/chat/MessagesShardBridge.ts). */
+    forward,
     /** Every request a page sent, in order, as `METHOD path?query`, whether or not it arrived. */
     requests,
     /** The next `times` requests whose line contains `match` meet `fault`. Default: every request, once. */

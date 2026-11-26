@@ -62,6 +62,7 @@ export const decide = (state: AppState, command: Command): Decision<DomainEvent,
     case "PostMessage":
     case "UpdateMessageStatus":
     case "UpdateMessageMetadata":
+    case "UpdateMessageBody":
       return decideChat(state.chat, command)
     default:
       return decidePlan(state.plan, command)
@@ -74,6 +75,7 @@ export const evolve = (state: AppState, commit: Commit): AppState => {
     case "MessagePosted":
     case "MessageStatusUpdated":
     case "MessageMetadataUpdated":
+    case "MessageBodyUpdated":
       return { plan: state.plan, chat: evolveChat(state.chat, commit.hubSeq, event) }
     default:
       return { plan: evolvePlan(state.plan, event), chat: state.chat }

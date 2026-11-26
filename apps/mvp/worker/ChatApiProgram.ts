@@ -10,6 +10,7 @@ import { withRequestRay } from "./RequestRay.vibe"
 import * as ArtifactRoutes from "./ops/ArtifactRoutes.vibe"
 import * as Waitlist from "./waitlist/Waitlist.vibe"
 import * as PlanTreeRoutes from "./plan/PlanTreeRoutes.vibe"
+import { MessagesShardBridge } from "./chat/MessagesShardBridge.ts"
 import * as MessagesShardObject from "./chat/MessagesShardObject.ts"
 import * as MessagesShardRoutes from "./chat/MessagesShardRoutes.ts"
 import * as SshKeyAccess from "./SshKeyAccess.vibe"
@@ -559,6 +560,9 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                 BranchRoles.layer(roles)
               )
               const path = request.url.split("?")[0]!
+              // ChatApi's own question and answer writes also reach the conversation's shard (decision 0170, slice 4c).
+              const shardBridge = MessagesShardBridge.make((shard, outgoing) =>
+                messageObjects.getByName(shard).fetch(outgoing).pipe(Effect.provideService(RuntimeContext, runtime)))
               if (SshKeyAccess.handles(request.method, path)) {
                 return yield* SshKeyAccess.guard(Effect.succeed(HttpServerResponse.empty({ status: 404 }))).pipe(
                   Effect.provide(signedIn),
@@ -682,7 +686,9 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
               }
               // Before the repository routes: Bring Your Own Agent MCP endpoints, RFC 9728/8414 metadata, OAuth 2.1,
               // and `/api/me/mcp-tokens` (docs/features/mcp.md).
-              if (Attach.handles(path)) return yield* attach.fetch.pipe(Effect.provide(signedIn))
+              if (Attach.handles(path)) {
+                return yield* attach.fetch.pipe(Effect.provide(signedIn), Effect.provideService(MessagesShardBridge, shardBridge))
+              }
               if (McpApi.handles(path)) {
                 const mcpAuth = McpAuth.McpAuthServiceLive({ database, roles })
                 const mcpTools = Layer.effect(
@@ -769,7 +775,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                 Effect.provideService(Flows.TaskAnswers, yield* taskAnswerer),
                 Effect.provide(signedIn),
                 Effect.provide(docsSource),
-                Effect.provide(Layer.merge(FetchHttpClient.layer, webCache))
+                Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),
+                Effect.provideService(MessagesShardBridge, shardBridge)
               )
             }),
             throttle

@@ -105,6 +105,7 @@ inductive Command where
       (run : MessageRun) (notes : MessageNotes)
   | updateMessageStatus (messageId : Id) (status : String)
   | updateMessageMetadata (messageId : Id) (run : MessageRun) (notes : MessageNotes)
+  | updateMessageBody (messageId : Id) (author body : String)
   deriving DecidableEq, Repr
 
 inductive Event where
@@ -120,6 +121,7 @@ inductive Event where
       (run : MessageRun) (notes : MessageNotes)
   | messageStatusUpdated (id : Id) (status : String)
   | messageMetadataUpdated (id : Id) (run : MessageRun) (notes : MessageNotes)
+  | messageBodyUpdated (id : Id) (body : String)
   deriving DecidableEq, Repr
 
 inductive Decision where

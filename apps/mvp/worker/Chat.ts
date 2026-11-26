@@ -43,6 +43,7 @@ import * as ConversationPeople from "./branch/ConversationPeople.vibe"
 import * as Conversations from "./branch/Conversations.vibe"
 import { readBounded } from "./Body.vibe"
 import * as ChatMetrics from "./ChatMetrics.ts"
+import * as MessagesShardBridge from "./chat/MessagesShardBridge.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as Messages from "./Messages.ts"
 import * as Notifications from "./Notifications.ts"
@@ -280,6 +281,14 @@ export const make = <E, R>(
           Effect.provide(database),
           Effect.catchCause(() => Effect.logWarning("conversation.asked.failed")),
         )
+        // The same question and pending answer, sequenced into the conversation's shard (decision 0170, slice 4c): on a
+        // retry too, which its keys answer from their receipts. It never fails and never changes this answer.
+        yield* MessagesShardBridge.asked({
+          conversationId,
+          questionId: question.id,
+          answerId: question.answerId,
+          text: question.text,
+        })
         if (asked.txid === null) fields.existing = true
         return asked.txid === null
           ? HttpServerResponse.jsonUnsafe({ txid: null, existing: true }, { status: 200, headers: noStore })

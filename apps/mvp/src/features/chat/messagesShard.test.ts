@@ -849,3 +849,67 @@ test("a replica of an id that is not a conversation's sends nothing, and its wri
     }
     expect(host.requests).toEqual([])
   })))
+
+test("a streamed answer extends its body, then its metadata, then its status, each only once the one before was taken", () =>
+  run(Effect.gen(function* () {
+    const host = yield* shardHost()
+    const laptop = yield* open(host, ada, nodeOf(ADA, "laptop"))
+    const phone = yield* open(host, bob, nodeOf(BOB, "phone"))
+    const head = Effect.map(host.head(conversation), (position) => position.seq)
+    const answer = { ...row("a1", ADA, ""), role: "assistant", questionId: "q1" } as const
+    yield* (yield* laptop.messages.insert(answer)).persisted
+    yield* (yield* laptop.messages.insert(row("q1", ADA, "Why?"))).persisted
+    expect(yield* head).toBe(2)
+
+    // The body alone: one command, the whole body so far, and no status asked for.
+    yield* (yield* laptop.messages.update("a1", (draft) => void (draft.body = "Be"))).persisted
+    expect(yield* host.events(conversation, 2)).toEqual([[{ _tag: "MessageBodyUpdated", id: "a1", body: "Be" }]])
+    // What the answer said, how it ended and its end, in one write: body, then metadata, then status.
+    host.requests.length = 0
+    yield* (yield* laptop.messages.update("a1", (draft) => {
+      draft.body = "Because."
+      draft.stopReason = "end_turn"
+      draft.status = "complete"
+    })).persisted
+    expect(submits(host)).toBe(3)
+    expect(yield* host.events(conversation, 3)).toEqual([
+      [{ _tag: "MessageBodyUpdated", id: "a1", body: "Because." }],
+      [{ _tag: "MessageMetadataUpdated", id: "a1", stopReason: "end_turn" }],
+      [{ _tag: "MessageStatusUpdated", id: "a1", status: "complete" }],
+    ])
+    expect(Option.getOrThrow(yield* laptop.messages.get("a1"))).toMatchObject({ body: "Because.", status: "complete", hubSeq: 1 })
+
+    // Finished: the reducer refuses a longer body, and the note written with it is never sent.
+    host.requests.length = 0
+    const late = yield* laptop.messages.update("a1", (draft) => {
+      draft.body = "Because. And more."
+      draft.summary = "never written"
+    })
+    expect(yield* failureOf(late)).toEqual(new MessagesWriteRefused({ reason: "refused", detail: "terminal_body" }))
+    expect(submits(host)).toBe(1)
+    expect(Option.getOrThrow(yield* laptop.messages.get("a1"))).toMatchObject({ body: "Because." })
+    // A question is never rewritten, by the person who asked it either: ChatApi's refusal, and no status after it.
+    host.requests.length = 0
+    const rewritten = yield* laptop.messages.update("q1", (draft) => {
+      draft.body = "Why? Because."
+      draft.status = "streaming"
+    })
+    expect(yield* failureOf(rewritten)).toEqual(
+      new MessagesShardUnavailable({ request: "submit", reason: "refused", status: 403, refusal: "question" }),
+    )
+    expect(submits(host)).toBe(1)
+    // A body that does not extend the one shown has no command at all.
+    expect(yield* failureOf(yield* laptop.messages.update("a1", (draft) => void (draft.body = "No."))))
+      .toEqual(new MessagesWriteRefused({ reason: "unsupported", detail: "update" }))
+    expect(yield* head).toBe(6)
+    expect((yield* laptop.state).outbox).toEqual([])
+
+    // Another person's replica folds the same body, and both hash as the shard does.
+    yield* phone.resume
+    expect((yield* phone.chat).messages.map((message) => [message.id, message.body, message.status])).toEqual([
+      ["a1", "Because.", "complete"],
+      ["q1", "Why?", "posted"],
+    ])
+    expect(canonicalHash(yield* phone.chat)).toBe((yield* host.state(conversation)).hash)
+    expect(canonicalHash(yield* laptop.chat)).toBe((yield* host.state(conversation)).hash)
+  })))

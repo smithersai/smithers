@@ -135,6 +135,7 @@ def evolvePlan (t : PlanTree) : Event → PlanTree
   | .messagePosted _ _ _ _ _ _ => t
   | .messageStatusUpdated _ _ => t
   | .messageMetadataUpdated _ _ _ => t
+  | .messageBodyUpdated _ _ => t
 
 /-! ## Well-formedness -/
 
@@ -431,6 +432,7 @@ theorem evolvePlan_preserves_wf (t : PlanTree) (e : Event) (hwf : t.WF)
   | messagePosted _ _ _ _ _ _ => exact hwf
   | messageStatusUpdated _ _ => exact hwf
   | messageMetadataUpdated _ _ _ => exact hwf
+  | messageBodyUpdated _ _ => exact hwf
 
 /-- `decide` emits zero events or exactly one valid event. -/
 def ValidEvents (t : PlanTree) (evs : List Event) : Prop :=

@@ -19,6 +19,7 @@ import {
   initialReplica,
   initialShardState,
   installSnapshot,
+  MAX_BODY_LENGTH,
   MAX_LABEL_LENGTH,
   MAX_MARK_LENGTH,
   MAX_PARTS,
@@ -456,6 +457,126 @@ describe("chat", () => {
     expect(decode({ ...meta("a1", { parts: [{ ...step("0.0", "done"), smuggled: true } as never] }), ...extra }))
       .toEqual(meta("a1", { parts: [step("0.0", "done")] }))
     expect(decode({ ...status("a1", "complete"), smuggled: 1, summary: "s" })).toEqual(status("a1", "complete"))
+  })
+
+  const write = (messageId: string, body: string, author = "run"): Command => ({ _tag: "UpdateMessageBody", messageId, author, body })
+
+  it("extends a streaming body, whole body by whole body, and changes nothing else", () => {
+    const shard = build([answer, post("m1", "one"), status("a1", "streaming"), meta("a1", { modelId: "m-large" })])
+    const before = shard.state.chat.messages
+    const grown = build([
+      answer,
+      post("m1", "one"),
+      status("a1", "streaming"),
+      meta("a1", { modelId: "m-large" }),
+      write("a1", "Hel"),
+      write("a1", "Hello, wor"),
+      write("a1", "Hello, world")
+    ])
+    expect(grown.log.slice(4).map((commit) => commit.event)).toEqual([
+      { _tag: "MessageBodyUpdated", id: "a1", body: "Hel" },
+      { _tag: "MessageBodyUpdated", id: "a1", body: "Hello, wor" },
+      { _tag: "MessageBodyUpdated", id: "a1", body: "Hello, world" }
+    ])
+    // Only the body moved: the id, author, hubSeq, origin, status and metadata are the ones the message had.
+    expect(grown.state.chat.messages).toEqual([{ ...before[0], body: "Hello, world" }, before[1]])
+    // A body is posted too: an update on a message that has one must extend it.
+    const posted = build([post("m1", "one", "run"), write("m1", "one two")])
+    expect(posted.state.chat.messages[0]).toMatchObject({ body: "one two", status: "posted", hubSeq: 1 })
+  })
+
+  it("answers a repeated or a late body with no event: a crashed run resends what it has", () => {
+    const shard = build([answer, write("a1", "Hello, wor")])
+    expect(reasonOf(shard.state, write("a1", "Hello, wor"))).toBe("accepted:0")
+    expect(reasonOf(shard.state, write("a1", "Hel"))).toBe("accepted:0")
+    expect(reasonOf(shard.state, write("a1", ""))).toBe("accepted:0")
+    expect(reasonOf(shard.state, write("a1", "Hello, world"))).toBe("accepted:1")
+    // As a key's first submit, the no-op takes a receipt and no hubSeq.
+    const again = submit(shard, { epoch: 0, origin: "t", commandId: "late", command: write("a1", "Hel") })
+    expect(again.result).toEqual({ _tag: "Accepted", firstSeq: 3, count: 0 })
+    expect(again.state.headSeq).toBe(2)
+    expect(again.state.state).toBe(shard.state)
+  })
+
+  it("refuses a body that does not extend the stored one", () => {
+    const shard = build([answer, write("a1", "Hello")])
+    expect(reasonOf(shard.state, write("a1", "Help"))).toBe("body_conflict")
+    expect(reasonOf(shard.state, write("a1", "hello, world"))).toBe("body_conflict")
+    expect(reasonOf(shard.state, write("a1", "Hell!"))).toBe("body_conflict")
+    expect(reasonOf(shard.state, write("nope", "Hello"))).toBe("message_missing")
+  })
+
+  it("lets only the message's own author extend it", () => {
+    const shard = build([answer, write("a1", "Hello")])
+    expect(reasonOf(shard.state, write("a1", "Hello, world", "another-run"))).toBe("body_author")
+    expect(reasonOf(shard.state, write("a1", "Hello, world", "will"))).toBe("body_author")
+    // Not even to say what it already says: a stranger learns nothing of the body from the answer.
+    expect(reasonOf(shard.state, write("a1", "Hello", "another-run"))).toBe("body_author")
+    expect(reasonOf(shard.state, write("a1", "", ""))).toBe("body_author")
+  })
+
+  it("never rewrites a question, whoever asks and whatever the body", () => {
+    const question: Post = { _tag: "PostMessage", messageId: "q1", author: "will", body: "Why?", role: "user" }
+    const shard = build([question, answer])
+    expect(reasonOf(shard.state, write("q1", "Why? Because.", "will"))).toBe("body_question")
+    expect(reasonOf(shard.state, write("q1", "Why? Because.", "run"))).toBe("body_question")
+    // The same body, a shorter one and an empty one are refused too: a question takes no body command at all.
+    expect(reasonOf(shard.state, write("q1", "Why?", "will"))).toBe("body_question")
+    expect(reasonOf(shard.state, write("q1", "", "will"))).toBe("body_question")
+    const streaming = build([question, status("q1", "streaming")])
+    expect(reasonOf(streaming.state, write("q1", "Why? Because.", "will"))).toBe("body_question")
+    // A message with no role, or an answer's, is its author's to extend.
+    expect(reasonOf(build([post("m1", "one")]).state, write("m1", "one two", "will"))).toBe("accepted:1")
+  })
+
+  it("freezes the body once the status is terminal", () => {
+    for (const end of ["complete", "failed"] as const) {
+      const shard = build([answer, status("a1", "streaming"), write("a1", "Hello"), status("a1", end)])
+      expect(reasonOf(shard.state, write("a1", "Hello, world"))).toBe("terminal_body")
+      // A body that diverges is refused as late, not as a conflict: a finished message takes nothing.
+      expect(reasonOf(shard.state, write("a1", "Other"))).toBe("terminal_body")
+      // What it holds, and what it held on the way, is still answered as landed.
+      expect(reasonOf(shard.state, write("a1", "Hello"))).toBe("accepted:0")
+      expect(reasonOf(shard.state, write("a1", "He"))).toBe("accepted:0")
+      expect(reasonOf(shard.state, write("a1", "Hello, world", "another-run"))).toBe("body_author")
+      expect(shard.state.chat.messages[0]).toMatchObject({ body: "Hello", status: end })
+    }
+  })
+
+  it("rebases an optimistic body update, and a post that repeats the grown body", () => {
+    const shard = build([answer])
+    const rebased = rebasePending(shard.state, [write("a1", "Hel"), write("a1", "Hello"), write("a1", "Nope")])
+    expect(rebased.decisions.map((decision) => decision._tag === "Accepted" ? decision.events.length : decision.reason))
+      .toEqual([1, 1, "body_conflict"])
+    expect(rebased.state.chat.messages[0]).toMatchObject({ body: "Hello", hubSeq: 1 })
+    // A post names the body the message was born with: once the body has grown, only the grown body agrees.
+    expect(reasonOf(rebased.state, answer)).toBe("message_conflict")
+    expect(reasonOf(rebased.state, { ...answer, body: "Hello" })).toBe("accepted:0")
+  })
+
+  it("bounds a streamed body at the wire and refuses a lone surrogate, on the command and the event alike", () => {
+    const decodeCommand = Schema.decodeUnknownExit(CommandSchema)
+    const decodeEnvelope = Schema.decodeUnknownExit(ShardState)
+    expect(MAX_BODY_LENGTH).toBe(32_000)
+    const logged = (body: string) => ({
+      ...initialShardState,
+      log: [{ hubSeq: 1, epoch: 0, origin: "t", commandId: "c", event: { _tag: "MessageBodyUpdated", id: "a1", body } }]
+    })
+    const pair = "\u{1F600}"
+    const fits = ["", "x".repeat(MAX_BODY_LENGTH), pair, `a${pair}b`, pair.repeat(MAX_BODY_LENGTH / 2)]
+    for (const body of fits) {
+      expect(decodeCommand(write("a1", body))._tag, `${body.length} units`).toBe("Success")
+      expect(decodeEnvelope(logged(body))._tag, `${body.length} units`).toBe("Success")
+    }
+    const refused = ["x".repeat(MAX_BODY_LENGTH + 1), "\uD83D", "\uDE00", "a\uD83Db", "\uDE00\uD83D", `${pair}\uD83D`]
+    for (const body of refused) {
+      expect(decodeCommand(write("a1", body))._tag, `${body.length} units`).toBe("Failure")
+      expect(decodeEnvelope(logged(body))._tag, `${body.length} units`).toBe("Failure")
+    }
+    expect(decodeCommand({ _tag: "UpdateMessageBody", messageId: "a1", body: "x" })._tag).toBe("Failure")
+    expect(decodeCommand({ _tag: "UpdateMessageBody", messageId: "a1", author: "run" })._tag).toBe("Failure")
+    expect(Schema.decodeUnknownSync(CommandSchema)({ ...write("a1", "x"), status: "complete", smuggled: 1 }))
+      .toEqual(write("a1", "x"))
   })
 })
 

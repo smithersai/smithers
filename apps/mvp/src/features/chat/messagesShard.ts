@@ -103,7 +103,7 @@ export const fold = (chat: Chat, delivery: ShardClient.Delivery): Chat => {
 type Batch = JournalCollection.Batch<ShardMessage, string>
 type Change = JournalCollection.RowChange<ShardMessage, string>
 
-/** The rows one fold changed. The reducer only appends a message or replaces the one whose status or metadata moved. */
+/** The rows one fold changed. The reducer only appends a message or replaces the one whose status, metadata or body moved. */
 export const changesBetween = (before: Chat, after: Chat): ReadonlyArray<Change> => {
   const known = new Map(before.messages.map((message) => [message.id, message]))
   return after.messages.flatMap((message): ReadonlyArray<Change> => {
@@ -116,10 +116,10 @@ export const changesBetween = (before: Chat, after: Chat): ReadonlyArray<Change>
 /**
  * The shard decided against a write, so its optimistic row rolls back:
  * - `refused`: the reducer's `reason` (`message_conflict`, `message_missing`, `terminal_status`,
- *   `terminal_metadata`), kept as the key's receipt;
+ *   `terminal_metadata`, `body_question`, `body_author`, `terminal_body`, `body_conflict`), kept as the key's receipt;
  * - `idempotency_conflict`: its key already names a command with other content, so this node's id is not its own;
  * - `unsupported`: the reducer has no command for it (a delete, an insert that is not `posted`, or an update that
- *   changes the author, the body or what the post said).
+ *   changes the author or what the post said, or whose body does not extend the one it had).
  */
 export class MessagesWriteRefused extends Data.TaggedError("MessagesWriteRefused")<{
   readonly reason: "refused" | "idempotency_conflict" | "unsupported"
@@ -174,11 +174,12 @@ const unsupported = (detail: string) => Effect.fail(new MessagesWriteRefused({ r
 
 /**
  * The commands a collection write asks the shard to sequence, in order. An insert is one command: the post carries the
- * message with whatever the row says of it, so the shard takes all of it or none. An update patches the metadata that
- * changed and then moves the status, so one write can record how an answer ended and end it: the shard freezes a
- * message's run metadata once its status is terminal. The second command is sent only once the shard accepted the
- * first (`submit`). An update that changes nothing still asks for its status, which the shard answers without a new
- * entry.
+ * message with whatever the row says of it, so the shard takes all of it or none. An update extends the body when it
+ * grew (a streamed answer writes the whole body it has so far, which the shard takes only from the message's own
+ * author), patches the metadata that changed and then moves the status, so one write can record what an answer said,
+ * how it ended and end it: the shard freezes a message's body and run metadata once its status is terminal. Each
+ * command is sent only once the shard accepted the one before it (`submit`). An update that changes nothing still asks
+ * for its status, which the shard answers without a new entry.
  */
 const commandsOf = (
   mutation: JournalCollection.Mutation<ShardMessage, string>,
@@ -199,14 +200,19 @@ const commandsOf = (
     }])
   }
   if (
-    type === "update" && known !== undefined && known.author === value.author && known.body === value.body &&
-    same(originOf(known), originOf(value))
+    type === "update" && known !== undefined && known.author === value.author &&
+    value.body.startsWith(known.body) && same(originOf(known), originOf(value))
   ) {
-    const metadata = patched(patchOf(known, value))
+    const written: ReadonlyArray<ChatCommand> = [
+      ...(known.body === value.body
+        ? []
+        : [{ _tag: "UpdateMessageBody" as const, messageId: value.id, author: value.author, body: value.body }]),
+      ...patched(patchOf(known, value)),
+    ]
     return Effect.succeed(
-      metadata.length > 0 && known.status === value.status
-        ? metadata
-        : [...metadata, { _tag: "UpdateMessageStatus", messageId: value.id, status: value.status }],
+      written.length > 0 && known.status === value.status
+        ? written
+        : [...written, { _tag: "UpdateMessageStatus", messageId: value.id, status: value.status }],
     )
   }
   return unsupported(type)
@@ -323,11 +329,13 @@ export const make = Effect.fnUntraced(function* (options: ReplicaOptions) {
       const known = new Map(chat.messages.map((message) => [message.id, message]))
       // Every write is translated before any is queued, so a write the reducer has no command for queues nothing.
       const plans = yield* Effect.forEach(mutations, (mutation) => commandsOf(mutation, known.get(mutation.key)))
-      // A write's second command depends on its first: it is queued only once the shard accepted the first, so a
+      // A write's later command depends on its earlier ones: it is queued only once the shard accepted them, so a
       // refused command is never followed by one that assumed it, in this tab or from the outbox after a restart.
-      const seq = yield* send(plans.flatMap((plan) => plan.slice(0, 1)))
-      const dependent = plans.flatMap((plan) => plan.slice(1))
-      return dependent.length === 0 ? seq : yield* send(dependent)
+      let seq = yield* send(plans.flatMap((plan) => plan.slice(0, 1)))
+      for (let step = 1; plans.some((plan) => plan.length > step); step++) {
+        seq = yield* send(plans.flatMap((plan) => plan.slice(step, step + 1)))
+      }
+      return seq
     })
 
   const messages: Collection.Collection<ShardMessage, string> = yield* JournalCollection.make({

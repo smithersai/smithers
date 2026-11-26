@@ -1,5 +1,5 @@
 import { ShardProtocol } from "@smthrs/sync"
-import { Effect, Option, Schema } from "effect"
+import { Cause, Data, Effect, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { type Actor, refusesPersonOnly, Sessions } from "../Actor.ts"
 import { MAX_MESSAGES_SHARD_BYTES, readBounded } from "../Body.vibe"
@@ -23,6 +23,7 @@ const Admission = Schema.Struct({
   write: Schema.Boolean
 })
 const decodeAdmission = Schema.decodeUnknownOption(Schema.fromJsonString(Admission))
+const decodeSubmitResponse = Schema.decodeUnknownEffect(Schema.fromJsonString(ShardProtocol.SubmitResponse))
 
 /** The most entries one Pull answers, whatever `limit` asks: its `through` and `done` then name the page it sent. */
 export const MAX_PULL_LIMIT = 256
@@ -33,7 +34,7 @@ export const handle = (messages: MessagesShard.LiveMessages) =>
     const request = yield* HttpServerRequest.HttpServerRequest
     const url = new URL(request.url, "https://messages.internal")
     const submits = request.method === "POST" && url.pathname === "/api/messages/submit"
-    const body = submits ? yield* readBounded(request, MAX_MESSAGES_SHARD_BYTES) : ""
+    const body = submits ? yield* readBounded(request, MAX_MESSAGES_SHARD_BYTES, undefined, true) : ""
     const admission = decodeAdmission(request.headers[admissionHeader])
     if (Option.isNone(admission)) return status(403)
     const { author, person, write } = admission.value
@@ -82,21 +83,83 @@ export const ownerOf = (actor: Actor): string =>
     ? personOwner(actor.subject.id)
     : [actor.act.kind, actor.subject.id, actor.act.root ?? actor.act.id, actor.act.id].map(encodeURIComponent).join(":")
 
+/** How the Worker reaches a conversation's object: its binding in production, the object's own handler in a test. */
+export type Forward<E = never, R = never> = (
+  shard: ShardProtocol.ShardId,
+  request: HttpServerRequest.HttpServerRequest,
+) => Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>
+
+/** The object gave no protocol answer to a submit the Worker itself sent: its status, and the refusal it named. */
+export class SubmitFailed extends Data.TaggedError("MessagesSubmitFailed")<{
+  readonly reason: "unreachable" | "refused" | "invalid_response"
+  readonly status?: number
+  readonly refusal?: string
+}> {}
+
+/**
+ * Sequences `request` on its shard for `writer`, from inside the Worker: what ChatApi's own writes use
+ * (worker/chat/MessagesShardBridge.ts). The Worker has already decided who writes, so the admission is its own; the
+ * object still applies every rule it applies to a browser's submit. Whatever goes wrong reaching the object is
+ * `unreachable`, with nothing of the failure kept: it can quote the request.
+ */
+export const submitAs = <E, R>(
+  forward: Forward<E, R>,
+  writer: MessagesShard.Writer,
+  request: ShardProtocol.SubmitRequest,
+): Effect.Effect<ShardProtocol.SubmitResponse, SubmitFailed, R> =>
+  Effect.gen(function*() {
+    const outgoing = HttpServerRequest.fromWeb(new Request("https://messages.internal/api/messages/submit", {
+      method: "POST",
+      body: JSON.stringify(request),
+      headers: { [admissionHeader]: JSON.stringify({ ...writer, write: true }) },
+    }))
+    const response = yield* forward(request.shard, outgoing)
+    if (response.status !== 200) {
+      const refusal = response.headers[refusalHeader]
+      return yield* new SubmitFailed({
+        reason: "refused",
+        status: response.status,
+        ...(refusal === undefined ? {} : { refusal }),
+      })
+    }
+    const text = yield* Effect.promise(() => HttpServerResponse.toWeb(response).text())
+    const answer = yield* decodeSubmitResponse(text).pipe(
+      Effect.mapError(() => new SubmitFailed({ reason: "invalid_response", status: 200 })),
+    )
+    // An answer is this command's only when it names the command's key and shard, and a conflict's position, where it
+    // has one, is in that shard too (`@smthrs/sync` ShardClient `matchesShard`): any other is no answer at all.
+    const [node, id] = request.command.key
+    const answered = answer._tag === "Accepted" || answer._tag === "Duplicate" ? answer.position.shard : answer.shard
+    const elsewhere = answer._tag === "IdempotencyConflict" && answer.position !== null &&
+      answer.position.shard !== request.shard
+    if (answer.key[0] !== node || answer.key[1] !== id || answered !== request.shard || elsewhere) {
+      return yield* new SubmitFailed({ reason: "invalid_response", status: 200 })
+    }
+    return answer
+  }).pipe(
+    Effect.catchCause((cause) => {
+      const failure = Cause.squash(cause)
+      return Effect.fail(failure instanceof SubmitFailed ? failure : new SubmitFailed({ reason: "unreachable" }))
+    }),
+  )
+
 /**
  * Admits a request to its conversation's shard. Only this Worker can call the bound object, and it overwrites any
  * client-supplied admission. The body is read under its cap before anyone is authenticated or anything is decoded.
  * `access` is what the asker may do on the conversation's branch (`branchAccess`), `undefined` when there is none.
+ * A submit the Worker cannot decode is refused here and never forwarded, so the object reads only a body the Worker
+ * read the same way. Which message ids a writer may post under is the object's own rule (MessagesShard.ts
+ * `BRIDGE_ID`): the Worker admits nobody under a bridge owner name (`ownerOf`) and asks Postgres nothing.
  */
 export const dispatch = <E, R, E2, R2>(
-  forward: (shard: ShardProtocol.ShardId, request: HttpServerRequest.HttpServerRequest) =>
-    Effect.Effect<HttpServerResponse.HttpServerResponse, E2, R2>,
+  forward: Forward<E2, R2>,
   access: (actor: Actor, conversationId: string) => Effect.Effect<BranchAccess | undefined, E, R>,
 ) => Effect.gen(function*() {
   const request = yield* HttpServerRequest.HttpServerRequest
   const url = new URL(request.url, "https://messages.internal")
   const match = conversationPath.exec(url.pathname)
   if (!match) return status(404)
-  const content = yield* (request.method === "POST" ? readBounded(request, MAX_MESSAGES_SHARD_BYTES) : Effect.undefined)
+  const content = yield* (request.method === "POST" ? readBounded(request, MAX_MESSAGES_SHARD_BYTES, undefined, true) : Effect.undefined)
     .pipe(Effect.result)
   if (content._tag === "Failure") return status(content.failure.reason === "too_large" ? 413 : 400)
   const body = content.success
@@ -113,6 +176,7 @@ export const dispatch = <E, R, E2, R2>(
       actor.act.ceiling.every((group) => group.includes(capability)))
   if (!canView(found.access) || !permits(MessagesShard.readCapability(shard))) return status(403)
   const write = askingOf(found) === "ask" && permits(MessagesShard.writeCapability(shard))
+  if (body !== undefined && match[2] === "submit" && !MessagesShard.decodes(body)) return status(400)
   const target = `https://messages.internal/api/messages/${match[2]}${url.search}`
   const outgoing = HttpServerRequest.fromWeb(new Request(target, {
     method: request.method,

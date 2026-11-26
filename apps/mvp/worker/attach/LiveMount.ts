@@ -1,4 +1,4 @@
-import { Cause, Clock, Effect, type Layer, Metric, Option, Result, Schema } from "effect"
+import { Cause, Clock, Context, Effect, type Layer, Metric, Option, Result, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { isBranchName } from "../../src/features/branch/contract.ts"
@@ -33,6 +33,7 @@ import {
   type AttachState,
   type Target,
 } from "./Attach.ts"
+import * as MessagesShardBridge from "../chat/MessagesShardBridge.ts"
 import { defineTool, makeMcpRoute, readBody, targetOf } from "./McpRoute.ts"
 
 const Uuid = Schema.String.check(Schema.isUUID())
@@ -107,6 +108,15 @@ const conversationRead = defineTool({
   }),
 })
 
+/**
+ * The answers one request's tools recorded inside its transaction. They reach the conversation's shard only after
+ * that transaction commits (`serveMcp`): an answer Postgres rolled back is never one the shard holds.
+ */
+class RecordedAnswers extends Context.Service<
+  RecordedAnswers,
+  { readonly record: (answer: MessagesShardBridge.Answered) => void }
+>()("@smthrs/mvp/attach/RecordedAnswers") {}
+
 const conversationRespond = defineTool({
   name: "conversation_respond",
   description: "Answer a question the person who attached you asked in this conversation.",
@@ -134,12 +144,16 @@ const conversationRespond = defineTool({
         AND a.role = 'assistant' AND a.conversation_id = q.conversation_id AND a.question_id = q.id
         AND a.status = 'streaming'
       RETURNING a.id`
-    if (answer !== undefined) return { answered: true, answerId: answer.id }
-    const [prior] = yield* sql<{ readonly id: string }>`
+    const [prior] = answer !== undefined ? [answer] : yield* sql<{ readonly id: string }>`
       SELECT id FROM messages
       WHERE question_id = ${questionId} AND conversation_id = ${grant.conversation}
         AND role = 'assistant' AND status = 'done' AND text = ${text}`
-    return prior === undefined ? { answered: false } : { answered: true, answerId: prior.id }
+    if (prior === undefined) return { answered: false }
+    // The same answer and its completion, for the conversation's shard (decision 0170, slice 4c): when it was just
+    // written, and when this is the same answer given again. Only recorded here, inside the transaction that holds
+    // the grant's lock and the answer's row: it is sent once that transaction has committed.
+    ;(yield* RecordedAnswers).record({ conversationId: grant.conversation, questionId, answerId: prior.id, text })
+    return { answered: true, answerId: prior.id }
   }),
 })
 
@@ -239,10 +253,11 @@ const serveMcp = (origin: string, web: Request, body: Result.Result<string, "too
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const key = yield* Effect.promise(() => bearerHash(web.headers.get("authorization")))
+    const answers: Array<MessagesShardBridge.Answered> = []
     const serve = (state?: AttachState) => makeMcpRoute({
       attach: makeAttach({ hostOrigin: origin, permissions, state }),
       hostOrigin: origin, tools, pathPrefix: ATTACH_MCP_ROUTE,
-    })(web, body)
+    })(web, body).pipe(Effect.provideService(RecordedAnswers, { record: (answer) => void answers.push(answer) }))
     const target = targetOf(new URL(web.url), ATTACH_MCP_ROUTE)
     if (key === undefined || target === undefined) return yield* serve()
     const [candidate] = yield* sql<AttachmentRow>`
@@ -251,11 +266,16 @@ const serveMcp = (origin: string, web: Request, body: Result.Result<string, "too
     if (issued === undefined || issued.grant.expiresAt <= Date.now() ||
       issued.grant.repo !== target.repo || issued.grant.branch !== target.branch) return yield* serve(candidate?.state)
     // Only a live, known token takes a shared row lock. Hold it through the tool's database effects.
-    return yield* sql.withTransaction(Effect.gen(function* () {
+    const response = yield* sql.withTransaction(Effect.gen(function* () {
       const [current] = yield* sql<AttachmentRow>`
         SELECT reference, grant_id, state FROM attach_grants WHERE origin = ${origin} AND token_hash = ${key} FOR SHARE`
       return yield* serve(current?.state)
     }))
+    // Committed: the locks are released and the connection is returned before the shard is reached. A transaction
+    // that rolled back, or whose commit failed, never gets here, so the shard never holds an answer Postgres does not.
+    // The bridge never fails; an answer it could not send is sent by the same answer given again.
+    yield* Effect.forEach(answers, MessagesShardBridge.answered, { discard: true })
+    return response
   })
 
 const decode = <P extends AttachPath>(path: P, body: string) =>

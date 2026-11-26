@@ -137,6 +137,8 @@ def parseCommand (j : Json) : Except String Command := do
     pure (.updateMessageStatus (← str j "messageId") (← str j "status"))
   | "UpdateMessageMetadata" =>
     pure (.updateMessageMetadata (← str j "messageId") (← parseRun j) (← parseNotes j))
+  | "UpdateMessageBody" =>
+    pure (.updateMessageBody (← str j "messageId") (← str j "author") (← str j "body"))
   | other => throw s!"unknown command tag {other}"
 
 def commandJ : Command → Json
@@ -165,6 +167,9 @@ def commandJ : Command → Json
   | .updateMessageMetadata messageId run notes =>
     Json.mkObj (fields [("_tag", "UpdateMessageMetadata"), ("messageId", messageId)]
       ++ runJ run ++ notesJ notes)
+  | .updateMessageBody messageId author body =>
+    Json.mkObj [("_tag", "UpdateMessageBody"), ("messageId", messageId), ("author", author),
+      ("body", body)]
 
 def eventJ : Event → Json
   | .planNodeCreated id parent title milestone sources assumptions dodFast order =>
@@ -192,6 +197,8 @@ def eventJ : Event → Json
   | .messageMetadataUpdated id run notes =>
     Json.mkObj (fields [("_tag", "MessageMetadataUpdated"), ("id", id)]
       ++ runJ run ++ notesJ notes)
+  | .messageBodyUpdated id body =>
+    Json.mkObj [("_tag", "MessageBodyUpdated"), ("id", id), ("body", body)]
 
 def nodeJ (n : PlanNode) : Json :=
   Json.mkObj [("id", n.id), ("parent", optStrJ n.parent), ("title", n.title),

@@ -1,8 +1,19 @@
-import { canonicalHash, type ChatCommand, decideChat, emptyChat, evolveChat, findMessage } from "@smthrs/app-state"
+import {
+  canonicalHash,
+  type ChatCommand,
+  decideChat,
+  emptyChat,
+  evolveChat,
+  findMessage,
+  MAX_BODY_LENGTH,
+  MAX_BODY_WIRE_BYTES,
+} from "@smthrs/app-state"
+import { ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { ShardClient, ShardProtocol } from "@smthrs/sync"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Effect, Exit, Logger, Metric, Result, Schema, type Scope } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { SqlClient } from "effect/sql"
 import * as Reactivity from "effect/reactivity/Reactivity"
 import fc from "fast-check"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -11,6 +22,7 @@ import { join } from "node:path"
 import { expect, test } from "vitest"
 import { openStorage } from "../../../../packages/smithers/flows/platform-cloudflare/test/SqliteObjectFixture.ts"
 import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../../src/features/auth/contract.ts"
+import { ATTACH_MAX_ANSWER_LENGTH } from "../../src/features/mcp/contract.ts"
 import { type Actor, personOnlyRefusals } from "../Actor.ts"
 import { MAX_MESSAGES_SHARD_BYTES } from "../Body.vibe"
 import type { BranchAccess } from "../branch/Access.vibe"
@@ -136,11 +148,21 @@ const world = Effect.fnUntraced(function*(path = ":memory:") {
     pull: (request) => json(routed(actor, found, "pull?" + ShardProtocol.pullQuery(request))),
     snapshot: (id) => json(routed(actor, found, snapshotPath(id))),
   })
+  /** A submit delivered to the conversation's object itself under `writer`, as the Worker's binding delivers one. */
+  const direct = (writer: Messages.Writer, body: string) =>
+    near.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request(
+      "https://messages.internal/api/messages/submit", {
+        method: "POST",
+        body,
+        headers: { "x-smithers-messages-admission": JSON.stringify({ ...writer, write: true }) },
+      },
+    ))))
   return {
     routed,
     json,
     submit,
     transport,
+    direct,
     forwarded,
     requests,
     /** The state a fresh wake of the object rebuilds from its SQLite. */
@@ -754,7 +776,7 @@ test("the object refuses a request without the Worker's admission, and reads a s
       const oversized = "é".repeat(MAX_MESSAGES_SHARD_BYTES / 2 + 1)
       expect(yield* call("submit", { method: "POST", body: oversized })).toBe(413)
       let cancelled = false
-      const chunk = new TextEncoder().encode("é".repeat(16_385))
+      const chunk = new TextEncoder().encode("é".repeat(MAX_MESSAGES_SHARD_BYTES / 4 + 1))
       const streamed = new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(chunk)
@@ -1176,4 +1198,444 @@ test("concurrent submits interleaved with compactions converge with a positive s
       db.hibernate()
     }
   })))
+})
+
+const extend = (messageId: string, author: string, body: string): ChatCommand =>
+  ({ _tag: "UpdateMessageBody", messageId, author, body })
+
+test("a body update extends only the writer's own unfinished answer: never a question, another writer's message or a finished one", async () => {
+  const db = openStorage(":memory:")
+  try {
+    await scoped(Effect.gen(function*() {
+      const hub = yield* open(db.storage)
+      const RUN2 = "agent:bob:run-2:run-2"
+      const person = { author: ADA }
+      const agent = { author: RUN, person: ADA }
+      const stranger = { author: RUN2, person: BOB }
+      let command = 0
+      const key = (node: string): Key => [node, String(command++)]
+      const send = (writer: Messages.Writer, node: string, payload: unknown) => hub.submit(writer, submitRequest(key(node), payload))
+      const reasonOf = (writer: Messages.Writer, node: string, payload: unknown) =>
+        Effect.map(Effect.flip(send(writer, node, payload)), (refused) => refused.reason)
+      const seq = Effect.map(hub.journal.head, (head) => head.seq)
+      const bodyOf = (id: string) => Effect.map(hub.state, (state) => findMessage(state.chat, id)?.body)
+
+      // A question, a person's message whose post named no role (it reads as a question), and a run's two messages.
+      expect(yield* send(person, ADA + "/laptop", { ...post("q1", ADA, "Why?"), role: "user" })).toMatchObject({ _tag: "Accepted" })
+      expect(yield* send(person, ADA + "/laptop", post("n1", ADA))).toMatchObject({ _tag: "Accepted" })
+      expect(yield* send(agent, RUN, { ...post("a1", RUN, ""), role: "assistant", questionId: "q1" })).toMatchObject({ _tag: "Accepted" })
+      expect(yield* send(agent, RUN, post("a2", RUN, ""))).toMatchObject({ _tag: "Accepted", position: { seq: 4 } })
+
+      // The run streams its own answer: each update carries the whole body so far.
+      expect(yield* send(agent, RUN, extend("a1", RUN, "Be"))).toMatchObject({ _tag: "Accepted", position: { seq: 5 } })
+      expect(yield* send(agent, RUN, extend("a1", RUN, "Because."))).toMatchObject({ _tag: "Accepted", position: { seq: 6 } })
+      // A late update the body already extends, and the same body again under a new key: each is answered with an
+      // entry that holds no event, as the journal answers every command that changes nothing.
+      expect(yield* send(agent, RUN, extend("a1", RUN, "Be"))).toMatchObject({ _tag: "Accepted" })
+      expect(yield* send(agent, RUN, extend("a1", RUN, "Because."))).toMatchObject({ _tag: "Accepted" })
+      expect(yield* bodyOf("a1")).toBe("Because.")
+      expect(yield* hub.journal.pull({ version: 2, shard, epoch: 0, after: 6, limit: 8 })).toMatchObject({
+        entries: [{ seq: 7, events: [] }, { seq: 8, events: [] }],
+      })
+      // A body that does not extend the stored one, and a message that is not there: the reducer's refusals, kept.
+      expect(yield* send(agent, RUN, extend("a1", RUN, "No."))).toMatchObject({ _tag: "Refused", reason: "body_conflict" })
+      expect(yield* send(agent, RUN, extend("nowhere", RUN, "x"))).toMatchObject({ _tag: "Refused", reason: "message_missing" })
+
+      // A run never rewrites a question, whether its post said `user` or a person wrote it with no role, and never
+      // writes under the person it acts for: each is named the person-only act before any author is compared.
+      expect(yield* reasonOf(agent, RUN, extend("q1", RUN, "Why? Because."))).toBe("person_only")
+      expect(yield* reasonOf(agent, RUN, extend("n1", RUN, "n1 and more"))).toBe("person_only")
+      expect(yield* reasonOf(agent, RUN, extend("a1", ADA, "Because. More."))).toBe("person_only")
+      expect(yield* reasonOf(agent, RUN, extend("q1", ADA, "Why? Because."))).toBe("person_only")
+      // Whatever author the run's update claims: another person, another run, a name that is nobody's, or none of
+      // its own. The stored question is what names the refusal, not the claim, so no claim hides the reach.
+      for (const claimed of [BOB, RUN2, "nobody", "", "answer:" + RUN]) {
+        expect(yield* reasonOf(agent, RUN, extend("q1", claimed, "Why? Because.")), claimed).toBe("person_only")
+        expect(yield* reasonOf(agent, RUN, extend("n1", claimed, "n1 and more")), claimed).toBe("person_only")
+        expect(yield* reasonOf(stranger, RUN2, extend("q1", claimed, "Why? Because.")), claimed).toBe("person_only")
+      }
+      // Nor does the person who asked it, under their own name or any other, nor another person.
+      expect(yield* reasonOf(person, ADA + "/laptop", extend("q1", ADA, "Why? Because."))).toBe("question")
+      expect(yield* reasonOf(person, ADA + "/laptop", extend("n1", ADA, "n1 and more"))).toBe("question")
+      expect(yield* reasonOf(person, ADA + "/laptop", extend("q1", BOB, "Why? Because."))).toBe("question")
+      expect(yield* reasonOf({ author: BOB }, BOB, extend("q1", BOB, "Why? Because."))).toBe("author")
+      expect(yield* reasonOf({ author: BOB }, BOB, extend("q1", ADA, "Why? Because."))).toBe("author")
+      // A claimed author that is not the writer, on a message that is not there: refused with no receipt.
+      expect(yield* reasonOf(agent, RUN, extend("nowhere", BOB, "x"))).toBe("author")
+      expect(yield* seq).toBe(8)
+      expect([yield* bodyOf("q1"), yield* bodyOf("n1")]).toEqual(["Why?", "n1"])
+      // Another writer's message: the person the run acts for, another run, and a name that is nobody's here.
+      expect(yield* reasonOf(person, ADA + "/laptop", extend("a1", ADA, "Because. More."))).toBe("author")
+      expect(yield* reasonOf(stranger, RUN2, extend("a1", RUN2, "Because. More."))).toBe("author")
+      expect(yield* reasonOf(agent, RUN, extend("a1", BOB, "Because. More."))).toBe("author")
+      // Past the bound, and text that is not whole Unicode: refused before the journal.
+      expect(yield* reasonOf(agent, RUN, extend("a2", RUN, "x".repeat(MAX_BODY_LENGTH + 1)))).toBe("invalid")
+      expect(yield* reasonOf(agent, RUN, extend("a1", RUN, "Because.\ud83d"))).toBe("invalid")
+      expect(yield* seq).toBe(8)
+      // At the bound, on a message whose post named no role: a run's reads as an answer.
+      expect(yield* send(agent, RUN, extend("a2", RUN, "x".repeat(MAX_BODY_LENGTH)))).toMatchObject({ _tag: "Accepted", position: { seq: 9 } })
+
+      // Once the answer is finished its body is frozen; what it already says is still answered, and changes nothing.
+      expect(yield* send(agent, RUN, mark("a1", "complete"))).toMatchObject({ _tag: "Accepted", position: { seq: 10 } })
+      expect(yield* send(agent, RUN, extend("a1", RUN, "Because. And more."))).toMatchObject({ _tag: "Refused", reason: "terminal_body" })
+      expect(yield* send(agent, RUN, extend("a1", RUN, "Because"))).toMatchObject({ _tag: "Accepted" })
+      expect(yield* seq).toBe(11)
+      expect([yield* bodyOf("q1"), yield* bodyOf("n1"), yield* bodyOf("a1")]).toEqual(["Why?", "n1", "Because."])
+      expect((yield* bodyOf("a2"))?.length).toBe(MAX_BODY_LENGTH)
+    }))
+  } finally {
+    db.hibernate()
+  }
+})
+
+test("the route names a run's reach for a question the person-only act, and the person's own a question", async () => {
+  await scoped(Effect.gen(function*() {
+    const app = yield* world()
+    const registry: Metric.MetricRegistry = new Map()
+    const logs: Array<ReturnType<typeof StructuredLogger.formatStructured.log>> = []
+    const logger = Logger.make((entry) => { logs.push(StructuredLogger.formatStructured.log(entry)) })
+    try {
+      yield* Effect.gen(function*() {
+        expect(yield* app.submit(ada, [ADA + "/laptop", "1"], { ...post("q1", ADA, "Why?"), role: "user" }))
+          .toMatchObject({ _tag: "Accepted", position: { seq: 1 } })
+        const reach = yield* app.routed(run, branch(), "submit", { body: submitRequest([RUN, "1"], extend("q1", RUN, "Why? x")) })
+        expect([reach.status, reach.headers[Routes.refusalHeader]]).toEqual([403, "person_only"])
+        const counter = Metric.value(Metric.withAttributes(personOnlyRefusals, { act: "conversation/ask", by: "agent" }))
+        expect((yield* counter).count).toBe(1)
+        // Under any author the update claims, the run's reach for the question is the person-only act: 403, named,
+        // counted and logged each time, with nothing sequenced. A claim never turns it into a plain author mismatch.
+        const claims = [BOB, ADA, "agent:bob:run-2:run-2", "nobody", ""]
+        for (const [index, claimed] of claims.entries()) {
+          const reach = yield* app.routed(run, branch(), "submit", {
+            body: submitRequest([RUN, `claim-${index}`], extend("q1", claimed, "Why? x")),
+          })
+          expect([reach.status, reach.headers[Routes.refusalHeader]], claimed).toEqual([403, "person_only"])
+          expect((yield* counter).count, claimed).toBe(2 + index)
+        }
+        const audited = logs.filter((log) => String(log.message).includes("auth.person_only"))
+        expect(audited).toHaveLength(1 + claims.length)
+        expect(audited.every((log) => log.level === "WARN")).toBe(true)
+        expect(audited.at(-1)!.annotations).toMatchObject({ act: "conversation/ask", by: "agent" })
+        // The journal is where it was: the question's post, and nothing after it.
+        expect(yield* app.json(app.routed(ada, branch(), pullPath(0)))).toMatchObject({
+          entries: [{ seq: 1, events: [{ _tag: "MessagePosted", id: "q1", body: "Why?" }] }],
+          through: 1,
+        })
+        const own = yield* app.routed(ada, branch(), "submit", { body: submitRequest([ADA + "/laptop", "2"], extend("q1", ADA, "Why? x")) })
+        expect([own.status, own.headers[Routes.refusalHeader]]).toEqual([403, "question"])
+        // The person's reach is not a run's: it is named, and neither counted nor logged as the person-only act.
+        expect((yield* counter).count).toBe(1 + claims.length)
+        expect(logs.filter((log) => String(log.message).includes("auth.person_only"))).toHaveLength(1 + claims.length)
+        // The run streams its own answer through the same route.
+        expect(yield* app.submit(run, [RUN, "2"], { ...post("a1", RUN, ""), role: "assistant", questionId: "q1" }))
+          .toMatchObject({ _tag: "Accepted", position: { seq: 2 } })
+        expect(yield* app.submit(run, [RUN, "3"], extend("a1", RUN, "Because."))).toMatchObject({ _tag: "Accepted", position: { seq: 3 } })
+        expect(yield* app.json(app.routed(ada, branch(), pullPath(1)))).toMatchObject({
+          _tag: "Page",
+          entries: [{ seq: 2 }, { seq: 3, events: [{ _tag: "MessageBodyUpdated", id: "a1", body: "Because." }] }],
+        })
+      }).pipe(
+        Effect.provideService(Metric.MetricRegistry, registry),
+        Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
+      )
+    } finally {
+      app.close()
+    }
+  }))
+})
+
+test("the Worker's own submit is admitted as the writer it names, and every failure to get an answer is named", async () => {
+  const db = openStorage(":memory:")
+  try {
+    await scoped(Effect.gen(function*() {
+      const handler = yield* makeShardHandler(db.storage, shard)
+      const admissions: Array<string | undefined> = []
+      const forward: Routes.Forward = (_, request) => {
+        admissions.push(request.headers["x-smithers-messages-admission"])
+        return handler.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
+      }
+      const request = (id: string, payload: Schema.Json, author = ADA): ShardProtocol.SubmitRequest => ({
+        version: 2,
+        shard,
+        epoch: 0,
+        command: { key: [author + "/chatapi", id], stream, payload },
+      })
+      const question = request("1", { ...post("q1", ADA), role: "user" })
+      expect(yield* Routes.submitAs(forward, { author: ADA }, question)).toMatchObject({ _tag: "Accepted", position: { seq: 1 } })
+      expect(yield* Routes.submitAs(forward, { author: ADA }, question)).toMatchObject({ _tag: "Duplicate", position: { seq: 1 } })
+      expect(admissions[0]).toBe(JSON.stringify({ author: ADA, write: true }))
+      // The object's own rules still hold: a run's question, and a command the schema refuses.
+      expect(yield* Effect.flip(Routes.submitAs(forward, { author: RUN, person: ADA }, request("1", { ...post("q2", RUN), role: "user" }, RUN))))
+        .toEqual(new Routes.SubmitFailed({ reason: "refused", status: 403, refusal: "person_only" }))
+      expect(yield* Effect.flip(Routes.submitAs(forward, { author: ADA }, request("2", { ...post("q3", ADA), summary: "" }))))
+        .toEqual(new Routes.SubmitFailed({ reason: "refused", status: 400 }))
+      // Faults at the binding: an answer outside the protocol, a failure, a defect. None keeps what was thrown.
+      const garbled: Routes.Forward = () => Effect.succeed(HttpServerResponse.text("{\"_tag\":"))
+      expect(yield* Effect.flip(Routes.submitAs(garbled, { author: ADA }, question)))
+        .toEqual(new Routes.SubmitFailed({ reason: "invalid_response", status: 200 }))
+      // An answer that names another command, another node or another shard is not this command's answer.
+      const answering = (answer: unknown): Routes.Forward => () => Effect.succeed(HttpServerResponse.jsonUnsafe(answer))
+      const key = question.command.key
+      const position = { shard, epoch: 0, seq: 9 }
+      for (const misnamed of [
+        { _tag: "Accepted", key: [key[0], "another"], position },
+        { _tag: "Accepted", key: [BOB + "/chatapi", key[1]], position },
+        { _tag: "Duplicate", key, position: { ...position, shard: other } },
+        { _tag: "Refused", key, shard: other, reason: "message_conflict" },
+        // A conflict that names this shard and places the command in another contradicts itself.
+        { _tag: "IdempotencyConflict", key, shard, position: { ...position, shard: other } },
+        { _tag: "IdempotencyConflict", key, shard: other, position: null },
+      ]) {
+        expect(yield* Effect.flip(Routes.submitAs(answering(misnamed), { author: ADA }, question)), JSON.stringify(misnamed))
+          .toEqual(new Routes.SubmitFailed({ reason: "invalid_response", status: 200 }))
+      }
+      for (const named of [
+        { _tag: "Refused", key, shard, reason: "message_conflict" },
+        { _tag: "StaleEpoch", key, shard, epoch: 2 },
+        { _tag: "IdempotencyConflict", key, shard, position: null },
+        { _tag: "IdempotencyConflict", key, shard, position },
+      ]) {
+        expect(yield* Routes.submitAs(answering(named), { author: ADA }, question)).toEqual(named)
+      }
+      const failing: Routes.Forward<Error> = () => Effect.fail(new Error("the question was: q1"))
+      const dying: Routes.Forward = () => Effect.die(new Error("the question was: q1"))
+      for (const broken of [failing, dying]) {
+        const failed = yield* Effect.flip(Routes.submitAs(broken, { author: ADA }, question))
+        expect(failed).toEqual(new Routes.SubmitFailed({ reason: "unreachable" }))
+        expect(JSON.stringify(failed)).not.toContain("q1")
+      }
+    }))
+  } finally {
+    db.hibernate()
+  }
+})
+
+test("a message id spelled as ChatApi's is its bridge's alone in every shard, stored or not: no page and no run posts under one", async () => {
+  await scoped(Effect.gen(function*() {
+    const app = yield* world()
+    try {
+      const question = "1111aaaa-1111-4111-8111-111111111111"
+      const answer = "2222bbbb-2222-4222-8222-222222222222"
+      const never = "3333cccc-3333-4333-8333-333333333333"
+      const QUESTION = Messages.questionOwner(question)
+      const ANSWER = Messages.answerOwner(answer)
+      const outcome = (
+        actor: Actor,
+        key: Key,
+        payload: unknown,
+        found = branch(),
+        at: { readonly conversation: string; readonly shard: string } = { conversation, shard },
+      ) =>
+        Effect.gen(function*() {
+          const reply = yield* app.routed(actor, found, "submit", {
+            conversation: at.conversation,
+            body: submitRequest(key, payload, { shard: at.shard, stream: at.shard }),
+          })
+          return [reply.status, reply.headers[Routes.refusalHeader], yield* Effect.promise(() => HttpServerResponse.toWeb(reply).text())]
+        })
+      const reserved = [403, "reserved", ""]
+      const far = { conversation: elsewhere, shard: other }
+      const journal = (id: string = shard) =>
+        app.json<{ readonly through: number; readonly entries: ReadonlyArray<unknown> }>(app.routed(ada, branch(), pullPath(0, id), {
+          conversation: id === shard ? conversation : elsewhere,
+        }))
+      // Two people and a run, each allowed to write here, each naming an id ChatApi has not stored and may: refused by
+      // the object, from the command alone, so nothing they send can stand where the bridge's post will.
+      const squats = Effect.gen(function*() {
+        expect(yield* outcome(bob, [BOB + "/phone", "1"], post(question, BOB, "not the question"))).toEqual(reserved)
+        expect(yield* outcome(bob, [BOB + "/phone", "2"], { ...post(answer, BOB, "not the answer"), role: "assistant" })).toEqual(reserved)
+        expect(yield* outcome(ada, [ADA + "/laptop", "1"], { ...post(question, ADA, "Why?"), role: "user" })).toEqual(reserved)
+        expect(yield* outcome(run, [RUN, "1"], post(answer, RUN, "not the answer"))).toEqual(reserved)
+        // A run's question under a reserved id is refused for the id, and counted as no person-only refusal.
+        expect(yield* outcome(run, [RUN, "2"], { ...post(question, RUN), role: "user" })).toEqual(reserved)
+        // Claiming the bridge's name as author changes nothing: the writer is who the Worker admitted. Claiming its
+        // node is refused before the id is read.
+        expect(yield* outcome(bob, [BOB + "/phone", "3"], post(question, QUESTION))).toEqual(reserved)
+        expect(yield* outcome(bob, [QUESTION + "/chatapi", "question:" + question], post(question, QUESTION))).toEqual([403, "origin", ""])
+        // The other conversation, and an id nobody will ever store: the same answer, byte for byte.
+        expect(yield* outcome(bob, [BOB + "/phone", "1"], post(question, BOB), branch(), far)).toEqual(reserved)
+        expect(yield* outcome(bob, [BOB + "/phone", "2"], post(never, BOB), branch(), far)).toEqual(reserved)
+        expect(yield* outcome(bob, [BOB + "/phone", "4"], post(never, BOB))).toEqual(reserved)
+      })
+      yield* squats
+      // Zero rows, in either shard, and no receipt: the object was reached and sequenced nothing.
+      expect(app.forwarded).toContain(shard)
+      expect(yield* journal()).toMatchObject({ through: 0, entries: [] })
+      expect(yield* journal(other)).toMatchObject({ through: 0, entries: [] })
+
+      // The bridge's writers, as the Worker itself admits them, each post their own message and no other.
+      const forward: Routes.Forward = (_, request) =>
+        Effect.flatMap(Effect.orDie(request.text), (text) =>
+          app.direct(JSON.parse(request.headers["x-smithers-messages-admission"]!) as Messages.Writer, text))
+      const bridged = (author: string, messageId: string) =>
+        Routes.submitAs(forward, { author }, {
+          version: 2,
+          shard,
+          epoch: 0,
+          command: { key: [author + "/chatapi", messageId], stream, payload: post(messageId, author) },
+        })
+      expect(yield* Effect.flip(bridged(ANSWER, question)))
+        .toEqual(new Routes.SubmitFailed({ reason: "refused", status: 403, refusal: "reserved" }))
+      expect(yield* Effect.flip(bridged(QUESTION, answer)))
+        .toEqual(new Routes.SubmitFailed({ reason: "refused", status: 403, refusal: "reserved" }))
+      expect(yield* bridged(QUESTION, question)).toMatchObject({ _tag: "Accepted", position: { seq: 1 } })
+      expect(yield* bridged(ANSWER, answer)).toMatchObject({ _tag: "Accepted", position: { seq: 2 } })
+      // Every squat again, now that the ids are held here: answered exactly as before, here and in the other
+      // conversation, so no answer says where an id exists.
+      yield* squats
+      expect(yield* journal()).toMatchObject({ through: 2 })
+      expect(yield* journal(other)).toMatchObject({ through: 0, entries: [] })
+
+      // An id spelled as no ChatApi message is (not a UUID, or one in capitals) names another message in the shard.
+      expect(yield* app.submit(bob, [BOB + "/phone", "5"], post("m1", BOB))).toMatchObject({ _tag: "Accepted", position: { seq: 3 } })
+      expect(yield* app.submit(bob, [BOB + "/phone", "6"], post(question.toUpperCase(), BOB)))
+        .toMatchObject({ _tag: "Accepted", position: { seq: 4 } })
+      // Only a post takes an id: an update that names a reserved id goes to the shard's own rules.
+      expect(yield* app.submit(bob, [BOB + "/phone", "7"], mark(never, "failed"))).toMatchObject({ _tag: "Refused", reason: "message_missing" })
+      expect(yield* outcome(bob, [BOB + "/phone", "8"], mark(question, "failed"))).toEqual([403, "author", ""])
+      // A writer the route does not admit is refused as one, whatever id it names.
+      const reader: Actor = { ...ada, act: { kind: "agent", id: "reader", ceiling: [[Messages.readCapability(shard)]] } }
+      expect(yield* outcome(reader, [Routes.ownerOf(reader), "1"], post(question, Routes.ownerOf(reader)))).toEqual([403, undefined, ""])
+    } finally {
+      app.close()
+    }
+  }))
+})
+
+test("a submit the Worker cannot decode is refused before the object is reached", async () => {
+  await scoped(Effect.gen(function*() {
+    const app = yield* world()
+    try {
+      const question = "1111aaaa-1111-4111-8111-111111111111"
+      const valid = submitRequest([BOB + "/phone", "1"], post(question, BOB))
+      const encoded = [...new TextEncoder().encode(valid)]
+      const bom = [0xef, 0xbb, 0xbf]
+      const undecodable: ReadonlyArray<readonly [string, BodyInit]> = [
+        ["malformed JSON", "{"],
+        ["cut-off JSON", valid.slice(0, -1)],
+        ["an empty body", new Uint8Array()],
+        ["JSON that is no request", "null"],
+        ["a request of another protocol version", JSON.stringify({ ...JSON.parse(valid), version: 1 })],
+        ["a command the reducer has none of", submitRequest([BOB + "/phone", "1"], { _tag: "DeleteEverything", messageId: question })],
+        ["a post without an id", submitRequest([BOB + "/phone", "1"], { _tag: "PostMessage", author: BOB, body: "" })],
+        ["bytes that are not UTF-8", new Uint8Array([0xff, 0xfe, ...encoded])],
+        ["UTF-8 cut inside a character", new Uint8Array([...encoded.slice(0, -1), 0xe7, 0x95])],
+        ["an overlong encoding", new Uint8Array([0xc0, 0xaf, ...encoded])],
+        // A second byte-order mark: one decode leaves it in front of the JSON, a second decode would take it off.
+        ["two byte-order marks", new Uint8Array([...bom, ...bom, ...encoded])],
+      ]
+      for (const [label, body] of undecodable) {
+        // The person who may write, and a run that may only read: neither's body is sent on.
+        const reader: Actor = { ...ada, act: { kind: "agent", id: "reader", ceiling: [[Messages.readCapability(shard)]] } }
+        for (const actor of [bob, reader]) {
+          const reply = yield* app.routed(actor, branch(), "submit", { body })
+          expect([reply.status, reply.headers[Routes.refusalHeader]], label).toEqual([400, undefined])
+        }
+      }
+      expect(app.forwarded).toEqual([])
+      // The object refuses the same bodies when it is reached without the Worker's check, and writes nothing.
+      for (const body of ["{", submitRequest([BOB + "/phone", "1"], { _tag: "DeleteEverything" })]) {
+        expect((yield* app.direct({ author: BOB }, body)).status, body).toBe(400)
+      }
+      // Both Worker and object preserve a leading UTF-8 BOM, so a single BOM is refused as 400 with zero forwards.
+      const second = yield* app.direct({ author: BOB }, "\uFEFF" + valid)
+      expect([second.status, second.headers[Routes.refusalHeader]]).toEqual([400, undefined])
+      expect(Messages.decodes(valid)).toBe(true)
+      expect(Messages.decodes("\uFEFF" + valid)).toBe(false)
+      const marked = yield* app.routed(bob, branch(), "submit", { body: new Uint8Array([...bom, ...encoded]) })
+      expect([marked.status, marked.headers[Routes.refusalHeader]]).toEqual([400, undefined])
+      expect(app.forwarded).toEqual([])
+      expect(yield* app.json(app.routed(ada, branch(), pullPath(0)))).toMatchObject({ through: 0, entries: [] })
+    } finally {
+      app.close()
+    }
+  }))
+})
+
+test("the shard's storage keeps a Durable Object's own transaction, bound to the storage, where it has one", async () => {
+  const db = openStorage(":memory:")
+  try {
+    await scoped(Effect.gen(function*() {
+      type Storage = Parameters<typeof Messages.make>[0]
+      // A storage as the runtime gives one: its methods live on its prototype and each needs the storage as `this`.
+      class Native {
+        readonly #inner: Storage = db.storage
+        transactions = 0
+        get sql() {
+          return this.#inner.sql
+        }
+        transaction<T>(closure: Parameters<Storage["transaction"]>[0]) {
+          this.transactions++
+          return this.#inner.transaction(closure) as Promise<T>
+        }
+        transactionSync<T>(closure: () => T): T {
+          return this.#inner.transactionSync(closure)
+        }
+      }
+      const native = new Native()
+      const storage = native as unknown as Storage
+      // A spread alone keeps none of them.
+      expect(Object.keys({ ...storage })).toEqual(["transactions"])
+      const tracked = Messages.withTransactionSync(storage, (closure) => storage.transactionSync(closure))
+      // A SQL client over it runs `withTransaction` through the storage's own `transaction`.
+      const rows = yield* Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        return yield* sql.withTransaction(sql<{ readonly one: number }>`SELECT 1 AS one`)
+      }).pipe(Effect.provide(ObjectDatabase.layer(tracked)))
+      expect(rows).toEqual([{ one: 1 }])
+      expect(native.transactions).toBe(1)
+      // The whole shard over such a storage sequences as over any other.
+      const hub = yield* open(storage)
+      expect(yield* hub.submit({ author: ADA }, submitRequest([ADA, "1"], post("m1", ADA))))
+        .toMatchObject({ _tag: "Accepted", position: { seq: 1 } })
+      expect((yield* hub.state).chat.messages.map((message) => message.id)).toEqual(["m1"])
+
+      // A storage with no `transaction` gains none, and still commits through `transactionSync`.
+      const without = { sql: db.storage.sql, transactionSync: db.storage.transactionSync } as unknown as Storage
+      const bare = Messages.withTransactionSync(without, without.transactionSync)
+      expect("transaction" in bare).toBe(false)
+      expect(bare.transactionSync(() => 7)).toBe(7)
+      const second = yield* open(without)
+      expect(yield* second.submit({ author: ADA }, submitRequest([ADA, "2"], post("m2", ADA))))
+        .toMatchObject({ _tag: "Accepted", position: { seq: 2 } })
+    }))
+  } finally {
+    db.hibernate()
+  }
+})
+
+test("the submit cap carries the longest body the reducer takes, in its longest encoding, through the route", async () => {
+  // One bound, in the three places that hold it: the attached agent's answer, the reducer's body, the route's bytes.
+  expect(ATTACH_MAX_ANSWER_LENGTH).toBe(MAX_BODY_LENGTH)
+  expect(MAX_BODY_WIRE_BYTES).toBe(JSON.stringify("\u0001".repeat(MAX_BODY_LENGTH)).length)
+  expect(MAX_MESSAGES_SHARD_BYTES).toBeGreaterThanOrEqual(MAX_BODY_WIRE_BYTES + 4096)
+  await scoped(Effect.gen(function*() {
+    const app = yield* world()
+    try {
+      // Text at the bound whose bytes are past the 65,536 a submit once carried: three bytes a unit, a control
+      // character JSON writes as six, and, at 64,000 bytes before its envelope, four bytes a pair.
+      const bodies = ["界".repeat(MAX_BODY_LENGTH), "\u0001".repeat(MAX_BODY_LENGTH), "😀".repeat(MAX_BODY_LENGTH / 2)]
+      const bytes = (text: string) => new TextEncoder().encode(text).length
+      for (const [index, body] of bodies.entries()) {
+        const id = `a${index}`
+        expect(body.length).toBe(MAX_BODY_LENGTH)
+        const request = submitRequest([RUN, `body-${index}`], extend(id, RUN, body))
+        expect(bytes(request)).toBeGreaterThan(index < 2 ? 65_536 : 64_000)
+        expect(bytes(request)).toBeLessThanOrEqual(MAX_MESSAGES_SHARD_BYTES)
+        expect(yield* app.submit(run, [RUN, `post-${index}`], { ...post(id, RUN, ""), role: "assistant" })).toMatchObject({ _tag: "Accepted" })
+        const reply = yield* app.routed(run, branch(), "submit", { body: request })
+        expect(reply.status, id).toBe(200)
+        // The same body again, as a retry sends it: answered from its receipt, never refused for its size.
+        expect(yield* app.json(app.routed(run, branch(), "submit", { body: request }))).toMatchObject({ _tag: "Duplicate" })
+        expect(yield* app.json(app.routed(ada, branch(), pullPath(2 * index + 1)))).toMatchObject({
+          entries: [{ events: [{ _tag: "MessageBodyUpdated", id, body }] }],
+        })
+      }
+      // One unit past the bound is the reducer's to refuse, not the cap's.
+      const past = yield* app.routed(run, branch(), "submit", { body: submitRequest([RUN, "past"], extend("a0", RUN, "界".repeat(MAX_BODY_LENGTH + 1))) })
+      expect(past.status).toBe(400)
+    } finally {
+      app.close()
+    }
+  }))
 })

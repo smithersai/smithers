@@ -1,4 +1,5 @@
 import { afterBody } from "../WriteAdmission.ts"
+import { MessagesShardBridge } from "../chat/MessagesShardBridge.ts"
 import * as ModelEndpoint from "./modelEndpoint.ts"
 import { MODEL_ROLES, type ModelRole } from "../../src/features/model/contract.ts"
 // ChatApi's real handler for the worker tests, on a test file's own schema of the compose Postgres (`pnpm db:up`,
@@ -152,6 +153,8 @@ interface HarnessOptions {
   readonly homes?: ReadonlyArray<CuratedFile>
   /** People's own models in place of the real ones over the file's schema, under `PERSONAL_KEYS`. */
   readonly personalModels?: Layer.Layer<PersonalModels>
+  /** ChatApi's bridge into the messages shards (worker/chat/MessagesShardBridge.ts): none unless set, as with no binding. */
+  readonly messagesShard?: MessagesShardBridge["Service"]
 }
 
 /** SECRETS_KEY for the people's own models in a harness. */
@@ -279,6 +282,10 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
         Effect.provide(options.personalModels ?? PersonalModels.layer(database).pipe(Layer.provide(SecretKeys.layer(PERSONAL_KEYS)))),
         Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),
         Effect.provideService(FetchHttpClient.Fetch, options.fetch ?? globalThis.fetch),
+        (admitted) =>
+          options.messagesShard === undefined
+            ? admitted
+            : Effect.provideService(admitted, MessagesShardBridge, options.messagesShard),
       ),
     ),
   )

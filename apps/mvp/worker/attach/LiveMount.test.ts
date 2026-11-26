@@ -1,4 +1,7 @@
-import { Deferred, Effect, Option } from "effect"
+import { Deferred, Effect, Metric, Option } from "effect"
+import { shardHost } from "../../src/test/messagesShardHost.ts"
+import { MAX_BODY_LENGTH } from "@smthrs/app-state"
+import { type Answered, answerOwner, MessagesShardBridge, writes as bridgeWrites } from "../chat/MessagesShardBridge.ts"
 import { FetchHttpClient, HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
@@ -33,7 +36,7 @@ const branchName = "work/attach"
 const mcp = attachMcpRoute(repo.owner, repo.name, branchName)
 const verifier = "agent-verifier-0123456789-abcdefghijklmnopqrstuvwxyz"
 
-const setup = async () => {
+const setup = async (bridge?: MessagesShardBridge["Service"]) => {
   const { database } = await runtime.runPromise(TestDatabase.Scratch)
   const auth = await signInHarness(runtime)
   const signed = await auth.signInAs()
@@ -71,6 +74,7 @@ const setup = async () => {
       (LiveMount.handles(path) ? attach.fetch : Effect.succeed(HttpServerResponse.empty({ status: 404 }))).pipe(
         Effect.provide(auth.sessions),
         Effect.provide(BranchRoles.layer(roles)),
+        (routed) => bridge === undefined ? routed : Effect.provideService(routed, MessagesShardBridge, bridge),
       ),
     ).pipe(Effect.provide(auth.services)))
     return handler(new Request(origin + path, {
@@ -302,3 +306,159 @@ test("an unknown bearer needs only a read lock on the attachment table", async (
     }))
   }))
 }, 15_000)
+
+test("an attached agent's answer and its completion are also sequenced into the conversation's shard, once", () =>
+  Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const host = yield* shardHost()
+    const registry: Metric.MetricRegistry = new Map()
+    const counted = MessagesShardBridge.make(host.forward)
+    const bridge = MessagesShardBridge.of({
+      asked: (asked) => counted.asked(asked).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
+      answered: (answered) => counted.answered(answered).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
+    })
+    const h = yield* Effect.promise(() => setup(bridge))
+    // Asked before the bridge reached this conversation: Postgres holds the pair, the shard nothing.
+    const question = yield* Effect.promise(() => h.ask())
+    const { token } = yield* Effect.promise(() => h.attach())
+    const respond = (text: string) =>
+      Effect.promise(async () =>
+        (await h.post(mcp, tool("conversation_respond", { questionId: question.id.toUpperCase(), text }), bearer(token))).json())
+    const state = () => Effect.map(host.state(h.target.conversation), ({ chat }) => chat.messages)
+    const seq = () => Effect.map(host.head(h.target.conversation), (head) => head.seq)
+    const stored = {
+      id: question.answerId,
+      author: answerOwner(question.answerId),
+      body: "Answer",
+      status: "complete",
+      hubSeq: 1,
+      role: "assistant",
+      questionId: question.id,
+    }
+    // The answer, and the same answer given again: Postgres takes it once, and so does the shard.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      expect(yield* respond("Answer")).toMatchObject({ result: { structuredContent: { answered: true, answerId: question.answerId } } })
+      expect(yield* state()).toEqual([stored])
+      expect(yield* seq()).toBe(4)
+    }
+    // Another answer once it is finished: Postgres refuses it, and the bridge is never asked.
+    expect(yield* respond("Other words")).toMatchObject({ result: { structuredContent: { answered: false } } })
+    expect(yield* state()).toEqual([stored])
+    const count = Effect.runSync(Metric.value(Metric.withAttributes(bridgeWrites, { write: "answered", outcome: "ok" })).pipe(
+      Effect.provideService(Metric.MetricRegistry, registry),
+    )).count
+    expect(count).toBe(2)
+    const [row] = yield* Effect.promise(() => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly text: string; readonly status: string }>`SELECT text, status FROM messages WHERE id = ${question.answerId}`)))
+    expect(row).toEqual({ text: "Answer", status: "done" })
+  }))))
+
+const answerRow = (answerId: string) =>
+  runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql<{ readonly text: string | null; readonly status: string }>`SELECT text, status FROM messages WHERE id = ${answerId}`))
+    .then(([row]) => row!)
+
+/** A bridge over `host` that first reads the answer's row on another connection: what Postgres has committed of it. */
+const observing = (host: Effect.Success<ReturnType<typeof shardHost>>) => {
+  const real = MessagesShardBridge.make(host.forward)
+  const committed: Array<string> = []
+  const outcomes: Array<string> = []
+  const bridge = MessagesShardBridge.of({
+    asked: real.asked,
+    answered: (answered: Answered) =>
+      Effect.gen(function* () {
+        const row = yield* Effect.promise(() => answerRow(answered.answerId))
+        committed.push(`${row.status}:${row.text === answered.text}`)
+        const outcome = yield* real.answered(answered)
+        outcomes.push(outcome)
+        return outcome
+      }),
+  })
+  return { bridge, committed, outcomes }
+}
+
+test("an answer reaches the shard only after Postgres commits it: a rollback and a failed commit write nothing there", () =>
+  Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const host = yield* shardHost()
+    const { bridge, committed, outcomes } = observing(host)
+    const h = yield* Effect.promise(() => setup(bridge))
+    const question = yield* Effect.promise(() => h.ask())
+    const { token } = yield* Effect.promise(() => h.attach())
+    const respond = (text: string) =>
+      Effect.promise(() => h.post(mcp, tool("conversation_respond", { questionId: question.id, text }), bearer(token)))
+    const state = () => Effect.map(host.state(h.target.conversation), ({ chat }) => chat.messages)
+    const seq = () => Effect.map(host.head(h.target.conversation), (head) => head.seq)
+    const ddl = (statement: string) =>
+      Effect.promise(() => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe(statement))))
+
+    // Postgres itself refuses the write, two ways: the answer's UPDATE fails, so its transaction rolls back before the
+    // tool finishes; then the UPDATE succeeds and the tool answers, and the COMMIT fails on a deferred constraint.
+    yield* ddl(`CREATE FUNCTION refuse_answer() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused'; END $$`)
+    const faults = [
+      `CREATE TRIGGER refuse_answer BEFORE UPDATE ON messages FOR EACH ROW EXECUTE FUNCTION refuse_answer()`,
+      `CREATE CONSTRAINT TRIGGER refuse_answer AFTER UPDATE ON messages DEFERRABLE INITIALLY DEFERRED
+        FOR EACH ROW EXECUTE FUNCTION refuse_answer()`,
+    ]
+    for (const fault of faults) {
+      yield* ddl(fault)
+      const failed = yield* respond("Answer").pipe(Effect.ensuring(ddl(`DROP TRIGGER refuse_answer ON messages`)))
+      expect(failed.status, fault).toBe(503)
+      // Postgres holds no answer, and the shard was never reached: zero entries, zero messages.
+      expect(yield* Effect.promise(() => answerRow(question.answerId))).toMatchObject({ status: "streaming" })
+      expect(committed).toEqual([])
+      expect(yield* seq()).toBe(0)
+      expect(yield* state()).toEqual([])
+    }
+    yield* ddl(`DROP FUNCTION refuse_answer()`)
+
+    // Postgres still takes an answer, and other words than the ones that failed: the shard holds nothing that says otherwise.
+    const answered = yield* respond("Another answer")
+    expect(yield* Effect.promise(() => answered.json())).toMatchObject({ result: { structuredContent: { answered: true, answerId: question.answerId } } })
+    // The bridge was called with the answer already committed: another connection read it finished, with this text.
+    expect(committed).toEqual(["done:true"])
+    const stored = {
+      id: question.answerId,
+      author: answerOwner(question.answerId),
+      body: "Another answer",
+      status: "complete",
+      hubSeq: 1,
+      role: "assistant",
+      questionId: question.id,
+    }
+    expect(yield* state()).toEqual([stored])
+    expect(yield* seq()).toBe(4)
+    // The same words again, as a retry gives them: committed as before, bridged again, and nothing added.
+    const again = yield* respond("Another answer")
+    expect(yield* Effect.promise(() => again.json())).toMatchObject({ result: { structuredContent: { answered: true } } })
+    expect(committed).toEqual(["done:true", "done:true"])
+    expect(outcomes).toEqual(["ok", "ok"])
+    expect(yield* state()).toEqual([stored])
+    expect(yield* seq()).toBe(4)
+    // The words that failed are now another answer to a finished question: Postgres refuses, and the bridge is not called.
+    const late = yield* respond("Answer")
+    expect(yield* Effect.promise(() => late.json())).toMatchObject({ result: { structuredContent: { answered: false } } })
+    expect(committed).toHaveLength(2)
+  }))), 30_000)
+
+test("an answer at the length bound in multibyte text is stored and bridged whole, and again on a retry", () =>
+  Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const host = yield* shardHost()
+    const { bridge, outcomes } = observing(host)
+    const h = yield* Effect.promise(() => setup(bridge))
+    const { token } = yield* Effect.promise(() => h.attach())
+    // 32,000 UTF-16 units each: 96,000 bytes of UTF-8, past the 65,536 a submit once carried, and 64,000.
+    for (const text of ["界".repeat(MAX_BODY_LENGTH), "😀".repeat(MAX_BODY_LENGTH / 2)]) {
+      expect(text.length).toBe(MAX_BODY_LENGTH)
+      const question = yield* Effect.promise(() => h.ask())
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = yield* Effect.promise(() =>
+          h.post(mcp, tool("conversation_respond", { questionId: question.id, text }), bearer(token)))
+        expect(yield* Effect.promise(() => response.json())).toMatchObject({ result: { structuredContent: { answered: true } } })
+        const row = yield* Effect.promise(() => answerRow(question.answerId))
+        expect([row.status, row.text === text]).toEqual(["done", true])
+        const mirrored = (yield* host.state(h.target.conversation)).chat.messages.find((message) => message.id === question.answerId)
+        // Finished in the shard too, with every character: never left streaming behind a write too large to send.
+        expect([mirrored?.status, mirrored?.body === text]).toEqual(["complete", true])
+      }
+    }
+    expect(outcomes).toEqual(["ok", "ok", "ok", "ok"])
+  }))), 30_000)

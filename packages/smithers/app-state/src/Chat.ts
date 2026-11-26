@@ -4,6 +4,11 @@
  * Mirrors `lean/smithers-state/SmithersState/Chat.lean`. A message records the
  * `hubSeq` of the commit that appended it; 0 means "optimistic, not yet committed".
  *
+ * A message's `body` only grows. `UpdateMessageBody` carries the whole body its author has so far, and is accepted
+ * only when that body extends the stored one, so a run that streams an answer resends everything it has after a crash
+ * and a late or repeated update changes nothing. Only the message's own author extends it, never once its status is
+ * terminal, and never when it is a question (`role: "user"`): a person's question says what its post said.
+ *
  * Besides `id`, `author`, `body`, `status`, and `hubSeq`, a message carries three
  * groups of optional fields. An absent field is absent from the canonical JSON,
  * so a message, command, event, or snapshot written before the groups existed
@@ -51,9 +56,28 @@ export const MAX_MARK_LENGTH = 512
 export const MAX_PARTS = 64
 /** The longest id, flow name, model name, stop reason, revision or timestamp. */
 export const MAX_LABEL_LENGTH = 256
+/** The longest body a body update writes, in UTF-16 code units: the longest answer an attached agent gives. */
+export const MAX_BODY_LENGTH = 32_000
+/**
+ * The most bytes a streamed body takes on the wire, as a JSON string in UTF-8: a UTF-16 code unit is at most three
+ * bytes written as itself and six written as an escape (`\u0001`), between two quotes. A route that carries a body
+ * update admits this many bytes for the body, and its envelope besides, so no body the reducer takes is refused for
+ * the size of its encoding.
+ */
+export const MAX_BODY_WIRE_BYTES = MAX_BODY_LENGTH * 6 + 2
 
 const Label = Schema.String.check(Schema.isMaxLength(MAX_LABEL_LENGTH))
 const Mark = Schema.String.check(Schema.isMaxLength(MAX_MARK_LENGTH))
+/** A surrogate with no partner. With the `u` flag a paired surrogate is one code point and never matches. */
+const LONE_SURROGATE = /\p{Cs}/u
+/**
+ * A streamed body: bounded, and whole Unicode text. A lone surrogate is refused, so "extends" means the same in
+ * UTF-16 here and in code points in Lean.
+ */
+const StreamedBody = Schema.String.check(
+  Schema.isMaxLength(MAX_BODY_LENGTH),
+  Schema.makeFilter((body: string) => !LONE_SURROGATE.test(body))
+)
 
 /** One step an answer took: the flow it called and how the call went. */
 export const MessagePart = Schema.Struct({
@@ -140,7 +164,16 @@ export const UpdateMessageMetadata = Schema.TaggedStruct("UpdateMessageMetadata"
   ...runFields,
   ...notesFields
 })
-export const ChatCommand = Schema.Union([PostMessage, UpdateMessageStatus, UpdateMessageMetadata])
+/**
+ * The whole body `author` has written of its message so far. `author` is who submits it, as the shard admitted them:
+ * the reducer refuses anyone but the message's own author.
+ */
+export const UpdateMessageBody = Schema.TaggedStruct("UpdateMessageBody", {
+  messageId: Schema.String,
+  author: Schema.String,
+  body: StreamedBody
+})
+export const ChatCommand = Schema.Union([PostMessage, UpdateMessageStatus, UpdateMessageMetadata, UpdateMessageBody])
 export type ChatCommand = typeof ChatCommand.Type
 
 export const MessagePosted = Schema.TaggedStruct("MessagePosted", {
@@ -160,10 +193,25 @@ export const MessageMetadataUpdated = Schema.TaggedStruct("MessageMetadataUpdate
   ...runFields,
   ...notesFields
 })
-export const ChatEvent = Schema.Union([MessagePosted, MessageStatusUpdated, MessageMetadataUpdated])
+export const MessageBodyUpdated = Schema.TaggedStruct("MessageBodyUpdated", {
+  id: Schema.String,
+  body: StreamedBody
+})
+export const ChatEvent = Schema.Union([MessagePosted, MessageStatusUpdated, MessageMetadataUpdated, MessageBodyUpdated])
 export type ChatEvent = typeof ChatEvent.Type
 
-export type ChatRefusal = "message_conflict" | "message_missing" | "terminal_status" | "terminal_metadata"
+/** Every reason the reducer refuses a command for: fixed codes, safe to log and to count by. */
+export const CHAT_REFUSALS = [
+  "message_conflict",
+  "message_missing",
+  "terminal_status",
+  "terminal_metadata",
+  "body_question",
+  "body_author",
+  "terminal_body",
+  "body_conflict"
+] as const
+export type ChatRefusal = (typeof CHAT_REFUSALS)[number]
 
 const ORIGIN_KEYS = Object.keys(originFields) as ReadonlyArray<keyof MessageOrigin>
 const RUN_KEYS = Object.keys(runFields) as ReadonlyArray<keyof MessageRun>
@@ -242,6 +290,18 @@ export const decideChat = (chat: Chat, command: ChatCommand): Decision<ChatEvent
       if (isTerminal(existing.status) && !same(runOf(before), runOf(after))) return refused("terminal_metadata")
       return accepted([{ _tag: "MessageMetadataUpdated", id: command.messageId, ...patch }])
     }
+    case "UpdateMessageBody": {
+      const existing = findMessage(chat, command.messageId)
+      if (existing === undefined) return refused("message_missing")
+      // A question is never rewritten, by anyone; then only the message's own author extends it.
+      if (existing.role === "user") return refused("body_question")
+      if (existing.author !== command.author) return refused("body_author")
+      // What the message already says, or said on the way here: a retry or a late update. Nothing to write.
+      if (existing.body.startsWith(command.body)) return accepted([])
+      if (isTerminal(existing.status)) return refused("terminal_body")
+      if (!command.body.startsWith(existing.body)) return refused("body_conflict")
+      return accepted([{ _tag: "MessageBodyUpdated", id: command.messageId, body: command.body }])
+    }
   }
 }
 
@@ -274,5 +334,9 @@ export const evolveChat = (chat: Chat, hubSeq: number, event: ChatEvent): Chat =
         messages: chat.messages.map((message) => (message.id === event.id ? { ...message, ...patch } : message))
       }
     }
+    case "MessageBodyUpdated":
+      return {
+        messages: chat.messages.map((message) => (message.id === event.id ? { ...message, body: event.body } : message))
+      }
   }
 }

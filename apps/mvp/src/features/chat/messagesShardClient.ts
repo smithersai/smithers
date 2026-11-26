@@ -43,7 +43,8 @@ export const messagesRoute = (origin: string, conversationId: string): string | 
  * The shard gave no protocol answer:
  * - `unreachable`: no whole answer within the deadline, its body included, for example offline;
  * - `refused`: a status other than 200, with ChatApi's `refusal` when it names one (`origin`, `author`, `person_only`,
- *   `wrong_shard`);
+ *   `wrong_shard`, `question` for a body update to the person's own question, or `reserved` for a post under a
+ *   message id ChatApi itself stored);
  * - `invalid_response`: 200 with a body outside protocol v2, or entries the reducer cannot fold;
  * - `invalid_target`: the conversation id is not a UUID or the origin is not an HTTP origin, so nothing was sent.
  */

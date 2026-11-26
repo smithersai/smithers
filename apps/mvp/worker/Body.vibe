@@ -5,8 +5,13 @@ import type { HttpServerRequest } from "effect/http"
 
 export const MAX_PLAN_MCP_BYTES = 65_536
 
-/** A submit to a conversation's messages shard: one command, its key and its stream (worker/chat/MessagesShardRoutes.ts). */
-export const MAX_MESSAGES_SHARD_BYTES = 65_536
+/**
+ * A submit to a conversation's messages shard: one command, its key and its stream (worker/chat/MessagesShardRoutes.ts).
+ * 192 KiB: the longest body the reducer takes, in its longest encoding (`MAX_BODY_WIRE_BYTES`, `@smthrs/app-state`:
+ * 32,000 UTF-16 code units at up to six bytes each as JSON in UTF-8), and 4,606 bytes for the rest of the command.
+ * A smaller cap refuses an answer ChatApi already stored, whose every retry is then refused the same way.
+ */
+export const MAX_MESSAGES_SHARD_BYTES = 196_608
 
 /** Why a body couldn't be read: larger than the route's limit (`too_large`), malformed UTF-8 (`utf8`), or cut off. */
 export error BodyRefused {
@@ -21,10 +26,11 @@ export const readBounded = (
   request: HttpServerRequest.HttpServerRequest,
   maxBytes: number,
   onBytes: (bytes: number) => void = () => {},
+  preserveBom = false,
 ): string!BodyRefused => {
   if (Number(request.headers["content-length"]) > maxBytes) return fail(new BodyRefused({ reason: "too_large" }))
   return effect {
-    const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false })
+    const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: preserveBom })
     const decode = (chunk?: Uint8Array) =>
       Effect.try({
         try: () => (chunk === undefined ? decoder.decode() : decoder.decode(chunk, { stream: true })),

@@ -18,6 +18,7 @@ def decide (s : AppState) : Command → Decision
     decidePost s.chat id author body origin run notes
   | .updateMessageStatus id status => decideMessageStatus s.chat id status
   | .updateMessageMetadata id run notes => decideMessageMetadata s.chat id run notes
+  | .updateMessageBody id author body => decideMessageBody s.chat id author body
 
 def evolve (s : AppState) (c : Commit) : AppState :=
   { plan := evolvePlan s.plan c.event, chat := evolveChat s.chat c.hubSeq c.event }
@@ -97,6 +98,21 @@ theorem decide_valid {s : AppState} {c : Command} {evs : List Event}
       · split at h
         · cases h
         · injection h with h; subst h; exact Or.inr ⟨_, rfl, trivial⟩
+  | updateMessageBody id author body =>
+    simp only [decide, decideMessageBody] at h
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+        · split at h
+          · injection h with h; subst h; exact Or.inl rfl
+          · split at h
+            · cases h
+            · split at h
+              · injection h with h; subst h; exact Or.inr ⟨_, rfl, trivial⟩
+              · cases h
 
 /-- Applying the events of one accepted command, at any sequence numbers. -/
 theorem commits_preserve_wf {s : AppState} {evs : List Event} (hwf : s.plan.WF)

@@ -35,8 +35,8 @@ test("POST /api/hosted-model has a 256-byte body limit", async () => {
   expect(await Effect.runPromise(BodyLimits.forRequest("/api/hosted-model"))).toBe(256)
 })
 
-test("a submit to a conversation's messages shard takes 64 KiB; its reads keep the aggregate cap", async () => {
+test("a submit to a conversation's messages shard takes 192 KiB; its reads keep the aggregate cap", async () => {
   const base = "/api/conversations/3f2b8c1e-5d4a-4b7e-9c1d-2a6f0e8b7c5d/messages/"
-  expect(await Effect.runPromise(BodyLimits.forRequest(base + "submit"))).toBe(65_536)
+  expect(await Effect.runPromise(BodyLimits.forRequest(base + "submit"))).toBe(196_608)
   expect(await Effect.runPromise(BodyLimits.forRequest(base + "pull?after=0"))).toBe(BodyLimits.MAX_BODY_BYTES)
 })

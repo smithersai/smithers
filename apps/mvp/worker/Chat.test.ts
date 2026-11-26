@@ -4,12 +4,18 @@ import * as WriteAdmission from "./WriteAdmission.ts"
 import { Metric as OtlpMetric } from "@smthrs/observability"
 import { Data, Effect, Layer, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
+import { ShardProtocol } from "@smthrs/sync"
 import { describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "./Actor.ts"
 import * as ConversationPeople from "./branch/ConversationPeople.vibe"
 import * as ChatMetrics from "./ChatMetrics.ts"
+import { rowsOf } from "../src/features/chat/messagesShard.ts"
+import { shardHost } from "../src/test/messagesShardHost.ts"
+import * as Bridge from "./chat/MessagesShardBridge.ts"
+import * as MessagesShard from "./chat/MessagesShard.ts"
+import { personOwner } from "./chat/MessagesShardRoutes.ts"
 import { shared, tracked } from "./test/branch.ts"
 import { answers, harness, recorded, row, rowCount, testFile, uuid } from "./test/harness.ts"
 
@@ -21,6 +27,8 @@ const nowhere = Database.layer(Effect.succeed(Redacted.make("postgresql://smithe
 const member: Actor = { subject: { kind: "person", id: "person-member" }, role: "member" }
 const guest: Actor = { subject: { kind: "person", id: "person-guest" }, role: "guest" }
 const roleless: Actor = { subject: { kind: "person", id: "person-roleless" }, role: null }
+/** Another person the messages shard's host admits to the conversation (src/test/messagesShardHost.ts). */
+const reader: Actor = { subject: { kind: "person", id: "person-reader" }, role: "member" }
 
 /** ChatApi with a Member signed in on every request, and a model that never answers: nothing on the server calls it. */
 const asMember = (options: Parameters<typeof harness>[2] = {}) =>
@@ -56,6 +64,152 @@ const bytes = (...parts: ReadonlyArray<string | ReadonlyArray<number>>) =>
   new Uint8Array(parts.flatMap((part) => (typeof part === "string" ? [...new TextEncoder().encode(part)] : part)))
 
 describe("POST /api/questions", () => {
+  test("a stored question and its pending answer are also sequenced into the conversation's shard, once", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const branch = yield* Effect.promise(() => tracked(runtime, "github/octocat/spoon-knife", `shard-bridge-${uuid()}`))
+      const host = yield* shardHost()
+      const h = yield* Effect.promise(() => asMember({ messagesShard: Bridge.MessagesShardBridge.make(host.forward) }))
+      // Ids in capitals, as a client may send them: Postgres and the shard both hold them lowercase.
+      const ids = { id: uuid(), answerId: uuid() }
+      const body = { id: ids.id.toUpperCase(), answerId: ids.answerId.toUpperCase(), text: "What is a shard?", conversationId: branch.conversationId }
+      const first = yield* Effect.promise(() => h.ask(body))
+      expect(first.status).toBe(202)
+      const state = () => Effect.map(host.state(branch.conversationId), ({ chat }) => chat.messages)
+      const sequenced = [
+        { id: ids.id, author: Bridge.questionOwner(ids.id), body: "What is a shard?", status: "posted", hubSeq: 1, role: "user" },
+        {
+          id: ids.answerId,
+          author: Bridge.answerOwner(ids.answerId),
+          body: "",
+          status: "streaming",
+          hubSeq: 2,
+          role: "assistant",
+          questionId: ids.id,
+        },
+      ]
+      expect(yield* state()).toEqual(sequenced)
+      // The rows read off the shard are the rows Postgres holds.
+      const stored = yield* Effect.promise(() => Promise.all([row(runtime, ids.id), row(runtime, ids.answerId)]))
+      expect(rowsOf({ messages: yield* state() }, { conversationId: branch.conversationId }).map((message) =>
+        [message.id, message.role, message.text, message.status === "done" ? "done" : "streaming", message.questionId]))
+        .toEqual(stored.map((message) => [message.id, message.role, message.text, message.status, message.questionId]))
+      // The same request again: Postgres finds the question asked, and the shard answers from its receipts.
+      const again = yield* Effect.promise(() => h.ask(body))
+      expect([again.status, yield* Effect.promise(() => again.json())]).toEqual([200, { txid: null, existing: true }])
+      expect(yield* state()).toEqual(sequenced)
+      expect((yield* host.head(branch.conversationId)).seq).toBe(3)
+      expect(h.count(Bridge.writes, { write: "asked", outcome: "ok" })).toBe(2)
+      expect(h.line("chat.shard.bridge")).toEqual([])
+      // A question Postgres refuses is never bridged.
+      const refused = yield* Effect.promise(() => h.ask({ ...body, text: "Other words under the same id" }))
+      expect(refused.status).toBe(409)
+      expect(h.count(Bridge.writes, { write: "asked", outcome: "ok" })).toBe(2)
+      expect((yield* host.head(branch.conversationId)).seq).toBe(3)
+
+      // Who asked stays on the server: what another reader of the conversation is sent, by Pull and, once the journal
+      // is compacted, by Snapshot, names the asker nowhere, neither as an author nor inside a key.
+      expect(yield* Effect.promise(() => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`SELECT asked_by AS "askedBy" FROM messages WHERE id = ${ids.id}`)))).toEqual([{ askedBy: member.subject.id }])
+      const shard = MessagesShard.shardOf(branch.conversationId)
+      const read = (path: string) =>
+        Effect.promise(async () => {
+          const response = await host.fetchAs(reader)(`https://smithers.test/api/conversations/${branch.conversationId}/messages/${path}`)
+          expect(response.status).toBe(200)
+          return await response.text()
+        })
+      const pulled = yield* read("pull?" + ShardProtocol.pullQuery({ version: 2, shard, epoch: 0, after: 0, limit: 256 }))
+      yield* host.compact(branch.conversationId)
+      const snapshot = yield* read(`snapshot?shard=${encodeURIComponent(shard)}`)
+      for (const wire of [pulled, snapshot]) {
+        expect(wire).toContain(ids.id)
+        expect(wire).not.toContain(member.subject.id)
+        expect(wire).not.toContain(personOwner(member.subject.id))
+      }
+    }))))
+
+  test("ChatApi's ids are its own in every shard, before Postgres commits one and after: nobody else posts under one, and no post learns which exist", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const branch = yield* Effect.promise(() => tracked(runtime, "github/octocat/spoon-knife", `shard-reserved-${uuid()}`))
+      const far = yield* Effect.promise(() => tracked(runtime, "github/octocat/spoon-knife", `shard-reserved-far-${uuid()}`))
+      // The shard's route as ChatApi serves it: it is given no way to ask Postgres anything about a message id.
+      const host = yield* shardHost()
+      const post = (actor: Actor, messageId: string, conversationId = branch.conversationId) =>
+        Effect.promise(async () => {
+          const owner = personOwner(actor.subject.id)
+          const shard = MessagesShard.shardOf(conversationId)
+          const response = await host.fetchAs(actor)(`https://smithers.test/api/conversations/${conversationId}/messages/submit`, {
+            method: "POST",
+            body: JSON.stringify({
+              version: 2,
+              shard,
+              epoch: 0,
+              command: { key: [owner + "/page", messageId], stream: shard, payload: { _tag: "PostMessage", messageId, author: owner, body: "mine now" } },
+            }),
+          })
+          return [response.status, response.headers.get("x-smithers-messages-refusal"), await response.text()]
+        })
+      const stored = (id: string) =>
+        Effect.promise(() => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT 1 FROM messages WHERE id = ${id}`)))
+      const ids = { id: uuid(), answerId: uuid() }
+      const body = { ...ids, text: "What is reserved?", conversationId: branch.conversationId }
+      const reserved = [403, "reserved", ""]
+      // Before ChatApi stores it, Postgres holds no such id. Another person, and the asker's own page, each post under
+      // the ids the ask is about to use: refused already, with nothing sequenced.
+      expect(yield* stored(ids.id)).toEqual([])
+      for (const actor of [reader, member]) {
+        expect(yield* post(actor, ids.id)).toEqual(reserved)
+        expect(yield* post(actor, ids.answerId)).toEqual(reserved)
+      }
+      expect((yield* host.head(branch.conversationId)).seq).toBe(0)
+      // The ask is stored; the shard cannot be reached, so the bridge writes nothing. The same posts again, after the
+      // commit and before the bridge: refused the same way.
+      const down = yield* Effect.promise(() => asMember({ messagesShard: Bridge.MessagesShardBridge.make(() => Effect.fail("down")) }))
+      expect((yield* Effect.promise(() => down.ask(body))).status).toBe(202)
+      expect(yield* stored(ids.id)).toHaveLength(1)
+      for (const actor of [reader, member]) {
+        expect(yield* post(actor, ids.id)).toEqual(reserved)
+        expect(yield* post(actor, ids.answerId)).toEqual(reserved)
+      }
+      expect((yield* host.head(branch.conversationId)).seq).toBe(0)
+      // No answer says whether an id exists: in the other conversation, an id Postgres holds here and one it holds
+      // nowhere are answered byte for byte alike, and so are both in this one.
+      const never = uuid()
+      expect(yield* stored(never)).toEqual([])
+      expect(yield* post(reader, ids.id, far.conversationId)).toEqual(reserved)
+      expect(yield* post(reader, never, far.conversationId)).toEqual(reserved)
+      expect(yield* post(reader, never)).toEqual(reserved)
+      expect((yield* host.head(far.conversationId)).seq).toBe(0)
+      // An id spelled as no ChatApi message is stays the poster's own.
+      const own = yield* post(reader, "page-" + never)
+      expect(own.slice(0, 2)).toEqual([200, null])
+      expect(JSON.parse(own[2] as string)).toMatchObject({ _tag: "Accepted" })
+      // The ask again, with the shard back: the bridge's posts land whole.
+      const up = yield* Effect.promise(() => asMember({ messagesShard: Bridge.MessagesShardBridge.make(host.forward) }))
+      expect((yield* Effect.promise(() => up.ask(body))).status).toBe(200)
+      expect((yield* host.state(branch.conversationId)).chat.messages.slice(1).map((message) => [message.id, message.author, message.status]))
+        .toEqual([[ids.id, Bridge.questionOwner(ids.id), "posted"], [ids.answerId, Bridge.answerOwner(ids.answerId), "streaming"]])
+      // And once bridged, the same answer still.
+      expect(yield* post(reader, ids.id)).toEqual(reserved)
+      expect(yield* post(reader, ids.id, far.conversationId)).toEqual(reserved)
+    }))))
+
+  test("a shard that cannot be reached never fails the ask Postgres stored, and logs nothing anyone wrote", async () => {
+    const branch = await tracked(runtime, "github/octocat/spoon-knife", `shard-bridge-down-${uuid()}`)
+    const h = await asMember({
+      messagesShard: Bridge.MessagesShardBridge.make(() => Effect.fail(new Error("a question nobody may log"))),
+    })
+    const ids = { id: uuid(), answerId: uuid() }
+    const response = await h.ask({ ...ids, text: "a question nobody may log", conversationId: branch.conversationId })
+    expect(response.status).toBe(202)
+    expect((await row(runtime, ids.answerId)).status).toBe("streaming")
+    expect(h.only("chat.shard.bridge")).toMatchObject({
+      level: "WARN",
+      annotations: { write: "asked", conversationId: branch.conversationId, outcome: "unavailable", reason: "unreachable" },
+    })
+    expect(JSON.stringify(h.logs)).not.toContain("nobody may log")
+    expect(h.count(Bridge.writes, { write: "asked", outcome: "unavailable" })).toBe(1)
+  })
+
   test("history persistence failing never fails an already stored ask", async () => {
     const branch = await tracked(runtime, "github/octocat/spoon-knife", `history-fault-${uuid()}`)
     const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))

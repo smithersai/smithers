@@ -3,7 +3,8 @@
  *
  * Each trace drives one shard authority and three replicas through request
  * drops, response drops, duplicate and reordered deliveries, skipped pages,
- * stale generations, cycle-creating moves, and concurrent edits. The TypeScript
+ * stale generations, cycle-creating moves, concurrent edits, and streamed message
+ * bodies written by their author, by strangers, late, and after the end. The TypeScript
  * machine checks its own invariants at every step. The same traces, run through
  * the compiled Lean oracle, produced `fixtures/lean-oracle-receipt.jsonl`;
  * the last test demands 100% agreement with it.
@@ -63,6 +64,12 @@ interface Stats {
   terminalStatusRefusals: number
   terminalMetadataRefusals: number
   terminalNotes: number
+  bodyUpdates: number
+  bodyNoops: number
+  bodyQuestionRefusals: number
+  bodyAuthorRefusals: number
+  terminalBodyRefusals: number
+  bodyConflicts: number
   staleGenerationSubmits: number
   requestDrops: number
   responseDrops: number
@@ -88,6 +95,12 @@ const emptyStats = (): Stats => ({
   terminalStatusRefusals: 0,
   terminalMetadataRefusals: 0,
   terminalNotes: 0,
+  bodyUpdates: 0,
+  bodyNoops: 0,
+  bodyQuestionRefusals: 0,
+  bodyAuthorRefusals: 0,
+  terminalBodyRefusals: 0,
+  bodyConflicts: 0,
   staleGenerationSubmits: 0,
   requestDrops: 0,
   responseDrops: 0,
@@ -134,10 +147,15 @@ const ROLES = ["user", "assistant"] as const
 const FAILURES = ["quota", "rate_limited", "model_error", "empty", "abandoned", "unfinished"] as const
 const PART_STATUSES = ["running", "done", "failed"] as const
 const STAMPS = ["2026-11-25T10:00:00Z", "2026-11-25T10:00:01Z", "2026-11-25T10:00:02Z"] as const
+/** What a run streams next. ASCII, so a prefix is the same prefix in UTF-16 and in Lean's code points. */
+const CHUNKS = [" and", " then", ".", " ok", "!"] as const
 
-/** What no event after the post may change. Independent of `decide`: read straight off two states. */
+/**
+ * What no event after the post may change. Independent of `decide`: read straight off two states. The body is not
+ * part of it: a body only grows, which the submit check below reads off the same two states.
+ */
 const identityOf = (message: Message): string =>
-  canonicalJson([message.id, message.author, message.body, message.hubSeq, originOf(message)])
+  canonicalJson([message.id, message.author, message.hubSeq, originOf(message)])
 
 interface Pending {
   readonly commandId: string
@@ -226,13 +244,29 @@ const simulate = (seed: number): Trace => {
         else if (ran.code === "R:message_conflict") stats.messageConflicts++
         else if (ran.code === "R:terminal_status") stats.terminalStatusRefusals++
         else if (ran.code === "R:terminal_metadata") stats.terminalMetadataRefusals++
+        else if (ran.code === "R:body_question") stats.bodyQuestionRefusals++
+        else if (ran.code === "R:body_author") stats.bodyAuthorRefusals++
+        else if (ran.code === "R:terminal_body") stats.terminalBodyRefusals++
+        else if (ran.code === "R:body_conflict") stats.bodyConflicts++
       }
-      // Whatever the op was: identity never changes, a terminal status never moves,
-      // and a terminal message's run fields are frozen.
+      // Whatever the op was: identity never changes, a body only grows and only by its author's own body command,
+      // a terminal status never moves, and a terminal message's body and run fields are frozen.
       const after = new Map(world.hub.state.chat.messages.map((message) => [message.id, message]))
       for (const was of before.state.chat.messages) {
         const now = after.get(was.id) ?? fail(`message ${was.id} vanished`)
         if (identityOf(now) !== identityOf(was)) fail(`message ${was.id} changed identity`)
+        if (now.body !== was.body) {
+          if (!now.body.startsWith(was.body)) fail(`message ${was.id} lost part of its body`)
+          if (was.role === "user") fail(`question ${was.id} changed its body`)
+          if (isTerminal(was.status)) fail(`terminal message ${was.id} changed its body`)
+          const by = op.command
+          if (by._tag !== "UpdateMessageBody" || by.messageId !== was.id) fail(`${by._tag} changed the body of ${was.id}`)
+          else if (by.author !== was.author) fail(`${by.author} changed the body of ${was.author}'s message ${was.id}`)
+          else if (by.body !== now.body) fail(`message ${was.id} holds a body no command carried`)
+          if (now.status !== was.status || canonicalJson(metadataOf(now)) !== canonicalJson(metadataOf(was))) {
+            fail(`a body update moved the status or the metadata of ${was.id}`)
+          }
+        }
         if (!isTerminal(was.status)) continue
         if (now.status !== was.status) fail(`terminal message ${was.id} changed status`)
         if (canonicalJson(runOf(now)) !== canonicalJson(runOf(was))) fail(`terminal message ${was.id} changed its run`)
@@ -249,6 +283,21 @@ const simulate = (seed: number): Trace => {
       if (op.command._tag === "UpdateMessageMetadata") {
         if (kind === "A" && ran.code.endsWith(":1")) stats.metadataUpdates++
         else if (kind === "A") stats.metadataNoops++
+      }
+      if (op.command._tag === "UpdateMessageBody" && kind === "A") {
+        const { messageId, body } = op.command
+        const was = before.state.chat.messages.find((message) => message.id === messageId) ??
+          fail(`a body update for the missing message ${messageId} was accepted`)
+        const now = after.get(messageId)!
+        if (ran.code.endsWith(":1")) {
+          // One commit, and the message says exactly what its author sent.
+          if (now.body !== body || body === was.body) fail(`body update of ${messageId} did not write its body`)
+          stats.bodyUpdates++
+        } else {
+          // Nothing written: the message already said it, or had said it on the way.
+          if (now !== was || !was.body.startsWith(body)) fail(`body no-op of ${messageId} was not a no-op`)
+          stats.bodyNoops++
+        }
       }
       checkHub()
     } else if (op.op === "deliver") {
@@ -304,9 +353,42 @@ const simulate = (seed: number): Trace => {
     }
   }
 
-  /** A status or a metadata update for a message the replica can see, or, rarely, for one that does not exist. */
+  /**
+   * The whole body someone says a message has now. Mostly its author extending it, as a run streams; sometimes a
+   * stranger, a body it already holds or held, a body that diverges, a question, a finished message or a missing one.
+   */
+  const bodyUpdate = (view: AppState): Command => {
+    const messages = view.chat.messages
+    const finished = messages.filter((message) => isTerminal(message.status))
+    const questions = messages.filter((message) => message.role === "user")
+    const aim = rng()
+    const target = aim < 0.06
+      ? undefined
+      : aim < 0.26 && finished.length > 0
+      ? pick(finished)
+      : aim < 0.4 && questions.length > 0
+      ? pick(questions)
+      : pick(messages)
+    if (target === undefined) return { _tag: "UpdateMessageBody", messageId: "m-missing", author: "r0", body: "lost" }
+    const shape = rng()
+    return {
+      _tag: "UpdateMessageBody",
+      messageId: target.id,
+      author: rng() < 0.12 ? "stranger" : target.author,
+      body: shape < 0.62
+        ? target.body + pick(CHUNKS)
+        : shape < 0.78
+        ? target.body.slice(0, int(target.body.length + 1))
+        : shape < 0.9
+        ? `~${target.body}`
+        : target.body
+    }
+  }
+
+  /** A status, a metadata or a body update for a message the replica can see, or, rarely, for one that does not exist. */
   const messageUpdate = (view: AppState): Command => {
     const messages = view.chat.messages
+    if (messages.length > 0 && rng() < 0.35) return bodyUpdate(view)
     // Half of the time a finished message, when there is one: the frozen side of the machine.
     const finished = messages.filter((message) => isTerminal(message.status))
     const late = finished.length > 0 && rng() < 0.5

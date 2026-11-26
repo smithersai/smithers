@@ -135,6 +135,8 @@ export default defineConfig({
         // Alchemy Durable Object declaration, runs only under Alchemy's bundle; its handler is proved through these two.
         "worker/chat/MessagesShard.ts",
         "worker/chat/MessagesShardRoutes.ts",
+        // ChatApi's own question and answer writes, sequenced into the shard as well (decision 0170, slice 4c).
+        "worker/chat/MessagesShardBridge.ts",
         "db/migrations/0011_question_askers.ts",
         // The edge throttle on the open routes (docs/features/chat.md#throttling).
         "worker/Throttle.vibe",
