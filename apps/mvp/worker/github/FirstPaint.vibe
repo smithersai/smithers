@@ -1,4 +1,3 @@
-import { Cause, Context, Duration, Effect, Exit, Fiber, Option } from "effect"
 import { HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { FIRST_PAINT_SEGMENT, type FirstPaint, type FirstPaintIssue, ISSUE_PAGE_DEFAULT } from "../../src/features/issues/contract.ts"
@@ -32,7 +31,7 @@ export const BEHIND_WITHIN = Duration.seconds(15)
  * Work a request leaves to run after its response (worker/RequestBackground.vibe). A first paint past its deadline leaves
  * its role read here, so the person's next read finds it fresh. Absent, as in a test that gives none, nothing runs.
  */
-export class Behind extends Context.Service<Behind, { readonly run: (work: Effect.Effect<void>) => Effect.Effect<void> }>()(
+export class Behind extends Context.Service<Behind, { readonly run: (work: void!!) => void!! }>()(
   "@smthrs/mvp/github/first-paint/Behind",
 ) {}
 
@@ -77,23 +76,22 @@ const issueOf = (row: Row): FirstPaintIssue => ({ number: row.number, title: row
  * What `form` reads of repository `repoId`: its issue, or the first page of its issues in the list's default order
  * (latest update first, then the highest number; `IssueList.page`'s order). `undefined`: no such issue.
  */
-export const read = (repoId: string, form: Form) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    if (form.kind === "issue") {
-      const rows = yield* sql<Row>`
-        SELECT number, title, state, author_login FROM items
-        WHERE repo_id = ${repoId} AND number = ${form.number} AND kind = 'issue' AND deleted_at IS NULL`
-      const [row] = rows
-      return row === undefined ? undefined : { issue: issueOf(row) }
-    }
-    const rows = yield* sql<Row>`
+export const read = effect (repoId: string, form: Form) => {
+  const sql = try SqlClient.SqlClient
+  if (form.kind === "issue") {
+    const rows = try sql<Row>`
       SELECT number, title, state, author_login FROM items
-      WHERE repo_id = ${repoId} AND kind = 'issue' AND deleted_at IS NULL
-      ORDER BY updated_at DESC, number DESC
-      LIMIT ${ISSUE_PAGE_DEFAULT}`
-    return { list: rows.map(issueOf) }
-  })
+      WHERE repo_id = ${repoId} AND number = ${form.number} AND kind = 'issue' AND deleted_at IS NULL`
+    const [row] = rows
+    return row === undefined ? undefined : { issue: issueOf(row) }
+  }
+  const rows = try sql<Row>`
+    SELECT number, title, state, author_login FROM items
+    WHERE repo_id = ${repoId} AND kind = 'issue' AND deleted_at IS NULL
+    ORDER BY updated_at DESC, number DESC
+    LIMIT ${ISSUE_PAGE_DEFAULT}`
+  return { list: rows.map(issueOf) }
+}
 
 /** The one answer every first paint that doesn't paint gets. */
 export const nothing = () => HttpServerResponse.empty({ status: 204, headers: FIRST_PAINT_HEADERS })
@@ -110,49 +108,47 @@ export const painted = (body: FirstPaint) => HttpServerResponse.jsonUnsafe(body,
  * Cancellation before that handoff also interrupts the read without waiting for its cleanup.
  */
 export const guarded = <E, R>(
-  answer: (fields: Record<string, string | number>) => Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
+  answer: (fields: Record<string, string | number>) => HttpServerResponse.HttpServerResponse!E!R,
   fields: Record<string, string | number>,
   codeOf: (error: unknown) => string,
   deadlineMs: number = FIRST_PAINT_DEADLINE_MS,
   behindMs: Duration.Input = BEHIND_WITHIN,
-): Effect.Effect<HttpServerResponse.HttpServerResponse, never, R> =>
-  Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
+): HttpServerResponse.HttpServerResponse!!R =>
+  uninterruptibleMask((restoreRead) => effect {
     // The read writes its own fields, which only an answer in time hands back: a late read rewrites nothing counted.
     const own = { ...fields }
-    const read = yield* Effect.forkDetach(restore(answer(own)))
-    const stop = Effect.asVoid(Effect.forkDetach(Fiber.interrupt(read)))
+    const read = fork.detached restoreRead(answer(own))
+    const stop = effect { fork.detached Fiber.interrupt(read) }
     let handedOff = false
     // Install cancellation cleanup before restoring interruption; only a completed registration releases ownership.
-    return yield* restore(Effect.gen(function* () {
-      const answered = yield* Fiber.join(read).pipe(Effect.timeoutOption(Duration.millis(deadlineMs)))
+    return try ensuring(restoreRead(effect {
+      const answered = try timeoutOption(Fiber.join(read), Duration.millis(deadlineMs))
       if (Option.isSome(answered)) {
         Object.assign(fields, own)
         return answered.value
       }
       fields.outcome = "deadline"
-      const behind = yield* Effect.serviceOption(Behind)
-      yield* Option.isNone(behind) ? stop : behind.value.run(
-        Fiber.await(read).pipe(
-          Effect.timeoutOption(behindMs),
-          Effect.flatMap(Option.match({
-            onNone: () => stop,
+      const behind = try serviceOption(Behind)
+      if (Option.isNone(behind)) {
+        try stop
+      } else {
+        try behind.value.run(effect {
+          const settled = try timeoutOption(Fiber.await(read), behindMs)
+          if (Option.isNone(settled)) {
+            try stop
+          } else if (Exit.isFailure(settled.value)) {
             // Behind the response nothing else says a read failed.
-            onSome: Exit.match({
-              onFailure: (cause) => Effect.logWarning("github.first_paint.behind").pipe(Effect.annotateLogs({ errorCode: codeOf(Cause.squash(cause)) })),
-              onSuccess: () => Effect.void,
-            }),
-          })),
-        ),
-      )
+            try annotateLogs(logWarning("github.first_paint.behind"), { errorCode: codeOf(Cause.squash(settled.value.cause)) })
+          }
+        })
+      }
       handedOff = true
       return nothing()
-    })).pipe(Effect.ensuring(Effect.suspend(() => handedOff ? Effect.void : stop)))
-  })).pipe(
-    Effect.catchCause((cause) =>
-      Effect.sync(() => {
-        fields.outcome = "error"
-        fields.errorCode = codeOf(Cause.squash(cause))
-        return nothing()
-      })
-    ),
+    }), suspend(() => handedOff ? Effect.void : stop))
+  }).pipe(
+    catchCause((cause) => sync(() => {
+      fields.outcome = "error"
+      fields.errorCode = codeOf(Cause.squash(cause))
+      return nothing()
+    })),
   )

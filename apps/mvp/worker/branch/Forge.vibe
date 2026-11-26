@@ -1,4 +1,4 @@
-import { withUserAgent } from "../github/Http.ts"
+import { withUserAgent } from "../github/Http.vibe"
 import { CreateRefused } from "./CreateRefused.vibe"
 export { CreateRefused } from "./CreateRefused.vibe"
 import { type CodeStorage, GitProxy, GitRemote } from "@smthrs/effect-code-storage"

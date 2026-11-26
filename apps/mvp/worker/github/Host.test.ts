@@ -1,6 +1,6 @@
 import { TestSchemas } from "@smthrs/database"
 import * as GitHubCreation from "../branch/GitHubCreation.vibe"
-// What a host builds to run the git loop (worker/github/{Config,Host}.ts, worker/ExecutionHost.ts `withGitHub`): the
+// What a host builds to run the git loop (worker/github/{Config,Host}.vibe, worker/ExecutionHost.ts `withGitHub`): the
 // App's settings from Config, the App itself, and the Durable Object's handlers running `github/Write` to the end over
 // the compose Postgres (`pnpm db:up`) with an in-memory object storage, as worker/ExecutionHost.test.ts runs the others.
 import * as Pg from "@effect/sql-pg"
@@ -13,8 +13,8 @@ import { writeExecutionId } from "../../src/features/issues/contract.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as Apply from "./Apply.vibe"
-import * as GitHubConfig from "./Config.ts"
-import * as Host from "./Host.ts"
+import * as GitHubConfig from "./Config.vibe"
+import * as Host from "./Host.vibe"
 import * as Merge from "./Merge.ts"
 import * as Reconcile from "./Reconcile.ts"
 import * as Relations from "./Relations.ts"
@@ -99,6 +99,20 @@ describe("Host", () => {
     expect(installation).toEqual({ id: 77 })
   })
 
+  test("an explicit allowlist adds repositories to the host's own and excludes others", async () => {
+    const { made } = await ready({
+      GITHUB_APP_ID: APP_ID,
+      GITHUB_APP_PRIVATE_KEY: Redacted.value(await appKey()),
+      GITHUB_REPOSITORY: "acme/widgets",
+      GITHUB_ALLOWED_REPOSITORIES: "acme/tools, Other/Project",
+    })
+    const host = Option.getOrThrow(made)
+    expect(host.allowedRepositories).toEqual(["github/acme/widgets", "github/acme/tools", "github/other/project"])
+    expect(host.mayAct("github/acme/widgets")).toBe(true)
+    expect(host.mayAct("github/acme/tools")).toBe(true)
+    expect(host.mayAct("github/acme/private")).toBe(false)
+  })
+
   test("the Durable Object's handlers run github/Write to the end through withGitHub", async () => {
     const github = scriptedGitHub()
     const token = github.userToken("maya")
@@ -123,15 +137,14 @@ describe("Host", () => {
     )
     const sessionKeys = await keys()
     const { seat } = await judgeSeat(runtime, judging("abstain"))
+    const sessions = { keys: Option.some(sessionKeys), refresh: () => Effect.void }
+    const services = Host.services(made, sessions, () => seat)
+    expect(services.allowedRepositories).toEqual(made.allowedRepositories)
+    expect(Host.services({ ...made, allowedRepositories: undefined }, sessions, () => seat).allowedRepositories)
+      .toEqual([made.roles.repository.id])
     const flows = ExecutionHost.withGitHub(
       ExecutionHost.remote(app),
-      Effect.succeed(
-        Host.services(
-          made,
-          { keys: Option.some(sessionKeys), refresh: () => Effect.void },
-          () => seat,
-        ),
-      ),
+      Effect.succeed(services),
     )
     expect(flows.flows.slice(-8)).toEqual([Apply.Apply, Reconcile.Reconcile, Relations.Relations, Write.Write, MachineWrite.MachineDispatch, Triage.TriageRun, Merge.Merge, GitHubCreation.Create])
     const values = new Map<string, unknown>()

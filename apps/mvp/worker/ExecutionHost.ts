@@ -48,7 +48,7 @@ import * as FleetAlert from "./flows/FleetAlert.vibe"
 import * as RedactFeed from "./flows/RedactFeed.vibe"
 import * as Fleet from "./runners/Fleet.vibe"
 import * as RunnerAdmin from "./runners/AdminFlows.vibe"
-import * as GitHubHost from "./github/Host.ts"
+import * as GitHubHost from "./github/Host.vibe"
 import type * as Triage from "./github/Triage.ts"
 import { RoleFreshMs, SigningKeyIds } from "./SessionStore.ts"
 

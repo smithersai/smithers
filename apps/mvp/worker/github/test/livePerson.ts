@@ -5,7 +5,7 @@ import * as SessionStore from "../../SessionStore.ts"
 import { roleOf } from "../../GitHubAuth.ts"
 import type { Services } from "../Apply.vibe"
 import { withToken } from "../Calls.ts"
-import type { Repository } from "../Config.ts"
+import type { Repository } from "../Config.vibe"
 import { permissionOf } from "../RepoRoles.ts"
 
 /** Record the live test's acting person with the identity and permission GitHub actually reports. */

@@ -8,12 +8,12 @@ import { ROLES } from "../../src/features/auth/contract.ts"
 import type { Actor, Role } from "../Actor.ts"
 import { type Permission, roleOf } from "../GitHubAuth.ts"
 import { classify, isRateLimited, statusOf, withToken } from "./Calls.ts"
-import { type GitHubApp, type Repository, repositoryOf } from "./Config.ts"
+import { type GitHubApp, type Repository, repositoryOf } from "./Config.vibe"
 import * as Tokens from "./Tokens.ts"
 import { requestRay } from "../RequestRay.vibe"
 import * as Visibility from "./Visibility.ts"
 import * as ReadToken from "./ReadToken.ts"
-import { DEFAULT_API_URL } from "./Config.ts"
+import { DEFAULT_API_URL } from "./Config.vibe"
 import * as FeedLocks from "../FeedLocks.vibe"
 import { FRESH_SECONDS } from "./RoleAge.ts"
 export { FRESH_SECONDS } from "./RoleAge.ts"
@@ -145,9 +145,13 @@ export const allowed = Effect.gen(function* () {
   return Option.some<ReadonlySet<string>>(new Set(text.value.split(",").map((name) => repositoryOf(name.trim()).id)))
 })
 
-/** Whether a deployment with the App acts on repository `id` (decision 0079 §4): its own, or any other `allowed` keeps. */
-export const actsOn = (own: Repository, allowed: Option.Option<ReadonlySet<string>>) => (id: string) =>
-  id === own.id || Option.match(allowed, { onNone: () => true, onSome: (ids) => ids.has(id) })
+/**
+ * Whether a deployment with the App acts on repository `id` (decision 0079 §4): its own, or any other `allowed` keeps.
+ * @throws {never}
+ */
+export const actsOn = (own: Repository, allowed: Option.Option<ReadonlySet<string>>) =>
+  /** @throws {never} */
+  (id: string) => id === own.id || Option.match(allowed, { onNone: () => true, onSome: (ids) => ids.has(id) })
 
 /**
  * GitHub's answer as a `Permission` (decision 0079 §3): the role it names when it is one of GitHub's five, else an

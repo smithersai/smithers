@@ -27,7 +27,7 @@ import { AnswerRequest, type FeedAnswer, IngestRequest } from "../../src/feature
 import { type Actor, refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
-import { repositoryOf } from "../github/Config.ts"
+import { repositoryOf } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import * as ShapeAccess from "../ShapeAccess.vibe"
 

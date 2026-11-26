@@ -1,4 +1,4 @@
-import { withUserAgent } from "./github/Http.ts"
+import { withUserAgent } from "./github/Http.vibe"
 import { GitRemote } from "@smthrs/effect-code-storage"
 import { GitHub } from "@smthrs/integrations"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"

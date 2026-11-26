@@ -31,7 +31,7 @@ import * as Actor from "../Actor.ts"
 import * as RunCredentials from "../RunCredentials.ts"
 import { signedIn as signedInAs, testFile } from "../test/harness.ts"
 import { cookie, signInHarness } from "../test/signIn.ts"
-import { Behind, FIRST_PAINT_DEADLINE_MS } from "./FirstPaint.ts"
+import { Behind, FIRST_PAINT_DEADLINE_MS } from "./FirstPaint.vibe"
 import * as Metrics from "./Metrics.ts"
 import * as RepoRoles from "./RepoRoles.ts"
 import { reset, sql } from "./test/fixtures.ts"
@@ -536,7 +536,7 @@ describe("one access matrix for every reader of a repository's issues", () => {
   }, 60_000)
 })
 
-// The first paint (worker/github/FirstPaint.ts, devpriv FINAL §3.10) answers the same matrix as the session cookie's
+// The first paint (worker/github/FirstPaint.vibe, devpriv FINAL §3.10) answers the same matrix as the session cookie's
 // person alone: a runner's token beside it is never read, so the cookie's person decides. Every refusal, whatever its
 // reason, is one empty 204, and every answer is `private, no-store`.
 describe("the first paint answers the matrix as the cookie's person, one empty 204 for every refusal", () => {

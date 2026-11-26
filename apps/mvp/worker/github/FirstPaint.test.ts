@@ -1,9 +1,9 @@
-// The first paint's pure parts (worker/github/FirstPaint.ts): which paths and queries it answers, and that a late, failed
+// The first paint's pure parts (worker/github/FirstPaint.vibe): which paths and queries it answers, and that a late, failed
 // or dying read is the same empty 204 as a refusal. The access matrix and the reads are worker/github/Readers.test.ts's.
 import { Deferred, Effect, Exit, Fiber } from "effect"
 import { HttpServerResponse } from "effect/http"
 import { describe, expect, test, vi } from "vitest"
-import { Behind, FIRST_PAINT_HEADERS, guarded, parseFirstPaintPath, parseForm } from "./FirstPaint.ts"
+import { Behind, FIRST_PAINT_HEADERS, guarded, parseFirstPaintPath, parseForm } from "./FirstPaint.vibe"
 
 const code = (error: unknown) => (error instanceof Error ? error.name : "unknown")
 

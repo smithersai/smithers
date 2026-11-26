@@ -1,0 +1,18 @@
+import { GitHub } from "@smthrs/integrations"
+import { HttpClient, HttpClientRequest } from "effect/http"
+
+const githubHosts = new Set(["api.github.com", "github.com", "uploads.github.com"])
+
+/** Identify Worker calls to GitHub even when fetch supplies no User-Agent. Mixed egress keeps other hosts' headers. */
+export const withUserAgent = <A, E, R>(effect: A!E!R, githubHostsOnly = false) =>
+  provideServiceEffect(
+    effect,
+    HttpClient.HttpClient,
+    effect {
+      const http = try HttpClient.HttpClient
+      return HttpClient.mapRequest(http, (request) =>
+        !githubHostsOnly || githubHosts.has(new URL(request.url).hostname)
+          ? HttpClientRequest.setHeader(request, "user-agent", GitHub.GitHubClient.USER_AGENT)
+          : request)
+    },
+  )

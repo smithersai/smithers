@@ -1,5 +1,5 @@
 import { FlowStarter } from "../Flows.ts"
-import * as GitHubConfig from "../github/Config.ts"
+import * as GitHubConfig from "../github/Config.vibe"
 import * as GitHubCreation from "./GitHubCreation.vibe"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"

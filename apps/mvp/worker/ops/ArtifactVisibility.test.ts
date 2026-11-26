@@ -296,7 +296,7 @@ test("the Worker artifact handler returns the same 404 before storage for anonym
   const { Effect, Option } = await import("effect")
   const { HttpEffect } = await import("effect/http")
   const { Sessions } = await import("../Actor.ts")
-  const { repositoryOf } = await import("../github/Config.ts")
+  const { repositoryOf } = await import("../github/Config.vibe")
   const routes = await import("./ArtifactRoutes.vibe")
   const repository = repositoryOf("smithersai/Smithers-Ops")
   const run = "ci:fixture"
@@ -336,7 +336,7 @@ test("the Worker artifact handler verifies membership, the run association, and 
   const { Effect, Option } = await import("effect")
   const { HttpEffect } = await import("effect/http")
   const { Sessions } = await import("../Actor.ts")
-  const { repositoryOf } = await import("../github/Config.ts")
+  const { repositoryOf } = await import("../github/Config.vibe")
   const routes = await import("./ArtifactRoutes.vibe")
   const repository = repositoryOf("acme/widgets")
   const path = "/api/repos/acme/widgets/artifacts/run-1/report.txt"

@@ -8,7 +8,7 @@ import { Context, Effect, Layer } from "effect"
 import { HttpServerResponse } from "effect/http"
 import { afterAll, beforeAll, expect, test } from "vitest"
 import type { ColdReadPage } from "../test/coldReads"
-import { guarded, painted } from "../../worker/github/FirstPaint"
+import { guarded, painted } from "../../worker/github/FirstPaint.vibe"
 
 class PaintRead extends Context.Service<PaintRead, { readonly read: Effect.Effect<HttpServerResponse.HttpServerResponse, Error> }>()("first-paint-test/Read") {}
 const issue = { number: 7, title: "An issue", state: "open", author: null }

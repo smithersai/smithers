@@ -1,4 +1,4 @@
-import { withUserAgent } from "../github/Http.ts"
+import { withUserAgent } from "../github/Http.vibe"
 import { Egress } from "@smthrs/secrets"
 import type { HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SandboxBranch } from "./Sandboxes.vibe"

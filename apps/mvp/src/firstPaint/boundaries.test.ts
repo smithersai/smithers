@@ -5,7 +5,7 @@ import { Window } from "happy-dom"
 import { Clock, Context, Effect, Layer } from "effect"
 import { HttpServerResponse } from "effect/http"
 import { afterAll, beforeAll, expect, test } from "vitest"
-import { painted } from "../../worker/github/FirstPaint"
+import { painted } from "../../worker/github/FirstPaint.vibe"
 import { DATA_LOCK, WIPE } from "../wipe"
 import { startShell, type EndRecord, type ShellHost } from "./shell"
 

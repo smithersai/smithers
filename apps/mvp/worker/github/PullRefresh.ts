@@ -4,7 +4,7 @@ import { applyExecutionId, itemId, reconcileBucketStart } from "../../src/featur
 import { FlowStarter } from "../Flows.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { Apply } from "./Apply.vibe"
-import type { Repository } from "./Config.ts"
+import type { Repository } from "./Config.vibe"
 
 export const refreshes = Metric.counter("smithers_pull_refresh_starts", { incremental: true })
 export const receipts = Metric.counter("smithers_pull_absence_receipts", { incremental: true })

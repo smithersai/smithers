@@ -17,7 +17,7 @@ import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { FlowStarter } from "../Flows.ts"
 import { checkRunIdOf, ReviewRun } from "../flows/Checks.vibe"
-import { type GitHubApp, type Repository, repositoryOf } from "./Config.ts"
+import { type GitHubApp, type Repository, repositoryOf } from "./Config.vibe"
 import * as RepoRoles from "./RepoRoles.ts"
 
 // Review on request (decision 0129, docs/features/pulls.md#review-on-request): `POST

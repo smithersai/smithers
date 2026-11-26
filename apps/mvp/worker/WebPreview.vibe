@@ -1,4 +1,4 @@
-import { withUserAgent } from "./github/Http.ts"
+import { withUserAgent } from "./github/Http.vibe"
 import { ImmutableCache } from "@smthrs/artifacts"
 import { WebPage } from "@smthrs/views"
 import { identity } from "effect/Function"

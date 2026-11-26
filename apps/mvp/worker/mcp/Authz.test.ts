@@ -16,7 +16,7 @@ import {
   type Role,
   Sessions,
 } from "../Actor.ts"
-import { repositoryOf } from "../github/Config.ts"
+import { repositoryOf } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import {
   assertNotBlockedAct,

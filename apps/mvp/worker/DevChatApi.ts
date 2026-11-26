@@ -5,7 +5,7 @@ import { program, props } from "./ChatApi.ts"
 import * as DevFaults from "./DevFaults.ts"
 import { DEV_ASK_TOKEN } from "./AsksDev.ts"
 import { DEV_FEED_KEY } from "./feeds/dev.ts"
-import { repositoryOf } from "./github/Config.ts"
+import { repositoryOf } from "./github/Config.vibe"
 import type * as RepoRoles from "./github/RepoRoles.ts"
 import type { Signed } from "./SignIn.ts"
 

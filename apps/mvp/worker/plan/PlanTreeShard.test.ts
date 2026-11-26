@@ -16,7 +16,7 @@ import { openStorage } from "../../../../packages/smithers/flows/platform-cloudf
 import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../../src/features/auth/contract.ts"
 import { type Actor, Sessions } from "../Actor.ts"
 import { MAX_PLAN_MCP_BYTES } from "../Body.vibe"
-import { repositoryOf } from "../github/Config.ts"
+import { repositoryOf } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import { signedIn } from "../test/harness.ts"
 import * as Plan from "./PlanTreeShard.vibe"

@@ -13,7 +13,7 @@ const fixture = worker + "__config_fixture.ts"
 const source = `
 import { Config as Settings, Effect, Layer } from "effect"
 import { HttpServerRequest } from "effect/http"
-import { repository as repositoryConfig } from "./github/Config.ts"
+import { maxTreePaths as treePathsConfig } from "./RepoReads.ts"
 const configured = Settings.String("SETTING")
 const lazy = Layer.effectDiscard(configured)
 export const steps = () => ({ run: () => configured })
@@ -21,7 +21,7 @@ export const request = Effect.gen(function* () {
   yield* HttpServerRequest.HttpServerRequest
   yield* Settings.String("DIRECT")
   yield* configured
-  yield* repositoryConfig
+  yield* treePathsConfig
   yield* Effect.void.pipe(Effect.provide(lazy))
 })
 declare const step: { toLayer: (implementation: unknown) => unknown }
@@ -132,7 +132,7 @@ const violations = (sources: ReadonlyArray<ts.SourceFile>) => {
 test("effect.config-at-build recognizes direct, aliased, imported and deferred reads while allowing captured values", () => {
   const found = violations([program.getSourceFile(fixture)!])
   expect(found.map(([hit]) => hit.slice(hit.indexOf(" ") + 1)).sort()).toEqual([
-    'Settings.String("DIRECT")', 'Settings.String("FACTORY")', 'Settings.String("NAMED")', 'configured', 'configured', 'configured', 'repositoryConfig',
+    'Settings.String("DIRECT")', 'Settings.String("FACTORY")', 'Settings.String("NAMED")', 'configured', 'configured', 'configured', 'treePathsConfig',
   ])
 })
 

@@ -16,7 +16,7 @@ import {
 import { codeOf } from "../ErrorCode.ts"
 import type { Services } from "./Apply.vibe"
 import { classify, withToken } from "./Calls.ts"
-import { repositoryOf } from "./Config.ts"
+import { repositoryOf } from "./Config.vibe"
 import * as Metrics from "./Metrics.ts"
 import { fetchPull, liveBaseHeadOf, moveBase, projectPull } from "./Pulls.ts"
 import * as Store from "./Store.ts"

@@ -11,7 +11,7 @@ import {
 import { isRepository } from "../../src/features/repo/contract.ts"
 import { canAsk } from "../Actor.ts"
 import { mayMaintain } from "../feeds/Api.ts"
-import { repositoryOf as repositoryNamed } from "../github/Config.ts"
+import { repositoryOf as repositoryNamed } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import * as ShapeAccess from "../ShapeAccess.vibe"
 

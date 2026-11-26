@@ -1,13 +1,12 @@
 import * as GitHubCreation from "../branch/GitHubCreation.vibe"
 import { GitHub } from "@smthrs/integrations"
-import { Effect, Layer, Option } from "effect"
 import { HttpClient } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
 import type { Seat } from "../ModelSeats.ts"
 import type { SessionKeys } from "../SessionKeys.vibe"
 import * as Apply from "./Apply.vibe"
-import * as GitHubConfig from "./Config.ts"
+import * as GitHubConfig from "./Config.vibe"
 import * as RepoRoles from "./RepoRoles.ts"
 import { appSlug } from "../GitHubAuth.ts"
 import * as Merge from "./Merge.ts"
@@ -44,23 +43,29 @@ export interface Ready<E, R> {
  * `HttpClient` in context, with the app's tables on `database`. `None` when the App isn't configured, or its key doesn't
  * import, which logs `github.config` with the code only.
  */
-export const ready = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
-  Effect.gen(function* () {
-    const configured = yield* GitHubConfig.configured
-    if (Option.isNone(configured)) return Option.none<Ready<E, R>>()
-    const { appId, privateKey, apiBaseUrl, repository } = configured.value
-    const app = yield* GitHub.AppAuth.make({ appId, privateKey, apiBaseUrl }).pipe(Effect.result)
-    if (app._tag === "Failure") {
-      yield* Effect.logError("github.config").pipe(Effect.annotateLogs({ errorCode: codeOf(app.failure) }))
-      return Option.none<Ready<E, R>>()
-    }
-    const http = yield* HttpClient.HttpClient
-    const allowed = yield* RepoRoles.allowed
-    const roles = yield* RepoRoles.make(database, { repository: configured.value.repository, app: configured, allowed, http })
-    return Option.some<Ready<E, R>>({ app: app.success, database, http, apiBaseUrl, roles, mayAct: RepoRoles.actsOn(repository, allowed),
-      appLogin: `${yield* appSlug}[bot]`,
-      allowedRepositories: [repository.id, ...Option.match(allowed, { onNone: () => [], onSome: (ids) => [...ids] })] })
+export const ready = effect <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
+  const configured = try GitHubConfig.configured
+  if (Option.isNone(configured)) return Option.none<Ready<E, R>>()
+  const { appId, privateKey, apiBaseUrl, repository } = configured.value
+  const app = try result(GitHub.AppAuth.make({ appId, privateKey, apiBaseUrl }))
+  if (app._tag === "Failure") {
+    try annotateLogs(logError("github.config"), { errorCode: codeOf(app.failure) })
+    return Option.none<Ready<E, R>>()
+  }
+  const http = try HttpClient.HttpClient
+  const allowed = try RepoRoles.allowed
+  const roles = try RepoRoles.make(database, { repository, app: configured, allowed, http })
+  return Option.some<Ready<E, R>>({
+    app: app.success,
+    database,
+    http,
+    apiBaseUrl,
+    roles,
+    mayAct: RepoRoles.actsOn(repository, allowed),
+    appLogin: `${try appSlug}[bot]`,
+    allowedRepositories: [repository.id, ...(Option.isSome(allowed) ? allowed.value : [])],
   })
+}
 
 /**
  * The flows' services from `ready`: sign-in's keys open a person's token (none without sign-in), `refresh` starts the
@@ -71,7 +76,7 @@ export const services = <E, R>(
   ready: Ready<E, R>,
   sessions: {
     readonly keys: Option.Option<SessionKeys>
-    readonly refresh: (sessionId: string, generation: number) => Effect.Effect<void>
+    readonly refresh: (sessionId: string, generation: number) => void!!
   },
   judge: (enabledBy: string) => Seat,
 ): Triage.Services<E, R> => ({

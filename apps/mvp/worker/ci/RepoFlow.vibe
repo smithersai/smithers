@@ -11,7 +11,7 @@ import { RUN_EVENTS } from "../../src/features/actions/contract.ts"
 import { statusContextOf } from "../../src/features/pulls/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { classify, withToken } from "../github/Calls.ts"
-import { type Repository, repositoryOf } from "../github/Config.ts"
+import { type Repository, repositoryOf } from "../github/Config.vibe"
 import type { GitHubTokens } from "../github/Tokens.ts"
 import * as Realm from "./Realm.vibe"
 

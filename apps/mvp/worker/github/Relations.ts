@@ -7,7 +7,7 @@ import { RELATIONS_STREAM, SYNC_STALE_MS } from "../../src/features/issues/contr
 import { codeOf } from "../ErrorCode.ts"
 import type { Services } from "./Apply.vibe"
 import { classify, isRateLimited, statusOf, withToken } from "./Calls.ts"
-import { repositoryOf, type Repository } from "./Config.ts"
+import { repositoryOf, type Repository } from "./Config.vibe"
 import * as Metrics from "./Metrics.ts"
 import * as Store from "./Store.ts"
 import { candidates } from "./TreeScope.ts"

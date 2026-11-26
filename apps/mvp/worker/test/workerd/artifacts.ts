@@ -4,7 +4,7 @@
 import { Effect, Option } from "effect"
 import { HttpEffect, HttpServerRequest } from "effect/http"
 import { Sessions } from "../../Actor.ts"
-import { repositoryOf } from "../../github/Config.ts"
+import { repositoryOf } from "../../github/Config.vibe"
 import * as ArtifactRoutes from "../../ops/ArtifactRoutes.vibe"
 import * as Artifacts from "../../branch/Artifacts.vibe"
 

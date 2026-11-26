@@ -2,7 +2,7 @@
 // execution context (workerd's `ctx.waitUntil`). It reads `@alchemy.run/cloudflare`, which only Alchemy's bundle resolves, so it stays out of
 // worker/ExecutionHost.ts's module graph (worker/ExecutionHost.bundle.test.ts).
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import * as FirstPaint from "./github/FirstPaint.ts"
+import * as FirstPaint from "./github/FirstPaint.vibe"
 
 /** The request's execution context as the first paint's `Behind`: its role read runs after the response. */
 export const firstPaintBehind = effect {

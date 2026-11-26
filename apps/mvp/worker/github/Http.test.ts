@@ -1,7 +1,7 @@
 import { Effect, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { expect, test } from "vitest"
-import { withUserAgent } from "./Http.ts"
+import { withUserAgent } from "./Http.vibe"
 
 // A refusing HTTP service exposes the actual outbound request without contacting GitHub or disclosing credentials.
 test.each([

@@ -7,7 +7,7 @@ import { ISSUES_STREAM, SYNC_STALE_MS } from "../../src/features/issues/contract
 import { codeOf } from "../ErrorCode.ts"
 import type { Services } from "./Apply.vibe"
 import { classify, withToken } from "./Calls.ts"
-import { repositoryOf } from "./Config.ts"
+import { repositoryOf } from "./Config.vibe"
 import * as Metrics from "./Metrics.ts"
 import { pullCurrent, readPull, reviewStream } from "./Pulls.ts"
 import * as Store from "./Store.ts"

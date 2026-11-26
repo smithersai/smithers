@@ -1,4 +1,3 @@
-import { Config, Effect, Option, Redacted, Schema } from "effect"
 import { repoId } from "../../src/features/repo/contract.ts"
 import { DEFAULT_REPOSITORY } from "../SignIn.ts"
 
@@ -38,7 +37,6 @@ const httpUrl = Schema.String.check(
 
 /**
  * `owner/name` as a `Repository`; `repositoryName` has checked its shape.
- * @throws {never}
  */
 export const repositoryOf = (full: string): Repository => {
   const [owner, name] = full.split("/") as [string, string]
@@ -58,12 +56,12 @@ export const apiUrl = Config.schema(httpUrl, "GITHUB_API_URL").pipe(Config.withD
  * Reads `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_REPOSITORY` and `GITHUB_API_URL`.
  * `None` without the ID or the key: the git loop is off. The key's text is never read into a log line.
  */
-export const configured = Effect.gen(function* () {
-  const appId = yield* Config.option(Config.NonEmptyString("GITHUB_APP_ID"))
-  const privateKey = yield* Config.option(Config.Redacted("GITHUB_APP_PRIVATE_KEY"))
-  const webhookSecret = yield* Config.option(Config.Redacted("GITHUB_WEBHOOK_SECRET"))
-  const synced = yield* repository
-  const apiBaseUrl = yield* apiUrl
+export const configured = effect {
+  const appId = try Config.option(Config.NonEmptyString("GITHUB_APP_ID"))
+  const privateKey = try Config.option(Config.Redacted("GITHUB_APP_PRIVATE_KEY"))
+  const webhookSecret = try Config.option(Config.Redacted("GITHUB_WEBHOOK_SECRET"))
+  const synced = try repository
+  const apiBaseUrl = try apiUrl
   if (Option.isNone(appId) || Option.isNone(privateKey) || Redacted.value(privateKey.value).trim() === "") {
     return Option.none<GitHubApp>()
   }
@@ -74,4 +72,4 @@ export const configured = Effect.gen(function* () {
     repository: synced,
     apiBaseUrl,
   })
-})
+}

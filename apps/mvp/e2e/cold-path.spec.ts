@@ -11,7 +11,7 @@
 import { execFileSync } from "node:child_process"
 import type { Page, Response } from "@playwright/test"
 import { roleAgeArgs } from "../ops/role-age/command"
-import { FIRST_PAINT_DEADLINE_MS } from "../worker/github/FirstPaint"
+import { FIRST_PAINT_DEADLINE_MS } from "../worker/github/FirstPaint.vibe"
 import { expect, test } from "./fixtures"
 import { me, requires } from "./target"
 import { expectServerError } from "./watch"

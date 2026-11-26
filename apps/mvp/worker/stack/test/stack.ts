@@ -13,7 +13,7 @@ import type { testFile } from "../../test/harness.ts"
 import { signedIn } from "../../test/harness.ts"
 import * as Api from "../Api.vibe"
 import * as Stack from "../Stack.vibe"
-import { type Repository, repositoryOf } from "../../github/Config.ts"
+import { type Repository, repositoryOf } from "../../github/Config.vibe"
 import * as RepoRoles from "../../github/RepoRoles.ts"
 
 type Runtime = ReturnType<typeof testFile>

@@ -1,4 +1,4 @@
-import { withUserAgent } from "../github/Http.ts"
+import { withUserAgent } from "../github/Http.vibe"
 import { ImmutableCache } from "@smthrs/artifacts"
 import { Docs, Home } from "@smthrs/views"
 import { Cause, Clock, Config, Context, Duration, Effect, Layer, Schema } from "effect"

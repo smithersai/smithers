@@ -3,7 +3,7 @@ import { Clock, Effect, Metric, Option, type Redacted, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import type { SessionKeys } from "../SessionKeys.vibe"
 import { classify, isRateLimited, statusOf } from "./Calls.ts"
-import type { Repository } from "./Config.ts"
+import type { Repository } from "./Config.vibe"
 import * as Metrics from "./Metrics.ts"
 import * as Store from "./Store.ts"
 
