@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { WorkbenchView } from "./store"
+import type { WorkbenchView } from "./store.vibe"
 
 const WorkbenchContext = createContext<WorkbenchView | null>(null)
 

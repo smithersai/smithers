@@ -4,7 +4,7 @@ import type { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer, Metric } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
 import { requesterOf } from "../../flows/requests"
-import { type CallRefused, SandboxClient, type Target } from "./api"
+import { type CallRefused, SandboxClient, type Target } from "./api.vibe"
 import { CALL_ID_NAMESPACE } from "./contract"
 import {
   Diff,
@@ -87,19 +87,20 @@ const outcomeOf = (failure: Failure): string =>
  */
 export const start =
   (tool: SandboxTools.Tool) => (input: { readonly conversationId?: string | undefined } & Record<string, unknown>) =>
-    Effect.gen(function*() {
-      const { executionId } = yield* FlowRuntime.FlowInstance
-      const callId = yield* Uuid.v5(CALL_ID_NAMESPACE, executionId).pipe(Effect.orDie)
-      const { door, target } = yield* targetOf(input.conversationId)
-      yield* Effect.annotateCurrentSpan({ "smithers.sandbox.tool": tool, door })
+    (effect {
+      const { executionId } = try FlowRuntime.FlowInstance
+      const callId = try Uuid.v5(CALL_ID_NAMESPACE, executionId).pipe(Effect.orDie)
+      const { door, target } = try targetOf(input.conversationId)
+      try Effect.annotateCurrentSpan({ "smithers.sandbox.tool": tool, door })
       const fail = (failure: Failure) => Effect.andThen(settled(tool, callId, outcomeOf(failure)), Effect.fail(failure))
-      if (target === undefined) return yield* fail(new SandboxCallRefused({ reason: "invalid" }))
+      if (target === undefined) return try fail(new SandboxCallRefused({ reason: "invalid" }))
       const { conversationId: _pinned, save, ...fields } = input
       const call = { ...fields, tool } as SandboxTools.Call
-      const answer = yield* Effect.result((yield* SandboxClient).start({ callId, call, ...target, ...(tool === "write" && save === true ? { save: true } : {}) }))
-      if (answer._tag === "Failure") return yield* fail(refusalOf(answer.failure))
+      const client = try SandboxClient
+      const answer = try Effect.result(client.start({ callId, call, ...target, ...(tool === "write" && save === true ? { save: true } : {}) }))
+      if (answer._tag === "Failure") return try fail(refusalOf(answer.failure))
       if (answer.success.status === "failed") {
-        return yield* fail(new SandboxCallFailed({ failure: answer.success.failure }))
+        return try fail(new SandboxCallFailed({ failure: answer.success.failure }))
       }
       return { callId }
     }).pipe(Effect.withSpan("sandbox.call.start"))
@@ -109,18 +110,20 @@ export const start =
  * `SandboxCallRunning`, which the step's retry policy asks again; done, it answers the tool's result.
  */
 export const result = (tool: SandboxTools.Tool) => ({ callId }: { readonly callId: string }) =>
-  Effect.gen(function*() {
-    const answer = yield* Effect.result((yield* SandboxClient).result(callId))
+  (effect {
+    const client = try SandboxClient
+    const answer = try Effect.result(client.result(callId))
     const fail = (failure: Failure) => Effect.andThen(settled(tool, callId, outcomeOf(failure)), Effect.fail(failure))
     if (answer._tag === "Failure") {
       const refusal = refusalOf(answer.failure)
       // Unreachable is not settled: the retry policy asks again.
-      return yield* refusal._tag === "@smthrs/mvp/sandbox/SandboxCallUnavailable" ? Effect.fail(refusal) : fail(refusal)
+      if (refusal._tag === "@smthrs/mvp/sandbox/SandboxCallUnavailable") throw refusal
+      return try fail(refusal)
     }
     const standing = answer.success
-    if (standing.status === "running") return yield* new SandboxCallRunning()
-    if (standing.status === "failed") return yield* fail(new SandboxCallFailed({ failure: standing.failure }))
-    yield* settled(tool, callId, "done")
+    if (standing.status === "running") throw new SandboxCallRunning()
+    if (standing.status === "failed") return try fail(new SandboxCallFailed({ failure: standing.failure }))
+    try settled(tool, callId, "done")
     return standing.result
   }).pipe(Effect.withSpan("sandbox.call.result", { attributes: { "smithers.sandbox.tool": tool } }))
 

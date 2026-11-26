@@ -8,7 +8,7 @@ import {
   buildPlaygroundSrcDoc,
   handlePlaygroundBridgeEvent,
   runPlaygroundDryRun,
-} from "./playgroundController.ts"
+} from "./playgroundController.vibe"
 
 export type PlaygroundFrameProps = {
   readonly preset: PlaygroundPreset

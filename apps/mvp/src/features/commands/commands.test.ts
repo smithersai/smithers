@@ -14,6 +14,7 @@ import { nodeDevice, openTab, openTestApi, openTestApp, type TabOptions, TestCha
 import { AuthStore, SESSION } from "../auth/store"
 import { Chat } from "../chat/chat"
 import { PLACE, Place } from "../chat/schema"
+import { pinConversation } from "../sandbox/actions.vibe"
 import { ChatStore } from "../chat/store"
 import { SharedPrompt } from "../chat/sharedPrompt"
 import { WebTab } from "../web/actions"
@@ -845,6 +846,17 @@ test("command-choice records explain keyboard matching without retaining the typ
   await until(() => expect(tab.count(Metric.withAttributes(dispatches, { flow: "app/navigate", door: "slash", outcome: "done" }))).toBe(1))
 })
 
+
+test("pins the conversation shown by the chat store when the payload omits it", async () => {
+  const tab = await open()
+  const payload = { path: "notes.txt" }
+  const pin = pinConversation(payload)
+  expect(await tab.runtime.runPromise(pin)).toBe(payload)
+
+  const conversationId = crypto.randomUUID()
+  await tab.showConversation(conversationId)
+  expect(await tab.runtime.runPromise(pin)).toEqual({ ...payload, conversationId })
+})
 
 describe("repository slash authority (AUTH-8)", () => {
   test("the conversation's repository Member gets sandbox commands despite no deployment role", async () => {

@@ -11,10 +11,10 @@ import { ChatStore } from "../chat/store"
  * step runs, or a run resumed later, still calls the tool on that branch. A payload naming one keeps it.
  */
 export const pinConversation = (payload: Readonly<Record<string, unknown>>) =>
-  Effect.gen(function* () {
+  effect {
     if (payload.conversationId !== undefined) return payload
-    const chat = yield* Effect.serviceOption(ChatStore)
-    const place = Option.isSome(chat) ? Option.getOrUndefined(yield* chat.value.place.get(PLACE)) : undefined
+    const chat = try Effect.serviceOption(ChatStore)
+    const place = Option.isSome(chat) ? Option.getOrUndefined(try chat.value.place.get(PLACE)) : undefined
     const conversationId = place?.conversationId ?? undefined
     return conversationId === undefined ? payload : { ...payload, conversationId }
-  })
+  }

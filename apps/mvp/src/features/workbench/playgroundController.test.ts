@@ -7,7 +7,7 @@ import {
   handlePlaygroundBridgeEvent,
   runPlaygroundDryRun,
   serializeScriptJson,
-} from "./playgroundController.ts"
+} from "./playgroundController.vibe"
 
 const TEVM_PRESET = playgroundPresetFor("evmts/tevm-monorepo")!
 const ZEVM_PRESET = playgroundPresetFor("evmts/zevm")!

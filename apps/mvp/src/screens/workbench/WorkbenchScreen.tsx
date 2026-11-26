@@ -14,7 +14,7 @@ import {
   type WorkbenchAction,
 } from "../../features/workbench/layout"
 import { effectivePaneSize } from "../../features/workbench/conversationState"
-import { attachPromptFor, roleToAudience } from "../../features/workbench/store"
+import { attachPromptFor, roleToAudience } from "../../features/workbench/store.vibe"
 import { useWorkbenchOptional } from "../../features/workbench/WorkbenchContext"
 import { playgroundPresetFor } from "../../features/workbench/playgroundBridge"
 import { WorkbenchShell } from "../../features/workbench/WorkbenchShell"

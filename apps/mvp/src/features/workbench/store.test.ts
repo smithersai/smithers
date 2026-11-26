@@ -14,7 +14,7 @@ import {
   Workbench,
   WorkbenchClient,
   WorkbenchStore,
-} from "./store.ts"
+} from "./store.vibe"
 
 const httpLayer = (respond: (request: { readonly url: string; readonly method: string }) => Response) =>
   Layer.succeed(

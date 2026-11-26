@@ -58,7 +58,7 @@ import type { McpView } from "./features/mcp/store"
 import { ProfileProvider } from "./features/profile/components/ProfileContext"
 import type { ProfileView } from "./features/profile/profile.vibe"
 import { WorkbenchProvider } from "./features/workbench/WorkbenchContext"
-import type { WorkbenchView } from "./features/workbench/store"
+import type { WorkbenchView } from "./features/workbench/store.vibe"
 
 /** Every layer the page's React tree reads: what the boot program hands the page (src/boot.ts `render`). */
 export interface AppViews {

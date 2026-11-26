@@ -20,8 +20,8 @@ import { branchHarness, resetBranches, tracked } from "../../../worker/test/bran
 import { build } from "../../../worker/test/flowHost.ts"
 import { testFile } from "../../../worker/test/harness.ts"
 import { BROWSER_TELEMETRY } from "../../telemetry"
-import { pinConversation } from "./actions"
-import { CallRefused, SandboxClient } from "./api"
+import { pinConversation } from "./actions.vibe"
+import { CallRefused, SandboxClient } from "./api.vibe"
 import { CALL_ID_NAMESPACE, COMMAND_LIMIT_SECONDS, SANDBOX_TELEMETRY } from "./contract"
 import {
   COMMAND_MAX_SECONDS,
@@ -40,7 +40,7 @@ import {
 } from "./flows"
 import { calls } from "./metrics"
 import type { Standing } from "./schema"
-import { refusalOf, registrationAt, result, start } from "./steps"
+import { refusalOf, registrationAt, result, start } from "./steps.vibe"
 
 /** A failed call's error. The engine annotates an action's failed cause with its FailureSite, which the outcome doesn't depend on. */
 const failureOf = (exit: Exit.Exit<unknown, unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit
@@ -432,6 +432,24 @@ describe("the steps", () => {
     const child = scripted({ start: Effect.succeed({ callId: "x", status: "running" }) })
     await step(start("status")({ conversationId: "c-1" }), child.layer, "flow-run-1/call/1.0")
     expect(child.started).toEqual([expect.objectContaining({ conversationId: "c-1" })])
+  })
+
+  test("start forwards save only for a write that explicitly requests it", async () => {
+    const client = scripted({ start: Effect.fail(new CallRefused({ status: 409, code: "locked" })) })
+    const input = { path: "a", content: "b", conversationId: "c" }
+    const locked = new SandboxCallRefused({ reason: "locked" })
+
+    const saved = await step(start("write")({ ...input, save: true }), client.layer)
+    const unsaved = await step(start("write")({ ...input, save: false }), client.layer)
+    const read = await step(start("read")({ path: "a", conversationId: "c", save: true }), client.layer)
+    expect([saved, unsaved, read].map(({ exit }) => failureOf(exit))).toEqual([locked, locked, locked])
+
+    const callId = await callIdOf("run-7")
+    expect(client.started).toEqual([
+      { callId, call: { tool: "write", path: "a", content: "b" }, conversationId: "c", save: true },
+      { callId, call: { tool: "write", path: "a", content: "b" }, conversationId: "c" },
+      { callId, call: { tool: "read", path: "a" }, conversationId: "c" },
+    ])
   })
 
   test("start without a conversation is invalid before anything is asked; a refusal or a failed call fails, counted", async () => {

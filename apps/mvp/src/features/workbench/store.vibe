@@ -169,8 +169,8 @@ export class WorkbenchClient extends Context.Service<
   static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
     Layer.effect(
       WorkbenchClient,
-      Effect.gen(function* () {
-        const http = yield* HttpClient.HttpClient
+      effect {
+        const http = try HttpClient.HttpClient
         const within = options.within ?? WORKBENCH_WITHIN
         return WorkbenchClient.of({
           fetchPlan: (owner, repo) =>
@@ -210,7 +210,7 @@ export class WorkbenchClient extends Context.Service<
               Effect.mapError((err) => waitlistErrorMessage(err)),
             ),
         })
-      }),
+      },
     )
 }
 
@@ -237,18 +237,18 @@ export class WorkbenchStore extends Context.Service<
 >()("@smthrs/mvp/workbench/WorkbenchStore") {
   static readonly layer = Layer.effect(
     WorkbenchStore,
-    Effect.gen(function* () {
-      const scope = yield* Effect.scope
-      const plan = yield* Collection.local<PlanRow, string>({
+    effect {
+      const scope = try Effect.scope
+      const plan = try Collection.local<PlanRow, string>({
         id: "workbench-plan",
         schema: PlanRow,
         getKey: (row) => row.id,
         initialData: [EMPTY_PLAN],
       })
       // A refused repository's plan leaves this tab: the plan row returns to idle when it holds that repository.
-      const repos = yield* Effect.serviceOption(RepoStore)
+      const repos = try Effect.serviceOption(RepoStore)
       if (Option.isSome(repos)) {
-        yield* repos.value.registerCache(["workbench-plan"], (id) =>
+        try repos.value.registerCache(["workbench-plan"], (id) =>
           Effect.flatMap(plan.toArray, (rows) =>
             Effect.forEach(
               rows.filter((row) => {
@@ -259,13 +259,13 @@ export class WorkbenchStore extends Context.Service<
               { discard: true },
             )))
       }
-      const attach = yield* Collection.local<AttachRow, string>({
+      const attach = try Collection.local<AttachRow, string>({
         id: "workbench-attach",
         schema: AttachRow,
         getKey: (row) => row.id,
         initialData: [{ id: ATTACH_ROW_ID, mode: "local-stdio", state: "unattached", copied: false }],
       })
-      const waitlist = yield* Collection.local<WaitlistRow, string>({
+      const waitlist = try Collection.local<WaitlistRow, string>({
         id: "workbench-waitlist",
         schema: WaitlistRow,
         getKey: (row) => row.id,
@@ -282,14 +282,14 @@ export class WorkbenchStore extends Context.Service<
       })
       return WorkbenchStore.of({
         plan,
-        planState: yield* planQuery(plan),
+        planState: try planQuery(plan),
         attach,
-        attachState: yield* attachQuery(attach),
+        attachState: try attachQuery(attach),
         waitlist,
-        waitlistState: yield* waitlistQuery(waitlist),
+        waitlistState: try waitlistQuery(waitlist),
         scope,
       })
-    }),
+    },
   )
 }
 
@@ -309,18 +309,18 @@ const setWaitlist = (change: Partial<Omit<WaitlistRow, "id">>) =>
   )
 
 export const loadPlan = (owner: string, repo: string) =>
-  Effect.gen(function* () {
+  (effect {
     const slug = `${owner}/${repo}`
-    yield* setPlan({ repoSlug: slug, status: "loading", error: null })
-    const client = yield* WorkbenchClient
-    const outcome = yield* client.fetchPlan(owner, repo).pipe(Effect.result)
+    try setPlan({ repoSlug: slug, status: "loading", error: null })
+    const client = try WorkbenchClient
+    const outcome = try client.fetchPlan(owner, repo).pipe(Effect.result)
     if (outcome._tag === "Failure") {
-      yield* setPlan({ repoSlug: slug, status: "failed", nodes: [], totalFrames: 1, error: outcome.failure.code })
+      try setPlan({ repoSlug: slug, status: "failed", nodes: [], totalFrames: 1, error: outcome.failure.code })
       return
     }
     const { hubSeq, tree } = outcome.success
     if (tree === null) {
-      yield* setPlan({ repoSlug: slug, status: "empty", nodes: [], totalFrames: Math.max(1, hubSeq + 1), error: null })
+      try setPlan({ repoSlug: slug, status: "empty", nodes: [], totalFrames: Math.max(1, hubSeq + 1), error: null })
       return
     }
     const nodes = planNodesFromTree(tree).map((node) => ({
@@ -332,7 +332,7 @@ export const loadPlan = (owner: string, repo: string) =>
       sources: [...node.sources!],
       assumptions: [...node.assumptions!],
     }))
-    yield* setPlan({
+    try setPlan({
       repoSlug: slug,
       status: nodes.length === 0 ? "empty" : "ready",
       nodes,
@@ -341,24 +341,24 @@ export const loadPlan = (owner: string, repo: string) =>
     })
   }).pipe(Effect.annotateLogs({ feature: "workbench" }))
 
-export const submitWaitlistDraft = Effect.gen(function* () {
-  const store = yield* WorkbenchStore
-  const { repoUrl, workflowNote } = yield* Effect.sync(
+export const submitWaitlistDraft = (effect {
+  const store = try WorkbenchStore
+  const { repoUrl, workflowNote } = try Effect.sync(
     () => store.waitlist.tanstack.get(WAITLIST_ROW_ID)!,
   )
-  yield* setWaitlist({ status: "submitting", errorMessage: null })
-  const client = yield* WorkbenchClient
-  const outcome = yield* client
+  try setWaitlist({ status: "submitting", errorMessage: null })
+  const client = try WorkbenchClient
+  const outcome = try client
     .joinWaitlist({
       repoUrl,
       ...(workflowNote.trim().length > 0 ? { workflowNote } : {}),
     })
     .pipe(Effect.result)
   if (outcome._tag === "Failure") {
-    yield* setWaitlist({ status: "error", errorMessage: outcome.failure })
+    try setWaitlist({ status: "error", errorMessage: outcome.failure })
     return
   }
-  yield* setWaitlist({ status: "submitted", position: outcome.success.position, errorMessage: null })
+  try setWaitlist({ status: "submitted", position: outcome.success.position, errorMessage: null })
 }).pipe(Effect.annotateLogs({ feature: "workbench" }))
 
 type Store = WorkbenchStore["Service"]
@@ -386,9 +386,9 @@ export class Workbench extends Context.Service<
 >()("@smthrs/mvp/workbench/Workbench") {
   static readonly layer = Layer.effect(
     Workbench,
-    Effect.gen(function* () {
-      const store = yield* WorkbenchStore
-      const context = yield* Effect.context<WorkbenchStore | WorkbenchClient>()
+    effect {
+      const store = try WorkbenchStore
+      const context = try Effect.context<WorkbenchStore | WorkbenchClient>()
       const { runSync: run, runPromise: promise } = runners(context, "workbench")
       let conversationSnapshots: ConversationPaneStore = new Map()
       return Workbench.of({
@@ -422,7 +422,7 @@ export class Workbench extends Context.Service<
           submitWaitlist: () => promise(submitWaitlistDraft),
         },
       })
-    }),
+    },
   ).pipe(Layer.provideMerge(WorkbenchStore.layer))
 
   static readonly live = (options: { readonly origin: string; readonly within?: Duration.Input }) =>

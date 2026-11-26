@@ -39,20 +39,21 @@ export class SandboxClient extends Context.Service<
   static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
     Layer.effect(
       SandboxClient,
-      Effect.gen(function* () {
-        const client = yield* HttpClient.HttpClient
+      effect {
+        const client = try HttpClient.HttpClient
         const exchange = (request: HttpClientRequest.HttpClientRequest) =>
-          Effect.gen(function* () {
-            const response = yield* client.execute(request).pipe(Effect.mapError(() => new CallRefused({})))
-            yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+          (effect {
+            const response = try client.execute(request).pipe(Effect.mapError(() => new CallRefused({})))
+            try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
             if (response.status !== 200 && response.status !== 202) {
-              const body = decodeRefused(yield* Effect.orElseSucceed(response.text, () => ""))
-              return yield* new CallRefused({
+              const text = response.text catch () => ""
+              const body = decodeRefused(text)
+              throw new CallRefused({
                 status: response.status,
                 ...Option.match(body, { onNone: () => ({}), onSome: (refused) => refused }),
               })
             }
-            return yield* response.json.pipe(
+            return try response.json.pipe(
               Effect.flatMap(decodeStanding),
               Effect.mapError(() => new CallRefused({ status: response.status })),
             )
@@ -63,17 +64,17 @@ export class SandboxClient extends Context.Service<
             })
           )
         return SandboxClient.of({
-          start: Effect.fn("sandbox.call.post")(function* (request) {
-            return yield* exchange(
+          start: Effect.fn("sandbox.call.post")(effect (request) => {
+            return try exchange(
               HttpClientRequest.post(`${options.origin}${SANDBOX_CALLS_ROUTE}`).pipe(
                 HttpClientRequest.bodyJsonUnsafe(request),
               ),
             )
           }),
-          result: Effect.fn("sandbox.call.result")(function* (callId) {
-            return yield* exchange(HttpClientRequest.get(`${options.origin}${SANDBOX_CALLS_ROUTE}/${callId}`))
+          result: Effect.fn("sandbox.call.result")(effect (callId) => {
+            return try exchange(HttpClientRequest.get(`${options.origin}${SANDBOX_CALLS_ROUTE}/${callId}`))
           }),
         })
-      }),
+      },
     )
 }
