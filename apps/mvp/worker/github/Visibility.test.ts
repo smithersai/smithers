@@ -2,7 +2,7 @@ import { Deferred, Effect, Logger, Metric, Option, Redacted } from "effect"
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { expect, test } from "vitest"
-import * as Visibility from "./Visibility.ts"
+import * as Visibility from "./Visibility.vibe"
 import * as Metrics from "./Metrics.vibe"
 
 const repository = { id: "acme/widgets", owner: "acme", name: "widgets" }
@@ -35,6 +35,27 @@ test.each([
   expect(JSON.stringify(logs)).not.toContain("fixture-token")
   expect(Effect.runSync(Metric.value(Metric.withAttributes(Metrics.visibilityReads, attributes)).pipe(
     Effect.provideService(Metric.MetricRegistry, registry)))).toMatchObject({ count: 1 })
+})
+
+test.each<{ headers: Record<string, string>; wait: number | undefined }>([
+  { headers: { "retry-after": "1.5" }, wait: 2 },
+  { headers: { "retry-after": "Wed, 25 Nov 2026 12:00:10 GMT", date: "Wed, 25 Nov 2026 12:00:04 GMT" }, wait: 6 },
+  { headers: { "retry-after": "Wed, 25 Nov 2026 12:00:10 GMT", date: "invalid" }, wait: 7 },
+  { headers: { "retry-after": "0" }, wait: 1 },
+  { headers: { "x-ratelimit-reset": "4102444800" }, wait: 60 },
+])("returns the retry delay from $headers", async ({ headers, wait }) => {
+  const http = HttpClient.make((request) => Effect.succeed(HttpClientResponse.fromWeb(request,
+    new Response("{}", { status: 429, headers }))))
+  const answer = await Effect.runPromise(Effect.gen(function* () {
+    yield* TestClock.setTime(Date.parse("2026-11-25T12:00:03Z"))
+    return yield* Visibility.readDetailed(repository, "https://github.test", Effect.succeed(Option.none()), http)
+  }).pipe(Effect.provide(TestClock.layer())))
+  expect(answer).toEqual({
+    visible: Option.none(),
+    rateLimited: true,
+    retryAfterSeconds: wait,
+    upstreamStatus: 429,
+  })
 })
 
 test("transport failures record a code without provider text or credentials", async () => {

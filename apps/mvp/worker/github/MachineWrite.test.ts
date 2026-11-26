@@ -15,7 +15,7 @@ import * as MachineWrite from "./MachineWrite.vibe"
 import { admit, reset, REPOSITORY, services, signedIn, sql, writeRow } from "./test/fixtures.ts"
 import { githubHarness } from "./test/harness.ts"
 import { BOT_LOGIN, INSTALLATION_ID, scriptedGitHub as makeScriptedGitHub } from "./test/scriptedGitHub.ts"
-import * as Write from "./Write.ts"
+import * as Write from "./Write.vibe"
 
 const githubs: Array<ReturnType<typeof makeScriptedGitHub>> = []
 const scriptedGitHub: typeof makeScriptedGitHub = (...args) => {
@@ -54,6 +54,11 @@ const row = async (id: string) =>
 /** Lets the next call go at once. */
 const clear = () => sql(runtime, `UPDATE machine_dispatch SET next_at = now() - interval '1 second'`)
 const posting = (pattern: RegExp) => (method: string, path: string) => method === "POST" && pattern.test(path)
+const waitBlockedBy = (blocker: number) => vi.waitFor(async () => {
+  const waiting = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql`SELECT pid FROM pg_stat_activity WHERE ${blocker} = ANY(pg_blocking_pids(pid))`))
+  expect(waiting).toHaveLength(1)
+}, { timeout: 5_000 })
 /** The owner's dispatcher, as tests drive it: one tick at a time, on the epoch `launch` answers. */
 const dispatcher = async (github: ReturnType<typeof scriptedGitHub>, process: Pick<typeof MachineWrite, "steps"> = MachineWrite) => {
   const { services: value } = await services(runtime, github)
@@ -170,7 +175,7 @@ describe("a machine token at the route", () => {
     await sql(runtime, `UPDATE machine_tokens SET expires_at = now() + interval '1 day'`)
     const links = { links: [{ kind: "queue", ref: "q-1" }] } as never
     await sql(runtime, `UPDATE machine_tokens SET revoked_at = now()`)
-    const { write } = await import("./WorkLinks.ts")
+    const { write } = await import("./WorkLinks.vibe")
     const written = await runtime.runPromise(write(REPOSITORY.id, 3, links, "machine:fixer/lane-1", Date.now(), undefined, { tokenSha256: digestSync(TOKEN) }))
     expect(written._tag).toBe("None")
   })
@@ -548,18 +553,19 @@ describe("github/MachineDispatch", () => {
     const body = create() as MachineWrite.MachineBody
     let release = () => {}
     const gate = new Promise<void>((resolve) => { release = resolve })
-    let inserted = () => {}
-    const holding = new Promise<void>((resolve) => { inserted = resolve })
+    let inserted = (_pid: number) => {}
+    const holding = new Promise<number>((resolve) => { inserted = resolve })
     const first = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
       const admission = yield* MachineWrite.admit({ repoId: REPOSITORY.id, owner: "acme", machine: machineOf(), body })
-      inserted()
+      const [connection] = yield* sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`
+      inserted(connection!.pid)
       yield* Effect.promise(() => gate)
       return admission
     }))))
-    await holding
+    const blocker = await holding
     const second = admitAs(body, machineOf("lane-1", "smm_second"))
     try {
-      await vi.waitFor(async () => expect(await sql(runtime, "SELECT count(*)::int AS waiting FROM pg_locks WHERE NOT granted")).not.toEqual([{ waiting: 0 }]))
+      await waitBlockedBy(blocker)
     } finally {
       release()
     }
@@ -576,19 +582,20 @@ describe("github/MachineDispatch", () => {
     await admitAs(write)
     let release = () => {}
     const gate = new Promise<void>((resolve) => { release = resolve })
-    let locked = () => {}
-    const holding = new Promise<void>((resolve) => { locked = resolve })
+    let locked = (_pid: number) => {}
+    const holding = new Promise<number>((resolve) => { locked = resolve })
     const replacement = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
       yield* sql`SELECT 1 FROM machine_writes WHERE id = ${write.writeId}::uuid FOR UPDATE`
-      locked()
+      const [connection] = yield* sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`
+      locked(connection!.pid)
       yield* Effect.promise(() => gate)
       yield* sql`DELETE FROM machine_writes WHERE id = ${write.writeId}::uuid`
       yield* sql`UPDATE machine_dispatch SET epoch = epoch + 1 WHERE owner = 'acme'`
     }))))
-    await holding
+    const blocker = await holding
     const old = d.tick()
     try {
-      await vi.waitFor(async () => expect(await sql(runtime, "SELECT count(*)::int AS waiting FROM pg_locks WHERE NOT granted")).not.toEqual([{ waiting: 0 }]))
+      await waitBlockedBy(blocker)
     } finally {
       release()
     }

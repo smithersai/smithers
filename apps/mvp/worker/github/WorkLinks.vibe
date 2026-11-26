@@ -1,5 +1,5 @@
+import { identity } from "effect/Function"
 import { digestSync } from "@smthrs/crypto"
-import { Effect, Option, Schema } from "effect"
 import type { HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { ISSUES_SEGMENT } from "../../src/features/issues/contract.ts"
@@ -86,22 +86,25 @@ export const fromTheFuture = (post: Post, now: number): boolean =>
  * through the repository's Admin role authorized it (it needs registering again), or Smithers recorded no App
  * installation on the repository; else the runner's name.
  */
-export const runnerOf = (request: HttpServerRequest.HttpServerRequest, repoId: string) =>
-  Effect.gen(function* () {
-    const token = bearerOf(request)
-    if (Option.isNone(token)) return Option.none<RunnerAccess>()
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly name: string; readonly current: boolean }>`
-      SELECT r.name, r.repo_authorized_at IS NOT NULL
-          AND EXISTS (SELECT 1 FROM github_repositories g WHERE g.repo_id = r.repo_id AND g.installation_id IS NOT NULL)
-          AS current
-      FROM runners r
-      WHERE r.token_sha256 = ${digestSync(token.value)} AND r.repo_id = ${repoId} AND r.removed_at IS NULL`
-    if (row === undefined) return Option.none<RunnerAccess>()
-    return Option.some<RunnerAccess>(
-      row.current ? { _tag: "Runner", name: row.name, tokenSha256: digestSync(token.value) } : { _tag: "NotAuthorized" },
-    )
-  })
+export const runnerOf = effect (request: HttpServerRequest.HttpServerRequest, repoId: string) => {
+  const token = try sync(() => bearerOf(request))
+  if (Option.isNone(token)) return Option.none<RunnerAccess>()
+  const sql = try SqlClient.SqlClient
+  const tokenSha256 = try orDie(Effect.try({
+    try: () => digestSync(token.value),
+    catch: identity,
+  }))
+  const [row] = try sql<{ readonly name: string; readonly current: boolean }>`
+    SELECT r.name, r.repo_authorized_at IS NOT NULL
+        AND EXISTS (SELECT 1 FROM github_repositories g WHERE g.repo_id = r.repo_id AND g.installation_id IS NOT NULL)
+        AS current
+    FROM runners r
+    WHERE r.token_sha256 = ${tokenSha256} AND r.repo_id = ${repoId} AND r.removed_at IS NULL`
+  if (row === undefined) return Option.none<RunnerAccess>()
+  return Option.some<RunnerAccess>(
+    row.current ? { _tag: "Runner", name: row.name, tokenSha256 } : { _tag: "NotAuthorized" },
+  )
+}
 
 /** A runner token's standing on a repository (`runnerOf`). */
 export type RunnerAccess =
@@ -117,7 +120,7 @@ export type RunnerAccess =
  * current as a claim requires (decision 0148): its row `FOR SHARE` where its token still names it, unremoved and
  * authorized, then the repository's installation row. A person's authority is established after its body at the dispatcher. `none` when authority ended; nothing is written.
  */
-export const write = (
+export const write = effect (
   repoId: string,
   number: number,
   post: Post,
@@ -125,64 +128,66 @@ export const write = (
   now: number,
   runner?: { readonly tokenSha256: string },
   machine?: { readonly tokenSha256: string },
-) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql.withTransaction(Effect.gen(function* () {
-      yield* WriteAuthority.bound
-      if (runner !== undefined) {
-        const [held] = yield* sql`
-          SELECT 1 FROM runners
-          WHERE token_sha256 = ${runner.tokenSha256} AND repo_id = ${repoId} AND removed_at IS NULL
-            AND repo_authorized_at IS NOT NULL
-          FOR SHARE`
-        const [installed] = held === undefined ? [] : yield* sql`
-          SELECT 1 FROM github_repositories WHERE repo_id = ${repoId} AND installation_id IS NOT NULL FOR SHARE`
-        if (installed === undefined) return Option.none<{ readonly links: number; readonly changed: number }>()
-      }
-      // A machine's token is held live and in scope after its body arrived; its links never replace another source's.
-      if (machine !== undefined) {
-        const [held] = yield* sql`
-          SELECT 1 FROM machine_tokens
-          WHERE token_sha256 = ${machine.tokenSha256} AND repo_id = ${repoId} AND revoked_at IS NULL AND expires_at > now()
-            AND 'work/link' = ANY(scope)
-          FOR SHARE`
-        if (held === undefined) return Option.none<{ readonly links: number; readonly changed: number }>()
-      }
-      return Option.some(yield* writeLinks(repoId, number, post, source, now, machine !== undefined))
-    })))
-
-const writeLinks = (repoId: string, number: number, post: Post, source: string, now: number, ownOnly = false) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const received = new Date(now).toISOString()
-    // One row per key: the last of a post's duplicates wins.
-    const rows = [...new Map(post.links.map((link) => [workLinkId(repoId, number, link.kind, link.ref), link])).entries()].map(([id, link]) => ({
-      id,
-      repo_id: repoId,
-      number,
-      kind: link.kind,
-      ref: link.ref,
-      label: link.label ?? link.ref,
-      url: link.url ?? null,
-      state: link.state ?? null,
-      source,
-      updated_at: link.at ?? received,
-    }))
-    const changed = yield* sql<{ readonly id: string }>`
-      INSERT INTO work_links (id, repo_id, number, kind, ref, label, url, state, source, updated_at)
-      SELECT id, repo_id, number, kind, ref, label, url, state, source, updated_at
-      FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS r(id text, repo_id text, number integer, kind text,
-        ref text, label text, url text, state text, source text, updated_at timestamptz)
-      ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label, url = EXCLUDED.url, state = EXCLUDED.state,
-        source = EXCLUDED.source, updated_at = EXCLUDED.updated_at
-      WHERE (EXCLUDED.updated_at > work_links.updated_at
-        OR (EXCLUDED.updated_at = work_links.updated_at
-          AND (work_links.label, work_links.url, work_links.state, work_links.source)
-            IS DISTINCT FROM (EXCLUDED.label, EXCLUDED.url, EXCLUDED.state, EXCLUDED.source)))
-        ${ownOnly ? sql`AND work_links.source = EXCLUDED.source` : sql``}
-      RETURNING id`
-    return { links: rows.length, changed: changed.length }
+) => {
+  const sql = try SqlClient.SqlClient
+  return try sql.withTransaction(effect {
+    try WriteAuthority.bound
+    const unauthorized = Option.none<{ readonly links: number; readonly changed: number }>()
+    if (runner !== undefined) {
+      const [held] = try sql`
+        SELECT 1 FROM runners
+        WHERE token_sha256 = ${runner.tokenSha256} AND repo_id = ${repoId} AND removed_at IS NULL
+          AND repo_authorized_at IS NOT NULL
+        FOR SHARE`
+      if (held === undefined) return unauthorized
+      const [installed] = try sql`
+        SELECT 1 FROM github_repositories WHERE repo_id = ${repoId} AND installation_id IS NOT NULL FOR SHARE`
+      if (installed === undefined) return unauthorized
+    }
+    // A machine's token is held live and in scope after its body arrived; its links never replace another source's.
+    if (machine !== undefined) {
+      const [held] = try sql`
+        SELECT 1 FROM machine_tokens
+        WHERE token_sha256 = ${machine.tokenSha256} AND repo_id = ${repoId} AND revoked_at IS NULL AND expires_at > now()
+          AND 'work/link' = ANY(scope)
+        FOR SHARE`
+      if (held === undefined) return unauthorized
+    }
+    return Option.some(try writeLinks(repoId, number, post, source, now, machine !== undefined))
   })
+}
+
+const writeLinks = effect (repoId: string, number: number, post: Post, source: string, now: number, ownOnly = false) => {
+  const sql = try SqlClient.SqlClient
+  const received = new Date(now).toISOString()
+  // One row per key: the last of a post's duplicates wins.
+  const rows = [...new Map(post.links.map((link) => [workLinkId(repoId, number, link.kind, link.ref), link])).entries()].map(([id, link]) => ({
+    id,
+    repo_id: repoId,
+    number,
+    kind: link.kind,
+    ref: link.ref,
+    label: link.label ?? link.ref,
+    url: link.url ?? null,
+    state: link.state ?? null,
+    source,
+    updated_at: link.at ?? received,
+  }))
+  const changed = try sql<{ readonly id: string }>`
+    INSERT INTO work_links (id, repo_id, number, kind, ref, label, url, state, source, updated_at)
+    SELECT id, repo_id, number, kind, ref, label, url, state, source, updated_at
+    FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS r(id text, repo_id text, number integer, kind text,
+      ref text, label text, url text, state text, source text, updated_at timestamptz)
+    ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label, url = EXCLUDED.url, state = EXCLUDED.state,
+      source = EXCLUDED.source, updated_at = EXCLUDED.updated_at
+    WHERE (EXCLUDED.updated_at > work_links.updated_at
+      OR (EXCLUDED.updated_at = work_links.updated_at
+        AND (work_links.label, work_links.url, work_links.state, work_links.source)
+          IS DISTINCT FROM (EXCLUDED.label, EXCLUDED.url, EXCLUDED.state, EXCLUDED.source)))
+      ${ownOnly ? sql`AND work_links.source = EXCLUDED.source` : sql``}
+    RETURNING id`
+  return { links: rows.length, changed: changed.length }
+}
 
 /** One link as the issues list answers it. */
 export interface ListedLink {
@@ -196,26 +201,25 @@ export interface ListedLink {
 }
 
 /** The work on each of `numbers`: its status and links, newest first. Issues with no link are absent. */
-export const workOf = (repoId: string, numbers: ReadonlyArray<number>) =>
-  Effect.gen(function* () {
-    const found = new Map<number, { status: WorkStatus; links: Array<ListedLink> }>()
-    if (numbers.length === 0) return found
-    const sql = yield* SqlClient.SqlClient
-    const rows = yield* sql<ListedLink & { readonly number: number }>`
-      SELECT number, kind, ref, label, url, state, source,
-        to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at
-      FROM work_links WHERE repo_id = ${repoId} AND number = ANY(${numbers.map(String)}::integer[])
-      ORDER BY updated_at DESC, id`
-    for (const { number, ...link } of rows) {
-      const entry = found.get(number) ?? { status: "none" as WorkStatus, links: [] }
-      entry.links.push(link)
-      found.set(number, entry)
-    }
-    for (const entry of found.values()) {
-      entry.status = workStatusOf(entry.links.map((link) => ({ kind: link.kind, state: link.state, updatedAt: link.updated_at })))
-    }
-    return found
-  })
+export const workOf = effect (repoId: string, numbers: ReadonlyArray<number>) => {
+  const found = new Map<number, { status: WorkStatus; links: Array<ListedLink> }>()
+  if (numbers.length === 0) return found
+  const sql = try SqlClient.SqlClient
+  const rows = try sql<ListedLink & { readonly number: number }>`
+    SELECT number, kind, ref, label, url, state, source,
+      to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at
+    FROM work_links WHERE repo_id = ${repoId} AND number = ANY(${numbers.map(String)}::integer[])
+    ORDER BY updated_at DESC, id`
+  for (const { number, ...link } of rows) {
+    const entry = found.get(number) ?? { status: "none" as WorkStatus, links: [] }
+    entry.links.push(link)
+    found.set(number, entry)
+  }
+  for (const entry of found.values()) {
+    entry.status = try sync(() => workStatusOf(entry.links.map((link) => ({ kind: link.kind, state: link.state, updatedAt: link.updated_at }))))
+  }
+  return found
+}
 
 /** The largest post, in bytes: `MAX_LINKS_PER_POST` links of the longest ref, label and URL, and their JSON. */
 export { MAX_POST_BYTES } from "../../src/features/issues/work.ts"

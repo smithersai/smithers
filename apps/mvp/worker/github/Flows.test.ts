@@ -22,7 +22,7 @@ import * as Store from "./Store.ts"
 import { admit, comments, database, items, keys, REPOSITORY, reset, services, signedIn, sql, writeRow } from "./test/fixtures.ts"
 import { BOT_LOGIN, scriptedApp, scriptedGitHub, appKey } from "./test/scriptedGitHub.ts"
 import * as Tokens from "./Tokens.ts"
-import * as Write from "./Write.ts"
+import * as Write from "./Write.vibe"
 
 const runtime = testFile("github_flows")
 
@@ -455,6 +455,26 @@ describe("github/Write", () => {
     }
     // Before 2026-10-21 the settings writes counted `user` here and `none` in send (Fable review).
     expect(kinds).toEqual(["none", "none", "app", "user"])
+  })
+
+  test("the generic writer refuses merge work and gives up without acquiring a token", async () => {
+    const github = scriptedGitHub()
+    const person = await maya(github)
+    const payload = { op: "pr/merge", number: 1, headSha: "a".repeat(40), baseSha: "b".repeat(40), method: "squash" } as const
+    const pending = () => admit(runtime, { actorId: person.personId, sessionId: person.sessionId, via: "person", payload })
+    const { services: value } = await services(runtime, github)
+    const { send, giveUp } = Write.steps(value)
+
+    const refused = await pending()
+    expect(await Effect.runPromise(send({ writeId: refused }))).toEqual({ status: "refused", itemNumber: null })
+    expect(await writeRow(runtime, refused)).toMatchObject({ status: "refused", failure: "invalid" })
+
+    const abandoned = await pending()
+    const { exit, logs } = await logged(giveUp({ writeId: abandoned }))
+    expect(exit).toEqual(Exit.succeed({ status: "failed", itemNumber: null }))
+    expect(logs.find((log) => log.message === "github.write")?.annotations).toMatchObject({ tokenKind: "none" })
+    expect(await writeRow(runtime, abandoned)).toMatchObject({ status: "failed", failure: "unavailable" })
+    expect(github.calls).toEqual([])
   })
 
   test("under the host's redaction a write's record still says whose token wrote: user for a person, app for the agent", async () => {

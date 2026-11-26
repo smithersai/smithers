@@ -11,7 +11,7 @@ import * as ReadToken from "./github/ReadToken.vibe"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import * as GhStore from "./github/Store.ts"
 import * as Tokens from "./github/Tokens.ts"
-import * as Visibility from "./github/Visibility.ts"
+import * as Visibility from "./github/Visibility.vibe"
 import * as Notifications from "./Notifications.ts"
 import * as SessionStore from "./SessionStore.ts"
 

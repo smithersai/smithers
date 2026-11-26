@@ -277,7 +277,7 @@ test("a repository's sync state, installation, visibility and App absence read b
           break
         case "private":
         case "public": {
-          // What a step's read of the repository records (worker/github/VisibilityReceipt.ts), as a fixture row.
+          // What a step's read of the repository records (worker/github/VisibilityReceipt.vibe), as a fixture row.
           const isPrivate = step === "private"
           model.visibility = Option.some(!isPrivate)
           model.row = true

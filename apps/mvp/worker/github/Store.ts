@@ -1,6 +1,6 @@
 import * as WriteAuthority from "../WriteAuthority.ts"
 import * as ProtectedAuthority from "../ProtectedAuthority.ts"
-import { fold as foldWriteNotice } from "./WriteFeed.ts"
+import { fold as foldWriteNotice } from "./WriteFeed.vibe"
 import { COMMITMENTS, commitmentOf } from "../../src/features/issues/lifecycle.ts"
 import { GitHub } from "@smthrs/integrations"
 import { Effect, Metric, Option, Schema } from "effect"
@@ -674,7 +674,7 @@ export const forgetInstallation = (repoId: string) =>
     yield* sql`UPDATE github_repositories SET installation_id = NULL, checked_at = now() WHERE repo_id = ${repoId}`
   })
 
-export { recordRepository, repositoryObservation } from "./VisibilityReceipt.ts"
+export { recordRepository, repositoryObservation } from "./VisibilityReceipt.vibe"
 
 /** Whether GitHub said `repoId` is public: `None` until a step has read it. */
 export const isPublic = (repoId: string) =>

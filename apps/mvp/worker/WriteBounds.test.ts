@@ -2,7 +2,7 @@ import { Deferred, Effect, Exit } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeAll, expect, test } from "vitest"
 import { testFile } from "./test/harness.ts"
-import * as WorkLinks from "./github/WorkLinks.ts"
+import * as WorkLinks from "./github/WorkLinks.vibe"
 import * as Stack from "./stack/Stack.vibe"
 import * as Runners from "./runners/Store.vibe"
 

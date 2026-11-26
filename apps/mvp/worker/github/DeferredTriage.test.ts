@@ -4,8 +4,9 @@ import { beforeEach, expect, test } from "vitest"
 import { testFile } from "../test/harness.ts"
 import { holdSql } from "../test/sqlWait.ts"
 import * as Host from "./Host.vibe"
+import { RoleRefused } from "./RepoRoles.ts"
 import * as TriageStore from "./TriageStore.ts"
-import * as Write from "./Write.ts"
+import * as Write from "./Write.vibe"
 import { rememberInstallation } from "./Store.ts"
 import { admit, database, judgeSeat, judging, keys, REPOSITORY, reset, signedIn, sql, writeRow } from "./test/fixtures.ts"
 import { APP_ID, appKey, INSTALLATION_ID, SCRIPTED_API, scriptedGitHub } from "./test/scriptedGitHub.ts"
@@ -13,7 +14,11 @@ import { APP_ID, appKey, INSTALLATION_ID, SCRIPTED_API, scriptedGitHub } from ".
 const runtime = testFile("deferred_triage")
 beforeEach(() => reset(runtime))
 
-const prepare = async (op: "triage/enable" | "triage/pause", state: string) => {
+const prepare = async (
+  op: "triage/enable" | "triage/pause",
+  state: string,
+  options: { readonly memberReceipt?: boolean; readonly alias?: string } = {},
+) => {
   const github = scriptedGitHub()
   const login = "deferred-maintainer"
   const who = await signedIn(runtime, { login, token: github.userToken(login), role: "maintainer" })
@@ -23,8 +28,16 @@ const prepare = async (op: "triage/enable" | "triage/pause", state: string) => {
   await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
     VALUES ('${REPOSITORY.id}', '${who.personId}', 'maintainer', now())`)
   const [row] = await sql(runtime, `SELECT checked_at::text AS "checkedAt" FROM github_repo_roles WHERE person_id = '${who.personId}'`) as Array<{ checkedAt: string }>
-  const authority = { personId: who.personId, sessionId: who.sessionId, scope: { _tag: "Repo" as const,
-    held: { repoId: REPOSITORY.id, personId: who.personId, role: "maintainer" as const, checkedAt: row!.checkedAt } } }
+  const authority = {
+    personId: who.personId,
+    sessionId: who.sessionId,
+    ...(options.alias === undefined ? {} : { alias: options.alias }),
+    scope: {
+      _tag: "Repo" as const,
+      held: { repoId: REPOSITORY.id, personId: who.personId,
+        role: options.memberReceipt ? "member" as const : "maintainer" as const, checkedAt: row!.checkedAt },
+    },
+  }
   const payload = op === "triage/enable" ? { op, dailyTokens: 2345, authority } : { op, authority }
   const id = await admit(runtime, { actorId: who.personId, sessionId: who.sessionId, via: "person", payload })
   if (state === "promoted") await sql(runtime, `UPDATE github_repo_roles SET role = 'admin', checked_at = clock_timestamp() WHERE person_id = '${who.personId}'`)
@@ -80,6 +93,49 @@ test.each(["unavailable", "rate_limited", "not_installed"])("deferred triage ret
     await runtime.runPromise(rememberInstallation(REPOSITORY.id, INSTALLATION_ID))
   }
   expect(await runtime.runPromise(h.send)).toMatchObject({ status: "done" })
+})
+
+test("a stored Member receipt cannot start a Maintainer role refresh or change triage", async () => {
+  const h = await prepare("triage/pause", "stale", { memberReceipt: true })
+  expect(await runtime.runPromise(Effect.result(h.send))).toMatchObject({
+    _tag: "Failure", failure: { _tag: "@smthrs/mvp/github/WriteUnavailable" },
+  })
+  expect(h.github.calls.filter((call) => call.path.includes("/collaborators/"))).toEqual([])
+  expect(await writeRow(runtime, h.id)).toMatchObject({ status: "pending", failure: null })
+  expect(await settings()).toEqual([{ enabled: true, dailyTokens: 1000 }])
+})
+
+test("the role refresh uses the admitted alias and preserves a refusal without a retry delay", async () => {
+  const alias = crypto.randomUUID()
+  const h = await prepare("triage/pause", "stale", { alias })
+  const roles = h.services.roles!
+  const actors: Array<Parameters<typeof roles.resolve>[0]> = []
+  const send = Write.steps({ ...h.services, roles: {
+    ...roles,
+    resolve: (actor) => {
+      actors.push(actor)
+      return Effect.fail(new RoleRefused({ code: "github_unavailable" }))
+    },
+  } }).send({ writeId: h.id })
+  const result = await runtime.runPromise(Effect.result(send))
+  expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "@smthrs/mvp/github/WriteUnavailable" } })
+  if (result._tag === "Failure") expect(result.failure.retryAfterMillis).toBeUndefined()
+  expect(actors).toMatchObject([{ alias, session: h.who.sessionId }])
+  expect(await writeRow(runtime, h.id)).toMatchObject({ status: "pending", failure: null })
+  expect(await settings()).toEqual([{ enabled: true, dailyTokens: 1000 }])
+})
+
+test("a write removed after the deferred role read cannot change triage", async () => {
+  const h = await prepare("triage/pause", "stale")
+  const roles = h.services.roles!
+  const send = Write.steps({ ...h.services, roles: {
+    ...roles,
+    resolve: (actor, repository) => roles.resolve(actor, repository).pipe(
+      Effect.tap(() => Effect.promise(() => sql(runtime, `DELETE FROM github_writes WHERE id = '${h.id}'`))),
+    ),
+  } }).send({ writeId: h.id })
+  expect(await runtime.runPromise(send)).toEqual({ status: "missing", itemNumber: null })
+  expect(await settings()).toEqual([{ enabled: true, dailyTokens: 1000 }])
 })
 
 test("a session revoked while the deferred role read is in flight cannot commit", async () => {

@@ -5,7 +5,7 @@
 // - GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY: the Smithers GitHub App, with Issues read and write (decision 0012 question 2);
 // - GITHUB_LIVE_REPOSITORY: `owner/name` of the scratch repository the App is installed on;
 // - GITHUB_LIVE_MAINTAINER: the login of a Maintainer or Admin on the scratch repository. The agent writes only for a
-//   person sign-in knows as a Member or above there (worker/github/Write.ts), so the App's cases record them as that
+//   person sign-in knows as a Member or above there (worker/github/Write.vibe), so the App's cases record them as that
 //   person, with the account id GitHub has for them, and the agent writes for them; they enable triage there too
 //   (docs/features/issues.md#triage). The triage case decides with a scripted judge, so its writes are certain, and, when
 //   CEREBRAS_API_KEY is set too, once more with the deployment's real model on the `judge` role;
@@ -29,7 +29,7 @@ import { database, judgeSeat, judging, keys, reset, signedIn, sql } from "./test
 import * as Tokens from "./Tokens.ts"
 import * as Triage from "./Triage.ts"
 import * as TriageStore from "./TriageStore.ts"
-import * as Write from "./Write.ts"
+import * as Write from "./Write.vibe"
 
 const runtime = testFile("github_live")
 

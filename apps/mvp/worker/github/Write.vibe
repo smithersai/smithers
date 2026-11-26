@@ -5,7 +5,7 @@ import { triageOf } from "../../src/features/issues/contract.ts"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Core, GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
-import { Clock, Effect, Layer, Metric, Option, type Redacted, Schema } from "effect"
+import type { Redacted } from "effect"
 import { HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import {
@@ -160,40 +160,39 @@ const answerOf = (status: Exclude<Store.Write["status"], "pending">, itemNumber:
 
 /** The steps over `services`, each recording what it did: never a title, a body, a login or a token. */
 export const steps = <E, R>(services: Services<E, R>) => {
-  const settled = (
+  const settled = effect (
     write: Store.Write,
     token: "user" | "app" | "none",
     settlement: Store.Settlement,
-    project?: Effect.Effect<unknown, unknown, unknown>,
-    beforeCommit: ReturnType<typeof ProtectedAuthority.requireAtCommit> = Effect.succeed(undefined),
-  ) =>
-    Effect.gen(function* () {
-      // `tokenKind`, never `token`: the flow host's redaction hides the value of a field named `token`.
-      const fields = { writeId: write.id, op: write.op, via: write.via, tokenKind: token }
-      const settledNow = yield* Store.settleWrite(write.id, settlement, project as Effect.Effect<unknown> | undefined, beforeCommit)
-      if (settledNow) {
-        yield* Metric.update(Metric.withAttributes(Metrics.writes, { op: write.op, outcome: settlement.status, token }), 1)
-        yield* Metric.update(Metric.withAttributes(Metrics.writeMs, { op: write.op }), (yield* Clock.currentTimeMillis) - write.createdAt)
-      }
-      yield* Effect.logWithLevel(settlement.status === "done" ? "Info" : "Warn")("github.write").pipe(
-        Effect.annotateLogs({
-          ...fields,
-          outcome: settlement.status,
-          settled: settledNow,
-          ...(settlement.status === "done" ? { number: settlement.itemNumber } : { failure: settlement.failure }),
-        }),
-      )
-      return {
-        status: settlement.status,
-        itemNumber: settlement.status === "done" ? settlement.itemNumber : null,
-      } satisfies Written
-    })
+    project?: unknown!unknown!unknown,
+    beforeCommit: ReturnType<typeof ProtectedAuthority.requireAtCommit> = succeed(undefined),
+  ) => {
+    // `tokenKind`, never `token`: the flow host's redaction hides the value of a field named `token`.
+    const fields = { writeId: write.id, op: write.op, via: write.via, tokenKind: token }
+    const settledNow = try Store.settleWrite(write.id, settlement, project as (unknown!!) | undefined, beforeCommit)
+    if (settledNow) {
+      try Metric.update(Metric.withAttributes(Metrics.writes, { op: write.op, outcome: settlement.status, token }), 1)
+      try Metric.update(Metric.withAttributes(Metrics.writeMs, { op: write.op }), (try Clock.currentTimeMillis) - write.createdAt)
+    }
+    try logWithLevel(settlement.status === "done" ? "Info" : "Warn")("github.write").pipe(
+      annotateLogs({
+        ...fields,
+        outcome: settlement.status,
+        settled: settledNow,
+        ...(settlement.status === "done" ? { number: settlement.itemNumber } : { failure: settlement.failure }),
+      }),
+    )
+    return {
+      status: settlement.status,
+      itemNumber: settlement.status === "done" ? settlement.itemNumber : null,
+    } satisfies Written
+  }
 
   const send = ({ writeId }: typeof Send.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const found = yield* Store.writeOf(writeId)
+    (effect {
+      const found = try Store.writeOf(writeId)
       if (Option.isNone(found)) {
-        yield* Effect.logWarning("github.write").pipe(Effect.annotateLogs({ writeId, outcome: "missing" }))
+        try logWarning("github.write").pipe(annotateLogs({ writeId, outcome: "missing" }))
         return { status: "missing", itemNumber: null } satisfies Written
       }
       const write = found.value
@@ -212,13 +211,13 @@ export const steps = <E, R>(services: Services<E, R>) => {
             unavailable = true
           } else {
             // Resolve from a fresh row or ask GitHub, with no write transaction/row locks held during the network read.
-            const current = yield* services.roles.resolve({ subject: { kind: "person", id: authority.personId },
+            const current = try services.roles.resolve({ subject: { kind: "person", id: authority.personId },
               role: held.role, session: authority.sessionId, ...(authority.alias === undefined ? {} : { alias: authority.alias }) },
-              repositoryOf(held.repoId.replace(/^github\//, ""))).pipe(Effect.result)
+              repositoryOf(held.repoId.replace(/^github\//, ""))).pipe(result)
             if (current._tag === "Failure") {
               // An installation/configuration refusal supplies no locked, fresh role observation.
               if (CANT_ACT.has(current.failure.code)) unavailable = true
-              else return yield* current.failure
+              else throw current.failure
             } else {
               // Keep negative observations too: a denial can expire or be replaced while the write lock waits.
               authority = { ...authority, scope: Option.isSome(current.success.held)
@@ -226,56 +225,56 @@ export const steps = <E, R>(services: Services<E, R>) => {
             }
           }
         }
-        const sql = yield* SqlClient.SqlClient
-        return yield* sql.withTransaction(Effect.gen(function* () {
-          yield* WriteAuthority.bound
-          const locked = yield* Store.writeOf(write.id, true)
+        const sql = try SqlClient.SqlClient
+        return try sql.withTransaction(effect {
+          try WriteAuthority.bound
+          const locked = try Store.writeOf(write.id, true)
           if (Option.isNone(locked)) return { status: "missing", itemNumber: null } satisfies Written
           if (locked.value.status !== "pending") return answerOf(locked.value.status, locked.value.itemNumber)
           // A fresh same-ID request can reauthorize while this attempt reads its repository role. Never settle
           // that new admission using the old snapshot, including an old permission denial.
           if (JSON.stringify(locked.value.payload) !== JSON.stringify(payload)) {
-            yield* Metric.update(Metric.withAttributes(Metrics.writeAuthority, { op: write.op, outcome: "superseded" }), 1)
-            yield* Effect.annotateCurrentSpan({ "github.write.authority": "superseded" })
-            yield* Effect.logInfo("github.write.authority").pipe(Effect.annotateLogs({ outcome: "superseded" }))
-            return yield* new WriteUnavailable({})
+            try Metric.update(Metric.withAttributes(Metrics.writeAuthority, { op: write.op, outcome: "superseded" }), 1)
+            try annotateCurrentSpan({ "github.write.authority": "superseded" })
+            try logInfo("github.write.authority").pipe(annotateLogs({ outcome: "superseded" }))
+            throw new WriteUnavailable({})
           }
-          if (unavailable) return yield* new WriteUnavailable({})
-          const access = yield* ProtectedAuthority.check(authority, permitted)
-          if (access === "unavailable") return yield* new WriteUnavailable({})
-          if (access === "denied") return yield* settled(write, "none", { status: "refused", failure: "not_allowed" },
+          if (unavailable) throw new WriteUnavailable({})
+          const access = try ProtectedAuthority.check(authority, permitted)
+          if (access === "unavailable") throw new WriteUnavailable({})
+          if (access === "denied") return try settled(write, "none", { status: "refused", failure: "not_allowed" },
             undefined, ProtectedAuthority.requireAtCommit(authority))
-          return yield* settled(write, "none", { status: "done", itemNumber: null, githubId: null },
+          return try settled(write, "none", { status: "done", itemNumber: null, githubId: null },
             payload.op === "triage/enable"
               ? TriageStore.enable(write.repoId, { actorId: write.actorId, login: write.login, dailyTokens: payload.dailyTokens })
               : TriageStore.pause(write.repoId, "person"), ProtectedAuthority.requireAtCommit(authority))
-        }))
+        })
       }
       // Run triage again is admitted for `triage/Run`, which settles it; this flow never runs one.
-      if (payload.op === "triage/run") return yield* settled(write, "none", { status: "refused", failure: "invalid" })
-      // A merge is admitted for `pr/Merge` (worker/github/Merge.ts), which settles it; this flow never runs one.
-      if (payload.op === "pr/merge") return yield* settled(write, "none", { status: "refused", failure: "invalid" })
+      if (payload.op === "triage/run") return try settled(write, "none", { status: "refused", failure: "invalid" })
+      // A merge is admitted for `pr/Merge` (worker/github/Merge.vibe), which settles it; this flow never runs one.
+      if (payload.op === "pr/merge") return try settled(write, "none", { status: "refused", failure: "invalid" })
       // Publish, Update branch and Resync are admitted for `branch/Publish`, `branch/Update` and `branch/Resync`
       // (worker/branch/Publish.vibe).
       if (payload.op === "branch/publish" || payload.op === "branch/update" || payload.op === "branch/resync") {
-        return yield* settled(write, "none", { status: "refused", failure: "invalid" })
+        return try settled(write, "none", { status: "refused", failure: "invalid" })
       }
       const kind = write.via === "person" ? "user" as const : "app" as const
       // A person's triage writes after every flow label or comment that passed its pin check before this write was
       // admitted.
-      if (payload.op === "issue/triage" && (yield* TriageStore.flowWriteInFlight(write.repoId, payload.number))) {
-        yield* Effect.logInfo("github.write").pipe(
-          Effect.annotateLogs({ writeId, op: write.op, tokenKind: kind, outcome: "waiting", waitingFor: "flow_write" }),
+      if (payload.op === "issue/triage" && (try TriageStore.flowWriteInFlight(write.repoId, payload.number))) {
+        try logInfo("github.write").pipe(
+          annotateLogs({ writeId, op: write.op, tokenKind: kind, outcome: "waiting", waitingFor: "flow_write" }),
         )
-        return yield* new WriteUnavailable({ retryAfterMillis: LABEL_WAIT_MS })
+        throw new WriteUnavailable({ retryAfterMillis: LABEL_WAIT_MS })
       }
-      const token = yield* (write.via === "person"
+      const token = try (write.via === "person"
         ? services.tokens.forSession(write.sessionId!)
-        : services.tokens.forInstallation(repository, "write")).pipe(Effect.result)
+        : services.tokens.forInstallation(repository, "write")).pipe(result)
       if (token._tag === "Failure") {
         const failure = tokenFailure(token.failure)
-        if (failure !== undefined) return yield* settled(write, kind, { status: "refused", failure })
-        return yield* new WriteUnavailable(
+        if (failure !== undefined) return try settled(write, kind, { status: "refused", failure })
+        throw new WriteUnavailable(
           token.failure.retryAfterMillis === undefined ? {} : { retryAfterMillis: token.failure.retryAfterMillis },
         )
       }
@@ -285,111 +284,111 @@ export const steps = <E, R>(services: Services<E, R>) => {
       /** Keyed by the write's own id, which the route recorded before the flow started and the projection joins on. */
       const keyed = { key: write.id }
       // The triage state the issue had before a person's override: what the override metric counts it from.
-      const before = payload.op === "issue/triage"
-        ? Option.match(yield* TriageStore.itemTriage(write.repoId, payload.number), {
-          onNone: () => "proposed" as const,
-          onSome: (item) => item.triage,
-        })
-        : "proposed"
+      const previous = payload.op === "issue/triage"
+        ? try TriageStore.itemTriage(write.repoId, payload.number)
+        : Option.none()
+      const before = Option.isSome(previous) ? previous.value.triage : "proposed"
       const onGitHub = (accessToken: Redacted.Redacted<string>) =>
-        Effect.gen(function* () {
+        (effect {
           // Counted for the write's record; `Action.once` decides what was made, by the write's marker alone.
-          yield* Store.beginAttempt(write.id)
+          try Store.beginAttempt(write.id)
           // The agent writes as the App, so GitHub checks nothing of the person: each attempt checks again that they
           // are still a Member or above there, as the account sign-in knows (decisions 0007 §6 and 0079). A person's
           // own write goes with their own token, which GitHub checks.
-          const actsForMember = write.via !== "agent" ? Effect.succeed(true) : Effect.gen(function* () {
+          const actsForMember = write.via !== "agent" ? succeed(true) : effect {
             // Store.writeOf reads both NOT NULL people columns through the same LEFT JOIN.
             if (write.login === null) return false
-            const permission = yield* GitHub.Collaborators.permission(repository.owner, repository.name, write.login)
+            const permission = try GitHub.Collaborators.permission(repository.owner, repository.name, write.login)
             if (Option.isNone(permission) || permission.value.userId !== write.accountId) return false
-            const role = roleOf(permissionOf(permission.value))
+            const role = try sync(() => roleOf(permissionOf(permission.value)))
             return role === "admin" || role === "maintainer" || role === "member"
-          })
+          }
           // Recovery may adopt an earlier write after permission was revoked; only a new POST needs authority.
           const authorized = <A, E, R>(operation: Action.Keyed<A, E, R>) => Action.keyed({
             find: operation.find,
-            perform: (key: string) => Effect.gen(function* () {
-              if (!(yield* actsForMember)) return yield* Effect.fail(new Core.IntegrationError.IntegrationError(
+            perform: effect (key: string) => {
+              if (!(try actsForMember)) throw new Core.IntegrationError.IntegrationError(
                 "delivery-failed", "The account may no longer write to this repository.", { status: 403 },
-              ))
-              return yield* operation.perform(key)
-            }),
+              )
+              return try operation.perform(key)
+            },
           })
-          const comment = (number: number, text: string) =>
-            Effect.map(
-              Action.once("comment", authorized(GitHub.Once.comment(repository.owner, repository.name, number, attributed(text))), keyed),
-              (made) => ({ number, githubId: made.id }),
-            )
+          const comment = effect (number: number, text: string) => {
+            const operation = try sync(() => GitHub.Once.comment(repository.owner, repository.name, number, attributed(text)))
+            const made = try Action.once("comment", authorized(operation), keyed)
+            return { number, githubId: made.id }
+          }
           if (payload.op === "issue/create") {
             const since = new Date(write.createdAt - MARKER_SLACK_MS).toISOString()
-            const issue = yield* Action.once(
-              "issue",
-              authorized(GitHub.Once.issue(repository.owner, repository.name, { title: payload.title, body: attributed(payload.body), since })),
-              keyed,
-            )
+            const operation = try sync(() => GitHub.Once.issue(repository.owner, repository.name, {
+              title: payload.title, body: attributed(payload.body), since,
+            }))
+            const issue = try Action.once("issue", authorized(operation), keyed)
             return { number: issue.number, githubId: issue.id }
           }
-          if (payload.op === "issue/comment") return yield* comment(payload.number, payload.body)
+          if (payload.op === "issue/comment") return try comment(payload.number, payload.body)
           if (payload.op === "issue/commitment") {
-            const permission = write.login === null ? Option.none() : yield* GitHub.Collaborators.permission(repository.owner, repository.name, write.login)
+            const permission = write.login === null ? Option.none() : try GitHub.Collaborators.permission(repository.owner, repository.name, write.login)
             const maintains = Option.isSome(permission) &&
               [permission.value.roleName, permission.value.permission].some((role) => role === "admin" || role === "maintain")
-            const issue = yield* GitHub.Issues.getIssue(repository.owner, repository.name, payload.number)
-            if (write.via !== "person" || !maintains || triageOf(issue.labels.map((label) => label.name)) !== "accepted")
+            const issue = try GitHub.Issues.getIssue(repository.owner, repository.name, payload.number)
+            if (write.via !== "person" || !maintains || (try sync(() => triageOf(issue.labels.map((label) => label.name)))) !== "accepted")
               return { number: payload.number, githubId: null, refused: true }
-            const add = commitmentLabel(payload.commitment)
-            yield* GitHub.Issues.createLabel(repository.owner, repository.name, { name: add, color: "1d76db" })
-            yield* GitHub.Issues.addLabels(repository.owner, repository.name, payload.number, [add])
-            for (const other of COMMITMENTS) if (other !== payload.commitment)
-              yield* GitHub.Issues.removeLabel(repository.owner, repository.name, payload.number, commitmentLabel(other))
+            const add = try sync(() => commitmentLabel(payload.commitment))
+            try GitHub.Issues.createLabel(repository.owner, repository.name, { name: add, color: "1d76db" })
+            try GitHub.Issues.addLabels(repository.owner, repository.name, payload.number, [add])
+            for (const other of COMMITMENTS) {
+              if (other === payload.commitment) continue
+              const label = try sync(() => commitmentLabel(other))
+              try GitHub.Issues.removeLabel(repository.owner, repository.name, payload.number, label)
+            }
             return { number: payload.number, githubId: null }
           }
           // A person's Accept or Not accepted: one triage label on, the other off (each idempotent, so a repeat is
           // harmless), then their reason as their own comment when they gave one.
-          const add = labelOf(payload.decision)
-          yield* GitHub.Issues.createLabel(repository.owner, repository.name, { name: add, color: TRIAGE_LABEL_COLORS[add]! })
-          yield* GitHub.Issues.addLabels(repository.owner, repository.name, payload.number, [add])
-          yield* GitHub.Issues.removeLabel(
+          const add = try sync(() => labelOf(payload.decision))
+          try GitHub.Issues.createLabel(repository.owner, repository.name, { name: add, color: TRIAGE_LABEL_COLORS[add]! })
+          try GitHub.Issues.addLabels(repository.owner, repository.name, payload.number, [add])
+          try GitHub.Issues.removeLabel(
             repository.owner,
             repository.name,
             payload.number,
             add === ACCEPTED_LABEL ? NOT_ACCEPTED_LABEL : ACCEPTED_LABEL,
           )
           if (payload.reason === null) return { number: payload.number, githubId: null }
-          return yield* comment(payload.number, payload.reason)
+          return try comment(payload.number, payload.reason)
         }).pipe(withToken(accessToken, services.apiBaseUrl))
-      const made = yield* onGitHub(token.success).pipe(Effect.result)
+      const made = try onGitHub(token.success).pipe(result)
       if (made._tag === "Failure") {
         const classified = classify(made.failure)
         if (classified.kind === "refused") {
-          return yield* settled(write, kind, { status: "refused", failure: refusalOf(classified.status, kind) })
+          return try settled(write, kind, { status: "refused", failure: refusalOf(classified.status, kind) })
         }
         if (classified.kind === "unknown") {
-          yield* Metric.update(Metric.withAttributes(Metrics.writeUnknown, { op: write.op }), 1)
+          try Metric.update(Metric.withAttributes(Metrics.writeUnknown, { op: write.op }), 1)
         }
-        yield* Effect.logWarning("github.write").pipe(
-          Effect.annotateLogs({ writeId, op: write.op, tokenKind: kind, outcome: classified.kind, errorCode: codeOf(made.failure) }),
+        try logWarning("github.write").pipe(
+          annotateLogs({ writeId, op: write.op, tokenKind: kind, outcome: classified.kind, errorCode: codeOf(made.failure) }),
         )
-        return yield* new WriteUnavailable(retryAfter(made.failure))
+        throw new WriteUnavailable(retryAfter(made.failure))
       }
       // GitHub took it: read the issue back, then settle the write with its rows in one transaction. A read-back that
       // fails is tried again; the next attempt finds the write by its marker.
-      const result = made.success
-      if ("refused" in result && result.refused) return yield* settled(write, kind, { status: "refused", failure: "not_allowed" })
-      const fetched = yield* fetchIssue(repository, result.number).pipe(withToken(token.success, services.apiBaseUrl))
-      const projected = project(repository, result.number, fetched)
-      const written = yield* settled(
+      const response = made.success
+      if ("refused" in response && response.refused) return try settled(write, kind, { status: "refused", failure: "not_allowed" })
+      const fetched = try fetchIssue(repository, response.number).pipe(withToken(token.success, services.apiBaseUrl))
+      const projected = project(repository, response.number, fetched)
+      const written = try settled(
         write,
         kind,
-        { status: "done", itemNumber: result.number, githubId: result.githubId },
+        { status: "done", itemNumber: response.number, githubId: response.githubId },
         payload.op === "issue/triage"
           // The override pins the issue, so the flow drops a decision in flight and never re-decides it, and is recorded
           // as the person's decision with its receipts.
-          ? Effect.gen(function* () {
-            yield* projected
-            yield* TriageStore.pin(write.repoId, payload.number, true)
-            yield* TriageStore.recordDecision({
+          ? effect {
+            try projected
+            try TriageStore.pin(write.repoId, payload.number, true)
+            try TriageStore.recordDecision({
               id: write.id,
               repoId: write.repoId,
               number: payload.number,
@@ -405,44 +404,41 @@ export const steps = <E, R>(services: Services<E, R>) => {
               abstained: null,
               tokens: 0,
               labeled: true,
-              commentGithubId: result.githubId,
+              commentGithubId: response.githubId,
             })
-          })
+          }
           : projected,
       )
       if (payload.op === "issue/triage" && written.status === "done") {
-        yield* Metric.update(Metric.withAttributes(Metrics.triageDecisions, { decision: payload.decision, via: "person" }), 1)
-        yield* Metric.update(Metric.withAttributes(Metrics.triageOverrides, { from: before, to: payload.decision }), 1)
+        try Metric.update(Metric.withAttributes(Metrics.triageDecisions, { decision: payload.decision, via: "person" }), 1)
+        try Metric.update(Metric.withAttributes(Metrics.triageOverrides, { from: before, to: payload.decision }), 1)
       }
       return written
     }).pipe(
-      Effect.provideService(HttpClient.HttpClient, services.http),
+      provideService(HttpClient.HttpClient, services.http),
       Effect.provide(services.database),
-      Effect.catch((error) =>
-        error instanceof WriteUnavailable
-          ? Effect.fail(error)
-          : Effect.logWarning("github.write").pipe(
-            Effect.annotateLogs({ writeId, outcome: "failed", errorCode: codeOf(error) }),
-            Effect.andThen(Effect.fail(new WriteUnavailable(retryAfter(error)))),
-          )
-      ),
-      Effect.withSpan("github.write", { attributes: { "smithers.github.write": writeId } }),
+      Effect.catch(effect (error) => {
+        if (error instanceof WriteUnavailable) throw error
+        try annotateLogs(logWarning("github.write"), { writeId, outcome: "failed", errorCode: codeOf(error) })
+        throw new WriteUnavailable(retryAfter(error))
+      }),
+      withSpan("github.write", { attributes: { "smithers.github.write": writeId } }),
     )
 
   const giveUp = ({ writeId }: typeof GiveUp.payloadSchema.Type) =>
-    Effect.gen(function* () {
-      const found = yield* Store.writeOf(writeId)
+    (effect {
+      const found = try Store.writeOf(writeId)
       if (Option.isNone(found)) return { status: "missing", itemNumber: null } satisfies Written
       // A write another run settled answers what it settled, never `failed`.
       if (found.value.status !== "pending") return answerOf(found.value.status, found.value.itemNumber)
       // These local writes have no uncertain external side effect. The existing unbounded final-step policy
       // retains unavailable authority, then executes the same guarded transaction after explicit reauthorization.
-      if (found.value.payload.op === "triage/enable" || found.value.payload.op === "triage/pause") return yield* send({ writeId })
-      return yield* settled(found.value, tokenKindOf(found.value), { status: "failed", failure: "unavailable" })
+      if (found.value.payload.op === "triage/enable" || found.value.payload.op === "triage/pause") return try send({ writeId })
+      return try settled(found.value, tokenKindOf(found.value), { status: "failed", failure: "unavailable" })
     }).pipe(
       Effect.provide(services.database),
-      Effect.mapError(() => new WriteUnavailable({})),
-      Effect.withSpan("github.write.give_up", { attributes: { "smithers.github.write": writeId } }),
+      mapError(() => new WriteUnavailable({})),
+      withSpan("github.write.give_up", { attributes: { "smithers.github.write": writeId } }),
     )
 
   return { send, giveUp }

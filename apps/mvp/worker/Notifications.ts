@@ -21,7 +21,7 @@ import * as SessionStore from "./SessionStore.ts"
 import * as NotificationPolicy from "./NotificationPolicy.vibe"
 import * as ShapeAccess from "./ShapeAccess.vibe"
 import { FRESH_SECONDS } from "./github/RoleAge.ts"
-import { TTL_MS } from "./github/Visibility.ts"
+import { TTL_MS } from "./github/Visibility.vibe"
 import * as FleetAudience from "./runners/FleetAudience.vibe"
 import { pruned as repositoryPruned } from "./github/RepoRoles.ts"
 

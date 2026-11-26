@@ -22,7 +22,7 @@ import { admit, database, judgeSeat, judging, keys, reset, signedIn, writeRow } 
 import { APP_ID, appKey, SCRIPTED_API, scriptedGitHub } from "./test/scriptedGitHub.ts"
 import * as Triage from "./Triage.ts"
 import * as MachineWrite from "./MachineWrite.vibe"
-import * as Write from "./Write.ts"
+import * as Write from "./Write.vibe"
 
 const runtime = testFile("github_host")
 

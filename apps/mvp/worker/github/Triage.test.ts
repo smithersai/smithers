@@ -43,7 +43,7 @@ import { BOT_LOGIN, scriptedGitHub } from "./test/scriptedGitHub.ts"
 import { TokenUnavailable } from "./Tokens.ts"
 import * as Triage from "./Triage.ts"
 import * as TriageStore from "./TriageStore.ts"
-import * as Write from "./Write.ts"
+import * as Write from "./Write.vibe"
 
 const runtime = testFile("github_triage")
 

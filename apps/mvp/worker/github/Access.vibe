@@ -21,7 +21,7 @@ import { type Actor, Sessions } from "../Actor.ts"
 import type { Repository } from "./Config.vibe"
 import * as RepoRoles from "./RepoRoles.ts"
 import * as Store from "./Store.ts"
-import * as WorkLinks from "./WorkLinks.ts"
+import * as WorkLinks from "./WorkLinks.vibe"
 
 /** Who a read is for: nobody signed in, a person, or a runner registered on the repository. */
 export type Viewer =

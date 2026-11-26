@@ -15,7 +15,7 @@ import * as Relations from "./Relations.ts"
 import * as Tokens from "./Tokens.ts"
 import * as Triage from "./Triage.ts"
 import * as MachineWrite from "./MachineWrite.vibe"
-import * as Write from "./Write.ts"
+import * as Write from "./Write.vibe"
 
 // What a host needs to run the GitHub flows (docs/features/issues.md#remote-flows): the App (`GitHub.AppAuth` from
 // `@smthrs/integrations`, which signs its JWT with WebCrypto), Postgres, GitHub's HTTP, the tokens, and triage's judge

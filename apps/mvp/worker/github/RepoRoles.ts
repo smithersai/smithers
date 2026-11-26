@@ -11,14 +11,14 @@ import { classify, isRateLimited, statusOf, withToken } from "./Calls.ts"
 import { type GitHubApp, type Repository, repositoryOf } from "./Config.vibe"
 import * as Tokens from "./Tokens.ts"
 import { requestRay } from "../RequestRay.vibe"
-import * as Visibility from "./Visibility.ts"
+import * as Visibility from "./Visibility.vibe"
 import * as ReadToken from "./ReadToken.vibe"
 import { DEFAULT_API_URL } from "./Config.vibe"
 import * as FeedLocks from "../FeedLocks.vibe"
 import { FRESH_SECONDS } from "./RoleAge.ts"
 export { FRESH_SECONDS } from "./RoleAge.ts"
 import * as SessionStore from "../SessionStore.ts"
-import * as VisibilityReceipt from "./VisibilityReceipt.ts"
+import * as VisibilityReceipt from "./VisibilityReceipt.vibe"
 
 // A person's role on one repository (decision 0079). On the deployment's own repository (`GITHUB_REPOSITORY`) it is
 // the session's role, as sign-in reads and rechecks it. On any other repository the deployment may act on, one where

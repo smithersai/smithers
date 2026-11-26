@@ -1,6 +1,6 @@
 // Generated properties with an oracle of their own for the branch machines' routing and a CI job's machine
 // (worker/branch/Machines.ts, worker/flows/CiJobMachine.ts), work links' authority and writes
-// (worker/github/WorkLinks.ts), a write's notice (worker/github/WriteFeed.ts), how a session ends
+// (worker/github/WorkLinks.vibe), a write's notice (worker/github/WriteFeed.vibe), how a session ends
 // (worker/SessionPrior.vibe, worker/SessionEnds.vibe), the request ray (worker/RequestRay.vibe) and Electric's object and
 // gateway (infra/ElectricAwake.ts, infra/ElectricRelay.ts). Everything that reads or writes rows runs on this file's
 // schema of the compose Postgres, and each property reads the rows back.
@@ -22,8 +22,8 @@ import * as SessionStore from "./SessionStore.ts"
 import * as Machines from "./branch/Machines.vibe"
 import { type SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "./branch/Sandboxes.vibe"
 import * as CiJobMachine from "./flows/CiJobMachine.vibe"
-import * as WorkLinks from "./github/WorkLinks.ts"
-import * as WriteFeed from "./github/WriteFeed.ts"
+import * as WorkLinks from "./github/WorkLinks.vibe"
+import * as WriteFeed from "./github/WriteFeed.vibe"
 import { testFile } from "./test/harness.ts"
 import { configured, signInHarness } from "./test/signIn.ts"
 

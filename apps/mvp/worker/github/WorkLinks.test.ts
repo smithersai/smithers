@@ -1,7 +1,8 @@
 // Work links (decision 0147, docs/features/work-links.md) through the real handler over this file's schema of the
 // compose Postgres: who may post, what a post writes, the status the issues list derives, and its `?work=` filter.
 import { digestSync } from "@smthrs/crypto"
-import { Effect, Layer, Redacted } from "effect"
+import { Cause, Effect, Layer, Redacted } from "effect"
+import { Headers, HttpServerRequest } from "effect/http"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import { issuesRoute } from "../../src/features/issues/contract.ts"
@@ -12,7 +13,7 @@ import { testFile } from "../test/harness.ts"
 import { handles } from "./Api.vibe"
 import * as RepoRoles from "./RepoRoles.ts"
 import * as Metrics from "./Metrics.vibe"
-import { MAX_POST_BYTES, parseLinksPath } from "./WorkLinks.ts"
+import { MAX_POST_BYTES, parseLinksPath, runnerOf } from "./WorkLinks.vibe"
 import { githubHarness as makeGithubHarness, member } from "./test/harness.ts"
 import { REPOSITORY, reset, signedIn, sql } from "./test/fixtures.ts"
 
@@ -58,6 +59,20 @@ describe("work links", () => {
     for (const path of ["/api/repos/acme/widgets/issues/0/links", "/api/repos/acme/widgets/issues/x/links", "/api/repos/acme/widgets/issues/9999999999/links",
       "/api/repos/acme/widgets/pulls/7/links", "/api/repos/%E0%A4%A/widgets/issues/7/links", "/api/repos/-bad/widgets/issues/7/links", "/api/other"]) {
       expect([path, parseLinksPath(path)]).toEqual([path, undefined])
+    }
+  })
+
+  test("a malformed runner token defects before looking up a registration", async () => {
+    const request = HttpServerRequest.fromWeb(new Request("https://smithers.test")).modify({
+      headers: Headers.fromInput({ authorization: "Bearer \ud800" }),
+    })
+    const result = await runtime.runPromise(Effect.exit(runnerOf(request, REPOSITORY.id)))
+    expect(result._tag).toBe("Failure")
+    if (result._tag === "Failure") {
+      expect(Cause.squash(result.cause)).toMatchObject({
+        _tag: "@smthrs/crypto/Sha256Error",
+        code: "invalid_text",
+      })
     }
   })
 

@@ -4,7 +4,7 @@ import { Clock, Context, Effect, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { foldCommit } from "./StackFeed.vibe"
 import { payloadHash, randomAttemptId } from "./StackCrypto.ts"
-import * as WorkLinks from "../github/WorkLinks.ts"
+import * as WorkLinks from "../github/WorkLinks.vibe"
 import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import {
   STACK_OUTCOMES,

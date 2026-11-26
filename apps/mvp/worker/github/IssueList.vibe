@@ -4,7 +4,7 @@ import { SqlClient } from "effect/sql"
 import { ISSUE_PAGE_DEFAULT, ISSUE_PAGE_MAX, ISSUES_SEGMENT, issuesRoute } from "../../src/features/issues/contract.ts"
 import { isRepository, REPOS_ROUTE } from "../../src/features/repo/contract.ts"
 import { WORK_FILTERS, type WorkFilter, type WorkStatus } from "../../src/features/issues/work.ts"
-import { type ListedLink, workOf } from "./WorkLinks.ts"
+import { type ListedLink, workOf } from "./WorkLinks.vibe"
 
 // `GET /api/repos/<owner>/<name>/issues` (docs/features/issues.md#routes): a repository's issues from Smithers'
 // projection, one page at a time, for a client that doesn't sync the whole list (the CLI, the proof, an agent). The

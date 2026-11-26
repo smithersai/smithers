@@ -1,4 +1,3 @@
-import { Effect, Metric } from "effect"
 import { SqlClient } from "effect/sql"
 import { routed } from "../Notifications.ts"
 
@@ -17,9 +16,9 @@ const TITLES: Readonly<Record<Folded, string>> = {
  * replays change nothing. A branch's write opens its branch; a new issue opens the issue once GitHub has it, else the
  * repository's issues.
  */
-export const fold = (id: string) => Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient
-  const [write] = yield* sql<{
+export const fold = (id: string) => withSpan(effect {
+  const sql = try SqlClient.SqlClient
+  const [write] = try sql<{
     readonly actorId: string
     readonly repoId: string
     readonly op: Folded
@@ -37,7 +36,7 @@ export const fold = (id: string) => Effect.gen(function* () {
   const href = write.op === "issue/create"
     ? write.itemNumber === null ? `/${repo}/issues` : `/${repo}/issues/${write.itemNumber}`
     : `/${repo}/tree/${write.name!.split("/").map(encodeURIComponent).join("/")}`
-  const rows = yield* sql`
+  const rows = try sql`
     INSERT INTO notifications (recipient, subject, kind, state, mine, quiet, repo_id, title, href, version)
     VALUES (${write.actorId}, ${`write:${id}`}, 'write', ${state}, true, false, ${write.repoId}, ${TITLES[write.op]}, ${href}, ${version})
     ON CONFLICT (recipient, subject) DO UPDATE SET state = EXCLUDED.state, version = EXCLUDED.version, href = EXCLUDED.href,
@@ -45,8 +44,8 @@ export const fold = (id: string) => Effect.gen(function* () {
     WHERE notifications.state <> EXCLUDED.state
     RETURNING subject`
   if (rows.length > 0) {
-    yield* Metric.update(Metric.withAttributes(routed, { kind: "write", state }), 1)
-    yield* Effect.logInfo("github.write.notice").pipe(Effect.annotateLogs({ writeId: id, op: write.op, state }))
+    try Metric.update(Metric.withAttributes(routed, { kind: "write", state }), 1)
+    try annotateLogs(logInfo("github.write.notice"), { writeId: id, op: write.op, state })
   }
   return rows.length
-}).pipe(Effect.withSpan("github.write.notice", { attributes: { writeId: id } }))
+}, "github.write.notice", { attributes: { writeId: id } })
