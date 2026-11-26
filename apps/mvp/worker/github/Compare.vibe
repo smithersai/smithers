@@ -42,28 +42,29 @@ const noStore = { "cache-control": "no-store" }
  * commits; `503` when the App isn't installed or GitHub didn't answer. Each read is a log line `github.compare` with the outcome and the file count, never a path.
  */
 export const make = (app: GitHubApp, http: Option.Option<HttpClient.HttpClient> = Option.none()) =>
-  Effect.gen(function* () {
+  effect {
     const appAuth = GitHub.AppAuth.make({ appId: app.appId, privateKey: app.privateKey, apiBaseUrl: app.apiBaseUrl })
     return (repository: Repository, base: string, head: string) =>
-      Effect.gen(function* () {
-        const outcome = yield* Effect.gen(function* () {
-          const tokens = Tokens.make({
-            app: yield* appAuth,
+      effect {
+        const outcome = try effect {
+          const auth = try appAuth
+          const tokens = try Effect.sync(() => Tokens.make({
+            app: auth,
             // Installation tokens only: no session's token to refresh.
             keys: Option.none(),
             refresh: Function.constant(Effect.void),
-          })
-          const token = yield* tokens.forInstallation(repository, "pulls")
-          return yield* GitHub.Commits.compare(repository.owner, repository.name, base, head).pipe(
+          }))
+          const token = try tokens.forInstallation(repository, "pulls")
+          return try GitHub.Commits.compare(repository.owner, repository.name, base, head).pipe(
             withToken(token, app.apiBaseUrl),
           )
-        }).pipe(
+        }.pipe(
           Option.isSome(http) ? Effect.provideService(HttpClient.HttpClient, http.value) : Effect.provide(FetchHttpClient.layer),
           Effect.result,
         )
         if (outcome._tag === "Success") {
-          yield* Metric.update(Metric.withAttributes(compares, { outcome: "read" }), 1)
-          yield* Effect.logInfo("github.compare").pipe(
+          try Metric.update(Metric.withAttributes(compares, { outcome: "read" }), 1)
+          try Effect.logInfo("github.compare").pipe(
             Effect.annotateLogs({ outcome: "read", files: outcome.success.files.length }),
           )
           return HttpServerResponse.jsonUnsafe(
@@ -78,10 +79,10 @@ export const make = (app: GitHubApp, http: Option.Option<HttpClient.HttpClient> 
         }
         const status = statusOf(outcome.failure)
         const code = status === 404 || status === 422 ? "not_found" : "unavailable"
-        yield* Metric.update(Metric.withAttributes(compares, { outcome: code }), 1)
-        yield* Effect.logWarning("github.compare").pipe(
+        try Metric.update(Metric.withAttributes(compares, { outcome: code }), 1)
+        try Effect.logWarning("github.compare").pipe(
           Effect.annotateLogs({ outcome: code, errorCode: codeOf(outcome.failure) }),
         )
         return HttpServerResponse.jsonUnsafe({ code }, { status: code === "not_found" ? 404 : 503, headers: noStore })
-      }).pipe(Effect.withSpan("github.compare", { kind: "server" }))
-  })
+      }.pipe(Effect.withSpan("github.compare", { kind: "server" }))
+  }

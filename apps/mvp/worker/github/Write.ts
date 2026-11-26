@@ -17,7 +17,7 @@ import {
   type WriteFailure,
 } from "../../src/features/issues/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
-import type { Services } from "./Apply.ts"
+import type { Services } from "./Apply.vibe"
 import { roleOf } from "../GitHubAuth.ts"
 import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.ts"

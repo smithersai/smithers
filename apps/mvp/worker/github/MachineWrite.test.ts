@@ -104,6 +104,49 @@ describe("a machine token at the route", () => {
     expect(h.starts).toEqual([])
   })
 
+  test("checks method, repository, App and body before admitting a machine write", async () => {
+    const h = await githubHarness(runtime, { actor: null, rawBody: true, allowed: new Set([REPOSITORY.id]) })
+    await issueToken()
+    const headers = { authorization: `Bearer ${TOKEN}` }
+    const write = create()
+    const status = `${ROUTE}/${write.writeId}`
+    expect((await h.fetch(ROUTE, { headers })).status).toBe(405)
+    expect((await h.fetch("/api/repos/-bad/widgets/writes", post(write))).status).toBe(404)
+    expect((await h.fetch("/api/repos/acme/other/writes", post(write))).status).toBe(404)
+    expect((await h.fetch(ROUTE, post({
+      writeId: crypto.randomUUID(),
+      op: "issue/relate",
+      number: 1,
+      parent: { repo: "acme/other", number: 2 },
+    }))).status).toBe(404)
+    const noApp = await githubHarness(runtime, { actor: null, app: null })
+    expect((await noApp.fetch(ROUTE, post(write))).status).toBe(503)
+
+    expect((await h.fetch(ROUTE, { ...post(write), headers: { ...headers, "content-length": "999999" } })).status).toBe(413)
+    expect((await h.fetch(ROUTE, { method: "POST", headers, body: new Uint8Array([0xff]) })).status).toBe(400)
+    expect((await h.fetch(status, { method: "POST", headers })).status).toBe(405)
+    expect((await h.fetch(`/api/repos/-bad/widgets/writes/${write.writeId}`, { headers })).status).toBe(404)
+    expect((await h.fetch(status)).status).toBe(401)
+    expect(h.starts).toEqual([])
+  })
+
+  test("a token revoked during body consumption gets a 401 at admission", async () => {
+    const h = await githubHarness(runtime, { actor: null, rawBody: true })
+    await issueToken()
+    const { headers, body } = post(create())
+    const stream = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        await sql(runtime, "UPDATE machine_tokens SET revoked_at = now()")
+        controller.enqueue(new TextEncoder().encode(body))
+        controller.close()
+      },
+    }, { highWaterMark: 0 })
+    const init = { method: "POST", headers, body: stream, duplex: "half" }
+    expect((await h.fetch(ROUTE, init)).status).toBe(401)
+    expect(h.starts).toEqual([])
+    expect(await sql(runtime, "SELECT count(*)::int AS count FROM machine_writes")).toEqual([{ count: 0 }])
+  })
+
   test("validates label metadata and refuses reserved names and private descriptions at admission", async () => {
     const h = await githubHarness(runtime, { actor: null })
     await issueToken()

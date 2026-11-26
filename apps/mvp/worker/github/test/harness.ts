@@ -43,7 +43,7 @@ import * as ExecutionHost from "../../ExecutionHost.ts"
 import { FlowStarter, StartConflict } from "../../Flows.ts"
 import { build } from "../../test/flowHost.ts"
 import { signedIn as signedInAs, type testFile } from "../../test/harness.ts"
-import * as Api from "../Api.ts"
+import * as Api from "../Api.vibe"
 import type { GitHubApp, Repository } from "../Config.ts"
 import * as RepoRoles from "../RepoRoles.ts"
 import * as Host from "../Host.ts"
@@ -117,6 +117,8 @@ export interface Options {
   /** Options for the real `RepoRoles` the harness makes, such as a shorter refresh cooldown. */
   readonly roleOptions?: Partial<Pick<RepoRoles.Options, "refreshCooldownSeconds" | "refreshDeadline" | "local">>
   readonly repoFlows?: boolean
+  /** Exercise a route’s own body handling without the dispatcher’s prebuffering. */
+  readonly rawBody?: boolean
   /** Exercise the production fetch transport against a test HTTP server. */
   readonly metadata?: { readonly url: string; readonly token: string }
   /** Local development's synced repository and issue (`Api.Options.localSynced`): none unless set. */
@@ -240,7 +242,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
   }
   const handler = HttpEffect.toWebHandler(
     observed(
-      afterBody(routes.fetch).pipe(
+      (options.rawBody === true ? routes.fetch : afterBody(routes.fetch)).pipe(
         Effect.provideService(Api.EndGitHubConnection, (person) => Effect.sync(() => { endedConnections.push(person) })),
         Effect.provide(
           options.sessions ?? (actor === null ? Actor.signedOut : signedInAs(actor)),

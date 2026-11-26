@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "vitest"
 import { GITHUB_WEBHOOK_ROUTE } from "../../src/features/issues/contract.ts"
 import { testFile } from "../test/harness.ts"
-import { installationChangesOf } from "./Api.ts"
+import { installationChangesOf } from "./Api.vibe"
 import { repositoryOf } from "./Config.ts"
 import * as Store from "./Store.ts"
 import { reset, sql } from "./test/fixtures.ts"
@@ -22,8 +22,18 @@ describe("installationChangesOf", () => {
     })).toEqual({ installationId: 77, added: [WIDGETS.id], removed: [] })
   })
 
+  test("an installation delivery without a repository list changes no links", () => {
+    expect(installationChangesOf("installation", { action: "created", installation }))
+      .toEqual({ installationId: 77, added: [], removed: [] })
+    expect(installationChangesOf("installation_repositories", { action: "added", installation }))
+      .toEqual({ installationId: 77, added: [], removed: [] })
+    expect(installationChangesOf("installation_repositories", { action: "removed", installation }))
+      .toEqual({ installationId: 77, added: [], removed: [] })
+  })
+
   test("ignores unknown actions, other events, and invalid installation ids", () => {
     expect(installationChangesOf("installation", { action: "unsuspend", installation })).toBeUndefined()
+    expect(installationChangesOf("installation_repositories", { action: "unknown", installation })).toBeUndefined()
     expect(installationChangesOf("ping", { action: "created", installation })).toBeUndefined()
     for (const id of [undefined, null, "77", 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
       expect(installationChangesOf("installation", { action: "created", installation: { id } })).toBeUndefined()

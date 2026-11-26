@@ -17,7 +17,7 @@ import {
 import type { Role } from "../../src/features/auth/contract.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
-import * as Apply from "./Apply.ts"
+import * as Apply from "./Apply.vibe"
 import * as Metrics from "./Metrics.ts"
 import * as MachineWrite from "./MachineWrite.ts"
 import * as Relations from "./Relations.ts"
@@ -354,6 +354,16 @@ describe("the webhook's sub_issues", () => {
     expect((await started({ action: "parent_issue_added", repository: inHere, sub_issue: { number: 2 }, parent_issue: { number: 1 } })).map((start) => start.number)).toEqual([2])
     await reset(runtime)
     expect((await started({ action: "sub_issue_added", repository: inHere, parent_issue: { number: 1 }, sub_issue: { number: 2 }, sub_issue_repo: repo("acme/elsewhere") })).map((start) => start.number)).toEqual([1])
+  })
+
+  test("a delivery can name its far side without a near issue", async () => {
+    expect(await started({
+      action: "parent_issue_removed",
+      repository: inHere,
+      sub_issue: null,
+      parent_issue: { number: 1 },
+      parent_issue_repo: repo("acme/other"),
+    })).toEqual([{ deliveryId: "d-1", repo: "acme/other", number: 1, event: "sub_issues" }])
   })
 
   test("an action GitHub adds later starts nothing", async () => {

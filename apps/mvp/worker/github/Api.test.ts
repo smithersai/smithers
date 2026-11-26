@@ -26,12 +26,13 @@ import {
   writesRoute,
   WRITES_SHAPE_ROUTE,
 } from "../../src/features/issues/contract.ts"
+import { firstPaintRoute, issuesRoute, ISSUE_EDGES_SHAPE_ROUTE, treeScopeRoute } from "../../src/features/issues/contract.ts"
 import { CHECKS_SHAPE_ROUTE, compareRoute, PULLS_SHAPE_ROUTE } from "../../src/features/pulls/contract.ts"
 import * as Actor from "../Actor.ts"
 import { FlowStarter, StartConflict, StartUnavailable } from "../Flows.ts"
 import * as WriteAdmission from "../WriteAdmission.ts"
 import { testFile } from "../test/harness.ts"
-import { handles, make, parseWritesPath, RECONCILE_START_TIMEOUT } from "./Api.ts"
+import { EndGitHubConnection, handles, make, parseMachineWritePath, parseWritesPath, RECONCILE_START_TIMEOUT } from "./Api.vibe"
 import * as Metrics from "./Metrics.ts"
 import * as RepoRoles from "./RepoRoles.ts"
 import { comments, items, REPOSITORY, reset, rolesThatRead, signedIn, sql, writeRow } from "./test/fixtures.ts"
@@ -565,6 +566,39 @@ describe("POST /api/repos/<owner>/<name>/writes on another repository (decision 
     const response = await h.fetch(route, post(createWrite()))
     expect([response.status, await response.json()]).toEqual([503, { code: "unavailable" }])
     expect(await sql(runtime, `SELECT * FROM github_writes`)).toEqual([])
+  })
+
+  test("a refresh failure returns the provider retry delay without admitting a write", async () => {
+    const actor = await maya("guest")
+    const h = await githubHarness(runtime, {
+      own: OWN,
+      actor,
+      wrapRoles: (roles) => ({
+        ...expiringAfterRead(async () => void await expire())(roles),
+        refresh: () => Effect.fail(new RepoRoles.RoleRefused({ code: "github_unavailable", retryAfterSeconds: 7 })),
+      }),
+    })
+    h.github.roles.set("maya", "write")
+    const response = await h.fetch(route, post(createWrite()))
+    expect([response.status, response.headers.get("retry-after"), await response.json()])
+      .toEqual([503, "7", { code: "github_unavailable" }])
+    expect(h.starts).toEqual([])
+  })
+
+  test("an agent cannot write under a refreshed Guest role even when a person could", async () => {
+    const actor = await maya("guest")
+    const h = await githubHarness(runtime, {
+      own: OWN,
+      actor: { ...actor, act: { kind: "agent", id: "answer-1" } },
+      wrapRoles: (roles) => ({
+        ...expiringAfterRead(async () => void await expire())(roles),
+        refresh: () => Effect.succeed({ role: "guest", held: Option.none() }),
+      }),
+    })
+    h.github.roles.set("maya", "write")
+    const response = await h.fetch(route, post(createWrite()))
+    expect([response.status, await response.json()]).toEqual([403, { code: "forbidden" }])
+    expect(h.starts).toEqual([])
   })
 
   test("a downgrade GitHub says when the role is read again refuses the write", async () => {
@@ -1317,6 +1351,13 @@ describe("the shapes", () => {
       // Again: the same row, its observation fence unmoved.
       expect((await local.fetch(`${named(ITEM_SUMMARIES_SHAPE_ROUTE, "acme/strangers")}&offset=-1`)).status).toBe(200)
       expect(await kept()).toEqual(seeded)
+      await sql(runtime, "ALTER TABLE items ADD CONSTRAINT block_local_seed CHECK (repo_id <> 'github/acme/strangers') NOT VALID")
+      try {
+        expect((await local.fetch(issuesRoute("acme", "strangers"))).status).toBe(200)
+        expect(local.line("github.local_synced.seed")).toHaveLength(1)
+      } finally {
+        await sql(runtime, "ALTER TABLE items DROP CONSTRAINT block_local_seed")
+      }
     })
   })
 })
@@ -1514,4 +1555,84 @@ test("a signed push refreshes another installed repository independently of REPO
   })
   expect(h.starts[1]).toEqual(h.starts[0])
   expect(h.count(Metrics.webhooks, { event: "push", outcome: "duplicate" })).toBe(1)
+})
+
+test("the status route rejects malformed escaping and the default revocation handler is inert", async () => {
+  const id = crypto.randomUUID()
+  expect(parseMachineWritePath("/api/repos/%E0%A4%A/widgets/writes/" + id)).toBeUndefined()
+  const endConnection = await Effect.runPromise(EndGitHubConnection)
+  expect(await Effect.runPromise(endConnection(42))).toBeUndefined()
+})
+
+test("declared oversized bodies are refused before webhook or person-write processing", async () => {
+  const h = await githubHarness(runtime)
+  const headers = { "content-length": "99999999" }
+  expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, {
+    method: "POST",
+    headers: { ...headers, "x-github-delivery": crypto.randomUUID() },
+  })).status).toBe(413)
+  expect((await h.fetch(writesRoute("acme", "widgets"), { method: "POST", headers })).status).toBe(413)
+  expect(h.starts).toEqual([])
+})
+
+test("tree and issue readers return unavailable when their query fails after authorization", async () => {
+  const h = await githubHarness(runtime)
+  const tree = treeScopeRoute("acme", "widgets")
+  expect((await h.fetch(tree, { method: "POST" })).status).toBe(405)
+  expect((await h.fetch(ISSUE_EDGES_SHAPE_ROUTE + "?repo=-bad/widgets")).status).toBe(400)
+
+  for (const [table, route] of [
+    ["issue_relations", tree],
+    ["items", issuesRoute("acme", "widgets")],
+  ] as const) {
+    await sql(runtime, "ALTER TABLE " + table + " RENAME TO hidden_during_read")
+    try {
+      const response = await h.fetch(route)
+      expect([response.status, await response.json()]).toEqual([503, { code: "unavailable" }])
+      if (table === "items") {
+        const paint = await h.fetch(firstPaintRoute("acme", "widgets") + "?issue=1")
+        expect(paint.status).toBe(204)
+        expect(h.line("github.first_paint").at(-1)?.level).toBe("WARN")
+      }
+    } finally {
+      await sql(runtime, "ALTER TABLE hidden_during_read RENAME TO " + table)
+    }
+  }
+})
+
+test("tree scope answers with no App or after a relation refresh times out", async () => {
+  const route = treeScopeRoute("acme", "widgets")
+  const noApp = await githubHarness(runtime, { app: null })
+  expect((await noApp.fetch(route)).status).toBe(200)
+  expect(noApp.starts).toEqual([])
+  const denied = await githubHarness(runtime, { allowed: new Set([REPOSITORY.id]) })
+  expect((await denied.fetch(treeScopeRoute("outside", "excluded"))).status).toBe(404)
+  const failed = await githubHarness(runtime, {
+    starter: FlowStarter.of({ start: () => Effect.fail(new StartUnavailable({ errorCode: "down" })) }),
+  })
+  expect((await failed.fetch(route)).status).toBe(200)
+  expect(failed.line("github.relations.start")).toHaveLength(1)
+
+  let requested = 0
+  const stalled = await githubHarness(runtime, {
+    starter: FlowStarter.of({
+      start: () => Effect.sync(() => { requested++ }).pipe(Effect.andThen(Effect.never)),
+    }),
+  })
+  expect((await stalled.fetch(route)).status).toBe(200)
+  expect(requested).toBe(1)
+})
+
+test("resending a pending protected write from a fresh session replaces its admission", async () => {
+  const actor = { ...member(), role: "admin" as const, login: "maya" }
+  const first = await githubHarness(runtime, { actor })
+  const route = writesRoute("acme", "widgets")
+  const command = post({ writeId: crypto.randomUUID(), op: "triage/pause" })
+  expect((await first.fetch(route, command)).status).toBe(202)
+
+  const session = crypto.randomUUID()
+  const again = await githubHarness(runtime, { actor: { ...actor, session } })
+  expect((await again.fetch(route, command)).status).toBe(200)
+  expect(again.line("github.write.request").at(-1)?.annotations).toMatchObject({ outcome: "reauthorized" })
+  expect(await sql(runtime, "SELECT session_id FROM github_writes")).toEqual([{ session_id: session }])
 })

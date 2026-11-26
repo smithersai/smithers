@@ -17,7 +17,7 @@ import { Effect, Fiber, type Layer, Option } from "effect"
 import { HttpServerRequest } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import type { Role } from "../../src/features/auth/contract.ts"
-import { type Actor, Sessions, type SessionsUnavailable } from "../Actor.ts"
+import { type Actor, Sessions } from "../Actor.ts"
 import type { Repository } from "./Config.ts"
 import * as RepoRoles from "./RepoRoles.ts"
 import * as Store from "./Store.ts"
@@ -104,46 +104,39 @@ const refusedAt = (
 export const make = <E, R>(options: Options<E, R>) => {
   const { repository, mayAct, roles, visibility, database } = options
 
-  /** The viewer's person from `source`: `None` signed out; a failure when sessions can't be read. */
-  const actorOf = (source: ViewerSource) =>
-    Effect.flatMap(Sessions, (sessions): Effect.Effect<Option.Option<Actor>, SessionsUnavailable, HttpServerRequest.HttpServerRequest> =>
-      source !== "cookie"
-        ? sessions.resolve
-        : sessions.resolveCookie === undefined
-        ? Effect.die("unreachable: cookie resolution without a cookie resolver is refused before it")
-        : sessions.resolveCookie)
-
   /** Stage 3: who may read `target`'s rows, the viewer alone; `repositoryReadable` runs it after the deployment's checks. */
   const viewerAccess = (target: Repository, source: ViewerSource) =>
-    Effect.gen(function* () {
-      const decided = yield* personAccess(target, source)
+    effect {
+      const decided = try personAccess(target, source)
       if (decided._tag === "Readable" || source !== "session_or_runner") return decided
       // A runner registered on the repository reads its issues with its own token, as it reads its jobs, only while it
       // is current as a claim requires (decision 0148); any other reads as nobody.
-      const request = yield* HttpServerRequest.HttpServerRequest
-      const runner = yield* WorkLinks.runnerOf(request, target.id).pipe(
+      const request = try HttpServerRequest.HttpServerRequest
+      const runner = try WorkLinks.runnerOf(request, target.id).pipe(
         Effect.provide(database),
         Effect.orElseSucceed(() => Option.none<WorkLinks.RunnerAccess>()),
       )
       return Option.isSome(runner) && runner.value._tag === "Runner"
         ? { _tag: "Readable", target, viewer: { kind: "runner", runner: runner.value.name }, role: null, via: "runner" } satisfies Proof
         : decided
-    })
+    }
 
   const personAccess = (target: Repository, source: ViewerSource) =>
-    Effect.gen(function* () {
-      if (source === "cookie" && (yield* Sessions).resolveCookie === undefined) return refusedAt(target, "viewer", "unavailable", 503)
-      const actor = yield* actorOf(source).pipe(Effect.option)
+    effect {
+      const sessions = try Sessions
+      const resolve = source === "cookie" ? sessions.resolveCookie : sessions.resolve
+      if (resolve === undefined) return refusedAt(target, "viewer", "unavailable", 503)
+      const actor = try resolve.pipe(Effect.option)
       if (Option.isNone(actor)) return refusedAt(target, "viewer", "unavailable", 503, { retryAfterSeconds: 5 })
-      return yield* accessAs(target, actor.value)
-    })
+      return try accessAs(target, actor.value)
+    }
 
   /** Stage 3 for `actor`, whom the caller already resolved. */
   const accessAs = (target: Repository, actor: Option.Option<Actor>) =>
-    Effect.gen(function* () {
+    effect {
       const viewer: Viewer = Option.isSome(actor) ? { kind: "person", actor: actor.value } : { kind: "anonymous" }
       if (Option.isSome(actor)) {
-        const resolved = yield* roles.resolve(actor.value, target).pipe(Effect.result)
+        const resolved = try roles.resolve(actor.value, target).pipe(Effect.result)
         if (resolved._tag === "Failure") {
           // Where the App can't act, nobody has a role there: the public check below decides, as for anyone. Every
           // other refusal is GitHub or Postgres not answering now.
@@ -154,43 +147,43 @@ export const make = <E, R>(options: Options<E, R>) => {
           return { _tag: "Readable", target, viewer, role: resolved.success.role, via: "role" } satisfies Proof
         }
       }
-      const isPublic = yield* Store.isPublic(target.id).pipe(Effect.provide(database), Effect.option)
+      const isPublic = try Store.isPublic(target.id).pipe(Effect.provide(database), Effect.option)
       if (Option.isNone(isPublic)) return refusedAt(target, "viewer", "unavailable", 503, { viewer })
       if (Option.getOrElse(isPublic.value, () => false)) {
-        const current = yield* visibility(target)
+        const current = try visibility(target)
         if (Option.isNone(current)) return refusedAt(target, "viewer", "unavailable", 503, { viewer })
         if (current.value) return { _tag: "Readable", target, viewer, role: null, via: "public" } satisfies Proof
       }
       return Option.isNone(actor)
         ? refusedAt(target, "viewer", "authentication", 401, { viewer })
         : refusedAt(target, "viewer", "forbidden", 403, { viewer })
-    })
+    }
 
   /** Stages 1 and 2: the deployment's checks, then the reader's validation; `None` when both pass. */
   const deploymentAccess = (target: Repository, validate?: Effect.Effect<boolean>) =>
-    Effect.gen(function* () {
+    effect {
       if (!mayAct(target.id)) return Option.some(refusedAt(target, "deployment", "not_found", 404))
       if (target.id !== repository.id) {
         // Postgres not answering leaves it to the viewer stage, which says unavailable.
-        const absent = yield* Store.appAbsent(target.id).pipe(Effect.provide(database), Effect.orElseSucceed(() => false))
+        const absent = try Store.appAbsent(target.id).pipe(Effect.provide(database), Effect.orElseSucceed(() => false))
         if (absent) return Option.some(refusedAt(target, "deployment", "app_not_installed", 404))
       }
-      if (validate !== undefined && !(yield* validate)) return Option.some(refusedAt(target, "request", "invalid", 400))
+      if (validate !== undefined && !(try validate)) return Option.some(refusedAt(target, "request", "invalid", 400))
       return Option.none<Proof>()
-    })
+    }
 
   /**
    * Whether the request may read `target`'s content, and who it reads as: stages 1 to 3 in order. `settled` waits for
    * `ask.alongside`; a reader awaits it before it answers, so the work never outlives the request.
    */
   const repositoryReadable = <A = never, R2 = never>(target: Repository, source: ViewerSource, ask: Ask<A, R2> = {}) =>
-    Effect.gen(function* () {
-      const early = yield* deploymentAccess(target, ask.validate)
+    effect {
+      const early = try deploymentAccess(target, ask.validate)
       if (Option.isSome(early)) return { proof: early.value, settled: Effect.void }
-      const beside = ask.alongside === undefined ? undefined : yield* Effect.forkChild(ask.alongside)
-      const proof = yield* viewerAccess(target, source)
+      const beside = ask.alongside === undefined ? undefined : try Effect.forkChild(ask.alongside)
+      const proof = try viewerAccess(target, source)
       return { proof, settled: beside === undefined ? Effect.void : Effect.asVoid(Fiber.join(beside)) }
-    })
+    }
 
   /**
    * Each of `targets` as `repositoryReadable` answers it, one proof each in their order, for one reader: who asks is
@@ -198,15 +191,15 @@ export const make = <E, R>(options: Options<E, R>) => {
    * answering refuses every one.
    */
   const readableAmong = (targets: ReadonlyArray<Repository>) =>
-    Effect.gen(function* () {
-      const actor = yield* actorOf("session").pipe(Effect.option)
-      return yield* Effect.forEach(targets, (target) =>
-        Effect.gen(function* () {
-          const early = yield* deploymentAccess(target)
+    effect {
+      const actor = try (try Sessions).resolve.pipe(Effect.option)
+      return try Effect.forEach(targets, (target) =>
+        effect {
+          const early = try deploymentAccess(target)
           if (Option.isSome(early)) return early.value
-          return Option.isNone(actor) ? refusedAt(target, "viewer", "unavailable", 503) : yield* accessAs(target, actor.value)
-        }), { concurrency: 8 })
-    })
+          return Option.isNone(actor) ? refusedAt(target, "viewer", "unavailable", 503) : try accessAs(target, actor.value)
+        }, { concurrency: 8 })
+    }
 
   return { repositoryReadable, readableAmong, viewerAccess }
 }

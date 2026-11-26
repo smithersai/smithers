@@ -201,6 +201,27 @@ describe("Publish and Update branch through the writes route", () => {
     expect(await writes()).toEqual([])
   })
 
+  test("a branch that disappears between location and authority checks admits no publication", async () => {
+    const actor = member()
+    const branchId = await ephemeral(actor.subject.id)
+    const h = await githubHarness(runtime, { actor })
+    // Supply two successive database snapshots without relying on the timing of a concurrent archive.
+    await sql(runtime, "CREATE SEQUENCE branch_publish_visibility")
+    await sql(runtime, "ALTER TABLE branches RENAME TO branch_publish_backing")
+    try {
+      await sql(runtime, "CREATE VIEW branches AS SELECT * FROM branch_publish_backing WHERE nextval('branch_publish_visibility') = 1")
+      const response = await h.fetch(writesRoute("acme", "widgets"), post(publishBody(branchId)))
+      expect([response.status, await response.json()]).toEqual([404, { code: "not_found" }])
+      expect(h.starts).toEqual([])
+      expect(await writes()).toEqual([])
+      expect(await sql(runtime, "SELECT last_value::int FROM branch_publish_visibility")).toEqual([{ last_value: 2 }])
+    } finally {
+      await sql(runtime, "DROP VIEW IF EXISTS branches")
+      await sql(runtime, "ALTER TABLE branch_publish_backing RENAME TO branches")
+      await sql(runtime, "DROP SEQUENCE branch_publish_visibility")
+    }
+  })
+
   test("refuses an empty title, a branch id that isn't one, and a method GitHub doesn't name", async () => {
     const actor = member()
     const branchId = await ephemeral(actor.subject.id)

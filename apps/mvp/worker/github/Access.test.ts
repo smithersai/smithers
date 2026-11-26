@@ -4,8 +4,8 @@ import { Effect, Layer, Option, Redacted } from "effect"
 import { HttpServerRequest } from "effect/http"
 import { describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
-import { type Actor, Sessions } from "../Actor.ts"
-import * as Access from "./Access.ts"
+import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
+import * as Access from "./Access.vibe"
 import type { RepoRoles } from "./RepoRoles.ts"
 
 const OWN = { owner: "acme", name: "own", id: "github/acme/own" } as const
@@ -55,4 +55,24 @@ describe("repositoryReadable's proof", () => {
     ))
     expect(proof).toMatchObject({ _tag: "Refused", stage: "deployment", refusal: "not_found", status: 404 })
   })
+})
+
+test("a batch preserves deployment refusals and reports one session outage for the readable candidates", async () => {
+  const excluded = { owner: "acme", name: "else", id: "github/acme/else" }
+  let reads = 0
+  const proofs = await Effect.runPromise(access.readableAmong([OWN, excluded, OWN]).pipe(
+    Effect.provideService(Sessions, Sessions.of({
+      resolve: Effect.suspend(() => {
+        reads++
+        return Effect.fail(new SessionsUnavailable({}))
+      }),
+    })),
+    Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://app.test/"))),
+  ))
+  expect(reads).toBe(1)
+  expect(proofs).toEqual([
+    { _tag: "Refused", target: OWN, stage: "viewer", refusal: "unavailable", status: 503 },
+    { _tag: "Refused", target: excluded, stage: "deployment", refusal: "not_found", status: 404 },
+    { _tag: "Refused", target: OWN, stage: "viewer", refusal: "unavailable", status: 503 },
+  ])
 })

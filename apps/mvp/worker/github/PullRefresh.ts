@@ -3,7 +3,7 @@ import { SqlClient } from "effect/sql"
 import { applyExecutionId, itemId, reconcileBucketStart } from "../../src/features/issues/contract.ts"
 import { FlowStarter } from "../Flows.ts"
 import { codeOf } from "../ErrorCode.ts"
-import { Apply } from "./Apply.ts"
+import { Apply } from "./Apply.vibe"
 import type { Repository } from "./Config.ts"
 
 export const refreshes = Metric.counter("smithers_pull_refresh_starts", { incremental: true })

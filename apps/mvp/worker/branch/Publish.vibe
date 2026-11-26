@@ -14,7 +14,7 @@ import {
 import { agentAttribution, type WriteFailure } from "../../src/features/issues/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { roleOf } from "../GitHubAuth.ts"
-import type { Services as GitHubServices } from "../github/Apply.ts"
+import type { Services as GitHubServices } from "../github/Apply.vibe"
 import { classify, statusOf, withToken } from "../github/Calls.ts"
 import { type Repository, repositoryOf } from "../github/Config.ts"
 import * as Metrics from "../github/Metrics.ts"

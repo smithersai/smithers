@@ -14,7 +14,7 @@ import {
   queueRequestOf,
 } from "../../src/features/pulls/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
-import type { Services } from "./Apply.ts"
+import type { Services } from "./Apply.vibe"
 import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.ts"
 import * as Metrics from "./Metrics.ts"

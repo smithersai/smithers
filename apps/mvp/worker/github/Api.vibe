@@ -5,7 +5,7 @@ import { COMMITMENTS } from "../../src/features/issues/lifecycle.ts"
 import { digestSync } from "@smthrs/crypto"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Core, GitHub } from "@smthrs/integrations"
-import { Context, Cause, Clock, Duration, Effect, type Layer, Metric, Option, Redacted, Ref, Result, Schema } from "effect"
+import { Context, Cause, Clock, Duration, Effect, Function, type Layer, Metric, Option, Redacted, Ref, Result, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
@@ -94,8 +94,8 @@ import * as Dispatch from "../ci/Dispatch.vibe"
 import { FlowStarter, StartUnavailable } from "../Flows.ts"
 import * as Notifications from "../Notifications.ts"
 import * as ShapeAccess from "../ShapeAccess.vibe"
-import { Apply, PULL_EVENTS } from "./Apply.ts"
-import * as Compare from "./Compare.ts"
+import { Apply, PULL_EVENTS } from "./Apply.vibe"
+import * as Compare from "./Compare.vibe"
 import { statusOf } from "./Calls.ts"
 import { apiUrl, type GitHubApp, type Repository, repositoryOf } from "./Config.ts"
 import { Merge } from "./Merge.ts"
@@ -113,7 +113,7 @@ import * as Visibility from "./Visibility.ts"
 import * as RepoRoles from "./RepoRoles.ts"
 import * as Review from "./Review.ts"
 import * as Store from "./Store.ts"
-import * as Access from "./Access.ts"
+import * as Access from "./Access.vibe"
 import { TriageRun } from "./Triage.ts"
 import * as TriageStore from "./TriageStore.ts"
 import { Write } from "./Write.ts"
@@ -523,8 +523,8 @@ export const revokingPerson = (payload: unknown): number | undefined => {
  * context, as RepoApi's do.
  */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, options: Options<R>) =>
-  Effect.gen(function* () {
-    const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+  effect {
+    const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
     const { repository } = options
     const allowed = options.allowed ?? Option.none<ReadonlySet<string>>()
     // Local development's synced repository counts only where there is no App: a deployment with the App decides by
@@ -540,18 +540,18 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         ? RepoRoles.actsOn(repository, allowed)(id)
         : id === repository.id || id === localSynced?.repository.id
     // Check current metadata for anonymous readers, using the shared metadata token policy.
-    const readToken = yield* ReadToken.fromConfig.pipe(
+    const readToken = try ReadToken.fromConfig.pipe(
       options.http === undefined ? Effect.provide(FetchHttpClient.layer) : Effect.provideService(HttpClient.HttpClient, options.http),
       Effect.orDie,
     )
-    const metadataApiUrl = Option.isSome(options.app) ? options.app.value.apiBaseUrl : (yield* apiUrl)
-    const metadataHttp = options.http ?? (yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer)))
-    const visibility = Visibility.make(metadataApiUrl, readToken, metadataHttp)
-    // A pull request's files (worker/github/Compare.ts), read with the App's token: none without the App.
+    const metadataApiUrl = Option.isSome(options.app) ? options.app.value.apiBaseUrl : (try apiUrl)
+    const metadataHttp = options.http ?? (try HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer)))
+    const visibility = try Effect.sync(() => Visibility.make(metadataApiUrl, readToken, metadataHttp))
+    // A pull request's files (worker/github/Compare.vibe), read with the App's token: none without the App.
     // Review on request (worker/github/Review.ts): any pull request of a repository the deployment acts on.
-    const review = Review.make(database, { repository, app: options.app, roles: options.roles, mayAct })
+    const review = try Effect.sync(() => Review.make(database, { repository, app: options.app, roles: options.roles, mayAct }))
     const compare = Option.isSome(options.app)
-      ? Option.some(yield* Compare.make(options.app.value, Option.fromUndefinedOr(options.http)))
+      ? Option.some(try Compare.make(options.app.value, Option.fromUndefinedOr(options.http)))
       : Option.none()
 
     // The webhook's channel (`Core.Channel`): GitHub's HMAC over the exact bytes, then strict JSON into an
@@ -583,41 +583,41 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       ))
 
     /** `POST /api/github/webhook`. */
-    const webhook = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
+    const webhook = effect {
+      const request = try HttpServerRequest.HttpServerRequest
       const event = request.headers["x-github-event"] ?? "unknown"
       const metricEvent = new Set(["issues", "issue_comment", "pull_request", "pull_request_review", "pull_request_review_comment",
         "sub_issues", "push", "release", "ping", "installation", "installation_repositories", "repository", "github_app_authorization"]).has(event) ? event : "unknown"
       const fields: Record<string, string | number> = { event: metricEvent }
       const answer = (status: number, outcome: string, code?: "not_configured" | "invalid_signature" | WriteRefusal) =>
-        Effect.gen(function* () {
+        effect {
           fields.outcome = outcome
-          yield* Metric.update(Metric.withAttributes(Metrics.webhooks, { event: metricEvent, outcome }), 1)
+          try Metric.update(Metric.withAttributes(Metrics.webhooks, { event: metricEvent, outcome }), 1)
           return code === undefined
             ? HttpServerResponse.empty({ status, headers: noStore })
             : refuse(status, code)
-        })
-      const response = yield* Effect.gen(function* () {
+        }
+      const response = try effect {
         if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
-        if (Option.isNone(channel)) return yield* answer(503, "not_configured", "not_configured")
+        if (Option.isNone(channel)) return try answer(503, "not_configured", "not_configured")
         const deliveryId = request.headers["x-github-delivery"] ?? ""
-        if (!DELIVERY_ID.test(deliveryId)) return yield* answer(400, "invalid", "invalid")
+        if (!DELIVERY_ID.test(deliveryId)) return try answer(400, "invalid", "invalid")
         fields.deliveryId = deliveryId
-        const text = yield* readBounded(request, MAX_WEBHOOK_BYTES, (bytes) => (fields.bytes = bytes)).pipe(Effect.result)
+        const text = try readBounded(request, MAX_WEBHOOK_BYTES, (bytes) => (fields.bytes = bytes)).pipe(Effect.result)
         if (text._tag === "Failure") {
           return text.failure.reason === "too_large"
-            ? yield* answer(413, "too_large", "too_large")
-            : yield* answer(400, "invalid", "invalid")
+            ? try answer(413, "too_large", "too_large")
+            : try answer(400, "invalid", "invalid")
         }
         const raw = {
           body: new TextEncoder().encode(text.success),
           headers: { ...request.headers },
           idempotencyKey: deliveryId,
         }
-        const verified = yield* channel.value.verify(raw).pipe(Effect.result)
-        if (verified._tag === "Failure") return yield* answer(401, "refused", "invalid_signature")
-        const decoded = yield* channel.value.decode(raw).pipe(Effect.result)
-        if (decoded._tag === "Failure") return yield* answer(400, "invalid", "invalid")
+        const verified = try channel.value.verify(raw).pipe(Effect.result)
+        if (verified._tag === "Failure") return try answer(401, "refused", "invalid_signature")
+        const decoded = try channel.value.decode(raw).pipe(Effect.result)
+        if (decoded._tag === "Failure") return try answer(400, "invalid", "invalid")
         // `Core.Channel` checked the decoder's output as an `ExternalEvent`.
         const delivered = decoded.success as Core.ExternalEvent.ExternalEvent
         const payload = delivered.payload
@@ -626,14 +626,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const installation = installationChangesOf(event, payload)
         if (installation !== undefined) {
           // A failed update rolls back the receipt so redelivery can apply it. Repeated deliveries cannot revert newer changes.
-          const counts = yield* Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient
-            return yield* sql.withTransaction(Effect.gen(function* () {
-              const first = yield* Store.recordDelivery({ deliveryId, event, action: recordedAction, repoId: null, subject: null })
+          const counts = try effect {
+            const sql = try SqlClient.SqlClient
+            return try sql.withTransaction(effect {
+              const first = try Store.recordDelivery({ deliveryId, event, action: recordedAction, repoId: null, subject: null })
               if (!first) return undefined
 
               const added = installation.added.filter(mayAct).sort()
-              for (const id of added) yield* Store.rememberInstallation(id, installation.installationId)
+              for (const id of added) try Store.rememberInstallation(id, installation.installationId)
 
               let uninstalled = 0
               const removed = installation.removed.filter(mayAct)
@@ -641,29 +641,29 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               if (entireInstallation || removed.length > 0) {
                 // GitHub can omit the repository list for deletion and suspension. Lock matching rows so a removal
                 // cannot forget a newer installation or race with another update to the same repository.
-                const linked = yield* sql<{ readonly repoId: string }>`
+                const linked = try sql<{ readonly repoId: string }>`
                   SELECT repo_id AS "repoId" FROM github_repositories
                   WHERE installation_id = ${installation.installationId}
                     AND (${entireInstallation} OR repo_id = ANY(${removed}::text[]))
                   ORDER BY repo_id COLLATE "C" FOR UPDATE`
                 for (const row of linked) {
                   if (!mayAct(row.repoId)) continue
-                  yield* Store.forgetInstallation(row.repoId)
+                  try Store.forgetInstallation(row.repoId)
                   uninstalled += 1
                 }
               }
               return { installed: added.length, uninstalled }
-            }))
-          }).pipe(Effect.provide(database))
+            })
+          }.pipe(Effect.provide(database))
           fields.installed = counts?.installed ?? 0
           fields.uninstalled = counts?.uninstalled ?? 0
-          yield* Effect.annotateCurrentSpan({ installed: fields.installed, uninstalled: fields.uninstalled })
-          return yield* answer(200, counts === undefined ? "duplicate" : counts.installed + counts.uninstalled > 0 ? "applied" : "ignored")
+          try Effect.annotateCurrentSpan({ installed: fields.installed, uninstalled: fields.uninstalled })
+          return try answer(200, counts === undefined ? "duplicate" : counts.installed + counts.uninstalled > 0 ? "applied" : "ignored")
         }
         // This event names no repository, so it runs before repository resolution. Redelivery is safe: it ends nothing twice.
         if (event === "github_app_authorization" && action === "revoked") {
           const person = revokingPerson(payload)
-          if (person !== undefined) yield* (yield* EndGitHubConnection)(person)
+          if (person !== undefined) try (try EndGitHubConnection)(person)
           fields.connection = person === undefined ? "unknown_sender" : "ended"
         }
         // Every issue the delivery names in a repository the deployment acts on (decision 0079, slice 1b).
@@ -678,13 +678,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           const configured = [repository.id, ...Option.match(allowed, { onNone: () => [], onSome: (ids) => [...ids] })]
           const independent: typeof named = []
           for (const subject of named) {
-            const known = yield* TreeScope.candidates(subject.target.owner, configured).pipe(Effect.provide(database))
+            const known = try TreeScope.candidates(subject.target.owner, configured).pipe(Effect.provide(database))
             if (known.includes(subject.target.id)) independent.push(subject)
           }
           named = independent
         }
         const [firstNamed] = named
-        const first = yield* Store.recordDelivery({
+        const first = try Store.recordDelivery({
           deliveryId,
           event,
           action: recordedAction,
@@ -694,9 +694,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         // Only issue and pull request events of a repository the deployment acts on name a subject.
         for (const [index, subject] of named.entries()) {
           // A second side of a delivery runs as a parent's refresh does, named by the delivery and the issue.
-          const refreshed = index === 0 ? deliveryId : `${deliveryId}:${itemId(subject.target.id, subject.issue.number)}`
-          yield* (yield* FlowStarter).start(Apply, {
-            executionId: applyExecutionId(refreshed),
+          const refreshed = index === 0 ? deliveryId : `${deliveryId}:${(try Effect.sync(() => itemId(subject.target.id, subject.issue.number)))}`
+          try (try FlowStarter).start(Apply, {
+            executionId: try Effect.sync(() => applyExecutionId(refreshed)),
             payload: { deliveryId: refreshed, repo: `${subject.target.owner}/${subject.target.name}`, number: subject.issue.number, event },
           })
         }
@@ -707,24 +707,24 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           fields.repoId = target.id
           const repo = `${target.owner}/${target.name}`
           // A new issue, while triage is on: the repository's triage flow decides it (decision 0012 §5).
-          if (event === "issues" && action === "opened" && (yield* TriageStore.isOn(target.id).pipe(Effect.provide(database)))) {
+          if (event === "issues" && action === "opened" && (try TriageStore.isOn(target.id).pipe(Effect.provide(database)))) {
             fields.triage = "started"
-            yield* (yield* FlowStarter).start(TriageRun, {
-              executionId: triageRunExecutionId(deliveryId),
+            try (try FlowStarter).start(TriageRun, {
+              executionId: try Effect.sync(() => triageRunExecutionId(deliveryId)),
               payload: { repo, number, trigger: "opened", key: deliveryId },
             })
           }
         }
         const mirror = MirrorRefresh.pushRepository(event, payload)
         if (Option.isSome(mirror)) {
-          yield* MirrorRefresh.request(mirror.value.owner, mirror.value.name, deliveryId)
+          try MirrorRefresh.request(mirror.value.owner, mirror.value.name, deliveryId)
           fields.mirror = "requested"
         }
         // A push or a pull request of any repository the App is installed on: its flows' triggers decide what runs
         // (docs/features/ci.md#triggers), on the delivery's own `triggers/Dispatch`.
         const dispatch = options.repoFlows === true ? Dispatch.requestOf(event, deliveryId, payload) : Option.none()
         if (Option.isSome(dispatch)) {
-          yield* (yield* FlowStarter).start(Dispatch.Dispatch, {
+          try (try FlowStarter).start(Dispatch.Dispatch, {
             executionId: Dispatch.dispatchExecutionId(deliveryId),
             payload: dispatch.value,
           })
@@ -733,7 +733,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           // (docs/features/ci.md#schedules).
           const sync = Cron.syncRequestOf(dispatch.value)
           if (Option.isSome(sync)) {
-            yield* (yield* FlowStarter).start(Cron.Sync, {
+            try (try FlowStarter).start(Cron.Sync, {
               executionId: Cron.syncExecutionId(deliveryId),
               payload: sync.value,
             })
@@ -741,132 +741,132 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           }
         }
         // `main` moving and a new release reach everyone watching the repository (decision 0009 §8).
-        const now = new Date(yield* Clock.currentTimeMillis)
-        const repoEvent = Notifications.repoEventOf(event, payload, repository, now)
+        const now = new Date(try Clock.currentTimeMillis)
+        const repoEvent = try Effect.sync(() => Notifications.repoEventOf(event, payload, repository, now))
         if (Option.isSome(repoEvent)) {
-          fields.notified = yield* Notifications.recordRepoEvent(repoEvent.value, options.localPeople).pipe(
+          fields.notified = try Notifications.recordRepoEvent(repoEvent.value, options.localPeople).pipe(
             Effect.provide(database),
           )
         }
-        if (!first) return yield* answer(200, "duplicate")
-        return yield* answer(200, firstNamed !== undefined || Option.isSome(repoEvent) || Option.isSome(dispatch) || Option.isSome(mirror) ? "applied" : "ignored")
-      }).pipe(
+        if (!first) return try answer(200, "duplicate")
+        return try answer(200, firstNamed !== undefined || Option.isSome(repoEvent) || Option.isSome(dispatch) || Option.isSome(mirror) ? "applied" : "ignored")
+      }.pipe(
         Effect.catchCause((cause) =>
-          Effect.gen(function* () {
+          effect {
             fields.errorCode = codeOf(Cause.squash(cause))
-            return yield* answer(503, "unavailable", "unavailable")
-          })
+            return try answer(503, "unavailable", "unavailable")
+          }
         ),
       )
-      yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-      yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+      try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+      try Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
         "github.webhook",
       ).pipe(Effect.annotateLogs({ ...fields, status: response.status }))
       return response
-    }).pipe(Effect.withSpan("github.webhook", { kind: "server" }))
+    }.pipe(Effect.withSpan("github.webhook", { kind: "server" }))
 
     /** Starts the owner's dispatcher. Its id is the epoch's, so a start that was lost is made good by any later request. */
     const startDispatch = (owner: string) =>
-      Effect.gen(function* () {
-        const epoch = yield* MachineWrite.launch(owner).pipe(Effect.provide(database))
-        yield* (yield* FlowStarter).start(MachineWrite.MachineDispatch, {
-          executionId: MachineWrite.dispatchExecutionId(owner, epoch),
-          payload: MachineWrite.dispatchPayload(owner, epoch),
+      effect {
+        const epoch = try MachineWrite.launch(owner).pipe(Effect.provide(database))
+        try (try FlowStarter).start(MachineWrite.MachineDispatch, {
+          executionId: try Effect.sync(() => MachineWrite.dispatchExecutionId(owner, epoch)),
+          payload: try Effect.sync(() => MachineWrite.dispatchPayload(owner, epoch)),
         })
-      })
+      }
 
     /**
      * `POST /api/repos/<owner>/<name>/writes` with a machine token (docs/features/machine-tokens.md). It reads no
      * session and reaches no person's path: the token's own repository and scope decide, and the App writes.
      */
     const machineWrites = (target: { readonly owner: string; readonly name: string }) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
         if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
-        if (!isRepository(target.owner, target.name)) return refuse(404, "not_found")
+        if (!(try Effect.sync(() => isRepository(target.owner, target.name)))) return refuse(404, "not_found")
         const repo = repositoryOf(`${target.owner}/${target.name}`)
         if (!mayAct(repo.id)) return refuse(404, "not_found")
         if (Option.isNone(options.app)) return refuse(503, "not_configured")
-        const machine = yield* MachineWrite.machineOf(request, repo.id).pipe(Effect.provide(database))
+        const machine = try MachineWrite.machineOf(request, repo.id).pipe(Effect.provide(database))
         if (Option.isNone(machine)) return refuse(401, "authentication")
-        const text = yield* readBounded(request, MAX_WRITE_BYTES).pipe(Effect.result)
+        const text = try readBounded(request, MAX_WRITE_BYTES).pipe(Effect.result)
         if (text._tag === "Failure") return text.failure.reason === "too_large" ? refuse(413, "too_large") : refuse(400, "invalid")
-        const body = MachineWrite.decodeBody(text.success)
+        const body = try Effect.sync(() => MachineWrite.decodeBody(text.success))
         if (Option.isNone(body)) return refuse(400, "invalid")
         const write = body.value
         if (!machine.value.scope.includes(write.op)) return refuse(403, "forbidden")
         // The body is filed escaped, with the server's attribution and marker: it must still fit GitHub's limit.
-        if ("body" in write && typeof write.body === "string" && !MachineWrite.fitsGitHub(write.body, machine.value.agent, machine.value.lane)) return refuse(413, "too_large")
+        if ("body" in write && typeof write.body === "string" && !(try Effect.sync(() => MachineWrite.fitsGitHub(write.body!, machine.value.agent, machine.value.lane)))) return refuse(413, "too_large")
         // What a machine posts is public, and a `smithers:` label is a person's or a flow's: refused whatever sent it.
-        const content = MachineWrite.refusalOf(write)
+        const content = try Effect.sync(() => MachineWrite.refusalOf(write))
         if (content !== undefined) {
-          yield* Effect.logWarning("github.machine_write.request").pipe(Effect.annotateLogs({ op: write.op, agent: machine.value.agent, lane: machine.value.lane, outcome: content }))
+          try Effect.logWarning("github.machine_write.request").pipe(Effect.annotateLogs({ op: write.op, agent: machine.value.agent, lane: machine.value.lane, outcome: content }))
           return content === "reserved_label" ? refuse(403, "forbidden") : HttpServerResponse.jsonUnsafe({ code: "public_content", reason: content }, { status: 422, headers: noStore })
         }
         // A sub-issue writes to its parent's repository too: it must be one this deployment acts on.
         const parent = write.op === "issue/relate" ? repositoryOf(write.parent.repo) : undefined
         if (parent !== undefined && !mayAct(parent.id)) return refuse(404, "not_found")
         const owner = repo.owner.toLowerCase()
-        const admitted = yield* MachineWrite.admit({ repoId: repo.id, owner, machine: machine.value, body: write }).pipe(Effect.provide(database))
+        const admitted = try MachineWrite.admit({ repoId: repo.id, owner, machine: machine.value, body: write }).pipe(Effect.provide(database))
         if (admitted.kind === "token") return refuse(401, "authentication")
         if (admitted.kind === "parent") return refuse(403, "forbidden")
         if (admitted.kind === "conflict") return refuse(409, "conflict")
         if (admitted.kind === "backlog") return refuse(429, "rate_limited", 30)
-        if (admitted.kind === "inserted" || admitted.status === "pending") yield* startDispatch(owner)
-        yield* Effect.logInfo("github.machine_write.request").pipe(
+        if (admitted.kind === "inserted" || admitted.status === "pending") try startDispatch(owner)
+        try Effect.logInfo("github.machine_write.request").pipe(
           Effect.annotateLogs({ op: write.op, writeId: write.writeId, agent: machine.value.agent, lane: machine.value.lane, outcome: admitted.kind }),
         )
         return HttpServerResponse.jsonUnsafe(
           { writeId: write.writeId, ...(admitted.kind === "existing" ? { status: admitted.status } : {}) },
           { status: admitted.kind === "inserted" ? 202 : 200, headers: noStore },
         )
-      }).pipe(Effect.catchCause(() => Effect.succeed(refuse(503, "unavailable"))))
+      }.pipe(Effect.catchCause(() => Effect.succeed(refuse(503, "unavailable"))))
 
     /** `GET .../writes/<id>`: its status and issue number. `POST .../writes/<id>/retry`: a failed write, back in the queue. */
     const machineWriteStatus = (target: { readonly owner: string; readonly name: string; readonly id: string; readonly retry: boolean }) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
         const method = target.retry ? "POST" : "GET"
         if (request.method !== method) return HttpServerResponse.empty({ status: 405, headers: { allow: method } })
-        if (!isRepository(target.owner, target.name)) return refuse(404, "not_found")
+        if (!(try Effect.sync(() => isRepository(target.owner, target.name)))) return refuse(404, "not_found")
         const repo = repositoryOf(`${target.owner}/${target.name}`)
-        const machine = yield* MachineWrite.machineOf(request, repo.id).pipe(Effect.provide(database))
+        const machine = try MachineWrite.machineOf(request, repo.id).pipe(Effect.provide(database))
         if (Option.isNone(machine)) return refuse(401, "authentication")
         if (target.retry) {
           if (!mayAct(repo.id)) return refuse(404, "not_found")
-          const again = yield* MachineWrite.retry(target.id, repo.id, machine.value, mayAct).pipe(Effect.provide(database))
+          const again = try MachineWrite.retry(target.id, repo.id, machine.value, mayAct).pipe(Effect.provide(database))
           if (again === "conflict") return refuse(409, "conflict")
           if (again === "forbidden") return refuse(403, "forbidden")
           if (again === "backlog") return refuse(429, "rate_limited", 30)
-          yield* startDispatch(repo.owner.toLowerCase())
+          try startDispatch(repo.owner.toLowerCase())
           return HttpServerResponse.jsonUnsafe({ writeId: target.id, status: "pending" }, { status: 202, headers: noStore })
         }
-        const found = yield* MachineWrite.statusOf(target.id, repo.id, machine.value).pipe(Effect.provide(database))
+        const found = try MachineWrite.statusOf(target.id, repo.id, machine.value).pipe(Effect.provide(database))
         return Option.isNone(found)
           ? refuse(404, "not_found")
           : HttpServerResponse.jsonUnsafe(found.value, { status: 200, headers: noStore })
-      }).pipe(Effect.catchCause(() => Effect.succeed(refuse(503, "unavailable"))))
+      }.pipe(Effect.catchCause(() => Effect.succeed(refuse(503, "unavailable"))))
 
     /** `POST /api/repos/<owner>/<name>/writes`. */
     const writes = (target: { readonly owner: string; readonly name: string }) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        const startedAt = yield* Clock.currentTimeMillis
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const startedAt = try Clock.currentTimeMillis
         const fields: Record<string, string | number> = {}
         const refused = (status: number, code: WriteRefusal) => {
           fields.outcome = code
           return refuse(status, code)
         }
-        const response = yield* Effect.gen(function* () {
+        const response = try effect {
           if (request.method !== "POST") {
             fields.outcome = "method"
             return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
           }
-          const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+          const actor = try (try Sessions).resolve.pipe(Effect.option)
           if (Option.isNone(actor)) return refused(503, "unavailable")
           if (Option.isNone(actor.value)) return refused(401, "authentication")
           const signed = actor.value.value
-          if (!isRepository(target.owner, target.name)) return refused(404, "not_found")
+          if (!(try Effect.sync(() => isRepository(target.owner, target.name)))) return refused(404, "not_found")
           const repo = repositoryOf(`${target.owner}/${target.name}`)
           const own = repo.id === repository.id
           fields.repoId = repo.id
@@ -875,7 +875,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           // deployment's own repository that is the session's role, checked before the App as it always was.
           if (own && signed.role === null) return refused(403, "forbidden")
           if (Option.isNone(options.app)) return refused(503, "not_configured")
-          const resolved = yield* options.roles.resolve(signed, repo).pipe(Effect.result)
+          const resolved = try options.roles.resolve(signed, repo).pipe(Effect.result)
           if (resolved._tag === "Failure") {
             const { code, retryAfterSeconds } = resolved.failure
             fields.outcome = code
@@ -883,7 +883,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           }
           const who: Actor = { ...signed, role: resolved.success.role }
           if (who.role === null) return refused(403, "forbidden")
-          const text = yield* readBounded(request, MAX_WRITE_BYTES).pipe(Effect.result)
+          const text = try readBounded(request, MAX_WRITE_BYTES).pipe(Effect.result)
           if (text._tag === "Failure") {
             return text.failure.reason === "too_large" ? refused(413, "too_large") : refused(400, "invalid")
           }
@@ -897,7 +897,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           // Triage is the person's own act: anyone acting for them is refused, and counted as such (decision 0017).
           if (
             write.op !== "issue/create" && write.op !== "issue/comment" && write.op !== "branch/publish" &&
-            write.op !== "branch/update" && write.op !== "branch/resync" && (yield* refusesPersonOnly(who, write.op))
+            write.op !== "branch/update" && write.op !== "branch/resync" && (try refusesPersonOnly(who, write.op))
           ) {
             return refused(403, "forbidden")
           }
@@ -905,14 +905,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           if (withPersonToken(write, via) && who.session === undefined) return refused(401, "authentication")
           // The agent's write runs as the App. Only a person who may ask Smithers has an agent (decision 0007
           // `repo:ask`, Member or above), so a Guest's write goes as the Guest or not at all, never as the bot.
-          if (via === "agent" && !canAsk(who)) return refused(403, "forbidden")
+          if (via === "agent" && !(try Effect.sync(() => canAsk(who)))) return refused(403, "forbidden")
           if (!mayWrite(who, write)) return refused(403, "forbidden")
           // Triage judges on the model of the person who enabled it: their own, else the deployment's, which answers only
           // Members of the deployment's own repository (ruling AUTH-8, decision 0122). Enabling it, on any repository,
           // needs one of the two; Run triage again judges on the enabler's, as a new issue's run does.
           if (
-            write.op === "triage/enable" && !canAsk(signed) &&
-            !(yield* PersonalStore.hasModel(who.subject.id).pipe(Effect.provide(database)))
+            write.op === "triage/enable" && !(try Effect.sync(() => canAsk(signed))) &&
+            !(try PersonalStore.hasModel(who.subject.id).pipe(Effect.provide(database)))
           ) {
             fields.refused = "deployment_model"
             return refused(403, "forbidden")
@@ -922,18 +922,18 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           // Publish, Update branch and Resync: a branch of this repository the writer may edit; Publish and Resync, one
           // at a time per branch.
           if (write.op === "branch/publish" || write.op === "branch/update" || write.op === "branch/resync") {
-            if (!canAsk(signed)) return refused(403, "forbidden")
+            if (!(try Effect.sync(() => canAsk(signed)))) return refused(403, "forbidden")
             const branchId = write.branchId.toLowerCase()
             fields.branchId = branchId
             // A branch of another repository is not found here before anyone's role there is asked: its repository's
             // GitHub metadata never decides this route's answer.
-            const located = yield* branchAccessAs(Option.none(), branchId).pipe(Effect.provide(database))
+            const located = try branchAccessAs(Option.none(), branchId).pipe(Effect.provide(database))
             if (located === undefined || located.repoId !== repo.id) return refused(404, "not_found")
-            const branch = yield* branchAccess(Option.some(who), branchId).pipe(Effect.provide(database))
+            const branch = try branchAccess(Option.some(who), branchId).pipe(Effect.provide(database))
             if (branch === undefined || branch.repoId !== repo.id) return refused(404, "not_found")
             if (!canEdit(branch.access)) return refused(403, "forbidden")
             if (write.op === "branch/publish" || write.op === "branch/resync") {
-              const blocked = yield* publishBlocked(branchId, write.writeId).pipe(Effect.provide(database))
+              const blocked = try publishBlocked(branchId, write.writeId).pipe(Effect.provide(database))
               if (blocked !== undefined) {
                 fields.blocked = blocked
                 return refused(409, "conflict")
@@ -941,34 +941,38 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             }
           }
           const plain = payloadOf(write)
-          const payloadHash = digestSync(JSON.stringify({ via, ...plain }))
-          const insert = (held: Option.Option<RepoRoles.Held>) =>
-            Store.insertWrite({
+          const payloadHash = try Effect.try({
+            try: () => digestSync(JSON.stringify({ via, ...plain })),
+            catch: Function.identity,
+          }).pipe(Effect.orDie)
+          const insert = effect (held: Option.Option<RepoRoles.Held>) => {
+            return try Store.insertWrite({
               id: write.writeId,
               repoId: repo.id,
               actorId: who.subject.id,
               sessionId: via === "person" ? who.session ?? null : null,
               via,
               payload: plain.op === "triage/enable" || plain.op === "triage/pause"
-                ? { ...plain, authority: WriteAuthority.protectedOf(who, held) } : plain,
+                ? { ...plain, authority: try Effect.sync(() => WriteAuthority.protectedOf(who, held)) } : plain,
               payloadHash,
               reauthorize: plain.op === "triage/enable" || plain.op === "triage/pause",
             }, Option.isSome(held) ? RepoRoles.holds(held.value) : undefined).pipe(Effect.provide(database))
-          let inserted = yield* insert(resolved.success.held)
+          }
+          let inserted = try insert(resolved.success.held)
           // The row the request read expired, or changed, before the write's transaction: GitHub decides again, once,
           // and the write is admitted only under that answer (decision 0079 §6). The five minutes still hold.
           const read = resolved.success.held
           if (inserted.kind === "stale" && Option.isSome(read) && options.roles.refresh !== undefined) {
             fields.refreshed = 1
-            const again = yield* options.roles.refresh(signed, repo, read.value).pipe(Effect.result)
+            const again = try options.roles.refresh(signed, repo, read.value).pipe(Effect.result)
             if (again._tag === "Failure") {
               const { code, retryAfterSeconds } = again.failure
               fields.outcome = code
               return refuse(RepoRoles.REFUSALS[code], code, retryAfterSeconds)
             }
             const now: Actor = { ...signed, role: again.success.role }
-            if (now.role === null || !mayWrite(now, write) || (via === "agent" && !canAsk(now))) return refused(403, "forbidden")
-            inserted = yield* insert(again.success.held)
+            if (now.role === null || !mayWrite(now, write) || (via === "agent" && !(try Effect.sync(() => canAsk(now))))) return refused(403, "forbidden")
+            inserted = try insert(again.success.held)
             // The row the refresh answered expired or changed again before this insert: the role GitHub just gave
             // allows the write, so the outbox sends it again (`503`), never the terminal 403.
             if (inserted.kind === "stale") {
@@ -985,9 +989,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           // that never reached its Durable Object gets there now. Run triage again is its own run: `triage/Run`
           // settles the write.
           if (inserted.kind === "inserted" || inserted.status === "pending") {
-            yield* write.op === "triage/run"
-              ? (yield* FlowStarter).start(TriageRun, {
-                executionId: triageRunExecutionId(write.writeId),
+            try (write.op === "triage/run"
+              ? (try FlowStarter).start(TriageRun, {
+                executionId: try Effect.sync(() => triageRunExecutionId(write.writeId)),
                 payload: {
                   repo: `${repo.owner}/${repo.name}`,
                   number: write.number,
@@ -996,29 +1000,29 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                 },
               })
               : write.op === "pr/merge"
-              ? (yield* FlowStarter).start(Merge, {
-                executionId: mergeExecutionId(write.writeId),
+              ? (try FlowStarter).start(Merge, {
+                executionId: try Effect.sync(() => mergeExecutionId(write.writeId)),
                 payload: { writeId: write.writeId },
               })
               : write.op === "branch/publish"
-              ? (yield* FlowStarter).start(Publish, {
-                executionId: publishExecutionId(write.writeId),
+              ? (try FlowStarter).start(Publish, {
+                executionId: try Effect.sync(() => publishExecutionId(write.writeId)),
                 payload: { writeId: write.writeId },
               })
               : write.op === "branch/update"
-              ? (yield* FlowStarter).start(Update, {
-                executionId: updateExecutionId(write.writeId),
+              ? (try FlowStarter).start(Update, {
+                executionId: try Effect.sync(() => updateExecutionId(write.writeId)),
                 payload: { writeId: write.writeId },
               })
               : write.op === "branch/resync"
-              ? (yield* FlowStarter).start(Resync, {
-                executionId: resyncExecutionId(write.writeId),
+              ? (try FlowStarter).start(Resync, {
+                executionId: try Effect.sync(() => resyncExecutionId(write.writeId)),
                 payload: { writeId: write.writeId },
               })
-              : (yield* FlowStarter).start(Write, {
-                executionId: writeExecutionId(write.writeId),
+              : (try FlowStarter).start(Write, {
+                executionId: try Effect.sync(() => writeExecutionId(write.writeId)),
                 payload: { writeId: write.writeId },
-              })
+              }))
           }
           if (inserted.kind === "existing") {
             fields.outcome = inserted.reauthorized === true ? "reauthorized" : "existing"
@@ -1032,7 +1036,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             { txid: inserted.txid, writeId: write.writeId },
             { status: 202, headers: noStore },
           )
-        }).pipe(
+        }.pipe(
           Effect.catchCause((cause) =>
             Effect.sync(() => {
               fields.errorCode = codeOf(Cause.squash(cause))
@@ -1041,7 +1045,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           ),
         )
         const outcome = String(fields.outcome)
-        yield* Metric.update(
+        try Metric.update(
           Metric.withAttributes(Metrics.writeRequests, {
             op: String(fields.op ?? "unknown"),
             outcome,
@@ -1049,24 +1053,24 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           }),
           1,
         )
-        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+        try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+        try Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
           "github.write.request",
         ).pipe(
           Effect.annotateLogs({
             ...fields,
             outcome,
             status: response.status,
-            durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+            durationMs: (try Clock.currentTimeMillis) - startedAt,
           }),
         )
         return response
-      }).pipe(Effect.withSpan("github.write.request", { kind: "server" }))
+      }.pipe(Effect.withSpan("github.write.request", { kind: "server" }))
 
     // The last admitted bucket per repository: completed values only. Each request that finds a bucket behind
     // starts it itself, without sharing pending work (decision 0104).
-    const admitted = yield* Ref.make<ReadonlyMap<string, number>>(new Map())
-    const refreshPull = yield* PullRefresh.make(database, Option.isSome(options.app), RECONCILE_START_TIMEOUT)
+    const admitted = try Ref.make<ReadonlyMap<string, number>>(new Map())
+    const refreshPull = try PullRefresh.make(database, Option.isSome(options.app), RECONCILE_START_TIMEOUT)
 
     /**
      * Starts `github/Reconcile` when `target`'s issues are older than `SYNC_STALE_MS`, one execution per repository and
@@ -1075,42 +1079,42 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * `github_reconcile_starts` by outcome (`started`, `timed_out`, `not_started` with its error code). Every admission,
      * stale or not, counts `github_reconcile_admissions` and records `github.reconcile.admission` as it begins.
      */
-    const reconcileIfStale = (target: Repository) => Effect.gen(function* () {
-      yield* Metric.update(Metrics.reconcileAdmissions, 1)
-      yield* Effect.logInfo("github.reconcile.admission")
+    const reconcileIfStale = (target: Repository) => effect {
+      try Metric.update(Metrics.reconcileAdmissions, 1)
+      try Effect.logInfo("github.reconcile.admission")
       if (Option.isNone(options.app)) {
         // Local development's synced repository keeps its one issue, read as of its own `updated_at`: an upsert that
         // changes nothing once the row is there, and puts it back if the dev database was reset.
         if (localSynced !== undefined && target.id === localSynced.repository.id) {
-          yield* Store.upsertIssue(target.id, localSynced.issue, Date.parse(localSynced.issue.updated_at)).pipe(
+          try Store.upsertIssue(target.id, localSynced.issue, Date.parse(localSynced.issue.updated_at)).pipe(
             Effect.provide(database),
             Effect.catchCause(() => Effect.logWarning("github.local_synced.seed").pipe(Effect.annotateLogs({ repoId: target.id, outcome: "failed" }))),
           )
         }
         return
       }
-      const now = yield* Clock.currentTimeMillis
-      const state = yield* Store.syncState(target.id, ISSUES_STREAM).pipe(Effect.provide(database))
-      if (state.syncedAt !== null) yield* Metric.update(Metrics.syncAge, Math.round((now - state.syncedAt) / 1000))
+      const now = try Clock.currentTimeMillis
+      const state = try Store.syncState(target.id, ISSUES_STREAM).pipe(Effect.provide(database))
+      if (state.syncedAt !== null) try Metric.update(Metrics.syncAge, Math.round((now - state.syncedAt) / 1000))
       if (state.syncedAt !== null && now - state.syncedAt < SYNC_STALE_MS) return
-      const bucket = reconcileBucketStart(now)
-      if ((yield* Ref.get(admitted)).get(target.id) === bucket) return
-      const started = yield* (yield* FlowStarter).start(Reconcile, {
-        executionId: reconcileExecutionId(target.id, now),
+      const bucket = try Effect.sync(() => reconcileBucketStart(now))
+      if ((try Ref.get(admitted)).get(target.id) === bucket) return
+      const started = try (try FlowStarter).start(Reconcile, {
+        executionId: try Effect.sync(() => reconcileExecutionId(target.id, now)),
         payload: { repo: `${target.owner}/${target.name}`, requestedAtMs: bucket },
       }).pipe(Effect.timeoutOption(RECONCILE_START_TIMEOUT))
       const outcome = Option.isSome(started) ? "started" : "timed_out"
-      if (Option.isSome(started)) yield* Ref.update(admitted, (buckets) => new Map(buckets).set(target.id, bucket))
-      yield* Metric.update(Metric.withAttributes(Metrics.reconcileStarts, { outcome }), 1)
-      yield* Effect.logWithLevel(outcome === "started" ? "Info" : "Warn")("github.reconcile.start").pipe(
+      if (Option.isSome(started)) try Ref.update(admitted, (buckets) => new Map(buckets).set(target.id, bucket))
+      try Metric.update(Metric.withAttributes(Metrics.reconcileStarts, { outcome }), 1)
+      try Effect.logWithLevel(outcome === "started" ? "Info" : "Warn")("github.reconcile.start").pipe(
         Effect.annotateLogs({
           repoId: target.id,
           outcome,
-          durationMs: (yield* Clock.currentTimeMillis) - now,
+          durationMs: (try Clock.currentTimeMillis) - now,
           ...(Option.isNone(started) ? { errorCode: "TimeoutError" } : {}),
         }),
       )
-    }).pipe(
+    }.pipe(
       Effect.catchCause((cause) => {
         const error = Cause.squash(cause)
         return Effect.andThen(
@@ -1169,17 +1173,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * and no call. A repository whose role can't be read now refuses the whole answer rather than shrink the tree.
      */
     const readableSet = (target: Repository) =>
-      Effect.gen(function* () {
+      effect {
         const listed = Option.match(allowed, { onNone: () => [] as ReadonlyArray<string>, onSome: (ids) => [...ids] })
-        const known = yield* TreeScope.candidates(target.owner, listed).pipe(
+        const known = try TreeScope.candidates(target.owner, listed).pipe(
           Effect.provide(database), Effect.result,
           Effect.tap((read) => Effect.annotateCurrentSpan({ "smithers.github.outcome": read._tag === "Failure" ? "unavailable" : "read" })),
           Effect.withSpan("github.tree_candidates"),
         )
         const outcome = known._tag === "Failure" ? "unavailable" : "read"
-        yield* Metric.update(Metric.withAttributes(Metrics.treeCandidateReads, { outcome }), 1)
+        try Metric.update(Metric.withAttributes(Metrics.treeCandidateReads, { outcome }), 1)
         if (known._tag === "Failure") {
-          yield* Effect.logWarning("github.tree_candidates").pipe(
+          try Effect.logWarning("github.tree_candidates").pipe(
             Effect.annotateLogs({ repoId: target.id, outcome, errorCode: codeOf(known.failure) }),
           )
           return { _tag: "Refused", proof: {
@@ -1187,28 +1191,28 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           } } as const
         }
         const others = known.success.filter((id) => id !== target.id && mayAct(id)).map((id) => repositoryOf(TreeScope.nameOf(id)))
-        const [own, ...rest] = yield* access.readableAmong([target, ...others])
+        const [own, ...rest] = try access.readableAmong([target, ...others])
         if (own!._tag === "Refused") return { _tag: "Refused", proof: own! } as const
         const down = rest.find((proof) => proof._tag === "Refused" && proof.refusal === "unavailable")
         if (down !== undefined && down._tag === "Refused") return { _tag: "Refused", proof: down } as const
         const ids = [own!, ...rest].filter((proof) => proof._tag === "Readable").map((proof) => proof.target.id)
         return { _tag: "Readable", ids: [...new Set(ids)].sort() } as const
-      })
+      }
 
-    const relationsAdmitted = yield* Ref.make<ReadonlyMap<string, number>>(new Map())
+    const relationsAdmitted = try Ref.make<ReadonlyMap<string, number>>(new Map())
 
     /** Starts `github/Relations` for `target`, once per repository and 5-minute bucket; it never fails the read. */
-    const startRelations = (target: Repository) => Effect.gen(function* () {
+    const startRelations = (target: Repository) => effect {
       if (Option.isNone(options.app)) return
-      const now = yield* Clock.currentTimeMillis
-      const bucket = reconcileBucketStart(now)
-      if ((yield* Ref.get(relationsAdmitted)).get(target.id) === bucket) return
-      const started = yield* (yield* FlowStarter).start(Relations, {
-        executionId: relationsExecutionId(target.id, now),
+      const now = try Clock.currentTimeMillis
+      const bucket = try Effect.sync(() => reconcileBucketStart(now))
+      if ((try Ref.get(relationsAdmitted)).get(target.id) === bucket) return
+      const started = try (try FlowStarter).start(Relations, {
+        executionId: try Effect.sync(() => relationsExecutionId(target.id, now)),
         payload: { repo: `${target.owner}/${target.name}`, requestedAtMs: bucket },
       }).pipe(Effect.timeoutOption(RECONCILE_START_TIMEOUT))
-      if (Option.isSome(started)) yield* Ref.update(relationsAdmitted, (buckets) => new Map(buckets).set(target.id, bucket))
-    }).pipe(
+      if (Option.isSome(started)) try Ref.update(relationsAdmitted, (buckets) => new Map(buckets).set(target.id, bucket))
+    }.pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("github.relations.start").pipe(
           Effect.annotateLogs({ repoId: target.id, errorCode: codeOf(Cause.squash(cause)) }),
@@ -1222,51 +1226,54 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * or who asks. A repository in scope whose relations aren't current starts its walk here.
      */
     const treeScope = (named: { readonly owner: string; readonly name: string }) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
         const fields: Record<string, string | number> = {}
-        const response = yield* Effect.gen(function* () {
+        const response = try effect {
           if (request.method !== "GET") {
             fields.outcome = "method"
             return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
           }
           const target = repositoryOf(`${named.owner}/${named.name}`)
           fields.repoId = target.id
-          const readable = yield* readableSet(target)
+          const readable = try readableSet(target)
           if (readable._tag === "Refused") {
             fields.outcome = readable.proof.stage === "viewer" ? "refused" : readable.proof.refusal
             return refusalOf(readable.proof as Access.Proof & { readonly _tag: "Refused" })
           }
-          const now = yield* Clock.currentTimeMillis
-          const found = yield* Effect.gen(function* () {
-            const pairs = yield* TreeScope.reachedPairs(target.id, readable.ids)
-            const ordered = TreeScope.byDistance(target.id, pairs)
-            const synced = yield* TreeScope.currentRelations(ordered, now)
+          const now = try Clock.currentTimeMillis
+          const found = try effect {
+            const pairs = try TreeScope.reachedPairs(target.id, readable.ids)
+            const ordered = try Effect.sync(() => TreeScope.byDistance(target.id, pairs))
+            const synced = try TreeScope.currentRelations(ordered, now)
             return { ordered, synced }
-          }).pipe(Effect.provide(database), Effect.result)
+          }.pipe(Effect.provide(database), Effect.result)
           if (found._tag === "Failure") {
             fields.outcome = "unavailable"
             fields.errorCode = codeOf(found.failure)
             return refuse(503, "unavailable")
           }
-          const scope = TreeScope.answer(found.success.ordered, found.success.synced)
-          yield* Effect.forEach(
+          const scope = try Effect.sync(() => TreeScope.answer(found.success.ordered, found.success.synced))
+          try Effect.forEach(
             found.success.ordered.slice(0, scope.repos.length).filter((id) => !found.success.synced.has(id)),
-            (id) => startRelations(repositoryOf(TreeScope.nameOf(id))),
+            effect (id) => {
+              const name = try Effect.sync(() => TreeScope.nameOf(id))
+              return try startRelations(repositoryOf(name))
+            },
             { concurrency: 4, discard: true },
           )
           fields.outcome = "answered"
           fields.repos = scope.repos.length
           fields.omitted = scope.omitted.length
           return HttpServerResponse.jsonUnsafe(scope, { headers: { "cache-control": "private, no-store" } })
-        })
-        yield* Metric.update(Metric.withAttributes(Metrics.treeScopes, { outcome: String(fields.outcome) }), 1)
-        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-        yield* Effect.logWithLevel(response.status >= 500 ? "Warn" : "Info")("github.tree_scope").pipe(
+        }
+        try Metric.update(Metric.withAttributes(Metrics.treeScopes, { outcome: String(fields.outcome) }), 1)
+        try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+        try Effect.logWithLevel(response.status >= 500 ? "Warn" : "Info")("github.tree_scope").pipe(
           Effect.annotateLogs({ ...fields, status: response.status }),
         )
         return response
-      }).pipe(Effect.withSpan("github.tree_scope", { kind: "server" }))
+      }.pipe(Effect.withSpan("github.tree_scope", { kind: "server" }))
 
     /**
      * `GET /api/shapes/github-writes`: the signed-in person's own writes; signed out, none; sessions unreadable, 503
@@ -1290,11 +1297,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * `github.issues.list` and one count by outcome; never a title or a query.
      */
     const issues = (named: { readonly owner: string; readonly name: string }) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        const startedAt = yield* Clock.currentTimeMillis
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const startedAt = try Clock.currentTimeMillis
         const fields: Record<string, string | number> = {}
-        const response = yield* Effect.gen(function* () {
+        const response = try effect {
           if (request.method !== "GET") {
             fields.outcome = "method"
             return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
@@ -1302,15 +1309,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           const target = repositoryOf(`${named.owner}/${named.name}`)
           fields.repoId = target.id
           const search = new URL(request.url, "http://localhost").searchParams
-          const query = IssueList.parseQuery(search)
+          const query = try Effect.sync(() => IssueList.parseQuery(search))
           // A runner registered on the repository reads its issues with its own token, as it reads its jobs.
-          const { proof } = yield* access.repositoryReadable(target, "session_or_runner", { validate: Effect.succeed(query !== undefined) })
+          const { proof } = try access.repositoryReadable(target, "session_or_runner", { validate: Effect.succeed(query !== undefined) })
           if (proof._tag === "Refused") {
             fields.outcome = proof.stage === "viewer" ? "refused" : proof.refusal
             return refusalOf(proof)
           }
           if (proof.via === "runner") fields.by = "runner"
-          const [, found] = yield* Effect.all([
+          const [, found] = try Effect.all([
             reconcileIfStale(target),
             IssueList.page(target.id, query!).pipe(Effect.provide(database), Effect.result),
           ], { concurrency: 2 })
@@ -1322,16 +1329,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           fields.outcome = "listed"
           fields.count = found.success.issues.length
           fields.more = found.success.next === undefined ? 0 : 1
-          return IssueList.answer(named, search, found.success)
-        })
+          return try Effect.sync(() => IssueList.answer(named, search, found.success))
+        }
         const outcome = String(fields.outcome)
-        yield* Metric.update(Metric.withAttributes(Metrics.issueLists, { outcome }), 1)
-        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.issues.outcome": outcome })
-        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : "Info")("github.issues.list").pipe(
-          Effect.annotateLogs({ ...fields, status: response.status, durationMs: (yield* Clock.currentTimeMillis) - startedAt }),
+        try Metric.update(Metric.withAttributes(Metrics.issueLists, { outcome }), 1)
+        try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.issues.outcome": outcome })
+        try Effect.logWithLevel(response.status >= 500 ? "Error" : "Info")("github.issues.list").pipe(
+          Effect.annotateLogs({ ...fields, status: response.status, durationMs: (try Clock.currentTimeMillis) - startedAt }),
         )
         return response
-      }).pipe(Effect.withSpan("github.issues.list", { kind: "server" }))
+      }.pipe(Effect.withSpan("github.issues.list", { kind: "server" }))
 
     /**
      * `GET /api/repos/<owner>/<name>/first-paint` (worker/github/FirstPaint.ts, devpriv FINAL §3.10): an issue's heading
@@ -1340,48 +1347,49 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * one count by form and outcome; never a title, a number or a person.
      */
     const firstPaint = (named: { readonly owner: string; readonly name: string }) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        const startedAt = yield* Clock.currentTimeMillis
-        const form = FirstPaint.parseForm(new URL(request.url, "http://localhost").searchParams)
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const startedAt = try Clock.currentTimeMillis
+        const form = try Effect.sync(() => FirstPaint.parseForm(new URL(request.url, "http://localhost").searchParams))
         const target = repositoryOf(`${named.owner}/${named.name}`)
         const fields: Record<string, string | number> = { form: form?.kind ?? "invalid", repoId: target.id }
-        const response = yield* FirstPaint.guarded((fields) => Effect.gen(function* () {
+        const response = try FirstPaint.guarded((fields) => effect {
           // Any other method is one more outcome that doesn't paint: the same empty 204.
           if (request.method !== "GET") {
             fields.outcome = "method"
-            return FirstPaint.nothing()
+            return try Effect.sync(() => FirstPaint.nothing())
           }
-          const { proof } = yield* access.repositoryReadable(target, "cookie", { validate: Effect.succeed(form !== undefined) })
+          const { proof } = try access.repositoryReadable(target, "cookie", { validate: Effect.succeed(form !== undefined) })
           if (proof._tag === "Refused") {
             fields.outcome = `refused_${proof.status}`
-            return FirstPaint.nothing()
+            return try Effect.sync(() => FirstPaint.nothing())
           }
-          const found = yield* FirstPaint.read(target.id, form!).pipe(Effect.provide(database))
+          const found = try FirstPaint.read(target.id, form!).pipe(Effect.provide(database))
           if (found === undefined) {
             fields.outcome = "missing"
-            return FirstPaint.nothing()
+            return try Effect.sync(() => FirstPaint.nothing())
           }
           fields.outcome = "painted"
           const person = proof.viewer.kind === "person" ? proof.viewer.actor : undefined
           // A person's deadline counts in the database's clock, from the lookup that read the session's end; a public
           // read signed out has no session, and only the shell's hand-over cap bounds it.
-          return FirstPaint.painted({
+          const painting = {
             viewer: person?.subject.id ?? null,
             ...(person?.expiry === undefined
-              ? { serverNow: yield* Clock.currentTimeMillis }
+              ? { serverNow: try Clock.currentTimeMillis }
               : { expiresAt: person.expiry.at, serverNow: person.expiry.now }),
             ...found,
-          })
-        }), fields, codeOf)
+          }
+          return try Effect.sync(() => FirstPaint.painted(painting))
+        }, fields, codeOf)
         const outcome = String(fields.outcome)
-        yield* Metric.update(Metric.withAttributes(Metrics.firstPaints, { form: String(fields.form), outcome }), 1)
-        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.first_paint.outcome": outcome })
-        yield* Effect.logWithLevel(outcome === "error" ? "Warn" : "Info")("github.first_paint").pipe(
-          Effect.annotateLogs({ ...fields, status: response.status, durationMs: (yield* Clock.currentTimeMillis) - startedAt }),
+        try Metric.update(Metric.withAttributes(Metrics.firstPaints, { form: String(fields.form), outcome }), 1)
+        try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.first_paint.outcome": outcome })
+        try Effect.logWithLevel(outcome === "error" ? "Warn" : "Info")("github.first_paint").pipe(
+          Effect.annotateLogs({ ...fields, status: response.status, durationMs: (try Clock.currentTimeMillis) - startedAt }),
         )
         return response
-      }).pipe(Effect.withSpan("github.first_paint", { kind: "server" }))
+      }.pipe(Effect.withSpan("github.first_paint", { kind: "server" }))
 
     /**
      * `POST /api/repos/<owner>/<name>/issues/<number>/links` (decision 0147, docs/features/work-links.md): a Member or
@@ -1390,15 +1398,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * posted (`person` or `runner`); never a ref, a label or a URL.
      */
     const links = (named: { readonly owner: string; readonly name: string; readonly number: number }) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        const startedAt = yield* Clock.currentTimeMillis
+      effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const startedAt = try Clock.currentTimeMillis
         const fields: Record<string, string | number> = { number: named.number }
         const refused = (status: number, code: string, outcome = code) => {
           fields.outcome = outcome
           return HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
         }
-        const response = yield* Effect.gen(function* () {
+        const response = try effect {
           if (request.method !== "POST") {
             fields.outcome = "method"
             return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
@@ -1406,26 +1414,26 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           const target = repositoryOf(`${named.owner}/${named.name}`)
           fields.repoId = target.id
           if (!mayAct(target.id)) return refused(404, "not_found")
-          const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+          const actor = try (try Sessions).resolve.pipe(Effect.option)
           if (Option.isNone(actor)) return refused(503, "unavailable")
           let source: string
           let byRunner: { readonly tokenSha256: string } | undefined
           let byMachine: { readonly tokenSha256: string } | undefined
           // The body is read before a runner is authorized: the write then checks the runner again, in its own
           // transaction, so a token revoked while the body arrived writes nothing (decision 0148).
-          const text = yield* readBounded(request, WorkLinks.MAX_POST_BYTES).pipe(Effect.result)
+          const text = try readBounded(request, WorkLinks.MAX_POST_BYTES).pipe(Effect.result)
           if (Option.isSome(actor.value)) {
             fields.by = "person"
-            const resolved = yield* WriteAuthority.wait("role", options.roles.resolve(actor.value.value, target)).pipe(Effect.result)
+            const resolved = try WriteAuthority.wait("role", options.roles.resolve(actor.value.value, target)).pipe(Effect.result)
             if (resolved._tag === "Failure") {
               const { code, retryAfterSeconds } = resolved.failure
               fields.outcome = code
               return refuse(RepoRoles.REFUSALS[code], code, retryAfterSeconds)
             }
-            if (!mayAsk(resolved.success.role)) return refused(403, "forbidden")
+            if (!(try Effect.sync(() => mayAsk(resolved.success.role)))) return refused(403, "forbidden")
             source = actor.value.value.login ?? actor.value.value.subject.id
           } else {
-            const machine = yield* WriteAuthority.wait("runner_lookup", MachineWrite.machineOf(request, target.id).pipe(Effect.provide(database))).pipe(Effect.result)
+            const machine = try WriteAuthority.wait("runner_lookup", MachineWrite.machineOf(request, target.id).pipe(Effect.provide(database))).pipe(Effect.result)
             if (machine._tag === "Failure") return refused(503, "unavailable")
             if (Option.isSome(machine.success)) {
               fields.by = "machine"
@@ -1434,7 +1442,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               byMachine = { tokenSha256: machine.success.value.tokenSha256 }
             } else {
             fields.by = "runner"
-            const runner = yield* WriteAuthority.wait("runner_lookup", WorkLinks.runnerOf(request, target.id).pipe(Effect.provide(database))).pipe(Effect.result)
+            const runner = try WriteAuthority.wait("runner_lookup", WorkLinks.runnerOf(request, target.id).pipe(Effect.provide(database))).pipe(Effect.result)
             if (runner._tag === "Failure") return refused(503, "unavailable")
             if (Option.isNone(runner.success)) return refused(401, "authentication")
             // Registered, but not current as a claim requires (decision 0148): it needs registering again.
@@ -1446,13 +1454,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           if (text._tag === "Failure") {
             return text.failure.reason === "too_large" ? refused(413, "too_large") : refused(400, "invalid")
           }
-          const post = WorkLinks.decode(text.success)
-          const now = yield* Clock.currentTimeMillis
-          if (post === undefined || WorkLinks.fromTheFuture(post, now)) return refused(400, "invalid")
-          if (byMachine !== undefined && MachineWrite.publicContentProblem(post.links.flatMap((link) => [link.ref, link.label, link.url])) !== undefined) {
+          const post = try Effect.sync(() => WorkLinks.decode(text.success))
+          const now = try Clock.currentTimeMillis
+          if (post === undefined || (try Effect.sync(() => WorkLinks.fromTheFuture(post, now)))) return refused(400, "invalid")
+          if (byMachine !== undefined && (try Effect.sync(() => MachineWrite.publicContentProblem(post.links.flatMap((link) => [link.ref, link.label, link.url])))) !== undefined) {
             return refused(400, "invalid")
           }
-          const written = yield* WriteAuthority.wait("commit", WorkLinks.write(target.id, named.number, post, source, now, byRunner, byMachine).pipe(
+          const written = try WriteAuthority.wait("commit", WorkLinks.write(target.id, named.number, post, source, now, byRunner, byMachine).pipe(
             Effect.provide(database),
           )).pipe(Effect.result)
           if (written._tag === "Failure") {
@@ -1464,31 +1472,31 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           fields.links = written.success.value.links
           fields.changed = written.success.value.changed
           return HttpServerResponse.jsonUnsafe(written.success.value, { headers: noStore })
-        })
+        }
         const outcome = String(fields.outcome)
-        yield* Metric.update(Metric.withAttributes(Metrics.workLinkPosts, { outcome, by: String(fields.by ?? "none") }), 1)
-        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.work.outcome": outcome })
-        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")("work.links").pipe(
-          Effect.annotateLogs({ ...fields, status: response.status, durationMs: (yield* Clock.currentTimeMillis) - startedAt }),
+        try Metric.update(Metric.withAttributes(Metrics.workLinkPosts, { outcome, by: String(fields.by ?? "none") }), 1)
+        try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.work.outcome": outcome })
+        try Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")("work.links").pipe(
+          Effect.annotateLogs({ ...fields, status: response.status, durationMs: (try Clock.currentTimeMillis) - startedAt }),
         )
         return response
-      }).pipe(Effect.withSpan("work.links", { kind: "server" }))
+      }.pipe(Effect.withSpan("work.links", { kind: "server" }))
 
-    const fetch = Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
+    const fetch = effect {
+      const request = try HttpServerRequest.HttpServerRequest
       const path = request.url.split("?")[0]!
-      if (path === GITHUB_WEBHOOK_ROUTE) return yield* webhook
-      if (path === WRITES_SHAPE_ROUTE) return yield* ownWrites
+      if (path === GITHUB_WEBHOOK_ROUTE) return try webhook
+      if (path === WRITES_SHAPE_ROUTE) return try ownWrites
       // A repository's edges whose parent the reader may also read, recomputed per request (decision 0153 rule 9).
       if (path === ISSUE_EDGES_SHAPE_ROUTE) {
         const named = shapeTarget(request.url)
         if (Result.isFailure(named)) return named.failure
-        const readable = yield* readableSet(named.success)
+        const readable = try readableSet(named.success)
         if (readable._tag === "Refused") return refusalOf(readable.proof as Access.Proof & { readonly _tag: "Refused" })
         const params: Record<string, string> = { "1": named.success.id }
         readable.ids.forEach((id, index) => void (params[String(index + 2)] = id))
         const list = readable.ids.map((_, index) => `$${index + 2}`).join(", ")
-        return yield* shape(ISSUE_RELATIONS_TABLE, ISSUE_EDGE_COLUMNS, `child_repo_id = $1 AND parent_repo_id IN (${list})`, params)
+        return try shape(ISSUE_RELATIONS_TABLE, ISSUE_EDGE_COLUMNS, `child_repo_id = $1 AND parent_repo_id IN (${list})`, params)
       }
       // A repository's issues, comments, sync and triage, its pull requests and a head's checks (the runs on a
       // commit): the repository `?repo=` names, its own unless it names one (decision 0079, slice 1b).
@@ -1498,16 +1506,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         if (Result.isFailure(named)) return named.failure
         const target = named.success
         const params = new URL(request.url, "http://localhost").searchParams
-        const selected = itemShape(path, repositoryShape.where, target.id, params.get("number"))
+        const selected = try Effect.sync(() => itemShape(path, repositoryShape.where, target.id, params.get("number")))
         const refresh = params.get("refresh")
         // A pull's commits, reviews or checks with `?refresh=<number>` also refresh that pull from GitHub.
         const refreshes = refresh !== null && (path === PULL_COMMITS_SHAPE_ROUTE || path === REVIEWS_SHAPE_ROUTE || path === CHECKS_SHAPE_ROUTE)
-        const refreshed = refreshes ? issueNumberOf(refresh) : undefined
+        const refreshed = refreshes ? (try Effect.sync(() => issueNumberOf(refresh))) : undefined
         // Admission runs beside the shape read inside this request, bounded at `RECONCILE_START_TIMEOUT`.
         // Reconcile's work stays on the durable engine; no admission outlives the request (decision 0104).
         const reconciles = path === ITEMS_SHAPE_ROUTE || path === ITEM_SUMMARIES_SHAPE_ROUTE
         const validate = Effect.succeed(selected !== undefined && (!refreshes || refreshed !== undefined))
-        const { proof, settled } = yield* access.repositoryReadable(
+        const { proof, settled } = try access.repositoryReadable(
           target,
           "session",
           reconciles ? { validate, alongside: reconcileIfStale(target) } : { validate },
@@ -1518,82 +1526,82 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           // counted and logged as the read's, except a refresh's, which never was.
           const counted = proof.refusal === "app_not_installed" || (proof.stage === "viewer" && !refreshes)
           if (counted) {
-            yield* Metric.update(
+            try Metric.update(
               Metric.withAttributes(Metrics.shapes, { table: repositoryShape.table, status: String(proof.status), live: "false" }),
               1,
             )
           }
           if (proof.refusal === "app_not_installed") {
-            yield* Effect.logInfo(`github.shape.${repositoryShape.table}`).pipe(
+            try Effect.logInfo(`github.shape.${repositoryShape.table}`).pipe(
               Effect.annotateLogs({ status: 404, errorCode: "app_not_installed", repoId: target.id }),
             )
           } else if (counted) {
-            yield* Effect.logWarning(`github.shape.${repositoryShape.table}`).pipe(Effect.annotateLogs({ status: proof.status }))
+            try Effect.logWarning(`github.shape.${repositoryShape.table}`).pipe(Effect.annotateLogs({ status: proof.status }))
           }
-          yield* settled
+          try settled
           return refusalOf(proof)
         }
         const read = shape(repositoryShape.table, repositoryShape.columns, selected!.where, selected!.params)
         if (refreshed !== undefined) {
-          const [, response] = yield* Effect.all([refreshPull.start(target, refreshed), read], { concurrency: 2 })
-          const receipt = yield* refreshPull.receipt(target, refreshed)
+          const [, response] = try Effect.all([refreshPull.start(target, refreshed), read], { concurrency: 2 })
+          const receipt = try refreshPull.receipt(target, refreshed)
           return HttpServerResponse.setHeader(response, PULL_RECEIPT_HEADER, receipt)
         }
-        const response = yield* read
-        yield* settled
+        const response = try read
+        try settled
         return response
       }
       if (path === ACTIONS_SHAPE_ROUTE) {
         const named = new URL(request.url, "http://localhost").searchParams.get("repo")
         const [owner = "", name = "", ...rest] = (named ?? `${repository.owner}/${repository.name}`).split("/")
-        if (rest.length !== 0 || !isRepository(owner, name)) return refuse(400, "invalid")
+        if (rest.length !== 0 || !(try Effect.sync(() => isRepository(owner, name)))) return refuse(400, "invalid")
         // The repository shapes' predicate (devpriv FINAL step 5): the deployment acts on it and the App isn't absent
         // there, then the viewer. Refusals are counted and logged as the shapes count theirs.
         const target = repositoryOf(`${owner}/${name}`)
-        const { proof } = yield* access.repositoryReadable(target, "session")
+        const { proof } = try access.repositoryReadable(target, "session")
         if (proof._tag === "Refused") {
           if (proof.refusal === "app_not_installed" || proof.stage === "viewer") {
-            yield* Metric.update(Metric.withAttributes(Metrics.shapes, { table: RUNS_TABLE, status: String(proof.status), live: "false" }), 1)
-            yield* Effect.logWarning(`github.shape.${RUNS_TABLE}`).pipe(Effect.annotateLogs({ status: proof.status }))
+            try Metric.update(Metric.withAttributes(Metrics.shapes, { table: RUNS_TABLE, status: String(proof.status), live: "false" }), 1)
+            try Effect.logWarning(`github.shape.${RUNS_TABLE}`).pipe(Effect.annotateLogs({ status: proof.status }))
           }
           return refusalOf(proof)
         }
-        return yield* shape(RUNS_TABLE, ACTION_COLUMNS, "repo_id = $1 AND execution IS NOT NULL", { "1": target.id })
+        return try shape(RUNS_TABLE, ACTION_COLUMNS, "repo_id = $1 AND execution IS NOT NULL", { "1": target.id })
       }
       // Any repository the person may read: a published branch's comparison lives on its own (docs/features/branch-publish.md).
       const compared = Compare.parseComparePath(path)
       if (compared !== undefined) {
         if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
-        if (!isRepository(compared.owner, compared.name)) return refuse(404, "not_found")
+        if (!(try Effect.sync(() => isRepository(compared.owner, compared.name)))) return refuse(404, "not_found")
         const target = repositoryOf(`${compared.owner}/${compared.name}`)
         // The repository shapes' predicate (devpriv FINAL step 5): the App's absence refuses too, as for the shapes.
-        const { proof } = yield* access.repositoryReadable(target, "session")
+        const { proof } = try access.repositoryReadable(target, "session")
         if (proof._tag === "Refused") return refusalOf(proof)
         if (Option.isNone(compare)) return refuse(503, "not_configured")
-        return yield* compare.value(target, compared.base, compared.head).pipe(
+        return try compare.value(target, compared.base, compared.head).pipe(
           Effect.provide(database),
           Effect.catchCause(() => Effect.succeed(refuse(503, "unavailable"))),
         )
       }
-      const reviewed = Review.parseReviewPath(path)
-      if (reviewed !== undefined) return yield* review(reviewed)
-      const listed = IssueList.parseIssuesPath(path)
-      if (listed !== undefined) return yield* issues(listed)
-      const scoped = TreeScope.parseTreeScopePath(path)
-      if (scoped !== undefined) return yield* treeScope(scoped)
-      const painting = FirstPaint.parseFirstPaintPath(path)
-      if (painting !== undefined) return yield* firstPaint(painting)
-      const linked = WorkLinks.parseLinksPath(path)
-      if (linked !== undefined) return yield* links(linked)
+      const reviewed = try Effect.sync(() => Review.parseReviewPath(path))
+      if (reviewed !== undefined) return try review(reviewed)
+      const listed = try Effect.sync(() => IssueList.parseIssuesPath(path))
+      if (listed !== undefined) return try issues(listed)
+      const scoped = try Effect.sync(() => TreeScope.parseTreeScopePath(path))
+      if (scoped !== undefined) return try treeScope(scoped)
+      const painting = try Effect.sync(() => FirstPaint.parseFirstPaintPath(path))
+      if (painting !== undefined) return try firstPaint(painting)
+      const linked = try Effect.sync(() => WorkLinks.parseLinksPath(path))
+      if (linked !== undefined) return try links(linked)
       const target = parseWritesPath(path)
       if (target !== undefined) {
-        const machine = MachineWrite.carriesMachineToken(yield* HttpServerRequest.HttpServerRequest)
-        return yield* machine ? machineWrites(target) : writes(target)
+        const machine = try Effect.sync(() => MachineWrite.carriesMachineToken(request))
+        return try (machine ? machineWrites(target) : writes(target))
       }
       const machineWrite = parseMachineWritePath(path)
-      if (machineWrite !== undefined) return yield* machineWriteStatus(machineWrite)
+      if (machineWrite !== undefined) return try machineWriteStatus(machineWrite)
       return HttpServerResponse.empty({ status: 404 })
-    })
+    }
 
     /**
      * Whether the deployment syncs repository `target`'s issues and pull requests, as its shapes' `404` says, for anyone
@@ -1628,14 +1636,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * only for a repository the deployment acts on, and never for its own.
      */
     const mayBrowse = (target: Repository) =>
-      Effect.gen(function* () {
+      effect {
         if (target.id === repository.id || !mayAct(target.id)) return false
-        const absent = yield* Store.appAbsent(target.id).pipe(Effect.provide(database), Effect.option)
+        const absent = try Store.appAbsent(target.id).pipe(Effect.provide(database), Effect.option)
         if (Option.isNone(absent)) return { unavailable: true as const }
         if (!absent.value) return false
-        const current = yield* visibility(target)
+        const current = try visibility(target)
         return Option.isNone(current) ? { unavailable: true as const } : current.value
-      })
+      }
 
     return { fetch, mayRead, mayBrowse, maySync }
-  })
+  }

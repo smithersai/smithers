@@ -8,7 +8,7 @@ import { HttpClient, HttpClientRequest, type HttpServerRequest } from "effect/ht
 import { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
 import { bearerOf } from "../RunCredentials.ts"
-import type { Services } from "./Apply.ts"
+import type { Services } from "./Apply.vibe"
 import { withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.ts"
 import { fetchIssue, project } from "./Project.ts"

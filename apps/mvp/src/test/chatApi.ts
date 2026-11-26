@@ -69,7 +69,7 @@ import * as ExecutionHost from "../../worker/ExecutionHost.ts"
 import { executions } from "../../worker/test/executions.ts"
 import * as TodoSession from "../../worker/flows/TodoSession.vibe"
 import * as Pause from "../../worker/flows/Pause.vibe"
-import * as GitHubApi from "../../worker/github/Api.ts"
+import * as GitHubApi from "../../worker/github/Api.vibe"
 import { repositoryOf } from "../../worker/github/Config.ts"
 import {
   APP_ID,

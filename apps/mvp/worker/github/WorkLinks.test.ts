@@ -9,7 +9,7 @@ import { MAX_LINKS_PER_POST, WORK_LINKS_SHAPE_ROUTE, workLinksRoute } from "../.
 import * as Actor from "../Actor.ts"
 import * as Store from "../runners/Store.vibe"
 import { testFile } from "../test/harness.ts"
-import { handles } from "./Api.ts"
+import { handles } from "./Api.vibe"
 import * as RepoRoles from "./RepoRoles.ts"
 import * as Metrics from "./Metrics.ts"
 import { MAX_POST_BYTES, parseLinksPath } from "./WorkLinks.ts"
@@ -123,6 +123,62 @@ describe("work links", () => {
     // check itself); the dispatcher adds no recheck beside it, and an alias costs nothing more than its home session.
     expect(counts.map((count) => count - counts[0]!)).toEqual([0, 1, 1])
     expect(reads.map((count) => count - reads[0]!)).toEqual([0, 1, 1])
+  })
+
+  test("a person without a GitHub login uses their person id and sees a failed commit as unavailable", async () => {
+    await seed()
+    const actor = member(undefined, null)
+    const h = await githubHarness(runtime, { actor })
+    const link = { links: [{ kind: "queue", ref: "q-1", state: "queued" }] }
+    expect((await h.fetch(route(1), post(link))).status).toBe(200)
+    expect(await sql(runtime, "SELECT source FROM work_links")).toEqual([{ source: actor.subject.id }])
+
+    await sql(runtime, "ALTER TABLE work_links ADD CONSTRAINT refuse_second_issue CHECK (number <> 2)")
+    try {
+      const response = await h.fetch(route(2), post(link))
+      expect([response.status, await response.json()]).toEqual([503, { code: "unavailable" }])
+    } finally {
+      await sql(runtime, "ALTER TABLE work_links DROP CONSTRAINT refuse_second_issue")
+    }
+  })
+
+  test("machine token lookup failure and oversized route bodies are refused", async () => {
+    await seed()
+    const person = await githubHarness(runtime, { rawBody: true })
+    expect((await person.fetch(route(1), post({}, { "content-length": "999999" }))).status).toBe(413)
+
+    const h = await githubHarness(runtime, { actor: null, rawBody: true })
+    await sql(runtime, "ALTER TABLE machine_tokens RENAME TO unavailable_machine_tokens")
+    try {
+      const response = await h.fetch(route(1), post({}, { authorization: "Bearer smm_test-token" }))
+      expect([response.status, await response.json()]).toEqual([503, { code: "unavailable" }])
+    } finally {
+      await sql(runtime, "ALTER TABLE unavailable_machine_tokens RENAME TO machine_tokens")
+    }
+  })
+
+  test("a machine token that disappears after lookup cannot commit a work link", async () => {
+    await seed()
+    const token = "smm_revoked-after-lookup"
+    await sql(runtime, "INSERT INTO machine_tokens (token_sha256, repo_id, agent, lane, scope, issued_by, expires_at) VALUES ('" +
+      digestSync(token) + "', 'github/acme/widgets', 'agent', 'lane', ARRAY['work/link'], 'test', now() + interval '1 day')")
+    const h = await githubHarness(runtime, { actor: null })
+
+    // Expose the token to the first read only, as if a revocation committed between lookup and the write transaction.
+    await sql(runtime, "CREATE SEQUENCE work_link_token_visibility")
+    await sql(runtime, "ALTER TABLE machine_tokens RENAME TO work_link_token_backing")
+    try {
+      await sql(runtime, "CREATE VIEW machine_tokens AS SELECT * FROM work_link_token_backing WHERE nextval('work_link_token_visibility') = 1")
+      const headers = { authorization: "Bearer " + token }
+      const response = await h.fetch(route(1), post({ links: [{ kind: "queue", ref: "q-revoked" }] }, headers))
+      expect([response.status, await response.json()]).toEqual([403, { code: "not_authorized" }])
+      expect(await sql(runtime, "SELECT source FROM work_links")).toEqual([])
+      expect(await sql(runtime, "SELECT last_value::int FROM work_link_token_visibility")).toEqual([{ last_value: 2 }])
+    } finally {
+      await sql(runtime, "DROP VIEW IF EXISTS machine_tokens")
+      await sql(runtime, "ALTER TABLE work_link_token_backing RENAME TO machine_tokens")
+      await sql(runtime, "DROP SEQUENCE work_link_token_visibility")
+    }
   })
 
   test("a runner registered on the repository posts and reads with its token; any other token is nobody", async () => {
