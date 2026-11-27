@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/app-core",
   "type": "module",
-  "version": "1.0.0-rc.20",
+  "version": "1.0.0-rc.21",
   "license": "MIT",
   "smthrs": {
     "group": "tooling"
@@ -41,8 +41,8 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@smthrs/canonical": "1.0.0-rc.20",
-    "@smthrs/plugin": "1.0.0-rc.20"
+    "@smthrs/canonical": "1.0.0-rc.21",
+    "@smthrs/plugin": "1.0.0-rc.21"
   },
   "devDependencies": {
     "@types/node": "26.4.1",

@@ -26,7 +26,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261019.1",
-    "@smthrs/build-cli": "1.0.0-rc.20",
+    "@smthrs/build-cli": "1.0.0-rc.21",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "alchemy": "2.0.0-beta.85",
@@ -41,12 +41,12 @@
     "aws4fetch": "1.0.20",
     "@alchemy.run/cloudflare": "2.0.0-beta.85",
     "@effect/platform-node": "4.1.1",
-    "@smthrs/step-cache": "1.0.0-rc.20"
+    "@smthrs/step-cache": "1.0.0-rc.21"
   },
   "dependencies": {
     "@cloudflare/sandbox": "0.12.14",
-    "@smthrs/canonical": "1.0.0-rc.20",
-    "@smthrs/sandbox": "1.0.0-rc.20",
-    "@smthrs/targets": "1.0.0-rc.20"
+    "@smthrs/canonical": "1.0.0-rc.21",
+    "@smthrs/sandbox": "1.0.0-rc.21",
+    "@smthrs/targets": "1.0.0-rc.21"
   }
 }

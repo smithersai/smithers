@@ -39,7 +39,7 @@ on `PATH`, because the fork adds its workspace through jj. Every output block is
 mkdir rewind && cd rewind
 npm init -y && npm pkg set type=module
 npm install @smthrs/platform-node@next @smthrs/flows@next effect
-npm install @smthrs/time-travel@1.0.0-rc.20 @smthrs/jj@1.0.0-rc.20
+npm install @smthrs/time-travel@1.0.0-rc.21 @smthrs/jj@1.0.0-rc.21
 jj git init workspace
 ```
 

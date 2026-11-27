@@ -5,6 +5,18 @@ release (what changed and why it matters, with screenshots and examples), see
 the release notes at
 [smithers.sh/changelogs/1.0.0-rc.0](https://smithers.sh/changelogs/1.0.0-rc.0).
 
+## 1.0.0-rc.21 (2026-11-27)
+
+<!-- commits:1.0.0-rc.21 -->
+
+1 commit since [v1.0.0-rc.20](https://github.com/smithersai/smithers/commit/4340d14999).
+
+### ✨ Features
+
+- **app-state,mvp,ci,release:** land ADR 0170 slice 6a PinsShard, fix temp-HOME npx jail mount & tarball.e2e cache token, and turn Drift 9/9 green ([8351ccd1a2](https://github.com/smithersai/smithers/commit/8351ccd1a2eb3405c1e3ec14c7a8e997b75018ac))
+
+<!-- /commits:1.0.0-rc.21 -->
+
 ## 1.0.0-rc.20 (2026-11-27)
 
 <!-- commits:1.0.0-rc.20 -->

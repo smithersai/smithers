@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/plan",
   "type": "module",
-  "version": "1.0.0-rc.20",
+  "version": "1.0.0-rc.21",
   "license": "MIT",
   "smthrs": {
     "group": "engine"
@@ -250,9 +250,9 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/crypto": "1.0.0-rc.20",
-    "@smthrs/keys": "1.0.0-rc.20",
-    "@smthrs/canonical": "1.0.0-rc.20"
+    "@smthrs/crypto": "1.0.0-rc.21",
+    "@smthrs/keys": "1.0.0-rc.21",
+    "@smthrs/canonical": "1.0.0-rc.21"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
