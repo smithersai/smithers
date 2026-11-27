@@ -162,6 +162,16 @@ describe("ops/SpendAlert on the Node host", () => {
 })
 
 describe("the alert step", () => {
+  test("an admitted zero-charge call alerts once and an empty window has no alert", async () => {
+    const window = ended()
+    await call("zero-charge", { charged: 0 })
+    expect(await runtime.runPromise(SpendAlert.record(window))).toMatchObject({ outcome: "recorded", calls: 1, tokens: 0, costUsd: 0 })
+    expect(await runtime.runPromise(SpendAlert.record(window))).toMatchObject({ outcome: "existing", calls: 1 })
+    expect(await runtime.runPromise(SpendAlert.record({ ...window, from: window.until, until: window.until + 900_000 })))
+      .toMatchObject({ outcome: "none", calls: 0 })
+    expect(await alertRows()).toHaveLength(1)
+  })
+
   test("a role whose model no rate card prices has no cost, and neither has the alert", async () => {
     await call("priced", { input: 100, output: 100, charged: 200 })
     await call("unpriced", { role: "judge", model: "a-model-nobody-prices", input: 10, output: 5, charged: 15 })

@@ -82,7 +82,7 @@ The top bar's bell (`NotificationsBell`, `@smthrs/ui` `NotificationBell`) is the
 
 ## The panel
 
-`src/features/attention/components/NotificationsPanel.tsx`, on every page (`src/screens/root/Root.tsx`): `@smthrs/ui`'s `NotificationPanel` at the window's top-right, its list scrolling, full width on a phone. It lists your entries newest first (by `occurred_at`), unread ones dotted, each with its time. Clicking an entry expands it in place; Open goes where its toast would. Expanded (`detailOf`, `src/features/attention/detail.ts`):
+`src/features/attention/components/NotificationsPanel.tsx`, on every page (`src/screens/root/Root.tsx`): `@smthrs/ui`'s `NotificationPanel` at the window's top-right, its list scrolling, full width on a phone. It lists your entries newest first by `occurred_at`, unread ones dotted, each with its time. For Admins, model spend windows appear among them by `created_at`, with the person’s entry first on a tie. Opening the bell focuses and expands the newest visible run waiting on you. Clicking an entry expands it in place; Open goes where its toast would. Expanded (`detailOf`, `src/features/attention/detail.ts`):
 
 | Entry | Shows |
 |---|---|
@@ -203,6 +203,7 @@ No record carries a title, a question, a commit message or who pushed (the tests
 | `@smthrs/notifications` `test/Inbox.test.ts`, `@smthrs/ui` `tests/agent-status-notices.test.tsx`, `tests/notification-panel.test.tsx` | `Inbox`; the notices, `Toast`, `ToastStack`, the panel, its entries, the bell and every key |
 | `tests/NotificationBacklog.test.ts`, `tests/AlertSettings.test.ts` | Backlog renders no overflow row in the stack, current notices cap at three, and spend entries expand and hide in the panel |
 | `e2e/notification-overflow.spec.ts` | Desktop and phone repository headers stay at the top with unread history: real API-created entries locally, existing account history on a deployment (`E2E_SYNCED_REPOSITORY`) |
+| `e2e/notification-history.spec.ts` | On a fresh local developer database with `E2E_NOTIFICATION_HISTORY_FIXTURE=fresh`, the bell counts 113 stored zero-charge windows and a personal wait, interleaves them by time, and opens with the wait expanded and focused. |
 | `e2e/notifications.spec.ts` | In real browsers: Ann on two devices, Ben on one; Ben sees Ann's run on `main` from the Runs page and clicks its toast to her run; Alt+T and H hide her toast on both her devices; she expands it in the panel and answers there with A; Alt+N, R, E and O on her second device; the bell and Dismiss; `main` and a release reach both people, expanded with who pushed (needs `E2E_GITHUB_WEBHOOK_SECRET`) |
 
 Two people locally: `worker/DevChatApi.ts` signs in a browser with the cookie `smithers_dev_person=teammate` as `local-teammate`, a Member (`devices.openTeammate`).

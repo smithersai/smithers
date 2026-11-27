@@ -249,20 +249,20 @@ describe("what an alert's toast says", () => {
 
   test("one role: the role, its tokens and its cost; several: the totals, then each role's tokens", () => {
     expect(ALERT_WORD).toBe("Model spend")
-    expect(alertDetail({ tokens: 12_340, costUsd: 0.0184, roles: roles(["agent", 12_340, 0.0184]) })).toBe(
+    expect(alertDetail({ calls: 1, tokens: 12_340, costUsd: 0.0184, roles: roles(["agent", 12_340, 0.0184]) })).toBe(
       "agent · 12,340 tokens · $0.02",
     )
     expect(
-      alertDetail({ tokens: 12_340, costUsd: 0.0184, roles: roles(["agent", 12_000, 0.018], ["judge", 340, 0.0004]) }),
+      alertDetail({ calls: 1, tokens: 12_340, costUsd: 0.0184, roles: roles(["agent", 12_000, 0.018], ["judge", 340, 0.0004]) }),
     ).toBe("12,340 tokens · $0.02 · agent 12,000 · judge 340")
   })
 
   test("a cost under a cent reads <$0.01; no cost when a model isn't priced", () => {
-    expect(alertDetail({ tokens: 46, costUsd: 0.00006, roles: roles(["agent", 46, 0.00006]) })).toBe(
+    expect(alertDetail({ calls: 1, tokens: 46, costUsd: 0.00006, roles: roles(["agent", 46, 0.00006]) })).toBe(
       "agent · 46 tokens · <$0.01",
     )
-    expect(alertDetail({ tokens: 46, costUsd: 0, roles: roles(["agent", 46, 0]) })).toBe("agent · 46 tokens · $0.00")
-    expect(alertDetail({ tokens: 46, costUsd: null, roles: roles(["agent", 46, null]) })).toBe("agent · 46 tokens")
+    expect(alertDetail({ calls: 1, tokens: 46, costUsd: 0, roles: roles(["agent", 46, 0]) })).toBe("agent · 46 tokens · $0.00")
+    expect(alertDetail({ calls: 1, tokens: 46, costUsd: null, roles: roles(["agent", 46, null]) })).toBe("agent · 46 tokens")
   })
 })
 

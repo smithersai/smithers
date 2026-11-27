@@ -149,9 +149,9 @@ describe("Wave9 SetModel, SpendCopy, BranchAccess, SandboxCall & ci/RepoFlow", (
 
   it("fuzzes SpendCopy, BranchAccess helpers, SandboxCall failureOf & settle (with SharedText mark)", async () => {
     // 1. SpendCopy every branch
-    expect(SpendCopy.alertDetail({ tokens: 12340, costUsd: 0.02, roles: [{ role: "agent", calls: 1, tokens: 12340, costUsd: 0.02 }] })).toContain("agent")
-    expect(SpendCopy.alertDetail({ tokens: 50, costUsd: 0.001, roles: [{ role: "agent", calls: 1, tokens: 30, costUsd: 0.0005 }, { role: "judge", calls: 1, tokens: 20, costUsd: 0.0005 }] })).toContain("<$0.01")
-    expect(SpendCopy.alertDetail({ tokens: 0, costUsd: null, roles: [] })).toBe("0 tokens")
+    expect(SpendCopy.alertDetail({ calls: 1, tokens: 12340, costUsd: 0.02, roles: [{ role: "agent", calls: 1, tokens: 12340, costUsd: 0.02 }] })).toContain("agent")
+    expect(SpendCopy.alertDetail({ calls: 1, tokens: 50, costUsd: 0.001, roles: [{ role: "agent", calls: 1, tokens: 30, costUsd: 0.0005 }, { role: "judge", calls: 1, tokens: 20, costUsd: 0.0005 }] })).toContain("<$0.01")
+    expect(SpendCopy.alertDetail({ calls: 0, tokens: 0, costUsd: null, roles: [] })).toBe("0 tokens")
     expect(SpendCopy.receiptText({ status: "sent", code: null, reason: null })).toBe("Sent")
     expect(SpendCopy.receiptText({ status: "refused", code: "400", reason: "bad chat" })).toBe("Refused · bad chat")
     expect(SpendCopy.receiptText({ status: "refused", code: "400", reason: null })).toBe("Refused · 400")

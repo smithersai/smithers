@@ -23,6 +23,7 @@ import { Theme } from "../theme/theme.vibe"
 import { BranchScreen } from "../../screens/branch/BranchScreen"
 import { branchRenderer, renderNoticeHistory } from "../../screens/branch/offline-render"
 import { Todos } from "../todos/todos.vibe"
+import { NotificationsPanel } from "./components/NotificationsPanel"
 import { Attention } from "./attention.vibe"
 import { Views } from "../views/views.vibe"
 import { PluginsUi } from "../../plugins/ui.vibe"
@@ -70,8 +71,8 @@ test("a branch page renders the shared toast stack, anchored under its chrome, o
       sql`INSERT INTO notifications (recipient, subject, kind, state, mine, repo_id, title, href, occurred_at, updated_at)
         SELECT 'person-member', 'main:overflow:' || n, 'main', 'update', false, 'github/acme/widgets', 'Old update', '/acme/widgets', now() - interval '1 day', now() - interval '1 day'
         FROM generate_series(1, 283) AS n`,
-      sql`INSERT INTO spend_alerts (id, window_start, window_end, calls, tokens, roles, day_tokens, budget)
-        VALUES ('panel-spend', now() - interval '1 minute', now(), 1, 100, '[]', 100, 1000)`,
+      sql`INSERT INTO spend_alerts (id, window_start, window_end, calls, tokens, roles, day_tokens, budget, created_at)
+        VALUES ('panel-spend', now() - interval '1 hour', now(), 1, 0, '[]', 0, 1000, now() - interval '1 hour')`,
     ]))))
     spend.queries.open.startSyncImmediate()
     attention.queries.unread.startSyncImmediate()
@@ -84,8 +85,19 @@ test("a branch page renders the shared toast stack, anchored under its chrome, o
     expect.soft(history.notices).not.toMatch(/>\+\d+</)
     const current = branchRenderer(services)(router)
     expect.soft(current).not.toContain('data-alert="panel-spend"')
-    expect(history.spendEntries).toContain('data-alert="panel-spend"')
-    expect(history.spendEntries).not.toContain('data-slot="toast"')
+    attention.queries.feed.startSyncImmediate()
+    await vi.waitFor(() => expect(attention.queries.feed.toArray).toHaveLength(284), { timeout: 60_000 })
+    attention.actions.openPanel("bell")
+    const panelRoot = createRootRoute({ component: NotificationsPanel })
+    const panelRouter = createRouter({ routeTree: panelRoot, history: createMemoryHistory({ initialEntries: ["/"] }) })
+    await panelRouter.load()
+    const panelHtml = branchRenderer(services)(panelRouter)
+    const ids = [...panelHtml.matchAll(/data-entry="([^"]+)"/g)].map(match => match[1])
+    expect(ids).toHaveLength(285)
+    expect(ids.slice(0, 2)).toEqual([subject, "panel-spend"])
+    expect(ids.slice(2).every(id => id?.startsWith("main:overflow:"))).toBe(true)
+    expect(panelHtml).toContain("1 call · 0 tokens")
+    expect(panelHtml).not.toContain('data-slot="toast"')
     expect(history.bell).toContain('285 unread')
     expect(html).toContain('class="branch-screen"')
     expect(html).toContain('data-placement="anchored"')

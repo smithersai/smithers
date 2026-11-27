@@ -646,6 +646,7 @@ describe("the data gate", { timeout: ENGINE_WITHIN }, () => {
       return ui.actions.strip(view, item).buttons.map((button) => button.label)
     }
     expect(offered()).toEqual(expect.arrayContaining(["main", "release"]))
+    await until(() => expect(ann.needs()).toContain(`run:${answerId}`))
     // The repository refuses Ann: in the same change, no query the host or the strip reads holds the question.
     const after = await ann.run(Effect.gen(function* () {
       yield* replaceRole(repos, { id: repoId, role: null, own: false, refused: "forbidden" })
@@ -658,6 +659,9 @@ describe("the data gate", { timeout: ENGINE_WITHIN }, () => {
     }))
     expect(after).toEqual({ waits: [], rows: [], live: [] })
     expect(offered()).toEqual([])
+    ann.attention.actions.openPanel("bell")
+    expect(ann.panel()).toMatchObject({ open: true, expanded: null, focus: null })
+
     // The queue's selection of it goes.
     await until(() => expect(state()?.item).toBeNull())
   })

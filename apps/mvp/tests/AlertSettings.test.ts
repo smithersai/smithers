@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Effect, Exit, Scope } from "effect"
-import { act, createElement } from "react"
+import { act, createElement, type ReactElement } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import { afterEach, expect, test } from "vitest"
-import { SpendAlertEntries } from "../src/features/spend/components/SpendAlertEntries"
+import { NotificationHistory } from "../src/features/attention/components/NotificationHistory"
 import { AlertSettings } from "../src/features/spend/components/AlertSettings"
 import { SpendProvider } from "../src/features/spend/components/SpendContext"
 import { channelsQuery, deliveriesQuery, openQuery, savesQuery } from "../src/features/spend/queries"
@@ -19,7 +19,7 @@ afterEach(async () => {
   for (const dispose of disposals.splice(0).reverse()) await dispose()
 })
 
-const settings = async (initial: ReadonlyArray<AlertChannel>, showAlerts = false) => {
+const settings = async (initial: ReadonlyArray<AlertChannel>, showAlerts = false, feed: ReadonlyArray<{ atMs: number; element: ReactElement }> = []) => {
   const scope = Effect.runSync(Scope.make())
   disposals.push(() => Effect.runPromise(Scope.close(scope, Exit.void)))
   const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
@@ -59,7 +59,7 @@ const settings = async (initial: ReadonlyArray<AlertChannel>, showAlerts = false
   let root: Root
   await act(async () => {
     root = createRoot(container)
-    root.render(createElement(SpendProvider, { value: view }, showAlerts ? createElement(SpendAlertEntries, { expanded: null, onExpand: (id: string) => { expanded.push(id) } }) : createElement(AlertSettings)))
+    root.render(createElement(SpendProvider, { value: view }, showAlerts ? createElement(NotificationHistory, { feed, open: true, onOpenChange: () => {}, expanded: null, onExpand: (id: string) => { expanded.push(id) } }) : createElement(AlertSettings)))
   })
   disposals.push(async () => {
     await act(async () => root.unmount())
@@ -115,6 +115,7 @@ test.each([
 
 test("spend backlog renders panel entries, never page-space toasts", async () => {
   const tab = await settings([], true)
+  expect(tab.container.textContent).toContain("No notifications")
   await act(async () => {
     for (let i = 0; i < 283; i++) await tab.run(tab.alerts.insert({
       id: `alert-${i}`, kind: "model", windowStart: "2026-10-25T00:00:00Z",
@@ -132,4 +133,25 @@ test("spend backlog renders panel entries, never page-space toasts", async () =>
   expect(tab.expanded).toEqual([first.getAttribute("data-entry")])
   await act(async () => { first.querySelector<HTMLButtonElement>('button[aria-label="Hide"]')!.click() })
   expect(tab.hidden).toEqual([first.getAttribute("data-entry")])
+})
+
+test("existing model-usage windows share the panel chronology with a person's work, including zero-charge calls", async () => {
+  const at = Date.parse("2026-11-27T12:00:00Z")
+  const tab = await settings([], true, [
+    { atMs: at, element: createElement("span", { key: "decision", "data-entry": "decision" }, "Needs you") },
+    { atMs: at - 2_000, element: createElement("span", { key: "failure", "data-entry": "failure" }, "Failed") },
+  ])
+  await act(async () => {
+    for (const offset of [-3, -1, 0, 1]) {
+      const timestamp = new Date(at + offset * 1_000).toISOString()
+      await tab.run(tab.alerts.insert({ id: `window${offset}`, kind: "model", createdAt: timestamp,
+        windowStart: timestamp, windowEnd: timestamp, calls: 2, tokens: 0, costUsd: 0, roles: [], dayTokens: 0, budget: 100 }))
+    }
+  })
+  const ids = [...tab.container.querySelectorAll("[data-entry]")].map(element => element.getAttribute("data-entry"))
+  expect(ids).toEqual(["window1", "decision", "window0", "window-1", "failure", "window-3"])
+  const receipt = tab.container.querySelector('[data-alert="window0"]')!
+  expect(receipt.textContent).toContain("2 calls · 0 tokens · $0.00")
+  expect(receipt.getAttribute("data-tone")).toBe("update")
+  expect(tab.hidden).toEqual([])
 })

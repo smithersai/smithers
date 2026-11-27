@@ -1,4 +1,3 @@
-import { SpendAlertEntries } from "../../features/spend/components/SpendAlertEntries"
 import { NotificationsBell } from "../../features/attention/components/NotificationsBell"
 import { Notices } from "../../features/attention/components/Notices"
 import { HomeProvider } from "../../features/home/components/HomeContext"
@@ -62,7 +61,6 @@ export const renderNoticeHistory = (services: Services) => {
   const wrap = wrapBranch(services)
   return {
     notices: renderToStaticMarkup(wrap(<Notices surface="conversation" />)),
-    spendEntries: renderToStaticMarkup(wrap(<SpendAlertEntries expanded={null} onExpand={services.attention.actions.expand} />)),
     bell: renderToStaticMarkup(wrap(<NotificationsBell />)),
   }
 }

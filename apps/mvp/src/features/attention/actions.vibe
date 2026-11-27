@@ -139,8 +139,8 @@ const recorded = (
  */
 export const openPanel = (via: PanelVia, subject: string | null = null) =>
   effect {
-    const { entries } = try AttentionStore
-    const at = subject ?? newestNeed(try entries.toArray)
+    const { shown } = try AttentionStore
+    const at = subject ?? newestNeed(try shown.toArray)
     try setPanel(at === null ? { open: true, focus: null } : { open: true, focus: at, expanded: at, answer: 0 })
     if (at !== null) try read(at)
     try recorded("open", at === null ? { via } : { via, subject: at })

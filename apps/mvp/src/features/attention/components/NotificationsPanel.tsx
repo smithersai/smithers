@@ -1,6 +1,5 @@
-import { useSpend } from "../../spend/components/SpendContext"
-import { SpendAlertEntries } from "../../spend/components/SpendAlertEntries"
-import { Button, NeedsYouCard, NotificationEntry, NotificationPanel, RelativeTime } from "@smthrs/ui"
+import { NotificationHistory } from "./NotificationHistory"
+import { Button, NeedsYouCard, NotificationEntry, RelativeTime } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useRouterState } from "@tanstack/react-router"
 import { useBranch } from "../../branch/components/BranchContext"
@@ -16,30 +15,31 @@ import { useAttention } from "./AttentionContext"
 // Alt+N open it; Escape, × or a click outside close it.
 export function NotificationsPanel() {
   const { queries, actions } = useAttention()
-  const spend = useSpend()
-  const { data: alerts } = useLiveQuery(spend.queries.open)
   const surface = surfaceOf(useRouterState({ select: (state) => state.matches.at(-1)?.routeId }))
   const { data: panel } = useLiveQuery(queries.panel)
   const { data: feed } = useLiveQuery(queries.feed)
   const { data: detail } = useLiveQuery(queries.detail)
   return (
-    <NotificationPanel
+    <NotificationHistory
       open={panel?.open === true}
       onOpenChange={(open) => (open ? actions.openPanel("key") : actions.closePanel())}
       focus={panel?.focus}
-    >
-      {alerts.length === 0 ? null : <SpendAlertEntries expanded={panel?.expanded ?? null} onExpand={actions.expand} />}
-      {feed.map((entry) => (
-        <Notification
-          key={entry.id}
-          entry={entry}
-          surface={surface}
-          expanded={panel?.expanded === entry.id}
-          detail={detail?.id === entry.id ? detail : undefined}
-          answerRequest={panel?.answer ?? 0}
-        />
-      ))}
-    </NotificationPanel>
+      expanded={panel?.expanded ?? null}
+      onExpand={actions.expand}
+      feed={feed.map(entry => ({
+        atMs: entry.atMs,
+        element: (
+          <Notification
+            key={entry.id}
+            entry={entry}
+            surface={surface}
+            expanded={panel?.expanded === entry.id}
+            detail={detail?.id === entry.id ? detail : undefined}
+            answerRequest={panel?.answer ?? 0}
+          />
+        ),
+      }))}
+    />
   )
 }
 
