@@ -247,7 +247,8 @@ for (const way of ways) {
           "runner.temp": temporary,
           // A repository that has set neither the variable nor the secrets, as after `apply`.
           "vars.SMITHERS_CACHE_URL": "",
-          "github.event_name == 'pull_request' && secrets.SMITHERS_CACHE_READ_TOKEN || github.ref_type != 'branch' && secrets.SMITHERS_CACHE_READ_TOKEN || github.ref_name != github.event.repository.default_branch && secrets.SMITHERS_CACHE_READ_TOKEN || github.event_name != 'pull_request' && github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch && secrets.SMITHERS_CACHE_TOKEN || ''": ""
+          "github.event_name == 'pull_request' && secrets.SMITHERS_CACHE_READ_TOKEN || github.ref_type != 'branch' && secrets.SMITHERS_CACHE_READ_TOKEN || github.ref_name != github.event.repository.default_branch && secrets.SMITHERS_CACHE_READ_TOKEN || github.event_name != 'pull_request' && github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch && secrets.SMITHERS_CACHE_TOKEN || ''": "",
+          "github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref_name != github.event.repository.default_branch && format('run-{0}', github.run_id) || ''": ""
         })
         const result = await run("bash", ["-e", "-c", filled.run], { cwd: repository, env: { ...environment, ...filled.env } })
         assert.equal(result.status, 0, `${filled.run}\n${result.stdout}\n${result.stderr}`)
