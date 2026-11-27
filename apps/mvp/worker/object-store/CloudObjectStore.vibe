@@ -71,7 +71,7 @@ export function r2BackingOf(bucket: Artifacts.Bucket): R2ByteBacking {
     put: effect (key, bytes) => {
       try tryPromise({
         try: () => putR2Bytes(bucket, key, bytes),
-        catch: () => new ObjectStoreError({ code: "unavailable", message: "Object store write failed" }),
+        catch: (cause) => new ObjectStoreError({ code: "unavailable", message: cause instanceof TypeError ? "R2 byte write failed (TypeError)" : "R2 byte write failed" }),
       })
     },
     get: effect (key) => {
@@ -209,7 +209,11 @@ export effect function putObject(
   )
   const r2Key = r2KeyFor(canonicalRepo, authz.namespace, authz.canonicalKey, sha256)
   if (r2 !== undefined) {
-    try r2.put(r2Key, input.bytes)
+    try Effect.tapError(r2.put(r2Key, input.bytes), effect () => {
+      const attributes = { op: "put", namespace: authz.namespace, trust: input.trust, outcome: "r2_write_failed" }
+      try Metric.update(Metric.withAttributes(objectOps, attributes), 1)
+      try annotateLogs(logWarning("object_store.r2_write_failed"), attributes)
+    })
   }
   const inlineBody = r2 === undefined || input.bytes.byteLength <= MAX_INLINE_OBJECT_BYTES ? input.bytes : null
   const sql = try SqlClient.SqlClient

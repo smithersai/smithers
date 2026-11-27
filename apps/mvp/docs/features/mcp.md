@@ -109,7 +109,7 @@ To test the full connection, run a real Streamable HTTP client through discovery
 
 Every repository exposes 15 Cloud Factory tools alongside the core BYOA catalog over `/<owner>/<repo>/mcp`:
 
-- **Shared Cloud Object Store**: `artifact_list`, `artifact_get`, `artifact_put` (backed by R2 + Postgres `cloud_objects` with SHA-256 verification and strict cache-write isolation for untrusted callers).
+- **Shared Cloud Object Store**: `artifact_list`, `artifact_get`, `artifact_put` (backed by R2 + Postgres `cloud_objects` with SHA-256 verification and strict cache-write isolation for untrusted callers). R2 receives an exact-length byte body, including for empty objects. Failed R2 writes log `object_store.r2_write_failed` and increment `smithers_cloud_object_ops` with outcome `r2_write_failed`.
 - **Stacked Changesets**: `changeset_stack_list`, `changeset_create` (`changeset_stacks` table, tracking trusted vs untrusted gate status).
 - **Project Wiki**: `wiki_list`, `wiki_read`, `wiki_write` (canonical writes sync live to `feed_documents` `wiki/<page>`, while untrusted contributors write isolated proposals under `proposed/<login>/`).
 - **Mythical History**: `mythical_history_list`, `mythical_history_record` (linear commit narrative with tree-equality verification against `main`; canonical writes require trusted execution).

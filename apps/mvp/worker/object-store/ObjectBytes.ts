@@ -46,15 +46,9 @@ export const sanitizeServeContentType = (
 export const safeJsonStringify = (value: unknown): string =>
   JSON.stringify(value ?? {}).replace(/\\u0000/g, "")
 
-/** Write bytes to an R2 bucket binding using Web Streams. */
+/** R2 requires a known-length body. Copy only the caller's view into its own ArrayBuffer. */
 export const putR2Bytes = async (bucket: Artifacts.Bucket, key: string, bytes: Uint8Array): Promise<void> => {
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(bytes)
-      controller.close()
-    },
-  })
-  await bucket.put(key, stream)
+  await bucket.put(key, new Uint8Array(bytes).buffer)
 }
 
 /** Read bytes from an R2 bucket binding, or null when absent. */

@@ -43,7 +43,7 @@ export class ArtifactStore extends Context.Service<
 
 /** What `r2` reads of an R2 bucket binding: workerd's `R2Bucket`, or Miniflare's. */
 export interface Bucket {
-  readonly put: (key: string, value: ReadableStream<Uint8Array> | null) => Promise<unknown>
+  readonly put: (key: string, value: ReadableStream<Uint8Array> | ArrayBuffer | null) => Promise<unknown>
   readonly get: (key: string) => Promise<{ readonly body: ReadableStream<Uint8Array>; readonly size: number } | null>
 }
 
