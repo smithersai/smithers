@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/std",
   "type": "module",
-  "version": "1.0.0-rc.22",
+  "version": "1.0.0-rc.23",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -452,21 +452,21 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/capability": "1.0.0-rc.22",
-    "@smthrs/control": "1.0.0-rc.22",
-    "@smthrs/core": "1.0.0-rc.22",
-    "@smthrs/kernel": "1.0.0-rc.22",
-    "@smthrs/model": "1.0.0-rc.22"
+    "@smthrs/capability": "1.0.0-rc.23",
+    "@smthrs/control": "1.0.0-rc.23",
+    "@smthrs/core": "1.0.0-rc.23",
+    "@smthrs/kernel": "1.0.0-rc.23",
+    "@smthrs/model": "1.0.0-rc.23"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
     "@effect/platform-node": "4.1.1",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
-    "@smthrs/flow": "1.0.0-rc.22",
+    "@smthrs/flow": "1.0.0-rc.23",
     "@smthrs/fuzz": "workspace:*",
-    "@smthrs/patterns": "1.0.0-rc.22",
-    "@smthrs/plan": "1.0.0-rc.22",
+    "@smthrs/patterns": "1.0.0-rc.23",
+    "@smthrs/plan": "1.0.0-rc.23",
     "@smthrs/platform-browser": "workspace:*",
     "@smthrs/platform-node": "workspace:*",
     "@smthrs/testing": "workspace:*",

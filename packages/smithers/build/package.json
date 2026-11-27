@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/build",
   "type": "module",
-  "version": "1.0.0-rc.22",
+  "version": "1.0.0-rc.23",
   "license": "MIT",
   "smthrs": {
     "group": "tooling"
@@ -126,9 +126,9 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/crypto": "1.0.0-rc.22",
-    "@smthrs/flow": "1.0.0-rc.22",
-    "@smthrs/plan": "1.0.0-rc.22",
+    "@smthrs/crypto": "1.0.0-rc.23",
+    "@smthrs/flow": "1.0.0-rc.23",
+    "@smthrs/plan": "1.0.0-rc.23",
     "jsonc-parser": "3.3.1",
     "smol-toml": "1.8.0",
     "yaml": "2.9.0"

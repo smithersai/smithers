@@ -11,7 +11,7 @@ The package is on npm under the `next` tag, which carries the 1.0 release
 candidates. Install the current candidate with Bun:
 
 ```bash
-bun add @smthrs/platform-bun@1.0.0-rc.22 effect @smthrs/kernel@1.0.0-rc.22
+bun add @smthrs/platform-bun@1.0.0-rc.23 effect @smthrs/kernel@1.0.0-rc.23
 ```
 
 `@smthrs/kernel` is on the line because the [Quickstart](./quickstart.md)'s

@@ -47,8 +47,8 @@ the `next` tag.
 ```json
 {
   "devDependencies": {
-    "@smthrs/build-cli": "1.0.0-rc.22",
-    "@smthrs/targets": "1.0.0-rc.22",
+    "@smthrs/build-cli": "1.0.0-rc.23",
+    "@smthrs/targets": "1.0.0-rc.23",
     "effect": "4.1.1"
   }
 }

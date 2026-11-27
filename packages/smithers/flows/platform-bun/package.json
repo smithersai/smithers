@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/platform-bun",
   "type": "module",
-  "version": "1.0.0-rc.22",
+  "version": "1.0.0-rc.23",
   "license": "MIT",
   "smthrs": {
     "group": "engine",
@@ -122,11 +122,11 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/database": "1.0.0-rc.22",
-    "@smthrs/flows": "1.0.0-rc.22",
-    "@smthrs/jj": "1.0.0-rc.22",
-    "@smthrs/kernel": "1.0.0-rc.22",
-    "@smthrs/sandbox": "1.0.0-rc.22",
+    "@smthrs/database": "1.0.0-rc.23",
+    "@smthrs/flows": "1.0.0-rc.23",
+    "@smthrs/jj": "1.0.0-rc.23",
+    "@smthrs/kernel": "1.0.0-rc.23",
+    "@smthrs/sandbox": "1.0.0-rc.23",
     "@types/ws": "8.18.2",
     "redis": "6.2.1",
     "undici": "8.12.4",
@@ -134,7 +134,7 @@
     "ws": "8.22.0"
   },
   "peerDependencies": {
-    "@smthrs/platform-node": "1.0.0-rc.22",
+    "@smthrs/platform-node": "1.0.0-rc.23",
     "effect": "4.1.1",
     "electrobun": "1.18.1"
   },
@@ -146,9 +146,9 @@
     "@effect/sql-pg": "4.1.1",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
-    "@smthrs/artifacts": "1.0.0-rc.22",
+    "@smthrs/artifacts": "1.0.0-rc.23",
     "@smthrs/fuzz": "workspace:*",
-    "@smthrs/platform-node": "1.0.0-rc.22",
+    "@smthrs/platform-node": "1.0.0-rc.23",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

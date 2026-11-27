@@ -5,6 +5,18 @@ release (what changed and why it matters, with screenshots and examples), see
 the release notes at
 [smithers.sh/changelogs/1.0.0-rc.0](https://smithers.sh/changelogs/1.0.0-rc.0).
 
+## 1.0.0-rc.23 (2026-11-27)
+
+<!-- commits:1.0.0-rc.23 -->
+
+1 commit since [v1.0.0-rc.22](https://github.com/smithersai/smithers/commit/14fdd2a8d6).
+
+### 🐛 Bug fixes
+
+- **ci,deps:** preserve temp-dir program installs in jail and bump lib0 to 0.2.120 ([b4cf4e191a](https://github.com/smithersai/smithers/commit/b4cf4e191a11622cc4ae172de46d36446c9fa085))
+
+<!-- /commits:1.0.0-rc.23 -->
+
 ## 1.0.0-rc.22 (2026-11-27)
 
 <!-- commits:1.0.0-rc.22 -->

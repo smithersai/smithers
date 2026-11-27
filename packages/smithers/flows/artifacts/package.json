@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/artifacts",
   "type": "module",
-  "version": "1.0.0-rc.22",
+  "version": "1.0.0-rc.23",
   "license": "MIT",
   "smthrs": {
     "group": "engine"
@@ -168,7 +168,7 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/crypto": "1.0.0-rc.22"
+    "@smthrs/crypto": "1.0.0-rc.23"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
