@@ -1,7 +1,8 @@
-import { PlanTree as PlanTreeSchema, type PlanNodeState, type PlanTree } from "@smthrs/app-state"
+import { emptyPlanTree, type PlanNodeState, type PlanTree } from "@smthrs/app-state"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
+import { ShardProtocol } from "@smthrs/sync"
 import type { AudienceRole, PlanTreeNodeItem, WaitlistStatus } from "@smthrs/ui"
-import { Context, Data, type Duration, Effect, Layer, Option, Schema, type Scope } from "effect"
+import { Context, Data, type Duration, Effect, Layer, Metric, Option, Schema, type Scope } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { runners } from "../../boundary.vibe"
 import type { Role } from "../auth/contract"
@@ -10,16 +11,34 @@ import { RepoStore } from "../repo/store.vibe"
 import { submitWaitlist as submitWaitlistRequest, waitlistErrorMessage } from "../waitlist/api.vibe"
 import { conversationStateKey, restoreConversationSnapshot, saveConversationSnapshot, type ConversationPaneSnapshot, type ConversationPaneStore } from "./conversationState"
 import type { WorkbenchLayout } from "./layout"
+import {
+  applyPlanDeliveryEffect,
+  decodePlanTreePullResponse,
+  decodePlanTreeSnapshotResponse,
+  planPullRoute,
+  planShardId,
+  planSnapshotRoute,
+} from "./planContract"
 
 // Workbench state on this tab: three local-only TanStack DB collections of one row each, kept strictly in memory
 // (never persisted on disk). Layout state (pane, size, frame, node, cause, audience, diffScope) stays in the URL
 // via TanStack Router. All HTTP calls go through Effect HttpClient.
+
+export { planPullRoute, planShardId, planSnapshotRoute }
 
 export const PLAN_ROW_ID = "plan"
 export const WAITLIST_ROW_ID = "waitlist"
 
 export const PLAN_STATUSES = ["idle", "loading", "ready", "empty", "failed"] as const
 export type PlanLoadStatus = (typeof PLAN_STATUSES)[number]
+
+/** Browser-side counter of Workbench plan tree loads by outcome (OBS-5 safe: no repo names or node content). */
+export const workbenchPlanLoads = Metric.counter("smithers_workbench_plan_loads", {
+  description: "Workbench plan tree loads by outcome",
+  incremental: true,
+})
+
+const MAX_PLAN_PULL_REQUESTS = 64
 
 const PlanAssumptionRow = Schema.Struct({
   id: Schema.String,
@@ -67,15 +86,10 @@ export class PlanSnapshotFailed extends Data.TaggedError("PlanSnapshotFailed")<{
   readonly code: string
 }> {}
 
-const SnapshotEnvelope = Schema.Struct({
-  hubSeq: Schema.Number,
-  state: Schema.NullOr(
-    Schema.Struct({
-      tree: PlanTreeSchema,
-    }),
-  ),
-})
-const decodeSnapshot = Schema.decodeUnknownEffect(SnapshotEnvelope)
+export interface FetchedPlan {
+  readonly position: ShardProtocol.ShardPosition
+  readonly tree: PlanTree | null
+}
 
 /** Convert a PlanTree shard snapshot into ordered, depth-annotated items for @smthrs/ui PlanTree. */
 export const planNodesFromTree = (tree: PlanTree): ReadonlyArray<PlanTreeNodeItem> => {
@@ -124,18 +138,13 @@ export const roleToAudience = (role: Role | null | undefined): AudienceRole => {
   return "visitor"
 }
 
-export const planSnapshotRoute = (origin: string, owner: string, repo: string): string => {
-  const shard = `repo:${owner}/${repo}`
-  return `${origin}/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/plan/snapshot?shard=${encodeURIComponent(shard)}`
-}
-
 export class WorkbenchClient extends Context.Service<
   WorkbenchClient,
   {
     readonly fetchPlan: (
       owner: string,
       repo: string,
-    ) => Effect.Effect<{ readonly hubSeq: number; readonly tree: PlanTree | null }, PlanSnapshotFailed>
+    ) => Effect.Effect<FetchedPlan, PlanSnapshotFailed>
     readonly joinWaitlist: (input: {
       readonly repoUrl: string
       readonly workflowNote?: string
@@ -150,33 +159,96 @@ export class WorkbenchClient extends Context.Service<
         const within = options.within ?? WORKBENCH_WITHIN
         return WorkbenchClient.of({
           fetchPlan: (owner, repo) =>
-            http.execute(HttpClientRequest.get(planSnapshotRoute(options.origin, owner, repo))).pipe(
+            withSpan(effect {
+              const shard = try sync(() => planShardId(owner, repo))
+              const snapshotUrl = try sync(() => planSnapshotRoute(options.origin, owner, repo))
+              let requestCount = 0
+              const getJson = <A>(
+                url: string,
+                decode: (raw: unknown) => A!Schema.SchemaError,
+                allowNotFound: boolean,
+              ): Option.Option<A>!PlanSnapshotFailed =>
+                effect {
+                  requestCount += 1
+                  if (requestCount > MAX_PLAN_PULL_REQUESTS) {
+                    throw new PlanSnapshotFailed({ code: "unavailable" })
+                  }
+                  const response = try http.execute(HttpClientRequest.get(url)).pipe(
+                    Effect.mapError(() => new PlanSnapshotFailed({ code: "unavailable" })),
+                  )
+                  if (response.status === 401) {
+                    throw new PlanSnapshotFailed({ status: 401, code: "sign_in_required" })
+                  }
+                  if (response.status === 403) {
+                    throw new PlanSnapshotFailed({ status: 403, code: "forbidden" })
+                  }
+                  if (response.status === 404 && allowNotFound) {
+                    return Option.none<A>()
+                  }
+                  if (response.status !== 200) {
+                    throw new PlanSnapshotFailed({ status: response.status, code: "unavailable" })
+                  }
+                  const raw = try response.json.pipe(
+                    Effect.mapError(() => new PlanSnapshotFailed({ status: 200, code: "invalid_snapshot" })),
+                  )
+                  const decoded = try decode(raw).pipe(
+                    Effect.mapError(() => new PlanSnapshotFailed({ status: 200, code: "invalid_snapshot" })),
+                  )
+                  return Option.some(decoded)
+                }
+
+              const initialSnapshot = try getJson(snapshotUrl, decodePlanTreeSnapshotResponse, true)
+              if (Option.isNone(initialSnapshot)) {
+                return { position: { shard, epoch: 0, seq: 0 }, tree: null }
+              }
+              const snapshot = initialSnapshot.value
+              if (snapshot.position.shard !== shard) {
+                throw new PlanSnapshotFailed({ status: 200, code: "invalid_snapshot" })
+              }
+
+              let position = snapshot.position
+              let tree: PlanTree = snapshot.state === null ? emptyPlanTree : snapshot.state.tree
+              let hasState = snapshot.state !== null
+
+              while (true) {
+                const pullUrl = try sync(() =>
+                  planPullRoute(options.origin, owner, repo, {
+                    version: ShardProtocol.protocolVersion,
+                    shard,
+                    epoch: position.epoch,
+                    after: position.seq,
+                    limit: 256,
+                  }),
+                )
+                const reply = Option.getOrThrow(try getJson(pullUrl, decodePlanTreePullResponse, false))
+                if (reply.shard !== shard) {
+                  throw new PlanSnapshotFailed({ status: 200, code: "invalid_snapshot" })
+                }
+                if (reply._tag === "Resync") {
+                  const refreshed = Option.getOrThrow(try getJson(snapshotUrl, decodePlanTreeSnapshotResponse, false))
+                  if (refreshed.position.shard !== shard) {
+                    throw new PlanSnapshotFailed({ status: 200, code: "invalid_snapshot" })
+                  }
+                  tree = refreshed.state === null ? emptyPlanTree : refreshed.state.tree
+                  hasState = refreshed.state !== null
+                  position = refreshed.position
+                  continue
+                }
+                const through: ShardProtocol.ShardPosition = { shard, epoch: reply.epoch, seq: reply.through }
+                if (reply.entries.length > 0) {
+                  tree = try applyPlanDeliveryEffect(tree, { _tag: "Entries", entries: reply.entries, through }).pipe(
+                    Effect.mapError(() => new PlanSnapshotFailed({ status: 200, code: "invalid_snapshot" })),
+                  )
+                  hasState = true
+                }
+                position = through
+                if (reply.done) break
+              }
+              return { position, tree: hasState ? tree : null }
+            }, "workbench.plan.fetch").pipe(
               Effect.timeoutOrElse({
                 duration: within,
                 orElse: () => Effect.fail(new PlanSnapshotFailed({ code: "timeout" })),
-              }),
-              Effect.mapError((error) =>
-                error instanceof PlanSnapshotFailed ? error : new PlanSnapshotFailed({ code: "unavailable" }),
-              ),
-              Effect.flatMap((response) => {
-                if (response.status === 401) {
-                  return Effect.fail(new PlanSnapshotFailed({ status: 401, code: "sign_in_required" }))
-                }
-                if (response.status === 403) {
-                  return Effect.fail(new PlanSnapshotFailed({ status: 403, code: "forbidden" }))
-                }
-                if (response.status === 404) return Effect.succeed({ hubSeq: 0, tree: null })
-                if (response.status !== 200) {
-                  return Effect.fail(new PlanSnapshotFailed({ status: response.status, code: "unavailable" }))
-                }
-                return response.json.pipe(
-                  Effect.flatMap((raw) => decodeSnapshot(raw)),
-                  Effect.map((body) => ({
-                    hubSeq: body.hubSeq,
-                    tree: body.state === null ? null : body.state.tree,
-                  })),
-                  Effect.mapError(() => new PlanSnapshotFailed({ status: 200, code: "invalid_snapshot" })),
-                )
               }),
             ),
           joinWaitlist: (input) =>
@@ -204,6 +276,8 @@ export class WorkbenchStore extends Context.Service<
     readonly planState: Query<typeof planQuery>
     readonly waitlist: Collection.Collection<WaitlistRow, string>
     readonly waitlistState: Query<typeof waitlistQuery>
+    readonly nextPlanGeneration: () => number
+    readonly isCurrentPlanGeneration: (generation: number) => boolean
     readonly scope: Scope.Scope
   }
 >()("@smthrs/mvp/workbench/WorkbenchStore") {
@@ -211,6 +285,12 @@ export class WorkbenchStore extends Context.Service<
     WorkbenchStore,
     effect {
       const scope = try Effect.scope
+      let planGeneration = 0
+      const nextPlanGeneration = () => {
+        planGeneration += 1
+        return planGeneration
+      }
+      const isCurrentPlanGeneration = (generation: number) => generation === planGeneration
       const plan = try Collection.local<PlanRow, string>({
         id: "workbench-plan",
         schema: PlanRow,
@@ -227,7 +307,12 @@ export class WorkbenchStore extends Context.Service<
                 const [owner, name] = row.repoSlug.split("/")
                 return owner !== undefined && name !== undefined && repoId(owner, name) === id
               }),
-              (row) => Effect.ignore(plan.update(row.id, (draft) => void Object.assign(draft, EMPTY_PLAN))),
+              (row) =>
+                Effect.sync(() => {
+                  nextPlanGeneration()
+                }).pipe(
+                  Effect.andThen(Effect.ignore(plan.update(row.id, (draft) => void Object.assign(draft, EMPTY_PLAN)))),
+                ),
               { discard: true },
             )))
       }
@@ -251,6 +336,8 @@ export class WorkbenchStore extends Context.Service<
         planState: try planQuery(plan),
         waitlist,
         waitlistState: try waitlistQuery(waitlist),
+        nextPlanGeneration,
+        isCurrentPlanGeneration,
         scope,
       })
     },
@@ -268,18 +355,40 @@ const setWaitlist = (change: Partial<Omit<WaitlistRow, "id">>) =>
   )
 
 export const loadPlan = (owner: string, repo: string) =>
-  (effect {
+  withSpan(effect {
+    const store = try WorkbenchStore
     const slug = `${owner}/${repo}`
-    try setPlan({ repoSlug: slug, status: "loading", error: null })
+    const generation = store.nextPlanGeneration()
+    const current = store.plan.tanstack.get(PLAN_ROW_ID)
+    const switchingRepo = current !== undefined && current.repoSlug.toLowerCase() !== slug.toLowerCase()
+    try setPlan({
+      repoSlug: slug,
+      status: "loading",
+      ...(switchingRepo ? { nodes: [], totalFrames: 1 } : {}),
+      error: null,
+    })
     const client = try WorkbenchClient
     const outcome = try client.fetchPlan(owner, repo).pipe(Effect.result)
-    if (outcome._tag === "Failure") {
-      try setPlan({ repoSlug: slug, status: "failed", nodes: [], totalFrames: 1, error: outcome.failure.code })
+    if (!store.isCurrentPlanGeneration(generation)) {
+      try Metric.update(Metric.withAttributes(workbenchPlanLoads, { outcome: "stale" }), 1)
       return
     }
-    const { hubSeq, tree } = outcome.success
+    if (outcome._tag === "Failure") {
+      const code = outcome.failure.code
+      try Metric.update(Metric.withAttributes(workbenchPlanLoads, { outcome: code }), 1)
+      try annotateCurrentSpan({ "workbench.plan.outcome": code })
+      try annotateLogs(logWarning("workbench.plan.load_failed"), {
+        code,
+        ...(outcome.failure.status === undefined ? {} : { status: outcome.failure.status }),
+      })
+      try setPlan({ repoSlug: slug, status: "failed", nodes: [], totalFrames: 1, error: code })
+      return
+    }
+    const { position, tree } = outcome.success
     if (tree === null) {
-      try setPlan({ repoSlug: slug, status: "empty", nodes: [], totalFrames: Math.max(1, hubSeq + 1), error: null })
+      try Metric.update(Metric.withAttributes(workbenchPlanLoads, { outcome: "empty" }), 1)
+      try annotateCurrentSpan({ "workbench.plan.outcome": "empty", "workbench.plan.seq": position.seq })
+      try setPlan({ repoSlug: slug, status: "empty", nodes: [], totalFrames: Math.max(1, position.seq + 1), error: null })
       return
     }
     const nodes = planNodesFromTree(tree).map((node) => ({
@@ -291,14 +400,21 @@ export const loadPlan = (owner: string, repo: string) =>
       sources: [...node.sources!],
       assumptions: [...node.assumptions!],
     }))
+    const status = nodes.length === 0 ? "empty" : "ready"
+    try Metric.update(Metric.withAttributes(workbenchPlanLoads, { outcome: status }), 1)
+    try annotateCurrentSpan({
+      "workbench.plan.outcome": status,
+      "workbench.plan.seq": position.seq,
+      "workbench.plan.nodes": nodes.length,
+    })
     try setPlan({
       repoSlug: slug,
-      status: nodes.length === 0 ? "empty" : "ready",
+      status,
       nodes,
-      totalFrames: Math.max(1, hubSeq + 1),
+      totalFrames: Math.max(1, position.seq + 1),
       error: null,
     })
-  }).pipe(Effect.annotateLogs({ feature: "workbench" }))
+  }, "workbench.plan.load").pipe(Effect.annotateLogs({ feature: "workbench" }))
 
 export const submitWaitlistDraft = (effect {
   const store = try WorkbenchStore

@@ -914,6 +914,11 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, m
                               )
                           : undefined,
                       },
+                      planTree: {
+                        policy: artifactPolicy,
+                        forward: (shard, outgoing) =>
+                          planObjects.getByName(shard).fetch(outgoing).pipe(Effect.provideService(RuntimeContext, runtime)),
+                      },
                       fleet: { database: database as Layer.Layer<SqlClient.SqlClient, unknown>, admins: deploymentAdmins },
                     })))
                   }).pipe(

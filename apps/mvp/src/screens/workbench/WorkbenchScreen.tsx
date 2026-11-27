@@ -150,10 +150,15 @@ function WorkbenchBound({
 }) {
   const { data: plan } = useLiveQuery(workbench.queries.plan)
   const { data: waitlist } = useLiveQuery(workbench.queries.waitlist)
+  const repoSlug = `${owner}/${repo}`
+  const planMatchesRepo = plan !== undefined && plan.repoSlug.toLowerCase() === repoSlug.toLowerCase()
   const planError =
-    plan?.status === "failed" && plan.error !== null ? (PLAN_ERROR_COPY[plan.error] ?? PLAN_ERROR_COPY.unavailable) : null
+    planMatchesRepo && plan.status === "failed" && plan.error !== null
+      ? (PLAN_ERROR_COPY[plan.error] ?? PLAN_ERROR_COPY.unavailable)
+      : null
 
-  const totalFrames = plan?.totalFrames ?? 1
+  const totalFrames = planMatchesRepo ? plan.totalFrames : 1
+  const planNodes = planMatchesRepo ? plan.nodes : []
   return (
     <div onKeyDown={(event) => onKeyDown(event, totalFrames)}>
       {planError !== null ? (
@@ -169,7 +174,7 @@ function WorkbenchBound({
         totalFrames={totalFrames}
         {...(fork !== undefined ? { fork } : {})}
         {...(playgroundPresetFor(`${owner}/${repo}`) !== undefined ? { playground: { preset: playgroundPresetFor(`${owner}/${repo}`)! } } : {})}
-        planNodes={plan?.nodes ?? []}
+        planNodes={planNodes}
         attachHref={branchPath(`${owner}/${repo}`, branch) + "#attach-agent"}
         waitlist={{
           repoUrl: waitlist?.repoUrl ?? `https://github.com/${owner}/${repo}`,

@@ -122,3 +122,10 @@ Every repository exposes 15 Cloud Factory tools alongside the core BYOA catalog 
 - **Backpressure Audit Reports**: `audit_report_list`, `audit_report_get`, `audit_report_publish` (mirrors trusted audits to `uphill` and untrusted community audits to `uphill/untrusted-<login>`).
 - **Pull Requests**: `pull_create` (requires Member access or above, opens a PR attributed to `@<login> (agent)`, and never approves or merges).
 - **One-Time Sandbox & Agent Auth**: `auth_one_time_mint` and `POST /api/repos/:owner/:repo/auth/one-time` print a short-lived single-use `smot_` token plus copy-paste shell and MCP snippets (`cache-control: no-store`). Ephemeral sandboxes redeem it atomically once via `POST /api/auth/one-time/redeem` (or `apps/mvp/scripts/mint-one-time-auth.mjs --redeem`) into an attenuated 2-hour `sma_` bearer token. Non-maintainers always receive `untrusted_contributor` trust.
+
+## Repository Plan Tree tools
+
+Authenticated repository MCP endpoints (`/<owner>/<repo>/mcp` and `/api/mcp`) expose two Plan Tree tools backed by the repository's durable `PlanTreeObject` shard (`worker/mcp/PlanTreeTools.vibe`):
+
+- `plan_tree_read`: reads the current Plan Tree (`revision`, `cursor`, ordered `nodes`, raw `tree`). Requires `mcp:read` scope and live Member role or above.
+- `plan_tree_update`: applies one `PlanCommand` (`UpsertPlanNode`, `MovePlanNode`, `ToggleAssumption`, `SetNodeStatus` except `done`, or `AttachArtifact`) with durable SQLite idempotency (`idempotencyKey`, defaulting to the JSON-RPC request id). Requires `mcp:write` scope and live Maintainer role or above. Setting `status: "done"` is person-only and refused with `person_only`. Private ops repositories (`Smithers-Ops`) are hidden and answer `not_found`.

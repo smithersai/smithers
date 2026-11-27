@@ -1,0 +1,580 @@
+import { McpAdapter } from "@smthrs/app-core"
+import { emptyPlanTree, PlanCommand, toPlanNodes } from "@smthrs/app-state"
+import { Uuid, WebCrypto } from "@smthrs/crypto"
+import type { ShardProtocol } from "@smthrs/sync"
+import { Cause, Effect, Option, Schema } from "effect"
+import type { HttpServerRequest, HttpServerResponse } from "effect/http"
+import {
+  decodePlanTreeMcpEnvelopeJson,
+  decodePlanTreeMcpErrorContent,
+  decodePlanTreeReadMcpResult,
+  decodePlanTreeUpdateMcpResult,
+  isPersonOnlyPlanCommand,
+  PLAN_READ_TAG,
+  PLAN_UPDATE_TAG,
+  PlanIdempotencyKey,
+  planShardId,
+} from "../../src/features/workbench/planContract.ts"
+import { rankOf, type Role } from "../Actor.vibe"
+import { codeOf } from "../ErrorCode.ts"
+import * as Visibility from "../ops/ArtifactVisibility.ts"
+import { admittedPlanMcpRequest, readServerResponseText } from "../plan/PlanTreeBoundary.ts"
+import {
+  McpAuthService,
+  type McpContentBlock,
+  type McpPrincipal,
+  type McpToolContext,
+  type McpToolDescriptor,
+  McpToolError,
+} from "./Contract.vibe"
+
+// Repository MCP tools backed by the durable Plan Tree shard (`worker/plan/PlanTreeShard.vibe`).
+//
+// Security & durability invariants:
+// - `plan_tree_read` requires an authenticated agent with `mcp:read`, matching `repoScope`, and live `member`+ role.
+// - `plan_tree_update` requires `McpAuthService.requireWriteAccess(..., "maintainer")` (`mcp:write`, matching
+//   `repoScope`, live `maintainer`+ role, valid agent act).
+// - Private ops repositories (`Smithers-Ops`) always answer `not_found`.
+// - Marking a node `"done"` is strictly person-only (refused here with `person_only` AND inside `PlanTreeShard`).
+// - Every update carries a deterministic token+shard-scoped idempotency key enforced atomically in SQLite.
+// - No token, login, node title, or command payload appears in logs, spans, or metrics (OBS-5).
+
+export interface PlanTreeToolResult {
+  readonly content: ReadonlyArray<McpContentBlock>
+  readonly isError?: boolean
+}
+
+export interface PlanTreeMcpDeps {
+  readonly policy: Visibility.Policy
+  readonly forward: (
+    shard: ShardProtocol.ShardId,
+    request: HttpServerRequest.HttpServerRequest,
+  ) => HttpServerResponse.HttpServerResponse!unknown
+}
+
+export const PLAN_TREE_TOOL_NAMES = ["plan_tree_read", "plan_tree_update"] as const
+export type PlanTreeToolName = (typeof PLAN_TREE_TOOL_NAMES)[number]
+
+export const isPlanTreeTool = (name: string): name is PlanTreeToolName =>
+  (PLAN_TREE_TOOL_NAMES as ReadonlyArray<string>).includes(name)
+
+/** UUIDv5 namespace for deterministic MCP Plan Tree idempotency keys. */
+export const MCP_PLAN_IDEMPOTENCY_NAMESPACE = "8a4d2c7e-1f5b-4a93-9c2d-7e6f5a4b3c2d"
+
+const UNPAIRED_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/
+const BODY_CONTROL_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/
+
+const MAX_ID_LENGTH = 200
+const MAX_TITLE_LENGTH = 500
+const MAX_SOURCE_LENGTH = 512
+const MAX_ASSUMPTION_LENGTH = 500
+const MAX_DOD_LENGTH = 1000
+const MAX_ARRAY_ITEMS = 100
+
+const Name = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,99})$/))
+
+const RepoArgs = {
+  owner: Schema.optional(Name),
+  repo: Schema.optional(Name),
+  repository: Schema.optional(
+    Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/)),
+  ),
+}
+
+const PlanTreeReadArgs = Schema.Struct(RepoArgs)
+
+const PlanTreeUpdateArgs = Schema.Struct({
+  ...RepoArgs,
+  command: PlanCommand,
+  idempotencyKey: Schema.optional(PlanIdempotencyKey),
+})
+
+const repoProps = {
+  owner: { type: "string", description: "Repository owner. Omit to use this endpoint's repository." },
+  repo: { type: "string", description: "Repository name. Omit to use this endpoint's repository." },
+  repository: { type: "string", description: "`owner/name`, instead of `owner` and `repo`." },
+}
+
+export const PLAN_TREE_READ_DESCRIPTOR: McpToolDescriptor = {
+  name: "plan_tree_read",
+  description:
+    "Read the repository's durable Plan Tree (revision, ordered nodes with goals, milestones, statuses, sources, assumptions, and raw tree). Requires Member role or above and mcp:read scope.",
+  inputSchema: {
+    type: "object",
+    properties: { ...repoProps },
+    additionalProperties: false,
+  },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+  },
+}
+
+export const PLAN_TREE_UPDATE_DESCRIPTOR: McpToolDescriptor = {
+  name: "plan_tree_update",
+  description:
+    "Apply one durable PlanCommand to the repository's Plan Tree (UpsertPlanNode, MovePlanNode, ToggleAssumption, SetNodeStatus except done, or AttachArtifact). Requires Maintainer role or above and mcp:write scope. Setting status to done is person-only and always refused for agents.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      ...repoProps,
+      idempotencyKey: {
+        type: "string",
+        minLength: 1,
+        maxLength: 200,
+        pattern: "^[A-Za-z0-9._:-]+$",
+        description: "Reuse the same key to retry without duplicating the update. Defaults to the JSON-RPC request id.",
+      },
+      command: {
+        description: "One PlanCommand tagged union from @smthrs/app-state.",
+        oneOf: [
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["_tag", "id", "parent", "title", "milestone", "sources", "assumptions", "dodFast", "order", "expectedRevision"],
+            properties: {
+              _tag: { const: "UpsertPlanNode" },
+              id: { type: "string", minLength: 1, maxLength: MAX_ID_LENGTH },
+              parent: { type: ["string", "null"], maxLength: MAX_ID_LENGTH },
+              title: { type: "string", minLength: 1, maxLength: MAX_TITLE_LENGTH },
+              milestone: { type: "string", enum: ["M0", "M1", "M2", "M3"] },
+              sources: { type: "array", maxItems: MAX_ARRAY_ITEMS, items: { type: "string", maxLength: MAX_SOURCE_LENGTH } },
+              assumptions: { type: "array", maxItems: MAX_ARRAY_ITEMS, items: { type: "string", maxLength: MAX_ASSUMPTION_LENGTH } },
+              dodFast: { type: "string", maxLength: MAX_DOD_LENGTH },
+              order: { type: "integer", minimum: 0 },
+              expectedRevision: { type: ["integer", "null"], minimum: 0 },
+            },
+          },
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["_tag", "id", "newParent", "order", "expectedRevision"],
+            properties: {
+              _tag: { const: "MovePlanNode" },
+              id: { type: "string", minLength: 1, maxLength: MAX_ID_LENGTH },
+              newParent: { type: ["string", "null"], maxLength: MAX_ID_LENGTH },
+              order: { type: "integer", minimum: 0 },
+              expectedRevision: { type: ["integer", "null"], minimum: 0 },
+            },
+          },
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["_tag", "nodeId", "index", "expectedRevision"],
+            properties: {
+              _tag: { const: "ToggleAssumption" },
+              nodeId: { type: "string", minLength: 1, maxLength: MAX_ID_LENGTH },
+              index: { type: "integer", minimum: 0 },
+              expectedRevision: { type: ["integer", "null"], minimum: 0 },
+            },
+          },
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["_tag", "nodeId", "status", "expectedRevision"],
+            properties: {
+              _tag: { const: "SetNodeStatus" },
+              nodeId: { type: "string", minLength: 1, maxLength: MAX_ID_LENGTH },
+              status: {
+                type: "string",
+                enum: ["pending", "in_progress", "blocked_on_will", "failed"],
+                description: "Agents cannot set status to done (person-only approval).",
+              },
+              expectedRevision: { type: ["integer", "null"], minimum: 0 },
+            },
+          },
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["_tag", "nodeId", "artifactId", "expectedRevision"],
+            properties: {
+              _tag: { const: "AttachArtifact" },
+              nodeId: { type: "string", minLength: 1, maxLength: MAX_ID_LENGTH },
+              artifactId: { type: "string", minLength: 1, maxLength: MAX_ID_LENGTH },
+              expectedRevision: { type: ["integer", "null"], minimum: 0 },
+            },
+          },
+        ],
+      },
+    },
+    required: ["command"],
+    additionalProperties: false,
+  },
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+  },
+}
+
+export const PLAN_TREE_TOOL_DESCRIPTORS: ReadonlyArray<McpToolDescriptor> = [
+  PLAN_TREE_READ_DESCRIPTOR,
+  PLAN_TREE_UPDATE_DESCRIPTOR,
+]
+
+/** Tools visible in `tools/list` for `principal` and resolved `role` on `defaultRepo` (if scoped). */
+export const visibleDescriptors = (
+  principal: Option.Option<McpPrincipal>,
+  role: Role | null,
+  defaultRepo?: { readonly owner: string; readonly name: string },
+  policy?: Visibility.Policy,
+): ReadonlyArray<McpToolDescriptor> => {
+  if (Option.isNone(principal)) return []
+  if (
+    defaultRepo !== undefined &&
+    policy !== undefined &&
+    Visibility.isOpsRepository({ fullName: `${defaultRepo.owner}/${defaultRepo.name}`, private: true }, policy)
+  ) {
+    return []
+  }
+  const scopes = principal.value.scopes
+  const out: Array<McpToolDescriptor> = []
+  if (scopes.includes("mcp:read") && rankOf(role) >= rankOf("member")) {
+    out.push(PLAN_TREE_READ_DESCRIPTOR)
+  }
+  if (scopes.includes("mcp:write") && rankOf(role) >= rankOf("maintainer")) {
+    out.push(PLAN_TREE_UPDATE_DESCRIPTOR)
+  }
+  return out
+}
+
+const jsonResult = (value: unknown): PlanTreeToolResult => ({
+  content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
+})
+
+const decodeArgs = <A>(schema: Schema.Decoder<A, never>, raw: Record<string, unknown>): A!McpToolError =>
+  Schema.decodeUnknownEffect(schema)(raw).pipe(
+    Effect.mapError((issue) =>
+      new McpToolError({ code: "invalid_params", message: `Invalid arguments: ${String(issue).slice(0, 500)}` }),
+    ),
+  )
+
+const resolveTarget = (
+  args: {
+    readonly owner?: string | undefined
+    readonly repo?: string | undefined
+    readonly repository?: string | undefined
+  },
+  defaultRepo: { readonly owner: string; readonly name: string } | undefined,
+): { readonly owner: string; readonly name: string }!McpToolError => {
+  if (args.repository !== undefined) {
+    const [owner, name] = args.repository.split("/") as [string, string]
+    if ((args.owner !== undefined && args.owner !== owner) || (args.repo !== undefined && args.repo !== name)) {
+      return Effect.fail(new McpToolError({ code: "invalid_params", message: "`repository` disagrees with `owner`/`repo`" }))
+    }
+    return Effect.succeed({ owner, name })
+  }
+  if (args.owner !== undefined && args.repo !== undefined) return Effect.succeed({ owner: args.owner, name: args.repo })
+  if (args.owner === undefined && args.repo === undefined && defaultRepo !== undefined) {
+    return Effect.succeed(defaultRepo)
+  }
+  return Effect.fail(new McpToolError({
+    code: "invalid_params",
+    message: defaultRepo === undefined
+      ? "Name the repository with `owner` and `repo`, or `repository: \"owner/name\"`"
+      : "Pass both `owner` and `repo`, or neither to use this endpoint's repository",
+  }))
+}
+
+const isValidLine = (value: string, max: number, min = 1): boolean =>
+  value.length >= min && value.length <= max && !CONTROL_CHARS.test(value)
+
+const validateCommandBounds = (command: PlanCommand): string | undefined => {
+  if (command.expectedRevision !== null && command.expectedRevision < 0) {
+    return "`command.expectedRevision` must be null or a non-negative integer."
+  }
+  switch (command._tag) {
+    case "UpsertPlanNode":
+      if (!isValidLine(command.id, MAX_ID_LENGTH)) return "`command.id` must be 1..200 printable characters."
+      if (command.parent !== null && !isValidLine(command.parent, MAX_ID_LENGTH)) {
+        return "`command.parent` must be null or 1..200 printable characters."
+      }
+      if (!isValidLine(command.title, MAX_TITLE_LENGTH)) return "`command.title` must be 1..500 printable characters."
+      if (command.sources.length > MAX_ARRAY_ITEMS) return `\`command.sources\` accepts at most ${MAX_ARRAY_ITEMS} entries.`
+      for (const source of command.sources) {
+        if (!isValidLine(source, MAX_SOURCE_LENGTH)) return "Each source must be 1..512 printable characters."
+      }
+      if (command.assumptions.length > MAX_ARRAY_ITEMS) {
+        return `\`command.assumptions\` accepts at most ${MAX_ARRAY_ITEMS} entries.`
+      }
+      for (const assumption of command.assumptions) {
+        if (!isValidLine(assumption, MAX_ASSUMPTION_LENGTH)) {
+          return "Each assumption must be 1..500 printable characters."
+        }
+      }
+      if (command.dodFast.length > MAX_DOD_LENGTH || BODY_CONTROL_CHARS.test(command.dodFast)) {
+        return `\`command.dodFast\` must be at most ${MAX_DOD_LENGTH} characters without control characters.`
+      }
+      return undefined
+    case "MovePlanNode":
+      if (!isValidLine(command.id, MAX_ID_LENGTH)) return "`command.id` must be 1..200 printable characters."
+      if (command.newParent !== null && !isValidLine(command.newParent, MAX_ID_LENGTH)) {
+        return "`command.newParent` must be null or 1..200 printable characters."
+      }
+      return undefined
+    case "ToggleAssumption":
+      if (!isValidLine(command.nodeId, MAX_ID_LENGTH)) return "`command.nodeId` must be 1..200 printable characters."
+      if (command.index < 0) return "`command.index` must be a non-negative integer."
+      return undefined
+    case "SetNodeStatus":
+      if (!isValidLine(command.nodeId, MAX_ID_LENGTH)) return "`command.nodeId` must be 1..200 printable characters."
+      return undefined
+    case "AttachArtifact":
+      if (!isValidLine(command.nodeId, MAX_ID_LENGTH)) return "`command.nodeId` must be 1..200 printable characters."
+      if (!isValidLine(command.artifactId, MAX_ID_LENGTH)) {
+        return "`command.artifactId` must be 1..200 printable characters."
+      }
+      return undefined
+  }
+}
+
+const deriveIdempotencyKey = (
+  principal: McpPrincipal,
+  shard: ShardProtocol.ShardId,
+  explicit: string | undefined,
+  requestId: string,
+): string!McpToolError => {
+  if (explicit === undefined && UNPAIRED_SURROGATE.test(requestId)) {
+    return Effect.fail(new McpToolError({
+      code: "invalid_params",
+      message: "The JSON-RPC request id is not well-formed Unicode: pass `idempotencyKey`, or send another id.",
+    }))
+  }
+  const rawKey = explicit ?? `rpc:${requestId}`
+  return Uuid.v5(MCP_PLAN_IDEMPOTENCY_NAMESPACE, `${principal.tokenId}:${shard}:plan_tree_update:${rawKey}`).pipe(
+    Effect.provide(WebCrypto.layer),
+    Effect.orDie,
+  )
+}
+
+const mapShardError = (content: {
+  readonly code: string
+  readonly cause?: string | undefined
+  readonly detail?: string | undefined
+}): McpToolError => {
+  const code = content.cause ?? content.code
+  const detail = content.detail ?? ""
+  if (code === "person_only" || code === "wrong_operation") {
+    return new McpToolError({
+      code: "person_only",
+      message: "Only a person can finish a plan node (status \"done\" is person-only).",
+    })
+  }
+  if (code === "capability_exceeded") {
+    return new McpToolError({ code: "forbidden", message: "Insufficient Plan Tree permission for this operation." })
+  }
+  if (code === "idempotency_conflict") {
+    return new McpToolError({
+      code: "conflict",
+      message: "Idempotency key was already used for a different plan command.",
+    })
+  }
+  if (code === "invalid_command") {
+    if (detail.includes("\"revision_mismatch\"")) {
+      return new McpToolError({
+        code: "conflict",
+        message: "Plan tree revision mismatch; read the latest revision and retry.",
+      })
+    }
+    if (detail.includes("\"node_missing\"") || detail.includes("\"parent_missing\"")) {
+      return new McpToolError({
+        code: "not_found",
+        message: detail.includes("\"parent_missing\"")
+          ? "Referenced parent plan node does not exist."
+          : "Referenced plan node does not exist.",
+      })
+    }
+    return new McpToolError({
+      code: "invalid_params",
+      message: detail.length > 0 ? `Plan command refused: ${detail.slice(0, 300)}` : "Invalid plan command.",
+    })
+  }
+  if (code === "invalid_event_count") {
+    return new McpToolError({ code: "conflict", message: "Plan command produced no state change (already applied)." })
+  }
+  if (code === "invalid_idempotency_key" || code === "invalid_payload") {
+    return new McpToolError({ code: "invalid_params", message: detail || "Invalid plan command arguments." })
+  }
+  return new McpToolError({ code: "unavailable", message: "Plan tree operation could not be completed." })
+}
+
+const callShardTool = (
+  deps: PlanTreeMcpDeps,
+  shard: ShardProtocol.ShardId,
+  principal: McpPrincipal,
+  write: boolean,
+  tag: string,
+  toolArgs: Record<string, unknown>,
+): unknown!McpToolError =>
+  effect {
+    const rpcBody = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: try sync(() => McpAdapter.toolName(tag)),
+        arguments: toolArgs,
+      },
+    })
+    const outgoing = try sync(() =>
+      admittedPlanMcpRequest(
+        { subject: principal.personId, session: `mcp:${principal.tokenId}`, write },
+        rpcBody,
+      ),
+    )
+    const response = try Effect.catchCause(deps.forward(shard, outgoing), (cause) =>
+      Effect.fail(new McpToolError({
+        code: "unavailable",
+        message: `Plan tree shard unavailable (${codeOf(Cause.squash(cause))}).`,
+      })),
+    )
+    if (response.status === 401) {
+      throw new McpToolError({ code: "authentication", message: "Plan tree authentication failed." })
+    }
+    if (response.status === 403) {
+      throw new McpToolError({ code: "forbidden", message: "Insufficient Plan Tree permission." })
+    }
+    if (response.status === 413) {
+      throw new McpToolError({ code: "invalid_params", message: "Plan tree update exceeds maximum request size." })
+    }
+    if (response.status !== 200) {
+      throw new McpToolError({ code: "unavailable", message: "Plan tree shard returned an unexpected status." })
+    }
+    const text = try readServerResponseText(response).pipe(
+      Effect.mapError(() => new McpToolError({ code: "unavailable", message: "Failed to read plan tree shard reply." })),
+    )
+    const envelope = try decodePlanTreeMcpEnvelopeJson(text).pipe(
+      Effect.mapError(() => new McpToolError({ code: "unavailable", message: "Malformed plan tree shard reply." })),
+    )
+    if (envelope.error !== undefined || envelope.result === undefined) {
+      throw new McpToolError({ code: "unavailable", message: "Plan tree shard rejected the internal protocol request." })
+    }
+    if (envelope.result.isError === true) {
+      const parsedErr = try decodePlanTreeMcpErrorContent(envelope.result.structuredContent).pipe(
+        Effect.mapError(() => new McpToolError({ code: "unavailable", message: "Plan tree operation failed." })),
+      )
+      throw mapShardError(parsedErr)
+    }
+    return envelope.result.structuredContent
+  }
+
+/** Executes one repository MCP Plan Tree tool (`plan_tree_read` or `plan_tree_update`). */
+export const callPlanTreeTool = (
+  name: PlanTreeToolName,
+  rawArgs: Record<string, unknown>,
+  ctx: McpToolContext,
+  deps: PlanTreeMcpDeps,
+  auth: McpAuthService["Service"],
+  onRole?: (role: Role | null) => void,
+): PlanTreeToolResult!McpToolError =>
+  withSpan(effect {
+    let commandTag: string | undefined
+    const outcome = try Effect.result(effect {
+      if (name === "plan_tree_read") {
+        const args = try decodeArgs(PlanTreeReadArgs, rawArgs)
+        const repo = try resolveTarget(args, ctx.defaultRepo)
+        const fullName = `${repo.owner}/${repo.name}`
+        if (try sync(() => Visibility.isOpsRepository({ fullName, private: true }, deps.policy))) {
+          throw new McpToolError({ code: "not_found", message: "Repository not found or access denied." })
+        }
+        if (Option.isNone(ctx.principal)) {
+          throw new McpToolError({
+            code: "authentication",
+            message: "Authentication is required to read the repository plan tree.",
+          })
+        }
+        const principal = ctx.principal.value
+        if (!principal.scopes.includes("mcp:read")) {
+          throw new McpToolError({ code: "forbidden", message: "This MCP token lacks mcp:read scope." })
+        }
+        const access = try auth.resolveRepoAccess(ctx.principal, repo.owner, repo.name)
+        onRole?.(access.role)
+        if (try sync(() => rankOf(access.role) < rankOf("member"))) {
+          throw new McpToolError({
+            code: "forbidden",
+            message: `Requires the member role or above on ${fullName}.`,
+          })
+        }
+        const shard = try sync(() => planShardId(repo.owner, repo.name))
+        const raw = try callShardTool(deps, shard, principal, false, PLAN_READ_TAG, {})
+        const page = try decodePlanTreeReadMcpResult(raw).pipe(
+          Effect.mapError(() => new McpToolError({ code: "unavailable", message: "Malformed plan tree read response." })),
+        )
+        const tree = page.rows[0] ?? emptyPlanTree
+        return jsonResult({
+          repository: fullName,
+          shard,
+          revision: tree.revision,
+          cursor: page.cursor,
+          nodes: try sync(() => toPlanNodes(tree)),
+          tree,
+        })
+      }
+
+      const args = try decodeArgs(PlanTreeUpdateArgs, rawArgs)
+      commandTag = args.command._tag
+      const repo = try resolveTarget(args, ctx.defaultRepo)
+      const fullName = `${repo.owner}/${repo.name}`
+      if (try sync(() => Visibility.isOpsRepository({ fullName, private: true }, deps.policy))) {
+        throw new McpToolError({ code: "not_found", message: "Repository not found or access denied." })
+      }
+      const { principal, access } = try auth.requireWriteAccess(ctx.principal, repo.owner, repo.name, "maintainer")
+      onRole?.(access.role)
+      if (try sync(() => isPersonOnlyPlanCommand(args.command))) {
+        throw new McpToolError({
+          code: "person_only",
+          message: "Only a person can finish a plan node (status \"done\" is person-only).",
+        })
+      }
+      const boundError = validateCommandBounds(args.command)
+      if (boundError !== undefined) {
+        throw new McpToolError({ code: "invalid_params", message: boundError })
+      }
+      const shard = try sync(() => planShardId(repo.owner, repo.name))
+      const idempotencyKey = try deriveIdempotencyKey(principal, shard, args.idempotencyKey, ctx.requestId)
+      const raw = try callShardTool(deps, shard, principal, true, PLAN_UPDATE_TAG, {
+        command: args.command,
+        idempotencyKey,
+      })
+      const updated = try decodePlanTreeUpdateMcpResult(raw).pipe(
+        Effect.mapError(() => new McpToolError({ code: "unavailable", message: "Malformed plan tree update response." })),
+      )
+      return jsonResult({
+        repository: fullName,
+        shard,
+        runId: updated.runId,
+        outputRef: updated.outputRef,
+        journalSeq: updated.journalSeq,
+        event: updated.output,
+        cause: updated.cause,
+      })
+    })
+
+    if (outcome._tag === "Failure") {
+      const code = outcome.failure.code
+      try annotateCurrentSpan({
+        "mcp.tool": name,
+        "plan.outcome": code,
+        ...(commandTag === undefined ? {} : { "plan.command_tag": commandTag }),
+      })
+      try annotateLogs(logWithLevel(code === "unavailable" ? "Error" : "Warn")("mcp.plan_tree"), {
+        tool: name,
+        outcome: code,
+        ...(commandTag === undefined ? {} : { commandTag }),
+      })
+      throw outcome.failure
+    }
+    try annotateCurrentSpan({
+      "mcp.tool": name,
+      "plan.outcome": "ok",
+      ...(commandTag === undefined ? {} : { "plan.command_tag": commandTag }),
+    })
+    try annotateLogs(logInfo("mcp.plan_tree"), {
+      tool: name,
+      outcome: "ok",
+      ...(commandTag === undefined ? {} : { commandTag }),
+    })
+    return outcome.success
+  }, "mcp.plan_tree")

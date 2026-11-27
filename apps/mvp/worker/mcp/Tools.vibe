@@ -16,6 +16,7 @@ import { rankOf, type Actor, type Role } from "../Actor.vibe"
 import * as DeploymentPolicy from "../DeploymentPolicy.vibe"
 import * as FleetMcpTools from "../fleet/FleetMcpTools.vibe"
 import * as CloudFactoryTools from "./CloudFactoryTools.vibe"
+import * as PlanTreeTools from "./PlanTreeTools.vibe"
 import {
   McpAuthService,
   type McpContentBlock,
@@ -226,6 +227,7 @@ export interface McpToolDeps {
     readonly inspect: (repoId: string, runId: string) => unknown!McpToolError
   }
   readonly cloudFactory?: CloudFactoryTools.CloudFactoryDeps | undefined
+  readonly planTree?: PlanTreeTools.PlanTreeMcpDeps | undefined
   readonly fleet?: {
     readonly database: Layer.Layer<SqlClient.SqlClient, unknown>
     readonly admins?: ReadonlySet<string>
@@ -281,6 +283,7 @@ const noDraftStorage = unavailable("todo_draft")
  */
 export const makeLiveToolDeps = (deps: Partial<McpToolDeps>): McpToolDeps => ({
   ...(deps.cloudFactory === undefined ? {} : { cloudFactory: deps.cloudFactory }),
+  ...(deps.planTree === undefined ? {} : { planTree: deps.planTree }),
   ...(deps.fleet === undefined ? {} : { fleet: deps.fleet }),
   readTree: deps.readTree ?? unavailable("repo_tree"),
   readFile: deps.readFile ?? unavailable("repo_read_file"),
@@ -1255,7 +1258,8 @@ export const makeMcpToolRegistry = effect (deps: McpToolDeps) => {
         ? []
         : FleetMcpTools.visibleDescriptors(principal, deps.fleet.admins ?? DeploymentPolicy.DEFAULT_ADMINS)
       const factoryTools = deps.cloudFactory === undefined ? [] : CloudFactoryTools.visibleDescriptors(principal)
-      return [...base, ...factoryTools, ...fleetTools]
+      const planTreeTools = deps.planTree === undefined ? [] : PlanTreeTools.visibleDescriptors(principal, role, defaultRepo, deps.planTree.policy)
+      return [...base, ...planTreeTools, ...factoryTools, ...fleetTools]
     },
 
     callTool: (name, args, ctx) => {
@@ -1265,6 +1269,15 @@ export const makeMcpToolRegistry = effect (deps: McpToolDeps) => {
           code: "person_only",
           message: `${name} is person-only and is never available to an agent. A person must do it on Smithers.`,
         }))))
+      }
+      if (deps.planTree !== undefined && PlanTreeTools.isPlanTreeTool(name)) {
+        const seen: Seen = { role: null }
+        return PlanTreeTools.callPlanTreeTool(name, args, ctx, deps.planTree, auth, (role) => {
+          seen.role = role
+        }).pipe(
+          Effect.tap(() => record(name, seen.role, "ok")),
+          Effect.tapError((error) => record(name, seen.role, error.code)),
+        )
       }
       if (deps.cloudFactory !== undefined && CloudFactoryTools.isCloudFactoryTool(name)) {
         return CloudFactoryTools.callCloudFactoryTool(name, args, ctx, deps.cloudFactory, auth).pipe(

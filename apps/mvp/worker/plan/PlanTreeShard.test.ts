@@ -503,3 +503,128 @@ test("a repeated artifact attachment cannot append an empty journal event", asyn
     db.hibernate()
   }
 })
+
+test("plan/update enforces durable SQLite idempotency across retries, restarts, conflicts, and actor isolation", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "plan-idem-"))
+  const path = join(dir, "plan.sqlite")
+  let db = openStorage(path)
+  try {
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      let hub = yield* Plan.make(db.storage, shard, auth())
+      const mcp = yield* hub.engine.openMcp({ transport: "http", tokenRef: "mcp" })
+      const createAt0 = {
+        command: {
+          _tag: "UpsertPlanNode" as const,
+          id: "goal-1",
+          parent: null,
+          title: "Cutover milestone",
+          milestone: "M0" as const,
+          sources: ["docs/features/workbench.md"],
+          assumptions: ["Real shard contract"],
+          dodFast: "pnpm test",
+          order: 0,
+          expectedRevision: 0,
+        },
+        idempotencyKey: "cutover-goal-1",
+      }
+
+      const first = yield* mcp.submit({ operation: Plan.update, payload: createAt0 })
+      expect(first.journalSeq).toBe(1)
+      expect((yield* hub.state).tree.revision).toBe(1)
+
+      // Exact retry after revision moved to 1 returns the original receipt without duplicating or failing revision_mismatch.
+      const retry = yield* mcp.submit({ operation: Plan.update, payload: createAt0 })
+      expect(retry).toEqual(first)
+      expect((yield* hub.state).tree.revision).toBe(1)
+
+      // Different command reusing the same key fails with idempotency_conflict.
+      const conflicting = {
+        ...createAt0,
+        command: { ...createAt0.command, title: "Different title" },
+      }
+      expect(yield* Effect.flip(mcp.submit({ operation: Plan.update, payload: conflicting }))).toMatchObject({
+        code: "idempotency_conflict",
+      })
+      expect((yield* hub.state).tree.revision).toBe(1)
+      expect((yield* hub.state).tree.nodes["goal-1"]?.title).toBe("Cutover milestone")
+
+      // Malformed idempotency key is refused cleanly.
+      expect(yield* Effect.flip(mcp.submit({
+        operation: Plan.update,
+        payload: { ...createAt0, idempotencyKey: "bad key with spaces!" },
+      }))).toMatchObject({ code: "invalid_idempotency_key" })
+
+      // Survives Durable Object hibernation/restart from SQLite.
+      db.hibernate()
+      db = openStorage(path)
+      hub = yield* Plan.make(db.storage, shard, auth())
+      const reopenedMcp = yield* hub.engine.openMcp({ transport: "http", tokenRef: "mcp" })
+      const retryAfterRestart = yield* reopenedMcp.submit({ operation: Plan.update, payload: createAt0 })
+      expect(retryAfterRestart).toEqual(first)
+      expect((yield* hub.state).tree.revision).toBe(1)
+
+      // Snapshot and pull responses carry cache-control: no-store so browser reloads never see stale data.
+      const snapRes = yield* Routes.handle(hub).pipe(
+        Effect.provideService(
+          HttpServerRequest.HttpServerRequest,
+          HttpServerRequest.fromWeb(
+            new Request(`https://smithers.example/api/plan/snapshot?shard=${encodeURIComponent(shard)}`, {
+              headers: { authorization: "Bearer reader" },
+            }),
+          ),
+        ),
+      )
+      expect(snapRes.status).toBe(200)
+      expect(snapRes.headers["cache-control"]).toBe("no-store")
+      const pullRes = yield* Routes.handle(hub).pipe(
+        Effect.provideService(
+          HttpServerRequest.HttpServerRequest,
+          HttpServerRequest.fromWeb(
+            new Request(
+              `https://smithers.example/api/plan/pull?${ShardProtocol.pullQuery({ version: 2, shard, epoch: 0, after: 0, limit: 10 })}`,
+              { headers: { authorization: "Bearer reader" } },
+            ),
+          ),
+        ),
+      )
+      expect(pullRes.status).toBe(200)
+      expect(pullRes.headers["cache-control"]).toBe("no-store")
+
+      // A different caller subject does not collide with another principal's idempotency key.
+      const reopenedWriter = yield* hub.engine.openMcp({ transport: "http", tokenRef: "writer" })
+      const second = yield* reopenedWriter.submit({
+        operation: Plan.update,
+        payload: {
+          command: {
+            _tag: "SetNodeStatus" as const,
+            nodeId: "goal-1",
+            status: "in_progress" as const,
+            expectedRevision: 1,
+          },
+          idempotencyKey: "other-key",
+        },
+      })
+      expect(second.journalSeq).toBe(2)
+      expect((yield* hub.state).tree.nodes["goal-1"]?.status).toBe("in_progress")
+      const personDoor = yield* hub.engine.openPerson({ session: "person" })
+      const finished = yield* personDoor.submit({
+        operation: Plan.review,
+        payload: {
+          command: { _tag: "SetNodeStatus" as const, nodeId: "goal-1", status: "done" as const, expectedRevision: 2 },
+          idempotencyKey: "person-approve-1",
+        },
+      })
+      expect(yield* personDoor.submit({
+        operation: Plan.review,
+        payload: {
+          command: { _tag: "SetNodeStatus" as const, nodeId: "goal-1", status: "done" as const, expectedRevision: 2 },
+          idempotencyKey: "person-approve-1",
+        },
+      })).toEqual(finished)
+      expect((yield* hub.state).tree.nodes["goal-1"]?.status).toBe("done")
+    }).pipe(Effect.provide(Reactivity.layer))))
+  } finally {
+    db.hibernate()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

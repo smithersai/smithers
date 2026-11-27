@@ -2,36 +2,44 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 import { McpAdapter, Principal } from "@smthrs/app-core"
 import type { ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { ShardProtocol } from "@smthrs/sync"
-import { Effect, Option, Schema } from "effect"
+import { Cause, Clock, Effect, Metric, Option, Schema } from "effect"
 import { Headers, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Reactivity from "effect/reactivity/Reactivity"
 import { memberOrAbove, rankOf, Sessions } from "../Actor.vibe"
+import { MAX_PLAN_MCP_BYTES, readBounded } from "../Body.vibe"
+import { holdsDeploymentAuthority } from "../DeploymentPolicy.vibe"
+import { codeOf } from "../ErrorCode.ts"
 import { repositoryOf } from "../github/Config.vibe"
 import type { RepoRoles } from "../github/RepoRoles.vibe"
 import * as ArtifactVisibility from "../ops/ArtifactVisibility.ts"
-import { holdsDeploymentAuthority } from "../DeploymentPolicy.vibe"
-import { MAX_PLAN_MCP_BYTES, readBounded } from "../Body.vibe"
-import { admissionToken, forwardedRequest } from "./PlanTreeBoundary.ts"
+import { admissionToken, forwardedRequest, PLAN_ADMISSION_HEADER } from "./PlanTreeBoundary.ts"
 import * as PlanTreeShard from "./PlanTreeShard.vibe"
 
-const respond = (body: unknown) => HttpServerResponse.jsonUnsafe(body)
-const invalid = HttpServerResponse.empty({ status: 400 })
-const forbidden = HttpServerResponse.empty({ status: 403 })
+const noStore = { "cache-control": "no-store" }
+const respond = (body: unknown) => HttpServerResponse.jsonUnsafe(body, { headers: noStore })
+const invalid = HttpServerResponse.empty({ status: 400, headers: noStore })
+const forbidden = HttpServerResponse.empty({ status: 403, headers: noStore })
+
+/** Plan Tree HTTP request counter, by operation (`snapshot`, `pull`, `mcp`, `unknown`) and outcome (OBS-5 safe). */
+export const planTreeRequests = Metric.counter("smithers_plan_tree_requests", {
+  description: "Plan Tree HTTP requests by operation and outcome",
+  incremental: true
+})
 
 export const handle = (plan: PlanTreeShard.LivePlanTree) =>
   effect {
     const request = try HttpServerRequest.HttpServerRequest
     const url = new URL(request.url, "https://plan.internal")
     const tokenRef = /^Bearer ([^\s]+)$/.exec(request.headers["authorization"] ?? "")?.[1]
-    if (tokenRef === undefined) return HttpServerResponse.empty({ status: 401 })
+    if (tokenRef === undefined) return HttpServerResponse.empty({ status: 401, headers: noStore })
     const evidence = { kind: "mcp", transport: "http", tokenRef } as const
     if (request.method === "POST" && url.pathname === "/api/plan/mcp") {
       const mcp = try McpAdapter.make({ engine: plan.engine, evidence })
       const body = try readBounded(request, MAX_PLAN_MCP_BYTES)
       const reply = try mcp.handle(body)
       return reply === undefined
-        ? HttpServerResponse.empty({ status: 202 })
-        : HttpServerResponse.text(reply, { contentType: "application/json" })
+        ? HttpServerResponse.empty({ status: 202, headers: noStore })
+        : HttpServerResponse.text(reply, { contentType: "application/json", headers: noStore })
     }
     if (request.method === "GET" && url.pathname === "/api/plan/pull") {
       if (!(try plan.canRead(evidence))) return forbidden
@@ -45,20 +53,24 @@ export const handle = (plan: PlanTreeShard.LivePlanTree) =>
       if (shard !== plan.shard) return forbidden
       return respond(try plan.journal.snapshot(shard))
     }
-    return HttpServerResponse.empty({ status: 404 })
+    return HttpServerResponse.empty({ status: 404, headers: noStore })
   }.pipe(Effect.catch((error) => {
-    if (error._tag === "@smthrs/app-core/AuthRefused") return Effect.succeed(HttpServerResponse.empty({ status: 401 }))
+    if (error._tag === "@smthrs/app-core/AuthRefused") return Effect.succeed(HttpServerResponse.empty({ status: 401, headers: noStore }))
     if (error._tag === "BodyRefused" && error.reason === "too_large") {
-      return Effect.succeed(HttpServerResponse.empty({ status: 413 }))
+      return Effect.succeed(HttpServerResponse.empty({ status: 413, headers: noStore }))
     }
     return Effect.succeed(invalid)
   }))
 
 export class PlanTreeObject extends Cloudflare.DurableObject<PlanTreeObject, {}>()("PlanTreeObject") {}
 
-const admissionHeader = "x-smithers-plan-admission"
+const admissionHeader = PLAN_ADMISSION_HEADER
 
-const Admission = Schema.Struct({ subject: Schema.String, session: Schema.String, write: Schema.Boolean })
+schema Admission {
+  subject: string
+  session: string
+  write: boolean
+}
 const decodeAdmission = Schema.decodeUnknownOption(Schema.fromJsonString(Admission))
 
 /** The bound object's handler. The Worker sends a fresh request containing only its own admission. */
@@ -79,7 +91,7 @@ export const makeShardHandler = (storage: ObjectDatabase.Storage, shard: ShardPr
         Effect.sync(() => { grants[token] = { kind: "mcp", subject, session, capabilities } }),
         () => handle(plan).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest,
           request.modify({ headers: Headers.set(request.headers, "authorization", `Bearer ${token}`) }))),
-        () => Effect.sync(() => { delete grants[token] }),
+        () => Effect.sync(() => { delete grants[token] })
       )
     }
   }
@@ -99,42 +111,77 @@ export const handles = (path: string): boolean => repoPlanPath.test(path)
 /** Only this Worker can call the bound object. It overwrites any client-supplied admission. */
 export const dispatch = <R, E2, R2>(
   forward: (shard: ShardProtocol.ShardId, request: HttpServerRequest.HttpServerRequest) =>
-    Effect.Effect<HttpServerResponse.HttpServerResponse, E2, R2>,
+    HttpServerResponse.HttpServerResponse!E2!R2,
   roles: RepoRoles<R>,
-  policy: ArtifactVisibility.Policy,
-) => effect {
+  policy: ArtifactVisibility.Policy
+) => withSpan(effect {
+  const startedAt = try Clock.currentTimeMillis
   const request = try HttpServerRequest.HttpServerRequest
   const url = new URL(request.url, "https://plan.internal")
   const match = repoPlanPath.exec(url.pathname)
+  const operation = match?.[3] ?? "unknown"
+  let outcome = "ok"
+  const recordAndReturn = (response: HttpServerResponse.HttpServerResponse, nextOutcome: string, errorCode?: string) => effect {
+    outcome = nextOutcome
+    try Metric.update(Metric.withAttributes(planTreeRequests, { operation, outcome }), 1)
+    try annotateCurrentSpan({
+      "plan.operation": operation,
+      "plan.outcome": outcome,
+      "http.response.status_code": response.status,
+      ...(errorCode === undefined ? {} : { "error.code": errorCode })
+    })
+    try annotateLogs(
+      logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")("plan.route"),
+      {
+        operation,
+        outcome,
+        status: response.status,
+        durationMs: (try Clock.currentTimeMillis) - startedAt,
+        ...(errorCode === undefined ? {} : { errorCode })
+      }
+    )
+    return response
+  }
+
   const repo = match && (try sync(() => ArtifactVisibility.canonicalRepositoryId(`${match[1]}/${match[2]}`)))
-  if (!repo || !match) return HttpServerResponse.empty({ status: 404 })
+  if (!repo || !match) return try recordAndReturn(HttpServerResponse.empty({ status: 404, headers: noStore }), "not_found")
   const current = try (try Sessions).resolve
-  if (Option.isNone(current)) return HttpServerResponse.empty({ status: 401 })
+  if (Option.isNone(current)) return try recordAndReturn(HttpServerResponse.empty({ status: 401, headers: noStore }), "unauthenticated")
   const actor = current.value
   if ((try sync(() => ArtifactVisibility.isOpsRepository({ fullName: repo, private: true }, policy)))
-    && !holdsDeploymentAuthority(actor, policy.admins)) return HttpServerResponse.empty({ status: 404 })
+    && !holdsDeploymentAuthority(actor, policy.admins)) {
+    return try recordAndReturn(HttpServerResponse.empty({ status: 404, headers: noStore }), "ops_hidden")
+  }
   const { role } = try roles.resolve(actor, try sync(() => repositoryOf(repo))).pipe(Effect.orElseSucceed(() => ({ role: null })))
-  const shard = try Schema.decodeUnknownEffect(ShardProtocol.ShardId)(`repo:${repo}`)
+  const shard = try sync(() => Schema.decodeUnknownSync(ShardProtocol.ShardId)(`repo:${repo}`))
   const permits = (capability: string) => actor.act === undefined ||
     (actor.act.ceiling !== undefined && actor.act.ceiling.length > 0 &&
       actor.act.ceiling.every((group) => group.includes(capability)))
-  if (!(try sync(() => memberOrAbove(role))) || !permits(PlanTreeShard.readCapability(shard))) return forbidden
+  if (!(try sync(() => memberOrAbove(role))) || !permits(PlanTreeShard.readCapability(shard))) {
+    return try recordAndReturn(forbidden, "forbidden")
+  }
   const write = (try sync(() => rankOf(role) >= rankOf("maintainer"))) && permits(PlanTreeShard.writeCapability(shard))
   const content = try (request.method === "POST" ? readBounded(request, MAX_PLAN_MCP_BYTES) : Effect.undefined).pipe(Effect.result)
   if (content._tag === "Failure") {
-    return HttpServerResponse.empty({ status: content.failure.reason === "too_large" ? 413 : 400 })
+    const tooLarge = content.failure.reason === "too_large"
+    return try recordAndReturn(
+      HttpServerResponse.empty({ status: tooLarge ? 413 : 400, headers: noStore }),
+      tooLarge ? "too_large" : "invalid_body"
+    )
   }
   const body = content.success
   const outgoing = try sync(() => forwardedRequest(`https://plan.internal/api/plan/${match[3]}${url.search}`, {
     method: request.method,
     ...(body === undefined ? {} : { body }),
     headers: {
-      [admissionHeader]: JSON.stringify({ subject: actor.subject.id, session: actor.session ?? actor.subject.id, write }),
-    },
+      [admissionHeader]: JSON.stringify({ subject: actor.subject.id, session: actor.session ?? actor.subject.id, write })
+    }
   }))
-  return try forward(shard, outgoing)
-}.pipe(
-  Effect.orElseSucceed(() => HttpServerResponse.empty({ status: 503 })),
-  Effect.withSpan("plan.route"),
-)
-
+  const forwarded = try Effect.catchCause(forward(shard, outgoing), effect (cause) => {
+    const code = try sync(() => codeOf(Cause.squash(cause)))
+    return try recordAndReturn(HttpServerResponse.empty({ status: 503, headers: noStore }), "unavailable", code)
+  })
+  if (outcome === "unavailable") return forwarded
+  const forwardedOutcome = forwarded.status >= 400 ? "refused" : "ok"
+  return try recordAndReturn(forwarded, forwardedOutcome)
+}, "plan.route")

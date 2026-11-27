@@ -11,28 +11,42 @@ import {
 import { DoSqliteShard, type ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { ShardClient, ShardProtocol } from "@smthrs/sync"
 import { Effect, Schema } from "effect"
+import {
+  applyPlanDelivery,
+  decodeCauseReceiptJson,
+  decodePlanEventJson,
+  decodePlanTreeRecordedEvent,
+  decodePlanTreeSnapshotState,
+  isPersonOnlyPlanCommand,
+  PLAN_READ_TAG,
+  PLAN_REVIEW_TAG,
+  PLAN_UPDATE_TAG,
+  PlanIdempotencyKey
+} from "../../src/features/workbench/planContract.ts"
+import { withTransactionSync } from "../chat/MessagesShard.ts"
 
-export const update = "plan/update"
-export const review = "plan/review"
-export const read = "plan/tree"
+export const update = PLAN_UPDATE_TAG
+export const review = PLAN_REVIEW_TAG
+export const read = PLAN_READ_TAG
 
 export const readCapability = (shard: ShardProtocol.ShardId) => "plan:read:" + shard
 export const writeCapability = (shard: ShardProtocol.ShardId) => "plan:write:" + shard
 
-const Recorded = Schema.Struct({ event: PlanEvent, cause: CauseReceipt.CauseReceipt })
-const Snapshot = Schema.Struct({ tree: PlanTree, receipts: Schema.Array(CauseReceipt.CauseReceipt) })
-const decodeSnapshot = Schema.decodeUnknownSync(Snapshot)
-const decodeEvent = Schema.decodeUnknownSync(Recorded)
 const decodeCommand = Schema.decodeUnknownOption(PlanCommand)
+const decodeIdempotencyKey = Schema.decodeUnknownOption(PlanIdempotencyKey)
+const decodePlanEventSync = Schema.decodeUnknownSync(PlanEvent)
 
-export const apply = (tree: PlanTree, delivery: ShardClient.Delivery): PlanTree => {
-  if (delivery._tag === "Reset") {
-    return delivery.snapshot.state === null ? emptyPlanTree : decodeSnapshot(delivery.snapshot.state).tree
-  }
-  return delivery.entries.reduce<PlanTree>(
-    (state, entry) => entry.events.reduce<PlanTree>((current, event) => evolvePlan(current, decodeEvent(event).event), state),
-    tree
-  )
+export const apply = applyPlanDelivery
+
+type PendingCommit =
+  | { readonly _tag: "Duplicate"; readonly run: Core.Requested }
+  | { readonly _tag: "Fresh"; readonly idempotency: { readonly key: string; readonly requestHash: string } | null }
+
+interface PendingIdempotencyWrite {
+  readonly key: string
+  readonly requestHash: string
+  readonly event: PlanEvent
+  readonly cause: CauseReceipt.CauseReceipt
 }
 
 export const make = effect (
@@ -44,33 +58,60 @@ export const make = effect (
   // inside an enclosing transaction), so staging in `beforeCommit` and publishing synchronously once
   // `storage.transactionSync` returns keeps in-memory state strictly equal to SQLite with no cross-request lock
   // (decision 0104).
+  const exec = <A extends Record<string, ArrayBuffer | string | number | null>>(
+    sql: string,
+    ...bindings: ReadonlyArray<ArrayBuffer | string | number | null>
+  ): Array<A> => storage.sql.exec<A>(sql, ...bindings).toArray()
+
+  try sync(() => {
+    exec(
+      "CREATE TABLE IF NOT EXISTS plan_idempotency (" +
+        "idempotency_key TEXT PRIMARY KEY, " +
+        "request_hash TEXT NOT NULL, " +
+        "journal_seq INTEGER NOT NULL, " +
+        "output_json TEXT NOT NULL, " +
+        "cause_json TEXT NOT NULL" +
+      ")"
+    )
+  })
+
   let tree = emptyPlanTree
   let receipts: Array<CauseReceipt.CauseReceipt> = []
   let headSeq = 0
+  let pendingCommit: PendingCommit | null = null
+  let pendingIdempotencyWrite: PendingIdempotencyWrite | null = null
   const staged: Array<{ readonly tree: PlanTree; readonly causes: ReadonlyArray<CauseReceipt.CauseReceipt>; readonly seq: number }> = []
-  const trackedStorage: ObjectDatabase.Storage = {
-    ...storage,
-    transactionSync: <T>(closure: () => T): T => {
-      staged.length = 0
-      try {
-        const value = storage.transactionSync(closure)
-        const committed = staged.pop()
-        if (committed !== undefined) {
-          tree = committed.tree
-          receipts.push(...committed.causes)
-          headSeq = committed.seq
-        }
-        return value
-      } finally {
-        staged.length = 0
+  const trackedStorage = try sync(() => withTransactionSync(storage, <T>(closure: () => T): T => {
+    staged.length = 0
+    try {
+      const value = storage.transactionSync(closure)
+      const committed = staged.pop()
+      if (committed !== undefined) {
+        tree = committed.tree
+        receipts.push(...committed.causes)
+        headSeq = committed.seq
       }
+      return value
+    } finally {
+      staged.length = 0
+      pendingIdempotencyWrite = null
     }
-  }
+  }))
   const { shard: journal } = try DoSqliteShard.make(trackedStorage, {
     shard,
     beforeCommit: (entry) => {
-      const nextTree = apply(tree, { _tag: "Entries", entries: [entry], through: { shard, epoch: entry.epoch, seq: entry.seq } })
-      const causes = entry.events.map((event) => decodeEvent(event).cause)
+      const nextTree = applyPlanDelivery(tree, { _tag: "Entries", entries: [entry], through: { shard, epoch: entry.epoch, seq: entry.seq } })
+      const causes = entry.events.map((event) => decodePlanTreeRecordedEvent(event).cause)
+      if (pendingIdempotencyWrite !== null) {
+        exec(
+          "INSERT INTO plan_idempotency (idempotency_key, request_hash, journal_seq, output_json, cause_json) VALUES (?, ?, ?, ?, ?)",
+          pendingIdempotencyWrite.key,
+          pendingIdempotencyWrite.requestHash,
+          entry.seq,
+          JSON.stringify(pendingIdempotencyWrite.event),
+          JSON.stringify(pendingIdempotencyWrite.cause)
+        )
+      }
       staged.push({ tree: nextTree, causes, seq: entry.seq })
     }
   })
@@ -80,13 +121,13 @@ export const make = effect (
     transport: journal,
     store: try sync(() => ShardClient.memoryStore()),
     apply: (delivery) => Effect.sync(() => {
-      tree = apply(tree, delivery)
+      tree = applyPlanDelivery(tree, delivery)
       headSeq = delivery._tag === "Reset" ? delivery.snapshot.position.seq : delivery.through.seq
       if (delivery._tag === "Reset") {
-        receipts = delivery.snapshot.state === null ? [] : [...decodeSnapshot(delivery.snapshot.state).receipts]
+        receipts = delivery.snapshot.state === null ? [] : [...decodePlanTreeSnapshotState(delivery.snapshot.state).receipts]
       } else {
         for (const entry of delivery.entries) {
-          for (const event of entry.events) receipts.push(decodeEvent(event).cause)
+          for (const event of entry.events) receipts.push(decodePlanTreeRecordedEvent(event).cause)
         }
       }
     })
@@ -95,7 +136,10 @@ export const make = effect (
   const head = try reader.pull
   const payload = {
     type: "object",
-    properties: { command: { type: "object", properties: {}, additionalProperties: true } },
+    properties: {
+      command: { type: "object", properties: {}, additionalProperties: true },
+      idempotencyKey: { type: "string", minLength: 1, maxLength: 200 }
+    },
     required: ["command"],
     additionalProperties: false
   } as const
@@ -106,11 +150,53 @@ export const make = effect (
     capabilities: [writeCapability(shard)],
     ...(tag === review ? { personOnly: "Only the person can finish a plan node." } : {}),
     run: (input, tx) => {
+      pendingCommit = null
       const command = decodeCommand(input["command"])
       if (command._tag === "None") return new Core.Failed("invalid_command", "Invalid plan command.")
       const value = command.value
-      const finishing = value._tag === "SetNodeStatus" && value.status === "done"
+      const finishing = isPersonOnlyPlanCommand(value)
       if (finishing !== (tag === review)) return new Core.Failed("wrong_operation", "Use the matching plan operation.")
+      const rawKey = input["idempotencyKey"]
+      let scopedKey: string | undefined
+      let requestHash: string | undefined
+      if (rawKey !== undefined) {
+        const parsedKey = decodeIdempotencyKey(rawKey)
+        if (parsedKey._tag === "None") {
+          return new Core.Failed("invalid_idempotency_key", "Invalid idempotency key.")
+        }
+        scopedKey = `${tag}:${tx.subject}:${tx.act ?? "person"}:${parsedKey.value}`
+        requestHash = canonicalHash({ shard, tag, command: value })
+        const prior = exec<{
+          readonly request_hash: string
+          readonly journal_seq: number
+          readonly output_json: string
+          readonly cause_json: string
+        }>(
+          "SELECT request_hash, journal_seq, output_json, cause_json FROM plan_idempotency WHERE idempotency_key = ?",
+          scopedKey
+        )[0]
+        if (prior !== undefined) {
+          if (prior.request_hash !== requestHash) {
+            return new Core.Failed(
+              "idempotency_conflict",
+              "Idempotency key was already used for a different plan command."
+            )
+          }
+          const savedOutput = decodePlanEventJson(prior.output_json)
+          const savedCause = decodeCauseReceiptJson(prior.cause_json)
+          pendingCommit = {
+            _tag: "Duplicate",
+            run: {
+              runId: savedCause.runId,
+              outputRef: savedCause.outputRef,
+              journalSeq: prior.journal_seq,
+              output: savedOutput,
+              cause: savedCause
+            }
+          }
+          return savedOutput
+        }
+      }
       const result = decidePlan(tree, value)
       if (result._tag === "Refused") return new Core.Failed("invalid_command", JSON.stringify(result))
       const nodeId = "id" in value ? value.id : value.nodeId
@@ -120,6 +206,10 @@ export const make = effect (
         return new Core.Failed("invalid_event_count", "The plan must produce one event.")
       }
       tx.put("plan", "tree", evolvePlan(tree, event))
+      pendingCommit = {
+        _tag: "Fresh",
+        idempotency: scopedKey === undefined || requestHash === undefined ? null : { key: scopedKey, requestHash }
+      }
       return event
     }
   })
@@ -132,20 +222,34 @@ export const make = effect (
     initialReceipts: receipts.map((receipt) => ({ receipt })),
     flows: [flow(update), flow(review)],
     projections: [{ name: read, title: "Plan tree", collection: "plan", capabilities: [readCapability(shard)] }],
-    persist: (requested) => effect {
-      const event = Schema.decodeUnknownSync(PlanEvent)(requested.output)
+    commit: (output, atSequence) => effect {
+      const intent = pendingCommit
+      pendingCommit = null
+      if (intent !== null && intent._tag === "Duplicate") {
+        return { _tag: "Duplicate" as const, run: intent.run }
+      }
+      const event = decodePlanEventSync(output)
       const current = try journal.head
+      const requested = atSequence(current.seq + 1)
+      const idempotency = intent?.idempotency ?? null
+      const commandKey: ShardProtocol.CommandKey = idempotency === null
+        ? ["plan", requested.runId]
+        : ["plan-idem", idempotency.key]
+      pendingIdempotencyWrite = idempotency === null
+        ? null
+        : { key: idempotency.key, requestHash: idempotency.requestHash, event, cause: requested.cause }
       const commit = try journal.submit({
         version: 2,
         shard,
         epoch: current.epoch,
         command: {
-          key: ["plan", requested.runId],
+          key: commandKey,
           stream,
           payload: { event, cause: requested.cause }
         }
       }).pipe(Effect.orDie)
       if (commit._tag !== "Accepted") return try Effect.die(new Error("Plan journal refused its own commit"))
+      return { _tag: "Committed" as const, run: requested }
     }
   })
   return {
