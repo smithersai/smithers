@@ -1042,3 +1042,24 @@ export {
   type WorkflowExecutionViewProps,
   type WorkflowNodeItem,
 } from "./workbench";
+
+export {
+  UphillGauge,
+  UphillScorecard,
+  UPHILL_CSS_ATTR,
+  uphillCss,
+  uphillScoreBand,
+  useUphillCss,
+  type UphillCategoryData,
+  type UphillChangeData,
+  type UphillComparisonScoreData,
+  type UphillGaugeProps,
+  type UphillGaugeSize,
+  type UphillHistoryPointData,
+  type UphillItemData,
+  type UphillMetricData,
+  type UphillOpportunityData,
+  type UphillReportData,
+  type UphillScoreBand,
+  type UphillScorecardProps,
+} from "./uphill";

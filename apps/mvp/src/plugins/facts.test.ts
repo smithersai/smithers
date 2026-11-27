@@ -6,6 +6,7 @@ import { Load } from "@smthrs/plugin"
 import { Effect } from "effect"
 import { describe, expect, test } from "vitest"
 import factory from "../../plugins/factory/plugin.json" with { type: "json" }
+import uphill from "../../plugins/uphill/plugin.json" with { type: "json" }
 import queue from "../../plugins/queue/plugin.json" with { type: "json" }
 import { registry } from "../flows/registry.vibe"
 import { POINTS } from "./contract"
@@ -169,4 +170,12 @@ describe("trust boundaries", () => {
   test("only a compiled plugin draws with React in the app's realm", () => {
     expect(reasons(load({ tier: "repository", manifest: queue }))).toContain("unsupported_point")
   })
+})
+
+test("the uphill plugin loads with nothing refused: scorecard view, repo tab, /uphill command and keys", () => {
+  const loaded = load({ tier: "built-in", manifest: uphill })
+  expect(loaded.refused).toEqual([])
+  expect(loaded.contributions.views.map((view) => view.id)).toEqual(["uphill/scorecard"])
+  expect(loaded.contributions.slots.map((slot) => slot.id)).toEqual(["uphill/tab"])
+  expect(loaded.contributions.commands.map((command) => command.slash?.name)).toEqual(["uphill"])
 })

@@ -1,0 +1,47 @@
+{
+  "apiVersion": 1,
+  "id": "uphill",
+  "version": "0.1.0",
+  "title": "Uphill",
+  "description": "Continuous metrics, Lighthouse-style score gauges, and ranked hill-climbing opportunities over repository feeds.",
+  "requires": { "api": "^1.0.0" },
+  "capabilities": [],
+  "uses": ["app/navigate"],
+  "contributes": {
+    "views": [{
+      "id": "uphill/scorecard",
+      "title": "Uphill",
+      "scope": "repository",
+      "path": "",
+      "sizes": ["full"],
+      "minimum": "anyone",
+      "reads": ["core/feeds", "core/feed"],
+      "render": { "kind": "component", "export": "Uphill" },
+      "events": [
+        { "name": "next", "local": true },
+        { "name": "previous", "local": true }
+      ]
+    }],
+    "slots": [{
+      "slot": "repo.tabs",
+      "id": "uphill/tab",
+      "order": 20,
+      "minimum": "anyone",
+      "reads": ["core/feeds"],
+      "render": { "kind": "component", "export": "RepoTab" }
+    }],
+    "commands": [{
+      "id": "uphill/open",
+      "flow": "app/navigate",
+      "args": { "to": "/{repo}/-/uphill" },
+      "title": "Uphill",
+      "minimum": "anyone",
+      "slash": { "name": "uphill" },
+      "palette": true
+    }],
+    "keybindings": [
+      { "key": "j", "event": "next", "when": "view == uphill/scorecard && !focus.input" },
+      { "key": "k", "event": "previous", "when": "view == uphill/scorecard && !focus.input" }
+    ]
+  }
+}

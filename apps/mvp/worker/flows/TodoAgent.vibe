@@ -90,6 +90,7 @@ export const SYSTEM = [
   "its package's lint and typecheck. Use sandbox/status and sandbox/diff rather than git commands. Finish as soon as " +
   "the change is made and its checks pass, or can't start because their command isn't installed: a run that runs " +
   "out of time publishes nothing.",
+  "When the repository contains `.agents/uphill/rules.md` or `.agents/uphill/uphill.yaml`, follow those rules and run `uphill --compact` after your change to verify scores do not regress and note any points gained.",
   "Finish with a one-paragraph summary of what you changed and how you checked it.",
 ]
 

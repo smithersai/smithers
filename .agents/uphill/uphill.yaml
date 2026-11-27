@@ -1,0 +1,55 @@
+# Smithers continuous metrics and hill climbing (wevm/uphill).
+# Run `uphill` to score every category and list top opportunities, or `uphill --compact` in agent loops.
+
+correctness:
+  run: bun .agents/uphill/metrics/hygiene.ts
+  # Escape hatches weaken TypeScript and VibeLang guarantees across SDK and app boundaries.
+  explicit-any:
+    description: "Avoid explicit `any` annotations and `as any` casts; model data with Effect Schema or Zod."
+    score: sum
+    poor: 40
+  # Type-checker suppressions hide real API drift across packages.
+  ts-suppressions:
+    description: "Do not add @ts-ignore, @ts-expect-error, or @ts-nocheck in production sources."
+    score: sum
+    poor: 20
+  # apps/mvp/AGENTS.md: UI state lives in TanStack DB collections, never React useState/useEffect.
+  react-state-leaks:
+    description: "Never use React useState or useEffect in apps/mvp components; keep UI state in TanStack DB collections."
+  # AGENTS.md DUR-4: every model call must go through a durable flow step.
+  direct-model-stream:
+    description: "Never call Model.stream directly in app or worker code; route model calls through durable flow steps."
+
+architecture:
+  run: bun .agents/uphill/metrics/architecture.ts
+  # Large source files hide coupling and slow agent navigation; split above 600 LOC.
+  oversized-files:
+    description: "Keep production source modules focused and under 600 lines."
+    score: sum
+    poor: 80
+  # Unresolved TODO/FIXME/HACK markers accumulate silent tech debt (AGENTS.md zero tech debt).
+  todo-markers:
+    description: "Resolve or track TODO/FIXME/HACK markers in the maintainer app instead of leaving them in source."
+    score: sum
+    poor: 40
+  # Every built-in plugin manifest must declare apiVersion 1 and register in src/plugins/manifests.ts.
+  plugin-boundary:
+    description: "Register every built-in UI plugin manifest in apps/mvp/src/plugins/manifests.ts with apiVersion 1."
+
+footprint:
+  run: bun .agents/uphill/metrics/footprint.ts
+  # Keep the source footprint lean across app, plugins, worker, rpc, and ui surfaces.
+  source-surface:
+    description: "Keep core source surfaces lean; prefer shared SDK primitives over duplicated app code."
+    score: p90
+    poor: 2MB
+
+documentation:
+  run: bun .agents/uphill/metrics/docs.ts
+  # Core architecture and feature docs must stay present and substantial.
+  core-docs:
+    description: "Document every shipped feature in apps/mvp/docs/features/ and keep AGENTS.md current."
+  # Broken relative links in feature docs erode agent and maintainer trust.
+  broken-doc-links:
+    description: "Keep all relative links in apps/mvp/docs/features/*.md valid."
+    poor: 10

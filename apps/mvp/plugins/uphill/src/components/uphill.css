@@ -1,0 +1,17 @@
+.uphill-plugin-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 1080px;
+}
+
+.uphill-plugin-tab-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.uphill-plugin-rules {
+  border-top: 1px solid var(--sui-border, rgba(127, 127, 127, 0.2));
+  padding-top: 1rem;
+}

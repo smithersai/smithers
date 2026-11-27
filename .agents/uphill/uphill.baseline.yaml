@@ -1,0 +1,52 @@
+# Each measurement's `baseline`, the size, count, or check `uphill --update` accepted, and its
+# `target`. Edit a target here, and each run reports what changed since the baseline.
+
+correctness:
+  explicit-any:
+    "*": { target: 0 }
+    apps/mvp/plugins: { baseline: 0 }
+    apps/mvp/src: { baseline: 15 }
+    apps/mvp/worker: { baseline: 19 }
+    packages/rpc/src: { baseline: 0 }
+    packages/smithers/ui/src: { baseline: 0 }
+  ts-suppressions:
+    "*": { target: 0 }
+    apps/mvp/plugins: { baseline: 0 }
+    apps/mvp/src: { baseline: 0 }
+    apps/mvp/worker: { baseline: 0 }
+    packages/rpc/src: { baseline: 0 }
+    packages/smithers/ui/src: { baseline: 0 }
+  react-state-leaks:
+    "*": { baseline: pass }
+  direct-model-stream:
+    "*": { baseline: pass }
+
+architecture:
+  oversized-files:
+    "*": { target: 0 }
+    apps/mvp/plugins: { baseline: 3 }
+    apps/mvp/src: { baseline: 17 }
+    apps/mvp/worker: { baseline: 26 }
+    packages/rpc/src: { baseline: 4 }
+  todo-markers:
+    "*": { target: 0 }
+    apps/mvp/plugins: { baseline: 4 }
+    apps/mvp/src: { baseline: 360 }
+    apps/mvp/worker: { baseline: 351 }
+    packages/rpc/src: { baseline: 45 }
+  plugin-boundary:
+    "*": { baseline: pass }
+
+footprint:
+  source-surface:
+    "*": { target: 500kB }
+    apps/mvp/plugins: { baseline: 298553B }
+    apps/mvp/src: { baseline: 5615053B }
+    apps/mvp/worker: { baseline: 5248568B }
+    packages/rpc/src: { baseline: 675175B }
+    packages/smithers/ui/src: { baseline: 1415816B }
+
+documentation:
+  core-docs:
+    "*": { baseline: pass }
+  broken-doc-links: { baseline: 2, target: 0 }

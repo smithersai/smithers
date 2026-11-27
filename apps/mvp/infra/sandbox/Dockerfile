@@ -42,13 +42,16 @@ ARG JJ_VERSION=0.39.0
 ARG JJ_SHA256_AMD64=8da8d96e9c8696c21ad47847a63d533e249acb0449d9af0f0562b5ea7b024f04
 ARG JJ_SHA256_ARM64=15bbb0199adf57929d1e3cd90ae0b47356858cbe374814769815a1fb87d5ad1d
 ARG CLAUDE_AGENT_ACP_VERSION=0.23.1
+ARG UPHILL_VERSION=0.0.11
+ARG UPHILL_SHA256_AMD64=63a1fe1220dc773274eb12d0ebff766f12de40d018c6de0c43fddf8da81e8c98
+ARG UPHILL_SHA256_ARM64=d96def9046f75bfc3679ed571a02239e825582a54c917b69d61f7770767440ef
 RUN apt-get update \
   && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl git less libatomic1 \
        python3 python3-pip python3-venv tini tmux \
   && rm -rf /var/lib/apt/lists/* \
   && case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
-       amd64) arch=x64; sum=$NODE_SHA256_AMD64; goarch=amd64; gosum=$GO_SHA256_AMD64; jjarch=x86_64; jjsum=$JJ_SHA256_AMD64 ;; \
-       arm64) arch=arm64; sum=$NODE_SHA256_ARM64; goarch=arm64; gosum=$GO_SHA256_ARM64; jjarch=aarch64; jjsum=$JJ_SHA256_ARM64 ;; \
+       amd64) arch=x64; sum=$NODE_SHA256_AMD64; goarch=amd64; gosum=$GO_SHA256_AMD64; jjarch=x86_64; jjsum=$JJ_SHA256_AMD64; uphillsum=$UPHILL_SHA256_AMD64 ;; \
+       arm64) arch=arm64; sum=$NODE_SHA256_ARM64; goarch=arm64; gosum=$GO_SHA256_ARM64; jjarch=aarch64; jjsum=$JJ_SHA256_ARM64; uphillsum=$UPHILL_SHA256_ARM64 ;; \
        *) echo "no Node or Go build for this architecture" >&2; exit 1 ;; \
      esac \
   && curl -fsSLo /tmp/node.tar.gz "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-$arch.tar.gz" \
@@ -64,6 +67,10 @@ RUN apt-get update \
   && echo "$jjsum  /tmp/jj.tar.gz" | sha256sum -c - \
   && tar -xzf /tmp/jj.tar.gz -C /usr/local/bin --no-same-owner ./jj \
   && rm /tmp/jj.tar.gz \
+  && curl -fsSLo /tmp/uphill.tar.gz "https://github.com/wevm/uphill/releases/download/v$UPHILL_VERSION/uphill-$jjarch-unknown-linux-musl.tar.gz" \
+  && echo "$uphillsum  /tmp/uphill.tar.gz" | sha256sum -c - \
+  && tar -xzf /tmp/uphill.tar.gz -C /usr/local/bin --no-same-owner uphill \
+  && rm /tmp/uphill.tar.gz \
   && npm install -g "pnpm@$PNPM_VERSION" "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" "@openai/codex@$CODEX_VERSION" \
        "@zed-industries/claude-agent-acp@$CLAUDE_AGENT_ACP_VERSION" \
   && npm cache clean --force \
