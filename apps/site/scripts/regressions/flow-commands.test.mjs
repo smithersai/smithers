@@ -5,7 +5,7 @@ import test from "node:test"
 const source = path => readFileSync(new URL(path, import.meta.url), "utf8")
 test("SD4-COPY-6 / sd4-missing-3 / p4-flows-5: flow instructions use registered personal-flow commands", () => {
   const page = source("../../docs/app/pages/flows.md")
-  const registry = source("../../../mvp/src/flows/registry.ts")
+  const registry = source("../../../mvp/src/flows/registry.vibe")
   const registered = new Set([...registry.matchAll(/command: "([^"]+)"/g)].map(match => match[1]))
   const commands = [...page.matchAll(/`\/([a-z][a-z0-9.-]*)(?:[ `])/g)].map(match => match[1])
   assert.ok(commands.includes("flow.new"))

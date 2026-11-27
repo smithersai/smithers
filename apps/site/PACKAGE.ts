@@ -247,7 +247,7 @@ const docsRegressionTest = Smithers.Shell.Test({
     Smithers.file("src/styles/starlight.css"),
     Smithers.file("//packages/smithers/flows/docs/quickstart.md"),
     Smithers.file("//packages/smithers/docs/reference/cli/tui.md"),
-    Smithers.file("//apps/mvp/src/flows/registry.ts"),
+    Smithers.file("//apps/mvp/src/flows/registry.vibe"),
     Smithers.file("//apps/mvp/src/screens/settings/SettingsScreen.tsx")
   ]
 })
