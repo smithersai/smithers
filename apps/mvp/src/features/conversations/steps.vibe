@@ -1,7 +1,6 @@
 import * as Creation from "../branch/creationSteps.vibe"
 import { Uuid } from "@smthrs/crypto"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
-import { Clock, Effect, Layer, Metric, Result } from "effect"
 import { requesterOf } from "../../flows/requests.vibe"
 import { BranchClient } from "../branch/api.vibe"
 import { CONVERSATION_NAMESPACE } from "../branch/contract"
@@ -41,7 +40,7 @@ export const failureOf = (refused: ArchiveNotTaken): ArchiveFailure =>
  * requester, `requesterOf`). A person's call that names none names nothing.
  */
 const targetOf = (conversationId: string | undefined) =>
-  Effect.map(FlowRuntime.FlowInstance, ({ executionId }) => {
+  map(FlowRuntime.FlowInstance, ({ executionId }) => {
     if (conversationId !== undefined) return { conversationId: conversationId.toLowerCase() }
     const requester = requesterOf(executionId)
     return requester !== executionId && isUuid(requester) ? { answerId: requester.toLowerCase() } : undefined
@@ -57,35 +56,33 @@ const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}
 export const requestArchive = (
   request: { readonly conversationId?: string | undefined; readonly archived: boolean; readonly at: number },
 ) =>
-  Effect.gen(function* () {
-    const startedAt = yield* Clock.currentTimeMillis
-    const target = yield* targetOf(request.conversationId)
+  effect {
+    const startedAt = try Clock.currentTimeMillis
+    const target = try targetOf(request.conversationId)
     const answer = target === undefined
       ? Result.fail(new ArchiveNotTaken({ status: 400 }))
-      : yield* Effect.result(
-        (yield* ConversationsClient).archive({ ...target, archived: request.archived, at: request.at }),
-      )
+      : try result((try ConversationsClient).archive({ ...target, archived: request.archived, at: request.at }))
     const failure = answer._tag === "Failure" ? failureOf(answer.failure) : undefined
     const outcome = failure === undefined
       ? "sent"
       : failure._tag === "@smthrs/mvp/conversations/ArchiveRefused"
       ? "refused"
       : "unsent"
-    yield* Metric.update(Metric.withAttributes(archives, { archived: String(request.archived), outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ outcome })
-    yield* Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("conversation.archive").pipe(
-      Effect.annotateLogs({
+    try Metric.update(Metric.withAttributes(archives, { archived: String(request.archived), outcome }), 1)
+    try annotateCurrentSpan({ outcome })
+    try (
+      logWithLevel(failure === undefined ? "Info" : "Warn")("conversation.archive") |> annotateLogs(%, {
         ...(target ?? {}),
         archived: request.archived,
         outcome,
         ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
-        durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+        durationMs: (try Clock.currentTimeMillis) - startedAt,
         feature: "conversations",
-      }),
+      })
     )
-    if (failure !== undefined) return yield* Effect.fail(failure)
+    if (failure !== undefined) throw failure
     return { archived: request.archived }
-  }).pipe(Effect.withSpan("conversation.archive"))
+  } |> withSpan(%, "conversation.archive")
 
 /** `owner/name` of a repository id, `github/<owner>/<name>`. */
 const repoOf = (repoId: string) => repoId.split("/").slice(1).join("/")
@@ -100,14 +97,14 @@ const repoOf = (repoId: string) => repoId.split("/").slice(1).join("/")
 export const requestNew = (
   request: { readonly repo?: string | undefined; readonly branch?: string | undefined; readonly at: number },
 ) =>
-  Effect.gen(function* () {
-    const startedAt = yield* Clock.currentTimeMillis
-    const { executionId } = yield* FlowRuntime.FlowInstance
+  effect {
+    const startedAt = try Clock.currentTimeMillis
+    const { executionId } = try FlowRuntime.FlowInstance
     // The run's own request: a branch the app tracks answers only to the run that made it.
-    const requestId = yield* Uuid.v5(CONVERSATION_NAMESPACE, executionId).pipe(Effect.orDie)
-    const branch = request.branch ?? newBranchName(requestId)
+    const requestId = try (Uuid.v5(CONVERSATION_NAMESPACE, executionId) |> orDie(%))
+    const branch = request.branch ?? (try sync(() => newBranchName(requestId)))
     const repository = request.repo === undefined ? {} : (([owner, name]) => ({ owner, name }))(parts(request.repo))
-    const answer = yield* Effect.result(
+    const answer = try result(
       Creation.run({ ...repository, ref: branch, request: requestId, openedAt: request.at }),
     )
     const failure = answer._tag === "Failure" ? answer.failure : undefined
@@ -116,24 +113,24 @@ export const requestNew = (
       : failure._tag === "@smthrs/mvp/branch/BranchTrackRefused"
       ? (failure as BranchTrackRefused).reason
       : "unavailable"
-    yield* Metric.update(Metric.withAttributes(news, { outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ outcome })
-    yield* Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("conversation.new").pipe(
-      Effect.annotateLogs({
+    try Metric.update(Metric.withAttributes(news, { outcome }), 1)
+    try annotateCurrentSpan({ outcome })
+    try (
+      logWithLevel(failure === undefined ? "Info" : "Warn")("conversation.new") |> annotateLogs(%, {
         outcome,
         ...(answer._tag === "Success" ? { conversationId: answer.success.conversationId } : {}),
-        durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+        durationMs: (try Clock.currentTimeMillis) - startedAt,
         feature: "conversations",
-      }),
+      })
     )
-    if (answer._tag === "Failure") return yield* Effect.fail(failure!)
+    if (answer._tag === "Failure") throw failure!
     const made = answer.success
-    return { ...made, path: branchPath(request.repo ?? repoOf(made.repoId), made.name) } satisfies Made
-  }).pipe(Effect.withSpan("conversation.new"))
+    return { ...made, path: try sync(() => branchPath(request.repo ?? repoOf(made.repoId), made.name)) } satisfies Made
+  } |> withSpan(%, "conversation.new")
 
 /** `at`, or the clock's now: the time an act was taken. */
 export const stamp = <P extends object>(payload: P & { readonly at?: number | undefined }) =>
-  Effect.map(Clock.currentTimeMillis, (now) => ({ ...payload, at: payload.at ?? now }))
+  map(Clock.currentTimeMillis, (now) => ({ ...payload, at: payload.at ?? now }))
 
 /** Registers `conversation/archive` and `conversation/new` with their steps. */
 export const registration = Layer.merge(
@@ -149,4 +146,6 @@ export const registration = Layer.merge(
 
 /** Your conversations' flows, asking ChatApi on `origin`. Needs the host's `HttpClient` and navigation's `Tabs`. */
 export const registrationAt = (origin: string) =>
-  Layer.merge(registration, Creation.registration(origin)).pipe(Layer.provide(ConversationsClient.layer({ origin })), Layer.provide(BranchClient.layer({ origin })))
+  Layer.merge(registration, Creation.registration(origin))
+    |> Layer.provide(%, ConversationsClient.layer({ origin }))
+    |> Layer.provide(%, BranchClient.layer({ origin }))

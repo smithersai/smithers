@@ -1,5 +1,5 @@
 // The factory's tab (plugins/factory/src/tab.ts) over an injected host (TEST-7) whose feed queries answer the rows a
-// test pushes, kept to the `params` asked as the core keeps them (src/plugins/plugins.ts, `queryOf`): each
+// test pushes, kept to the `params` asked as the core keeps them (src/plugins/plugins.vibe, `queryOf`): each
 // repository's status from its own documents only, an on-demand document followed while it shows, the ask the strip
 // answers (a `core/feed-items` row of `for_will` that the status says waits), and the views it opens.
 import { Host } from "@smthrs/plugin"

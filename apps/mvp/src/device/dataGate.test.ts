@@ -24,7 +24,7 @@ const ACTS: Readonly<Record<string, string>> = {
   "src/resumeAdmissions.vibe": "finishes the device's own queued writes after a reload; renders nothing",
   "src/admissionSource.vibe": "admits the device's own queued writes; renders nothing",
   "src/features/timeline/notice.vibe": "checks whether its own notice is already raised before it raises one",
-  "src/features/conversations/pin.ts": "names the routed branch in a pin's payload; renders nothing",
+  "src/features/conversations/pin.vibe": "names the routed branch in a pin's payload; renders nothing",
   "src/features/pulls/refresh.ts": "adds the routed pull request's number to its shape's request; renders nothing",
   "src/features/views/minimize.ts": "reads where a minimized view came from, to go back there; renders nothing",
   "src/features/chat/chat.ts": "Pin's action reads the person's pin state and the routed conversation's messages to name what it pins; every query it hands a page is the store's gated one",

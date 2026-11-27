@@ -1,0 +1,69 @@
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { ARCHIVE_ROUTE, ARCHIVE_WITHIN } from "./contract"
+import { type ArchiveRequest, Archived, Refusal } from "./schema"
+
+// ChatApi's archive route as `conversation/archive`'s step calls it (docs/features/conversations.md#the-routes),
+// through Effect's HttpClient, with one deadline covering the whole exchange.
+
+/**
+ * ChatApi didn't take the act: no whole answer within the deadline, or no network (`status` absent), or a refusal
+ * (`status`, with ChatApi's `code` when its body had one).
+ */
+export error ArchiveNotTaken {
+  reason?: "unreachable" | "timeout"
+  status?: number
+  code?: string
+}
+
+const decodeRefusal = Schema.decodeUnknownEffect(Refusal)
+const decodeArchived = Schema.decodeUnknownEffect(Archived)
+
+/** The archive route on ChatApi at `origin`. */
+export class ConversationsClient extends Context.Service<
+  ConversationsClient,
+  {
+    /** `POST /api/conversations/archive`: archive a conversation for the person, or bring it back. */
+    readonly archive: (request: ArchiveRequest) => typeof Archived.Type!ArchiveNotTaken
+  }
+>()("@smthrs/mvp/conversations/ConversationsClient") {
+  /** The client over the host's `HttpClient`: a `200` took the act; anything else is refused. */
+  static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
+    Layer.effect(
+      ConversationsClient,
+      effect {
+        const client = try HttpClient.HttpClient
+        return ConversationsClient.of({
+          archive: Effect.fn("conversation.archive.post")(effect (request: ArchiveRequest) => {
+            const response = try (
+              client.execute(
+                HttpClientRequest.post(`${options.origin}${ARCHIVE_ROUTE}`) |> HttpClientRequest.bodyJsonUnsafe(%, request),
+              ) |> mapError(%, () => new ArchiveNotTaken({ reason: "unreachable" }))
+            )
+            try annotateCurrentSpan({ "http.response.status_code": response.status })
+            if (response.status !== 200) {
+              const refusal = try (response.json |> flatMap(%, decodeRefusal) |> option(%))
+              const code = match (refusal) {
+                when { _tag: "Some", let value }: { code: value.code };
+                default: {};
+              }
+              throw new ArchiveNotTaken({ status: response.status, ...code })
+            }
+            // A 200 took the act whatever its body says: one it can't read is logged, never sent again.
+            return try (
+              response.json
+                |> flatMap(%, decodeArchived)
+                |> Effect.catch(%, () =>
+                  Effect.as(logWarning("conversation.archive.malformed") |> annotateLogs(%, { status: 200 }), {
+                    archived: request.archived,
+                  }))
+            )
+          }, (archiving) =>
+            // Interrupting the request aborts its fetch, so a stalled body stops too.
+            timeoutOrElse(archiving, {
+              duration: options.within ?? ARCHIVE_WITHIN,
+              orElse: () => fail(new ArchiveNotTaken({ reason: "timeout" })),
+            })),
+        })
+      },
+    )
+}

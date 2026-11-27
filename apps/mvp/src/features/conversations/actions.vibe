@@ -1,4 +1,3 @@
-import { Clock, Effect, Metric, Option } from "effect"
 import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { timeOf } from "../attention/entries"
 import { dropped } from "./metrics"
@@ -20,29 +19,28 @@ export const archiveRun = (conversationId: string, at: number) => `conversation-
  * run to end; when it can't land, the act leaves the device, unless a later act replaced it, and a log line
  * `conversations.dropped` and a count of `dropped` say so.
  */
-const send = (conversationId: string, archived: boolean, at: number) =>
-  Effect.gen(function* () {
-    const { pending, scope } = yield* ConversationsStore
-    const drop = (reason: string) =>
-      Effect.gen(function* () {
-        const now = yield* pending.get(conversationId)
-        if (Option.isNone(now) || now.value.at !== at) return
-        yield* pending.delete(conversationId)
-        yield* Metric.update(Metric.withAttributes(dropped, { reason }), 1)
-        yield* Effect.logWarning("conversations.dropped").pipe(
-          Effect.annotateLogs({ conversationId, archived, reason, feature: "conversations" }),
-        )
-      }).pipe(Effect.orDie)
-    yield* (yield* FlowDispatch).dispatch(
+effect function send(conversationId: string, archived: boolean, at: number) {
+  const { pending, scope } = try ConversationsStore
+  const drop = (reason: string) =>
+    orDie(effect {
+      const now = try pending.get(conversationId)
+      if (Option.isNone(now) || now.value.at !== at) return
+      try pending.delete(conversationId)
+      try Metric.update(Metric.withAttributes(dropped, { reason }), 1)
+      try (logWarning("conversations.dropped") |> annotateLogs(%, { conversationId, archived, reason, feature: "conversations" }))
+    })
+  const flows = try FlowDispatch
+  try (
+    flows.dispatch(
       "conversation/archive",
       { conversationId, archived, at },
       { door: "button", executionId: archiveRun(conversationId, at) },
-    ).pipe(
-      Effect.flatMap((done) => (done._tag === "Done" ? Effect.void : Effect.fail(done.error))),
-      Effect.catch((error) => drop(error._tag)),
-      Effect.forkIn(scope),
     )
-  })
+      |> flatMap(%, (done) => (done._tag === "Done" ? Effect.void : fail(done.error)))
+      |> Effect.catch(%, (error) => drop(error._tag))
+      |> forkIn(%, scope)
+  )
+}
 
 /**
  * Archives conversation `conversationId` for this person, or, with `archived` false, brings it back: at once on this
@@ -50,66 +48,68 @@ const send = (conversationId: string, archived: boolean, at: number) =>
  * later than the last this device did or saw for it.
  */
 export const archive = (conversationId: string, archived: boolean) =>
-  Effect.gen(function* () {
-    const { mine, pending } = yield* ConversationsStore
-    const held = yield* pending.get(conversationId)
-    const row = yield* mine.get(conversationId)
+  effect {
+    const { mine, pending } = try ConversationsStore
+    const held = try pending.get(conversationId)
+    const row = try mine.get(conversationId)
     // Later than anything this device has seen for it: a second press in the same millisecond, or a clock behind the
     // server's, still wins.
     const at = Math.max(
-      yield* Clock.currentTimeMillis,
-      Option.match(held, { onNone: () => 0, onSome: (act) => act.at + 1 }),
-      Option.match(row, { onNone: () => 0, onSome: (synced) => timeOf(synced.changedAt) + 1 }),
+      try Clock.currentTimeMillis,
+      match (held) {
+        when { _tag: "Some", let value }: value.at + 1;
+        default: 0;
+      },
+      try sync(() => Option.match(row, { onNone: () => 0, onSome: (synced) => timeOf(synced.changedAt) + 1 })),
     )
     if (Option.isSome(held)) {
-      yield* pending.update(conversationId, (draft) => {
+      try pending.update(conversationId, (draft) => {
         draft.archived = archived
         draft.at = at
       })
-    } else yield* pending.insert({ conversationId, archived, at })
-    yield* send(conversationId, archived, at)
-  }).pipe(
+    } else try pending.insert({ conversationId, archived, at })
+    try send(conversationId, archived, at)
+  }
     // A local collection refuses only a row its own schema rejects, which these never are: a bug, not a state.
-    Effect.orDie,
-    Effect.withSpan("conversations.archive"),
-  )
+    |> orDie(%)
+    |> withSpan(%, "conversations.archive")
 
 /**
  * Follows every act this device still holds, as a page opening does after a reload: each joins its run, or starts it if
  * the tab closed before it could, so an act that can't land still leaves the device.
  */
-export const resume = Effect.gen(function* () {
-  const { pending } = yield* ConversationsStore
+export const resume = orDie(effect {
+  const { pending } = try ConversationsStore
   // Once the device has restored them; a device store that can't be read has none to follow.
-  yield* Effect.ignore(pending.restored)
-  for (const act of yield* pending.toArray) yield* send(act.conversationId, act.archived, act.at)
-}).pipe(Effect.orDie)
+  try ignore(pending.restored)
+  for (const act of try pending.toArray) try send(act.conversationId, act.archived, act.at)
+})
 
 /**
  * When opening branch `branch` of `owner/repo` happens: now, or, if the device saw a later act on its conversation (a
  * clock behind the server's, or an archive pressed this millisecond), just after it, so the open wins over it.
  */
-export const openAt = (owner: string, repo: string, branch: string) =>
-  Effect.gen(function* () {
-    const { mine, pending } = yield* ConversationsStore
-    const row = (yield* mine.toArray).find((mineRow) =>
-      mineRow.owner.toLowerCase() === owner.toLowerCase() && mineRow.repo.toLowerCase() === repo.toLowerCase() &&
-      mineRow.branch === branch
-    )
-    const act = row === undefined ? Option.none() : yield* pending.get(row.conversationId)
-    return Math.max(
-      yield* Clock.currentTimeMillis,
-      row === undefined ? 0 : timeOf(row.changedAt) + 1,
-      Option.match(act, { onNone: () => 0, onSome: (held) => held.at + 1 }),
-    )
-  })
+export effect function openAt(owner: string, repo: string, branch: string) {
+  const { mine, pending } = try ConversationsStore
+  const row = (try mine.toArray).find((mineRow) =>
+    mineRow.owner.toLowerCase() === owner.toLowerCase() && mineRow.repo.toLowerCase() === repo.toLowerCase() &&
+    mineRow.branch === branch
+  )
+  const act = row === undefined ? Option.none() : try pending.get(row.conversationId)
+  return Math.max(
+    try Clock.currentTimeMillis,
+    row === undefined ? 0 : (try sync(() => timeOf(row.changedAt))) + 1,
+    match (act) {
+      when { _tag: "Some", let value }: value.at + 1;
+      default: 0;
+    },
+  )
+}
 
 /** Searches the list for `text`: every word, in a conversation's repository or branch name. */
 export const search = (text: string) =>
-  Effect.flatMap(ConversationsStore, ({ search }) =>
-    Effect.orDie(search.update(SEARCH, (draft) => void (draft.text = text))))
+  flatMap(ConversationsStore, ({ search }) => orDie(search.update(SEARCH, (draft) => void (draft.text = text))))
 
 /** Shows the archived conversations instead (`true`), or those that aren't. */
 export const showArchived = (archived: boolean) =>
-  Effect.flatMap(ConversationsStore, ({ search }) =>
-    Effect.orDie(search.update(SEARCH, (draft) => void (draft.archived = archived))))
+  flatMap(ConversationsStore, ({ search }) => orDie(search.update(SEARCH, (draft) => void (draft.archived = archived))))

@@ -1,4 +1,3 @@
-import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary.vibe"
 import type { FlowDispatch } from "../../flows/dispatch.vibe"
 import { archive, resume, search, showArchived } from "./actions"
@@ -36,21 +35,21 @@ export class Conversations extends Context.Service<
   static readonly layer = (config: ConversationsConfig) =>
     Layer.effect(
       Conversations,
-      Effect.gen(function* () {
-        const store = yield* ConversationsStore
+      effect {
+        const store = try ConversationsStore
         // Acts a closed tab left on the device follow their runs again, in the background.
-        yield* Effect.forkIn(resume, store.scope)
-        const { runPromise: run } = runners(yield* Effect.context<ConversationsStore | FlowDispatch>(), "conversations")
+        try forkIn(resume, store.scope)
+        const { runPromise: run } = runners(try Effect.context<ConversationsStore | FlowDispatch>(), "conversations")
         return Conversations.of({
           queries: { list: store.listState.tanstack, search: store.searchState.tanstack },
           actions: {
             archive: (conversationId, archived) => run(archive(conversationId, archived)),
-            search: (text) => run(Effect.asVoid(search(text))),
-            showArchived: (archived) => run(Effect.asVoid(showArchived(archived))),
+            search: (text) => run(asVoid(search(text))),
+            showArchived: (archived) => run(asVoid(showArchived(archived))),
           },
         })
-      }),
-    ).pipe(Layer.provideMerge(ConversationsStore.layer(config)))
+      },
+    ) |> Layer.provideMerge(%, ConversationsStore.layer(config))
 }
 
 /** The conversations layer's value: what frontends get. */

@@ -1,6 +1,5 @@
 import type { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Layer, Metric, type Scope, Stream } from "effect"
 import { ConversationOwners } from "./owners"
 import type { Source } from "../repo/gate"
 import { observeShape } from "../issues/shapeSync.vibe"
@@ -51,13 +50,13 @@ export class ConversationsStore extends Context.Service<
   static readonly layer = (_config: ConversationsConfig) =>
     Layer.effect(
       ConversationsStore,
-      Effect.gen(function* () {
-        const scope = yield* Effect.scope
+      effect {
+        const scope = try Effect.scope
         // The rows sync once, below every store that attributes a conversation's rows by them (owners.ts).
-        const owners = yield* ConversationOwners
+        const owners = try ConversationOwners
         const { mine } = owners
-        yield* observeShape(mine.sync, "conversations.shape.sync", shapeTransitions).pipe(Effect.forkIn(scope, { startImmediately: true }))
-        const pending = yield* Collection.persisted<Pending, string>({
+        try forkIn(observeShape(mine.sync, "conversations.shape.sync", shapeTransitions), scope, { startImmediately: true })
+        const pending = try Collection.persisted<Pending, string>({
           id: "conversation-pending",
           schema: Pending,
           getKey: (row) => row.conversationId,
@@ -65,14 +64,14 @@ export class ConversationsStore extends Context.Service<
         })
         // Expose the store only after local pending acts are restored. An empty pre-restore snapshot must not look
         // settled to a consumer while the resume fiber is still waiting for the device's rows.
-        yield* Effect.ignore(pending.restored)
-        const search = yield* Collection.local<Search, string>({
+        try ignore(pending.restored)
+        const search = try Collection.local<Search, string>({
           id: "conversation-search",
           schema: Search,
           getKey: (row) => row.id,
           initialData: [{ id: SEARCH, text: "", archived: false, loaded: false }],
         })
-        const list = yield* Collection.local<Listed, string>({
+        const list = try Collection.local<Listed, string>({
           id: "conversation-list",
           schema: Listed,
           getKey: (row) => row.conversationId,
@@ -80,21 +79,22 @@ export class ConversationsStore extends Context.Service<
 
         // The list: worked out again whenever a row, an act or the search changes.
         let projection: string | undefined
-        const work = Effect.gen(function* () {
-          const rows = yield* mine.toArray
-          const acts = yield* pending.toArray
+        // Local collections refuse only rows their own schema rejects, which `listOf` never makes: a bug, not a state.
+        const work = orDie(effect {
+          const rows = try mine.toArray
+          const acts = try pending.toArray
           // The search always holds its one row.
-          const showing = (yield* search.toArray)[0]!
-          const next = listOf(rows, acts, showing)
+          const showing = (try search.toArray)[0]!
+          const next = try sync(() => listOf(rows, acts, showing))
           const keep = new Set(next.map((row) => row.conversationId))
-          const before = new Map((yield* list.toArray).map((row) => [row.conversationId, row]))
+          const before = new Map((try list.toArray).map((row) => [row.conversationId, row]))
           const gone = [...before.keys()].filter((id) => !keep.has(id))
-          if (gone.length > 0) yield* list.delete(gone)
+          if (gone.length > 0) try list.delete(gone)
           for (const row of next) {
             const old = before.get(row.conversationId)
-            if (old === undefined) yield* list.insert(row)
+            if (old === undefined) try list.insert(row)
             else if ((Object.keys(row) as ReadonlyArray<keyof Listed>).some((field) => old[field] !== row[field])) {
-              yield* list.update(row.conversationId, (draft) => void Object.assign(draft, row))
+              try list.update(row.conversationId, (draft) => void Object.assign(draft, row))
             }
           }
           // Counts distinguish a pending shape, missing personal rows and a filtered list without recording content.
@@ -108,33 +108,34 @@ export class ConversationsStore extends Context.Service<
           const snapshot = JSON.stringify(fields)
           if (snapshot !== projection) {
             projection = snapshot
-            yield* Effect.gen(function* () {
-              yield* Metric.update(Metric.withAttributes(listUpdates, { archived: String(showing.archived), loaded: String(showing.loaded) }), 1)
-              yield* Effect.annotateCurrentSpan(fields)
-              yield* Effect.logInfo("conversations.list").pipe(Effect.annotateLogs(fields))
-            }).pipe(Effect.withSpan("conversations.list"))
+            try withSpan(effect {
+              try Metric.update(Metric.withAttributes(listUpdates, { archived: String(showing.archived), loaded: String(showing.loaded) }), 1)
+              try annotateCurrentSpan(fields)
+              try (logInfo("conversations.list") |> annotateLogs(%, fields))
+            }, "conversations.list")
           }
-          const done = landed(rows, acts)
-          if (done.length > 0) yield* pending.delete([...done])
-        }).pipe(
-          // Local collections refuse only rows their own schema rejects, which `listOf` never makes: a bug, not a state.
-          Effect.orDie,
+          const done = try sync(() => landed(rows, acts))
+          if (done.length > 0) try pending.delete([...done])
+        })
+        try (
+          Stream.mergeAll(
+            [
+              Stream.map(mine.changes({ initial: true }), () => undefined),
+              Stream.map(pending.changes({ initial: true }), () => undefined),
+              Stream.map(search.changes({ initial: true }), () => undefined),
+            ],
+            { concurrency: "unbounded" },
+          )
+            |> Stream.runForEach(%, () => work)
+            |> forkIn(%, scope, { startImmediately: true })
         )
-        yield* Stream.mergeAll(
-          [
-            Stream.map(mine.changes({ initial: true }), () => undefined),
-            Stream.map(pending.changes({ initial: true }), () => undefined),
-            Stream.map(search.changes({ initial: true }), () => undefined),
-          ],
-          { concurrency: "unbounded" },
-        ).pipe(Stream.runForEach(() => work), Effect.forkIn(scope, { startImmediately: true }))
 
         // Loaded: the device's rows restored and the first sync answered, or failed: the list says it is empty only then.
-        yield* Effect.gen(function* () {
-          yield* Effect.ignore(mine.restored)
-          yield* Effect.ignore(mine.preload)
-          yield* Effect.orDie(search.update(SEARCH, (draft) => void (draft.loaded = true)))
-        }).pipe(Effect.forkIn(scope, { startImmediately: true }))
+        try forkIn(effect {
+          try ignore(mine.restored)
+          try ignore(mine.preload)
+          try orDie(search.update(SEARCH, (draft) => void (draft.loaded = true)))
+        }, scope, { startImmediately: true })
 
         return ConversationsStore.of({
           mine,
@@ -143,10 +144,10 @@ export class ConversationsStore extends Context.Service<
           list,
           // A refused or hidden repository's conversations leave the list, names included (ruling #4); `mine` and `list`
           // stay whole for reconciling the acts this device did.
-          listState: yield* listQuery((yield* owners.ofShown(list, "conversationId")) as unknown as Source<Listed>),
-          searchState: yield* searchQuery(search),
+          listState: try listQuery((try owners.ofShown(list, "conversationId")) as unknown as Source<Listed>),
+          searchState: try searchQuery(search),
           scope,
         })
-      }),
+      },
     )
 }

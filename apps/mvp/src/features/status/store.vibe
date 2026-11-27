@@ -1,7 +1,6 @@
 import { agentStatusTitle } from "@smthrs/ui"
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Layer, Metric, Scope, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { signedInShapeSource } from "../auth/source.vibe"
 import { AuthStore } from "../auth/store.vibe"
@@ -84,84 +83,86 @@ export class StatusStore extends Context.Service<
   static readonly layer = (config: StatusConfig) =>
     Layer.effect(
       StatusStore,
-      Effect.gen(function* () {
-        const scope = yield* Effect.scope
-        const chat = yield* ChatStore
+      effect {
+        const scope = try Effect.scope
+        const chat = try ChatStore
         const { messages } = chat
-        const flows = yield* FlowDispatch
-        const title = yield* TabTitle
-        const runs = yield* ElectricCollection.make<Run>({
-          id: "runs",
-          schema: Run,
-          getKey: (row) => row.id,
-          syncMode: "eager",
-          // Version 3: a run names its conversation (`conversationId`), what its wait shows through. Version 4: its
-          // repository (`repoId`), what an agent's question to the person names.
-          persist: { schemaVersion: 4 },
-          shape: {
-            url: `${config.origin}${RUNS_SHAPE_ROUTE}`,
-            columnMapper: ElectricCollection.snakeCamelMapper(),
-          },
-        }).pipe(Effect.provideService(ShapeSource.ShapeSource, signedInShapeSource(yield* ShapeSource.ShapeSource, yield* AuthStore)))
-        const local = yield* Collection.local<Local, string>({ id: "status-local", schema: Local, getKey: (row) => row.id })
-        const statuses = yield* statusesQuery(chat.shownMessages as unknown as Source<ShardRow>, runs, local)
+        const flows = try FlowDispatch
+        const title = try TabTitle
+        const runs = try (
+          ElectricCollection.make<Run>({
+            id: "runs",
+            schema: Run,
+            getKey: (row) => row.id,
+            syncMode: "eager",
+            // Version 3: a run names its conversation (`conversationId`), what its wait shows through. Version 4: its
+            // repository (`repoId`), what an agent's question to the person names.
+            persist: { schemaVersion: 4 },
+            shape: {
+              url: `${config.origin}${RUNS_SHAPE_ROUTE}`,
+              columnMapper: try sync(() => ElectricCollection.snakeCamelMapper()),
+            },
+          }) |> provideService(%, ShapeSource.ShapeSource, signedInShapeSource(try ShapeSource.ShapeSource, try AuthStore))
+        )
+        const local = try Collection.local<Local, string>({ id: "status-local", schema: Local, getKey: (row) => row.id })
+        const statuses = try statusesQuery(chat.shownMessages as unknown as Source<ShardRow>, runs, local)
         // A wait shows only through its run's conversation (decision 0110, the data gate): the home conversation's, or one
         // whose repository may show now. A run of a conversation this device has no row of shows no wait. An agent's
         // question has no conversation: its own repository must pass the data gate.
-        const owners = (yield* ConversationOwners).shown as unknown as Source<{ readonly conversationId: string }>
-        const shownRuns = yield* shownRunsQuery(chat.shownMessages as unknown as Source<Message>, runs, owners)
-        const visibleRuns = yield* (yield* RepoStore).gate(runs)
-        const waitRuns = yield* waitRunsQuery(chat.shownMessages as unknown as Source<Message>, runs, owners, visibleRuns as unknown as Source<Run>)
-        const waits = yield* waitsQuery(messages, waitRuns as unknown as Source<Run>)
-        const latest = yield* latestQuery(statuses)
-        const deliveries = yield* deliveriesQuery(runs)
+        const owners = (try ConversationOwners).shown as unknown as Source<{ readonly conversationId: string }>
+        const shownRuns = try shownRunsQuery(chat.shownMessages as unknown as Source<Message>, runs, owners)
+        const visibleRuns = try (try RepoStore).gate(runs)
+        const waitRuns = try waitRunsQuery(chat.shownMessages as unknown as Source<Message>, runs, owners, visibleRuns as unknown as Source<Run>)
+        const waits = try waitsQuery(messages, waitRuns as unknown as Source<Run>)
+        const latest = try latestQuery(statuses)
+        const deliveries = try deliveriesQuery(runs)
 
         // A branch's status (decision 0013 §1): its own messages against the same runs, built as chat opens the
         // conversation, so a tab that shows it finds it whole; the views read it beside chat's window of it.
         const branches = new Map<string, ConversationStatus>()
-        yield* chat.forEachOpened((opened) =>
-          Effect.gen(function* () {
+        try chat.forEachOpened((opened) =>
+          effect {
             // Through the data gate: a branch's statuses carry its waits' prompts, options and answers (Astra on 0c7b9f01).
             // Its rows keep the shard's sequence (`shardSeq`), which orders the header's latest answer as the transcript's.
-            const branchStatuses = yield* statusesQuery(opened.shownMessages as unknown as Source<ShardRow>, runs, local)
-            branches.set(opened.conversationId, { statuses: branchStatuses, latest: yield* latestQuery(branchStatuses) })
-          }).pipe(
-            Scope.provide(scope),
+            const branchStatuses = try statusesQuery(opened.shownMessages as unknown as Source<ShardRow>, runs, local)
+            branches.set(opened.conversationId, { statuses: branchStatuses, latest: try latestQuery(branchStatuses) })
+          }
+            |> Scope.provide(%, scope)
             // These queries' shape is fixed here; one TanStack DB can't build is a bug, as chat's own queries are.
-            Effect.orDie,
-          )
+            |> orDie(%)
         )
 
-        const background = <A>(stream: Stream.Stream<A>, each: (value: A) => Effect.Effect<void>) =>
-          stream.pipe(Stream.runForEach(each), Effect.forkIn(scope, { startImmediately: true }))
+        const background = <A>(stream: Stream.Stream<A>, each: (value: A) => void!!) =>
+          stream |> Stream.runForEach(%, each) |> forkIn(%, scope, { startImmediately: true })
 
         // Delivery: `run/deliver` for each question this tab sees answered, under one execution id per question, so the
         // engine starts it once per device however often the rows change.
-        yield* background(deliveries.rows, (rows) =>
-          Effect.forEach(rows, (row) =>
+        try background(deliveries.rows, (rows) =>
+          forEach(rows, (row) =>
             // An answered row that still needs the person holds its question and its answer (Postgres' CHECKs).
             flows.dispatch(
               "run/deliver",
               { execution: row.wait!.execution, value: row.answer!.value },
               { door: "sync", executionId: `deliver/${row.id}:${row.version}` },
-            ).pipe(Effect.ignore, Effect.forkIn(scope)), { discard: true }))
+            ) |> ignore(%) |> forkIn(%, scope), { discard: true }))
 
         // The title, and a record of each question that came to need the person.
         const base = title.read()
         const seen = new Set<string>()
-        yield* background(waits.rows, (rows) =>
-          Effect.gen(function* () {
-            yield* Effect.sync(() => title.write(agentStatusTitle(base, rows.length)))
+        try background(waits.rows, (rows) =>
+          effect {
+            try sync(() => title.write(agentStatusTitle(base, rows.length)))
             // Each wait once: the rows come again whenever any wait opens or closes.
             const keyOf = (row: (typeof rows)[number]) => `${row.runId}:${row.version}`
             for (const row of rows.filter((row) => !seen.has(keyOf(row)))) {
               seen.add(keyOf(row))
-              yield* Metric.update(Metric.withAttributes(shown, { surface: "title" }), 1)
-              yield* Effect.logInfo("agent.status.shown").pipe(
-                Effect.annotateLogs({ runId: row.runId, version: row.version, surface: "title" }),
+              try Metric.update(Metric.withAttributes(shown, { surface: "title" }), 1)
+              try (
+                logInfo("agent.status.shown")
+                  |> annotateLogs(%, { runId: row.runId, version: row.version, surface: "title" })
               )
             }
-          }))
+          })
 
         return StatusStore.of({
           runs,
@@ -174,6 +175,6 @@ export class StatusStore extends Context.Service<
           opened: (conversationId) => branches.get(conversationId),
           scope,
         })
-      }),
+      },
     )
 }

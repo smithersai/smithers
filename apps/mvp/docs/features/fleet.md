@@ -179,7 +179,7 @@ admits.
 
 - `worker/runners/Fleet.ts` (the projection and the rules), `Jobs.ts`, `Api.ts`, `FleetApi.ts` (the shapes);
   `worker/flows/FleetAlert.ts` (`ops/FleetAlert`, `ops/RunnerHealth`); `src/features/fleet/` (contract, schema, store);
-  `src/plugins/plugins.ts` (the queries); `plugins/fleet/` (manifest, `model.ts`, `tab.ts`, components).
+  `src/plugins/plugins.vibe` (the queries); `plugins/fleet/` (manifest, `model.ts`, `tab.ts`, components).
 - `worker/runners/Fleet.test.ts`: `project`'s rules (stall by quiet, a CPU-bound build, recovery, waiting, offline,
   cost, outcomes); the projection on Postgres through the real job store and runner routes; `ops/FleetAlert` on the Node
   host to the bell and the local Telegram stand-in, once; Admins only for an outage; the deployment's own repository;

@@ -144,3 +144,29 @@ test("a deployment-wide fleet query hides its cached rows in the change that put
     stop()
     expect(gate.listeners.size).toBe(0)
   })))
+
+// Each deployment-wide query reads its own store query and asks the gate for its own shape.
+test("core/fleet-sessions and core/fleet-accounts each read their own rows, gated by their own shape", () =>
+  scoped(Effect.gen(function* () {
+    const scope = yield* Effect.scope
+    const asked: Array<string> = []
+    const fleet = {
+      globalSessions: Effect.succeed({ rows: Stream.make([{ sessionId: "s-1" }]) }),
+      globalAccounts: Effect.succeed({ rows: Stream.make([{ accountId: "a-1" }]) }),
+      global: {
+        visible: (shape: string) => {
+          asked.push(shape)
+          return true
+        },
+        availability: () => "ready",
+        subscribe: () => () => {},
+      },
+    } as unknown as FleetStore["Service"]
+    const layer = Layer.succeed(Plugins, Plugins.of({ core: new Map(), fleet, fleetOpen: new Map(), scope } as unknown as Plugins["Service"]))
+    const sessions = yield* queryOf("core/fleet-sessions", undefined).pipe(Effect.provide(layer))
+    const accounts = yield* queryOf("core/fleet-accounts", undefined).pipe(Effect.provide(layer))
+    yield* Effect.yieldNow
+    expect(sessions.current()).toEqual([{ sessionId: "s-1" }])
+    expect(accounts.current()).toEqual([{ accountId: "a-1" }])
+    expect(asked).toEqual(["sessions", "accounts"])
+  })))

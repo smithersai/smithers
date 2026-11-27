@@ -61,7 +61,7 @@ Compiled UI plugin chunks run with the app's full power: the import rules are hy
 
 ## The host contract
 
-`PluginHost` (`@smthrs/plugin`) is the one contract a plugin's tab reads and acts through; the app implements it per plugin (`src/plugins/plugins.ts`, `hostFor`):
+`PluginHost` (`@smthrs/plugin`) is the one contract a plugin's tab reads and acts through; the app implements it per plugin (`src/plugins/plugins.vibe`, `hostFor`):
 
 Live query snapshots retain the same array reference while their rows and order are unchanged, so plugins can pass `current` directly to React's `useSyncExternalStore`. Every read checks the current gated collection synchronously; a role or session change hides refused rows before the next asynchronous notification. Hidden repository queries share one frozen empty array. `src/plugins/liveQuerySnapshots.test.ts` holds this contract with real collections and same-stack revocation checks.
 

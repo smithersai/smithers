@@ -1,5 +1,5 @@
 // The fleet's tab (plugins/fleet/src/tab.ts) over an injected host (TEST-7) whose queries answer the rows a test pushes,
-// kept to the repository asked, as the core keeps them (src/plugins/plugins.ts, `queryOf`).
+// kept to the repository asked, as the core keeps them (src/plugins/plugins.vibe, `queryOf`).
 import { Host } from "@smthrs/plugin"
 import { Effect, Layer, Stream } from "effect"
 import { describe, expect, test, vi } from "vitest"
@@ -10,7 +10,7 @@ const widgets = { owner: "Acme", name: "Widgets" }
 
 const hostWith = (refused: ReadonlyArray<string> = []) => {
   const rows = new Map<string, Array<{ readonly repo: string }>>([[RUNS, []], [MACHINES, []], [FLEET_NODES, []]])
-  /** What the deployment-wide source says of itself, as the core's does (src/plugins/plugins.ts `globalLive`). */
+  /** What the deployment-wide source says of itself, as the core's does (src/plugins/plugins.vibe `globalLive`). */
   const source = { availability: "loading" as "loading" | "unavailable" | "ready" }
   const say = (next: typeof source.availability) => {
     source.availability = next

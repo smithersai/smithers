@@ -150,7 +150,7 @@ export const AttentionDismissedStore = Migrations.local({
   getKey: (row) => row.id,
 })
 
-/** Archives and restores of your conversations not yet synced back (src/features/conversations/store.ts). */
+/** Archives and restores of your conversations not yet synced back (src/features/conversations/store.vibe). */
 export const ConversationPendingStore = Migrations.local({
   id: "conversation-pending",
   versions: [ConversationPending],

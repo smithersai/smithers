@@ -1,6 +1,6 @@
 import { Bind, type Contribution, Host, JsonSchema, Load } from "@smthrs/plugin"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Cause, Context, Deferred, Effect, Exit, Layer, Metric, Option, PubSub, Result, Scope, Stream } from "effect"
+import { WebCrypto } from "effect/crypto/WebCrypto"
 import { codeOf } from "../errorCode"
 import { issueUrl } from "../features/bugs/github"
 import { BugsStore } from "../features/bugs/store.vibe"
@@ -88,17 +88,17 @@ export const globalLive = <R>(access: GlobalAccess, shape: GlobalFleetShape, liv
 })
 
 export const liveOf = <R>(rows: Stream.Stream<ReadonlyArray<R>>, initial: ReadonlyArray<R> = []) =>
-  Effect.gen(function* () {
+  effect {
     let current: ReadonlyArray<R> = initial
     const listeners = new Set<() => void>()
-    yield* rows.pipe(
-      Stream.runForEach((next) =>
-        Effect.sync(() => {
-          current = next
-          for (const listener of listeners) listener()
-        })
-      ),
-      Effect.forkScoped({ startImmediately: true }),
+    try (
+      rows
+        |> Stream.runForEach(%, (next) =>
+          sync(() => {
+            current = next
+            for (const listener of listeners) listener()
+          }))
+        |> forkScoped(%, { startImmediately: true })
     )
     return {
       current: () => current,
@@ -107,7 +107,7 @@ export const liveOf = <R>(rows: Stream.Stream<ReadonlyArray<R>>, initial: Readon
         return () => void listeners.delete(listener)
       },
     } satisfies Host.Live<R>
-  })
+  }
 
 /**
  * `query` as a plugin reads it: `current` reads the gated live query itself, so a change that hides rows (a refusal,
@@ -116,8 +116,8 @@ export const liveOf = <R>(rows: Stream.Stream<ReadonlyArray<R>>, initial: Readon
  * 0c7b9f01).
  */
 export const liveQueryOf = <R extends object>(query: Gated<R>) =>
-  Effect.gen(function* () {
-    query.tanstack.startSyncImmediate()
+  effect {
+    try sync(() => query.tanstack.startSyncImmediate())
     let current: ReadonlyArray<R> = EMPTY_ROWS
     // TanStack allocates toArray on each read. Keep an unchanged React snapshot stable, but read the gate now:
     // a cached stream value could still expose rows synchronously after permission was refused.
@@ -129,9 +129,10 @@ export const liveQueryOf = <R extends object>(query: Gated<R>) =>
       return current
     }
     const listeners = new Set<() => void>()
-    yield* query.rows.pipe(
-      Stream.runForEach(() => Effect.sync(() => { for (const listener of listeners) listener() })),
-      Effect.forkScoped({ startImmediately: true }),
+    try (
+      query.rows
+        |> Stream.runForEach(%, () => sync(() => { for (const listener of listeners) listener() }))
+        |> forkScoped(%, { startImmediately: true })
     )
     return {
       current: snapshot,
@@ -140,8 +141,7 @@ export const liveQueryOf = <R extends object>(query: Gated<R>) =>
         return () => void listeners.delete(listener)
       },
     } satisfies Host.Live<R>
-  })
-
+  }
 /** Every view's strip state, as a live query. */
 const stripsQuery = (views: Collection.Collection<ViewState, string>) =>
   LiveQuery.make((q) => q.from({ view: views.tanstack }))
@@ -198,7 +198,7 @@ export class Plugins extends Context.Service<
     /** `core/feeds` of each repository asked for so far, by its `owner/name` lowercased, for the strip to read. */
     readonly opened: Map<string, CoreQuery>
     /** `core/feed-items` of each document asked for so far, by `<repo>:<document>`, opened once, for the strip to read. */
-    readonly items: Map<string, Effect.Effect<CoreQuery>>
+    readonly items: Map<string, CoreQuery!!>
     /** The same, once open: what the strip reads. */
     readonly itemsOpen: Map<string, CoreQuery>
     /** Every repository's feeds, which `core/feeds` and `core/feed` read. */
@@ -208,7 +208,7 @@ export class Plugins extends Context.Service<
     /** Every repository's agent runs and machines, which `core/agent-runs` and `core/machines` read. */
     readonly fleet: FleetStore["Service"]
     /** `core/agent-runs` and `core/machines` of each repository asked for so far, by `<query>:<repo>`, opened once. */
-    readonly fleetOpen: Map<string, Effect.Effect<Host.Live<Readonly<Record<string, unknown>>>>>
+    readonly fleetOpen: Map<string, Host.Live<Readonly<Record<string, unknown>>>!!>
     readonly visible: (id: string) => boolean
     readonly onVisibility: (listener: () => void) => () => void
     readonly shown: Collection.Collection<Shown, string>
@@ -228,11 +228,11 @@ export class Plugins extends Context.Service<
   static readonly layer = (builtins: ReadonlyArray<BuiltIn> = BUILTIN) =>
     Layer.effect(
       Plugins,
-      Effect.gen(function* () {
-        const scope = yield* Effect.scope
-        const facts = hostFacts()
-        const loaded = yield* Load.load(facts, builtins.map(({ manifest }) => ({ tier: "built-in" as const, manifest })))
-        yield* record(loaded)
+      effect {
+        const scope = try Effect.scope
+        const facts = try sync(() => hostFacts())
+        const loaded = try Load.load(facts, builtins.map(({ manifest }) => ({ tier: "built-in" as const, manifest })))
+        try record(loaded)
         const built = new Map(
           builtins.flatMap((entry) => {
             const id = (entry.manifest as { readonly id?: unknown }).id
@@ -241,12 +241,12 @@ export class Plugins extends Context.Service<
               : []
           }),
         )
-        const status = yield* StatusStore
-        const bugs = yield* BugsStore
-        const feeds = yield* FeedsStore
-        const fleet = yield* FleetStore
-        const auth = yield* Effect.serviceOption(AuthStore)
-        const repos = yield* RepoStore
+        const status = try StatusStore
+        const bugs = try BugsStore
+        const feeds = try FeedsStore
+        const fleet = try FleetStore
+        const auth = try Effect.serviceOption(AuthStore)
+        const repos = try RepoStore
         const visible = (id: string) => {
           if (Option.isNone(auth)) return true
           const session = auth.value.sessionState.tanstack.toArray[0]
@@ -268,55 +268,56 @@ export class Plugins extends Context.Service<
           // of a conversation whose repository may not show is in neither the plugin's rows nor the strip's.
           ["core/waits", {
             key: "runId",
-            live: (yield* liveQueryOf(status.waits as unknown as Gated<Readonly<Record<string, unknown>>>)) as CoreQuery["live"],
+            live: (try liveQueryOf(status.waits as unknown as Gated<Readonly<Record<string, unknown>>>)) as CoreQuery["live"],
             rows: status.waits.tanstack,
           }],
           // The bug reports the viewer may see, newest first, each with GitHub's prefilled form for it
           // (docs/features/bugs.md). No strip acts on a report, so the strip never reads its rows.
           ["core/bug-reports", {
             key: "id",
-            live: (yield* liveOf(
+            live: (try liveOf(
               Stream.map(bugs.newest.rows, (rows) => rows.map((row) => ({ ...row, github: issueUrl(row) }))),
             )) as CoreQuery["live"],
             rows: bugs.newest.tanstack as unknown as CoreQuery["rows"],
           }],
         ])
-        const shown = yield* Collection.local<Shown, string>({
+        const shown = try Collection.local<Shown, string>({
           id: "plugin-shown",
           schema: Shown,
           getKey: (row) => row.id,
           initialData: [{ id: SHOWN, view: null }],
         })
-        const views = yield* Collection.local<ViewState, string>({
+        const views = try Collection.local<ViewState, string>({
           id: "plugin-views",
           schema: ViewState,
           getKey: (row) => row.id,
         })
-        const drafts = yield* Collection.persisted<Draft, string>({
+        const drafts = try Collection.persisted<Draft, string>({
           id: "plugin-drafts",
           schema: Draft,
           getKey: (row) => row.id,
           schemaVersion: 1,
         })
-        const strips = yield* stripsQuery(views)
-        const notes = yield* draftsQuery(drafts)
-        const delivered = yield* PubSub.unbounded<Delivered>()
+        const strips = try stripsQuery(views)
+        const notes = try draftsQuery(drafts)
+        const delivered = try PubSub.unbounded<Delivered>()
         // A view's selection of a wait that no longer shows (answered, or of a repository the person may no longer see,
         // through the data gate) is cleared once no press on it is on its way: the strip never keeps an item the
         // person can't see. A plugin selects the next one it shows (`select`).
-        const clearHidden = Effect.gen(function* () {
-          const shownWaits = new Set((yield* status.waits.toArray).map((row) => row.runId))
-          for (const view of yield* views.toArray) {
+        const clearHidden = orDie(effect {
+          const shownWaits = new Set((try status.waits.toArray).map((row) => row.runId))
+          for (const view of try views.toArray) {
             if (view.query !== "core/waits" || view.item === null || view.sending || shownWaits.has(view.item)) continue
-            yield* views.update(view.id, (draft) => {
+            try views.update(view.id, (draft) => {
               draft.item = null
               draft.failed = false
             })
           }
-        }).pipe(Effect.orDie)
-        yield* Stream.merge(Stream.map(status.waits.rows, () => undefined), Stream.map(views.changes(), () => undefined)).pipe(
-          Stream.runForEach(() => clearHidden),
-          Effect.forkIn(scope, { startImmediately: true }),
+        })
+        try (
+          Stream.merge(Stream.map(status.waits.rows, () => undefined), Stream.map(views.changes(), () => undefined))
+            |> Stream.runForEach(%, () => clearHidden)
+            |> forkIn(%, scope, { startImmediately: true })
         )
         return Plugins.of({
           contributions: loaded.contributions,
@@ -343,31 +344,32 @@ export class Plugins extends Context.Service<
           delivered,
           scope,
         })
-      }),
+      },
     )
 }
 
+
 /** One `plugin.load` record per plugin: a span, a log line and a count, with its id and outcome, never its text. */
-const record = (loaded: Load.Loaded) =>
-  Effect.gen(function* () {
-    for (const plugin of loaded.contributions.plugins) {
-      const fields = { plugin: plugin.id, version: plugin.version, tier: plugin.tier, outcome: "active" }
-      yield* Metric.update(Metric.withAttributes(loads, { outcome: "active", tier: plugin.tier, reason: "none" }), 1)
-      yield* Effect.logInfo("plugin.load").pipe(Effect.annotateLogs(fields), Effect.withSpan("plugin.load", { attributes: fields }))
-    }
-    for (const refusal of loaded.refused) {
-      const fields = { plugin: refusal.plugin ?? "unknown", outcome: "refused", reason: refusal.reason }
-      yield* Metric.update(Metric.withAttributes(loads, { outcome: "refused", tier: "built-in", reason: refusal.reason }), 1)
-      yield* Effect.logError("plugin.refused").pipe(
-        Effect.annotateLogs({ ...fields, path: refusal.path ?? "" }),
-        Effect.withSpan("plugin.load", { attributes: fields }),
-      )
-    }
-    const points = { views: loaded.contributions.views, slots: loaded.contributions.slots, commands: loaded.contributions.commands, keybindings: loaded.contributions.keybindings }
-    for (const [point, entries] of Object.entries(points)) {
-      if (entries.length > 0) yield* Metric.update(Metric.withAttributes(contributionCount, { point }), entries.length)
-    }
-  })
+effect function record(loaded: Load.Loaded) {
+  for (const plugin of loaded.contributions.plugins) {
+    const fields = { plugin: plugin.id, version: plugin.version, tier: plugin.tier, outcome: "active" }
+    try Metric.update(Metric.withAttributes(loads, { outcome: "active", tier: plugin.tier, reason: "none" }), 1)
+    try (logInfo("plugin.load") |> annotateLogs(%, fields) |> withSpan(%, "plugin.load", { attributes: fields }))
+  }
+  for (const refusal of loaded.refused) {
+    const fields = { plugin: refusal.plugin ?? "unknown", outcome: "refused", reason: refusal.reason }
+    try Metric.update(Metric.withAttributes(loads, { outcome: "refused", tier: "built-in", reason: refusal.reason }), 1)
+    try (
+      logError("plugin.refused")
+        |> annotateLogs(%, { ...fields, path: refusal.path ?? "" })
+        |> withSpan(%, "plugin.load", { attributes: fields })
+    )
+  }
+  const points = { views: loaded.contributions.views, slots: loaded.contributions.slots, commands: loaded.contributions.commands, keybindings: loaded.contributions.keybindings }
+  for (const [point, entries] of Object.entries(points)) {
+    if (entries.length > 0) try Metric.update(Metric.withAttributes(contributionCount, { point }), entries.length)
+  }
+}
 
 /** The view declared with `id`, if any. */
 export const viewById = (contributions: Contribution.Contributions, id: string): View | undefined =>
@@ -386,8 +388,6 @@ export const viewAt = (
 
 /**
  * Where a view shows; a `repository` view shows on `repository` and has no path without one.
- *
- * @throws {never}
  */
 export const pathOf = (view: View, repository?: Host.Repository): string | undefined => Host.pathOf(view, repository)
 
@@ -399,16 +399,16 @@ const readsOf = (contributions: Contribution.Contributions, plugin: string): Rea
 
 /** View `id`'s strip state, made fresh when it has none, changed by `change`. */
 const touch = (id: string, change: (row: ViewState) => Partial<ViewState>) =>
-  Effect.gen(function* () {
-    const { views } = yield* Plugins
-    const current = yield* views.get(id)
+  orDie(effect {
+    const { views } = try Plugins
+    const current = try views.get(id)
     if (Option.isNone(current)) {
-      const base = fresh(id)
-      yield* views.insert({ ...base, ...change(base) })
+      const base = try sync(() => fresh(id))
+      try views.insert({ ...base, ...change(base) })
       return
     }
-    yield* views.update(id, (draft) => void Object.assign(draft, change(current.value)))
-  }).pipe(Effect.orDie)
+    try views.update(id, (draft) => void Object.assign(draft, change(current.value)))
+  })
 
 /**
  * Core query `name` as the strip reads it: a fixed one, or one a plugin asked with `params` (`core/feeds`); `undefined`
@@ -434,24 +434,23 @@ export const INDEX_FIRST_SYNC = "30 seconds"
  * `INDEX_FIRST_SYNC` passed), with those rows: an index still loading is never an empty one, which a plugin would
  * draw as "No feed yet" and the factory's tab as no tab at all (Will's Factory tab on smithers.sh, 2026-10-31).
  */
-const indexOf = (plugins: Plugins["Service"], repo: string) =>
-  Effect.gen(function* () {
-    const known = plugins.opened.get(repo)
-    if (known !== undefined) return known
-    const index = yield* plugins.feeds.index(repo)
-    // expected: a shape that fails or takes longer answers what the tab has, and its rows follow as they arrive
-    yield* index.byName.preload.pipe(Effect.timeout(INDEX_FIRST_SYNC), Effect.ignore)
-    const synced = yield* index.byName.toArray
-    const again = plugins.opened.get(repo)
-    if (again !== undefined) return again
-    const query: CoreQuery = {
-      key: "id",
-      live: (yield* liveOf(index.byName.rows, synced).pipe(Scope.provide(plugins.scope))) as CoreQuery["live"],
-      rows: index.byName.tanstack as unknown as CoreQuery["rows"],
-    }
-    plugins.opened.set(repo, query)
-    return query
-  })
+effect function indexOf(plugins: Plugins["Service"], repo: string) {
+  const known = plugins.opened.get(repo)
+  if (known !== undefined) return known
+  const index = try plugins.feeds.index(repo)
+  // expected: a shape that fails or takes longer answers what the tab has, and its rows follow as they arrive
+  try (index.byName.preload |> timeout(%, INDEX_FIRST_SYNC) |> ignore(%))
+  const synced = try index.byName.toArray
+  const again = plugins.opened.get(repo)
+  if (again !== undefined) return again
+  const query: CoreQuery = {
+    key: "id",
+    live: (try (liveOf(index.byName.rows, synced) |> Scope.provide(%, plugins.scope))) as CoreQuery["live"],
+    rows: index.byName.tanstack as unknown as CoreQuery["rows"],
+  }
+  plugins.opened.set(repo, query)
+  return query
+}
 
 /**
  * The items of index document `document` of `repo` (`itemsOf`), kept in a collection on the tab, never the device, so
@@ -459,47 +458,48 @@ const indexOf = (plugins: Plugins["Service"], repo: string) =>
  * inserts, updates and deletes by key. Opened once per document, while the host lives.
  */
 const openItems = (plugins: Plugins["Service"], repo: string, document: string) =>
-  Effect.gen(function* () {
-    const index = yield* plugins.feeds.index(repo)
-    const collection = yield* Collection.local<FeedItem, string>({
+  effect {
+    const index = try plugins.feeds.index(repo)
+    const collection = try Collection.local<FeedItem, string>({
       id: `plugin-feed-items:${itemsKey(repo, document)}`,
       schema: FeedItem,
       getKey: (row) => row.key,
     })
     // The host shows a document's items only through the data gate (repo/gate.ts).
-    const shown = yield* plugins.repos.gate(collection)
-    const ordered = yield* LiveQuery.make((q) => q.from({ item: shown.tanstack }).orderBy(({ item }) => item.index, "asc"))
+    const shown = try plugins.repos.gate(collection)
+    const ordered = try LiveQuery.make((q) => q.from({ item: shown.tanstack }).orderBy(({ item }) => item.index, "asc"))
     // What `collection` holds, kept beside it: the host reads its rows only through the gate.
     let current = new Map<string, FeedItem>()
     const apply = (next: ReadonlyArray<FeedItem>) =>
-      Effect.gen(function* () {
+      orDie(effect {
         const kept = new Set(next.map((row) => row.key))
         const gone = [...current.keys()].filter((key) => !kept.has(key))
-        if (gone.length > 0) yield* collection.delete(gone)
+        if (gone.length > 0) try collection.delete(gone)
         const added = next.filter((row) => !current.has(row.key))
-        if (added.length > 0) yield* collection.insert(added)
+        if (added.length > 0) try collection.insert(added)
         for (const row of next) {
           const before = current.get(row.key)
           if (before !== undefined && seen(before) !== seen(row)) {
-            yield* collection.update(row.key, (draft) => void Object.assign(draft, row))
+            try collection.update(row.key, (draft) => void Object.assign(draft, row))
           }
         }
         current = new Map(next.map((row) => [row.key, row]))
-      }).pipe(Effect.orDie)
-    yield* index.byName.rows.pipe(
-      Stream.map((rows) => rows.find((row) => row.name === document)?.body),
-      Stream.mapEffect((body) => itemsOf(repo, document, body)),
-      Stream.runForEach(apply),
-      Effect.forkScoped({ startImmediately: true }),
+      })
+    try (
+      index.byName.rows
+        |> Stream.map(%, (rows) => rows.find((row) => row.name === document)?.body)
+        |> Stream.mapEffect(%, (body) => itemsOf(repo, document, body))
+        |> Stream.runForEach(%, apply)
+        |> forkScoped(%, { startImmediately: true })
     )
     const query: CoreQuery = {
       key: "key",
-      live: (yield* liveOf(ordered.rows)) as CoreQuery["live"],
+      live: (try liveOf(ordered.rows)) as CoreQuery["live"],
       rows: ordered.tanstack as unknown as CoreQuery["rows"],
     }
     plugins.itemsOpen.set(itemsKey(repo, document), query)
     return query
-  }).pipe(Scope.provide(plugins.scope), Effect.orDie)
+  } |> Scope.provide(%, plugins.scope) |> orDie(%)
 
 /**
  * Query `name` for a plugin, asked with `params`: a fixed core query's rows; `core/feeds`, the index of the repository
@@ -507,131 +507,130 @@ const openItems = (plugins: Plugins["Service"], repo: string, document: string) 
  * only while the view listens. Fails with what is wrong: `query` for one the host doesn't serve, else the parameter it
  * needs that is missing or malformed.
  */
-export const queryOf = (name: string, params: Host.QueryParams | undefined) =>
-  Effect.gen(function* () {
-    const plugins = yield* Plugins
-    const fixed = plugins.core.get(name)
-    if (fixed !== undefined) return fixed.live
-    if (name === FLEET_NODES || name === FLEET_SESSIONS || name === FLEET_ACCOUNTS) {
-      const key = `global:${name}`
-      const existing = plugins.fleetOpen.get(key)
-      if (existing !== undefined) return yield* existing
-      const open = yield* Effect.cached(
-        Effect.gen(function* () {
-          const query =
-            name === FLEET_NODES
-              ? yield* plugins.fleet.globalNodes
-              : name === FLEET_SESSIONS
-              ? yield* plugins.fleet.globalSessions
-              : yield* plugins.fleet.globalAccounts
-          const shape: GlobalFleetShape = name === FLEET_NODES ? "nodes" : name === FLEET_SESSIONS ? "sessions" : "accounts"
-          const live = yield* liveOf(query.rows as unknown as Stream.Stream<ReadonlyArray<Readonly<Record<string, unknown>>>>)
-          return globalLive(plugins.fleet.global, shape, live)
-        }).pipe(Scope.provide(plugins.scope), Effect.orDie)
-      )
-      plugins.fleetOpen.set(key, open)
-      return yield* open
-    }
-    const fleetQuery = name === AGENT_RUNS || name === MACHINES
-    if (name !== FEED_INDEX && name !== FEED_DOCUMENT && name !== FEED_ITEMS && !fleetQuery) {
-      return yield* Effect.fail("query" as const)
-    }
-    const { repo: asked = "", name: document = "" } = params ?? {}
-    const repo = parseFeedRepo(asked)
-    if (repo === undefined) return yield* Effect.fail("repo" as const)
-    // A repository's rows reach a plugin only while the repository may show (`repoVisibility`), read at each read.
-    const [owner = "", repoName = ""] = repo.split("/")
-    const gated = (live: Host.Live<Readonly<Record<string, unknown>>>) => gateLive(plugins, repoId(owner, repoName), live)
-    if (fleetQuery) {
-      // One live list per repository and query, opened on the first ask and kept for the host's life: a shape each.
-      const key = `${name}:${repo}`
-      const opening = plugins.fleetOpen.get(key) ?? (yield* Effect.cached(
-        Effect.gen(function* () {
-          const query = name === AGENT_RUNS ? yield* plugins.fleet.runs(repo) : yield* plugins.fleet.machines(repo)
-          // As indexOf: rows still loading are never no rows, which the fleet would draw as "No agent runs" and
-          // "runners 0/0" for as long as the first sync takes (6 s and more on smithers.sh, 2026-11-01).
-          // expected: a shape that fails or takes longer answers what the tab has, and its rows follow as they arrive
-          yield* query.preload.pipe(Effect.timeout(INDEX_FIRST_SYNC), Effect.ignore)
-          const rows = query.rows as Stream.Stream<ReadonlyArray<Readonly<Record<string, unknown>>>>
-          const synced = (yield* query.toArray) as ReadonlyArray<Readonly<Record<string, unknown>>>
-          return (yield* liveOf(rows, synced)) as CoreQuery["live"]
-        }).pipe(Scope.provide(plugins.scope)),
-      ))
-      plugins.fleetOpen.set(key, opening)
-      return gated(yield* opening)
-    }
-    if (name === FEED_INDEX) return gated((yield* indexOf(plugins, repo)).live)
-    if (!isFeedName(document)) return yield* Effect.fail("name" as const)
-    if (name === FEED_DOCUMENT) return gated(plugins.feeds.document(repo, document) as unknown as CoreQuery["live"])
-    // Items come from an index document only: the strip reads them while the view is gone, and only the index stays.
-    if (!isIndexName(document)) return yield* Effect.fail("name" as const)
-    const key = itemsKey(repo, document)
-    // Asked twice at once, a document's items open once: the first ask keeps the opening for every later one.
-    const opening = plugins.items.get(key) ?? (yield* Effect.cached(openItems(plugins, repo, document)))
-    plugins.items.set(key, opening)
-    return gated((yield* opening).live)
-  })
+export effect function queryOf(name: string, params: Host.QueryParams | undefined) {
+  const plugins = try Plugins
+  const fixed = plugins.core.get(name)
+  if (fixed !== undefined) return fixed.live
+  if (name === FLEET_NODES || name === FLEET_SESSIONS || name === FLEET_ACCOUNTS) {
+    const key = `global:${name}`
+    const existing = plugins.fleetOpen.get(key)
+    if (existing !== undefined) return try existing
+    const open = try cached(
+      effect {
+        const query =
+          name === FLEET_NODES
+            ? try plugins.fleet.globalNodes
+            : name === FLEET_SESSIONS
+            ? try plugins.fleet.globalSessions
+            : try plugins.fleet.globalAccounts
+        const shape: GlobalFleetShape = name === FLEET_NODES ? "nodes" : name === FLEET_SESSIONS ? "sessions" : "accounts"
+        const live = try liveOf(query.rows as unknown as Stream.Stream<ReadonlyArray<Readonly<Record<string, unknown>>>>)
+        return globalLive(plugins.fleet.global, shape, live)
+      } |> Scope.provide(%, plugins.scope) |> orDie(%),
+    )
+    plugins.fleetOpen.set(key, open)
+    return try open
+  }
+  const fleetQuery = name === AGENT_RUNS || name === MACHINES
+  if (name !== FEED_INDEX && name !== FEED_DOCUMENT && name !== FEED_ITEMS && !fleetQuery) {
+    throw "query" as const
+  }
+  const { repo: asked = "", name: document = "" } = params ?? {}
+  const repo = parseFeedRepo(asked)
+  if (repo === undefined) throw "repo" as const
+  // A repository's rows reach a plugin only while the repository may show (`repoVisibility`), read at each read.
+  const [owner = "", repoName = ""] = repo.split("/")
+  const gated = (live: Host.Live<Readonly<Record<string, unknown>>>) => gateLive(plugins, repoId(owner, repoName), live)
+  if (fleetQuery) {
+    // One live list per repository and query, opened on the first ask and kept for the host's life: a shape each.
+    const key = `${name}:${repo}`
+    const opening = plugins.fleetOpen.get(key) ?? (try cached(
+      effect {
+        const query = name === AGENT_RUNS ? try plugins.fleet.runs(repo) : try plugins.fleet.machines(repo)
+        // As indexOf: rows still loading are never no rows, which the fleet would draw as "No agent runs" and
+        // "runners 0/0" for as long as the first sync takes (6 s and more on smithers.sh, 2026-11-01).
+        // expected: a shape that fails or takes longer answers what the tab has, and its rows follow as they arrive
+        try (query.preload |> timeout(%, INDEX_FIRST_SYNC) |> ignore(%))
+        const rows = query.rows as Stream.Stream<ReadonlyArray<Readonly<Record<string, unknown>>>>
+        const synced = (try query.toArray) as ReadonlyArray<Readonly<Record<string, unknown>>>
+        return (try liveOf(rows, synced)) as CoreQuery["live"]
+      } |> Scope.provide(%, plugins.scope),
+    ))
+    plugins.fleetOpen.set(key, opening)
+    return gated(try opening)
+  }
+  if (name === FEED_INDEX) return gated((try indexOf(plugins, repo)).live)
+  if (!isFeedName(document)) throw "name" as const
+  if (name === FEED_DOCUMENT) return gated(plugins.feeds.document(repo, document) as unknown as CoreQuery["live"])
+  // Items come from an index document only: the strip reads them while the view is gone, and only the index stays.
+  if (!(try sync(() => isIndexName(document)))) throw "name" as const
+  const key = itemsKey(repo, document)
+  // Asked twice at once, a document's items open once: the first ask keeps the opening for every later one.
+  const opening = plugins.items.get(key) ?? (try cached(openItems(plugins, repo, document)))
+  plugins.items.set(key, opening)
+  return gated((try opening).live)
+}
 
 /** View `id`'s strip state now. */
-export const stateOf = (id: string) =>
-  Effect.gen(function* () {
-    const { views } = yield* Plugins
-    return Option.getOrElse(yield* views.get(id), () => fresh(id))
-  })
+export effect function stateOf(id: string) {
+  const { views } = try Plugins
+  return Option.getOrElse(try views.get(id), () => fresh(id))
+}
 
 /** The row view `id` selected, as its query has it now, if it is still there. */
-export const selectedOf = (id: string) =>
-  Effect.gen(function* () {
-    const plugins = yield* Plugins
-    const state = yield* stateOf(id)
-    const query = state.query === null ? undefined : readable(plugins, state.query, state.params)
-    return query?.live.current().find((row) => row[query.key] === state.item)
-  })
+export effect function selectedOf(id: string) {
+  const plugins = try Plugins
+  const state = try stateOf(id)
+  const query = state.query === null ? undefined : readable(plugins, state.query, state.params)
+  return try sync(() => query?.live.current().find((row) => row[query.key] === state.item))
+}
 
 /** The plugin view shown now, if any. */
-export const shownView = Effect.gen(function* () {
-  const { shown, contributions } = yield* Plugins
-  const row = yield* shown.get(SHOWN)
+export const shownView = effect {
+  const { shown, contributions } = try Plugins
+  const row = try shown.get(SHOWN)
   const id = Option.getOrUndefined(row)?.view ?? null
   return id === null ? undefined : viewById(contributions, id)
-})
+}
 
 /** Shows view `id`: the route that draws it calls this. */
 export const show = (id: string) =>
-  Effect.gen(function* () {
-    const { shown } = yield* Plugins
-    yield* shown.update(SHOWN, (row) => void (row.view = id))
-  }).pipe(Effect.orDie)
+  orDie(effect {
+    const { shown } = try Plugins
+    try shown.update(SHOWN, (row) => void (row.view = id))
+  })
 
 /**
  * Hides view `id` if it is still the one shown: its route calls this on leaving. A route's `onLeave` runs after the
  * next route opened (router-core `runRouteLifecycle`), so a plugin route that opened next has already shown its own view.
  */
 export const hide = (id: string) =>
-  Effect.gen(function* () {
-    const { shown } = yield* Plugins
-    yield* shown.update(SHOWN, (row) => {
+  orDie(effect {
+    const { shown } = try Plugins
+    try shown.update(SHOWN, (row) => {
       if (row.view === id) row.view = null
     })
-  }).pipe(Effect.orDie)
+  })
 
 /** The note view `id` holds for `item`. */
-const draftOf = (id: string, item: string) =>
-  Effect.gen(function* () {
-    const { drafts } = yield* Plugins
-    return Option.match(yield* drafts.get(draftKey(id, item)), { onNone: () => "", onSome: (row) => row.text })
-  })
+effect function draftOf(id: string, item: string) {
+  const { drafts } = try Plugins
+  return match (try drafts.get(try sync(() => draftKey(id, item)))) {
+    when { _tag: "Some", let value }: value.text;
+    default: "";
+  }
+}
 
 /** Keeps the text box's note for the item view `id` selected; with nothing selected there is no note to keep. */
 export const setDraft = (id: string, text: string) =>
-  Effect.gen(function* () {
-    const { drafts } = yield* Plugins
-    const { item } = yield* stateOf(id)
+  orDie(effect {
+    const { drafts } = try Plugins
+    const { item } = try stateOf(id)
     if (item === null) return
-    const key = draftKey(id, item)
-    if (Option.isSome(yield* drafts.get(key))) yield* drafts.update(key, (row) => void (row.text = text))
-    else yield* drafts.insert({ id: key, text })
-  }).pipe(Effect.orDie)
+    const key = try sync(() => draftKey(id, item))
+    if (Option.isSome(try drafts.get(key))) try drafts.update(key, (row) => void (row.text = text))
+    else try drafts.insert({ id: key, text })
+  })
 
 /** A row as the person saw it: its own fields, without TanStack DB's virtual `$` ones, in a stable order. */
 const seen = (row: Readonly<Record<string, unknown>>) =>
@@ -645,83 +644,79 @@ const seen = (row: Readonly<Record<string, unknown>>) =>
  * fails shows as failed, keeping the draft, until the next press. A run that succeeds drops the draft it sent; a note
  * typed while it was on its way never went, so it stays.
  */
-export const press = (
+export effect function press(
   id: string,
   button: Button,
   door: "button" | "key",
   drawn?: Readonly<Record<string, unknown>>,
-) =>
-  Effect.gen(function* () {
-    const plugins = yield* Plugins
-    const view = viewById(plugins.contributions, id)
-    const event = view?.events.find((candidate) => candidate.name === button.event)
-    const item = yield* selectedOf(id)
-    const state = yield* stateOf(id)
-    if (view === undefined || event === undefined || !("flow" in event) || !event.personOnly) return
-    if (item === undefined || state.item === null || state.sending) return
-    const key = state.item
-    // A button acts on the item it was drawn for: if that item moved on (answered elsewhere, a new version), nothing runs.
-    if (drawn !== undefined && seen(drawn) !== seen(item)) {
-      return yield* Effect.andThen(
-        Metric.update(Metric.withAttributes(presses, { plugin: view.plugin, event: event.name, door, outcome: "stale" }), 1),
-        Effect.logInfo("plugin.press").pipe(Effect.annotateLogs({ plugin: view.plugin, view: id, event: event.name, door, outcome: "stale" })),
-      )
-    }
-    const fields: Record<string, unknown> = { ...button.fields }
-    const note = yield* draftOf(id, key)
-    for (const field of textFields(event)) fields[field] = note
-    // A press whose flow didn't run or failed is a failure, Warn by its code; every other outcome is Info.
-    const outcome = (value: string, failure?: unknown) =>
-      Effect.andThen(
-        Metric.update(Metric.withAttributes(presses, { plugin: view.plugin, event: event.name, door, outcome: value }), 1),
-        (value === "failed" ? Effect.logWarning : Effect.logInfo)("plugin.press").pipe(Effect.annotateLogs({
-          feature: "plugins",
-          plugin: view.plugin,
-          view: id,
-          event: event.name,
-          door,
-          outcome: value,
-          ...(value === "failed" ? { errorCode: codeOf(failure) } : {}),
-        })),
-      )
-    const payload = Bind.bind(event.args, { item, event: fields })
-    if (Option.isSome(misfit(event.payload, fields)) || Result.isFailure(payload)) {
-      yield* touch(id, () => ({ failed: true }))
-      return yield* outcome("invalid")
-    }
-    yield* touch(id, () => ({ sending: true, failed: false }))
-    const flows = yield* FlowDispatch
-    yield* flows.dispatch(event.flow as FlowName, payload.success as never, { door }).pipe(
+) {
+  const plugins = try Plugins
+  const view = viewById(plugins.contributions, id)
+  const event = view?.events.find((candidate) => candidate.name === button.event)
+  const item = try selectedOf(id)
+  const state = try stateOf(id)
+  if (view === undefined || event === undefined || !("flow" in event) || !event.personOnly) return
+  if (item === undefined || state.item === null || state.sending) return
+  const key = state.item
+  // A button acts on the item it was drawn for: if that item moved on (answered elsewhere, a new version), nothing runs.
+  if (drawn !== undefined && seen(drawn) !== seen(item)) {
+    return try andThen(
+      Metric.update(Metric.withAttributes(presses, { plugin: view.plugin, event: event.name, door, outcome: "stale" }), 1),
+      logInfo("plugin.press") |> annotateLogs(%, { plugin: view.plugin, view: id, event: event.name, door, outcome: "stale" }),
+    )
+  }
+  const fields: Record<string, unknown> = { ...button.fields }
+  const note = try draftOf(id, key)
+  for (const field of try sync(() => textFields(event))) fields[field] = note
+  // A press whose flow didn't run or failed is a failure, Warn by its code; every other outcome is Info.
+  const outcome = (value: string, failure?: unknown) =>
+    andThen(
+      Metric.update(Metric.withAttributes(presses, { plugin: view.plugin, event: event.name, door, outcome: value }), 1),
+      (value === "failed" ? logWarning : logInfo)("plugin.press") |> annotateLogs(%, {
+        feature: "plugins",
+        plugin: view.plugin,
+        view: id,
+        event: event.name,
+        door,
+        outcome: value,
+        ...(value === "failed" ? { errorCode: codeOf(failure) } : {}),
+      }),
+    )
+  const payload = try sync(() => Bind.bind(event.args, { item, event: fields }))
+  if (Option.isSome(misfit(event.payload, fields)) || Result.isFailure(payload)) {
+    try touch(id, () => ({ failed: true }))
+    return try outcome("invalid")
+  }
+  try touch(id, () => ({ sending: true, failed: false }))
+  const flows = try FlowDispatch
+  try (
+    flows.dispatch(event.flow as FlowName, payload.success as never, { door })
       // A flow that ran and failed is a failure like one that didn't run: either is named by its code.
-      Effect.flatMap((dispatched) => dispatched._tag === "Done" ? Effect.void : Effect.fail(dispatched.error)),
-      Effect.exit,
-      Effect.flatMap((exit) =>
+      |> flatMap(%, (dispatched) => dispatched._tag === "Done" ? Effect.void : fail(dispatched.error))
+      |> exit(%)
+      |> flatMap(%, (exit) =>
         Exit.isSuccess(exit)
-          ? Effect.andThen(
-            Effect.andThen(touch(id, () => ({ sending: false })), dropDraft(id, key, note)),
+          ? andThen(
+            andThen(touch(id, () => ({ sending: false })), dropDraft(id, key, note)),
             outcome("done"),
           )
-          : Effect.andThen(touch(id, () => ({ sending: false, failed: true })), outcome("failed", Cause.squash(exit.cause)))
-      ),
-      Effect.forkIn(plugins.scope),
-    )
-  })
+          : andThen(touch(id, () => ({ sending: false, failed: true })), outcome("failed", Cause.squash(exit.cause))))
+      |> forkIn(%, plugins.scope)
+  )
+}
 
 /** Drops view `id`'s note for `item`, once its answer went, if it is still the note that went (`sent`): a newer one stays. */
-const dropDraft = (id: string, item: string, sent: string) =>
-  Effect.gen(function* () {
-    const { drafts } = yield* Plugins
-    if ((yield* draftOf(id, item)) !== sent) return
-    yield* drafts.delete(draftKey(id, item)).pipe(Effect.ignore)
-  })
+effect function dropDraft(id: string, item: string, sent: string) {
+  const { drafts } = try Plugins
+  if ((try draftOf(id, item)) !== sent) return
+  try ignore(drafts.delete(try sync(() => draftKey(id, item))))
+}
 
 /** Delivers a local event to the view that declares it: `j` and `k`. */
-export const deliver = (view: string, name: string, fields: unknown) =>
-  Effect.gen(function* () {
-    const { delivered } = yield* Plugins
-    yield* PubSub.publish(delivered, { view, name, fields })
-  })
-
+export effect function deliver(view: string, name: string, fields: unknown) {
+  const { delivered } = try Plugins
+  try PubSub.publish(delivered, { view, name, fields })
+}
 /** Why `fields` don't fit an event's payload, if they don't: none when it declares no payload. */
 const misfit = (payload: JsonSchema.Resolved | undefined, fields: unknown) =>
   payload === undefined ? Option.none<string>() : JsonSchema.validate(payload, fields)
@@ -751,101 +746,100 @@ export const settledOf = (
   return { _tag: "Failed", code: Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "defect" }
 }
 
+
 /** Refuses a request plugin `plugin` made of its host: logged once by the reason, never the detail, then failed. */
 const refuse = (plugin: string, reason: Host.PluginRefused["reason"], detail: string) =>
-  Effect.logWarning("plugin.request").pipe(
-    Effect.annotateLogs({ feature: "plugins", plugin, outcome: "refused", reason }),
-    Effect.andThen(Effect.fail(new Host.PluginRefused({ plugin, reason, detail }))),
-  )
+  logWarning("plugin.request")
+    |> annotateLogs(%, { feature: "plugins", plugin, outcome: "refused", reason })
+    |> andThen(%, fail(new Host.PluginRefused({ plugin, reason, detail })))
 
 /**
  * `PluginHost` for `plugin`, over this host: the one contract its tab reads and acts through (decision 0017, "The host
  * contract"). Every request is checked against what the plugin's own manifest declares.
  */
-export const hostFor = (plugin: string) =>
-  Effect.gen(function* () {
-    const plugins = yield* Plugins
-    const context = yield* Effect.context<Plugins | FlowDispatch>()
-    const provide = <A, E>(effect: Effect.Effect<A, E, Plugins | FlowDispatch>) => Effect.provide(effect, context)
-    const reads = readsOf(plugins.contributions, plugin)
-    /** The event `name` of the plugin's own view `id`. */
-    const eventOf = (ref: Host.EventRef) => {
-      const view = viewById(plugins.contributions, ref.view)
-      const event = view?.plugin === plugin ? view.events.find((candidate) => candidate.name === ref.name) : undefined
-      return event === undefined ? refuse(plugin, "undeclared_event", ref.name) : Effect.succeed({ view: view!, event })
-    }
-    return {
-      query: <R>(name: string, params?: Host.QueryParams) =>
-        Effect.gen(function* () {
-          if (!reads.has(name)) return yield* refuse(plugin, "undeclared_query", name)
-          // A declared query is one the host serves (`Load` checks `reads` against its facts): only a parameter fails.
-          const live = yield* provide(queryOf(name, params)).pipe(
-            Effect.catch((param) => refuse(plugin, "invalid_fields", `${name} needs ${param}`)),
-          )
-          return live as unknown as Host.Live<R>
-        }),
-      select: (item: Host.ItemRef) =>
-        Effect.gen(function* () {
-          // Every view of this plugin that reads the item's query acts on it: the strip under it shows its actions.
-          const targets = plugins.contributions.views.filter((view) => view.plugin === plugin && (view.reads ?? []).includes(item.query))
-          const params = item.params ?? null
-          const query = readable(plugins, item.query, params)
-          if (targets.length === 0 || query === undefined) return yield* refuse(plugin, "not_in_reads", item.query)
-          if (!query.live.current().some((row) => row[query.key] === item.key)) return yield* refuse(plugin, "not_in_reads", "no such row")
-          for (const view of targets) {
-            yield* provide(touch(view.id, (row) =>
-              row.item === item.key && row.query === item.query && paramsKey(row.params) === paramsKey(params)
-                ? {}
-                : { query: item.query, params, item: item.key, failed: false }
-            ))
-          }
-        }),
-      propose: (ref: Host.EventRef, fields: unknown) =>
-        Effect.gen(function* () {
-          const { event } = yield* eventOf(ref)
-          if (!("flow" in event) || !event.personOnly) {
-            return yield* refuse(plugin, "undeclared_event", "only the strip's events are proposed")
-          }
-          const invalid = misfit(event.payload, fields)
-          if (Option.isSome(invalid)) return yield* refuse(plugin, "invalid_fields", invalid.value)
-          const text = textFields(event).map((field) => (fields as Record<string, unknown>)[field]).find((value) => typeof value === "string")
-          if (typeof text === "string") yield* provide(setDraft(ref.view, text))
-        }),
-      dispatch: (ref: Host.EventRef, fields: unknown) =>
-        Effect.gen(function* () {
-          const { view, event } = yield* eventOf(ref)
-          if (!("flow" in event)) return yield* refuse(plugin, "undeclared_event", "a local event stays in its view")
-          if (personOnly(event)) return yield* refuse(plugin, "person_only", event.flow)
-          const invalid = misfit(event.payload, fields)
-          if (Option.isSome(invalid)) return yield* refuse(plugin, "invalid_fields", invalid.value)
-          const item = yield* provide(selectedOf(view.id))
-          const payload = Bind.bind(event.args, { item, event: fields })
-          if (Result.isFailure(payload)) return yield* refuse(plugin, "invalid_fields", payload.failure)
-          const runId = crypto.randomUUID()
-          const flows = yield* provide(FlowDispatch)
-          // The view hears how its run ended, failed or interrupted included, so it never says Sending for good.
-          const settled = yield* Deferred.make<Host.Settled>()
-          yield* flows.dispatch(event.flow as FlowName, payload.success as never, { door: "view", executionId: runId }).pipe(
-            Effect.onExit((exit) => Deferred.succeed(settled, settledOf(exit))),
-            Effect.ignore,
-            Effect.forkIn(plugins.scope),
-          )
-          return { runId, settled: Deferred.await(settled) }
-        }),
-      open: (id: string, repository?: Host.Repository) =>
-        Effect.gen(function* () {
-          const view = viewById(plugins.contributions, id)
-          const to = view?.plugin === plugin ? pathOf(view, repository) : undefined
-          if (to === undefined) return
-          const flows = yield* provide(FlowDispatch)
-          yield* flows.dispatch("app/navigate", { to }, { door: "view" }).pipe(Effect.ignore, Effect.forkIn(plugins.scope))
-        }),
-      events: (id: string) =>
-        viewById(plugins.contributions, id)?.plugin === plugin
-          ? Stream.fromPubSub(plugins.delivered).pipe(
-            Stream.filter((event) => event.view === id),
-            Stream.map(({ name, fields }) => ({ name, fields })),
-          )
-          : Stream.empty,
-    } satisfies Host.PluginHost
-  })
+export effect function hostFor(plugin: string) {
+  const plugins = try Plugins
+  const context = try Effect.context<Plugins | FlowDispatch>()
+  const provideHost = <A, E>(program: A!E!(Plugins | FlowDispatch)) => Effect.provide(program, context)
+  const reads = readsOf(plugins.contributions, plugin)
+  /** The event `name` of the plugin's own view `id`. */
+  const eventOf = (ref: Host.EventRef) => {
+    const view = viewById(plugins.contributions, ref.view)
+    const event = view?.plugin === plugin ? view.events.find((candidate) => candidate.name === ref.name) : undefined
+    return event === undefined ? refuse(plugin, "undeclared_event", ref.name) : succeed({ view: view!, event })
+  }
+  return {
+    query: <R>(name: string, params?: Host.QueryParams) =>
+      effect {
+        if (!reads.has(name)) return try refuse(plugin, "undeclared_query", name)
+        // A declared query is one the host serves (`Load` checks `reads` against its facts): only a parameter fails.
+        const live = try (
+          provideHost(queryOf(name, params)) |> Effect.catch(%, (param) => refuse(plugin, "invalid_fields", `${name} needs ${param}`))
+        )
+        return live as unknown as Host.Live<R>
+      },
+    select: (item: Host.ItemRef) =>
+      effect {
+        // Every view of this plugin that reads the item's query acts on it: the strip under it shows its actions.
+        const targets = plugins.contributions.views.filter((view) => view.plugin === plugin && (view.reads ?? []).includes(item.query))
+        const params = item.params ?? null
+        const query = readable(plugins, item.query, params)
+        if (targets.length === 0 || query === undefined) return try refuse(plugin, "not_in_reads", item.query)
+        if (!(try sync(() => query.live.current().some((row) => row[query.key] === item.key)))) return try refuse(plugin, "not_in_reads", "no such row")
+        for (const view of targets) {
+          try provideHost(touch(view.id, (row) =>
+            row.item === item.key && row.query === item.query && paramsKey(row.params) === paramsKey(params)
+              ? {}
+              : { query: item.query, params, item: item.key, failed: false }
+          ))
+        }
+      },
+    propose: (ref: Host.EventRef, fields: unknown) =>
+      effect {
+        const { event } = try eventOf(ref)
+        if (!("flow" in event) || !event.personOnly) {
+          return try refuse(plugin, "undeclared_event", "only the strip's events are proposed")
+        }
+        const invalid = misfit(event.payload, fields)
+        if (Option.isSome(invalid)) return try refuse(plugin, "invalid_fields", invalid.value)
+        const text = (try sync(() => textFields(event))).map((field) => (fields as Record<string, unknown>)[field]).find((value) => typeof value === "string")
+        if (typeof text === "string") try provideHost(setDraft(ref.view, text))
+      },
+    dispatch: (ref: Host.EventRef, fields: unknown) =>
+      effect {
+        const { view, event } = try eventOf(ref)
+        if (!("flow" in event)) return try refuse(plugin, "undeclared_event", "a local event stays in its view")
+        if (personOnly(event)) return try refuse(plugin, "person_only", event.flow)
+        const invalid = misfit(event.payload, fields)
+        if (Option.isSome(invalid)) return try refuse(plugin, "invalid_fields", invalid.value)
+        const item = try provideHost(selectedOf(view.id))
+        const payload = try sync(() => Bind.bind(event.args, { item, event: fields }))
+        if (Result.isFailure(payload)) return try refuse(plugin, "invalid_fields", payload.failure)
+        const runId = try sync(() => WebCrypto.defaultValue().randomUUID())
+        const flows = try provideHost(FlowDispatch)
+        // The view hears how its run ended, failed or interrupted included, so it never says Sending for good.
+        const settled = try Deferred.make<Host.Settled>()
+        try (
+          flows.dispatch(event.flow as FlowName, payload.success as never, { door: "view", executionId: runId })
+            |> onExit(%, (exit) => Deferred.succeed(settled, settledOf(exit)))
+            |> ignore(%)
+            |> forkIn(%, plugins.scope)
+        )
+        return { runId, settled: Deferred.await(settled) }
+      },
+    open: (id: string, repository?: Host.Repository) =>
+      effect {
+        const view = viewById(plugins.contributions, id)
+        const to = view?.plugin === plugin ? pathOf(view, repository) : undefined
+        if (to === undefined) return
+        const flows = try provideHost(FlowDispatch)
+        try (flows.dispatch("app/navigate", { to }, { door: "view" }) |> ignore(%) |> forkIn(%, plugins.scope))
+      },
+    events: (id: string) =>
+      viewById(plugins.contributions, id)?.plugin === plugin
+        ? Stream.fromPubSub(plugins.delivered)
+          |> Stream.filter(%, (event) => event.view === id)
+          |> Stream.map(%, ({ name, fields }) => ({ name, fields }))
+        : Stream.empty,
+  } satisfies Host.PluginHost
+}
