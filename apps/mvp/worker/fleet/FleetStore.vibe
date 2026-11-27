@@ -8,11 +8,13 @@
  * reads it, so a row written before a rule existed is read through that rule. Each report commits whole or not at all.
  */
 
+import * as Budget from "../branch/Budget.vibe"
 import { SqlClient } from "effect/sql"
 import {
   ACCOUNT_PROVIDERS,
   ACCOUNT_STATUSES,
   HOST_KINDS,
+  HOST_REACHABLE_MS,
   SESSION_HARNESSES,
   SESSION_STATUSES,
 } from "../../src/features/fleet/globalContract.ts"
@@ -462,10 +464,14 @@ export effect function reportAccounts(input: AccountsReportInput) {
 export effect function readOverview(includeEnded: boolean = false) {
   const sql = try SqlClient.SqlClient
   const nodes = try sql`
-    SELECT node_id AS "nodeId", name, kind, labels, online, held,
+    SELECT node_id AS "nodeId", name, kind, labels,
+      online AND seen_at >= now() - ${HOST_REACHABLE_MS} * interval '1 millisecond' AS online,
+      online AS "reportedOnline", held,
       load1, cpu_cores AS "cpuCores", mem_used_gb AS "memUsedGb", mem_total_gb AS "memTotalGb",
       disk_free_gb AS "diskFreeGb", disk_total_gb AS "diskTotalGb",
-      active_sessions AS "activeSessions", runner_capacity AS "runnerCapacity",
+      active_sessions AS "activeSessions",
+      CASE WHEN node_id = 'cloudflare-cfbox' OR runner_capacity = 0 THEN NULL ELSE runner_capacity END AS "runnerCapacity",
+      CASE WHEN node_id = 'cloudflare-cfbox' OR runner_capacity = 0 THEN 'unknown' ELSE 'reported' END AS "capacitySource",
       version, seen_at AS "seenAt"
     FROM host_nodes
     ORDER BY name ASC
@@ -522,10 +528,10 @@ export effect function readOverview(includeEnded: boolean = false) {
   const projectedAccounts = accounts.map((row: Record<string, unknown>) => ({ ...row, grantsJson: projectGrants(row["grantsJson"]) }))
   const sandboxes = try sql`
     SELECT id::text AS id, branch_id AS "branchId", generation, kind, instance,
-      started_at AS "startedAt", seen_at AS "seenAt", ended_at AS "endedAt"
+      started_at AS "startedAt", seen_at AS "seenAt", ended_at AS "endedAt", count(*) OVER ()::int AS "awakeCount"
     FROM sandbox_generations
-    WHERE ended_at IS NULL
-    ORDER BY seen_at DESC
+    WHERE ended_at IS NULL AND seen_at > now() - make_interval(secs => ${Budget.LEASE_SECONDS})
+    ORDER BY seen_at DESC, id DESC
     LIMIT 60
   `
   const cfSessions = sandboxes.map((row: Record<string, unknown>) => {
@@ -547,7 +553,8 @@ export effect function readOverview(includeEnded: boolean = false) {
       summary: scrubText(`BranchSandbox ${kind} ${branchId} (gen ${gen})`, 320),
       cwd: null,
       transcriptJson: null,
-      status: "working",
+      status: row["generation"] == null ? "waiting" : "working",
+      leaseState: row["generation"] == null ? "admitted" : "awake",
       pid: null,
       cpuSeconds: null,
       tokensUsed: null,
@@ -556,18 +563,16 @@ export effect function readOverview(includeEnded: boolean = false) {
       endedAt: row["endedAt"] ?? null,
     }
   })
-  const hasCfSandboxNode = nodes.some(
-    (n: Record<string, unknown>) => n["nodeId"] === "cloudflare-branch-sandbox"
-  )
-  const allNodes = cfSessions.length > 0 && !hasCfSandboxNode
+  const allNodes = cfSessions.length > 0
     ? [
-      ...nodes,
+      ...nodes.filter((node) => node["nodeId"] !== "cloudflare-branch-sandbox"),
       {
         nodeId: "cloudflare-branch-sandbox",
         name: "Cloudflare BranchSandbox",
         kind: "cloudflare",
         labels: ["cloudflare", "serverless", "branch-sandbox"],
         online: true,
+        reportedOnline: null,
         held: null,
         load1: null,
         cpuCores: null,
@@ -575,12 +580,18 @@ export effect function readOverview(includeEnded: boolean = false) {
         memTotalGb: null,
         diskFreeGb: null,
         diskTotalGb: null,
-        activeSessions: cfSessions.length,
-        runnerCapacity: 64,
+        activeSessions: sandboxes[0]!["awakeCount"],
+        runnerCapacity: (try Budget.limits).awake,
+        capacitySource: "sandbox_budget",
         version: "durable-object",
-        seenAt: new Date().toISOString(),
+        seenAt: sandboxes[0]!["seenAt"],
       },
     ]
     : nodes
+  try Effect.logInfo("fleet.overview").pipe(Effect.annotateLogs({
+    staleHosts: nodes.filter((node) => node["reportedOnline"] === true && node["online"] === false).length,
+    liveSandboxLeases: sandboxes[0]?.["awakeCount"] ?? 0,
+    returnedSandboxLeases: cfSessions.length,
+  }))
   return { nodes: allNodes, sessions: [...projectedSessions, ...cfSessions], accounts: projectedAccounts }
 }

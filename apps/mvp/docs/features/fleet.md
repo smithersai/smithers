@@ -207,3 +207,12 @@ admits.
 - **`/app/fleet`**, every repository's runs for a deployment's Admins: FINAL.md §4.1's second view.
 - **Steer and Stop** as row acts: they are S3's, on the TODO's page the row links to.
 - **Containers** (`sandbox_generations`) beside the runners in Machines.
+
+
+### Deployment host observations
+
+The Fleet page checks host reachability every ten seconds. It and the `fleet_overview` tool use a 135-second reporting window. An explicit offline report takes effect immediately. In the tool, `reportedOnline` retains the last report and `seenAt` identifies when the last host or session report arrived.
+
+Host session counts are observations. A cfbox instance reported as running, starting or reserved appears as working. Its collector has no capacity measurement. The overview returns `runnerCapacity: null` and `capacitySource: "unknown"` for cfbox and for unspecified capacities. A positive reporter-supplied capacity has source `reported`; the count can exceed it.
+
+The overview’s BranchSandbox entry uses the admission ledger. It counts all unended leases renewed within five minutes, shows the newest 60 in detail and uses the newest lease observation for `seenAt`. Its capacity comes from the deployment’s sandbox budget (`sandbox_budget`). A lease whose generation has yet to start appears as waiting (`leaseState: "admitted"`). A started generation appears as working (`leaseState: "awake"`), which records machine liveness. This synthetic entry has no host heartbeat (`reportedOnline: null`). The global Fleet UI reads the three telemetry shapes; the extra ledger projection is specific to the MCP overview.

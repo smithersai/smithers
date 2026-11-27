@@ -494,6 +494,7 @@ console.log(JSON.stringify({ jobs: [null, { id: "" }, { id: "job-1", owner: "smi
         expect(res.sessions.length).toBeGreaterThanOrEqual(4)
         expect(res.accounts.length).toBeGreaterThanOrEqual(8)
         expect(res.cfbox?.sessions.length).toBe(2)
+        expect(res.cfbox?.host.runnerCapacity).toBe(0)
 
         // Exercise table-text cfbox parser and failing cfbox exit
         const tableScript = `#!/usr/bin/env node

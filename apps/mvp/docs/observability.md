@@ -1355,3 +1355,8 @@ checks live in `src/telemetry-privacy.test.ts`. The relay refuses server-only se
 `github.write.request` and `github_write_requests` record `outcome=reauthorized` only after a fresh same-ID pending triage admission commits. The existing `op` and `repository` labels remain bounded. Failed/contended admissions retain the existing unavailable outcome. An executing attempt superseded while resolving a role records `github.write.authority` with `outcome=superseded`, the `github.write.authority` span attribute, and `github_write_authority{op,outcome}`. No key, cookie, token, identity or payload is added. `TriageReauthorization.test.ts` checks the route count, stale-attempt count, real reauthentication, bounded contention and execution ordering.
 
 Credential read-lock refusal carries only `stage=credential_lock` and `wait=deadline|cancelled` on `DeviceIdentityRefused`, alongside the existing `credential_stale` reason. The native lock request is cancelled, so the abandoned request cannot later acquire it or send. Tests assert the bounded cause, no remaining waiter, unchanged network write count and usable session reads under rejected/stalled publication. Role-window tests exercise actual production-host flows with a five-minute construction setting and empty runtime configuration, including pending-write recovery and the request service.
+
+
+### Fleet overview
+
+A successful deployment-wide fleet read records `fleet.overview` with three counts. `staleHosts` counts last-reported online hosts outside the reachability window. `liveSandboxLeases` counts every live BranchSandbox admission lease and `returnedSandboxLeases` counts the detailed rows returned (up to 60).

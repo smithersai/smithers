@@ -2,6 +2,9 @@
 // harnesses (Claude, Codex, AGY CLI/IDE, Cloudflare sandboxes, Smithers runners), and provider account quotas.
 // Zero runtime library imports so browser, workerd, CLI, and tests share one source of truth.
 
+/** A host is reachable through the last 135 seconds of its reporting window. */
+export const HOST_REACHABLE_MS = 135_000
+
 export const FLEET_NODES_SHAPE_ROUTE = "/api/shapes/fleet/nodes"
 export const FLEET_SESSIONS_SHAPE_ROUTE = "/api/shapes/fleet/sessions"
 export const FLEET_ACCOUNTS_SHAPE_ROUTE = "/api/shapes/fleet/accounts"

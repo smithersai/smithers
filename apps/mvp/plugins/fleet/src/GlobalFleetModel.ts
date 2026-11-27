@@ -4,9 +4,10 @@
  * ElectricSQL into TanStack DB.
  */
 
+import { HOST_REACHABLE_MS } from "../../../src/features/fleet/globalContract"
 import type { HostNode, ObservedSession, ProviderAccount } from "../../../src/features/fleet/globalSchema"
 import { redactSecrets } from "../../../src/features/fleet/scrub"
-import { durationOf, tokensOf, type Tone, UNREACHABLE_MS } from "./model"
+import { durationOf, tokensOf, type Tone } from "./model"
 import type { Rows } from "./tab"
 
 /**
@@ -588,7 +589,7 @@ export function formatCpuSeconds(cpuSeconds: number | null): string {
 export function hostRowsOf(nodes: ReadonlyArray<HostNode>, nowMs: number): ReadonlyArray<HostRow> {
   return nodes.map((n) => {
     const seenMs = parseMs(n.seenAt)
-    const reachable = n.online && seenMs !== null && nowMs - seenMs <= UNREACHABLE_MS * 3
+    const reachable = n.online && seenMs !== null && nowMs - seenMs <= HOST_REACHABLE_MS
     const diskLow = n.diskFreeGb !== null && n.diskFreeGb < LOW_DISK_FREE_GB
     const stateWord = !reachable
       ? "Offline"

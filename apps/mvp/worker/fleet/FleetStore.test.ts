@@ -29,7 +29,7 @@ beforeAll(() => runtime.runPromise(scrubFleetTranscripts))
 beforeEach(() =>
   runtime.runPromise(
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      sql`TRUNCATE host_nodes, observed_sessions, provider_accounts, sandbox_generations,
+      sql`TRUNCATE host_nodes, observed_sessions, provider_accounts, sandbox_generations, sandbox_limits,
         fleet_session_snapshot_keys, fleet_session_snapshot_receipts CASCADE`
     ),
   )
@@ -148,6 +148,7 @@ describe("FleetStore (real Postgres)", () => {
           "agy-cli",
           "cf-sandbox",
         ])
+        expect(active.sessions).toContainEqual(expect.objectContaining({ harness: "cf-sandbox", status: "working", leaseState: "awake" }))
         expect(active.accounts).toHaveLength(2)
         // Regression guard: bigint tokens_used must serialize cleanly with JSON.stringify (no BigInt TypeError).
         expect(() => JSON.stringify(active)).not.toThrow()
@@ -709,6 +710,34 @@ describe("FleetMcpTools against Postgres", () => {
     const error = Option.getOrUndefined(Exit.findErrorOption(exit))
     return typeof error === "object" && error !== null && "code" in error ? String(error.code) : "died"
   }
+
+  test("fleet_overview ages hosts, separates collector observations from leases and keeps whole counts above a limit", async () => {
+    await runtime.runPromise(Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      for (const [nodeId, online] of [["stale", true], ["fresh", true], ["stopped", false], ["cloudflare-cfbox", true], ["cloudflare-branch-sandbox", false]] as const) {
+        yield* FleetStore.upsertHostNode({ nodeId, name: nodeId, kind: "cloudflare", online, activeSessions: 91, runnerCapacity: 64 })
+      }
+      yield* sql`UPDATE host_nodes SET seen_at = now() - interval '136 seconds' WHERE node_id = 'stale'`
+      yield* sql`INSERT INTO sandbox_limits (awake, awake_per_person, monthly_alert_usd, updated_by) VALUES (42, 2, 0, 'fixture')`
+      yield* sql`INSERT INTO sandbox_generations (branch_id, kind, seen_at)
+        SELECT 'test-' || n, 'job', now() - interval '1 minute' FROM generate_series(1, 63) n`
+      yield* sql`INSERT INTO sandbox_generations (branch_id, kind, seen_at) VALUES ('expired', 'job', now() - interval '6 minutes')`
+    }))
+    const result = await call("fleet_overview", {}, null)
+    if (!Exit.isSuccess(result)) throw new Error("fleet_overview failed")
+    const overview = JSON.parse(result.value.content.map((block) => block.type === "text" ? block.text : "").join(""))
+    const host = (id: string) => overview.nodes.find((n: { nodeId: string }) => n.nodeId === id)
+    expect(host("stale")).toMatchObject({ online: false, reportedOnline: true })
+    expect(host("stopped").online).toBe(false)
+    expect(host("fresh")).toMatchObject({ online: true, activeSessions: 91, runnerCapacity: 64, capacitySource: "reported" })
+    expect(host("cloudflare-cfbox")).toMatchObject({ activeSessions: 91, runnerCapacity: null, capacitySource: "unknown" })
+    expect(overview.nodes.filter((n: { nodeId: string }) => n.nodeId === "cloudflare-branch-sandbox")).toHaveLength(1)
+    expect(host("cloudflare-branch-sandbox")).toMatchObject({ online: true, reportedOnline: null, activeSessions: 63, runnerCapacity: 42, capacitySource: "sandbox_budget" })
+    expect(overview.sessions).toHaveLength(60)
+    expect(overview.sessions[0]).toMatchObject({ status: "waiting", leaseState: "admitted" })
+    expect(host("cloudflare-branch-sandbox").seenAt).toBe(overview.sessions[0].lastActivityAt)
+    expect(JSON.stringify(overview.sessions)).not.toContain("expired")
+  })
 
   // R2-Astra-D4-001: the read-only overview tool returns no machine token from a row stored before the rule.
   test("fleet_overview returns a pre-upgrade transcript without its machine token", async () => {

@@ -98,7 +98,7 @@ export const FLEET_TOOL_DESCRIPTORS: ReadonlyArray<McpToolDescriptor> = [
   },
   {
     name: "fleet_overview",
-    description: "Read deployment-wide hosts, active sessions across all machines, and monitored provider accounts.",
+    description: "Read host reachability, observed sessions and monitored accounts. Reported session counts do not reserve seats. runnerCapacity is null when unknown. BranchSandbox counts live admission leases; at most 60 of its leases are detailed.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

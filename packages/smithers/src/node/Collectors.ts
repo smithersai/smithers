@@ -1731,7 +1731,8 @@ const discoverCfbox = (home: string): { host: HostSnapshot; sessions: ReadonlyAr
       diskFreeGb: null,
       diskTotalGb: null,
       activeSessions: sessions.filter((s) => s.status !== "ended").length,
-      runnerCapacity: 64,
+      // cfbox list reports instances and their states. It supplies no allocatable seat limit.
+      runnerCapacity: 0,
       version: "cfbox"
     },
     sessions
