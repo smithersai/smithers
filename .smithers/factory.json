@@ -1462,6 +1462,50 @@
       "flows": []
     },
     {
+      "id": "landing-check",
+      "description": "Check decision and migration numbering and verify that every migration is registered.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/workflows/landing-check.ts",
+      "capabilities": [],
+      "model": null,
+      "modelInvocable": false,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "run": {
+              "type": "string"
+            },
+            "repo": {
+              "type": "string"
+            },
+            "sha": {
+              "type": "string"
+            },
+            "ref": {
+              "type": "string"
+            },
+            "event": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "run",
+            "repo",
+            "sha",
+            "ref",
+            "event"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
       "id": "learning",
       "description": "Read merged TODO evidence and return decision pages and proposals.",
       "summary": null,
@@ -2202,6 +2246,11 @@
         "on": "github.pull_request",
         "flow": "gate",
         "title": "gate-pull-request"
+      },
+      {
+        "on": "manual",
+        "flow": "landing-check",
+        "title": "Check landing readiness"
       }
     ]
   }

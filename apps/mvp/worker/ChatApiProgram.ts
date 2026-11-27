@@ -210,10 +210,11 @@ export const program = (options: ProgramOptions = {}) =>
   Effect.gen(function*() {
     const repoFlows = yield* Dispatch.enabled
     const repositories = yield* Dispatch.repositories
+    const manualRepositories = yield* Dispatch.manualRepositories
     const homeRepository = yield* Conversations.configuredHomeRepositoryNames
     // The job machines the deployment declared beside the default one (docs/features/ci.md#machines).
     const machines = yield* JobMachines.declared.pipe(Effect.orDie)
-    return yield* configuredProgram(options, { repoFlows, repositories, homeRepository, machines })
+    return yield* configuredProgram(options, { repoFlows, repositories, manualRepositories, homeRepository, machines })
   })
 
 /** All deployment choices below are already captured before Alchemy builds the handlers. */
@@ -223,9 +224,10 @@ const socketChecks = (options: ProgramOptions): SocketChecks.Options => ({
   ...(options.localRoles === undefined ? {} : { localRoles: options.localRoles })
 })
 
-const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, homeRepository, machines }: {
+const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, manualRepositories, homeRepository, machines }: {
   readonly repoFlows: boolean
   readonly repositories: ReadonlySet<string>
+  readonly manualRepositories: ReadonlySet<string>
   readonly homeRepository: { readonly owner: string; readonly name: string }
   readonly machines: ReadonlyArray<string>
 }) =>
@@ -428,9 +430,10 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       transcript: (runId, admission) => RunContent.connect(runContents, runId, admission)
     }, roles)
     // A repository's flows run by hand, and its runs run again (docs/features/actions.md#running-a-flow-by-hand), on the
-    // repositories REPO_FLOWS_REPOSITORIES allows, by the asker's role there, read as the App and in the QuickJS realm.
+    // repositories admitted for manual runs, by the asker's role there, read as the App and in the QuickJS realm.
     const repoRunsApi = yield* RunsApi.make(database, {
       repositories,
+      manualRepositories,
       app,
       repoFlows,
       roles,

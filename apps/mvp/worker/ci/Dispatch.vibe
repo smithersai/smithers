@@ -52,10 +52,15 @@ export type DispatchRequest = typeof DispatchRequest.Type
 export const enabled = Config.Boolean("REPO_FLOWS").pipe(Config.withDefault(false))
 
 /** Comma-separated owner/name allowlist; unset or blank allows no repositories. */
-export const repositories = Config.String("REPO_FLOWS_REPOSITORIES").pipe(
+const repositorySet = (key: string) => Config.String(key).pipe(
   Config.withDefault(""),
   Config.map((value) => new Set(value.split(",").map((name) => name.trim().toLowerCase()).filter((name) => /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(name)))),
 )
+
+export const repositories = repositorySet("REPO_FLOWS_REPOSITORIES")
+
+/** Additional repositories whose default branch may declare flows for a Member to start by hand. */
+export const manualRepositories = repositorySet("REPO_FLOWS_MANUAL_REPOSITORIES")
 
 /** The association GitHub gives a pull request's author who is Member or above: their head may have secrets. */
 export const TRUSTED_ASSOCIATIONS: ReadonlyArray<string> = ["OWNER", "MEMBER", "COLLABORATOR"]

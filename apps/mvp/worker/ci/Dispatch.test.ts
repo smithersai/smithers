@@ -300,6 +300,21 @@ test("repository allowlist defaults closed and trims case-insensitive names", as
   expect(await read({ REPO_FLOWS_REPOSITORIES: " Acme/Widgets, other/repo " })).toEqual(new Set(["acme/widgets", "other/repo"]))
 })
 
+test("manual-only configuration cannot match or start a webhook", async () => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  const provider = ConfigProvider.fromUnknown({ REPO_FLOWS_MANUAL_REPOSITORIES: " Acme/Widgets, *, invalid " })
+  const config = await runtime.runPromise(Effect.all({
+    automatic: Dispatch.repositories, manual: Dispatch.manualRepositories,
+  }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, provider)))
+  expect(config.manual).toEqual(new Set(["acme/widgets"]))
+  const { services } = await githubServices(runtime, github)
+  const impl = Dispatch.steps({ ...services, repositories: config.automatic, start: () => Effect.die("unexpected start") })
+  const request = pushed(SHA)
+  expect(await runtime.runPromise(impl.match({ request }))).toEqual({ flows: [], outcome: "not_allowed" })
+  expect(await runtime.runPromise(impl.start({ request, flows: ["ci"] }))).toEqual([])
+  expect(github.calls).toEqual([])
+})
+
 test("a denied repository has a visible match receipt and cannot start precomputed flows", async () => {
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
   const { services } = await githubServices(runtime, github)

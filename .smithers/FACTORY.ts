@@ -10,6 +10,7 @@
 import { Smithers as S } from "@smthrs/targets"
 import { On, Trigger } from "@smthrs/triggers"
 import Gate from "./workflows/gate.vibe"
+import LandingCheck from "./workflows/landing-check.ts"
 
 // --- featured flows --------------------------------------------------------
 // The flows this repository recommends first, and the one line each shows
@@ -95,7 +96,8 @@ export const factory = S.Factory({
   // request. The app reads these rows from .smithers/factory.json on main.
   triggers: {
     "gate-push": Trigger.bind({ flow: Gate, on: On.push({ branches: ["main", "gate/**"] }) }),
-    "gate-pull-request": Trigger.bind({ flow: Gate, on: On.pullRequest() })
+    "gate-pull-request": Trigger.bind({ flow: Gate, on: On.pullRequest() }),
+    "landing-check": Trigger.bind({ flow: LandingCheck, on: On.manual(), title: "Check landing readiness" })
   },
   // For now GitHub writes main: a Change opens a GitHub pull request that a
   // maintainer merges there, Smithers Cloud follows GitHub's main, and issues

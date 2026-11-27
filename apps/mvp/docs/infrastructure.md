@@ -321,6 +321,8 @@ A local `.env` that raises a limit for development, such as `MODEL_DAILY_TOKEN_B
 | `FLOW_EXECUTION_LOCATION` | no | ChatApi, FlowExecution | the Durable Object location hint new remote flow executions are created at, such as `enam` beside a database in us-east-1; unset, near their first caller ([Placement](#placement)) |
 | `CHATAPI_PLACEMENT_REGION` | no | ChatApi (the stack) | the cloud region ChatApi's requests run beside, such as `aws:us-east-1` with the database; unset, near whoever sent each request ([Placement](#placement)) |
 | `REPO_FLOWS` | no | ChatApi | `true` lets GitHub's pushes and pull requests start repositories' own flows, each job on its own machine ([ci.md](features/ci.md#triggers)); off unless set |
+| `REPO_FLOWS_REPOSITORIES` | no | ChatApi | Comma-separated repository names admitted for manual runs, GitHub dispatch and schedules. Defaults empty. |
+| `REPO_FLOWS_MANUAL_REPOSITORIES` | no | ChatApi | Additional comma-separated repository names admitted for manual runs only. Defaults empty. |
 | `TODO_RUNS` | no | ChatApi | `false` switches the coding factory's `todo` run off, so every TODO stays Queued; on otherwise, with the GitHub App ([todos.md](features/todos.md#the-run)) |
 | `SANDBOX_SECRETS` | no | ChatApi, SandboxObject | `true` routes branch sandbox requests through repository-secret egress; off by default. Enabling requires the authorized deployment decision and the real proof in [secrets.md](features/secrets.md#tests). It does not relax the deployment-repository write fence. |
 | `EGRESS_ALLOW_HOSTS` | no | ChatApi, SandboxObject | comma-separated DNS hosts allowed without a secret when secret egress is on; package registries remain allowed. This never rebinds a secret to another host. |

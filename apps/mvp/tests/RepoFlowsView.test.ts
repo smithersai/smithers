@@ -15,7 +15,7 @@ import { openTab, openTestApp, TestChatApi } from "../src/test/chatApi"
 Object.assign(globalThis, { self: dom, customElements: dom.customElements, scrollTo: dom.scrollTo.bind(dom) })
 afterAll(() => dom.happyDOM.close())
 
-test.each(["unavailable", "rate_limited"] as const)("the Run card shows %s and retries its initial flow read", async (code) => {
+test.each([["unavailable", 503, REFUSAL_WORDS.unavailable], ["rate_limited", 429, REFUSAL_WORDS.rate_limited], ["not_found", 404, "Repository flows unavailable."]] as const)("the Run card shows %s and retries its initial flow read", async (code, status, words) => {
   const server = openTestApp()
   const api = await server.runPromise(Effect.service(TestChatApi))
   const source = await server.runPromise(Effect.service(RemoteRunsClient))
@@ -29,7 +29,7 @@ test.each(["unavailable", "rate_limited"] as const)("the Run card shows %s and r
         yield* Deferred.succeed(retryRequested, undefined)
         yield* Deferred.await(releaseRetry)
       }
-      return yield* new RepoRunsFailed({ status: code === "unavailable" ? 503 : 429, code })
+      return yield* new RepoRunsFailed({ status, code })
     }),
   }) })
   const container = document.createElement("div")
@@ -42,7 +42,7 @@ test.each(["unavailable", "rate_limited"] as const)("the Run card shows %s and r
     await device.runPromise(store.loadRepoFlows({ owner: "octo", name: "hello" }))
     await vi.waitFor(async () => {
       await act(async () => {})
-      expect(container.querySelector('[role="alert"]')?.textContent).toBe(REFUSAL_WORDS[code])
+      expect(container.querySelector('[role="alert"]')?.textContent).toBe(words)
       expect(container.querySelector("button")?.textContent).toBe("Retry")
     })
     await act(async () => container.querySelector("button")!.click())
@@ -57,7 +57,7 @@ test.each(["unavailable", "rate_limited"] as const)("the Run card shows %s and r
     await device.runPromise(Deferred.succeed(releaseRetry, undefined))
     await vi.waitFor(async () => {
       await act(async () => {})
-      expect(container.querySelector('[role="alert"]')?.textContent).toBe(REFUSAL_WORDS[code])
+      expect(container.querySelector('[role="alert"]')?.textContent).toBe(words)
       expect(container.querySelector("button")?.textContent).toBe("Retry")
     })
     // Successful empty results hide the card; a populated result keeps its existing controls.
@@ -68,6 +68,11 @@ test.each(["unavailable", "rate_limited"] as const)("the Run card shows %s and r
       await act(async () => {})
       expect(container.querySelector("button")?.textContent).toBe("CI")
       expect(container.querySelector('[role="alert"]')).toBeNull()
+    })
+    await device.runPromise(store.form.update(FORM, (form) => { form.state = "refused"; form.refusal = "not_found" }))
+    await vi.waitFor(async () => {
+      await act(async () => {})
+      expect(container.querySelector('[role="alert"]')?.textContent).toBe("Branch or flow not found.")
     })
   } finally {
     await device.runPromise(Deferred.succeed(releaseRetry, undefined))

@@ -1,6 +1,6 @@
 import { Button, Card, CardContent, CardHeader, CardTitle, FlowFormView, Input, Label, LoadingBar } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { BRANCH, REFUSAL_WORDS, RETRY, RUN } from "../contract"
+import { BRANCH, repoFlowRefusalWords, RETRY, RUN } from "../contract"
 import type { RepoRunForm } from "../schema"
 import { useRuns } from "./RunsContext"
 
@@ -62,7 +62,7 @@ export function RepoFlowsView() {
             onSubmit={(submission) => actions.runRepoFlow(submission.data)}
           />
         )}
-        {form.refusal === null ? null : <p role="alert">{REFUSAL_WORDS[form.refusal] ?? form.refusal}</p>}
+        {form.refusal === null ? null : <p role="alert">{repoFlowRefusalWords(form.refusal, form.flows.length === 0)}</p>}
         {form.state === "refused" && form.flows.length === 0 ? <Button onClick={actions.reloadRepoFlow}>{RETRY}</Button> : null}
       </CardContent>
     </Card>

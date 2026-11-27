@@ -67,6 +67,8 @@ const SETTINGS: Readonly<Record<string, string>> = {
   GITHUB_APP_PRIVATE_KEY: pem("rsa"),
   FLOW_EXECUTION_LOCATION: "enam",
   REPO_FLOWS: "true",
+  REPO_FLOWS_MANUAL_REPOSITORIES: "acme/manual",
+  REPO_FLOWS_REPOSITORIES: "acme/automatic",
   TODO_RUNS: "true",
   GATE_IMAGE: `registry.cloudflare.com/account/smithers-gate@sha256:${"a".repeat(64)}`,
   SANDBOX_SECRETS: "true",

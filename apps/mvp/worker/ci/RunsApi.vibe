@@ -23,7 +23,7 @@ import * as RepoFlow from "./RepoFlow.vibe"
 import * as Triggers from "./Triggers.vibe"
 
 // Running a repository's flow by hand, and a run again (docs/features/actions.md#running-a-flow-by-hand,
-// docs/features/actions.md#acts): three routes on a repository `REPO_FLOWS_REPOSITORIES` allows, for a Member or above
+// docs/features/actions.md#acts): three routes on a repository admitted for manual runs, for a Member or above
 // on that repository (decision 0079), in person or through an agent acting for them (ruling FLOW-3).
 //
 //   GET  /api/repos/<owner>/<name>/flows                 the flows its default branch's manifest lets a person run
@@ -119,8 +119,10 @@ export const withDefaults = (
 
 /** What the routes need beyond Postgres. */
 export interface Options<R, EE, ER> {
-  /** `REPO_FLOWS_REPOSITORIES`, as `owner/name` in lower case: only their flows run here. */
+  /** `REPO_FLOWS_REPOSITORIES`, as lower-case owner/name, also permits retries of automatic runs. */
   readonly repositories: ReadonlySet<string>
+  /** Additional manual-only repositories. These never admit a retry of an automatic run. */
+  readonly manualRepositories: ReadonlySet<string>
   /** The GitHub App, which reads the repository; none switches the routes off. */
   readonly app: Option.Option<GitHubApp>
   /** Whether repository flows run here (`REPO_FLOWS`). */
@@ -329,7 +331,7 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
       const url = new URL(request.url, "http://localhost")
       const route = parsePath(url.pathname)!
       const startedAt = try Clock.currentTimeMillis
-      const fields: Record<string, string | number> = { route: route.kind }
+      const fields: Record<string, string | number> = { route: route.kind, stage: "request" }
       const refused = (code: RunsRefusal) => {
         fields.outcome = code
         const status = statusOf[code]
@@ -345,20 +347,26 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
           fields.outcome = "method"
           return HttpServerResponse.empty({ status: 405, headers: { allow: method } })
         }
+        fields.stage = "session"
         const actor = try option((try Sessions).resolve)
         if (Option.isNone(actor)) return refused("unavailable")
         if (Option.isNone(actor.value)) return refused("authentication")
         fields.via = actor.value.value.act === undefined ? "person" : "agent"
         const full = `${route.owner}/${route.name}`.toLowerCase()
-        // Only a repository repository flows run for: any other has no flows here.
-        if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(full) || !options.repositories.has(full)) return refused("not_found")
+        // Both lists grant manual starts. Only the automatic list grants retries of an automatic run.
+        fields.stage = "repository_allowlist"
+        const automatic = options.repositories.has(full)
+        if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(full) || (!automatic && !options.manualRepositories.has(full))) return refused("not_found")
         const repository = try sync(() => repositoryOf(full))
         fields.repoId = repository.id
+        fields.stage = "configuration"
         if (!options.repoFlows || Option.isNone(options.app)) return refused("off")
         // A Member or above on the repository, in person or through an agent acting for them: running a flow neither
         // approves nor merges.
+        fields.stage = "repository_role"
         const admitted = try Effect.provide(admission(options.roles, actor.value.value, repository), database)
         if (typeof admitted === "string") return refused(admitted)
+        fields.stage = route.kind
         const github = on(options.app.value, repository)
 
         if (route.kind === "flows") {
@@ -386,6 +394,11 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
           fields.kind = failed ? "retry_failed" : "retry"
           const found = try retried(repository, retryOf, failed)
           if (found._tag === "refused") return refused(found.code)
+          if (!automatic) {
+            if (found.request.event !== "manual") return refused("not_manual")
+            const current = try github.manualFlows
+            if (!current.flows.some((flow) => flow.name === found.request.flow)) return refused("not_manual")
+          }
           const run = try sync(() => manualExecutionId(found.request.flow, id))
           const { only, startedVia: _previousVia, ...again } = found.request
           const next: RepoFlow.RunRequest = { ...again, run, ...(failed && only !== undefined ? { only } : {}) }
@@ -438,7 +451,7 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
       } else {
         try Metric.update(Metric.withAttributes(reads, { read: route.kind, outcome }), 1)
       }
-      try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+      try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, stage: fields.stage, outcome })
       try annotateLogs(
         logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
           route.kind === "runs" ? "repo.run.start" : "repo.flow.read",

@@ -177,6 +177,7 @@ worktrees/
 !/.smithers/workflows/full-check.ts
 # The apps/mvp gate (decision 0145), the workflow FACTORY.ts's trigger bindings name.
 !/.smithers/workflows/gate.vibe
+!/.smithers/workflows/landing-check.ts
 !/.smithers/plan-tree/
 # A pull request's checks: each `.smithers/checks/<name>.sh` runs on the head's check job (apps/mvp/docs/features/pulls.md).
 !/.smithers/checks/

@@ -342,3 +342,8 @@ export const REFUSAL_WORDS: Readonly<Record<string, string>> = {
   defect: "Action failed.",
   unavailable: "Couldn't reach the engine.",
 }
+
+export const repoFlowRefusalWords = (code: string, listing: boolean) => {
+  if (code === "not_found") return listing ? "Repository flows unavailable." : "Branch or flow not found."
+  return REFUSAL_WORDS[code] ?? code
+}

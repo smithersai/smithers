@@ -7,7 +7,7 @@ import wasmfile from "@jitl/quickjs-wasmfile-release-sync"
 import { QuickJSVariant } from "@smthrs/harness"
 import type { SandboxTools } from "@smthrs/sandbox"
 import { FlowRuntime } from "@smthrs/flow"
-import { Context, Effect, Exit, Layer, Metric, Option, Redacted } from "effect"
+import { Context, Effect, Exit, Layer, Logger, Metric, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
@@ -127,6 +127,7 @@ const routes = async (
     readonly repoFlows?: boolean
     readonly app?: boolean
     readonly repositories?: ReadonlyArray<string>
+    readonly manualRepositories?: ReadonlyArray<string>
     readonly engineSchema?: string
     readonly starter?: FlowStarter["Service"]
     /** GitHub out of reach: no scripted GitHub, and a base URL nothing listens on. */
@@ -139,6 +140,8 @@ const routes = async (
   const server = await Effect.runPromise(TestDatabase.serverUrl)
   const starts: Array<{ readonly flow: string; readonly executionId: string; readonly payload: unknown }> = []
   const registry: Metric.MetricRegistry = new Map()
+  const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+  const logger = Logger.make((entry) => { logs.push(Logger.formatStructured.log(entry)) })
   const configured = options.app === false
     ? Option.none()
     : Option.some(app({ privateKey: await appKey(), ...(options.unreachable === true || options.contentsDown === true ? { apiBaseUrl: "http://127.0.0.1:1" } : {}) }))
@@ -152,6 +155,7 @@ const routes = async (
   }))
   const api = await runtime.runPromise(RunsApi.make(scratch.database, {
     repositories: new Set(options.repositories ?? ["acme/widgets"]),
+    manualRepositories: new Set(options.manualRepositories),
     app: configured,
     repoFlows: options.repoFlows ?? true,
     roles: options.roleFailure === undefined ? roles : { ...roles, resolve: () => Effect.fail(new RepoRoles.RoleRefused({ code: options.roleFailure! })) },
@@ -197,9 +201,11 @@ const routes = async (
       Effect.provideService(FlowStarter, starter),
       Effect.provide(FetchHttpClient.layer),
       Effect.provideService(Metric.MetricRegistry, registry),
+      Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
     ),
   )
   return {
+    logs,
     starts,
     starter,
     storage,
@@ -244,6 +250,20 @@ describe("GET /api/repos/<owner>/<name>/flows", () => {
     const code = roleFailure === "app_not_installed" ? "not_found" : roleFailure
     expect(await answer(await h.fetch(repoFlowsRoute(REPOSITORY.owner, REPOSITORY.name))))
       .toEqual([roleFailure === "app_not_installed" ? 404 : roleFailure === "rate_limited" ? 429 : 503, { code }])
+  })
+  test("a hidden repository and a missing installation keep distinct operator receipts", async () => {
+    const { github } = repository()
+    const path = repoFlowsRoute(REPOSITORY.owner, REPOSITORY.name)
+    for (const [options, stage] of [
+      [{ repositories: [] }, "repository_allowlist"],
+      [{ roleFailure: "app_not_installed" }, "repository_role"],
+    ] as const) {
+      const h = await routes(github, options)
+      expect(await answer(await h.fetch(path))).toEqual([404, { code: "not_found" }])
+      expect(h.logs).toContainEqual(expect.objectContaining({
+        annotations: expect.objectContaining({ route: "flows", outcome: "not_found", stage }),
+      }))
+    }
   })
   test("the flows a person runs by hand, once each, with their titles, and the default branch", async () => {
     const { github } = repository()
@@ -544,9 +564,9 @@ describe("POST /api/repos/<owner>/<name>/runs", () => {
     expect(await answer(await failed.fetch(path, post({ ...body, id: uuid() })))).toEqual([503, { code: "unavailable" }])
   })
 
-  test("a run by hand: recorded as the person's, started at the branch's head with its inputs, once", async () => {
+  test.each([{}, { repositories: [], manualRepositories: ["acme/widgets"] }])("a run by hand records the person and starts once under either admission policy", async (policy) => {
     const { github, sha } = repository()
-    const h = await routes(github)
+    const h = await routes(github, policy)
     const id = uuid()
     const runId = manualExecutionId("release", id)
     const body = { id, flow: "release", ref: "main", input: { channel: "next", dryRun: false } }
@@ -627,6 +647,7 @@ describe("POST /api/repos/<owner>/<name>/runs: a run again", { timeout: 120_000 
     exits: Readonly<Record<string, number>>,
     use: (h: Awaited<ReturnType<typeof routes>>, request: RepoFlow.RunRequest, stop: () => Promise<void>) => Promise<void>,
     hang = false,
+    event: "push" | "manual" = "push",
   ) => {
     const { github, sha } = repository()
     const { services } = await githubServices(runtime, github)
@@ -646,10 +667,10 @@ describe("POST /api/repos/<owner>/<name>/runs: a run again", { timeout: 120_000 
         flow: "ci",
         sha,
         ref: "refs/heads/main",
-        event: "push",
+        event,
         secrets: true,
       }
-      yield* RepoRuns.record({ execution: runId, repoId: REPOSITORY.id, flow: "ci", sha, ref: request.ref, event: "push", launchedBy: "github" })
+      yield* RepoRuns.record({ execution: runId, repoId: REPOSITORY.id, flow: "ci", sha, ref: request.ref, event, launchedBy: event === "manual" ? MAYA : "github" })
         .pipe(Effect.provide(scratch.database))
       const flows = Context.get(context, FlowRuntime.FlowRuntime)
       const execute = flows.execute(RepoFlow.Run, { executionId: runId, payload: request }).pipe(Effect.provide(context))
@@ -813,6 +834,36 @@ describe("POST /api/repos/<owner>/<name>/runs: a run again", { timeout: 120_000 
       expect(await answer(response), `settled poisoned ${mismatch} must not authorize Stop`).toEqual([404, { code: "not_found" }])
       expect(stopped).toEqual([])
     })
+  })
+
+  test("manual-only admission refuses retries of automatic runs", async () => {
+    await afterRun({ "pnpm lint": 1 }, async (h, request) => {
+      const { github } = repository()
+      const manual = await routes(github, {
+        repositories: [], manualRepositories: ["acme/widgets"], engineSchema: h.engineSchema,
+      })
+      for (const failed of [false, true]) {
+        const response = await manual.fetch(repoRunsRoute(REPOSITORY.owner, REPOSITORY.name),
+          post({ id: uuid(), retryOf: request.run, failed }))
+        expect(await answer(response)).toEqual([404, { code: "not_manual" }])
+      }
+      expect(manual.starts).toEqual([])
+    })
+  })
+  test("manual-only retries require the recorded flow to remain on the default branch’s manual list", async () => {
+    await afterRun({ "pnpm lint": 1 }, async (previous, request) => {
+      const { github } = repository()
+      const h = await routes(github, {
+        repositories: [], manualRepositories: ["acme/widgets"], engineSchema: previous.engineSchema,
+      })
+      const retryId = uuid()
+      const retry = () => h.fetch(repoRunsRoute(REPOSITORY.owner, REPOSITORY.name),
+        post({ id: retryId, retryOf: request.run, failed: false }))
+      expect((await retry()).status).toBe(202)
+      github.push("main", { ".smithers/factory.json": JSON.stringify({ apiVersion: 1, contributes: { triggers: [] } }) })
+      expect(await answer(await retry())).toEqual([404, { code: "not_manual" }])
+      expect(h.starts).toHaveLength(1)
+    }, false, "manual")
   })
 
   test("Retry runs the flow again at its commit; Retry failed only its jobs that didn't pass", async () => {

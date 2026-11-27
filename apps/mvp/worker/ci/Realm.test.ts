@@ -1,5 +1,6 @@
 // A repository flow's plan in the real QuickJS realm (worker/ci/Realm.ts), from TypeScript source as a repository
 // commits it. No stand-in: the build's own QuickJS module, the separate-file build the Worker also uses.
+import { readFileSync } from "node:fs"
 import wasmfile from "@jitl/quickjs-wasmfile-release-sync"
 import { QuickJSVariant } from "@smthrs/harness"
 import { Effect } from "effect"
@@ -7,6 +8,7 @@ import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
 import { describe, expect, test } from "vitest"
 import { sourceText } from "../../../../packages/repo-targets/test-utils/source-readers.mjs"
 import * as Realm from "./Realm.vibe"
+import * as Triggers from "./Triggers.vibe"
 
 const payload: Realm.Payload = {
   run: "ci:delivery-1",
@@ -203,6 +205,21 @@ const describeFlow = (source: string, name = "release") =>
 
 test("describes the gate as the flow tagged gate", async () => {
   expect(await describeFlow(sourceText(GATE), "gate")).toMatchObject({ _tag: "described", tag: "gate" })
+})
+
+test("the landing check is discoverable by hand and plans one bounded job", async () => {
+  const name = "landing-check"
+  const manifest = readFileSync(new URL("../../../../.smithers/factory.json", import.meta.url), "utf8")
+  expect(Triggers.manualFlows(Triggers.triggersOf(manifest))).toContainEqual({ name, title: "Check landing readiness" })
+  const source = sourceText(new URL("../../../../.smithers/workflows/landing-check.ts", import.meta.url))
+  expect(await describeFlow(source, name)).toMatchObject({ _tag: "described", inputs: { properties: {}, required: [] } })
+  const result = await plan(source, name, { ...payload, event: "manual" })
+  expect(result).toMatchObject({
+    _tag: "planned",
+    jobs: [{ name: "landing-readiness", steps: [
+      { name: "check-numbers", timeoutSeconds: 30 },
+    ] }],
+  })
 })
 
 /** A flow a person runs by hand: inputs beside the run's own fields, typed, optional, defaulted and chosen. */
