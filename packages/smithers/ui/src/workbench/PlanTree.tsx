@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { safeHref } from "../internal/safeHref";
 import { Badge } from "../badge";
 import { cn } from "@smthrs/ui-css";
 import { StatusPill } from "../status-pill";
@@ -19,6 +20,7 @@ export type PlanTreeNodeItem = {
   readonly milestone: string;
   readonly status: PlanTreeNodeStatus;
   readonly depth: number;
+  /** Absolute web sources open in a new tab; other references stay plain text. */
   readonly sources?: ReadonlyArray<string>;
   readonly assumptions?: ReadonlyArray<PlanAssumption>;
   readonly cause?: CauseReceiptData;
@@ -163,19 +165,23 @@ export function PlanTree({
                   data-slot="plan-tree-sources"
                   style={{ marginTop: "6px", display: "flex", flexWrap: "wrap", gap: "6px" }}
                 >
-                  {sources.map((src) => (
-                    <code
-                      key={src}
-                      style={{
-                        fontSize: "11px",
-                        padding: "1px 6px",
-                        borderRadius: "4px",
-                        background: "var(--surface-2, #efeae0)",
-                      }}
-                    >
-                      {src}
-                    </code>
-                  ))}
+                  {sources.map((src) => {
+                    const href = safeHref(src);
+                    const web = href !== undefined && /^https?:\/\//i.test(href) && URL.canParse(href);
+                    return (
+                      <code
+                        key={src}
+                        style={{
+                          fontSize: "11px",
+                          padding: "1px 6px",
+                          borderRadius: "4px",
+                          background: "var(--surface-2, #efeae0)",
+                        }}
+                      >
+                        {web ? <a href={href} target="_blank" rel="noopener noreferrer">{src}</a> : src}
+                      </code>
+                    );
+                  })}
                 </div>
               ) : null}
 

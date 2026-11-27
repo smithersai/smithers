@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
+import { PlanTree } from "../../src/workbench/PlanTree";
 import { Calendar } from "../../src/calendar/Calendar";
 import { TestSuite, TestSuiteName, TestRow, TestResults, TestResultsProgress } from "../../src/artifacts/TestResults";
 import { Sources, SourcesTrigger, SourcesContent, Source } from "../../src/agentic/Sources";
@@ -24,6 +25,10 @@ function App() {
     <Sources defaultOpen><SourcesTrigger count={2} /><SourcesContent><Source title="Alpha" /><Source title="Beta" /></SourcesContent></Sources>
     <ChangeSummary additions={1} deletions={1} filesChanged={1} compact />
     <TestResults suites={[{ id: "api", name: "api", tests: [{ id: "ok", name: "ok", status: "passed" }, { id: "todo", name: "todo", status: "todo" }] }]}><TestResultsProgress /></TestResults>
+    <PlanTree onSelect={() => {}} nodes={[{
+      id: "receipt", title: "Qualification", milestone: "Release", status: "done", depth: 0,
+      sources: ["docs/check.md", location.origin + "/receipt.json"],
+    }]} />
   </main>;
 }
 createRoot(document.getElementById("app")!).render(<App />);

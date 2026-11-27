@@ -26,6 +26,8 @@ flowchart LR
 - **Side inspector:** Split grid showing chat and the active pane side by side.
 - **Full pane:** Maximized pane outside chat for Plan Tree, BYOA MCP attach, workflow run inspection, state machine proofs, diff review, or repository hosting waitlist.
 
+Plan node sources with valid HTTP or HTTPS URLs open in a new tab. File paths and other source references stay readable as text. Artifact links use the viewer’s existing access.
+
 ## Keyboard shortcuts
 
 Shortcuts ignore editable inputs, IME composition, modified chords, and already handled events.

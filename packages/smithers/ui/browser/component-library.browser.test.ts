@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { build } from "esbuild";
 import { join } from "node:path";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { chromium, type Browser } from "playwright";
 
 describe("component-library browser access", () => {
@@ -50,6 +52,40 @@ describe("component-library browser access", () => {
       expect(new URL(page.url()).hash).toBe("#second");
     } finally { await page.close(); }
   });
+
+  test("Tab reaches a Plan Tree receipt and Enter opens it without sending a referrer", async () => {
+    const referrers: Array<string | undefined> = [];
+    const server = createServer((request, response) => {
+      if (request.url === "/") {
+        response.writeHead(200, { "content-type": "text/html" }).end('<div id="app"></div><script src="/host.js"></script>');
+      } else if (request.url === "/host.js") {
+        response.writeHead(200, { "content-type": "application/javascript" }).end(bundle);
+      } else if (request.url === "/receipt.json") {
+        referrers.push(request.headers.referer);
+        response.writeHead(200, { "content-type": "application/json" }).end('{"result":"fixture"}');
+      } else response.writeHead(404).end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto(base);
+      await page.getByRole("button", { name: "Qualification" }).focus();
+      await page.keyboard.press("Tab");
+      const href = new URL("/receipt.json", base).href;
+      const source = page.getByRole("link", { name: href, exact: true });
+      expect(await source.evaluate(a => a === document.activeElement)).toBe(true);
+      expect(referrers).toHaveLength(0);
+      const opened = page.waitForEvent("popup");
+      await page.keyboard.press("Enter");
+      const receipt = await opened;
+      await receipt.waitForURL(href);
+      expect(await receipt.locator("body").innerText()).toContain('"result":"fixture"');
+      expect(referrers).toEqual([undefined]);
+      expect(await receipt.evaluate(() => window.opener === null)).toBe(true);
+    } finally { await context.close(); server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); }
+  }, 30_000);
 
   test("Chromium exposes grid rows, agenda links, source lists and the change summary", async () => {
     const page = await open();

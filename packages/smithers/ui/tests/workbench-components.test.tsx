@@ -156,7 +156,7 @@ describe("workbench components", () => {
             milestone: "M1",
             status: "in_progress",
             depth: 0,
-            sources: ["apps/mvp/worker/attach/Attach.ts"],
+            sources: ["apps/mvp/worker/attach/Attach.ts", "https://example.test/receipt.json", "http://example.test/check", "http://", "mailto:review@example.test", "//example.test", "javascript:alert(1)"],
             assumptions: [
               { id: "a1", text: "Sync converges without must-refetch", verified: true },
               { id: "a2", text: "Lean proves all transitions", verified: false },
@@ -179,6 +179,14 @@ describe("workbench components", () => {
     expect(container.textContent).toContain("apps/mvp/worker/attach/Attach.ts");
     expect(container.textContent).toContain("Assumptions 1/2");
     expect(container.querySelector('[data-slot="plan-tree-branch"] [data-node-id="n2"]')).toBeTruthy();
+
+    const pointers = container.querySelector('[data-slot="plan-tree-sources"]')!;
+    expect(Array.from(pointers.querySelectorAll("a"), a => a.getAttribute("href"))).toEqual([
+      "https://example.test/receipt.json", "http://example.test/check",
+    ]);
+    expect(pointers.querySelectorAll("code")).toHaveLength(7);
+    expect(pointers.textContent).toContain("javascript:alert(1)");
+    expect(pointers.querySelector("a")!.getAttribute("rel")).toBe("noopener noreferrer");
 
     const childButton = container.querySelector('[data-node-id="n2"] [data-slot="plan-tree-select"]') as HTMLButtonElement;
     expect(childButton.getAttribute("aria-pressed")).toBe("true");
