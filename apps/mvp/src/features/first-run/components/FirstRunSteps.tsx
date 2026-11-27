@@ -1,8 +1,9 @@
 import { Badge, Button, Card, CardContent, Input } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { useNavigate } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import { useAuth } from "../../auth/components/AuthContext"
 import { SignInButton } from "../../auth/components/SignInButton"
+import { formatUsd } from "../../billing/contract"
 import { INSTALL } from "../../repo/contract"
 import { DONE, GET_STARTED, OPEN, REPOSITORY, REPOSITORY_FIELD, REPOSITORY_PLACEHOLDER, STEP_TITLES } from "../contract"
 import type { Step } from "../schema"
@@ -12,17 +13,19 @@ import "./first-run.css"
 
 const MARK = { done: "success", next: "default", later: "muted" } as const
 
-// The first run's steps (decision 0121), just above the composer's place on `/app` until the person has a conversation
-// of their own: each step's mark (✓ once done, else its number) and title, and the current step's one action. Sign in
-// uses the sign-in link. At Ask, Chat ⌘K under the list is the button.
-// For a person who may not ask in `/app`'s conversation (ruling AUTH-8), Open your repository takes the repository's
-// name and opens its page, beside Install, the Smithers GitHub App's installation, when the deployment has one.
+// The first run's steps (decision 0121, 0175), just above the composer's place on `/app` until the person has a
+// conversation of their own. For a 3rd-party contributor without a role on the deployment repo, it surfaces their two
+// clear paths: fork a repo and bring their own agent for free over MCP, or add prepaid credits for cloud sandboxes.
 export function FirstRunSteps() {
   const { queries, actions } = useFirstRun()
   const { data: session } = useLiveQuery(useAuth().queries.session)
   const navigate = useNavigate()
   const { data: firstRun } = useLiveQuery(queries.state)
   if (firstRun?.show !== "steps") return null
+  const isContributorStep = firstRun.at === REPOSITORY
+  const balance = session?.computeBalanceMicroUsd ?? 0
+  const hasPaidCompute = session?.computeAccess === "paid"
+
   const action = (step: Step) => {
     if (step.state !== "next") return null
     if (step.id === "sign_in") return <SignInButton />
@@ -79,6 +82,25 @@ export function FirstRunSteps() {
               </li>
             ))}
           </ol>
+          {isContributorStep ? (
+            <div className="first-run-contributor" aria-label="Contributor options">
+              <div className="first-run-quick-repos">
+                <span>Browse &amp; fork:</span>
+                <Link to="/$owner/$repo" params={{ owner: "smithersai", repo: "smithers" }}>smithersai/smithers</Link>
+                <Link to="/$owner/$repo" params={{ owner: "smithersai", repo: "vibelang" }}>smithersai/vibelang</Link>
+              </div>
+              <div className="first-run-modes">
+                <Button asChild size="sm" variant="outline">
+                  <Link to="/app/settings">Connect your agent (Free)</Link>
+                </Button>
+                <Button asChild size="sm" variant={hasPaidCompute ? "outline" : "solid"}>
+                  <Link to="/app/settings">
+                    {hasPaidCompute ? `Cloud credits (${formatUsd(balance)})` : "Add cloud credits"}
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </section>

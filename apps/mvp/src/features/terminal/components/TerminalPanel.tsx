@@ -69,7 +69,17 @@ export function TerminalPanel({ canOpen, deploymentMember = true }: { readonly c
               onResize={actions.resize}
             />
           </Suspense>
-        ) : screen.kind === "open" ? openButton : screen.text === undefined ? null : <EmptyState title={screen.text} />}
+        ) : screen.kind === "open" ? openButton : view.badge === "Members can run machines." ? (
+          <EmptyState
+            title="Cloud sandboxes need credits"
+            description="Add prepaid compute credits to run terminals and jobs on your fork, or attach your own agent locally via MCP."
+            action={
+              <Button asChild size="sm" variant="solid">
+                <Link to="/app/settings">Add cloud credits</Link>
+              </Button>
+            }
+          />
+        ) : screen.text === undefined ? null : <EmptyState title={screen.text} />}
       </Card>
     </section>
   )

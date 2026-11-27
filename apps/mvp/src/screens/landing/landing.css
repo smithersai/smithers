@@ -1,4 +1,4 @@
-/* Page layout only; components and colors come from @smthrs/ui. */
+/* Layout only; components, colors and type come from @smthrs/ui. */
 .landing {
   min-height: 100dvh;
   padding: 0 1.25rem 2rem;
@@ -30,7 +30,7 @@
 .landing-title { margin: 0; min-width: 0; max-width: 100%; }
 .landing-title .sui-wordmark { width: min(100%, 38rem); }
 
-.landing-body { display: flex; flex-direction: column; align-items: center; }
+.landing-body { display: flex; flex-direction: column; align-items: center; width: 100%; }
 
 .landing-tagline {
   max-width: 52rem;
@@ -46,10 +46,43 @@
   gap: 0.9rem;
 }
 
+.landing-paths {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+  width: min(100%, 56rem);
+  margin-top: 2.5rem;
+  text-align: left;
+}
+
+.landing-path-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.landing-path-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.landing-path-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.landing-path-card p {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--text-muted);
+}
+
 .landing-footer { padding-top: 2rem; }
 
 @media (max-width: 28rem) {
   .landing { padding: 0 1rem 1.5rem; }
   .landing-top { gap: 1rem; }
 }
-

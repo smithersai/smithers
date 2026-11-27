@@ -1,0 +1,69 @@
+import { SqlClient } from "effect/sql"
+import {
+  type ComputeAccessMode,
+  MIN_ADMIT_MICRO_USD,
+  type SandboxBillingMode,
+} from "../../src/features/billing/contract.ts"
+import { type Actor, canAsk } from "../Actor.vibe"
+import * as BillingStore from "./BillingStore.vibe"
+
+// Single source of truth for Cloudflare machine & remote job authorization (decision 0175).
+// - Deployment Members (`canAsk(actor)` on `GITHUB_REPOSITORY`) run on deployment-funded compute (`deployment`).
+// - Third-party contributors run on prepaid compute (`paid`) once their balance is at least `MIN_ADMIT_MICRO_USD`.
+// - Anyone else has `none` (and can still use Smithers for free with their own agent over MCP).
+
+export interface ComputeDecision {
+  readonly allowed: boolean
+  readonly mode: ComputeAccessMode
+  readonly billingMode: SandboxBillingMode
+  readonly balanceMicroUsd: number
+}
+
+/** Evaluates whether `actor` may run Cloudflare sandboxes or remote jobs right now. */
+export const check = effect (actor: Actor): ComputeDecision!unknown!SqlClient.SqlClient => {
+  if (canAsk(actor)) {
+    return {
+      allowed: true,
+      mode: "deployment",
+      billingMode: "deployment",
+      balanceMicroUsd: 0,
+    } satisfies ComputeDecision
+  }
+  const balanceMicroUsd = try BillingStore.balanceOf(actor.subject.id)
+  if (balanceMicroUsd >= MIN_ADMIT_MICRO_USD) {
+    return {
+      allowed: true,
+      mode: "paid",
+      billingMode: "paid",
+      balanceMicroUsd,
+    } satisfies ComputeDecision
+  }
+  return {
+    allowed: false,
+    mode: "none",
+    billingMode: "paid",
+    balanceMicroUsd,
+  } satisfies ComputeDecision
+}
+
+/** Convenience boolean check for route and socket gates. */
+export const canRunMachine = effect (actor: Actor): boolean!unknown!SqlClient.SqlClient => {
+  const decision = try check(actor)
+  return decision.allowed
+}
+
+/** Summary fields included on `GET /api/auth/session` for immediate UI gating. */
+export const sessionSummary = effect (actor: Actor) => {
+  if (canAsk(actor)) {
+    const balanceMicroUsd = try BillingStore.balanceOf(actor.subject.id)
+    return {
+      computeAccess: "deployment" as ComputeAccessMode,
+      computeBalanceMicroUsd: balanceMicroUsd,
+    }
+  }
+  const balanceMicroUsd = try BillingStore.balanceOf(actor.subject.id)
+  return {
+    computeAccess: (balanceMicroUsd >= MIN_ADMIT_MICRO_USD ? "paid" : "none") as ComputeAccessMode,
+    computeBalanceMicroUsd: balanceMicroUsd,
+  }
+}

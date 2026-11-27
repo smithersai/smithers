@@ -46,6 +46,8 @@ import { Directory } from "./branch/People.vibe"
 import { TerminalSockets } from "./branch/Sandboxes.vibe"
 import * as BranchRooms from "./BranchRooms.vibe"
 import * as BranchSandboxes from "./BranchSandboxes.vibe"
+import * as BillingApi from "./billing/BillingApi.vibe"
+import * as StripeProvider from "./billing/StripeProvider.vibe"
 import * as BugsApi from "./bugs/Api.vibe"
 import * as Chat from "./Chat.ts"
 import * as Dispatch from "./ci/Dispatch.vibe"
@@ -68,6 +70,7 @@ import { recheckExecutionId, RecheckRole } from "./flows/RecheckRole.vibe"
 import * as Todo from "./flows/Todo.vibe"
 import * as TodoSession from "./flows/TodoSession.vibe"
 import * as GitHubApi from "./github/Api.vibe"
+import * as ForkApi from "./github/ForkApi.vibe"
 import * as GitHubConfig from "./github/Config.vibe"
 import * as FirstPaint from "./github/FirstPaint.vibe"
 import * as ReadToken from "./github/ReadToken.vibe"
@@ -242,6 +245,9 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const personalApi = yield* PersonalApi.make(database)
     // Bug reports (docs/features/bugs.md): filing one, the Admins' read and the reports' shape.
     const bugsApi = yield* BugsApi.make(database)
+    // Cloud compute billing & prepaid credits (decision 0175, docs/features/compute-billing.md).
+    const billingProvider = StripeProvider.layerFromEnv()
+    const billingApi = yield* BillingApi.make(database)
     const brokerObjects = yield* AuthBroker.HostedAuthBroker
     const connectionObjects = yield* GitHubConnection.GitHubConnection
     // Read once: the delegation route checks a call's signature against these sites before it addresses an object.
@@ -359,6 +365,11 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // TODOs' shapes.
     const refreshIssue = Option.isSome(app) ? yield* IssueRead.make(app.value) : undefined
     const stack = yield* StackApi.make(database, roles, refreshIssue === undefined ? {} : { refreshIssue })
+    // Contributor forks & upstream sync (decision 0175, docs/features/fork.md).
+    const forkApi = yield* ForkApi.make(database, {
+      app,
+      keys: Option.map(signIn.configured, (configured) => configured.keys),
+    })
     // The fleet's shapes: a repository's agent runs and runner machines (docs/features/fleet.md#the-shapes).
     const deploymentAdmins = yield* DeploymentPolicy.configuredAdmins().pipe(Effect.orElseSucceed(() => DeploymentPolicy.DEFAULT_ADMINS))
     const fleet = yield* FleetApi.make(roles)
@@ -678,6 +689,13 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                   Effect.provide(FetchHttpClient.layer)
                 )
               }
+              if (BillingApi.handles(path)) {
+                return yield* billingApi.fetch.pipe(
+                  Effect.provideService(Flows.FlowStarter, starter),
+                  Effect.provide(billingProvider),
+                  Effect.provide(signedIn)
+                )
+              }
               if (BugsApi.handles(path)) {
                 return yield* bugsApi.fetch.pipe(
                   Effect.provideService(Flows.FlowStarter, starter),
@@ -726,6 +744,12 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                 return yield* mcpApi.fetch.pipe(
                   Effect.provide(mcpTools),
                   Effect.provide(mcpAuth),
+                  Effect.provide(signedIn)
+                )
+              }
+              if (ForkApi.handles(path)) {
+                return yield* forkApi.fetch.pipe(
+                  Effect.provideService(Flows.FlowStarter, starter),
                   Effect.provide(signedIn)
                 )
               }

@@ -1,0 +1,11 @@
+.fork-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.fork-actions-status {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}

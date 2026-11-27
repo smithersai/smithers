@@ -43,6 +43,8 @@ import { PROFILE_TELEMETRY } from "./features/profile/contract"
 import { COEDIT_TELEMETRY } from "./features/coedit/contract"
 import { SHARING_TELEMETRY } from "./features/sharing/contract"
 import { SANDBOX_TELEMETRY } from "./features/sandbox/contract"
+import { BILLING_TELEMETRY } from "./features/billing/contract"
+import { FORK_TELEMETRY } from "./features/fork/contract"
 
 /** Records by name (log messages, span names, metric names) and the fields a relayed line keeps. */
 export interface Telemetry {
@@ -213,6 +215,8 @@ const features: ReadonlyArray<Telemetry> = [
   COEDIT_TELEMETRY,
   TERMINAL_TELEMETRY,
   SANDBOX_TELEMETRY,
+  BILLING_TELEMETRY,
+  FORK_TELEMETRY,
   SPEND_TELEMETRY,
   BUGS_TELEMETRY,
   FEEDS_TELEMETRY,

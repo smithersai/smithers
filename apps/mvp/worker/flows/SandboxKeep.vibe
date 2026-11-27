@@ -38,6 +38,12 @@ export const keeps = Metric.counter("smithers_sandbox_keeps", {
   incremental: true,
 })
 
+/** Paid sandboxes put to sleep because their owner's credit balance reached $0. */
+export const exhaustedSleeps = Metric.counter("smithers_compute_exhausted_sleeps", {
+  description: "Paid sandboxes slept immediately because compute credits were exhausted",
+  incremental: true,
+})
+
 /** Asking again while the machine is busy or can't answer: every `KEEP_EVERY_SECONDS`, for at most a week. */
 export const KEEP_RETRY = RetryPolicy.make({
   initialMs: KEEP_EVERY_SECONDS * 1000,
@@ -104,14 +110,27 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, id
     try Metric.update(Metric.withAttributes(keeps, { outcome }), 1)
     // A busy machine is awake: its ledger slot is renewed. A renewal Postgres refused is logged; the next ask renews it.
     if (outcome === "busy") {
-      try Budget.seen(branchId, generation).pipe(
+      const billed = try Budget.seen(branchId, generation).pipe(
         Effect.provide(database),
         Effect.catchCause((cause) =>
-          Effect.logWarning("sandbox.keep.seen").pipe(
-            Effect.annotateLogs({ branchId, generation, errorCode: codeOf(Cause.squash(cause)) }),
+          Effect.andThen(
+            Effect.logWarning("sandbox.keep.seen").pipe(
+              Effect.annotateLogs({ branchId, generation, errorCode: codeOf(Cause.squash(cause)) }),
+            ),
+            Effect.succeed({ paid: false, chargedMicroUsd: 0, balanceMicroUsd: 0, exhausted: false }),
           )
         ),
       )
+      if (billed.paid && billed.exhausted) {
+        try Metric.update(exhaustedSleeps, 1)
+        try Effect.logWarning("sandbox.keep.credits_exhausted").pipe(
+          Effect.annotateLogs({ branchId, generation }),
+        )
+        const sleptNow = try machines.sleepIfIdle(branchId, generation, 0, machine).pipe(
+          Effect.catchTag("@smthrs/mvp/branch/SandboxUnavailable", () => Effect.succeed("unavailable" as const)),
+        )
+        if (sleptNow === "slept" || sleptNow === "gone") return sleptNow
+      }
     }
     if (outcome === "slept" || outcome === "gone") return outcome
     throw new MachineBusy()

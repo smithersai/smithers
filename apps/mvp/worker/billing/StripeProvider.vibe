@@ -1,0 +1,182 @@
+import { Clock, Config, Effect, Layer, Option, Redacted } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { packById } from "../../src/features/billing/contract.ts"
+import {
+  BillingProvider,
+  BillingProviderError,
+  BillingWebhookError,
+  type CheckoutRequest,
+  type CheckoutSession,
+  type VerifiedWebhookEvent,
+} from "./BillingProvider.ts"
+import {
+  computeStripeHmacHex,
+  parseStripeSignature,
+  STRIPE_TOLERANCE_SECONDS,
+  timingSafeEqualHex,
+} from "./StripeCrypto.ts"
+
+const DEFAULT_STRIPE_API_URL = "https://api.stripe.com"
+
+export interface StripeConfig {
+  readonly secretKey: Redacted.Redacted<string>
+  readonly webhookSecret: Option.Option<Redacted.Redacted<string>>
+  readonly apiUrl: string
+}
+
+/** Reads Stripe configuration from Effect Config; None when STRIPE_SECRET_KEY is unset or blank. */
+export const configFromEnv = effect {
+  const secretOpt = try Config.option(Config.Redacted("STRIPE_SECRET_KEY"))
+  if (Option.isNone(secretOpt) || Redacted.value(secretOpt.value).trim() === "") {
+    return Option.none<StripeConfig>()
+  }
+  const webhookOpt = try Config.option(Config.Redacted("STRIPE_WEBHOOK_SECRET"))
+  const webhookSecret = Option.filter(webhookOpt, (s) => Redacted.value(s).trim() !== "")
+  const apiUrl = try Config.withDefault(Config.String("STRIPE_API_URL"), DEFAULT_STRIPE_API_URL)
+  return Option.some<StripeConfig>({
+    secretKey: secretOpt.value,
+    webhookSecret,
+    apiUrl: apiUrl.replace(/\/+$/, ""),
+  })
+}
+
+const formEncode = (fields: ReadonlyArray<readonly [string, string]>): string =>
+  fields.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&")
+
+/** Builds a Stripe-backed BillingProvider over the supplied HttpClient (defaults to FetchHttpClient). */
+export const make = (cfg: StripeConfig, http?: HttpClient.HttpClient): Layer.Layer<BillingProvider> => {
+  const runHttp = <A, E, R>(prog: Effect.Effect<A, E, R>): Effect.Effect<A, E, Exclude<R, HttpClient.HttpClient>> =>
+    http === undefined
+      ? Effect.provide(prog, FetchHttpClient.layer)
+      : Effect.provideService(prog, HttpClient.HttpClient, http)
+
+  const createCheckoutSession = (req: CheckoutRequest): Effect.Effect<CheckoutSession, BillingProviderError> =>
+    effect {
+      const client = try HttpClient.HttpClient
+      const body = formEncode([
+        ["mode", "payment"],
+        ["success_url", req.successUrl],
+        ["cancel_url", req.cancelUrl],
+        ["client_reference_id", req.personId],
+        ["line_items[0][price_data][currency]", "usd"],
+        ["line_items[0][price_data][unit_amount]", String(req.amountCents)],
+        ["line_items[0][price_data][product_data][name]", `Smithers Cloud Compute Credits (${req.packLabel})`],
+        ["line_items[0][price_data][product_data][description]", "Prepaid Cloudflare sandbox & remote job compute credits"],
+        ["line_items[0][quantity]", "1"],
+        ["metadata[person_id]", req.personId],
+        ["metadata[login]", req.login],
+        ["metadata[pack_id]", req.packId],
+        ["metadata[amount_micro_usd]", String(req.amountMicroUsd)],
+      ])
+      const request = HttpClientRequest.post(`${cfg.apiUrl}/v1/checkout/sessions`).pipe(
+        HttpClientRequest.setHeader("authorization", `Bearer ${Redacted.value(cfg.secretKey)}`),
+        HttpClientRequest.setHeader("content-type", "application/x-www-form-urlencoded"),
+        HttpClientRequest.bodyText(body),
+      )
+      const response = try client.execute(request).pipe(
+        Effect.mapError(() => new BillingProviderError({ code: "upstream_error" })),
+      )
+      if (response.status < 200 || response.status >= 300) {
+        throw new BillingProviderError({ code: "upstream_error", status: response.status })
+      }
+      const parsed = try response.json.pipe(
+        Effect.mapError(() => new BillingProviderError({ code: "invalid_response" })),
+      )
+      const obj = parsed as { readonly id?: unknown; readonly url?: unknown }
+      if (typeof obj?.id !== "string" || typeof obj?.url !== "string" || obj.id === "" || obj.url === "") {
+        throw new BillingProviderError({ code: "invalid_response" })
+      }
+      return { sessionId: obj.id, url: obj.url } satisfies CheckoutSession
+    } |> runHttp(%)
+
+  const verifyWebhook = (
+    rawBody: string,
+    signatureHeader: string,
+  ): Effect.Effect<VerifiedWebhookEvent, BillingWebhookError> =>
+    effect {
+      if (Option.isNone(cfg.webhookSecret)) {
+        throw new BillingWebhookError({ code: "not_configured" })
+      }
+      const parsedSig = parseStripeSignature(signatureHeader)
+      if (parsedSig === undefined) {
+        throw new BillingWebhookError({ code: "invalid_signature" })
+      }
+      const nowSec = Math.floor((try Clock.currentTimeMillis) / 1000)
+      if (Math.abs(nowSec - parsedSig.timestamp) > STRIPE_TOLERANCE_SECONDS) {
+        throw new BillingWebhookError({ code: "expired_timestamp" })
+      }
+      const webhookSecret = cfg.webhookSecret.value
+      const expected = try Effect.promise(() =>
+        computeStripeHmacHex(Redacted.value(webhookSecret), parsedSig.timestamp, rawBody)
+      )
+      const matched = parsedSig.signatures.some((sig) => timingSafeEqualHex(sig, expected))
+      if (!matched) {
+        throw new BillingWebhookError({ code: "invalid_signature" })
+      }
+      const payload = try Effect.try(() => JSON.parse(rawBody) as Record<string, unknown>).pipe(
+        Effect.mapError(() => new BillingWebhookError({ code: "invalid_payload" })),
+      )
+      const eventId = typeof payload.id === "string" ? payload.id : ""
+      const eventType = typeof payload.type === "string" ? payload.type : ""
+      if (eventId === "" || eventType === "") {
+        throw new BillingWebhookError({ code: "invalid_payload" })
+      }
+      if (eventType !== "checkout.session.completed") {
+        return { kind: "ignored", eventId, type: eventType } satisfies VerifiedWebhookEvent
+      }
+      const dataObj = (payload.data as { readonly object?: Record<string, unknown> } | undefined)?.object
+      if (dataObj === undefined || typeof dataObj !== "object") {
+        throw new BillingWebhookError({ code: "invalid_payload" })
+      }
+      const paymentStatus = dataObj.payment_status
+      if (paymentStatus !== "paid") {
+        return { kind: "ignored", eventId, type: `${eventType}:${String(paymentStatus)}` } satisfies VerifiedWebhookEvent
+      }
+      const sessionId = typeof dataObj.id === "string" ? dataObj.id : ""
+      const metadata = (dataObj.metadata as Record<string, unknown> | undefined) ?? {}
+      const personId = typeof metadata.person_id === "string" ? metadata.person_id : ""
+      const packIdRaw = typeof metadata.pack_id === "string" ? metadata.pack_id : ""
+      const pack = packById(packIdRaw)
+      if (sessionId === "" || personId === "" || pack === undefined) {
+        throw new BillingWebhookError({ code: "invalid_payload" })
+      }
+      const customerId = typeof dataObj.customer === "string" ? dataObj.customer : null
+      return {
+        kind: "checkout.completed",
+        eventId,
+        sessionId,
+        personId,
+        packId: pack.id,
+        amountMicroUsd: pack.amountMicroUsd,
+        customerId,
+      } satisfies VerifiedWebhookEvent
+    }
+
+  return Layer.succeed(
+    BillingProvider,
+    BillingProvider.of({
+      configured: true,
+      createCheckoutSession,
+      verifyWebhook,
+    }),
+  )
+}
+
+/** Layer built from environment Config; falls back to disabledLayer when STRIPE_SECRET_KEY is unset. */
+export const layerFromEnv = (http?: HttpClient.HttpClient): Layer.Layer<BillingProvider> =>
+  Layer.unwrap(
+    effect {
+      const cfg = try configFromEnv.pipe(Effect.catchCause(() => Effect.succeed(Option.none<StripeConfig>())))
+      if (Option.isNone(cfg)) {
+        return Layer.succeed(
+          BillingProvider,
+          BillingProvider.of({
+            configured: false,
+            createCheckoutSession: () => Effect.fail(new BillingProviderError({ code: "not_configured" })),
+            verifyWebhook: () => Effect.fail(new BillingWebhookError({ code: "not_configured" })),
+          }),
+        )
+      }
+      return make(cfg.value, http)
+    },
+  )

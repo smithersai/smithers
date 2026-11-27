@@ -110,6 +110,10 @@ export const ASKING_ROLES: ReadonlyArray<Role> = ["admin", "maintainer", "member
  */
 export const mayAsk = (role: Role | null): boolean => role !== null && ASKING_ROLES.includes(role)
 
+/** Whether a signed-in person may run Cloudflare machines: deployment Member+ OR paid compute credits (decision 0175). */
+export const mayRunMachines = (session: { readonly role: Role | null; readonly computeAccess?: "deployment" | "paid" | "none" }): boolean =>
+  mayAsk(session.role) || session.computeAccess === "paid"
+
 /** The roles that may add and remove a repository's custom domains (`repo:domain-write`, decision 0039). */
 export const DOMAIN_ROLES: ReadonlyArray<Role> = ["admin", "maintainer"]
 
@@ -163,6 +167,8 @@ export type SessionState =
     readonly login: string
     readonly role: Role | null
     readonly hostedModel?: boolean
+    readonly computeAccess?: "deployment" | "paid" | "none"
+    readonly computeBalanceMicroUsd?: number
     readonly install?: string
     /** When the session ends, epoch milliseconds on the server's clock; none for a session that has no end, as in local development. */
     readonly expiresAt?: number

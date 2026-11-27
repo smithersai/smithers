@@ -12,7 +12,8 @@ import {
   TERMINALS_TABLE,
 } from "../../src/features/terminal/contract.ts"
 import type { Actor } from "../Actor.vibe"
-import { refusesPersonOnly, canAsk, Sessions } from "../Actor.vibe"
+import { refusesPersonOnly, Sessions } from "../Actor.vibe"
+import * as ComputeAccess from "../billing/ComputeAccess.vibe"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.vibe"
@@ -191,7 +192,7 @@ export const make = effect <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, 
         const branch = try branchAccess(actor, branchId).pipe(Effect.provide(database))
         if (branch === undefined) return refuse(fields, 404, "not_found")
         if (!canEdit(branch.access)) return refuse(fields, 403, "forbidden")
-        if (!(try sync(() => canAsk(actor.value)))) return refuse(fields, 403, "members_only")
+        if (!(try ComputeAccess.canRunMachine(actor.value).pipe(Effect.provide(database)))) return refuse(fields, 403, "members_only")
         // No terminal on a locked branch, nor yet on a restricted one, whose writers come with 0007's modes.
         if (branch.mode !== "open") return refuse(fields, 409, "locked")
         // A shell's exit reaches the browser socket immediately, but its row can still say open. A new open
@@ -285,7 +286,7 @@ export const make = effect <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, 
         const branch = try branchAccess(actor, row.branchId).pipe(Effect.provide(database))
         // A terminal's branch is never deleted while its rows stand (the foreign key).
         if (!canView(branch!.access)) return refuse(fields, 403, "forbidden")
-        if (!(try sync(() => canAsk(actor.value)))) return refuse(fields, 403, "members_only")
+        if (!(try ComputeAccess.canRunMachine(actor.value).pipe(Effect.provide(database)))) return refuse(fields, 403, "members_only")
         const access = canEdit(branch!.access) ? "write" : "read"
         fields.access = access
         if (row.status !== "open") return refuse(fields, 409, row.status)

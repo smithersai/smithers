@@ -12,7 +12,8 @@ import {
   SANDBOX_CALLS_ROUTE,
 } from "../../src/features/sandbox/contract.ts"
 import type { Actor } from "../Actor.vibe"
-import { boundTo, canAsk, Sessions } from "../Actor.vibe"
+import { boundTo, Sessions } from "../Actor.vibe"
+import * as ComputeAccess from "../billing/ComputeAccess.vibe"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.vibe"
@@ -172,7 +173,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, com
         if (branch === undefined) return refuse(fields, 404, "not_found")
         fields.branchId = branch.branchId
         if (!canEdit(branch.access)) return refuse(fields, 403, "forbidden")
-        if (!(try Effect.sync(() => canAsk(actor.value)))) return refuse(fields, 403, "members_only")
+        if (!(try ComputeAccess.canRunMachine(actor.value).pipe(Effect.provide(database)))) return refuse(fields, 403, "members_only")
         if (branch.mode === "locked") return refuse(fields, 409, "locked")
         if (call.tool === "run" && (call.timeoutSeconds ?? 60) > commandSeconds) {
           fields.code = "too_long"

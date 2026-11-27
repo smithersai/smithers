@@ -21,6 +21,7 @@ import {
 } from "../src/features/auth/contract.ts"
 import { installUrl } from "../src/features/repo/contract.ts"
 import * as Actor from "./Actor.vibe"
+import * as ComputeAccess from "./billing/ComputeAccess.vibe"
 import { DEFAULT_REPOSITORY } from "./defaultRepository.ts"
 import * as Conversations from "./branch/Conversations.vibe"
 import { readBounded } from "./Body.vibe"
@@ -1180,6 +1181,12 @@ export const make = <E, R>(
           catchCause(() => succeed(undefined)),
         )
         : undefined
+      const compute = Option.isSome(signed)
+        ? try ComputeAccess.sessionSummary(signed.value.actor).pipe(
+          Effect.provide(database),
+          catchCause(() => succeed(undefined)),
+        )
+        : undefined
       const state: SessionState = Option.isSome(signed)
         ? {
           signedIn: true,
@@ -1189,6 +1196,8 @@ export const make = <E, R>(
           role: signed.value.actor.role,
           ...(signed.value.roleConfirmed === false ? { roleConfirmed: false } : {}),
           hostedModel: hostedModel && Actor.canAsk(signed.value.actor),
+          ...(compute !== undefined && compute.computeAccess === "paid" ? { computeAccess: "paid" as const } : {}),
+          ...(compute !== undefined && compute.computeBalanceMicroUsd > 0 ? { computeBalanceMicroUsd: compute.computeBalanceMicroUsd } : {}),
           ...(install === undefined ? {} : { install }),
           // Until when the session is live, and the database's now read beside it, so a tab counts down on one clock
           // from when it asked. Local development's people have no session: the Worker's now, with no end to compare.

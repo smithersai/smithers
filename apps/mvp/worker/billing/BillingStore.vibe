@@ -1,0 +1,339 @@
+import { Config, Effect, Metric, Option } from "effect"
+import { SqlClient } from "effect/sql"
+import {
+  type BillingAccountState,
+  chargeMicroUsd,
+  COMPUTE_PACKS,
+  type ComputeAccessMode,
+  type ComputeLedgerEntry,
+  type ComputeLedgerKind,
+  type ComputePackId,
+  DEFAULT_PRICE_MULTIPLIER,
+  hourlyUsd,
+  INSTANCE_SPECS,
+  MIN_ADMIT_MICRO_USD,
+} from "../../src/features/billing/contract.ts"
+
+// Atomic Postgres ledger for prepaid compute credits (decision 0175).
+// All monetary balances are exact integer micro-USD (1 USD = 1_000_000).
+// Every credit and usage debit carries a unique idempotency_key so webhook retries
+// and durable flow replays never double-credit or double-charge.
+
+export const creditsCounter = Metric.counter("smithers_compute_credits_micro_usd", {
+  description: "Compute credits added in micro-USD, by kind",
+  incremental: true,
+})
+
+export const debitsCounter = Metric.counter("smithers_compute_debits_micro_usd", {
+  description: "Compute credits debited for paid sandbox usage in micro-USD, by instance",
+  incremental: true,
+})
+
+export const configuredMultiplier = effect {
+  const raw = try Config.withDefault(Config.Number("COMPUTE_PRICE_MULTIPLIER"), DEFAULT_PRICE_MULTIPLIER)
+  return Number.isFinite(raw) && raw >= 1 ? raw : DEFAULT_PRICE_MULTIPLIER
+}
+
+/** Current balance in micro-USD for `personId` (0 if no account row exists yet). */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export const balanceOf = effect (personId: string) => {
+  if (!UUID_RE.test(personId)) return 0
+  const sql = try SqlClient.SqlClient
+  const [row] = try sql<{ readonly balance: string }>`
+    SELECT balance_micro_usd::text AS balance FROM compute_accounts WHERE person_id = ${personId}::uuid`
+  return row === undefined ? 0 : Number(row.balance)
+}
+
+/** Ensures a compute_accounts row exists for `personId` and locks it FOR UPDATE inside an open transaction. */
+const lockAccount = effect (sql: SqlClient.SqlClient, personId: string) => {
+  try sql`
+    INSERT INTO compute_accounts (person_id)
+    VALUES (${personId}::uuid)
+    ON CONFLICT (person_id) DO NOTHING`
+  const [row] = try sql<{
+    readonly balance: string
+    readonly purchased: string
+    readonly spent: string
+  }>`
+    SELECT balance_micro_usd::text AS balance,
+           lifetime_purchased_micro_usd::text AS purchased,
+           lifetime_spent_micro_usd::text AS spent
+    FROM compute_accounts
+    WHERE person_id = ${personId}::uuid
+    FOR UPDATE`
+  return {
+    balance: Number(row!.balance),
+    purchased: Number(row!.purchased),
+    spent: Number(row!.spent),
+  }
+}
+
+export interface CreditInput {
+  readonly personId: string
+  readonly kind: Extract<ComputeLedgerKind, "topup" | "admin_grant" | "refund">
+  readonly amountMicroUsd: number
+  readonly idempotencyKey: string
+  readonly description: string
+  readonly metadata?: Record<string, unknown>
+  readonly checkoutSessionId?: string
+  readonly stripeCustomerId?: string | null
+}
+
+export interface CreditOutcome {
+  readonly applied: boolean
+  readonly balanceMicroUsd: number
+}
+
+/** Atomically credits `personId` once per `idempotencyKey`. */
+export const credit = effect (input: CreditInput): CreditOutcome!unknown!SqlClient.SqlClient => {
+  const sql = try SqlClient.SqlClient
+  const outcome = try sql.withTransaction(effect {
+    const acct = try lockAccount(sql, input.personId)
+    const [existing] = try sql<{ readonly balanceAfter: string }>`
+      SELECT balance_after_micro_usd::text AS "balanceAfter"
+      FROM compute_ledger WHERE idempotency_key = ${input.idempotencyKey}`
+    if (existing !== undefined) {
+      return { applied: false, balanceMicroUsd: acct.balance } satisfies CreditOutcome
+    }
+    const nextBalance = acct.balance + input.amountMicroUsd
+    const nextPurchased = input.kind === "topup" ? acct.purchased + input.amountMicroUsd : acct.purchased
+    try sql`
+      UPDATE compute_accounts
+      SET balance_micro_usd = ${nextBalance}::bigint,
+          lifetime_purchased_micro_usd = ${nextPurchased}::bigint,
+          stripe_customer_id = coalesce(${input.stripeCustomerId ?? null}, stripe_customer_id),
+          updated_at = now()
+      WHERE person_id = ${input.personId}::uuid`
+    try sql`
+      INSERT INTO compute_ledger (
+        person_id, kind, amount_micro_usd, balance_after_micro_usd, idempotency_key, description, metadata
+      ) VALUES (
+        ${input.personId}::uuid,
+        ${input.kind},
+        ${input.amountMicroUsd}::bigint,
+        ${nextBalance}::bigint,
+        ${input.idempotencyKey},
+        ${input.description},
+        ${(try Effect.sync(() => JSON.stringify(input.metadata ?? {})))}::jsonb
+      )`
+    if (input.checkoutSessionId !== undefined) {
+      try sql`
+        UPDATE compute_checkout_sessions
+        SET status = 'completed', settled_at = now()
+        WHERE id = ${input.checkoutSessionId}`
+    }
+    return { applied: true, balanceMicroUsd: nextBalance } satisfies CreditOutcome
+  })
+  if (outcome.applied) {
+    try Metric.update(Metric.withAttributes(creditsCounter, { kind: input.kind }), input.amountMicroUsd)
+  }
+  return outcome
+}
+
+/** Records a newly created Stripe Checkout session as pending. */
+export const recordCheckoutPending = effect (input: {
+  readonly sessionId: string
+  readonly personId: string
+  readonly packId: ComputePackId
+  readonly amountMicroUsd: number
+}) => {
+  const sql = try SqlClient.SqlClient
+  try sql`
+    INSERT INTO compute_checkout_sessions (id, person_id, pack_id, amount_micro_usd, status)
+    VALUES (${input.sessionId}, ${input.personId}::uuid, ${input.packId}, ${input.amountMicroUsd}::bigint, 'pending')
+    ON CONFLICT (id) DO NOTHING`
+}
+
+export interface ChargeOutcome {
+  readonly paid: boolean
+  readonly chargedMicroUsd: number
+  readonly balanceMicroUsd: number
+  readonly exhausted: boolean
+}
+
+/**
+ * Settles incremental elapsed usage on a `paid` sandbox generation row (`Budget.seen` and `Budget.ended`).
+ * Deployment-funded generations return `{ paid: false, chargedMicroUsd: 0, balanceMicroUsd: 0, exhausted: false }`.
+ * Clamps balance at 0 and flags `exhausted: true` when the owner has no remaining credits.
+ */
+export const settleGeneration = effect (
+  branchId: string,
+  generation: number,
+  multiplier = DEFAULT_PRICE_MULTIPLIER,
+): ChargeOutcome!unknown!SqlClient.SqlClient => {
+  const sql = try SqlClient.SqlClient
+  const outcome = try sql.withTransaction(effect {
+    const [gen] = try sql<{
+      readonly id: string
+      readonly personId: string | null
+      readonly instance: string | null
+      readonly billingMode: string
+      readonly billedSeconds: number
+      readonly elapsedSeconds: number
+    }>`
+      SELECT id::text AS id,
+             person_id::text AS "personId",
+             instance,
+             billing_mode AS "billingMode",
+             billed_seconds AS "billedSeconds",
+             greatest(0, floor(extract(epoch FROM (coalesce(ended_at, now()) - started_at))))::int AS "elapsedSeconds"
+      FROM sandbox_generations
+      WHERE branch_id = ${branchId} AND generation = ${generation}
+      ORDER BY id DESC
+      LIMIT 1
+      FOR UPDATE`
+    if (gen === undefined || gen.billingMode !== "paid" || gen.personId === null || !UUID_RE.test(gen.personId) || gen.instance === null) {
+      return {
+        outcome: { paid: false, chargedMicroUsd: 0, balanceMicroUsd: 0, exhausted: false } satisfies ChargeOutcome,
+        instance: "",
+      }
+    }
+    const acct = try lockAccount(sql, gen.personId)
+    const targetSeconds = Math.max(gen.billedSeconds, gen.elapsedSeconds)
+    const deltaSeconds = targetSeconds - gen.billedSeconds
+    if (deltaSeconds <= 0) {
+      return {
+        outcome: {
+          paid: true,
+          chargedMicroUsd: 0,
+          balanceMicroUsd: acct.balance,
+          exhausted: acct.balance <= 0,
+        } satisfies ChargeOutcome,
+        instance: gen.instance,
+      }
+    }
+    const rawCost = chargeMicroUsd(gen.instance, deltaSeconds, multiplier)
+    const deducted = Math.min(acct.balance, rawCost)
+    const nextBalance = acct.balance - deducted
+    const idempotencyKey = `sandbox:${gen.id}:sec:${targetSeconds}`
+    if (deducted > 0) {
+      try sql`
+        UPDATE compute_accounts
+        SET balance_micro_usd = ${nextBalance}::bigint,
+            lifetime_spent_micro_usd = lifetime_spent_micro_usd + ${deducted}::bigint,
+            updated_at = now()
+        WHERE person_id = ${gen.personId}::uuid`
+      try sql`
+        INSERT INTO compute_ledger (
+          person_id, kind, amount_micro_usd, balance_after_micro_usd, idempotency_key, description, metadata
+        ) VALUES (
+          ${gen.personId}::uuid,
+          'sandbox_usage',
+          ${-deducted}::bigint,
+          ${nextBalance}::bigint,
+          ${idempotencyKey},
+          ${`Cloud sandbox (${gen.instance}, ${deltaSeconds}s)`},
+          ${(try Effect.sync(() => JSON.stringify({ generationRowId: gen.id, instance: gen.instance, seconds: deltaSeconds })))}::jsonb
+        )
+        ON CONFLICT (idempotency_key) DO NOTHING`
+    }
+    try sql`
+      UPDATE sandbox_generations
+      SET billed_seconds = ${targetSeconds},
+          billed_micro_usd = billed_micro_usd + ${deducted}::bigint
+      WHERE id = ${gen.id}::bigint`
+    return {
+      outcome: {
+        paid: true,
+        chargedMicroUsd: deducted,
+        balanceMicroUsd: nextBalance,
+        exhausted: nextBalance <= 0,
+      } satisfies ChargeOutcome,
+      instance: gen.instance,
+    }
+  })
+  if (outcome.outcome.chargedMicroUsd > 0) {
+    try Metric.update(
+      Metric.withAttributes(debitsCounter, { instance: outcome.instance }),
+      outcome.outcome.chargedMicroUsd,
+    )
+  }
+  return outcome.outcome
+}
+
+/** Looks up a person's id by GitHub login (case-insensitive) for admin credit grants. */
+export const findPersonByLogin = effect (login: string) => {
+  const sql = try SqlClient.SqlClient
+  const [row] = try sql<{ readonly id: string; readonly login: string }>`
+    SELECT id::text AS id, github_login AS login
+    FROM people
+    WHERE lower(github_login) = lower(${login.trim()})
+    LIMIT 1`
+  return Option.fromNullishOr(row)
+}
+
+/** Reads the full BillingAccountState for Settings UI. */
+export const accountState = effect (input: {
+  readonly personId: string
+  readonly isDeploymentMember: boolean
+  readonly stripeConfigured: boolean
+  readonly multiplier: number
+  readonly defaultInstance: string
+}): BillingAccountState!unknown!SqlClient.SqlClient => {
+  const sql = try SqlClient.SqlClient
+  const [acct] = try sql<{
+    readonly balance: string
+    readonly purchased: string
+    readonly spent: string
+  }>`
+    SELECT balance_micro_usd::text AS balance,
+           lifetime_purchased_micro_usd::text AS purchased,
+           lifetime_spent_micro_usd::text AS spent
+    FROM compute_accounts
+    WHERE person_id = ${input.personId}::uuid`
+  const balanceMicroUsd = acct === undefined ? 0 : Number(acct.balance)
+  const lifetimePurchasedMicroUsd = acct === undefined ? 0 : Number(acct.purchased)
+  const lifetimeSpentMicroUsd = acct === undefined ? 0 : Number(acct.spent)
+  const computeAccess: ComputeAccessMode = input.isDeploymentMember
+    ? "deployment"
+    : balanceMicroUsd >= MIN_ADMIT_MICRO_USD
+    ? "paid"
+    : "none"
+  const ledgerRows = try sql<{
+    readonly id: string
+    readonly kind: ComputeLedgerKind
+    readonly amount: string
+    readonly balanceAfter: string
+    readonly description: string
+    readonly createdAt: string
+  }>`
+    SELECT id::text AS id,
+           kind,
+           amount_micro_usd::text AS amount,
+           balance_after_micro_usd::text AS "balanceAfter",
+           description,
+           created_at::text AS "createdAt"
+    FROM compute_ledger
+    WHERE person_id = ${input.personId}::uuid
+    ORDER BY created_at DESC
+    LIMIT 50`
+  const ledger: ReadonlyArray<ComputeLedgerEntry> = ledgerRows.map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    amountMicroUsd: Number(row.amount),
+    balanceAfterMicroUsd: Number(row.balanceAfter),
+    description: row.description,
+    createdAt: row.createdAt,
+  }))
+  const rates = Object.entries(INSTANCE_SPECS).map(([instance, spec]) => ({
+    instance,
+    vcpu: spec.vcpu,
+    memoryGib: spec.memoryGib,
+    hourlyUsd: Number(hourlyUsd(instance, input.multiplier).toFixed(4)),
+  }))
+  return {
+    balanceMicroUsd,
+    lifetimePurchasedMicroUsd,
+    lifetimeSpentMicroUsd,
+    computeAccess,
+    isDeploymentMember: input.isDeploymentMember,
+    minAdmitMicroUsd: MIN_ADMIT_MICRO_USD,
+    stripeConfigured: input.stripeConfigured,
+    priceMultiplier: input.multiplier,
+    defaultInstance: input.defaultInstance,
+    rates,
+    packs: COMPUTE_PACKS,
+    ledger,
+  } satisfies BillingAccountState
+}

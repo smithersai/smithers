@@ -86,10 +86,12 @@ export const load = effect {
         roleConfirmed: state.roleConfirmed,
         available: true,
         hostedModel: state.hostedModel ?? true,
+        computeAccess: state.computeAccess,
+        computeBalanceMicroUsd: state.computeBalanceMicroUsd,
         install: state.install,
         homeConversationId: state.homeConversationId,
       }
-      : { status: "signed_out", login: null, role: null, roleConfirmed: undefined, available: state.available, hostedModel: state.hostedModel, install: undefined, homeConversationId: undefined },
+      : { status: "signed_out", login: null, role: null, roleConfirmed: undefined, available: state.available, hostedModel: state.hostedModel, computeAccess: undefined, computeBalanceMicroUsd: undefined, install: undefined, homeConversationId: undefined },
   )
   try (try AuthStore).sessionConfirmed
   if (state.signedIn) {

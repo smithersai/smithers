@@ -1,7 +1,8 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
-import { type Actor, canAsk } from "./Actor.vibe"
+import type { Actor } from "./Actor.vibe"
+import * as ComputeAccess from "./billing/ComputeAccess.vibe"
 import { branchAccess, BranchRoles, canEdit, canView } from "./branch/Access.vibe"
 import * as Conversations from "./branch/Conversations.vibe"
 import { scopeAccess } from "./branch/Texts.vibe"
@@ -74,7 +75,7 @@ export const verdict = <R>(roles: RepoRoles.RepoRoles<R>, admission: Admission, 
             ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const)
             : "changed" as const
         }
-        if (!(try sync(() => canAsk(actor)))) return "revoked" as const
+        if (!(try ComputeAccess.canRunMachine(actor))) return "revoked" as const
         return ((try sync(() => canEdit(branch.access))) ? "write" : "read") === admission.access
           ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const)
           : "changed" as const

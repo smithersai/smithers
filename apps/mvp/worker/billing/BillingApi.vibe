@@ -1,0 +1,300 @@
+import { Clock, Config, Effect, type Layer, Metric, Option, Schema } from "effect"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { SqlClient } from "effect/sql"
+import {
+  BILLING_ACCOUNT_ROUTE,
+  BILLING_ADMIN_GRANT_ROUTE,
+  BILLING_CHECKOUT_ROUTE,
+  BILLING_ROUTE,
+  BILLING_WEBHOOK_ROUTE,
+  COMPUTE_PACK_IDS,
+  MAX_BILLING_BODY_BYTES,
+  MAX_WEBHOOK_BODY_BYTES,
+  MICRO_USD_PER_USD,
+  packById,
+} from "../../src/features/billing/contract.ts"
+import { canAsk, refusesPersonOnly, Sessions } from "../Actor.vibe"
+import { readBounded } from "../Body.vibe"
+import * as DeploymentPolicy from "../DeploymentPolicy.vibe"
+import { codeOf } from "../ErrorCode.ts"
+import * as Flows from "../Flows.vibe"
+import * as BillingFlows from "./BillingFlows.vibe"
+import { BillingProvider } from "./BillingProvider.ts"
+import * as BillingStore from "./BillingStore.vibe"
+import { randomUuid } from "./StripeCrypto.ts"
+
+// Cloud compute billing HTTP routes (decision 0175, docs/features/compute-billing.md):
+// - GET  /api/billing/account      : signed-in person's balance, rates, packs, ledger
+// - POST /api/billing/checkout     : person-only Stripe Checkout session creation
+// - POST /api/billing/webhook      : signature-verified Stripe webhook -> durable billing/CreditTopUp
+// - POST /api/billing/admin/grant  : Deployment Admin person-only credit grant -> durable billing/AdminGrant
+
+export const requests = Metric.counter("smithers_compute_billing_requests", {
+  description: "Requests to compute billing routes, by route and outcome",
+  incremental: true,
+})
+
+const noStore = { "cache-control": "no-store" }
+const json = (status: number, body: unknown) => HttpServerResponse.jsonUnsafe(body, { status, headers: noStore })
+
+const CheckoutBody = Schema.Struct({
+  packId: Schema.Literals(COMPUTE_PACK_IDS),
+})
+const decodeCheckout = Schema.decodeUnknownOption(Schema.fromJsonString(CheckoutBody))
+
+const GrantBody = Schema.Struct({
+  login: Schema.String,
+  amountUsd: Schema.Number,
+  note: Schema.optional(Schema.String),
+})
+const decodeGrant = Schema.decodeUnknownOption(Schema.fromJsonString(GrantBody))
+
+/** Whether `path` belongs to the compute billing API. */
+export const handles = (path: string): boolean =>
+  path === BILLING_ACCOUNT_ROUTE ||
+  path === BILLING_CHECKOUT_ROUTE ||
+  path === BILLING_WEBHOOK_ROUTE ||
+  path === BILLING_ADMIN_GRANT_ROUTE ||
+  path === BILLING_ROUTE
+
+const originOf = (request: HttpServerRequest.HttpServerRequest): string => {
+  const originHeader = request.headers.origin
+  if (typeof originHeader === "string" && /^https?:\/\/[^/\s]+$/i.test(originHeader)) {
+    return originHeader
+  }
+  const host = request.headers.host
+  if (typeof host === "string" && host.trim() !== "") {
+    const proto = request.headers["x-forwarded-proto"] === "http" ? "http" : "https"
+    return `${proto}://${host.trim()}`
+  }
+  return "https://smithers.sh"
+}
+
+export const make = effect <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
+  const multiplier = try BillingStore.configuredMultiplier
+  const defaultInstance = try Config.withDefault(Config.String("SANDBOX_INSTANCE"), "standard-1")
+  const configuredAdmins = try DeploymentPolicy.configuredAdmins()
+
+  const record = (route: string, outcome: string, startedAt: number) =>
+    effect {
+      const durationMs = (try Clock.currentTimeMillis) - startedAt
+      try Metric.update(Metric.withAttributes(requests, { route, outcome }), 1)
+      try Effect.logInfo("billing.request").pipe(Effect.annotateLogs({ route, outcome, durationMs }))
+    }
+
+  const fetch = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const path = (try Effect.sync(() => request.url.split("?")[0]!))
+    const startedAt = try Clock.currentTimeMillis
+
+    if (path === BILLING_WEBHOOK_ROUTE) {
+      if (request.method !== "POST") {
+        return HttpServerResponse.empty({ status: 405, headers: { ...noStore, allow: "POST" } })
+      }
+      const provider = try BillingProvider
+      if (!provider.configured) {
+        try record("webhook", "not_configured", startedAt)
+        return json(503, { code: "not_configured" })
+      }
+      const sig = request.headers["stripe-signature"]
+      if (typeof sig !== "string" || sig.trim() === "") {
+        try record("webhook", "invalid_signature", startedAt)
+        return json(400, { code: "invalid_signature" })
+      }
+      const bodyRes = try readBounded(request, MAX_WEBHOOK_BODY_BYTES).pipe(Effect.result)
+      if (bodyRes._tag === "Failure") {
+        const tooLarge = bodyRes.failure.reason === "too_large"
+        try record("webhook", tooLarge ? "too_large" : "invalid", startedAt)
+        return json(tooLarge ? 413 : 400, { code: tooLarge ? "too_large" : "invalid" })
+      }
+      const verified = try provider.verifyWebhook(bodyRes.success, sig).pipe(Effect.result)
+      if (verified._tag === "Failure") {
+        const code = verified.failure.code
+        const status = code === "not_configured" ? 503 : 400
+        try record("webhook", code, startedAt)
+        return json(status, { code })
+      }
+      if (verified.success.kind === "ignored") {
+        try record("webhook", "ignored", startedAt)
+        return json(200, { received: true, ignored: true })
+      }
+      const ev = verified.success
+      const starter = try Flows.FlowStarter
+      const started = try starter.start(BillingFlows.CreditTopUp, {
+        executionId: BillingFlows.topUpExecutionId(ev.eventId),
+        payload: {
+          eventId: ev.eventId,
+          sessionId: ev.sessionId,
+          personId: ev.personId,
+          packId: ev.packId,
+          amountMicroUsd: ev.amountMicroUsd,
+          customerId: ev.customerId,
+        },
+      }).pipe(Effect.result)
+      if (started._tag === "Failure") {
+        try Effect.logWarning("billing.webhook.start_failed").pipe(
+          Effect.annotateLogs({ errorCode: codeOf(started.failure) }),
+        )
+        try record("webhook", "unavailable", startedAt)
+        return json(503, { code: "unavailable" })
+      }
+      try record("webhook", "accepted", startedAt)
+      return json(200, { received: true })
+    }
+
+    const sessions = try Sessions
+    const actorOpt = try sessions.resolve.pipe(
+      Effect.provideService(HttpServerRequest.HttpServerRequest, request),
+      Effect.result,
+    )
+    if (actorOpt._tag === "Failure") {
+      try record("auth", "unavailable", startedAt)
+      return json(503, { code: "unavailable" })
+    }
+    if (Option.isNone(actorOpt.success)) {
+      try record("auth", "authentication", startedAt)
+      return json(401, { code: "authentication" })
+    }
+    const actor = actorOpt.success.value
+
+    if (path === BILLING_ACCOUNT_ROUTE) {
+      if (request.method !== "GET") {
+        return HttpServerResponse.empty({ status: 405, headers: { ...noStore, allow: "GET" } })
+      }
+      const provider = try BillingProvider
+      const state = try BillingStore.accountState({
+        personId: actor.subject.id,
+        isDeploymentMember: canAsk(actor),
+        stripeConfigured: provider.configured,
+        multiplier,
+        defaultInstance,
+      }).pipe(Effect.provide(database), Effect.result)
+      if (state._tag === "Failure") {
+        try record("account", "unavailable", startedAt)
+        return json(503, { code: "unavailable" })
+      }
+      try record("account", "ok", startedAt)
+      return json(200, state.success)
+    }
+
+    if (path === BILLING_CHECKOUT_ROUTE) {
+      if (request.method !== "POST") {
+        return HttpServerResponse.empty({ status: 405, headers: { ...noStore, allow: "POST" } })
+      }
+      if (try refusesPersonOnly(actor, "billing/checkout")) {
+        try record("checkout", "person_only", startedAt)
+        return json(403, { code: "person_only" })
+      }
+      const provider = try BillingProvider
+      if (!provider.configured) {
+        try record("checkout", "not_configured", startedAt)
+        return json(503, { code: "not_configured" })
+      }
+      const bodyRes = try readBounded(request, MAX_BILLING_BODY_BYTES).pipe(Effect.result)
+      if (bodyRes._tag === "Failure") {
+        const tooLarge = bodyRes.failure.reason === "too_large"
+        try record("checkout", tooLarge ? "too_large" : "invalid", startedAt)
+        return json(tooLarge ? 413 : 400, { code: tooLarge ? "too_large" : "invalid" })
+      }
+      const decoded = decodeCheckout(bodyRes.success)
+      if (Option.isNone(decoded)) {
+        try record("checkout", "invalid", startedAt)
+        return json(400, { code: "invalid" })
+      }
+      const pack = packById(decoded.value.packId)
+      if (pack === undefined) {
+        try record("checkout", "invalid", startedAt)
+        return json(400, { code: "invalid" })
+      }
+      const origin = try Effect.sync(() => originOf(request))
+      const sessionRes = try provider.createCheckoutSession({
+        personId: actor.subject.id,
+        login: actor.login ?? "",
+        packId: pack.id,
+        packLabel: pack.label,
+        amountCents: pack.amountCents,
+        amountMicroUsd: pack.amountMicroUsd,
+        successUrl: `${origin}/app/settings?billing=success`,
+        cancelUrl: `${origin}/app/settings?billing=canceled`,
+      }).pipe(Effect.result)
+      if (sessionRes._tag === "Failure") {
+        const code = sessionRes.failure.code
+        try record("checkout", code, startedAt)
+        return json(code === "not_configured" ? 503 : 502, { code })
+      }
+      try BillingStore.recordCheckoutPending({
+        sessionId: sessionRes.success.sessionId,
+        personId: actor.subject.id,
+        packId: pack.id,
+        amountMicroUsd: pack.amountMicroUsd,
+      }).pipe(Effect.provide(database), Effect.catchCause(() => Effect.void))
+      try record("checkout", "created", startedAt)
+      return json(200, { sessionId: sessionRes.success.sessionId, url: sessionRes.success.url })
+    }
+
+    if (path === BILLING_ADMIN_GRANT_ROUTE) {
+      if (request.method !== "POST") {
+        return HttpServerResponse.empty({ status: 405, headers: { ...noStore, allow: "POST" } })
+      }
+      if (try refusesPersonOnly(actor, "billing/grant")) {
+        try record("grant", "person_only", startedAt)
+        return json(403, { code: "person_only" })
+      }
+      // Allow either a configured Deployment Admin OR a deployment repo Admin (for local dev & single-owner installs).
+      const isAllowedAdmin =
+        DeploymentPolicy.holdsDeploymentAuthority(actor, configuredAdmins) || actor.role === "admin"
+      if (!isAllowedAdmin) {
+        try record("grant", "forbidden", startedAt)
+        return json(403, { code: "forbidden" })
+      }
+      const bodyRes = try readBounded(request, MAX_BILLING_BODY_BYTES).pipe(Effect.result)
+      if (bodyRes._tag === "Failure") {
+        const tooLarge = bodyRes.failure.reason === "too_large"
+        try record("grant", tooLarge ? "too_large" : "invalid", startedAt)
+        return json(tooLarge ? 413 : 400, { code: tooLarge ? "too_large" : "invalid" })
+      }
+      const decoded = decodeGrant(bodyRes.success)
+      if (Option.isNone(decoded)) {
+        try record("grant", "invalid", startedAt)
+        return json(400, { code: "invalid" })
+      }
+      const { login, amountUsd, note = "" } = decoded.value
+      if (login.trim() === "" || !Number.isFinite(amountUsd) || amountUsd <= 0 || amountUsd > 1000) {
+        try record("grant", "invalid", startedAt)
+        return json(400, { code: "invalid" })
+      }
+      const target = try BillingStore.findPersonByLogin(login).pipe(Effect.provide(database), Effect.result)
+      if (target._tag === "Failure") {
+        try record("grant", "unavailable", startedAt)
+        return json(503, { code: "unavailable" })
+      }
+      if (Option.isNone(target.success)) {
+        try record("grant", "not_found", startedAt)
+        return json(404, { code: "not_found" })
+      }
+      const amountMicroUsd = Math.round(amountUsd * MICRO_USD_PER_USD)
+      const grantId = randomUuid()
+      const starter = try Flows.FlowStarter
+      const started = try starter.start(BillingFlows.AdminGrant, {
+        executionId: BillingFlows.grantExecutionId(grantId),
+        payload: {
+          grantId,
+          personId: target.success.value.id,
+          grantedByLogin: actor.login ?? "admin",
+          amountMicroUsd,
+          note: note.trim().slice(0, 80),
+        },
+      }).pipe(Effect.result)
+      if (started._tag === "Failure") {
+        try record("grant", "unavailable", startedAt)
+        return json(503, { code: "unavailable" })
+      }
+      try record("grant", "accepted", startedAt)
+      return json(202, { grantId, login: target.success.value.login, amountMicroUsd })
+    }
+
+    return json(404, { code: "not_found" })
+  }.pipe(Effect.withSpan("billing.api"))
+
+  return { fetch }
+}

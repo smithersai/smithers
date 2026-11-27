@@ -1,0 +1,238 @@
+import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
+import { Context, type Duration, Effect, Layer, Metric, Option, Schema, type Scope } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { runners } from "../../boundary.vibe"
+import { redirectBrowser } from "./browserNav"
+import {
+  BILLING_ACCOUNT_ROUTE,
+  BILLING_ADMIN_GRANT_ROUTE,
+  BILLING_CHECKOUT_ROUTE,
+  COMPUTE_ACCESS_MODES,
+  COMPUTE_PACK_IDS,
+  type ComputePackId,
+  LEDGER_KINDS,
+} from "./contract"
+
+export const LedgerEntrySchema = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literals(LEDGER_KINDS),
+  amountMicroUsd: Schema.Number,
+  balanceAfterMicroUsd: Schema.Number,
+  description: Schema.String,
+  createdAt: Schema.String,
+})
+
+export const RateSummarySchema = Schema.Struct({
+  instance: Schema.String,
+  vcpu: Schema.Number,
+  memoryGib: Schema.Number,
+  hourlyUsd: Schema.Number,
+})
+
+export const PackSchema = Schema.Struct({
+  id: Schema.Literals(COMPUTE_PACK_IDS),
+  label: Schema.String,
+  amountUsd: Schema.Number,
+  amountCents: Schema.Number,
+  amountMicroUsd: Schema.Number,
+})
+
+export const AccountStateSchema = Schema.Struct({
+  balanceMicroUsd: Schema.Number,
+  lifetimePurchasedMicroUsd: Schema.Number,
+  lifetimeSpentMicroUsd: Schema.Number,
+  computeAccess: Schema.Literals(COMPUTE_ACCESS_MODES),
+  isDeploymentMember: Schema.Boolean,
+  minAdmitMicroUsd: Schema.Number,
+  stripeConfigured: Schema.Boolean,
+  priceMultiplier: Schema.Number,
+  defaultInstance: Schema.String,
+  rates: Schema.Array(RateSummarySchema),
+  packs: Schema.Array(PackSchema),
+  ledger: Schema.Array(LedgerEntrySchema),
+})
+export type AccountState = typeof AccountStateSchema.Type
+
+export const BILLING = "billing"
+export const BillingRow = Schema.Struct({
+  id: Schema.Literal(BILLING),
+  status: Schema.Literals(["idle", "loading", "ready", "failed"]),
+  account: Schema.NullOr(AccountStateSchema),
+  error: Schema.NullOr(Schema.String),
+  checkoutPackId: Schema.NullOr(Schema.Literals(COMPUTE_PACK_IDS)),
+  checkoutError: Schema.NullOr(Schema.String),
+  grantSaving: Schema.Boolean,
+  grantStatus: Schema.NullOr(Schema.String),
+})
+export type BillingRow = typeof BillingRow.Type
+
+const decodeAccount = Schema.decodeUnknownOption(AccountStateSchema)
+const decodeCheckout = Schema.decodeUnknownOption(Schema.Struct({ sessionId: Schema.String, url: Schema.String }))
+const decodeCode = Schema.decodeUnknownOption(Schema.Struct({ code: Schema.String }))
+
+const checkoutCounter = Metric.counter("smithers_web_billing_checkouts", {
+  description: "Browser compute credit checkout attempts, by outcome",
+  incremental: true,
+})
+
+const accountQuery = (col: Collection.Collection<BillingRow, string>) =>
+  LiveQuery.make((q) => q.from({ billing: col.tanstack }).findOne())
+
+type AccountTanstack = Effect.Success<ReturnType<typeof accountQuery>>["tanstack"]
+
+export interface BillingView {
+  readonly queries: {
+    readonly state: AccountTanstack
+  }
+  readonly actions: {
+    readonly load: () => Promise<void>
+    readonly checkout: (packId: ComputePackId) => Promise<void>
+    readonly grant: (input: { readonly login: string; readonly amountUsd: number; readonly note: string }) => Promise<void>
+  }
+}
+
+export class Billing extends Context.Service<Billing, BillingView>()("@smthrs/mvp/billing/Billing") {
+  static readonly live = (options: {
+    readonly origin: string
+    readonly within: Duration.Input
+    readonly redirect?: (url: string) => void
+  }): Layer.Layer<Billing, never, HttpClient.HttpClient> =>
+    Layer.orDie(Layer.effect(
+      Billing,
+      effect {
+        const http = try HttpClient.HttpClient
+        const col = try Collection.local<BillingRow, string>({
+          id: "billing-account",
+          schema: BillingRow,
+          getKey: (row) => row.id,
+          initialData: [
+            {
+              id: BILLING,
+              status: "idle",
+              account: null,
+              error: null,
+              checkoutPackId: null,
+              checkoutError: null,
+              grantSaving: false,
+              grantStatus: null,
+            },
+          ],
+        }).pipe(Effect.orDie)
+        const stateQuery = try accountQuery(col)
+        const patch = (next: Partial<Omit<BillingRow, "id">>) =>
+          col.update(BILLING, (draft) => void Object.assign(draft, next)).pipe(Effect.orDie, Effect.asVoid)
+
+        const base = options.origin.replace(/\/+$/, "")
+        const go = options.redirect ?? redirectBrowser
+
+        const loadEffect = effect {
+          try patch({ status: "loading", error: null })
+          const res = try http.execute(HttpClientRequest.get(`${base}${BILLING_ACCOUNT_ROUTE}`)).pipe(
+            Effect.timeout(options.within),
+            Effect.result,
+          )
+          if (res._tag === "Failure") {
+            try Effect.logWarning("billing.account.load").pipe(Effect.annotateLogs({ outcome: "unreachable" }))
+            try patch({ status: "failed", error: "unavailable" })
+            return
+          }
+          if (res.success.status === 401) {
+            try patch({ status: "idle", account: null, error: null })
+            return
+          }
+          if (res.success.status < 200 || res.success.status >= 300) {
+            try Effect.logWarning("billing.account.load").pipe(Effect.annotateLogs({ outcome: "error", status: res.success.status }))
+            try patch({ status: "failed", error: "unavailable" })
+            return
+          }
+          const body = try res.success.json.pipe(Effect.result)
+          if (body._tag === "Failure") {
+            try patch({ status: "failed", error: "invalid" })
+            return
+          }
+          const decoded = decodeAccount(body.success)
+          if (Option.isNone(decoded)) {
+            try patch({ status: "failed", error: "invalid" })
+            return
+          }
+          try patch({ status: "ready", account: decoded.value, error: null })
+        }
+
+        const checkoutEffect = (packId: ComputePackId) =>
+          effect {
+            try patch({ checkoutPackId: packId, checkoutError: null })
+            const payload = try Effect.sync(() => JSON.stringify({ packId }))
+            const req = HttpClientRequest.post(`${base}${BILLING_CHECKOUT_ROUTE}`).pipe(
+              HttpClientRequest.setHeader("content-type", "application/json"),
+              HttpClientRequest.bodyText(payload),
+            )
+            const res = try http.execute(req).pipe(Effect.timeout(options.within), Effect.result)
+            if (res._tag === "Failure") {
+              try Metric.update(Metric.withAttributes(checkoutCounter, { outcome: "unreachable" }), 1)
+              try Effect.logWarning("billing.checkout.start").pipe(Effect.annotateLogs({ outcome: "unreachable", packId }))
+              try patch({ checkoutPackId: null, checkoutError: "unavailable" })
+              return
+            }
+            const body = try res.success.json.pipe(Effect.result)
+            if (res.success.status < 200 || res.success.status >= 300) {
+              const code =
+                body._tag === "Success"
+                  ? Option.getOrElse(decodeCode(body.success), () => ({ code: "unavailable" })).code
+                  : "unavailable"
+              try Metric.update(Metric.withAttributes(checkoutCounter, { outcome: code }), 1)
+              try Effect.logWarning("billing.checkout.start").pipe(Effect.annotateLogs({ outcome: code, packId, status: res.success.status }))
+              try patch({ checkoutPackId: null, checkoutError: code })
+              return
+            }
+            const decoded = body._tag === "Success" ? decodeCheckout(body.success) : Option.none()
+            if (Option.isNone(decoded)) {
+              try patch({ checkoutPackId: null, checkoutError: "invalid" })
+              return
+            }
+            try Metric.update(Metric.withAttributes(checkoutCounter, { outcome: "redirected" }), 1)
+            try patch({ checkoutPackId: null, checkoutError: null })
+            try Effect.sync(() => go(decoded.value.url))
+          }
+
+        const grantEffect = (input: { readonly login: string; readonly amountUsd: number; readonly note: string }) =>
+          effect {
+            try patch({ grantSaving: true, grantStatus: null })
+            const payload = try Effect.sync(() => JSON.stringify(input))
+            const req = HttpClientRequest.post(`${base}${BILLING_ADMIN_GRANT_ROUTE}`).pipe(
+              HttpClientRequest.setHeader("content-type", "application/json"),
+              HttpClientRequest.bodyText(payload),
+            )
+            const res = try http.execute(req).pipe(Effect.timeout(options.within), Effect.result)
+            if (res._tag === "Failure") {
+              try Effect.logWarning("billing.grant.start").pipe(Effect.annotateLogs({ outcome: "unreachable" }))
+              try patch({ grantSaving: false, grantStatus: "Couldn't reach server." })
+              return
+            }
+            if (res.success.status < 200 || res.success.status >= 300) {
+              const body = try res.success.json.pipe(Effect.result)
+              const code =
+                body._tag === "Success"
+                  ? Option.getOrElse(decodeCode(body.success), () => ({ code: "failed" })).code
+                  : "failed"
+              const msg = code === "not_found" ? "User not found (they must sign in once first)." : `Refused (${code}).`
+              try Effect.logWarning("billing.grant.start").pipe(Effect.annotateLogs({ outcome: code, status: res.success.status }))
+              try patch({ grantSaving: false, grantStatus: msg })
+              return
+            }
+            try patch({ grantSaving: false, grantStatus: `Granted $${input.amountUsd.toFixed(2)} to ${input.login}.` })
+            try loadEffect
+          }
+
+        const context = try Effect.context<never>()
+        const { runPromise } = runners(context, "billing")
+        return Billing.of({
+          queries: { state: stateQuery.tanstack },
+          actions: {
+            load: () => runPromise(loadEffect),
+            checkout: (packId) => runPromise(checkoutEffect(packId)),
+            grant: (input) => runPromise(grantEffect(input)),
+          },
+        })
+      },
+    ))
+}

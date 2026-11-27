@@ -1,4 +1,4 @@
-import { mayAsk } from "../../features/auth/contract"
+import { mayAsk, mayRunMachines } from "../../features/auth/contract"
 import { useTodos } from "../../features/todos/components/TodosContext"
 import { repoId } from "../../features/repo/contract"
 import { Card, EmptyState } from "@smthrs/ui"
@@ -74,7 +74,7 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
           {search.terminal !== undefined && unavailable
             ? <section className="terminal-panel" aria-label="Terminal"><EmptyState title={TERMINAL_UNAVAILABLE} /></section>
             : open && search.terminal !== undefined
-            ? <TerminalPanel canOpen={writes(access) && current?.mode === "open"} deploymentMember={session?.status !== "signed_in" || mayAsk(session.role)} />
+            ? <TerminalPanel canOpen={writes(access) && current?.mode === "open"} deploymentMember={session?.status !== "signed_in" || mayRunMachines(session)} />
             : unavailable && search.edit !== undefined
             ? <EmptyState title={FILE_UNAVAILABLE} />
             : unavailable && search.compare !== undefined

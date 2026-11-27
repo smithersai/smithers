@@ -112,6 +112,8 @@ import { Profile, type ProfileView } from "./features/profile/profile.vibe"
 import { ProfileStore } from "./features/profile/store.vibe"
 import { Mcp, type McpView } from "./features/mcp/store.vibe"
 import { Workbench, type WorkbenchView } from "./features/workbench/store.vibe"
+import { Billing, type BillingView } from "./features/billing/store.vibe"
+import { Fork, type ForkView } from "./features/fork/store.vibe"
 import { FirstRun, type FirstRunView } from "./features/first-run/firstRun.vibe"
 import { type ThemeHost, ThemeStore } from "./features/theme/store.vibe"
 import { Theme, type ThemeView } from "./features/theme/theme.vibe"
@@ -324,6 +326,8 @@ export const appLayer = <S = never>(
     // Bring Your Own Agent via MCP (docs/features/mcp.md): Connect Agent dialog, OAuth consent, and connected tokens.
     Mcp.live({ origin, within: REQUEST_WITHIN }),
     Workbench.live({ origin, within: REQUEST_WITHIN }),
+    Billing.live({ origin, within: REQUEST_WITHIN }),
+    Fork.live({ origin, within: REQUEST_WITHIN }),
     tabIssues({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
     // TODOs and the stack (decision 0016): the stack pages, the drafts, and this tab's answers to the TODO steps it
     // started.
@@ -636,6 +640,8 @@ export interface BootOptions {
     mcp: McpView,
     profile: ProfileView,
     workbench: WorkbenchView,
+    billing?: BillingView,
+    fork?: ForkView,
   ) => void
 }
 
@@ -679,6 +685,8 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const mcp = yield* Mcp
     const profile = yield* Profile
     const workbench = yield* Workbench
+    const billing = yield* Billing
+    const fork = yield* Fork
     const store = yield* ChatStore
     // Summaries that can't be made say so, on the one stack (ruling FE-19).
     const { launches } = yield* AttentionStore
@@ -719,6 +727,8 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         mcp,
         profile,
         workbench,
+        billing,
+        fork,
       )
     )
     if (timeline !== undefined) {

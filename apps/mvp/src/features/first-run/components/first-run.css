@@ -1,7 +1,7 @@
 /* Layout only; components, colors and type come from @smthrs/ui. The steps are one card; one step per row, its button
    at the row's end. */
 .first-run { display: flex; justify-content: center; min-width: 0; }
-.first-run > [data-slot="card"] { width: 100%; max-width: 26rem; }
+.first-run > [data-slot="card"] { width: 100%; max-width: 30rem; }
 .first-run-steps { display: grid; gap: 0.75rem; margin: 0; padding: 0; list-style: none; min-width: 0; }
 .first-run-step { display: flex; align-items: center; gap: 0.75rem; min-height: 2rem; min-width: 0; }
 .first-run-step > [data-slot="badge"] { flex: none; min-width: 1.5rem; justify-content: center; }
@@ -13,3 +13,28 @@
 .first-run-step:has(.first-run-open) { flex-wrap: wrap; }
 .first-run-open { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0; }
 .first-run-open input { width: 14rem; max-width: 100%; }
+
+.first-run-contributor {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.first-run-quick-repos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.first-run-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}

@@ -133,6 +133,8 @@ import m0132 from "./migrations/0132_fleet_snapshot_receipts.ts"
 import m0133 from "./migrations/0133_byoa_cutover.ts"
 import m0134 from "./migrations/0134_waitlist_entries.ts"
 import m0135 from "./migrations/0135_message_note_versions.ts"
+import m0136 from "./migrations/0136_compute_billing.ts"
+import m0137 from "./migrations/0137_repo_forks.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -270,4 +272,6 @@ export const migrations = {
   "0133_byoa_cutover": m0133,
   "0134_waitlist_entries": m0134,
   "0135_message_note_versions": m0135,
+  "0136_compute_billing": m0136,
+  "0137_repo_forks": m0137,
 }

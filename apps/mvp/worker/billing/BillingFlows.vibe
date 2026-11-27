@@ -1,0 +1,144 @@
+import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Effect, Layer, Schema } from "effect"
+import type { SqlClient } from "effect/sql"
+import { COMPUTE_PACK_IDS } from "../../src/features/billing/contract.ts"
+import * as BillingStore from "./BillingStore.vibe"
+
+// Durable billing flows (DUR-1, decision 0175):
+// - `billing/CreditTopUp`: records a verified Stripe Checkout payment idempotently.
+// - `billing/AdminGrant`: records a Deployment Admin compute credit grant idempotently.
+
+export class BillingStoreUnavailable extends Schema.TaggedError<BillingStoreUnavailable>()(
+  "@smthrs/mvp/billing/BillingStoreUnavailable",
+  {},
+) {}
+
+export const BILLING_RETRY = RetryPolicy.make({
+  initialMs: 1_000,
+  factor: 2,
+  maxMs: 60_000,
+  expirationMs: 30 * 60_000,
+})
+
+const topUpPayload = {
+  eventId: Schema.String,
+  sessionId: Schema.String,
+  personId: Schema.String,
+  packId: Schema.Literals(COMPUTE_PACK_IDS),
+  amountMicroUsd: Schema.Int,
+  customerId: Schema.NullOr(Schema.String),
+}
+
+const grantPayload = {
+  grantId: Schema.String,
+  personId: Schema.String,
+  grantedByLogin: Schema.String,
+  amountMicroUsd: Schema.Int,
+  note: Schema.String,
+}
+
+const creditResult = Schema.Struct({
+  applied: Schema.Boolean,
+  balanceMicroUsd: Schema.Int,
+})
+
+export const ApplyTopUp = Action.make("billing/ApplyTopUp", {
+  payload: topUpPayload,
+  success: creditResult,
+  error: BillingStoreUnavailable,
+  capabilities: ["db:write:compute_accounts", "db:write:compute_ledger"],
+  retryPolicy: BILLING_RETRY,
+})
+
+export const CreditTopUp = Flow.make("billing/CreditTopUp", {
+  description: "Apply a verified Stripe Checkout compute credit top-up idempotently.",
+  capabilities: ["db:write:compute_accounts", "db:write:compute_ledger"],
+  modelInvocable: false,
+  payload: topUpPayload,
+  success: creditResult,
+  error: BillingStoreUnavailable,
+  body: Node.capture({ apply: ApplyTopUp.name }, (input) => ApplyTopUp.call(input)),
+})
+
+export const ApplyGrant = Action.make("billing/ApplyGrant", {
+  payload: grantPayload,
+  success: creditResult,
+  error: BillingStoreUnavailable,
+  capabilities: ["db:write:compute_accounts", "db:write:compute_ledger"],
+  retryPolicy: BILLING_RETRY,
+})
+
+export const AdminGrant = Flow.make("billing/AdminGrant", {
+  description: "Apply a Deployment Admin compute credit grant idempotently.",
+  capabilities: ["db:write:compute_accounts", "db:write:compute_ledger"],
+  modelInvocable: false,
+  payload: grantPayload,
+  success: creditResult,
+  error: BillingStoreUnavailable,
+  body: Node.capture({ apply: ApplyGrant.name }, (input) => ApplyGrant.call(input)),
+})
+
+export const topUpExecutionId = (eventId: string) => `billing-topup:${eventId}`
+export const grantExecutionId = (grantId: string) => `billing-grant:${grantId}`
+
+export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
+  const applyTopUp = (input: typeof topUpPayload extends Record<string, Schema.Top> ? typeof ApplyTopUp.payloadSchema.Type : never) =>
+    effect {
+      const outcome = try BillingStore.credit({
+        personId: input.personId,
+        kind: "topup",
+        amountMicroUsd: input.amountMicroUsd,
+        idempotencyKey: `stripe:${input.eventId}`,
+        description: `Cloud credit top-up (${input.packId.replace("pack_", "$")})`,
+        metadata: { eventId: input.eventId, sessionId: input.sessionId, packId: input.packId },
+        checkoutSessionId: input.sessionId,
+        stripeCustomerId: input.customerId,
+      })
+      try Effect.logInfo("billing.topup").pipe(
+        Effect.annotateLogs({
+          applied: outcome.applied,
+          packId: input.packId,
+          amountMicroUsd: input.amountMicroUsd,
+        }),
+      )
+      return outcome
+    }.pipe(
+      Effect.provide(database),
+      Effect.mapError(() => new BillingStoreUnavailable()),
+      Effect.withSpan("billing.topup"),
+    )
+
+  const applyGrant = (input: typeof ApplyGrant.payloadSchema.Type) =>
+    effect {
+      const outcome = try BillingStore.credit({
+        personId: input.personId,
+        kind: "admin_grant",
+        amountMicroUsd: input.amountMicroUsd,
+        idempotencyKey: `admin-grant:${input.grantId}`,
+        description: input.note === "" ? "Compute credit grant" : `Compute credit grant: ${input.note.slice(0, 80)}`,
+        metadata: { grantId: input.grantId, grantedBy: input.grantedByLogin },
+      })
+      try Effect.logInfo("billing.grant").pipe(
+        Effect.annotateLogs({
+          applied: outcome.applied,
+          amountMicroUsd: input.amountMicroUsd,
+        }),
+      )
+      return outcome
+    }.pipe(
+      Effect.provide(database),
+      Effect.mapError(() => new BillingStoreUnavailable()),
+      Effect.withSpan("billing.grant"),
+    )
+
+  const topUpLayer = Interpreter.layerWithImplementations(
+    CreditTopUp,
+    ApplyTopUp.toLayer(applyTopUp),
+  )
+  const grantLayer = Interpreter.layerWithImplementations(
+    AdminGrant,
+    ApplyGrant.toLayer(applyGrant),
+  )
+  return Layer.mergeAll(topUpLayer, grantLayer).pipe(Layer.provideMerge(Action.layerImplementations))
+}

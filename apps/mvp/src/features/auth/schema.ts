@@ -16,6 +16,8 @@ export const SessionState = Schema.Union([
     role: Schema.NullOr(Schema.Literals(ROLES)),
     roleConfirmed: Schema.optional(Schema.Boolean),
     hostedModel: Schema.optional(Schema.Boolean),
+    computeAccess: Schema.optional(Schema.Literals(["deployment", "paid", "none"])),
+    computeBalanceMicroUsd: Schema.optional(Schema.Number),
     install: Schema.optional(Schema.String),
     expiresAt: Schema.optional(Schema.Number),
     deadline: Schema.optional(Schema.Number),
@@ -51,6 +53,8 @@ export const Session = Schema.Struct({
   roleConfirmed: Schema.optional(Schema.Boolean),
   available: Schema.Boolean,
   hostedModel: Schema.optional(Schema.Boolean),
+  computeAccess: Schema.optional(Schema.Literals(["deployment", "paid", "none"])),
+  computeBalanceMicroUsd: Schema.optional(Schema.Number),
   /** True while an Admin's hosted-inference toggle is in flight. */
   hostedModelSaving: Schema.optional(Schema.Boolean),
   /** True when the last Admin hosted-inference toggle failed. */

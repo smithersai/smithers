@@ -1,0 +1,231 @@
+import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { GitHub } from "@smthrs/integrations"
+import { Node, type Planned } from "@smthrs/plan"
+import { Effect, Layer, Metric, Option, Schema } from "effect"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { SqlClient } from "effect/sql"
+import { repoId } from "../../src/features/repo/contract.ts"
+import { codeOf } from "../ErrorCode.ts"
+import { withToken } from "../github/Calls.ts"
+import * as Tokens from "../github/Tokens.vibe"
+import type { SessionKeys } from "../SessionKeys.vibe"
+
+// `repo/Fork` (decision 0175, docs/features/fork.md): durably forks a public GitHub repository
+// into the signed-in contributor's GitHub account using their session OAuth token, checks whether
+// the Smithers GitHub App is already installed on the fork, and settles `repo_forks`.
+
+export class ForkFailed extends Schema.TaggedError<ForkFailed>()("@smthrs/mvp/fork/ForkFailed", {
+  reason: Schema.Literals(["sign_in_required", "forbidden", "not_found", "unavailable"]),
+}) {}
+
+export class ForkRetry extends Schema.TaggedError<ForkRetry>()("@smthrs/mvp/fork/ForkRetry", {
+  reason: Schema.Literals(["refreshing", "unavailable"]),
+  retryAfterMillis: Schema.optional(Schema.Number),
+}) {}
+
+export class ForkSettleFailed extends Schema.TaggedError<ForkSettleFailed>()(
+  "@smthrs/mvp/fork/ForkSettleFailed",
+  {},
+) {}
+
+export const forksCounter = Metric.counter("smithers_repo_forks", {
+  description: "Contributor repository forks settled, by outcome",
+  incremental: true,
+})
+
+const FORK_RETRY = RetryPolicy.make({
+  initialMs: 1_000,
+  factor: 2,
+  maxMs: 30_000,
+  expirationMs: 2 * 60_000,
+})
+
+const SETTLE_RETRY = RetryPolicy.make({
+  initialMs: 1_000,
+  factor: 2,
+  maxMs: 60_000,
+  expirationMs: 30 * 60_000,
+})
+
+const forkPayload = {
+  forkId: Schema.String,
+  personId: Schema.String,
+  sessionId: Schema.String,
+  upstreamOwner: Schema.String,
+  upstreamName: Schema.String,
+}
+
+const CreatedFork = Schema.Struct({
+  forkOwner: Schema.String,
+  forkName: Schema.String,
+  appInstalled: Schema.Boolean,
+})
+
+export const CreateOnGitHub = Action.make("fork/CreateOnGitHub", {
+  payload: forkPayload,
+  success: CreatedFork,
+  error: Schema.Union([ForkFailed, ForkRetry]),
+  capabilities: ["github:fork"],
+  retryPolicy: FORK_RETRY,
+})
+
+const settlePayload = {
+  forkId: Schema.String,
+  outcome: Schema.Literals(["ready", "failed"]),
+  forkOwner: Schema.optional(Schema.String),
+  forkName: Schema.optional(Schema.String),
+  appInstalled: Schema.optional(Schema.Boolean),
+  failure: Schema.optional(Schema.String),
+}
+
+export const Settle = Action.make("fork/Settle", {
+  payload: settlePayload,
+  success: Schema.Struct({ settled: Schema.Boolean }),
+  error: ForkSettleFailed,
+  capabilities: ["db:write:repo_forks"],
+  retryPolicy: SETTLE_RETRY,
+})
+
+export const RepoFork = Flow.make("repo/Fork", {
+  description: "Fork a GitHub repository into the contributor's account and record its state.",
+  capabilities: ["github:fork", "db:write:repo_forks"],
+  modelInvocable: false,
+  payload: forkPayload,
+  success: Settle.successSchema,
+  error: Schema.Union([ForkFailed, ForkRetry, ForkSettleFailed]),
+  body: Node.capture({ create: CreateOnGitHub.name, settle: Settle.name }, (input) =>
+    CreateOnGitHub.call(input).pipe(
+      Node.bindPlanned(
+        Node.capture({ settle: Settle.name, forkId: input.forkId }, (created: Planned.Planned<typeof CreatedFork.Type>) =>
+          Settle.call({
+            forkId: input.forkId,
+            outcome: "ready" as const,
+            forkOwner: created.forkOwner,
+            forkName: created.forkName,
+            appInstalled: created.appInstalled,
+          }),
+        ),
+      ),
+    ),
+  ),
+})
+
+export const forkExecutionId = (forkId: string) => `repo-fork:${forkId}`
+
+export interface Services<E, R> {
+  readonly database: Layer.Layer<SqlClient.SqlClient, E, R>
+  readonly app: Option.Option<GitHub.AppAuth.AppAuth>
+  readonly apiBaseUrl: string
+  readonly keys: Option.Option<SessionKeys>
+  readonly refresh: (sessionId: string, generation: number) => void!!
+  readonly http?: HttpClient.HttpClient
+}
+
+export const registration = <E, R>(services: Services<E, R>) => {
+  const runHttp = <A, X, Y>(prog: Effect.Effect<A, X, Y>): Effect.Effect<A, X, Exclude<Y, HttpClient.HttpClient>> =>
+    services.http === undefined
+      ? Effect.provide(prog, FetchHttpClient.layer)
+      : Effect.provideService(prog, HttpClient.HttpClient, services.http)
+
+  const createOnGitHub = (
+    input: typeof CreateOnGitHub.payloadSchema.Type,
+  ): Effect.Effect<typeof CreatedFork.Type, ForkFailed | ForkRetry, R> =>
+    effect {
+      if (Option.isNone(services.app) || Option.isNone(services.keys)) {
+        throw new ForkFailed({ reason: "unavailable" })
+      }
+      const tokens = Tokens.make({
+        app: services.app.value,
+        keys: services.keys,
+        refresh: services.refresh,
+      })
+      const userToken = try tokens.forSession(input.sessionId).pipe(
+        Effect.provide(services.database),
+        Effect.mapError((err): ForkFailed | ForkRetry => {
+          if (err instanceof Tokens.TokenUnavailable) {
+            if (err.reason === "refreshing") {
+              return new ForkRetry({
+                reason: "refreshing",
+                ...(err.retryAfterMillis === undefined ? {} : { retryAfterMillis: err.retryAfterMillis }),
+              })
+            }
+            if (err.reason === "sign_in_required") {
+              return new ForkFailed({ reason: "sign_in_required" })
+            }
+            return new ForkRetry({
+              reason: "unavailable",
+              ...(err.retryAfterMillis === undefined ? {} : { retryAfterMillis: err.retryAfterMillis }),
+            })
+          }
+          return new ForkRetry({ reason: "unavailable" })
+        }),
+      )
+      const forked = try GitHub.Forks.createFork(input.upstreamOwner, input.upstreamName).pipe(
+        withToken(userToken, services.apiBaseUrl),
+        runHttp,
+        Effect.mapError((err): ForkFailed | ForkRetry => {
+          const status = (err as { readonly status?: number }).status
+          if (status === 404) return new ForkFailed({ reason: "not_found" })
+          if (status === 403) return new ForkFailed({ reason: "forbidden" })
+          return new ForkRetry({ reason: "unavailable" })
+        }),
+      )
+      const forkOwner = forked.owner.login
+      const forkName = forked.name
+      const forkRepoId = repoId(forkOwner, forkName)
+      const appInstalled = try Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`SELECT 1 FROM github_repositories WHERE repo_id = ${forkRepoId} LIMIT 1`,
+      ).pipe(
+        Effect.provide(services.database),
+        Effect.map((rows) => rows.length > 0),
+        Effect.catchCause(() => Effect.succeed(false)),
+      )
+      return { forkOwner, forkName, appInstalled }
+    }.pipe(Effect.withSpan("fork.create_on_github"))
+
+  const settle = (
+    input: typeof Settle.payloadSchema.Type,
+  ): Effect.Effect<{ readonly settled: boolean }, ForkSettleFailed, R> =>
+    effect {
+      const sql = try SqlClient.SqlClient
+      const forkOwner = input.forkOwner ?? ""
+      const forkName = input.forkName ?? ""
+      const forkRepoId = forkOwner !== "" && forkName !== "" ? repoId(forkOwner, forkName) : ""
+      if (input.outcome === "ready" && forkRepoId !== "") {
+        try sql`
+          UPDATE repo_forks
+          SET status = 'ready',
+              fork_owner = ${forkOwner},
+              fork_name = ${forkName},
+              fork_repo_id = ${forkRepoId},
+              app_installed = ${input.appInstalled ?? false},
+              failure = NULL,
+              updated_at = now()
+          WHERE id = ${input.forkId}::uuid`
+      } else {
+        try sql`
+          UPDATE repo_forks
+          SET status = 'failed',
+              failure = ${input.failure ?? "unavailable"},
+              updated_at = now()
+          WHERE id = ${input.forkId}::uuid`
+      }
+      try Metric.update(Metric.withAttributes(forksCounter, { outcome: input.outcome }), 1)
+      try Effect.logInfo("repo.fork.settled").pipe(
+        Effect.annotateLogs({ outcome: input.outcome, appInstalled: input.appInstalled ?? false }),
+      )
+      return { settled: true }
+    }.pipe(
+      Effect.provide(services.database),
+      Effect.mapError((err) => {
+        void codeOf(err)
+        return new ForkSettleFailed()
+      }),
+      Effect.withSpan("fork.settle"),
+    )
+
+  return Interpreter.layerWithImplementations(
+    RepoFork,
+    Layer.mergeAll(CreateOnGitHub.toLayer(createOnGitHub), Settle.toLayer(settle)),
+  ).pipe(Layer.provideMerge(Action.layerImplementations))
+}

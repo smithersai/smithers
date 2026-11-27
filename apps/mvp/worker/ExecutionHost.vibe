@@ -22,12 +22,14 @@ import * as CiJobMachine from "./flows/CiJobMachine.vibe"
 import * as Pause from "./flows/Pause.vibe"
 import * as RecheckRole from "./flows/RecheckRole.vibe"
 import * as RepoClone from "./flows/RepoClone.vibe"
+import * as RepoFork from "./flows/RepoFork.vibe"
 import * as RepoRefresh from "./flows/RepoRefresh.vibe"
 import * as ReplacedTokens from "./flows/RevokeReplacedGitHubToken.vibe"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.vibe"
 import * as SandboxCall from "./flows/SandboxCall.vibe"
 import * as SandboxCommand from "./flows/SandboxCommand.vibe"
 import * as SandboxKeep from "./flows/SandboxKeep.vibe"
+import * as BillingFlows from "./billing/BillingFlows.vibe"
 import * as DomainFlows from "./domains/DomainFlows.vibe"
 import type { DomainProvider } from "./domains/Provider.vibe"
 import * as SecretFlows from "./secrets/SecretFlows.vibe"
@@ -384,6 +386,24 @@ export const withPersonalModels = <ROut, E, R, DE, DR>(
  * `flows`, plus `domain/Verify` and `domain/Remove` over the app's tables, reaching `provider`: a Maintainer's custom
  * domains (docs/features/domains.md#flows).
  */
+/** `flows`, plus `billing/CreditTopUp` and `billing/AdminGrant` (decision 0175). */
+/** `flows`, plus `repo/Fork` (decision 0175). */
+export const withRepoFork = <ROut, E, R, SE, SR, DE, DR>(
+  flows: Flows<ROut, E, R>,
+  services: RepoFork.Services<DE, DR>!SE!SR,
+) => ({
+  flows: [...flows.flows, RepoFork.RepoFork],
+  registration: Layer.merge(flows.registration, Layer.unwrap(Effect.map(services, RepoFork.registration))),
+})
+
+export const withBilling = <ROut, E, R, DE, DR>(
+  flows: Flows<ROut, E, R>,
+  database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
+) => ({
+  flows: [...flows.flows, BillingFlows.CreditTopUp, BillingFlows.AdminGrant],
+  registration: Layer.merge(flows.registration, BillingFlows.registration(database)),
+})
+
 export const withDomains = <ROut, E, R, DE, DR>(
   flows: Flows<ROut, E, R>,
   database: Layer.Layer<SqlClient.SqlClient, DE, DR>,

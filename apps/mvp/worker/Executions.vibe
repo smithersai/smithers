@@ -389,7 +389,7 @@ const object = <E, R>(
         const raiser = Effect.map(flowStarter, FleetAlert.startWith)
         // An agent's question to one person waits on its own object for their answer
         // (docs/features/agent-status.md#addressed-waits).
-        const base = ExecutionHost.withAsks(ExecutionHost.withFeedRedaction(
+        const base = ExecutionHost.withBilling(ExecutionHost.withAsks(ExecutionHost.withFeedRedaction(
           ExecutionHost.withFleet(
             ExecutionHost.withRunners(
               ExecutionHost.withCiJobs(
@@ -427,7 +427,7 @@ const object = <E, R>(
             alertChannels
           ),
           appDatabase
-        ), appDatabase)
+        ), appDatabase), appDatabase)
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
         // review run on the `judge` and `review` roles, admitted and metered as the endpoint's calls are: triage's on
@@ -538,7 +538,28 @@ const object = <E, R>(
                     // Publish and Update branch (docs/features/branch-publish.md) read a branch's working copy on its
                     // machine and write GitHub as the person who pressed; Resync moves the working copy to GitHub's head.
                     ExecutionHost.withBranchPublish(
-                      ExecutionHost.withGitHub(flows, githubServices(github.value)),
+                      ExecutionHost.withRepoFork(
+                        ExecutionHost.withGitHub(flows, githubServices(github.value)),
+                        effect {
+                          const execRuntime = try RuntimeContext
+                          return {
+                            database: appDatabase,
+                            app: Option.some(github.value.app),
+                            apiBaseUrl: github.value.apiBaseUrl,
+                            http: github.value.http,
+                            keys: Option.map(signIn, (configured) => configured.keys),
+                            refresh: (sessionId: string, generation: number) => {
+                              const executionId = recheckExecutionId(sessionId, generation)
+                              return ExecutionHost.intent(RecheckRole, { executionId, payload: { sessionId } }).pipe(
+                                Effect.flatMap((intent) => executions.getByName(executionId).start(intent)),
+                                Effect.asVoid,
+                                Effect.catchCause(() => Effect.void),
+                                Effect.provideService(RuntimeContext, execRuntime),
+                              )
+                            },
+                          }
+                        },
+                      ),
                       githubServices(github.value),
                       machines,
                       forge

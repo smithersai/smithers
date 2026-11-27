@@ -19,6 +19,8 @@ import type { RunsView } from "./features/runs/runs.vibe"
 import type { SecretsLayer } from "./features/secrets/secrets.vibe"
 import type { McpView } from "./features/mcp/store.vibe"
 import type { WorkbenchView } from "./features/workbench/store.vibe"
+import type { BillingView } from "./features/billing/store.vibe"
+import type { ForkView } from "./features/fork/store.vibe"
 import { isProfileOwner } from "./features/profile/contract"
 import type { ProfileView } from "./features/profile/profile.vibe"
 import { canonicalProfileHref, profileSearch } from "./features/profile/view"
@@ -108,6 +110,8 @@ export interface RouterContext {
   readonly mcp?: McpView
   readonly profile?: ProfileView
   readonly workbench?: WorkbenchView
+  readonly billing?: BillingView
+  readonly fork?: ForkView
 }
 
 /**
@@ -417,7 +421,10 @@ const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.settings,
   component: SettingsScreen,
-  beforeLoad: (load) => enter(load, local, () => void load.context.mcp?.actions.loadTokens()),
+  beforeLoad: (load) => enter(load, local, () => {
+    void load.context.mcp?.actions.loadTokens()
+    void load.context.billing?.actions.load()
+  }),
 })
 
 /** `/app/mcp/authorize`: OAuth 2.1 consent screen for connecting a local agent via MCP (docs/features/mcp.md). */
@@ -508,6 +515,7 @@ const repoRoute = createRoute({
       () => {
         context.repo.actions.openRoute("tree", params, search)
         context.home.actions.open(params.owner, params.repo)
+        void context.fork?.actions.load(params.owner, params.repo)
       },
     )
   },

@@ -50,6 +50,12 @@ export * as Contents from "./github/Contents.ts"
  * @category constructors
  * @since 1.0.0
  */
+export * as Forks from "./github/Forks.ts"
+
+/**
+ * @category constructors
+ * @since 1.0.0
+ */
 export * as GitDatabase from "./github/GitDatabase.ts"
 
 /**

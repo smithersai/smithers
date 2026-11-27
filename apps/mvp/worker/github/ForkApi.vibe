@@ -1,0 +1,285 @@
+import { GitHub } from "@smthrs/integrations"
+import { Clock, Config, Effect, type Layer, Metric, Option, Schema } from "effect"
+import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { SqlClient } from "effect/sql"
+import type { ForkState } from "../../src/features/fork/contract.ts"
+import { isRepository, repoId } from "../../src/features/repo/contract.ts"
+import { refusesPersonOnly, Sessions } from "../Actor.vibe"
+import { readBounded } from "../Body.vibe"
+import { codeOf } from "../ErrorCode.ts"
+import * as Flows from "../Flows.vibe"
+import * as RepoFork from "../flows/RepoFork.vibe"
+import type { SessionKeys } from "../SessionKeys.vibe"
+import { withToken } from "./Calls.ts"
+import type { GitHubApp } from "./Config.vibe"
+import * as Tokens from "./Tokens.vibe"
+
+// Contributor fork & upstream sync routes (decision 0175, docs/features/fork.md):
+// - GET  /api/repos/<owner>/<name>/fork          : current user's fork state (and upstream info if this repo is a fork)
+// - POST /api/repos/<owner>/<name>/fork          : person-only durable fork into the user's GitHub account
+// - POST /api/repos/<owner>/<name>/sync-upstream : person-only upstream branch merge on a fork
+
+export const forkApiRequests = Metric.counter("smithers_repo_fork_requests", {
+  description: "Requests to fork and sync-upstream routes, by route and outcome",
+  incremental: true,
+})
+
+const FORK_PATH = /^\/api\/repos\/([^/]+)\/([^/]+)\/(fork|sync-upstream)$/
+const noStore = { "cache-control": "no-store" }
+const json = (status: number, body: unknown) => HttpServerResponse.jsonUnsafe(body, { status, headers: noStore })
+
+const SyncBody = Schema.Struct({
+  branch: Schema.optional(Schema.String),
+})
+const decodeSync = Schema.decodeUnknownOption(Schema.fromJsonString(SyncBody))
+
+export const handles = (path: string): boolean => FORK_PATH.test(path)
+
+export interface ForkApiOptions {
+  readonly app?: Option.Option<GitHubApp>
+  readonly keys?: Option.Option<SessionKeys>
+  readonly refresh?: (sessionId: string, generation: number) => void!!
+  readonly http?: HttpClient.HttpClient
+}
+
+export const make = effect <E, R>(
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
+  options: ForkApiOptions = {},
+) => {
+  const appSlug = try Config.withDefault(Config.String("GITHUB_APP_SLUG"), "smithers")
+  const installUrl = try Effect.sync(() => `https://github.com/apps/${encodeURIComponent(appSlug)}/installations/new`)
+  const appOpt = options.app ?? Option.none<GitHubApp>()
+  const keysOpt = options.keys ?? Option.none<SessionKeys>()
+  const refresh = options.refresh ?? (() => Effect.void)
+
+  const runHttp = <A, X, Y>(prog: Effect.Effect<A, X, Y>): Effect.Effect<A, X, Exclude<Y, HttpClient.HttpClient>> =>
+    options.http === undefined
+      ? Effect.provide(prog, FetchHttpClient.layer)
+      : Effect.provideService(prog, HttpClient.HttpClient, options.http)
+
+  const record = (route: string, outcome: string, startedAt: number) =>
+    effect {
+      const durationMs = (try Clock.currentTimeMillis) - startedAt
+      try Metric.update(Metric.withAttributes(forkApiRequests, { route, outcome }), 1)
+      try Effect.logInfo("repo.fork.request").pipe(Effect.annotateLogs({ route, outcome, durationMs }))
+    }
+
+  const fetch = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const path = (try Effect.sync(() => request.url.split("?")[0]!))
+    const startedAt = try Clock.currentTimeMillis
+    const match = FORK_PATH.exec(path)
+    if (match === null) return json(404, { code: "not_found" })
+    const owner = try Effect.orDie(Effect.try(() => decodeURIComponent(match[1]!)))
+    const name = try Effect.orDie(Effect.try(() => decodeURIComponent(match[2]!)))
+    const action = match[3]! as "fork" | "sync-upstream"
+    if (!isRepository(owner, name)) return json(400, { code: "invalid" })
+    const targetRepoId = repoId(owner, name)
+
+    const sessions = try Sessions
+    const actorOpt = try sessions.resolve.pipe(
+      Effect.provideService(HttpServerRequest.HttpServerRequest, request),
+      Effect.result,
+    )
+    if (actorOpt._tag === "Failure") {
+      try record(action, "unavailable", startedAt)
+      return json(503, { code: "unavailable" })
+    }
+    if (Option.isNone(actorOpt.success)) {
+      try record(action, "authentication", startedAt)
+      return json(401, { code: "authentication" })
+    }
+    const actor = actorOpt.success.value
+
+    if (action === "fork" && request.method === "GET") {
+      const stateRes = try Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        effect {
+          // 1. Has this person forked `owner/name`?
+          const [mine] = try sql<{
+            readonly forkOwner: string
+            readonly forkName: string
+            readonly forkRepoId: string
+            readonly status: "forking" | "ready" | "failed"
+            readonly failure: string | null
+            readonly appInstalled: boolean
+          }>`
+            SELECT fork_owner AS "forkOwner",
+                   fork_name AS "forkName",
+                   fork_repo_id AS "forkRepoId",
+                   status,
+                   failure,
+                   app_installed AS "appInstalled"
+            FROM repo_forks
+            WHERE person_id = ${actor.subject.id}::uuid AND upstream_repo_id = ${targetRepoId}
+            LIMIT 1`
+          // 2. Is `owner/name` itself a known fork created through Smithers?
+          const [asFork] = try sql<{
+            readonly upstreamOwner: string
+            readonly upstreamName: string
+          }>`
+            SELECT upstream_owner AS "upstreamOwner",
+                   upstream_name AS "upstreamName"
+            FROM repo_forks
+            WHERE fork_repo_id = ${targetRepoId} AND status = 'ready'
+            ORDER BY updated_at DESC
+            LIMIT 1`
+          // 3. Re-check if the App is installed on the fork via github_repositories
+          let appInstalled = mine?.appInstalled ?? false
+          if (mine !== undefined && !appInstalled) {
+            const [inst] = try sql`
+              SELECT 1 FROM github_repositories WHERE repo_id = ${mine.forkRepoId} LIMIT 1`
+            if (inst !== undefined) {
+              appInstalled = true
+              try sql`
+                UPDATE repo_forks SET app_installed = true, updated_at = now()
+                WHERE person_id = ${actor.subject.id}::uuid AND upstream_repo_id = ${targetRepoId}`
+            }
+          }
+          const state: ForkState = {
+            status: mine?.status ?? "none",
+            ...(mine === undefined
+              ? {}
+              : {
+                forkOwner: mine.forkOwner,
+                forkName: mine.forkName,
+                appInstalled,
+                ...(mine.failure === null ? {} : { failure: mine.failure }),
+              }),
+            installUrl,
+            ...(asFork === undefined
+              ? {}
+              : {
+                isFork: true,
+                upstreamOwner: asFork.upstreamOwner,
+                upstreamName: asFork.upstreamName,
+              }),
+          }
+          return state
+        },
+      ).pipe(Effect.provide(database), Effect.result)
+      if (stateRes._tag === "Failure") {
+        try record("fork_get", "unavailable", startedAt)
+        return json(503, { code: "unavailable" })
+      }
+      try record("fork_get", "ok", startedAt)
+      return json(200, stateRes.success)
+    }
+
+    if (action === "fork" && request.method === "POST") {
+      if (try refusesPersonOnly(actor, "repo/fork")) {
+        try record("fork_post", "person_only", startedAt)
+        return json(403, { code: "person_only" })
+      }
+      if (actor.session === undefined || actor.login === undefined || Option.isNone(appOpt)) {
+        try record("fork_post", "not_configured", startedAt)
+        return json(503, { code: "not_configured", installUrl })
+      }
+      if (actor.login.toLowerCase() === owner.toLowerCase()) {
+        try record("fork_post", "own_repo", startedAt)
+        return json(409, { code: "own_repo" })
+      }
+      const forkOwner = actor.login
+      const forkName = name
+      const forkRepoId = repoId(forkOwner, forkName)
+      const persisted = try Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly id: string; readonly status: string }>`
+          INSERT INTO repo_forks (
+            person_id, upstream_repo_id, upstream_owner, upstream_name, fork_owner, fork_name, fork_repo_id, status
+          ) VALUES (
+            ${actor.subject.id}::uuid, ${targetRepoId}, ${owner}, ${name}, ${forkOwner}, ${forkName}, ${forkRepoId}, 'forking'
+          )
+          ON CONFLICT (person_id, upstream_repo_id) DO UPDATE
+          SET status = CASE WHEN repo_forks.status = 'ready' THEN 'ready' ELSE 'forking' END,
+              failure = CASE WHEN repo_forks.status = 'ready' THEN repo_forks.failure ELSE NULL END,
+              updated_at = now()
+          RETURNING id::text AS id, status`,
+      ).pipe(Effect.provide(database), Effect.result)
+      if (persisted._tag === "Failure" || persisted.success[0] === undefined) {
+        try record("fork_post", "unavailable", startedAt)
+        return json(503, { code: "unavailable" })
+      }
+      const row = persisted.success[0]
+      if (row.status === "ready") {
+        try record("fork_post", "already_ready", startedAt)
+        return json(200, { forkId: row.id, status: "ready", forkOwner, forkName, installUrl })
+      }
+      const starter = try Flows.FlowStarter
+      const started = try starter.start(RepoFork.RepoFork, {
+        executionId: RepoFork.forkExecutionId(row.id),
+        payload: {
+          forkId: row.id,
+          personId: actor.subject.id,
+          sessionId: actor.session,
+          upstreamOwner: owner,
+          upstreamName: name,
+        },
+      }).pipe(Effect.result)
+      if (started._tag === "Failure") {
+        try Effect.logWarning("repo.fork.start_failed").pipe(
+          Effect.annotateLogs({ errorCode: codeOf(started.failure) }),
+        )
+        try record("fork_post", "unavailable", startedAt)
+        return json(503, { code: "unavailable" })
+      }
+      try record("fork_post", "accepted", startedAt)
+      return json(202, { forkId: row.id, status: "forking", forkOwner, forkName, installUrl })
+    }
+
+    if (action === "sync-upstream" && request.method === "POST") {
+      if (try refusesPersonOnly(actor, "repo/sync-upstream")) {
+        try record("sync_upstream", "person_only", startedAt)
+        return json(403, { code: "person_only" })
+      }
+      if (actor.session === undefined || Option.isNone(appOpt) || Option.isNone(keysOpt)) {
+        try record("sync_upstream", "not_configured", startedAt)
+        return json(503, { code: "not_configured" })
+      }
+      const bodyRes = try readBounded(request, 4096).pipe(Effect.result)
+      const branch =
+        bodyRes._tag === "Success" && bodyRes.success.trim() !== ""
+          ? Option.getOrUndefined(decodeSync(bodyRes.success))?.branch ?? "main"
+          : "main"
+      const appCfg = appOpt.value
+      const synced = try effect {
+        const appAuth = try GitHub.AppAuth.make({
+          appId: appCfg.appId,
+          privateKey: appCfg.privateKey,
+          apiBaseUrl: appCfg.apiBaseUrl,
+        }).pipe(runHttp)
+        const tokens = Tokens.make({ app: appAuth, keys: keysOpt, refresh })
+        const userToken = try tokens.forSession(actor.session!).pipe(Effect.provide(database))
+        return try GitHub.Forks.syncUpstream(owner, name, branch).pipe(
+          withToken(userToken, appCfg.apiBaseUrl),
+          runHttp,
+        )
+      }.pipe(Effect.result)
+      if (synced._tag === "Failure") {
+        const status = (synced.failure as { readonly status?: number }).status
+        if (status === 409) {
+          try record("sync_upstream", "conflict", startedAt)
+          return json(409, { code: "conflict", message: "Fork has merge conflicts with upstream." })
+        }
+        if (status === 403 || status === 404) {
+          try record("sync_upstream", "forbidden", startedAt)
+          return json(status, { code: status === 404 ? "not_found" : "forbidden" })
+        }
+        try record("sync_upstream", "unavailable", startedAt)
+        return json(503, { code: "unavailable" })
+      }
+      try record("sync_upstream", "synced", startedAt)
+      return json(200, {
+        synced: true,
+        message: synced.success.message,
+        ...(synced.success.merge_type === undefined ? {} : { mergeType: synced.success.merge_type }),
+        ...(synced.success.base_branch === undefined ? {} : { baseBranch: synced.success.base_branch }),
+      })
+    }
+
+    return HttpServerResponse.empty({
+      status: 405,
+      headers: { ...noStore, allow: action === "fork" ? "GET, POST" : "POST" },
+    })
+  }.pipe(Effect.withSpan("repo.fork.api"))
+
+  return { fetch }
+}

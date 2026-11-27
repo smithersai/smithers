@@ -1,4 +1,4 @@
-import { Button, Wordmark } from "@smthrs/ui"
+import { Badge, Button, Card, CardContent, Wordmark } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
@@ -31,6 +31,35 @@ export function Landing() {
               <Link to="/app">{session?.status === "signed_in" ? "Open Smithers" : "Get started for free"}</Link>
             </Button>
           </nav>
+          <section className="landing-paths" aria-label="Ways to contribute">
+            <Card>
+              <CardContent className="landing-path-card">
+                <div className="landing-path-head">
+                  <h2>Bring your own agent</h2>
+                  <Badge variant="success">Free</Badge>
+                </div>
+                <p>Attach Claude Code, Codex, Antigravity, or Cursor locally over MCP.</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="landing-path-card">
+                <div className="landing-path-head">
+                  <h2>Fork &amp; maintain</h2>
+                  <Badge variant="default">Your fork</Badge>
+                </div>
+                <p>Fork any repo in one click and work with full maintainer branches, stack, and PRs.</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="landing-path-card">
+                <div className="landing-path-head">
+                  <h2>Cloud sandboxes</h2>
+                  <Badge variant="muted">Pay as you go</Badge>
+                </div>
+                <p>Run Cloudflare branch sandboxes, terminals, and CI jobs on prepaid credits (~$0.15/hr).</p>
+              </CardContent>
+            </Card>
+          </section>
         </main>
       </div>
       <footer className="landing-footer">

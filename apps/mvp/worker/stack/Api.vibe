@@ -29,7 +29,8 @@ import {
   TODOS_SHAPE_ROUTE,
   TODOS_TABLE,
 } from "../../src/features/todos/contract.ts"
-import { type Actor, canAsk, refusesPersonOnly, Sessions } from "../Actor.vibe"
+import { type Actor, refusesPersonOnly, Sessions } from "../Actor.vibe"
+import * as ComputeAccess from "../billing/ComputeAccess.vibe"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { repositoryOf as repositoryNamed } from "../github/Config.vibe"
@@ -335,7 +336,7 @@ export const make = effect <E, R>(
             ? mayConfigure(actor)
             : mayChange(actor)
         if (!allows(scopedActor)) return refused("forbidden")
-        if (!(try sync(() => canAsk(who)))) return refused("forbidden")
+        if (!(try ComputeAccess.canRunMachine(who).pipe(Effect.provide(database)))) return refused("forbidden")
         const held = resolved.success.held
         // An attach checks its issue live (decision 0153): a new op whose row is missing or older than
         // `ISSUE_FRESH_MINUTES` reads GitHub first, so the writer decides on what GitHub says now. A replay reads nothing.

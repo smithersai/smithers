@@ -5,7 +5,7 @@ import { WebCrypto } from "effect/crypto/WebCrypto"
 import { runners } from "../../boundary.vibe"
 import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch.vibe"
-import { mayAsk, type Role } from "../auth/contract"
+import { mayRunMachines, type Role } from "../auth/contract"
 import { AuthStore, SESSION } from "../auth/store.vibe"
 import { ADMIT_WAIT_SECONDS, DEFAULT_COLS, DEFAULT_ROWS, OPEN_DEADLINE_SECONDS, terminalSocketRoute } from "./contract"
 import { bytes, ended, openMs, reconnects } from "./metrics"
@@ -38,9 +38,9 @@ const loginNow = effect {
 }
 
 /** A confirmed session refusal; loading and a transient loss of contact leave authorization to the server. */
-const machineRefusalOf = (now: { readonly status: string; readonly role: Role | null }) =>
+const machineRefusalOf = (now: { readonly status: string; readonly role: Role | null; readonly computeAccess?: "deployment" | "paid" | "none" }) =>
   now.status === "signed_out" ? "no_access" as const
-    : now.status === "signed_in" && !mayAsk(now.role) ? "members_only" as const : undefined
+    : now.status === "signed_in" && !mayRunMachines(now) ? "members_only" as const : undefined
 
 /** Reject a known deployment non-Member before selecting or dialing a shared terminal. The server rechecks it too. */
 const machineRefused = effect {

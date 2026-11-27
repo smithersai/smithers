@@ -59,6 +59,10 @@ import { ProfileProvider } from "./features/profile/components/ProfileContext"
 import type { ProfileView } from "./features/profile/profile.vibe"
 import { WorkbenchProvider } from "./features/workbench/WorkbenchContext"
 import type { WorkbenchView } from "./features/workbench/store.vibe"
+import type { BillingView } from "./features/billing/store.vibe"
+import { BillingProvider } from "./features/billing/components/BillingContext"
+import type { ForkView } from "./features/fork/store.vibe"
+import { ForkProvider } from "./features/fork/components/ForkContext"
 
 /** Every layer the page's React tree reads: what the boot program hands the page (src/boot.ts `render`). */
 export interface AppViews {
@@ -92,6 +96,8 @@ export interface AppViews {
   readonly mcp?: McpView
   readonly profile?: ProfileView
   readonly workbench?: WorkbenchView
+  readonly billing?: BillingView
+  readonly fork?: ForkView
 }
 
 /**
@@ -132,7 +138,9 @@ export function AppProviders({ views: app, children }: { readonly views: AppView
                                                           {(() => {
                                                             const withMcp = app.mcp === undefined ? children : <McpProvider value={app.mcp}>{children}</McpProvider>
                                                             const withProfile = app.profile === undefined ? withMcp : <ProfileProvider value={app.profile}>{withMcp}</ProfileProvider>
-                                                            return app.workbench === undefined ? withProfile : <WorkbenchProvider value={app.workbench}>{withProfile}</WorkbenchProvider>
+                                                            const withWorkbench = app.workbench === undefined ? withProfile : <WorkbenchProvider value={app.workbench}>{withProfile}</WorkbenchProvider>
+                                                            const withBilling = app.billing === undefined ? withWorkbench : <BillingProvider value={app.billing}>{withWorkbench}</BillingProvider>
+                                                            return app.fork === undefined ? withBilling : <ForkProvider value={app.fork}>{withBilling}</ForkProvider>
                                                           })()}
                                                         </PluginsProvider>
                                                       </AttentionProvider>

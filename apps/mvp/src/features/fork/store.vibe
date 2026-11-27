@@ -1,0 +1,217 @@
+import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
+import { Context, type Duration, Effect, Layer, Metric, Option, Schema, type Scope } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { runners } from "../../boundary.vibe"
+import { openBrowserTab } from "../billing/browserNav"
+import {
+  FORK_STATUSES,
+  forkRoute,
+  githubForkUrl,
+  syncUpstreamRoute,
+} from "./contract"
+
+export const ForkRow = Schema.Struct({
+  id: Schema.String,
+  status: Schema.Literals(FORK_STATUSES),
+  forkOwner: Schema.optional(Schema.String),
+  forkName: Schema.optional(Schema.String),
+  appInstalled: Schema.optional(Schema.Boolean),
+  installUrl: Schema.optional(Schema.String),
+  failure: Schema.optional(Schema.String),
+  isFork: Schema.optional(Schema.Boolean),
+  upstreamOwner: Schema.optional(Schema.String),
+  upstreamName: Schema.optional(Schema.String),
+  busy: Schema.Boolean,
+  syncing: Schema.Boolean,
+  syncMessage: Schema.optional(Schema.String),
+})
+export type ForkRow = typeof ForkRow.Type
+
+const ForkAnswer = Schema.Struct({
+  status: Schema.Literals(FORK_STATUSES),
+  forkOwner: Schema.optional(Schema.String),
+  forkName: Schema.optional(Schema.String),
+  appInstalled: Schema.optional(Schema.Boolean),
+  installUrl: Schema.optional(Schema.String),
+  failure: Schema.optional(Schema.String),
+  isFork: Schema.optional(Schema.Boolean),
+  upstreamOwner: Schema.optional(Schema.String),
+  upstreamName: Schema.optional(Schema.String),
+})
+
+const PostForkAnswer = Schema.Struct({
+  forkId: Schema.String,
+  status: Schema.Literals(FORK_STATUSES),
+  forkOwner: Schema.String,
+  forkName: Schema.String,
+  installUrl: Schema.optional(Schema.String),
+})
+
+const SyncAnswer = Schema.Struct({
+  synced: Schema.Boolean,
+  message: Schema.String,
+})
+
+const decodeForkAnswer = Schema.decodeUnknownOption(ForkAnswer)
+const decodePostFork = Schema.decodeUnknownOption(PostForkAnswer)
+const decodeSync = Schema.decodeUnknownOption(SyncAnswer)
+
+const forkCounter = Metric.counter("smithers_web_repo_forks", {
+  description: "Browser repository fork actions, by outcome",
+  incremental: true,
+})
+
+export const forkKey = (owner: string, name: string): string => `${owner.toLowerCase()}/${name.toLowerCase()}`
+
+const allForksQuery = (col: Collection.Collection<ForkRow, string>) =>
+  LiveQuery.make((q) => q.from({ fork: col.tanstack }))
+
+type AllForksTanstack = Effect.Success<ReturnType<typeof allForksQuery>>["tanstack"]
+
+export interface ForkView {
+  readonly queries: {
+    readonly all: AllForksTanstack
+  }
+  readonly actions: {
+    readonly load: (owner: string, name: string) => Promise<void>
+    readonly fork: (owner: string, name: string) => Promise<void>
+    readonly syncUpstream: (owner: string, name: string, branch?: string) => Promise<void>
+  }
+}
+
+export class Fork extends Context.Service<Fork, ForkView>()("@smthrs/mvp/fork/Fork") {
+  static readonly live = (options: {
+    readonly origin: string
+    readonly within: Duration.Input
+    readonly openExternal?: (url: string) => void
+  }): Layer.Layer<Fork, never, HttpClient.HttpClient> =>
+    Layer.orDie(Layer.effect(
+      Fork,
+      effect {
+        const http = try HttpClient.HttpClient
+        const col = try Collection.local<ForkRow, string>({
+          id: "repo-forks",
+          schema: ForkRow,
+          getKey: (row) => row.id,
+        }).pipe(Effect.orDie)
+        const allQuery = try allForksQuery(col)
+        const base = options.origin.replace(/\/+$/, "")
+        const openExternal = options.openExternal ?? openBrowserTab
+
+        const upsert = (id: string, next: Partial<Omit<ForkRow, "id">>) =>
+          effect {
+            const existing = try col.get(id)
+            if (Option.isNone(existing)) {
+              try col.insert({
+                id,
+                status: "none",
+                busy: false,
+                syncing: false,
+                ...next,
+              })
+            } else {
+              try col.update(id, (draft) => void Object.assign(draft, next)).pipe(Effect.orDie)
+            }
+          }
+
+        const loadEffect = (owner: string, name: string) =>
+          effect {
+            const key = forkKey(owner, name)
+            const res = try http.execute(HttpClientRequest.get(`${base}${forkRoute(owner, name)}`)).pipe(
+              Effect.timeout(options.within),
+              Effect.result,
+            )
+            if (res._tag === "Failure" || res.success.status < 200 || res.success.status >= 300) {
+              return
+            }
+            const body = try res.success.json.pipe(Effect.result)
+            if (body._tag === "Failure") return
+            const decoded = decodeForkAnswer(body.success)
+            if (Option.isNone(decoded)) return
+            try upsert(key, { ...decoded.value, busy: false })
+          }
+
+        const forkEffect = (owner: string, name: string) =>
+          effect {
+            const key = forkKey(owner, name)
+            try upsert(key, { busy: true, failure: undefined })
+            const res = try http.execute(HttpClientRequest.post(`${base}${forkRoute(owner, name)}`)).pipe(
+              Effect.timeout(options.within),
+              Effect.result,
+            )
+            if (res._tag === "Failure") {
+              try Metric.update(Metric.withAttributes(forkCounter, { outcome: "unreachable" }), 1)
+              try Effect.logWarning("fork.start").pipe(Effect.annotateLogs({ outcome: "unreachable" }))
+              try upsert(key, { busy: false, failure: "Couldn't reach server." })
+              return
+            }
+            if (res.success.status === 503) {
+              try Metric.update(Metric.withAttributes(forkCounter, { outcome: "fallback_github" }), 1)
+              try upsert(key, { busy: false })
+              try Effect.sync(() => openExternal(githubForkUrl(owner, name)))
+              return
+            }
+            if (res.success.status < 200 || res.success.status >= 300) {
+              try Metric.update(Metric.withAttributes(forkCounter, { outcome: "refused" }), 1)
+              try Effect.logWarning("fork.start").pipe(Effect.annotateLogs({ outcome: "refused", status: res.success.status }))
+              try upsert(key, { busy: false, failure: "Couldn't fork repository." })
+              return
+            }
+            const body = try res.success.json.pipe(Effect.result)
+            const decoded = body._tag === "Success" ? decodePostFork(body.success) : Option.none()
+            if (Option.isNone(decoded)) {
+              try upsert(key, { busy: false, failure: "Unexpected response." })
+              return
+            }
+            try Metric.update(Metric.withAttributes(forkCounter, { outcome: decoded.value.status }), 1)
+            try upsert(key, {
+              status: decoded.value.status,
+              forkOwner: decoded.value.forkOwner,
+              forkName: decoded.value.forkName,
+              installUrl: decoded.value.installUrl,
+              busy: false,
+            })
+          }
+
+        const syncEffect = (owner: string, name: string, branch = "main") =>
+          effect {
+            const key = forkKey(owner, name)
+            try upsert(key, { syncing: true, syncMessage: undefined })
+            const payload = try Effect.sync(() => JSON.stringify({ branch }))
+            const req = HttpClientRequest.post(`${base}${syncUpstreamRoute(owner, name)}`).pipe(
+              HttpClientRequest.setHeader("content-type", "application/json"),
+              HttpClientRequest.bodyText(payload),
+            )
+            const res = try http.execute(req).pipe(Effect.timeout(options.within), Effect.result)
+            if (res._tag === "Failure") {
+              try Effect.logWarning("fork.sync_upstream").pipe(Effect.annotateLogs({ outcome: "unreachable" }))
+              try upsert(key, { syncing: false, syncMessage: "Couldn't reach server." })
+              return
+            }
+            const body = try res.success.json.pipe(Effect.result)
+            if (res.success.status < 200 || res.success.status >= 300) {
+              const msg = res.success.status === 409 ? "Merge conflict with upstream." : "Couldn't sync upstream."
+              try Effect.logWarning("fork.sync_upstream").pipe(Effect.annotateLogs({ outcome: "failed", status: res.success.status }))
+              try upsert(key, { syncing: false, syncMessage: msg })
+              return
+            }
+            const decoded = body._tag === "Success" ? decodeSync(body.success) : Option.none()
+            try upsert(key, {
+              syncing: false,
+              syncMessage: Option.isSome(decoded) ? decoded.value.message : "Synced with upstream.",
+            })
+          }
+
+        const context = try Effect.context<never>()
+        const { runPromise } = runners(context, "fork")
+        return Fork.of({
+          queries: { all: allQuery.tanstack },
+          actions: {
+            load: (owner, name) => runPromise(loadEffect(owner, name)),
+            fork: (owner, name) => runPromise(forkEffect(owner, name)),
+            syncUpstream: (owner, name, branch) => runPromise(syncEffect(owner, name, branch)),
+          },
+        })
+      },
+    ))
+}

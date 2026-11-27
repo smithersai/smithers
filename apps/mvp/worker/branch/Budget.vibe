@@ -1,6 +1,8 @@
 import { Effect, type Layer, Metric } from "effect"
 import { SqlClient } from "effect/sql"
+import { MIN_ADMIT_MICRO_USD, type SandboxBillingMode } from "../../src/features/billing/contract.ts"
 import { DEFAULT_SANDBOX_LIMITS, type SandboxLimits } from "../../src/features/spend/contract.ts"
+import * as BillingStore from "../billing/BillingStore.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { CI_OWNER } from "../flows/CiJobMachine.vibe"
 import type { Store } from "./Machine.vibe"
@@ -41,6 +43,7 @@ export interface Slot {
   readonly branchId: string
   readonly personId: string | null
   readonly kind: Kind
+  readonly billingMode?: SandboxBillingMode
 }
 
 /**
@@ -118,9 +121,18 @@ export const admit = effect (slot: Slot) => {
     if (slot.kind === "branch" && slot.personId !== null && counted.mine >= limit.perPerson) {
       return { _tag: "Waiting", scope: "person", awake: counted.awake, limit: limit.perPerson } satisfies Admission
     }
+    const billingMode = slot.billingMode ?? (try resolveBillingMode(sql, slot.personId))
+    if (billingMode === "paid" && slot.personId !== null && PERSON_UUID_RE.test(slot.personId)) {
+      const [acct] = try sql<{ readonly balance: string }>`
+        SELECT balance_micro_usd::text AS balance FROM compute_accounts WHERE person_id = ${slot.personId}::uuid`
+      const balance = acct === undefined ? 0 : Number(acct.balance)
+      if (balance < MIN_ADMIT_MICRO_USD) {
+        return { _tag: "Waiting", scope: "person", awake: counted.awake, limit: 0 } satisfies Admission
+      }
+    }
     try sql`
-      INSERT INTO sandbox_generations (branch_id, person_id, kind)
-      VALUES (${slot.branchId}, ${slot.personId}, ${slot.kind})`
+      INSERT INTO sandbox_generations (branch_id, person_id, kind, billing_mode)
+      VALUES (${slot.branchId}, ${slot.personId}, ${slot.kind}, ${billingMode})`
     return { _tag: "Admitted", awake: counted.awake + 1 } satisfies Admission
   })
 }
@@ -196,9 +208,10 @@ export const started = effect (machine: Started) => {
       return
     }
     if (open !== undefined) try sql`UPDATE sandbox_generations SET ended_at = now() WHERE id = ${open.id}::bigint`
+    const billingMode = machine.billingMode ?? (try resolveBillingMode(sql, machine.personId))
     try sql`
-      INSERT INTO sandbox_generations (branch_id, generation, person_id, kind, instance)
-      VALUES (${machine.branchId}, ${machine.generation}, ${machine.personId}, ${machine.kind}, ${machine.instance})`
+      INSERT INTO sandbox_generations (branch_id, generation, person_id, kind, instance, billing_mode)
+      VALUES (${machine.branchId}, ${machine.generation}, ${machine.personId}, ${machine.kind}, ${machine.instance}, ${billingMode})`
   })
 }
 
@@ -223,20 +236,42 @@ export const release = effect (branchId: string) => {
   return try sql`UPDATE sandbox_generations SET ended_at = now() WHERE branch_id = ${branchId} AND ended_at IS NULL AND generation IS NULL`
 }
 
-/** Renews generation `generation`'s slot: `sandbox/Keep` found its machine awake. */
-export const seen = effect (branchId: string, generation: number) => {
-  const sql = try SqlClient.SqlClient
-  return try sql`
-    UPDATE sandbox_generations SET seen_at = now()
-    WHERE branch_id = ${branchId} AND generation = ${generation} AND ended_at IS NULL`
+/** Resolves whether a sandbox woken for `personId` is deployment-funded or paid (decision 0175). */
+const PERSON_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+const resolveBillingMode = effect (sql: SqlClient.SqlClient, personId: string | null): SandboxBillingMode!unknown => {
+  if (personId === null || !PERSON_UUID_RE.test(personId)) return "deployment"
+  const [member] = try sql<{ readonly ok: number }>`
+    SELECT 1 AS ok FROM sessions
+    WHERE person_id = ${personId}::uuid
+      AND revoked_at IS NULL
+      AND expires_at > now()
+      AND role IN ('admin', 'maintainer', 'member')
+    LIMIT 1`
+  if (member !== undefined) return "deployment"
+  const [acct] = try sql<{ readonly ok: number }>`
+    SELECT 1 AS ok FROM compute_accounts WHERE person_id = ${personId}::uuid LIMIT 1`
+  return acct === undefined ? "deployment" : "paid"
 }
 
-/** Closes generation `generation`'s slot: its machine slept, or is gone. */
+/** Renews generation `generation`'s slot and settles incremental paid compute usage (decision 0175). */
+export const seen = effect (branchId: string, generation: number) => {
+  const sql = try SqlClient.SqlClient
+  try sql`
+    UPDATE sandbox_generations SET seen_at = now()
+    WHERE branch_id = ${branchId} AND generation = ${generation} AND ended_at IS NULL`
+  const multiplier = try BillingStore.configuredMultiplier
+  return try BillingStore.settleGeneration(branchId, generation, multiplier)
+}
+
+/** Closes generation `generation`'s slot and settles final paid compute usage (decision 0175). */
 export const ended = effect (branchId: string, generation: number) => {
   const sql = try SqlClient.SqlClient
-  return try sql`
+  try sql`
     UPDATE sandbox_generations SET ended_at = greatest(now(), started_at)
     WHERE branch_id = ${branchId} AND generation = ${generation} AND ended_at IS NULL`
+  const multiplier = try BillingStore.configuredMultiplier
+  return try BillingStore.settleGeneration(branchId, generation, multiplier)
 }
 
 /** Cloudflare Containers' instance types: vCPUs, GiB of memory and GB of disk. */

@@ -24,7 +24,8 @@ import {
   stoppable,
   type StopRefusal,
 } from "../src/features/runs/contract.ts"
-import { type Actor, canAsk, Sessions } from "./Actor.vibe"
+import { type Actor, Sessions } from "./Actor.vibe"
+import * as ComputeAccess from "./billing/ComputeAccess.vibe"
 import { readBounded } from "./Body.vibe"
 import * as CloudRuns from "./CloudRuns.vibe"
 import * as TodoSession from "./flows/TodoSession.vibe"
@@ -483,7 +484,7 @@ export const make = <E, R, EE, ER, RS>(
           const who = actor.value.value
           const authority = try resolvedMember(who, attempt.value.repoId)
           if (Option.isNone(authority)) return refused(403, "forbidden")
-          if (!canAsk(who)) return refused(403, "forbidden")
+          if (!(try ComputeAccess.canRunMachine(who).pipe(Effect.provide(database)))) return refused(403, "forbidden")
           fields.runId = runId
           // The app's transaction stays open from before the engine writer is taken until the steer commits. Once the
           // writer is held, the session and role receipt are locked and rechecked, as Stop does, through admission.

@@ -3,9 +3,13 @@
 // in (`act`), and counts it, through that route's real handler on this file's schema of the compose Postgres. The cases
 // are keyed by the list itself, so a person-only flow added to the registry fails the compiler here until its route is
 // held to it.
-import { Effect, Metric, Option, Stream } from "effect"
+import { SqlClient } from "effect/sql"
+import { Effect, Layer, Metric, Option, Stream } from "effect"
 import { HttpEffect, HttpServerResponse } from "effect/http"
 import * as TestDatabase from "../db/TestDatabase.ts"
+import * as BillingApi from "./billing/BillingApi.vibe"
+import { disabledLayer as billingDisabled } from "./billing/BillingProvider.ts"
+import * as ForkApi from "./github/ForkApi.vibe"
 import * as SshKeyAccess from "./SshKeyAccess.vibe"
 import * as Flows from "./Flows.vibe"
 import * as RunnerAdmin from "./runners/Admin.vibe"
@@ -216,6 +220,64 @@ const protectedActs: { readonly [A in keyof typeof PROTECTED_ACTS]: Case } = {
     return { status: 403, counted: counted / 2 }
   },
   agent: runnerAdmin(`/api/repos/${REPO.owner}/${REPO.name}/agents/coder`, { labels: [], profile: "coder" }),
+  "billing/checkout": async (actor, act) => {
+    const registry: Metric.MetricRegistry = new Map()
+    const api = await Effect.runPromise(BillingApi.make(Layer.succeed(SqlClient.SqlClient, {} as SqlClient.SqlClient)))
+    const handler = HttpEffect.toWebHandler(api.fetch.pipe(
+      Effect.provide(signedIn(actor)),
+      Effect.provide(billingDisabled),
+      Effect.provideService(Flows.FlowStarter, Flows.FlowStarter.of({ start: () => Effect.die(new Error("never started")) })),
+      Effect.provideService(Metric.MetricRegistry, registry),
+    ))
+    const response = await handler(new Request("https://chat.test/api/billing/checkout", { method: "POST" }))
+    const counted = Effect.runSync(Metric.value(Metric.withAttributes(personOnlyRefusals, {
+      act, by: actor.act!.kind,
+    })).pipe(Effect.provideService(Metric.MetricRegistry, registry))).count
+    return { status: response.status, counted }
+  },
+  "billing/grant": async (actor, act) => {
+    const registry: Metric.MetricRegistry = new Map()
+    const api = await Effect.runPromise(BillingApi.make(Layer.succeed(SqlClient.SqlClient, {} as SqlClient.SqlClient)))
+    const handler = HttpEffect.toWebHandler(api.fetch.pipe(
+      Effect.provide(signedIn(actor)),
+      Effect.provide(billingDisabled),
+      Effect.provideService(Flows.FlowStarter, Flows.FlowStarter.of({ start: () => Effect.die(new Error("never started")) })),
+      Effect.provideService(Metric.MetricRegistry, registry),
+    ))
+    const response = await handler(new Request("https://chat.test/api/billing/admin/grant", { method: "POST" }))
+    const counted = Effect.runSync(Metric.value(Metric.withAttributes(personOnlyRefusals, {
+      act, by: actor.act!.kind,
+    })).pipe(Effect.provideService(Metric.MetricRegistry, registry))).count
+    return { status: response.status, counted }
+  },
+  "repo/fork": async (actor, act) => {
+    const registry: Metric.MetricRegistry = new Map()
+    const api = await Effect.runPromise(ForkApi.make(Layer.succeed(SqlClient.SqlClient, {} as SqlClient.SqlClient)))
+    const handler = HttpEffect.toWebHandler(api.fetch.pipe(
+      Effect.provide(signedIn(actor)),
+      Effect.provideService(Flows.FlowStarter, Flows.FlowStarter.of({ start: () => Effect.die(new Error("never started")) })),
+      Effect.provideService(Metric.MetricRegistry, registry),
+    ))
+    const response = await handler(new Request(`https://chat.test/api/repos/${REPO.owner}/${REPO.name}/fork`, { method: "POST" }))
+    const counted = Effect.runSync(Metric.value(Metric.withAttributes(personOnlyRefusals, {
+      act, by: actor.act!.kind,
+    })).pipe(Effect.provideService(Metric.MetricRegistry, registry))).count
+    return { status: response.status, counted }
+  },
+  "repo/sync-upstream": async (actor, act) => {
+    const registry: Metric.MetricRegistry = new Map()
+    const api = await Effect.runPromise(ForkApi.make(Layer.succeed(SqlClient.SqlClient, {} as SqlClient.SqlClient)))
+    const handler = HttpEffect.toWebHandler(api.fetch.pipe(
+      Effect.provide(signedIn(actor)),
+      Effect.provideService(Flows.FlowStarter, Flows.FlowStarter.of({ start: () => Effect.die(new Error("never started")) })),
+      Effect.provideService(Metric.MetricRegistry, registry),
+    ))
+    const response = await handler(new Request(`https://chat.test/api/repos/${REPO.owner}/${REPO.name}/sync-upstream`, { method: "POST" }))
+    const counted = Effect.runSync(Metric.value(Metric.withAttributes(personOnlyRefusals, {
+      act, by: actor.act!.kind,
+    })).pipe(Effect.provideService(Metric.MetricRegistry, registry))).count
+    return { status: response.status, counted }
+  },
 }
 
 describe("person-only acts refuse anyone acting for the person", () => {

@@ -152,6 +152,12 @@ export const PROTECTED_ACTS = {
   runner: { route: "PUT, DELETE /api/repos/<owner>/<name>/runners/<name>" },
   "ssh-key": { route: "POST /api/user/keys, DELETE /api/user/keys/<id>" },
   agent: { route: "PUT, DELETE /api/repos/<owner>/<name>/agents/<name>" },
+  // Purchasing or granting compute credits (decision 0175): only the person in person.
+  "billing/checkout": { route: "POST /api/billing/checkout" },
+  "billing/grant": { route: "POST /api/billing/admin/grant" },
+  // Forking or syncing a repository on GitHub (decision 0175): only the person in person.
+  "repo/fork": { route: "POST /api/repos/<owner>/<name>/fork" },
+  "repo/sync-upstream": { route: "POST /api/repos/<owner>/<name>/sync-upstream" },
 } as const
 
 /** A person-only act: a registry flow with a `userOnlyReason`, or a protected act. */
