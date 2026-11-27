@@ -148,5 +148,12 @@
     "effect@4.1.1": "patches/effect@4.1.1.patch",
     "electrobun@1.18.1": "patches/electrobun@1.18.1.patch",
     "@effect/platform-node@4.1.1": "patches/@effect__platform-node@4.1.1.patch"
+  },
+  "packageExtensions": {
+    "@alchemy.run/cloudflare@2.0.0-beta.85": {
+      "dependencies": {
+        "@cloudflare/workers-types": "5.20261019.1"
+      }
+    }
   }
 }

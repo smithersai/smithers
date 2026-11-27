@@ -16,7 +16,7 @@ both programs as Effect code.
 
 - Bun 1.4.0 or later, or Node.js 22.19.0 or later.
 - A project with the packages installed:
-  `bun add @smthrs/platform-bun@1.0.0-rc.19 effect @smthrs/kernel@1.0.0-rc.19`.
+  `bun add @smthrs/platform-bun@1.0.0-rc.20 effect @smthrs/kernel@1.0.0-rc.20`.
   That also installs the required peer `@smthrs/platform-node`, which ships the
   `smithers-jj-export` helper the filesystem slot runs. `@smthrs/kernel` is on
   the line because `contained.ts` imports its `ProcessLedger`, and Bun's

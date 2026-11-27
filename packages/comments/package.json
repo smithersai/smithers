@@ -37,10 +37,10 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/engine": "1.0.0-rc.19",
-    "@smthrs/flows": "1.0.0-rc.19",
-    "@smthrs/plan": "1.0.0-rc.19",
-    "@smthrs/targets": "1.0.0-rc.19"
+    "@smthrs/engine": "1.0.0-rc.20",
+    "@smthrs/flows": "1.0.0-rc.20",
+    "@smthrs/plan": "1.0.0-rc.20",
+    "@smthrs/targets": "1.0.0-rc.20"
   },
   "peerDependencies": {
     "effect": "4.1.1"
@@ -52,7 +52,7 @@
     "@effect/language-service": "0.87.2",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
-    "@smthrs/fuzz": "1.0.0-rc.19",
+    "@smthrs/fuzz": "1.0.0-rc.20",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

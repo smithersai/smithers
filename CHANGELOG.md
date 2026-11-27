@@ -5,6 +5,35 @@ release (what changed and why it matters, with screenshots and examples), see
 the release notes at
 [smithers.sh/changelogs/1.0.0-rc.0](https://smithers.sh/changelogs/1.0.0-rc.0).
 
+## 1.0.0-rc.20 (2026-11-27)
+
+<!-- commits:1.0.0-rc.20 -->
+
+12 commits since [v1.0.0-rc.19](https://github.com/smithersai/smithers/commit/c19229ffe7).
+
+### ✨ Features
+
+- **mvp,site:** align public front door around smithers-ci + smithers.sh BYOA workbench, add GET /api/health ([dab224d510](https://github.com/smithersai/smithers/commit/dab224d510f86c4639081800091d07e28f40ef9e))
+- **mvp:** cut over ChatStore to MessagesShard by default with lazy Postgres backfill (ADR 0170 slice 5b) ([580c4b500c](https://github.com/smithersai/smithers/commit/580c4b500ce1a98e68ccdb1d61e1b52e8e0fb880))
+- **cloud:** complete Smithers Cloud public coding factory switchover ([bf6c8db75c](https://github.com/smithersai/smithers/commit/bf6c8db75c677e4f87b34c2aa752b23fee6f5737))
+- **mvp,integrations:** 3rd-party contributor onboarding, prepaid cloud compute credits, and one-click forks (ADR 0175) ([c1a37ca119](https://github.com/smithersai/smithers/commit/c1a37ca119855e5d82d6bc0c0167417e304685af))
+- **uphill:** add Uphill SDK contracts, Lighthouse UI, first-party app plugin, sandbox binary, durable flows, and continuous metrics ([ef014b37cf](https://github.com/smithersai/smithers/commit/ef014b37cf6d7bea777be1fa90d2e5db9e40cfe8))
+
+### 🐛 Bug fixes
+
+- **mvp:** wire Alchemy Stripe bindings, RepoFork failure settlement, contributor UX, and tests ([f3cc29e4cb](https://github.com/smithersai/smithers/commit/f3cc29e4cbc1e2515590496e71037438caccaf8a))
+- **mvp:** settle receipt-backed backfill refusals and ended-answer asked writes (ADR 0170 slice 5b Fable review) ([915f87c8e4](https://github.com/smithersai/smithers/commit/915f87c8e4af1580f362dbda0cefe28bf434a1cd))
+- **mvp:** add .ts extension to sourceConstants import for native Node db:migrate ([aa0a0bc835](https://github.com/smithersai/smithers/commit/aa0a0bc8357de3ca95f87df6823081a70386f97e))
+- **mvp:** close Slice 5b frontend authorization and readiness gaps ([fc92164085](https://github.com/smithersai/smithers/commit/fc92164085089eeebf2070ea6a4113c0c342b244))
+- **mvp:** ADR 0170 slice 5b backend Astra P1 fixes (#1-#6) ([d8af5eaf6a](https://github.com/smithersai/smithers/commit/d8af5eaf6a8dfb28d2967ba6ff71d08f9842f049))
+- **release,drift,ci:** promote @smthrs/app-core, fix JSDoc/formatting/trackedHygiene/apiBaseline/Uphill, and unblock smithers-ci release ([0ef4addd11](https://github.com/smithersai/smithers/commit/0ef4addd11db88903f7340098b4b0a92523d61cb))
+
+### ♻️ Refactors
+
+- **mvp:** migrate conversations, status/store, and plugins to VibeLang (W6-VIBE-SRC-52) ([07fc32b7e3](https://github.com/smithersai/smithers/commit/07fc32b7e30f7fdcb43fcc547b2c53695958f3d0))
+
+<!-- /commits:1.0.0-rc.20 -->
+
 ## 1.0.0-rc.19 (2026-11-27)
 
 <!-- commits:1.0.0-rc.19 -->

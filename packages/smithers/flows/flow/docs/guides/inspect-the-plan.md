@@ -19,7 +19,7 @@ engine, database, or jj: planning reads declarations only. They import
 add both at the version of `@smthrs/flows` you have:
 
 ```bash
-npm install @smthrs/flow@1.0.0-rc.19 @smthrs/plan@1.0.0-rc.19
+npm install @smthrs/flow@1.0.0-rc.20 @smthrs/plan@1.0.0-rc.20
 ```
 
 `@smthrs/flows` re-exports the same modules, so `import { Graph } from "@smthrs/flows"`

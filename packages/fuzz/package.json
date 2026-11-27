@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/fuzz",
   "type": "module",
-  "version": "1.0.0-rc.19",
+  "version": "1.0.0-rc.20",
   "license": "MIT",
   "smthrs": {
     "group": "agent"

@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/engine",
   "type": "module",
-  "version": "1.0.0-rc.19",
+  "version": "1.0.0-rc.20",
   "license": "MIT",
   "smthrs": {
     "group": "engine"
@@ -151,13 +151,13 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/canonical": "1.0.0-rc.19",
-    "@smthrs/capability": "1.0.0-rc.19",
-    "@smthrs/crypto": "1.0.0-rc.19",
-    "@smthrs/flow": "1.0.0-rc.19",
-    "@smthrs/journal": "1.0.0-rc.19",
-    "@smthrs/keys": "1.0.0-rc.19",
-    "@smthrs/plan": "1.0.0-rc.19",
+    "@smthrs/canonical": "1.0.0-rc.20",
+    "@smthrs/capability": "1.0.0-rc.20",
+    "@smthrs/crypto": "1.0.0-rc.20",
+    "@smthrs/flow": "1.0.0-rc.20",
+    "@smthrs/journal": "1.0.0-rc.20",
+    "@smthrs/keys": "1.0.0-rc.20",
+    "@smthrs/plan": "1.0.0-rc.20",
     "vibelang-runtime": "0.0.13"
   },
   "devDependencies": {
