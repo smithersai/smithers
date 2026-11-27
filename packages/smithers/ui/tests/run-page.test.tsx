@@ -99,6 +99,8 @@ describe("the run vocabulary", () => {
     ];
     for (const [state, cancelRequested, word] of table) expect([state, cancelRequested, runWord(state, { cancelRequested })]).toEqual([state, cancelRequested, word]);
     expect(runWord("running")).toBe("Working");
+    expect(runWord("skipped", { cancelRequested: true })).toBe("Skipped");
+    expect(isSettled("skipped")).toBe(true);
   });
 
   test("a settled run changes no more", () => {

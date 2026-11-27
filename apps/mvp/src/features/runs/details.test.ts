@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { detailsOf, jobStateOf } from "./details"
+import { reportedJobs } from "./jobResults"
+import { headerStatusOf } from "./todoRun"
 import { graphOf } from "./graph"
 import type { Inspection, RunPage } from "./schema"
 
@@ -146,4 +148,21 @@ describe("detailsOf", () => {
       jobStateOf(status as Inspection["run"]["status"])
     )).toEqual(["completed", "failed", "skipped", "waiting", "pending", "running"])
   })
+})
+
+
+test("reported jobs show while child inspections load, then include the named checkout and command outcomes", () => {
+  const pack = (v: unknown) => value(JSON.stringify(v))
+  const failed = { name: "checkout", outcome: "failed", exitCode: null }
+  const skipped = { name: "check", outcome: "skipped", exitCode: null }
+  const root = { ...child, run: { ...child.run, flowName: "repo/Run", status: "completed" as const,
+    result: pack({ state: "failure", outcome: "sent", jobs: [{ name: "readiness", outcome: "failed" }] }) } }
+  const job = { ...child, run: { ...child.run, flowName: "ci/job", status: "completed" as const, runId: "job:1",
+    input: pack({ job: { name: "readiness" } }), result: pack({ outcome: "failed", steps: [failed, skipped] }) } }
+  expect(reportedJobs(root, [])).toEqual([{ name: "readiness", outcome: "failed", steps: [] }])
+  expect(reportedJobs(root, [job])).toEqual([{ name: "readiness", outcome: "failed", steps: [failed, skipped] }])
+  expect(reportedJobs(job, [])).toEqual(reportedJobs(root, [job]))
+  expect(headerStatusOf(job.run)).toBe("failed")
+  expect(headerStatusOf({ ...job.run, result: pack({ outcome: "skipped", steps: [] }) })).toBe("skipped")
+  expect(reportedJobs({ ...root, run: { ...root.run, result: { ...root.run.result, clipped: true } } }, [job])).toEqual([])
 })

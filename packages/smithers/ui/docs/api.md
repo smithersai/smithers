@@ -1365,7 +1365,7 @@ The pure helpers the components use, for a terminal or a test:
 | Export | What it does |
 | --- | --- |
 | `runWord(state, { cancelRequested })` | `pending` → `Queued`, `running` → `Working`, `suspended` → `Waiting`, each `Stopping` once a stop is requested; `completed` → `Done`, `failed` → `Failed`, `cancelled` → `Stopped`. |
-| `RUN_WORDS`, `RUN_WORD_GLYPHS`, `RUN_WORD_TONES`, `isSettled` | The closed vocabulary (`RunWord`), adding `On another device`, `Expired` and `No access`; a glyph and a badge tone per word. `Failed` and `No access` are ember; `Done` is success; `Working` is brand and pulses; the rest are quiet. |
+| `RUN_WORDS`, `RUN_WORD_GLYPHS`, `RUN_WORD_TONES`, `isSettled` | The closed vocabulary (`RunWord`), including `Skipped`, `On another device`, `Expired` and `No access`; a glyph and a badge tone per word. `Failed` and `No access` are ember; `Done` is success; `Working` is brand and pulses; the rest are quiet. |
 | `STEP_GLYPHS`, `STEP_WORDS` | A step's state (`StepState`: `running`, `completed`, `failed`, `waiting`, `skipped`) as a glyph and a word. |
 | `clockDuration(ms)`, `stepDuration(ms)`, `untilWords(atMs, now)`, `offsetWords(atMs, originMs)`, `stepElapsed(step, now)` | `0:42` and `1:02:03`; `12 ms`, `1.2 s`, `42 s`, then a clock (rounded milliseconds reaching `1000` show `1.0 s`); `in 8 s`; `+1.2 s`; a step's elapsed time, to `now` while open. |
 | `waterfallBars(steps, now)`, `waterfallAxis(steps, now)` | Each step's bar (`WaterfallBar`: `left` and `width` in percent, `instant`, `open`) on the shared axis. A zero-width axis makes every bar a marker at the start. |
@@ -1375,7 +1375,7 @@ The pure helpers the components use, for a terminal or a test:
 
 `jsonValueCss`, `runPageCss` and `flowDraftViewCss` are part of `smithersUiCss`.
 
-`RunState` is `"pending" | "running" | "suspended" | "completed" | "failed" | "cancelled"`.
+`RunState` is `"pending" | "running" | "suspended" | "completed" | "failed" | "cancelled" | "skipped"`. A CI job that never ran shows `Skipped`.
 `RunTone` is `"default" | "muted" | "warning" | "destructive" | "success"`,
 the value selected by `RUN_WORD_TONES`. `DraftFile` is the immutable
 `{ path: string, text: string }` file in a flow draft.

@@ -575,6 +575,7 @@ test("a real repository run records the route's inspection and first subscribed 
     await until(() => expect(stages()).toEqual(expect.arrayContaining([
       expect.objectContaining({ stage: "match", phase: "start" }),
       expect.objectContaining({ stage: "inspection", phase: "ready" }),
+      expect.objectContaining({ stage: "descendants", phase: "loaded", rows: 1 }),
       expect.objectContaining({ stage: "changes", phase: "rows" }),
       expect.objectContaining({ stage: "render", phase: "ready" }),
     ])))

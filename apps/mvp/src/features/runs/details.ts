@@ -2,6 +2,7 @@ import type { JsonValueData, RunDetailsJob, StepState } from "@smthrs/ui"
 import { runPath } from "./contract"
 import { graphOf, runTitle } from "./graph"
 import type { Inspection, RunPage } from "./schema"
+import { ciJobOf } from "./jobResults"
 import { headerStatusOf } from "./todoRun"
 
 // A run opened in place on the Runs page (ruling FLOW-13: runs read like GitHub Actions): its jobs, the run itself and
@@ -9,12 +10,12 @@ import { headerStatusOf } from "./todoRun"
 // lines. Pure: the same graph the run page draws (./graph.ts), regrouped by the run each step belongs to.
 
 /** A run's state as a job's line reads it. A stopped run reads as skipped work, never as a failure. */
-export const jobStateOf = (status: Inspection["run"]["status"]): StepState =>
+export const jobStateOf = (status: Inspection["run"]["status"] | "skipped"): StepState =>
   status === "completed"
     ? "completed"
     : status === "failed"
     ? "failed"
-    : status === "cancelled"
+    : status === "cancelled" || status === "skipped"
     ? "skipped"
     : status === "suspended"
     ? "waiting"
@@ -54,10 +55,11 @@ export const detailsOf = (page: RunPage, now: number, pathOf: (runId: string) =>
           logs: step.logs.length,
         }
       })
+    const ci = ciJobOf(owner.run)
     return {
       id: owner.run.runId,
-      label: runTitle(owner.run),
-      state: jobStateOf(isRoot ? headerStatusOf(owner.run) : owner.run.status),
+      label: ci?.name ?? runTitle(owner.run),
+      state: ci === undefined ? jobStateOf(headerStatusOf(owner.run)) : ci.outcome === "passed" ? "completed" : ci.outcome,
       href,
       steps,
     } satisfies RunDetailsJob

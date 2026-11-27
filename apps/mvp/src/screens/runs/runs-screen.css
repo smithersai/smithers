@@ -8,6 +8,9 @@
 .run-page-loading { min-height: 12rem; }
 .run-page-values { display: flex; flex-direction: column; gap: 0.5rem; }
 .run-page-summary { gap: 0.75rem; }
+.run-page-jobs h2 { margin: 0; font-size: 1rem; }
+.run-page-jobs ul { list-style: none; padding-inline-start: 1rem; }
+.run-page-jobs li { display: flex; gap: 0.5rem; align-items: center; }
 .run-page-graph { margin-top: 0.75rem; }
 .run-page-waterfall { margin-top: 0.75rem; }
 .run-page-steps { display: grid; grid-template-columns: minmax(14rem, 1fr) 2fr; gap: 1rem; align-items: start; }

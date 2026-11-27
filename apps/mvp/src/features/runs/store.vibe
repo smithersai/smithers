@@ -360,7 +360,7 @@ export class RunsStore extends Context.Service<
                 visible.push(child)
                 pending.push(...child.children.map((nested) => nested.runId))
               }
-              try put(pages, { id: runId, state: "read", inspection, ...kept, descendants: visible, ...(try attributed(runId, inspection, local)) })
+              try put(pages, { id: runId, state: "read", inspection, ...kept, descendants: visible, childReads: pending.some((id) => !known.has(id)) ? "loading" : undefined, ...(try attributed(runId, inspection, local)) })
             }
             try publish([])
             try (attempt?.record("page", "rows", 1) ?? Effect.void)
@@ -381,6 +381,7 @@ export class RunsStore extends Context.Service<
             }
             // Child journals carry their own identities. Never join children by display name.
             const descendants: Inspection[] = []
+            let failedChildren = 0
             const seen = new Set([runId])
             const pending = [...inspection.children.map((child) => child.runId)]
             for (let i = 0; i < pending.length; i++) {
@@ -395,6 +396,7 @@ export class RunsStore extends Context.Service<
               }
               const child = try Effect.result(source(childId, { limit: JOURNAL_PAGE }))
               if (child._tag === "Failure") {
+                failedChildren++
                 try recordFollowing("child", child.failure, startedAt)
                 continue
               }
@@ -421,10 +423,11 @@ export class RunsStore extends Context.Service<
               pending.push(...child.success.children.map((child) => child.runId))
             }
             if (generations.get(runId) !== generation) return
+            try (attempt?.record("descendants", failedChildren === 0 ? "loaded" : "failed", descendants.length) ?? Effect.void)
             const latestView = Option.getOrThrow(try view.get(VIEW))
             if (latestView.runId === runId && latestView.at != null) return
             const owner = try attributed(runId, inspection, local)
-            try put(pages, { id: runId, state: "read", inspection, ...kept, descendants, ...owner })
+            try put(pages, { id: runId, state: "read", inspection, ...kept, descendants, childReads: failedChildren > 0 ? "unavailable" : undefined, ...owner })
             // A run on Cloudflare whose root this tab can't place shows nothing until it can: the list of runs on
             // Cloudflare may name its repository. One read of it at a time for each such run.
             if (owner.repoId === undefined && owner.personal === undefined && owner.system !== true && !placing.has(runId)) {
@@ -461,7 +464,9 @@ export class RunsStore extends Context.Service<
           // again. Only an answer about the run itself (not found, not started) replaces what the page shows.
           const shown = try pages.get(runId)
           if (state !== "unavailable" || Option.isNone(shown) || shown.value.state !== "read") {
-            try put(pages, { id: runId, state, inspection: null, more: [], hasMore: false, repoId: undefined, personal: undefined, system: undefined })
+            try put(pages, { id: runId, state, inspection: null, more: [], hasMore: false, repoId: undefined, personal: undefined, system: undefined, childReads: undefined })
+          } else if (shown.value.childReads === "loading") {
+            try put(pages, { ...shown.value, childReads: "unavailable" })
           }
           try recordRead("run", state, startedAt, undefined, failure)
         }.pipe(Effect.orDie)

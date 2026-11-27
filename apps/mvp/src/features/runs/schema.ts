@@ -86,6 +86,7 @@ export const RunPage = Schema.Struct({
   /** The journal events read past the first page, by More. */
   more: Schema.Array(Schema.Unknown),
   descendants: Schema.optionalKey(Schema.Array(Schema.Unknown)),
+  childReads: Schema.optional(Schema.Literals(["loading", "unavailable"])),
   hasMore: Schema.Boolean,
   /**
    * Whose run this read is (decision 0110, 2026-11-03, the data gate): a repository's (`github/owner/name`), from its

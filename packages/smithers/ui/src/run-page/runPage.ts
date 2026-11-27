@@ -5,8 +5,8 @@
  * pure, so a terminal frontend reads the same words and the same bars.
  */
 
-/** A run's state as its engine records it. */
-export type RunState = "pending" | "running" | "suspended" | "completed" | "failed" | "cancelled";
+/** A run's state, including a CI job skipped by its workflow. */
+export type RunState = "pending" | "running" | "suspended" | "completed" | "failed" | "cancelled" | "skipped";
 
 /**
  * The closed vocabulary a run shows (decision 0009 §4, plus 0014's
@@ -18,6 +18,7 @@ export type RunWord =
   | "Waiting"
   | "Stopping"
   | "Stopped"
+  | "Skipped"
   | "Failed"
   | "Done"
   | "On another device"
@@ -33,6 +34,7 @@ export const RUN_WORDS: ReadonlyArray<RunWord> = [
   "Queued",
   "Done",
   "Stopped",
+  "Skipped",
   "On another device",
   "Expired",
   "No access",
@@ -45,6 +47,7 @@ export const RUN_WORD_GLYPHS: Readonly<Record<RunWord, string>> = Object.freeze(
   Waiting: "○",
   Stopping: "◌",
   Stopped: "■",
+  Skipped: "–",
   Failed: "✕",
   Done: "✓",
   "On another device": "↗",
@@ -62,6 +65,7 @@ export const RUN_WORD_TONES: Readonly<Record<RunWord, RunTone>> = Object.freeze(
   Waiting: "muted",
   Stopping: "muted",
   Stopped: "muted",
+  Skipped: "muted",
   Failed: "destructive",
   Done: "success",
   "On another device": "muted",
@@ -87,12 +91,14 @@ export const runWord = (state: RunState, options: { readonly cancelRequested?: b
       return "Failed";
     case "cancelled":
       return "Stopped";
+    case "skipped":
+      return "Skipped";
   }
 };
 
 /** Whether a run in `state` has settled: it changes no more. */
 export const isSettled = (state: RunState): boolean =>
-  state === "completed" || state === "failed" || state === "cancelled";
+  state === "completed" || state === "failed" || state === "cancelled" || state === "skipped";
 
 /** A step's state as the run's journal records it. */
 export type StepState = "pending" | "running" | "completed" | "failed" | "waiting" | "skipped" | "cancelled";

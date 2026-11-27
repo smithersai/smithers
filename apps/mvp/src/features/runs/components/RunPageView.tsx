@@ -14,6 +14,8 @@ import {
   JournalScrubber,
   journalPosition,
   StepInspector,
+  StatusPill,
+  LoadingBar,
   Skeleton,
   Tabs,
   TabsContent,
@@ -24,6 +26,7 @@ import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
 import { ANSWER, OPEN, REFUSAL_WORDS, RESUME, RETRY, RETRY_FAILED, RETRY_FROM, RETRY_LATEST, STOP } from "../contract"
 import { actsOf, agentStopOf, journalOf, missingOf, placeOf, repoRunStateOf, retriesFrom, selectedStep } from "../page"
+import { reportedJobs } from "../jobResults"
 import { headerStatusOf } from "../todoRun"
 import { graphOf, runTitle } from "../graph"
 import type { RunsActions } from "../runs.vibe"
@@ -55,9 +58,13 @@ export function RunPageView({ fromRuns = false }: { readonly fromRuns?: boolean 
   const gate = (node: ReactNode) => owner === undefined || name === undefined ? node : <RepoGate owner={owner} name={name}>{node}</RepoGate>
   if (page.state === "loading") {
     const known = repoRuns.find((run) => run.execution === page.id)
-    return known === undefined ? <Skeleton aria-label="Loading run" className="run-page-loading" /> : gate(<RunHeader title={flowWords(known.flow)} state={repoRunStateOf(known.status)}
-      startedAtMs={Date.parse(known.createdAt)} finishedAtMs={known.status === "running" ? null : Date.parse(known.updatedAt)}
-      now={view.now ?? Date.now()} />)
+    if (known === undefined) return <Skeleton aria-label="Loading run" className="run-page-loading" />
+    const state = repoRunStateOf(known.status)
+    return gate(<>
+      <RunHeader title={flowWords(known.flow)} state={state} startedAtMs={Date.parse(known.createdAt)}
+        finishedAtMs={state === "running" ? null : Date.parse(known.updatedAt)} now={view.now ?? Date.now()} />
+      <LoadingBar loading placement="inline" label="Loading run details" />
+    </>)
   }
   if (page.state !== "read") return <Card className="run-page-missing"><h1 className="sui-sr-only">Run</h1><EmptyState title={missingOf(page, view.repo != null)} /></Card>
   return gate(<ReadRunPage page={page} view={view} actions={actions} fromRuns={fromRuns} />)
@@ -78,6 +85,7 @@ function ReadRunPage({ page, view, actions, fromRuns }: { page: RunPage; view: R
     [page, at, run.createdAtMs, repo, fromRuns],
   )
   const graph = { ...frame, time: at === null ? now : frame.time }
+  const jobs = at === null ? reportedJobs(inspection, (page.descendants ?? []) as ReadonlyArray<Inspection>) : []
   const steps = graph.steps
   const shown = selectedStep(steps, view.selected)
   const acts = actsOf(inspection, now, journalOf(page), place)
@@ -130,6 +138,19 @@ function ReadRunPage({ page, view, actions, fromRuns }: { page: RunPage; view: R
       {view.refusal === null ? null : <p role="alert">{REFUSAL_WORDS[view.refusal] ?? view.refusal}</p>}
       <RunSteers page={page} view={view} steps={steps} />
       {transcribed(inspection.steps) ? <TranscriptPanel runId={run.runId} /> : null}
+      {at === null && page.childReads === "loading" ? <LoadingBar loading placement="inline" label="Loading run details" /> : null}
+      {at === null && page.childReads === "unavailable" ? <p role="status">Some run details are unavailable.</p> : null}
+      {jobs.length > 0 ? (
+        <section aria-label="Jobs" className="run-page-jobs">
+          {jobs.map((job) => <section key={job.name} aria-label={job.name}>
+            <h2>{job.name} <StatusPill status={job.outcome} /></h2>
+            {job.steps.length > 0 ? <ul>{job.steps.map((step, index) => <li key={index}>
+              {step.name} <StatusPill status={step.outcome} />
+              {step.exitCode != null && step.exitCode !== 0 ? <span>Exit {step.exitCode}</span> : null}
+            </li>)}</ul> : null}
+          </section>)}
+        </section>
+      ) : null}
       <div className="run-page-values">
         <JsonValue label="Input" value={run.input} />
         {run.result === null ? null : <JsonValue label="Result" value={run.result} />}

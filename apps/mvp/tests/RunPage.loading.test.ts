@@ -97,7 +97,10 @@ test.each([true, false])("a run shows its frame while inspection and sync are he
       expect(container.querySelector('main[aria-label="Run"]')).not.toBeNull()
       expect([...container.querySelectorAll("a")].find((link) => link.textContent === "Runs")?.getAttribute("href"))
         .toBe(persisted ? "/app/runs" : "/octo/hello/runs")
-      if (persisted) expect(container.querySelector("h1")?.textContent).toBe("CI")
+      if (persisted) {
+        expect(container.querySelector("h1")?.textContent).toBe("CI")
+        expect(container.querySelector('[aria-label="Loading run details"]')).not.toBeNull()
+      }
       else {
         expect(container.querySelector('[aria-label="Loading run"]')).not.toBeNull()
         expect(container.querySelector('[aria-label="Loading runs"]')).not.toBeNull()

@@ -544,3 +544,29 @@ test("CI command records follow the selected step and replay excludes future out
   expect(graphOf(data, null, 2000).steps[0]!.logs).toEqual([{ text: "command output", bytes: 14, clipped: false }])
   expect(graphOf(data, 2, 2000).steps[0]!.logs).toEqual([])
 })
+
+test("a failed checkout and the skipped command keep their CI outcomes when their engine actions completed", () => {
+  const checkout = { name: "checkout", outcome: "failed", exitCode: null }
+  const command = { name: "check", outcome: "skipped", exitCode: null }
+  const actions = ["ci/job/Checkout", "ci/job/Step", "ci/job/Release"] as const
+  const history = [event(1, "flows.engine.plan-recorded", { generation: 0, graph: {
+    nodes: actions.map((action, i) => ({ id: String(i), action, kind: "ActionCall", tier: "sealed", dependsOn: i === 0 ? [] : [String(i - 1)] })),
+    edges: [],
+  } })]
+  const steps = actions.map((action, i) => {
+    const nodeId = String(i)
+    const output = value(JSON.stringify({ outcome: "failed", steps: i === 0 ? [checkout] : [checkout, command] }))
+    history.push(event(2 + 2*i, "flows.engine.node-scheduled", { nodeId, kind: "ActionCall", attempt: 1 }),
+      event(3 + 2*i, "flows.engine.node-settled", { nodeId, outcome: "built", attempts: 1,
+        result: { preview: output.text, bytes: output.bytes, truncated: false } }))
+    return { nodeId, action, kind: "ActionCall", status: "completed", scheduledAtMs: 1200, settledAtMs: 1300, seq: 3 + 2*i, output, attempts: [] }
+  }) satisfies Inspection["steps"]
+  const data = page({ steps, journal: { events: history, nextSeq: 7, afterSeq: -1, hasMore: false } })
+  for (const cursor of [null, 7]) {
+    const graph = graphOf(data, cursor, 2000)
+    expect(graph.nodes.map(({label,state}) => [label,state])).toEqual([["checkout","failed"], ["check","skipped"], ["ci/job/Release","done"]])
+    expect(graph.steps[0]!.attempts.at(-1)?.state).toBe("failed")
+    expect(graph.steps[1]!.attempts).toEqual([])
+  }
+  expect(graphOf(data, 2, 2000).nodes[0]!.state).toBe("current")
+})

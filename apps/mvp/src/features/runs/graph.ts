@@ -1,22 +1,24 @@
 import { Journal } from "@smthrs/flows"
 import { InspectionJournal, RunTrace } from "@smthrs/gateway"
 import type { GraphEdge, GraphNode, JsonValueData, StepRow } from "@smthrs/ui"
+import { inspectionValue as parsed } from "./inspectionValue"
+import { ciStageOf } from "./jobResults"
 import { outputLogs } from "./outputLogs"
 import { runPath, settled } from "./contract"
 import { journalOf, type PageStep } from "./page"
 import type { Inspection, RunPage } from "./schema"
 
+const graphStates: Record<StepRow["state"], GraphNode["state"]> = {
+  pending: "next", running: "current", completed: "done", failed: "failed",
+  waiting: "waiting", cancelled: "cancelled", skipped: "skipped",
+}
+const stepStates: Record<GraphNode["state"], StepRow["state"]> = {
+  next: "pending", current: "running", done: "completed", failed: "failed",
+  waiting: "waiting", cancelled: "cancelled", skipped: "skipped",
+}
+
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null ? value as Record<string, unknown> : {}
-const parsed = (value: JsonValueData): unknown => {
-  if (value.clipped) return undefined
-  try {
-    return JSON.parse(value.text)
-    // expected: a value that isn't JSON shows as none
-  } catch {
-    return undefined
-  }
-}
 const asValue = (value: unknown): JsonValueData => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
   return { text, bytes: new TextEncoder().encode(text).length, clipped: false }
@@ -131,13 +133,10 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
     // An explicit empty dispatch list proves dependency resolution failed before the action ran.
     // The journal retains that failure; the action gets no invented attempt or failed duration.
     const undispatched = node.state === "failed" && Array.isArray(nodePayload.stepKeyDigests) && digests.length === 0
-    const state: StepRow["state"] = undispatched ? "skipped" : node.state === "done"
-      ? "completed"
-      : node.state === "current"
-      ? "running"
-      : node.state === "next"
-      ? latest?.state === "skipped" ? "skipped" : "pending"
-      : node.state
+    const receipt = node.state === "done" ? ciStageOf(native?.action, at === null ? native?.output ?? output : output) : undefined
+    const outcome = receipt?.outcome === "passed" ? "completed" : receipt?.outcome
+    const skipped = undispatched || (node.state === "next" && latest?.state === "skipped")
+    const state = outcome ?? (skipped ? "skipped" : stepStates[node.state])
     const recordedAttempts = at === null ?
       native?.attempts.map((attempt) => ({
         attempt: attempt.attempt,
@@ -158,7 +157,7 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
         finishedAtMs: span.endedAt ?? null,
         error: span.status === "failed" ? "failed" : null
       }))
-    const attempts = undispatched ? [] : recordedAttempts !== undefined && recordedAttempts.length > 0
+    const engineAttempts = undispatched || receipt?.outcome === "skipped" ? [] : recordedAttempts !== undefined && recordedAttempts.length > 0
       ? recordedAttempts
       : calls.map((call) => ({
         attempt: call.k,
@@ -167,10 +166,15 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
         finishedAtMs: call.ended_at === undefined ? null : Date.parse(call.ended_at),
         error: call.state === "failed" ? "failed" : null
       }))
+    const attempts = receipt?.outcome === "failed" || receipt?.outcome === "cancelled"
+      ? engineAttempts.map((attempt, index) => index === engineAttempts.length - 1 && attempt.state === "completed"
+        ? { ...attempt, state: receipt.outcome }
+        : attempt)
+      : engineAttempts
     return {
       row: {
         id: node.id,
-        label: node.label,
+        label: receipt?.name ?? node.label,
         kind: native?.kind === "FlowCall" ? "Flow" : "Step",
         state,
         startedAtMs: latest === undefined ? time : Date.parse(latest.started_at),
@@ -273,10 +277,10 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
       state: wait.row.state === "cancelled" ? "cancelled" : "waiting"
     }))
   ]
-  const shownNodes = nodes.filter((node) => visibleIds.has(node.id)).map((node) => steps.find((step) => step.row.id === node.id)?.row.state === "skipped"
-    ? { ...node, state: "skipped" as const }
-    : stoppedAt !== null && (node.state === "current" || node.state === "waiting")
-    ? { ...node, state: "cancelled" as const }
-    : node)
+  const rows = new Map(visibleSteps.map((step) => [step.row.id, step.row]))
+  const shownNodes = nodes.flatMap((node) => {
+    const row = rows.get(node.id)
+    return row === undefined ? [] : [{ ...node, label: row.label, state: graphStates[row.state] }]
+  })
   return { nodes: shownNodes, edges: edges.filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to)), steps: [...visibleSteps, ...cells, ...waits], timeline, segments, events, time, trace }
 }

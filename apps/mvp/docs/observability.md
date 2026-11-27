@@ -218,6 +218,8 @@ A request is the same request when its method and full URL are; a request its ca
 
 A request a service worker failed to answer shows as a failed fetch or module load in the page: `http.request.failed` for `/api/`, which the worker never answers, and a render error or an unhandled rejection for a module.
 
+A hosted run detail read records `run.route.stage` with stage `descendants`, phase `loaded` or `failed`, the number of child inspections read, elapsed time and the random navigation attempt ID. This distinguishes a loaded root from missing job inspections without recording job names, inputs or output.
+
 #### Render errors
 
 React reports every render error to the page's host (`main.tsx`, `createRoot`'s `onCaughtError` and `onUncaughtError`), which hands it to the program through `src/hostRecords.ts` before the first render: `render error` at Error with `boundary` (`caught` when a boundary caught it, `uncaught` when nothing did) and `name` (the error's name), never its message or a component's props. A page that fails to load or render shows "Couldn't show this page" and Retry in the shell (`src/screens/root/RouteError.tsx`, the router's `defaultErrorComponent`); one no page caught shows the same and Reload instead of a blank page (`src/screens/root/AppErrorBoundary.tsx`). Under the dev server the console keeps React's own report.

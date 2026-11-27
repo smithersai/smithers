@@ -683,6 +683,7 @@ test("descendants keep separate paginated journals, ignore cycles and tolerate a
   })
   await t.run(t.store.readRun("r"))
   expect(reads).toEqual(["r:first", "child:first", "child:0", "gone:first"])
+  expect(t.page("r")?.childReads).toBe("unavailable")
   expect((t.page("r")!.descendants as Inspection[]).map((read) => read.journal.events.map((event) => event.seq))).toEqual([[0, 1, 2, 3]])
   // A parent's event reuses the child's complete snapshot.
   await t.run(t.store.view.update(VIEW, (draft) => { draft.runId = "r" }))
@@ -844,8 +845,10 @@ test("a superseded read awaiting a child cannot replace the newer forest", async
   })
   const old = t.run(t.store.readRun("r"))
   await t.run(Deferred.await(started))
+  expect(t.page("r")?.childReads).toBe("loading")
   withChild = false
   await t.run(t.store.readRun("r"))
+  expect(t.page("r")?.childReads).toBeUndefined()
   await t.run(Deferred.succeed(child, inspection("child", [], false)))
   await old
   expect((t.page("r")?.inspection as Inspection).children).toEqual([])
