@@ -245,6 +245,43 @@ describe("the steps", () => {
       .toBe(3)
   })
 
+  test("a busy paid generation whose compute credits reach zero sleeps immediately", async () => {
+    const sql = (statement: string) =>
+      runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => Effect.orDie(client.unsafe(statement))))
+    const branchId = crypto.randomUUID()
+    const personId = crypto.randomUUID()
+    await sql(`INSERT INTO people (id, github_id, github_login) VALUES ('${personId}'::uuid, 99123, 'paid-keep-user')`)
+    await sql(`INSERT INTO compute_accounts (person_id, balance_micro_usd) VALUES ('${personId}'::uuid, 50)`)
+    await sql(`
+      INSERT INTO sandbox_generations (branch_id, generation, kind, instance, person_id, billing_mode, started_at, seen_at)
+      VALUES ('${branchId}', 1, 'branch', 'standard-1', '${personId}'::uuid, 'paid', now() - interval '60 seconds', now())`)
+
+    const m = machine([Effect.succeed("busy"), Effect.succeed("slept")])
+    const res = await observed(
+      SandboxKeep.steps(await database(), 60_000).sleepIfIdle({ branchId, generation: 1 }).pipe(
+        Effect.provide(m.layer),
+      ),
+    )
+    expect(res.exit).toEqual(Exit.succeed("slept"))
+    expect(m.asked).toEqual([
+      { branchId, generation: 1, idleMs: 60_000 },
+      { branchId, generation: 1, idleMs: 0 },
+    ])
+    expect(res.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: "sandbox.keep.credits_exhausted", level: "WARN" }),
+      ]),
+    )
+
+    const m2 = machine([Effect.succeed("busy"), Effect.fail(new SandboxUnavailable({ reason: "exec" }))])
+    const res2 = await observed(
+      SandboxKeep.steps(await database(), 60_000).sleepIfIdle({ branchId, generation: 1 }).pipe(
+        Effect.provide(m2.layer),
+      ),
+    )
+    expect(Exit.isFailure(res2.exit) && Cause.squash(res2.exit.cause)).toBeInstanceOf(SandboxKeep.MachineBusy)
+  })
+
   test("the idle time is SANDBOX_IDLE_SECONDS, fifteen minutes unless set", async () => {
     const read = (config: Record<string, string>) =>
       Effect.runPromise(

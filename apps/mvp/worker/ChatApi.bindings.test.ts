@@ -93,7 +93,11 @@ const SETTINGS: Readonly<Record<string, string>> = {
   REPO_MAX_SIZE_MB: "500",
   REPO_BUDGET_USD: "10",
   REPO_TREE_MAX_PATHS: "10000",
-  REPO_CLONE_DEADLINE: "5 minutes"
+  REPO_CLONE_DEADLINE: "5 minutes",
+  STRIPE_SECRET_KEY: "sk_test_bindings",
+  STRIPE_WEBHOOK_SECRET: "whsec_test_bindings",
+  STRIPE_API_URL: "https://stripe.test",
+  COMPUTE_PRICE_MULTIPLIER: "2"
 }
 
 /** The values the stack makes and binds itself (alchemy.run.ts), which a real plan's Config never sees. */

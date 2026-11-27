@@ -25,6 +25,7 @@ import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { RepoPage } from "../../features/repo/components/RepoPage"
 import { Notices } from "../../features/attention/components/Notices"
 import { TerminalPanel } from "../../features/terminal/components/TerminalPanel"
+import { ForkActions } from "../../features/fork/components/ForkActions"
 import "./branch-screen.css"
 
 // /$owner/$repo/tree/$ref/$ and, as `BlobScreen`, /$owner/$repo/blob/$ref/$: the repository at a branch, and the branch's workspace once the app tracks it and this
@@ -94,7 +95,23 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
             )}
           {denied ? (
             <Card className="branch-screen-denied">
-              <EmptyState title={deniedTitleOf(session?.status === "signed_in", answer)} />
+              <EmptyState
+                title={deniedTitleOf(session?.status === "signed_in", answer)}
+                action={
+                  session?.status === "signed_in" && answer !== undefined && !mayAsk(answer.role) && current !== undefined
+                    ? (
+                      <ForkActions
+                        owner={current.owner}
+                        name={current.repo}
+                        defaultBranch={current.name || "main"}
+                        isMaintainer={false}
+                        signedIn
+                        login={session.login}
+                      />
+                    )
+                    : undefined
+                }
+              />
             </Card>
           ) : null}
         </div>

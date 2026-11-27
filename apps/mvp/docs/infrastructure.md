@@ -338,6 +338,7 @@ A local `.env` that raises a limit for development, such as `MODEL_DAILY_TOKEN_B
 | `SMITHERS_BUILD` | no | the build | the build's name in the bundle and `/version.json`; unset, the checkout's jj revision, else `dev` ([bugs.md](features/bugs.md#the-build)) |
 | `ALERT_EMAIL_FROM`, `ALERT_EMAIL_API_URL`, `ALERT_TELEGRAM_API_URL` | no | FlowExecution | the sender (default `Smithers <onboarding@resend.dev>`) and the providers' origins ([spend-alerts.md](features/spend-alerts.md#channels)) |
 | `GITHUB_APP_SLUG`, `GITHUB_TOKEN`, `CODE_STORAGE_API_URL`, `REPO_MAX_REPOSITORIES`, `REPO_MAX_STORED_GB`, `REPO_MAX_READ_GB_PER_MONTH`, `REPO_MAX_SIZE_MB`, `REPO_BUDGET_USD`, `REPO_TREE_MAX_PATHS`, `REPO_CLONE_DEADLINE` | no | ChatApi, FlowExecution | [repo.md](features/repo.md#configuration) |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_API_URL`, `COMPUTE_PRICE_MULTIPLIER` | for paid compute | ChatApi, FlowExecution | Stripe Checkout API key, webhook signing secret, optional API origin, and Cloudflare sandbox price multiplier (default `2`) for third-party prepaid compute credits ([compute-billing.md](features/compute-billing.md)) |
 
 Leave `SECRETS_KEY` unset: Alchemy generates it once (`infra/Secrets.ts`) and binds it to ChatApi; its absence from a deployment wrapper does not mean repository secrets are unconfigured.
 

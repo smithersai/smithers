@@ -253,7 +253,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // Bug reports (docs/features/bugs.md): filing one, the Admins' read and the reports' shape.
     const bugsApi = yield* BugsApi.make(database)
     // Cloud compute billing & prepaid credits (decision 0175, docs/features/compute-billing.md).
-    const billingProvider = StripeProvider.layerFromEnv()
+    const billingConfig = yield* StripeProvider.configFromEnv.pipe(Effect.orDie)
+    const billingProvider = StripeProvider.fromOption(billingConfig)
     const billingApi = yield* BillingApi.make(database)
     const brokerObjects = yield* AuthBroker.HostedAuthBroker
     const connectionObjects = yield* GitHubConnection.GitHubConnection

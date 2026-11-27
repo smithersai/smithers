@@ -82,7 +82,7 @@ export const AdminGrant = Flow.make("billing/AdminGrant", {
 export const topUpExecutionId = (eventId: string) => `billing-topup:${eventId}`
 export const grantExecutionId = (grantId: string) => `billing-grant:${grantId}`
 
-export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
+export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
   const applyTopUp = (input: typeof topUpPayload extends Record<string, Schema.Top> ? typeof ApplyTopUp.payloadSchema.Type : never) =>
     effect {
       const outcome = try BillingStore.credit({
@@ -132,13 +132,18 @@ export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E,
       Effect.withSpan("billing.grant"),
     )
 
+  return { applyTopUp, applyGrant }
+}
+
+export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
+  const s = steps(database)
   const topUpLayer = Interpreter.layerWithImplementations(
     CreditTopUp,
-    ApplyTopUp.toLayer(applyTopUp),
+    ApplyTopUp.toLayer(s.applyTopUp),
   )
   const grantLayer = Interpreter.layerWithImplementations(
     AdminGrant,
-    ApplyGrant.toLayer(applyGrant),
+    ApplyGrant.toLayer(s.applyGrant),
   )
   return Layer.mergeAll(topUpLayer, grantLayer).pipe(Layer.provideMerge(Action.layerImplementations))
 }

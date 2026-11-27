@@ -33,6 +33,14 @@ const SyncBody = Schema.Struct({
 })
 const decodeSync = Schema.decodeUnknownOption(Schema.fromJsonString(SyncBody))
 
+const httpStatusOf = (err: unknown): number | undefined => {
+  if (typeof err !== "object" || err === null) return undefined
+  const rec = err as { readonly status?: unknown; readonly details?: { readonly status?: unknown } }
+  if (typeof rec.status === "number") return rec.status
+  if (typeof rec.details?.status === "number") return rec.details.status
+  return undefined
+}
+
 export const handles = (path: string): boolean => FORK_PATH.test(path)
 
 export interface ForkApiOptions {
@@ -254,7 +262,7 @@ export const make = effect <E, R>(
         )
       }.pipe(Effect.result)
       if (synced._tag === "Failure") {
-        const status = (synced.failure as { readonly status?: number }).status
+        const status = httpStatusOf(synced.failure)
         if (status === 409) {
           try record("sync_upstream", "conflict", startedAt)
           return json(409, { code: "conflict", message: "Fork has merge conflicts with upstream." })

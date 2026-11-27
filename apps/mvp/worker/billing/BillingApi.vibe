@@ -132,6 +132,10 @@ export const make = effect <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, 
         },
       }).pipe(Effect.result)
       if (started._tag === "Failure") {
+        if (started.failure instanceof Flows.StartConflict) {
+          try record("webhook", "duplicate", startedAt)
+          return json(200, { received: true, duplicate: true })
+        }
         try Effect.logWarning("billing.webhook.start_failed").pipe(
           Effect.annotateLogs({ errorCode: codeOf(started.failure) }),
         )

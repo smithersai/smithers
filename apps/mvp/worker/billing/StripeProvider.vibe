@@ -27,12 +27,12 @@ export interface StripeConfig {
 /** Reads Stripe configuration from Effect Config; None when STRIPE_SECRET_KEY is unset or blank. */
 export const configFromEnv = effect {
   const secretOpt = try Config.option(Config.Redacted("STRIPE_SECRET_KEY"))
+  const webhookOpt = try Config.option(Config.Redacted("STRIPE_WEBHOOK_SECRET"))
+  const apiUrl = try Config.withDefault(Config.String("STRIPE_API_URL"), DEFAULT_STRIPE_API_URL)
   if (Option.isNone(secretOpt) || Redacted.value(secretOpt.value).trim() === "") {
     return Option.none<StripeConfig>()
   }
-  const webhookOpt = try Config.option(Config.Redacted("STRIPE_WEBHOOK_SECRET"))
   const webhookSecret = Option.filter(webhookOpt, (s) => Redacted.value(s).trim() !== "")
-  const apiUrl = try Config.withDefault(Config.String("STRIPE_API_URL"), DEFAULT_STRIPE_API_URL)
   return Option.some<StripeConfig>({
     secretKey: secretOpt.value,
     webhookSecret,
@@ -162,21 +162,29 @@ export const make = (cfg: StripeConfig, http?: HttpClient.HttpClient): Layer.Lay
   )
 }
 
+/** Layer from a previously resolved StripeConfig option. */
+export const fromOption = (
+  cfg: Option.Option<StripeConfig>,
+  http?: HttpClient.HttpClient,
+): Layer.Layer<BillingProvider> => {
+  if (Option.isNone(cfg)) {
+    return Layer.succeed(
+      BillingProvider,
+      BillingProvider.of({
+        configured: false,
+        createCheckoutSession: () => Effect.fail(new BillingProviderError({ code: "not_configured" })),
+        verifyWebhook: () => Effect.fail(new BillingWebhookError({ code: "not_configured" })),
+      }),
+    )
+  }
+  return make(cfg.value, http)
+}
+
 /** Layer built from environment Config; falls back to disabledLayer when STRIPE_SECRET_KEY is unset. */
 export const layerFromEnv = (http?: HttpClient.HttpClient): Layer.Layer<BillingProvider> =>
   Layer.unwrap(
     effect {
       const cfg = try configFromEnv.pipe(Effect.catchCause(() => Effect.succeed(Option.none<StripeConfig>())))
-      if (Option.isNone(cfg)) {
-        return Layer.succeed(
-          BillingProvider,
-          BillingProvider.of({
-            configured: false,
-            createCheckoutSession: () => Effect.fail(new BillingProviderError({ code: "not_configured" })),
-            verifyWebhook: () => Effect.fail(new BillingWebhookError({ code: "not_configured" })),
-          }),
-        )
-      }
-      return make(cfg.value, http)
+      return fromOption(cfg, http)
     },
   )

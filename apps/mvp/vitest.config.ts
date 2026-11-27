@@ -271,6 +271,10 @@ export default await WebAssembly.compile(await readFile(new URL(${url})))`
         "db/migrations/0024_sandbox_calls.ts",
         // Sandbox budgets: the limits, the ledger and a terminal's wait (docs/features/sandbox-budgets.md).
         "db/migrations/0062_sandbox_budgets.ts",
+        // Prepaid cloud compute credits and contributor forks (decision 0175).
+        "worker/billing/*.{ts,vibe}",
+        "db/migrations/0136_compute_billing.ts",
+        "db/migrations/0137_repo_forks.ts",
         // Sequence-ordered session role receipts (decision 0122).
         "db/migrations/0072_role_observations.ts",
         // Bug reports: filing one, the Admins' read and the reports' shape (docs/features/bugs.md).
