@@ -942,3 +942,35 @@ describe("attach", () => {
     })
   })
 })
+
+test("an MCP retry returns the started attempt, replays it and denies a revoked grant even for a repeated receipt", async () => {
+  const person = uuid(), session = uuid(), token = uuid()
+  const actor: Actor = { ...member, subject: { kind: "person", id: person } }
+  const host = runs()
+  await runtime.runPromise(Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`INSERT INTO people (id, github_id, github_login) VALUES (${person}::uuid, ${Math.floor(Math.random() * 1e9)}, 'retry-owner')`
+    yield* sql`INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, role_verified_at, expires_at)
+      VALUES (${session}::uuid, ${session}, ${person}::uuid, 'member', clock_timestamp(), clock_timestamp(), now() + interval '1 hour')`
+    yield* sql`INSERT INTO mcp_oauth_clients (client_id, client_name, redirect_uris)
+      VALUES ('retry-check', 'Retry check', ARRAY['https://localhost/callback']) ON CONFLICT DO NOTHING`
+    yield* sql`INSERT INTO mcp_tokens (id, person_id, client_id, client_name, token_sha256, scopes, repo_scope, expires_at)
+      VALUES (${token}::uuid, ${person}::uuid, 'retry-check', 'Retry check', ${"b".repeat(64)},
+        ARRAY['mcp:write'], ${OWN_REPOSITORY.id}, now() + interval '1 hour')`
+  }))
+  const h = await stackHarness(runtime, { actor, runs: host })
+  expect((await post(h, commitBody())).status).toBe(202)
+  const agent = await stackHarness(runtime, { actor: { ...actor, act: { kind: "agent", id: `mcp:${token}` } }, runs: host })
+  const body = { op: "retry", number: 1, opId: uuid() }
+  expect((await post(agent, body)).status).toBe(409)
+  await runtime.runPromise(Stack.report(host.started[0]!, { kind: "finished", state: "failed", failure: "implement" }, { runs: true }))
+  const retry = { ...body, opId: uuid() }
+  const started = await post(agent, retry)
+  expect(started.status).toBe(202)
+  const runId = `todo:${host.started[1]!.attemptId}`
+  expect(await started.json()).toMatchObject({ opId: retry.opId, number: 1, outcome: "retried", runId })
+  expect(await json(await post(agent, retry))).toEqual([200, { txid: null, opId: retry.opId, number: 1, outcome: "retried", runId }])
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`UPDATE mcp_tokens SET revoked_at = now() WHERE id = ${token}::uuid`))
+  expect((await post(agent, retry)).status).toBe(403)
+  expect(await sql("SELECT ordinal FROM todo_attempts ORDER BY ordinal")).toEqual([{ ordinal: 1 }, { ordinal: 2 }])
+})

@@ -220,6 +220,7 @@ export interface WriteParams {
 
 /** Every external call an MCP tool makes. Each fails only with `McpToolError`. */
 export interface McpToolDeps {
+  readonly retryTodo?: (actor: Actor, owner: string, name: string, number: number, opId: string) => unknown!McpToolError
   readonly workflows?: {
     readonly start: (actor: Actor, owner: string, name: string, id: string, flow: string, input: Readonly<Record<string, string | boolean | number>>) => unknown!McpToolError
     readonly inspect: (repoId: string, runId: string) => unknown!McpToolError
@@ -368,6 +369,7 @@ const WorkflowStartArgs = Schema.Struct({
   ...RepoArgs, flow: FlowId, input: Schema.optional(Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Boolean, Schema.Number]))),
   idempotencyKey: IdempotencyKey,
 })
+const TodoRetryArgs = Schema.Struct({ ...RepoArgs, number: IssueNumber, idempotencyKey: IdempotencyKey })
 const WorkflowInspectArgs = Schema.Struct({ ...RepoArgs, runId: Line(256) })
 const FlowGetArgs = Schema.Struct({ ...RepoArgs, id: FlowId, ref: Schema.optional(Ref) })
 const IssuesListArgs = Schema.Struct({
@@ -572,6 +574,11 @@ export const TOOL_SPECS: ReadonlyArray<ToolSpec> = [
       path: { type: "string", maxLength: 512, description: "Page path starting with '/', from docs_list." },
     },
     required: ["path"],
+  },
+  {
+    name: "todo_retry", access: "write", minimum: "member", idempotent: true,
+    description: "Retry an existing failed TODO in place. Members retry their own TODOs. Maintainers may retry any TODO in the repository.",
+    properties: { number: issueNumber, idempotencyKey: { type: "string", maxLength: 200 } }, required: ["number", "idempotencyKey"],
   },
   {
     name: "workflow_start", access: "write", minimum: "member", idempotent: true,
@@ -930,6 +937,15 @@ export const makeMcpToolRegistry = effect (deps: McpToolDeps) => {
       }
     },
 
+    todo_retry: effect (raw, ctx, seen) => {
+      const args = try decodeArgs(TodoRetryArgs, raw)
+      const repo = try resolveRepoArgs(args, ctx.defaultRepo)
+      const { principal, access } = try writeAccess(seen, ctx, repo, "member")
+      if (deps.retryTodo === undefined) throw new McpToolError({ code: "unavailable", message: "TODO retries are unavailable" })
+      const id = try mcpWriteId(principal.tokenId, "todo_retry", `${access.repoId}:${args.idempotencyKey}`)
+      return { content: json(try deps.retryTodo(principal.actor, repo.owner, repo.name, args.number, id)) }
+    },
+
     workflow_start: effect (raw, ctx, seen) => {
       if (Object.hasOwn(raw, "ref")) throw new McpToolError({ code: "invalid_params", message: "Workflow starts use the default branch" })
       const args = try decodeArgs(WorkflowStartArgs, raw)
@@ -1231,6 +1247,7 @@ export const makeMcpToolRegistry = effect (deps: McpToolDeps) => {
       const isPublic = Option.isSome(access) ? access.value.isPublic : defaultRepo === undefined
       const base = TOOL_SPECS.filter((spec) =>
         !isBlockedName(spec.name)
+        && (spec.name !== "todo_retry" || deps.retryTodo !== undefined)
         && (deps.workflows !== undefined || (spec.name !== "workflow_start" && spec.name !== "workflow_run_get"))
         && (spec.name !== "todo_draft" || deps.draftTodo !== noDraftStorage) && visible(spec, role, principal, isPublic)
       ).map(descriptorOf)

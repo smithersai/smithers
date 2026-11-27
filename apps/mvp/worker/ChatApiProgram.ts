@@ -59,6 +59,8 @@ import * as BugsApi from "./bugs/Api.vibe"
 import * as Chat from "./Chat.ts"
 import * as Dispatch from "./ci/Dispatch.vibe"
 import * as RepoFlow from "./ci/RepoFlow.vibe"
+import { stackRoute } from "../src/features/todos/contract.ts"
+import { freshDeploymentRole } from "./SessionStore.vibe"
 import { repoRunsRoute } from "../src/features/actions/contract.ts"
 import * as RepoRuns from "./RepoRuns.vibe"
 import * as RunsApi from "./ci/RunsApi.vibe"
@@ -85,6 +87,7 @@ import * as FirstPaint from "./github/FirstPaint.vibe"
 import * as ReadToken from "./github/ReadToken.vibe"
 import * as RepoRoles from "./github/RepoRoles.vibe"
 import * as HomeApi from "./home/Api.vibe"
+import * as McpAgentRoute from "./mcp/AgentRoute.vibe"
 import * as McpApi from "./mcp/Api.vibe"
 import * as McpAuth from "./mcp/Auth.vibe"
 import { McpToolError, McpToolRegistry } from "./mcp/Contract.vibe"
@@ -120,6 +123,11 @@ import * as Stack from "./stack/Stack.vibe"
 import * as TodoRuns from "./stack/TodoRuns.vibe"
 import * as Throttle from "./Throttle.vibe"
 import * as ViewRealm from "./ViewRealm.vibe"
+
+const mcpPostRequest = (path: string, body: Readonly<Record<string, unknown>>) =>
+  HttpServerRequest.fromWeb(new Request(new URL(path, "https://smithers.internal"), {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  }))
 
 /**
  * Postgres, through Hyperdrive. Its origin is `DATABASE_URL`; under `alchemy dev` the binding passes straight
@@ -610,6 +618,23 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, m
         if (GitHub.PublicRead.handles(brokerRequest.url)) return yield* PublicReads.route(publicReadSetup, publicReadHttp)
         const checks = Layer.succeed(SignIn.RoleChecks, yield* roleChecks)
         const starter = yield* flowStarter
+        const stackRequest = Option.isSome(githubApp) && runTodos
+          ? stack.fetch.pipe(Effect.provideService(
+            Stack.TodoRuns,
+            TodoRuns.make(starter, (executionId) =>
+              executions.getByName(executionId).cancel().pipe(
+                Effect.provideService(RuntimeContext, runtime)
+              ), (attemptId) =>
+              TodoRuns.isStopped(
+                Layer.unwrap(
+                  Effect.map(
+                    hyperdrive.connectionString,
+                    (url) => ExecutionHost.readDatabase(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA)
+                  )
+                )
+              )(attemptId).pipe(Effect.provideService(RuntimeContext, runtime)))
+          ))
+          : stack.fetch
         const confirmPath = brokerRequest.url.split("?")[0]!
         if (confirmPath.startsWith(CONFIRM_ROUTE)) {
           const status = yield* RedactFeed.confirm(brokerRequest.method, confirmPath, brokerRequest.headers.authorization).pipe(
@@ -820,30 +845,21 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, m
                       docsSource: docsSvc,
                     }).pipe(Effect.map((liveDeps): McpTools.McpToolDeps => ({
                       ...liveDeps,
-                      workflows: {
-                        start: (actor, owner, name, id, flow, input) => Effect.gen(function* () {
-                          const req = new Request(new URL(repoRunsRoute(owner, name), "https://smithers.internal"), {
-                            method: "POST", headers: { "content-type": "application/json" },
-                            body: JSON.stringify({ id, flow, ref: "", input }),
-                          })
-                          const response = yield* repoRunsApi.startDefaultBranch.pipe(
-                            Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(req)),
-                            Effect.provideService(Sessions, Sessions.of({ resolve: Effect.succeed(Option.some(actor)) })),
-                            Effect.provideService(Flows.FlowStarter, starter),
-                            Effect.provideService(RuntimeContext, runtime),
+                      retryTodo: Option.isSome(githubApp) && runTodos
+                        ? (actor, owner, name, number, opId) => freshDeploymentRole(actor.subject.id).pipe(
+                            Effect.provide(database), Effect.provideService(RuntimeContext, runtime),
+                            Effect.mapError(() => new McpToolError({ code: "unavailable", message: "Compute authority unavailable" })),
+                            Effect.flatMap((deploymentRole) => McpAgentRoute.post(
+                              McpAgentRoute.retryReceipt, stackRequest.pipe(Effect.provideService(RuntimeContext, runtime), Effect.provide(FetchHttpClient.layer)),
+                              { ...actor, role: deploymentRole }, mcpPostRequest(stackRoute(owner, name), { op: "retry", number, opId }),
+                            )),
                           )
-                          const result = yield* Effect.tryPromise({
-                            try: () => HttpServerResponse.toWeb(response).json() as Promise<{ runId?: string; code?: string }>,
-                            catch: () => new McpToolError({ code: "unavailable", message: "Workflow admission unavailable" }),
-                          })
-                          if (response.status < 300 && typeof result.runId === "string") return { runId: result.runId }
-                          return yield* new McpToolError({
-                            code: response.status === 401 ? "authentication" : response.status === 403 ? "forbidden"
-                              : response.status === 404 ? "not_found" : response.status === 409 ? "conflict"
-                              : response.status === 429 ? "rate_limited" : response.status >= 500 ? "unavailable" : "invalid_params",
-                            message: result.code ?? "Workflow admission unavailable",
-                          })
-                        }),
+                        : undefined,
+                      workflows: {
+                        start: (actor, owner, name, id, flow, input) => McpAgentRoute.post(
+                          McpAgentRoute.workflowReceipt, repoRunsApi.startDefaultBranch.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provideService(RuntimeContext, runtime)),
+                          actor, mcpPostRequest(repoRunsRoute(owner, name), { id, flow, ref: "", input }),
+                        ),
                         inspect: (repoId, runId) => RepoRuns.manualStatus(repoId, runId).pipe(
                           Effect.provide(database), Effect.provideService(RuntimeContext, runtime),
                           Effect.mapError(() => new McpToolError({ code: "unavailable", message: "Workflow status unavailable" })),
@@ -929,24 +945,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, m
               // `TODO_RUNS` on, this host runs TODOs: each attempt the writer starts runs `todo` on its own Durable Object
               // (decision 0016).
               if (StackApi.handles(path)) {
-                const requestRuntime = yield* RuntimeContext
-                return yield* (Option.isSome(githubApp) && runTodos
-                  ? stack.fetch.pipe(Effect.provideService(
-                    Stack.TodoRuns,
-                    TodoRuns.make(starter, (executionId) =>
-                      executions.getByName(executionId).cancel().pipe(
-                        Effect.provideService(RuntimeContext, requestRuntime)
-                      ), (attemptId) =>
-                      TodoRuns.isStopped(
-                        Layer.unwrap(
-                          Effect.map(
-                            hyperdrive.connectionString,
-                            (url) => ExecutionHost.readDatabase(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA)
-                          )
-                        )
-                      )(attemptId).pipe(Effect.provideService(RuntimeContext, requestRuntime)))
-                  ))
-                  : stack.fetch).pipe(Effect.provide(signedIn))
+                return yield* stackRequest.pipe(Effect.provide(signedIn))
               }
               if (RemoteRuns.handles(path)) return yield* remoteRuns.fetch.pipe(Effect.provide(signedIn))
               // Before the repository routes: `/api/repos/<owner>/<name>/flows[/<flow>]` and `.../runs`

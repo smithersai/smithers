@@ -2,11 +2,13 @@ import { repoId } from "../../src/features/repo/contract.ts"
 // The MCP tool catalog (worker/mcp/Tools.ts) over fake deps and a fake McpAuthService: no network, no database.
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Effect, Exit, Layer, Option } from "effect"
+import { HttpServerResponse } from "effect/http"
+import { handleMcpMessage } from "./Protocol.vibe"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import { MCP_BLOCKED_ACTS, type McpScope } from "../../src/features/mcp/contract.ts"
 import { rankOf, type Role } from "../Actor.vibe"
-import { McpAuthService, type McpPrincipal, type McpToolContext, McpToolError } from "./Contract.vibe"
+import { McpAuthService, type McpPrincipal, type McpToolContext, McpToolError, McpToolRegistry } from "./Contract.vibe"
 import {
   attributed,
   declaredFlows,
@@ -596,4 +598,23 @@ test("workflow tools use the member agent, a stable intent ID, and repository-sc
   expect(codeOf(await callExit("workflow_run_get", { runId: "ci:123" }, ctx("mia", "id", ["mcp:write"])))).toBe("forbidden")
   const tools = await Effect.runPromise(registry.listTools(Option.some(principalOf("mia")), VOLTAIRE))
   expect(tools.map((entry) => entry.name)).toEqual(expect.arrayContaining(["workflow_start", "workflow_run_get"]))
+})
+
+test("TODO retry uses one repository-scoped operation for repeated requests from the same agent", async () => {
+  const { ctx, payload, callExit, registry } = setup({
+    retryTodo: (actor, owner, repo, number, opId) => Effect.succeed({ act: actor.act, owner, repo, number, opId }),
+  })
+  const args = { number: 2, idempotencyKey: "retry-2" }
+  const response = await Effect.runPromise(handleMcpMessage({
+    body: JSON.stringify({ jsonrpc: "2.0", id: "first", method: "tools/call", params: { name: "todo_retry", arguments: args } }),
+    principal: Option.some(principalOf("mia")),
+  }, "https://smithers.test", VOLTAIRE).pipe(Effect.provideService(McpToolRegistry, registry)))
+  expect(response.status).toBe(200)
+  const rpc = await HttpServerResponse.toWeb(response).json() as { result: { content: Array<{ text: string }> } }
+  const first = JSON.parse(rpc.result.content[0]!.text)
+  expect(first).toMatchObject({ act: { kind: "agent", id: "mcp:token-mia" }, owner: "evmts", repo: "voltaire", number: 2 })
+  expect(await payload("todo_retry", args, ctx("mia", "again"))).toEqual(first)
+  expect(codeOf(await callExit("todo_retry", args, ctx("mia", "id", ["mcp:read"])))).toBe("forbidden")
+  expect(codeOf(await callExit("todo_retry", args, ctx("alice")))).toBe("forbidden")
+  expect((await Effect.runPromise(registry.listTools(Option.some(principalOf("mia")), VOLTAIRE))).map(t => t.name)).toContain("todo_retry")
 })

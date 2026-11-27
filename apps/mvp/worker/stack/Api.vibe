@@ -1,3 +1,6 @@
+import { todoExecutionId } from "../../src/features/pulls/contract.ts"
+import { freshDeploymentRole } from "../SessionStore.vibe"
+import { stillAdmittedMcp } from "../RunAuthority.vibe"
 import { withRequestRay } from "../RequestRay.vibe"
 import * as ProtectedAuthority from "../ProtectedAuthority.vibe"
 import * as WriteAuthority from "../WriteAuthority.vibe"
@@ -372,8 +375,9 @@ export const make = effect <E, R>(
             if (read._tag === "Failure") return refused("github_unavailable")
           }
         }
+        const mcpRetry = admitted.op === "retry" && who.act?.kind === "agent" && who.act.id.startsWith("mcp:")
         let stoppedAttemptId: string | undefined
-        if (admitted.op === "retry" && Option.isSome(runs) && runs.value.isStopped !== undefined) {
+        if (admitted.op === "retry" && !mcpRetry && Option.isSome(runs) && runs.value.isStopped !== undefined) {
           const candidate = try WriteAuthority.wait("retry_candidate", Stack.retryCandidate(repository.id, admitted.number).pipe(Effect.provide(database)))
           if (candidate !== undefined && (try WriteAuthority.wait("run_status", runs.value.isStopped(candidate)))) stoppedAttemptId = candidate
         }
@@ -406,6 +410,13 @@ export const make = effect <E, R>(
             },
             {
               runs: Option.isSome(runs),
+              ...(mcpRetry ? { retryGrant: effect {
+                const refusal = try stillAdmittedMcp(who, repository.id, false)
+                if (refusal !== undefined) throw new Stack.RetryForbidden({})
+                const role = try freshDeploymentRole(who.subject.id)
+                if ((repository.id === roles.repository.id && role !== actor.role)
+                  || !(try ComputeAccess.canRunMachine({ ...who, role }))) throw new Stack.RetryForbidden({})
+              } } : {}),
               // The role's scope stays with the write: elsewhere the repository's role row, on the deployment's own
               // repository the person's newest role receipt, each rechecked under its lock in the writer's transaction.
               session: session ?? undefined,
@@ -415,7 +426,7 @@ export const make = effect <E, R>(
           )
           return try WriteAuthority.wait("commit", change.pipe(
             Effect.provide(database),
-            catchTag("@smthrs/mvp/stack/RetryForbidden", () => succeed({ kind: "forbidden" as const })),
+            Effect.catchIf((error) => error instanceof Stack.RetryForbidden, () => succeed({ kind: "forbidden" as const })),
           ))
         }
         let applied = try apply(scopedActor, held)
@@ -466,8 +477,10 @@ export const make = effect <E, R>(
         }
         fields.outcome = applied.kind === "applied" ? receipt.outcome : "repeated"
         if (receipt.number !== undefined) fields.number = receipt.number
+        const attempt = mcpRetry ? receipt.starts.find((start) => start.number === receipt.number) : undefined
         return HttpServerResponse.jsonUnsafe(
           {
+            ...(mcpRetry ? { runId: attempt === undefined ? null : todoExecutionId(attempt.attemptId) } : {}),
             txid: applied.kind === "applied" ? applied.txid : null,
             opId: admitted.opId.toLowerCase(),
             outcome: receipt.outcome,

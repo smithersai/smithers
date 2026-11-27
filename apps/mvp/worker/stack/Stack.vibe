@@ -211,7 +211,7 @@ export const lanesOf = (stack: Stack) => {
  */
 export const apply = <E = never, R = never>(
   change: Change,
-  options: { readonly runs: boolean; readonly session?: WriteAuthority.Session; readonly stoppedAttemptId?: string; readonly holds?: boolean!E!R },
+  options: { readonly runs: boolean; readonly retryGrant?: void!E!R; readonly session?: WriteAuthority.Session; readonly stoppedAttemptId?: string; readonly holds?: boolean!E!R },
 ) =>
   withSpan(effect {
     const startedAt = try Clock.currentTimeMillis
@@ -224,24 +224,25 @@ export const apply = <E = never, R = never>(
       const [locked] = try sql<Locked>`
         SELECT next_number AS "nextNumber", lanes, max_open AS "maxOpen", base FROM stacks
         WHERE repo_id = ${change.repoId} FOR UPDATE`
+      if (options.retryGrant !== undefined) try options.retryGrant
       const [prior] = try sql<{ readonly payloadHash: string; readonly result: unknown }>`
         SELECT payload_hash AS "payloadHash", result FROM stack_ops WHERE id = ${change.opId}::uuid`
+      const named = change.op.kind === "drop" || change.op.kind === "retry" ? change.op.number : 0
+      if (prior === undefined || options.retryGrant !== undefined) {
+        if (options.holds !== undefined && !(try options.holds)) return { kind: "stale" } satisfies Applied
+        if (change.op.kind === "retry" && !change.retryAny) {
+          const [owner] = try sql<{ readonly createdBy: string }>`
+            SELECT created_by AS "createdBy" FROM todos WHERE repo_id = ${change.repoId} AND number = ${named}`
+          if (owner !== undefined && owner.createdBy !== change.actor.id) throw new RetryForbidden({})
+        }
+      }
       if (prior !== undefined) {
         return prior.payloadHash === hash
           ? ({ kind: "repeated", receipt: decodeReceipt(prior.result) } satisfies Applied)
           : ({ kind: "conflict" } satisfies Applied)
       }
-      if (options.holds !== undefined && !(try options.holds)) return { kind: "stale" } satisfies Applied
       const op = change.op
       if (op.kind === "attach") return try attachIssue(sql, change, op, hash)
-      const named = change.op.kind === "drop" || change.op.kind === "retry" ? change.op.number : 0
-      if (change.op.kind === "retry" && !change.retryAny) {
-        const [owner] = try sql<{ readonly createdBy: string }>`
-          SELECT created_by AS "createdBy" FROM todos WHERE repo_id = ${change.repoId} AND number = ${named}`
-        if (owner !== undefined && owner.createdBy !== change.actor.id) {
-          throw new RetryForbidden({})
-        }
-      }
       const rows = try sql<Loaded>`
         SELECT t.id, t.number, t.state, t.position, t.attempt, t.revision, t.after::text AS after, a.id AS "attemptId",
           (t.failure = 'base_closed' OR i.state = 'closed' AND NOT p.merged) IS TRUE AS "baseClosed"
@@ -371,7 +372,7 @@ export const apply = <E = never, R = never>(
         lanes: lanesOf(after),
       } as const
     }, result => result.kind === "applied" || result.kind === "repeated"
-      ? linkWork(change.repoId).pipe(andThen(options.session?.scope === undefined
+      ? linkWork(change.repoId).pipe(andThen(options.retryGrant ?? Effect.void), andThen(options.session?.scope === undefined
         ? WriteAuthority.requireAtCommit(options.session)
         : ProtectedAuthority.requireAtCommit(options.session)))
       : Effect.void)).pipe(catchTag("WriteAuthorityExpired", () => succeed({ kind: "stale" as const })))

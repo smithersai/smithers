@@ -58,6 +58,8 @@ repository still answers `not_found`. Quota exhaustion surfaces as the `rate_lim
 
 `workflow_start` starts a manually declared repository workflow with `flow`, `idempotencyKey`, and optional `input`. A member with write scope starts it as an agent. Smithers pins the declaration and executable to the same default-branch revision. Repeating the request returns its run ID. `workflow_run_get` reads that repository's manual run status, flow, revision, and branch for members with read scope.
 
+`todo_retry` takes an existing failed TODO's `number` and an `idempotencyKey`. Members can retry their own TODOs, and maintainers can retry any TODO in that repository. The shared Stack returns the same operation receipt on replay. A run ID means the host accepted the start. A null run ID means the TODO was requeued without starting an attempt.
+
 ## Attach to a conversation
 
 The person mints an attach reference for a repository, branch and conversation. The agent claims it with a PKCE S256

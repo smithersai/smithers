@@ -1,0 +1,32 @@
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { type Actor, Sessions } from "../Actor.vibe"
+import { McpToolError } from "./Contract.vibe"
+
+export const workflowReceipt = Schema.Struct({ runId: Schema.String })
+export const retryReceipt = Schema.Struct({
+  opId: Schema.String, outcome: Schema.Literal("retried"), number: Schema.Number, runId: Schema.NullOr(Schema.String),
+})
+
+/** Invoke a shared app write as the authenticated agent, using only a server-chosen path and command. */
+export const post = <A>(receipt: Schema.Decoder<A, never>, route: HttpServerResponse.HttpServerResponse!!(HttpServerRequest.HttpServerRequest | Sessions),
+  actor: Actor, request: HttpServerRequest.HttpServerRequest) => effect {
+  const response = try route.pipe(
+    Effect.provideService(HttpServerRequest.HttpServerRequest, request),
+    Effect.provideService(Sessions, Sessions.of({ resolve: Effect.succeed(Option.some(actor)) })),
+  )
+  const result = try tryPromise({
+    try: () => HttpServerResponse.toWeb(response).json() as Promise<Record<string, unknown>>,
+    catch: () => new McpToolError({ code: "unavailable", message: "Admission unavailable" }),
+  })
+  if (response.status < 300) {
+    const decoded = Schema.decodeUnknownOption(receipt)(result)
+    if (Option.isNone(decoded)) throw new McpToolError({ code: "unavailable", message: "Admission returned an invalid receipt" })
+    return decoded.value
+  }
+  const status = response.status
+  throw new McpToolError({
+    code: status === 401 ? "authentication" : status === 403 ? "forbidden" : status === 404 ? "not_found"
+      : status === 409 ? "conflict" : status === 429 ? "rate_limited" : status >= 500 ? "unavailable" : "invalid_params",
+    message: typeof result.code === "string" ? result.code : "Admission unavailable",
+  })
+}
