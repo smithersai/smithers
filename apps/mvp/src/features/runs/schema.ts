@@ -8,7 +8,10 @@ import { STEER_REFUSALS } from "./contract"
 // here is stored on the device: a reload reads the engine again.
 
 /** One run of this device's engine, as `BrowserEngine.inspect` reads it. */
-export type Inspection = Effect.Success<ReturnType<BrowserEngine.Service["inspect"]>>
+export type Inspection = Effect.Success<ReturnType<BrowserEngine.Service["inspect"]>> & {
+  /** Set by ChatApi only after it admits a hosted job through its recorded repository. */
+  readonly admittedRepoId?: string
+}
 
 /** The engine's statuses. */
 export const RunStatus = Schema.Literals(["pending", "running", "suspended", "completed", "failed", "cancelled"])

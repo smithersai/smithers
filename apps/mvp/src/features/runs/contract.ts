@@ -13,6 +13,9 @@ export const runPath = (runId: string): string => `${RUNS_PATH}/${encodeURICompo
  */
 export const REMOTE_RUNS_ROUTE = "/api/remote-runs"
 
+/** The verified repository on a successful inspection of a repository workflow child. */
+export const RUN_REPOSITORY_HEADER = "x-smithers-run-repository"
+
 /** That route for one run. */
 export const remoteRunRoute = (runId: string): string => `${REMOTE_RUNS_ROUTE}/${encodeURIComponent(runId)}`
 

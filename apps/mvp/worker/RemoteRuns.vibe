@@ -17,6 +17,7 @@ import {
   type RemoteReadRefusal,
   REMOTE_RUNS_ROUTE,
   RUN_CHANGE_COLUMNS,
+  RUN_REPOSITORY_HEADER,
   RUN_CHANGES_TABLE,
   settled,
   steerable,
@@ -600,7 +601,12 @@ export const make = <E, R, EE, ER, RS>(
           fields.events = read.success.journal.events.length
           fields.bytes = new TextEncoder().encode(body).length
           fields.clipped = clippedValues(read.success)
-          return HttpServerResponse.text(body, { contentType: "application/json", headers: noStore })
+          const repository = admitted.repoRun
+          const headers = Option.isSome(repository) && repository.value.execution !== runId
+            ? { ...noStore, [RUN_REPOSITORY_HEADER]: repository.value.repoId }
+            : noStore
+          fields.repositoryScope = RUN_REPOSITORY_HEADER in headers ? "descendant" : "none"
+          return HttpServerResponse.text(body, { contentType: "application/json", headers })
         }.pipe(
           Effect.catchCause((cause) =>
             Effect.sync(() => {

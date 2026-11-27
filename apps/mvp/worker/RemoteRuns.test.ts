@@ -1012,7 +1012,10 @@ describe("a repository's run", () => {
         "completed",
         [job],
       ])
-      const [childStatus, child] = await json(await h.fetch(remoteRunRoute(job!)))
+      const response = await h.fetch(remoteRunRoute(job!))
+      expect(response.headers.get("x-smithers-run-repository")).toBe("github/octo/hello")
+      expect(h.line("run.inspect").at(-1)?.annotations).toMatchObject({ repositoryScope: "descendant", status: 200 })
+      const [childStatus, child] = await json(response)
       expect([childStatus, child.run.parentRunId]).toEqual([200, runId])
       expect((await firstShape(h, job!)).rows).toEqual([{ run_id: job, revision: expect.any(String) }])
       expect((await firstShape(h, runId)).status).toBe(200)
@@ -1021,6 +1024,9 @@ describe("a repository's run", () => {
       expect((await firstShape(h, `ci:${uuid()}`)).status).toBe(403)
       const guest_ = await routes(engine, { actor: guest })
       expect((await guest_.fetch(remoteRunRoute(runId))).status).toBe(403)
+      const refused = await guest_.fetch(remoteRunRoute(job!))
+      expect(refused.status).toBe(403)
+      expect(refused.headers.has("x-smithers-run-repository")).toBe(false)
       expect(recorded(h)).not.toContain(SENTINEL)
     })
   })

@@ -549,6 +549,29 @@ describe("a repository's run on Cloudflare", () => {
     }
   }, 120_000)
 
+  test("a fresh tab follows an admitted job link without having visited its parent", async () => {
+    const t = await open()
+    const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))
+    await Effect.runPromise(t.api.remote.start(runId, { label: "link", pauseMs: 0, hold: true, nested: true }))
+    try {
+      await Effect.runPromise(t.api.remote.ready(runId))
+      await t.runs.actions.openRun(runId, { owner: "octo", name: "hello" })
+      await until(() => expect(t.page()?.descendants).toHaveLength(1))
+      const jobId = (t.page()!.descendants![0] as Inspection).run.runId
+      const unlisted = Layer.effect(RemoteRunsClient, Effect.map(RemoteRunsClient, (real) =>
+        RemoteRunsClient.of({ ...real, list: Effect.fail(new RemoteReadFailed({ status: 503 })) })))
+        .pipe(Layer.provide(RemoteRunsClient.layer({ origin: CHATAPI_ORIGIN, within: "10 seconds" })))
+      const tab = openTab(t.api, { replace: unlisted })
+      runtimes.push(tab)
+      const runs = await tab.runPromise(Effect.service(Runs))
+      for (const query of Object.values(runs.queries)) query.startSyncImmediate()
+      await runs.actions.openRun(jobId)
+      await until(() => expect(runs.queries.page.toArray[0]?.page).toMatchObject({ id: jobId, state: "read" }))
+    } finally {
+      await Effect.runPromise(t.api.remote.release(runId))
+    }
+  }, 120_000)
+
   test("a Guest reads it as Not found and can't stop it", async () => {
     const t = await open("gus")
     const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))

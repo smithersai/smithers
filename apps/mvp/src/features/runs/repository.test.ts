@@ -12,5 +12,6 @@ test("a run's repository comes from its Cloudflare row, else its parent's; a per
   expect(runRepository("root", undefined, runs)).toBe("acme/private")
   expect(runRepository("child", read("root"), runs)).toBe("acme/private")
   expect(runRepository("mine", undefined, runs)).toBeNull()
+  expect(runRepository("grandchild", { ...read("unlisted-job"), repoId: "github/acme/private" }, [])).toBe("acme/private")
   expect(runRepository("local", read(null), runs)).toBeNull()
 })

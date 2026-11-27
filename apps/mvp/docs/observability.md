@@ -927,7 +927,7 @@ Watching a TODO's run ([runs.md](features/runs.md#a-run-on-cloudflare)): ChatApi
 
 | Record | Kind | Where | Fields |
 |---|---|---|---|
-| `run.inspect` | log, span | ChatApi, each `GET /api/remote-runs/<run id>` | `host` (`remote`), `runId`, `outcome` (`read`, or the refusal's code), `events`, `bytes`, `clipped`, `status`, `durationMs`, `errorCode` |
+| `run.inspect` | log, span | ChatApi, each `GET /api/remote-runs/<run id>` | `host` (`remote`), `runId`, `outcome` (`read`, or the refusal's code), `repositoryScope` (`descendant` or `none` on successful reads), `events`, `bytes`, `clipped`, `status`, `durationMs`, `errorCode` |
 | `smithers_remote_run_reads` | counter | ChatApi | `outcome` |
 | `runs.shape.remote`; `smithers_remote_run_shape_requests` | log, span; counter | ChatApi | `status`, `live` |
 | `run.read`, `smithers_run_reads` | browser | the tab | as for this device's runs, `outcome` also `not_started` |

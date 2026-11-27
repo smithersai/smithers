@@ -6,6 +6,7 @@ import type { CloudRun, RunPage } from "./schema"
  * (`repoVisibility`), so a refused repository's run shows nothing on the global Runs pages either.
  */
 export const runRepository = (runId: string, page: RunPage | undefined, cloud: ReadonlyArray<CloudRun>): string | null => {
+  if (page?.repoId?.startsWith("github/")) return page.repoId.slice("github/".length)
   const repoOf = (id: string | null | undefined) => (id == null ? null : cloud.find((run) => run.runId === id)?.repo ?? null)
   const own = repoOf(runId)
   if (own !== null) return own

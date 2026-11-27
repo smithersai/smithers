@@ -712,6 +712,9 @@ export class RunsStore extends Context.Service<
       const attributed = (runId: string, inspection: Inspection, local: boolean) =>
         effect {
           if (local) return { repoId: undefined, personal: true as boolean | undefined, system: undefined as boolean | undefined }
+          if (inspection.admittedRepoId !== undefined) {
+            return { repoId: inspection.admittedRepoId, personal: undefined, system: undefined }
+          }
           const cloud = new Map((try cloudRuns.toArray).map((run) => [run.runId, run]))
           const executions = new Map((try shownRepoRuns.toArray).map((run) => [run.execution, run.repoId]))
           // Up the chain as far as this tab has the reads: each run's parent, from its own read, else its page's.

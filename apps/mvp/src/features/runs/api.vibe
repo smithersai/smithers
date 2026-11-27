@@ -3,7 +3,7 @@ import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "eff
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { renewed, withBearer, withoutCookie } from "../../flows/bearer"
 import { CONFIRM_401_HEADER, sessionCheckOf } from "../auth/contract"
-import { CLOUD_RUNS_LIMIT, CLOUD_RUNS_ROUTE, remoteRunRoute, steersRoute, stopRoute } from "./contract"
+import { CLOUD_RUNS_LIMIT, CLOUD_RUNS_ROUTE, RUN_REPOSITORY_HEADER, remoteRunRoute, steersRoute, stopRoute } from "./contract"
 import { requestFlowInputs, requestRepoFlows, requestRepoRuns } from "./requestRoute"
 import { type CloudRun, CloudRunList, type Inspection, type RepoName } from "./schema"
 
@@ -49,10 +49,12 @@ export const getRun = (
         ...(Option.isSome(refused) ? { code: refused.value.code } : {}),
       }))
     }
-    return try response.json.pipe(
+    const inspection = try response.json.pipe(
       Effect.flatMap(decodeInspection),
       Effect.mapError(() => new RemoteReadFailed({ status: response.status })),
     )
+    const admittedRepoId = response.headers[RUN_REPOSITORY_HEADER]
+    return admittedRepoId === undefined ? inspection : { ...inspection, admittedRepoId }
   }).pipe(
     // Interrupting the request aborts its fetch, so a stalled body stops too.
     Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new RemoteReadFailed({})) }),
