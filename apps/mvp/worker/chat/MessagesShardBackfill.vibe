@@ -1,0 +1,119 @@
+import { SqlClient } from "effect/sql"
+import { MessagesShardBridge, type Noted } from "./MessagesShardBridge.ts"
+import * as MessagesShardSource from "./MessagesShardSource.ts"
+
+// A conversation's history in Postgres, replayed once into its messages shard (decision 0170, slice 5b). The bridge
+// writes into a shard only what ChatApi stored since it started (slices 4c and 5a), so a conversation asked before
+// then has a shard that holds nothing of its history, or only its latest writes. A shard's head is therefore no proof
+// of anything: the object keeps its own mark (MessagesShard.ts `backfill`), set once every command of the history
+// reached an answer that stands.
+//
+// `ensure` runs before a page's Pull, Snapshot or Submit is forwarded (MessagesShardRoutes.ts `dispatch` `before`).
+// A shard already marked costs one call to its object and asks Postgres nothing. Any other is read whole from Postgres
+// in its place, every exchange and every note on its messages, and replayed through the bridge
+// (MessagesShardBridge.ts `replayed`) under the keys the bridge writes live: `question:<id>`, `answer:<id>`,
+// `noted:<id>:<version>` and the rest. A command the bridge already sent, or a replay that already ran, is answered
+// `Duplicate` from its key's receipt, so two requests that both find the shard unmarked journal each message once,
+// and a replay cut short is completed by the next. A key of the backfill's own would post every bridged message twice.
+//
+// The mark is set only when every exchange's replay was final (`Replayed.final`): sequenced, held already, or refused
+// for what it is. A row the shard refuses for ever is counted and logged, and the shard is still marked: otherwise
+// every later request would read the conversation again and be refused again. A shard that could not be reached, whose
+// epoch kept moving, or that took too long is left unmarked, and the next request replays the history again.
+//
+// Nothing here fails, and nothing here refuses the request: a backfill that did not finish is a log line and a count,
+// and the request goes on. The log line carries the conversation's id, counts and fixed codes, never a message's text,
+// its author or who asked.
+
+/** Backfills, by `outcome`: `backfilled`, `empty`, `incomplete`, `unreadable` or `unreachable`. */
+export const backfills = Metric.counter("smithers_messages_shard_backfill", {
+  description: "Conversations whose history in Postgres was replayed into their messages shard, by outcome",
+  incremental: true,
+})
+
+/**
+ * What became of one backfill: the history replayed and marked (`backfilled`); no history, marked (`empty`); some of
+ * it not final, or the mark not set (`incomplete`); Postgres not read (`unreadable`); the object not asked whether it
+ * holds the history (`unreachable`).
+ */
+export type BackfillOutcome = "backfilled" | "empty" | "incomplete" | "unreadable" | "unreachable"
+
+/** How many exchanges one backfill replays at once: each is its own commands, in order. */
+export const REPLAY_CONCURRENCY = 4
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/** Counts and logs one backfill. Every field is the conversation's id, a fixed code or a count. */
+effect function report(conversationId: string, outcome: BackfillOutcome, counts: Readonly<Record<string, number | string>>) {
+  try Metric.update(Metric.withAttributes(backfills, { outcome }), 1)
+  const line = outcome === "backfilled" || outcome === "empty"
+    ? logInfo("messages_shard.backfill")
+    : logWarning("messages_shard.backfill")
+  try annotateLogs(line, { conversationId, outcome, ...counts })
+}
+
+/** What Postgres holds of the conversation, read whole: its exchanges, and its notes by the question of each. */
+effect function read(conversationId: string) {
+  const exchanges = try MessagesShardSource.history(conversationId)
+  const rows = try MessagesShardSource.notes(conversationId)
+  const notes = new Map<string, Array<Noted>>()
+  for (const row of rows) {
+    // A question's note is its own exchange's; an answer's is its question's.
+    const questionId = row.questionId ?? row.id
+    notes.set(questionId, [...(notes.get(questionId) ?? []), MessagesShardSource.notedOf(conversationId, row)])
+  }
+  return { exchanges, notes, noted: rows.length }
+}
+
+/**
+ * Replays conversation `conversationId`'s history from Postgres, read through `database`, into its shard, unless the
+ * shard holds it already. `database` is built only once the shard says it does not.
+ */
+effect function backfill<E, R>(
+  bridge: MessagesShardBridge["Service"],
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
+  conversationId: string,
+) {
+  const checked = bridge.backfilled(conversationId) catch () => undefined
+  if (checked === true) return
+  if (checked === undefined) return try report(conversationId, "unreachable", {})
+  // Whatever went wrong reading is kept out of the log: a driver's error can quote a row.
+  const held = try catchCause(Effect.provide(read(conversationId), database), () => succeed(undefined))
+  if (held === undefined) return try report(conversationId, "unreadable", {})
+  const replays = try Effect.forEach(
+    held.exchanges,
+    (exchange) => bridge.replayed(exchange, held.notes.get(exchange.questionId) ?? []),
+    { concurrency: REPLAY_CONCURRENCY },
+  )
+  const transient = replays.filter((replay) => !replay.final).length
+  const counts = {
+    exchanges: held.exchanges.length,
+    notes: held.noted,
+    // Final, and not taken: what the shard will refuse every time it is sent.
+    refused: replays.filter((replay) => replay.final && replay.outcome !== "ok" && replay.outcome !== "kept").length,
+    transient,
+  }
+  if (transient > 0) return try report(conversationId, "incomplete", counts)
+  const marked = Effect.as(bridge.markBackfilled(conversationId), true) catch () => false
+  if (!marked) return try report(conversationId, "incomplete", { ...counts, reason: "unmarked" })
+  try report(conversationId, held.exchanges.length === 0 ? "empty" : "backfilled", counts)
+}
+
+/**
+ * Makes sure conversation `conversationId`'s shard holds its history from Postgres, read through `database`, where a
+ * bridge is provided: a deployment with none asks nothing. What ChatApi runs before a page's Pull, Snapshot or Submit
+ * is forwarded (worker/ChatApiProgram.ts). Never fails.
+ */
+export effect function ensureIn<E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, conversationId: string) {
+  const service = try serviceOption(MessagesShardBridge)
+  const conversation = conversationId.toLowerCase()
+  // A shard is named from a conversation's UUID and nothing else (MessagesShard.ts `shardOf`).
+  if (Option.isNone(service) || !UUID.test(conversation)) return
+  try withSpan(backfill(service.value, database, conversation), "messages_shard.backfill")
+}
+
+/** `ensureIn`, reading through the database the caller already holds. Never fails. */
+export effect function ensure(conversationId: string) {
+  const sql = try SqlClient.SqlClient
+  try ensureIn(Layer.succeed(SqlClient.SqlClient, sql), conversationId)
+}

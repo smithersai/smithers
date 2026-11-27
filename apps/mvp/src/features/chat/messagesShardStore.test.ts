@@ -1,4 +1,3 @@
-import { SyncPolicy } from "@smthrs/effect-electric"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { Effect, Metric, Option } from "effect"
 import { SqlClient } from "effect/sql"
@@ -22,11 +21,11 @@ import { ViewsStore } from "../views/store"
 import { ConversationOwners } from "../conversations/owners"
 import * as Marks from "../conversations/marks"
 
-// Chat's store reading a branch conversation from its messages shard (`ChatConfig.shard`, decision 0170 slice 5a), end
-// to end with nothing replaced: a tab asks through ChatApi's real handler, Postgres stores the question, ChatApi's
-// bridge sequences it into the conversation's real shard over SQLite, and the tab reads it back through ChatApi's real
-// shard route as the row its pages show. A second tab reads the same conversation from Electric's shape of the same
-// Postgres, and the two are held equal. Faults are the network's, injected at the tab's `fetch`.
+// Chat's store reading a branch conversation from its messages shard (`ChatConfig.shard`, decision 0170 slices 5a and
+// 5b), end to end with nothing replaced: a tab asks through ChatApi's real handler, Postgres stores the question,
+// ChatApi's bridge sequences it into the conversation's real shard over SQLite, and the tab reads it back through
+// ChatApi's real shard route as the row its pages show, column for column what Postgres holds. No tab asks Electric for
+// any conversation's messages. Faults are the network's, injected at the tab's `fetch`.
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -36,7 +35,7 @@ afterEach(async () => {
 const quick: TabOptions = {
   unreachableAfter: "300 millis",
   confirmWithin: "5 seconds",
-  retry: SyncPolicy.backoff({ initial: "20 millis", max: "50 millis" }),
+  shard: { follow: "20 millis", within: "2 seconds" },
 }
 /** A tab whose branch conversations are read from their shards, asked every 20 milliseconds. */
 const fromShard: TabOptions = { ...quick, shard: { follow: "20 millis", within: "2 seconds" } }
@@ -46,7 +45,7 @@ const until = (assertion: () => void | Promise<void>, timeout = 20_000) =>
 
 /** A ChatApi that serves the messages shards and bridges its own writes into them, with two branches to open. */
 const openApi = async () => {
-  const runtime = openTestApp({ answers: false }, { messagesShard: true })
+  const runtime = openTestApp({ answers: false })
   runtimes.push(runtime)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   api.branches.github.publish("octo", "hello", {
@@ -123,9 +122,8 @@ const openOn = async (
   }
 }
 
-/** The requests for a branch conversation's messages: Electric's shape of it, and its shard. */
-const shapeOf = (requests: ReadonlyArray<string>) =>
-  requests.filter((request) => request.includes(SHAPE_ROUTE) && request.includes("conversation="))
+/** The requests for a conversation's messages: Electric's shape of them, which no tab sends, and its shard. */
+const shapeOf = (requests: ReadonlyArray<string>) => requests.filter((request) => request.includes(SHAPE_ROUTE))
 const shardOf = (requests: ReadonlyArray<string>, conversationId: string) =>
   requests.filter((request) => request.includes(`/api/conversations/${conversationId}/messages/`))
 
@@ -138,33 +136,42 @@ const exchange = async (api: TestChatApi["Service"], tab: Awaited<ReturnType<typ
   return asked
 }
 
-test("a question asked through ChatApi is read back from the shard, with no shape of the branch's messages, as the rows Electric delivers", async () => {
+/** Conversation `conversationId`'s rows as Postgres holds them, its times as Postgres prints them in UTC, by position. */
+const postgresRows = (api: TestChatApi["Service"], conversationId: string) =>
+  Effect.runPromise(api.branches.run(Effect.orDie(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<Record<string, unknown>>`
+    SELECT id, role, text, status, question_id AS "questionId", failure, model_id AS "modelId",
+      stop_reason AS "stopReason", input_tokens AS "inputTokens", output_tokens AS "outputTokens",
+      position::int AS position, (created_at AT TIME ZONE 'UTC')::text || '+00' AS "createdAt",
+      (updated_at AT TIME ZONE 'UTC')::text || '+00' AS "updatedAt", conversation_id AS "conversationId", summary,
+      summary_revision AS "summaryRevision", phase, arc
+    FROM messages WHERE conversation_id = ${conversationId} ORDER BY position`))))
+
+test("a question asked through ChatApi is read back from the shard, with no shape of any conversation's messages, as Postgres holds it", async () => {
   const api = await openApi()
   const reader = await openOn(api, nodeDevice({ agent: api }), fromShard)
-  const electric = await openOn(api, nodeDevice({ agent: api }), quick)
+  const other = await openOn(api, nodeDevice({ agent: api }), quick)
   const conversationId = await reader.show("feature")
-  expect(await electric.show("feature")).toBe(conversationId)
+  expect(await other.show("feature")).toBe(conversationId)
 
-  // Asked on the tab that reads the shard: the send is confirmed by the row arriving from the shard, and nothing else
-  // delivers it there.
+  // Asked on one tab: the send is confirmed by the row arriving from the shard, and nothing else delivers it there.
   const asked = await exchange(api, reader, "What is a shard?", "One conversation, sequenced.")
   const whole = ["user done What is a shard?", "assistant done One conversation, sequenced."]
   await until(async () => expect(await reader.shown(conversationId)).toEqual(whole))
-  await until(async () => expect(await electric.shown(conversationId)).toEqual(whole))
+  await until(async () => expect(await other.shown(conversationId)).toEqual(whole))
   expect(await reader.queued(conversationId)).toEqual([])
   expect(reader.connection()).toMatchObject({ status: "up", retry: false })
 
-  // No Electric on the read path: the tab never asked for a shape of this conversation's messages. It pulled the shard.
-  expect(shapeOf(reader.requests)).toEqual([])
-  expect(shardOf(reader.requests, conversationId).length).toBeGreaterThan(0)
-  expect(shardOf(reader.requests, conversationId).every((request) => request.startsWith("GET "))).toBe(true)
-  // The other tab is the control: Electric's shape, and no shard.
-  expect(shapeOf(electric.requests).length).toBeGreaterThan(0)
-  expect(shardOf(electric.requests, conversationId)).toEqual([])
+  // No Electric on the read path of either tab: neither asked for a shape of any conversation's messages, the home's
+  // included. Each pulled the shard.
+  for (const tab of [reader, other]) {
+    expect(shapeOf(tab.requests)).toEqual([])
+    expect(shardOf(tab.requests, conversationId).length).toBeGreaterThan(0)
+    expect(shardOf(tab.requests, conversationId).every((request) => request.startsWith("GET "))).toBe(true)
+  }
 
-  // Row for row, column for column, what the shard gave is what Electric gave of Postgres: ids, text, status, the
-  // question each answer answers, Postgres's position and its times as it prints them.
-  const [fromShardRows, fromElectric] = [await reader.rows(conversationId), await electric.rows(conversationId)]
+  // Row for row, column for column, what the shard gave is what Postgres holds: ids, text, status, the question each
+  // answer answers, Postgres's position and its times as it prints them.
+  const fromShardRows = await reader.rows(conversationId)
   expect(fromShardRows.map((row) => row.id)).toEqual([asked.questionId, asked.answerId])
   const columns = (row: Message) => ({
     id: row.id, role: row.role, text: row.text, status: row.status, questionId: row.questionId, failure: row.failure,
@@ -172,20 +179,20 @@ test("a question asked through ChatApi is read back from the shard, with no shap
     position: row.position, createdAt: row.createdAt, updatedAt: row.updatedAt, conversationId: row.conversationId,
     summary: row.summary ?? null, summaryRevision: row.summaryRevision ?? null, phase: row.phase ?? null, arc: row.arc ?? null,
   })
-  expect(fromShardRows.map(columns)).toEqual(fromElectric.map(columns))
+  expect(fromShardRows.map(columns)).toEqual(await postgresRows(api, conversationId))
   expect(fromShardRows[1]!.position).toBe(fromShardRows[0]!.position + 1)
   expect(fromShardRows[1]!.updatedAt).not.toBe(fromShardRows[1]!.createdAt)
 
-  // A second exchange, asked on the Electric tab: the shard tab follows it without being told.
-  await exchange(api, electric, "And a replica?", "A copy that follows.")
+  // A second exchange, asked on the other tab: the first follows it without being told.
+  await exchange(api, other, "And a replica?", "A copy that follows.")
   const both = [...whole, "user done And a replica?", "assistant done A copy that follows."]
   await until(async () => expect(await reader.shown(conversationId)).toEqual(both))
-  await until(async () => expect(await electric.shown(conversationId)).toEqual(both))
-  expect((await reader.rows(conversationId)).map(columns)).toEqual((await electric.rows(conversationId)).map(columns))
-  expect(shapeOf(reader.requests)).toEqual([])
+  await until(async () => expect(await other.shown(conversationId)).toEqual(both))
+  expect((await reader.rows(conversationId)).map(columns)).toEqual(await postgresRows(api, conversationId))
+  expect((await other.rows(conversationId)).map(columns)).toEqual(await postgresRows(api, conversationId))
 
-  // A tab configured with nothing but "read the shard" asks at once, then once a second: it opens whole.
-  const defaults = await openOn(api, nodeDevice({ agent: api }), { ...quick, shard: {} })
+  // A tab configured with nothing about the shard asks at once, then once a second: it opens whole.
+  const defaults = await openOn(api, nodeDevice({ agent: api }), { unreachableAfter: "300 millis", confirmWithin: "5 seconds" })
   expect(await defaults.show("feature")).toBe(conversationId)
   await until(async () => expect(await defaults.shown(conversationId)).toEqual(both))
   expect(shapeOf(defaults.requests)).toEqual([])
@@ -294,8 +301,8 @@ test("each branch reads its own shard as the tab switches between them, on two t
 test("a branch share taken away empties the open conversation at once, though the person is still in the repository; shared again, Retry brings it back", async () => {
   const api = await openApi()
   const tab = await openOn(api, nodeDevice({ agent: api }), fromShard)
-  // The same person's other tab reads the conversation from Electric: what the data gate alone still shows.
-  const control = await openOn(api, nodeDevice({ agent: api }), quick)
+  // The same person's other device, following the shard once a second.
+  const control = await openOn(api, nodeDevice({ agent: api }), { ...quick, shard: {} })
   const conversationId = await tab.show("feature")
   expect(await control.show("feature")).toBe(conversationId)
   await exchange(api, tab, "Still shared?", "For now.")
@@ -324,11 +331,15 @@ test("a branch share taken away empties the open conversation at once, though th
   const stoppedAt = shardOf(tab.requests, conversationId).length
   await new Promise((resolve) => setTimeout(resolve, 120))
   expect(shardOf(tab.requests, conversationId).length).toBe(stoppedAt)
-  // The repository is still the person's, and the data gate still shows its conversations: the tab that read this
-  // one from Electric holds the rows it had. Only the answer to the shard's own read took them from the other tab.
-  expect(await control.shown(conversationId)).toEqual(populated)
-  // Asking again while it is still not shared shows nothing.
+  // The repository is still the person's, and the data gate still shows its conversations: only ChatApi's answer to
+  // a read of the shard takes the conversation away, so the other device loses it with its own next read.
+  await until(async () => expect(await control.shown(conversationId)).toEqual([]))
+  // Asking again while it is still not shared shows nothing. Retry starts the read and does not wait for it: the
+  // read is sent, and refused.
+  const retriedFrom = shardOf(tab.requests, conversationId).length
   await tab.run(tab.store.retryNow)
+  await until(() => expect(shardOf(tab.requests, conversationId).length).toBeGreaterThan(retriedFrom))
+  await new Promise((resolve) => setTimeout(resolve, 200))
   await until(() => expect(tab.connection()).toMatchObject({ status: "failed", retry: true }))
   expect(await tab.shown(conversationId)).toEqual([])
 

@@ -43,7 +43,7 @@ import { Pulls } from "./features/pulls/pulls.vibe"
 import { StoragePersistence } from "@smthrs/platform-browser"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "./test/chatApi"
 import { inProcessWorker } from "./test/languageServer"
-import { faultyServices } from "./test/faults"
+import { faultyServices, shardFaults } from "./test/faults"
 import { read } from "./test/otlp"
 import { PluginsUi } from "./plugins/ui.vibe"
 import { Secrets } from "./features/secrets/secrets.vibe"
@@ -215,10 +215,10 @@ const chatApi = async () => {
   return host.runPromise(Effect.service(TestChatApi))
 }
 
-test("when the device's conversation can't be restored, it logs that, records no boot time, and keeps running", async () => {
+test("a device store that can't be read still shows the conversation: nothing of it is kept there, so it is ready once its shard is read", async () => {
   const api = await chatApi()
   const device = nodeDevice()
-  // A database that opens, then fails every statement: the restore fails.
+  // A database that opens, then fails every statement: nothing the device keeps can be restored.
   const broken = {
     ...device,
     persistence: {
@@ -229,21 +229,14 @@ test("when the device's conversation can't be restored, it logs that, records no
   const runtime = openTab(api, { host: broken, sessionLifecycle: false })
   runtimes.push(runtime)
   const fiber = runtime.runFork(boot({ target: new EventTarget(), startedAt: Date.now(), render: () => {}, storage: granted }))
-  const store = await runtime.runPromise(Effect.service(ChatStore))
-  await until(() => expect(store.messages.tanstack.status).toBe("error"))
-  await until(() => expect(read(api.telemetry).log("chat couldn't restore")).toHaveLength(1))
+  await until(() => expect(read(api.telemetry).log("chat ready")).toHaveLength(1))
   expect(fiber.pollUnsafe()).toBeUndefined()
   await runtime.runPromise(Fiber.interrupt(fiber))
   await runtimes.pop()!.dispose()
 
   const records = read(api.telemetry)
-  // By the failure's code, never its message.
-  expect(records.log("chat couldn't restore")).toEqual([
-    expect.objectContaining({ severity: "Error", attributes: { feature: "app", errorCode: expect.stringMatching(/^[\w.:/@-]+$/) } }),
-  ])
+  expect(records.point("smithers_web_boot_ms")?.count).toBe(1)
   expect(JSON.stringify(records.logs)).not.toContain("disk")
-  expect(records.log("chat ready")).toEqual([])
-  expect(records.points.some(({ metric }) => metric === "smithers_web_boot_ms")).toBe(false)
 })
 
 test("a browser that won't keep the storage is counted as not granted", async () => {
@@ -474,7 +467,10 @@ test("start is the boundary: it builds the one runtime, renders the chat layer o
 
 test("start takes faulty services in place of the real ones, as the end-to-end entry gives them", async () => {
   const api = await chatApi()
-  const page = { origin: api.origin, fetch: api.fetch, reload: api.reload, host: nodeDevice() }
+  // Every read of a messages shard refused, as the end-to-end entry's `?faults=refuse` refuses them.
+  const shards = shardFaults()
+  Effect.runSync(shards.service.refuse(400))
+  const page = { origin: api.origin, fetch: shards.wrap(api.fetch), reload: api.reload, host: nodeDevice() }
   const rendered: Array<ChatView> = []
   performance.clearMarks()
   const { stop } = start(

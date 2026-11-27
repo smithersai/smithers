@@ -1,13 +1,11 @@
-import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import { Effect } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { failingWorker, nodeDevice, openFaultyApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { failRestore } from "../../test/restoreFailure"
-import { QuestionFaults } from "../../test/faults"
+import { QuestionFaults, ShardFaults } from "../../test/faults"
 import { read } from "../../test/otlp"
 import { Chat } from "./chat"
 import { ChatStore } from "./store"
-import { SHAPE_ROUTE } from "./contract"
 
 // Every browser record docs/observability.md lists for chat, read back from the OTLP exports the browser sent
 // ChatApi's relay, attribute by attribute. A sentinel in what people write appears in none of them. The app's own
@@ -21,7 +19,7 @@ afterEach(async () => {
 const until = (assertion: () => void, timeout = 4_000) => vi.waitFor(assertion, { timeout, interval: 20 })
 
 /**
- * A tab on its own ChatApi, with the faulty ChatApi client and shape source so a test can fail one ask or one sync.
+ * A tab on its own ChatApi, with the faulty ChatApi client and shard reads so a test can fail one ask or one sync.
  * `exported` closes every runtime, which flushes the exporter, and reads the exports.
  */
 const open = async (options: TabOptions = {}) => {
@@ -32,7 +30,7 @@ const open = async (options: TabOptions = {}) => {
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   for (const query of [store.shown, store.queued, store.connectionState, store.historyState]) query.tanstack.startSyncImmediate()
   const questions = await runtime.runPromise(Effect.service(QuestionFaults))
-  const shapes = await runtime.runPromise(Effect.service(ShapeSource.Faults))
+  const shards = await runtime.runPromise(Effect.service(ShardFaults))
   const fault = (effect: Effect.Effect<void>) => runtime.runSync(effect)
   const exported = async () => {
     for (const each of runtimes.splice(0).reverse()) await each.dispose()
@@ -44,7 +42,7 @@ const open = async (options: TabOptions = {}) => {
     api,
     runtime,
     questions,
-    shapes,
+    shards,
     fault,
     onApi: <A>(effect: Effect.Effect<A>) => runtime.runPromise(effect),
     exported,
@@ -133,7 +131,8 @@ test("asking: asked, stored and not sent, one trace from the ask through the out
   expect(records.point("outbox_refused", { name: "ask", status: "400" })?.value).toBe(1)
   expect(records.point("outbox_queued_ms", { name: "ask" })?.count).toBe(1)
   expect(records.point("outbox_leader_changes", { leader: "true" })?.value).toBe(1)
-  expect(records.point("persistence_restore_ms", { collection: "chat-messages" })?.count).toBe(1)
+  // Nothing of the conversation's messages is kept on the device, so nothing of them is restored.
+  expect(records.point("persistence_restore_ms", { collection: "chat-messages" })).toBeUndefined()
   expect(tab.api.telemetry.map(({ body }) => body).join("\n")).not.toContain(secret)
 })
 
@@ -156,35 +155,18 @@ test("the connection and the window: offline, retried and up again, earlier mess
   const tab = await open({
     pageSize: 2,
     unreachableAfter: "300 millis",
-    retry: SyncPolicy.backoff({ initial: "20 millis", max: "50 millis" }),
+    shard: { follow: "20 millis", within: "2 seconds" },
   })
   const secret = sentinel()
   await tab.onApi(tab.api.askElsewhere(`Earlier ${secret}`))
   await tab.onApi(tab.api.askElsewhere(`Later ${secret}`))
   await until(() => expect(tab.queries.history.toArray[0]?.earlier).toBe(true))
   tab.actions.loadEarlier()
-  const chatRequests = () => tab.runtime.runSync(tab.shapes.sent).filter((url) => url.pathname === SHAPE_ROUTE)
-  const sentBeforeFault = chatRequests().length
-  const observe = (stage: string, assertion: () => void, timeout = 4_000) => until(assertion, timeout).catch((cause: unknown) => {
-    const requests = chatRequests()
-    const connection = tab.queries.connection.toArray[0]
-    throw new Error(`Shape fault observation: ${JSON.stringify({
-      stage,
-      sentBeforeFault,
-      sent: requests.length,
-      live: requests.filter((url) => url.searchParams.get("live") === "true").length,
-      connection: { status: connection?.status, retry: connection?.retry },
-    })}`, { cause })
-  })
-  // Down applies when the next request starts. The held healthy long poll
-  // first delivers this change; replication latency is setup, not time spent
-  // failing. Observe the chat shape's next request before its four-second
-  // offline deadline, within the same 15-second delivery budget as a chat send.
-  tab.fault(tab.shapes.down())
+  // Down applies to the next read of the shard, which the store sends within its follow.
+  tab.fault(tab.shards.down())
   await tab.onApi(tab.api.askElsewhere(`During ${secret}`))
-  await observe("awaiting_fault_request", () => expect(chatRequests().length).toBeGreaterThan(sentBeforeFault), 15_000)
-  await observe("fault_applied", () => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "offline", retry: true }))
-  tab.fault(tab.shapes.heal)
+  await until(() => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "offline", retry: true }))
+  tab.fault(tab.shards.heal)
   tab.actions.retry()
   await until(() => expect(tab.queries.connection.toArray[0]?.status).toBe("up"))
   const records = await tab.exported()

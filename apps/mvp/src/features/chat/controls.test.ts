@@ -1,7 +1,7 @@
-import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import type { Outbox } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Exit, Fiber, Layer, Logger, Metric, Option, Scope, Stream } from "effect"
 import * as Arr from "effect/Array"
+import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { shaOf } from "../../../worker/test/branch"
@@ -47,7 +47,7 @@ afterEach(async () => {
 const quick: TabOptions = {
   unreachableAfter: "300 millis",
   confirmWithin: "1 second",
-  retry: SyncPolicy.backoff({ initial: "20 millis", max: "50 millis" })
+  shard: { follow: "20 millis", within: "2 seconds" }
 }
 
 const until = (assertion: () => void | Promise<void>, timeout = 15_000) =>
@@ -188,16 +188,15 @@ describe("Copy", () => {
     expect(await attach.read()).toMatchObject({
       messages: expect.arrayContaining([expect.objectContaining({ id: answerId, status: "streaming" })]),
     })
-    // A retained partially written answer from before BYOA has text, so status alone prevents Copy.
-    await tab.run(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      sql`UPDATE messages SET text = 'Hal' WHERE id = ${answerId}`)))
-    await until(() => expect(tab.shown()).toEqual(["user done hello", "assistant streaming Hal"]))
+    // An answer still streaming is not copied.
+    await until(() => expect(tab.shown()).toEqual(["user done hello", "assistant streaming "]))
     expect(await tab.run(copyableText(answerId))).toEqual(Option.none())
     expect(await tab.run(copyableText())).toEqual(Option.none())
     expect(await tab.run(copyableText("hello"))).toEqual(Option.none())
     // A persisted answer from before BYOA can still be failed.
     await tab.run(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql`UPDATE messages SET status = 'failed', failure = 'model_error', text = ${COULDNT_ANSWER} WHERE id = ${answerId}`)))
+    await tab.run(api.bridgeExchange(asked.questionId))
     await until(() => expect(tab.shown().at(-1)).toBe(`assistant failed ${COULDNT_ANSWER}`))
     expect(await tab.run(copyableText(answerId))).toEqual(Option.none())
   })
@@ -773,42 +772,6 @@ describe("drafts and delivery stay in their own conversation", () => {
     60_000
   )
 
-  test(
-    "a branch's refused shape shows Sync failed, which the home shape syncing doesn't clear; Retry does",
-    async () => {
-      let refusing = true
-      // Electric's proxy refuses the branch conversations' message shapes, never the home one's (test.faults-by-injection).
-      const source = ShapeSource.ShapeSource.of({
-        request: (url, init) =>
-          refusing && new URL(url).searchParams.has("conversation")
-            ? Effect.succeed(new Response("forbidden", { status: 403 }))
-            : ShapeSource.fetchSource.request(url, init)
-      })
-      const { api, device } = await openApi()
-      const tab = await openOn(api, device, false, { replace: Layer.succeed(ShapeSource.ShapeSource, source) })
-      await until(() => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "up" }))
-      await tab.run(show("refused-branch"))
-      await until(() => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "failed", retry: true }))
-      const synced = await tab.run(Effect.forkIn(
-        tab.store.messages.sync.pipe(
-          Stream.filter((event) => event._tag === "Succeeded"),
-          Stream.take(1),
-          Stream.runDrain
-        ),
-        tab.store.scope,
-        { startImmediately: true }
-      ))
-      await tab.run(tab.store.messages.reconnect)
-      await tab.run(Fiber.join(synced).pipe(Effect.timeout("10 seconds")))
-      await tab.run(Effect.sleep("1200 millis"))
-      expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "failed", retry: true })
-      refusing = false
-      await tab.run(tab.store.retryNow)
-      await until(() => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "up" }))
-    },
-    60_000
-  )
-
   test("a branch answer's first text is timed in the branch's conversation", async () => {
     const { api, tab } = await onBranch()
     const before = (await tab.run(Metric.value(firstAnswerText))).count
@@ -833,6 +796,7 @@ describe("drafts and delivery stay in their own conversation", () => {
     await tab.run(api.attachFor(asked.questionId))
     await tab.run(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql`UPDATE messages SET status = 'failed', failure = 'model_error' WHERE id = ${asked.answerId}`)))
+    await tab.run(api.bridgeExchange(asked.questionId))
     await expect(tab.run(Fiber.join(follower).pipe(Effect.timeout("15 seconds")))).resolves.toBeUndefined()
     expect((await tab.run(Metric.value(firstAnswerText))).count).toBe(before)
   }, 60_000)
@@ -870,7 +834,11 @@ describe("drafts and delivery stay in their own conversation", () => {
       // The device can't open the branch's views collection while the question is confirmed (test.faults-by-injection).
       const context = await tab.run(
         Layer.build(
-          ChatStore.layer(chatConfig(api.origin, quick as never), host).pipe(Layer.provide(ChatWrites.layer(host)))
+          ChatStore.layer(chatConfig(api.origin, quick as never), host).pipe(
+            Layer.provide(ChatWrites.layer(host)),
+            // The page's own requests, as the tab's reach ChatApi.
+            Layer.provide(Layer.provide(FetchHttpClient.layer, Layer.succeed(FetchHttpClient.Fetch, api.fetch))),
+          )
         ).pipe(
           Effect.provideService(ViewsStore, {
             ...views,

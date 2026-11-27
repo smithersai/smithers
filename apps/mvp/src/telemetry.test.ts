@@ -1,6 +1,5 @@
 import { FlowRegistry } from "./flows/registry.vibe"
 import { join } from "node:path"
-import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { FetchHttpClient } from "effect/http"
 import { signInHarness } from "../worker/test/signIn"
@@ -27,7 +26,7 @@ import { ChatStore } from "./features/chat/store"
 import { engineTelemetry } from "./flows/engine.vibe"
 import { BROWSER_TELEMETRY, EXPORTED_SPANS, RELAY_FIELDS, TELEMETRY_LIMITS, WEB_SERVICE, WITHHELD } from "./telemetry"
 import { nodeDevice, openFaultyApp, TestChatApi } from "./test/chatApi"
-import { QuestionFaults } from "./test/faults"
+import { QuestionFaults, ShardFaults } from "./test/faults"
 import { captured, type Dropped, type Export, ORIGIN, relayed } from "./test/relay"
 
 // One telemetry contract for the browser and ChatApi (src/telemetry.ts): the browser's code paths run with the exporters
@@ -68,14 +67,14 @@ describe("the relay keeps everything the browser exports", () => {
       answers: true,
       pageSize: 2,
       unreachableAfter: "300 millis",
-      retry: SyncPolicy.backoff({ initial: "20 millis", max: "50 millis" }),
+      shard: { follow: "20 millis", within: "2 seconds" },
     })
     closing.push(() => app.dispose())
     const chat = await app.runPromise(Effect.service(Chat))
     const store = await app.runPromise(Effect.service(ChatStore))
     const api = await app.runPromise(Effect.service(TestChatApi))
     const questions = await app.runPromise(Effect.service(QuestionFaults))
-    const shapes = await app.runPromise(Effect.service(ShapeSource.Faults))
+    const shards = await app.runPromise(Effect.service(ShardFaults))
     for (const query of [store.shown, store.queued, store.connectionState, store.historyState]) {
       query.tanstack.startSyncImmediate()
     }
@@ -92,11 +91,11 @@ describe("the relay keeps everything the browser exports", () => {
     await app.runPromise(api.askElsewhere("Earlier"))
     await until(() => expect(chat.queries.history.toArray[0]?.earlier).toBe(true))
     chat.actions.loadEarlier()
-    // Down from the next request on; a change ends the live request Electric holds, so the next one goes.
-    app.runSync(shapes.down())
+    // Down from the next read of the shard on.
+    app.runSync(shards.down())
     await app.runPromise(api.askElsewhere("During"))
     await until(() => expect(chat.queries.connection.toArray[0]).toMatchObject({ status: "offline", retry: true }))
-    app.runSync(shapes.heal)
+    app.runSync(shards.heal)
     chat.actions.retry()
     await until(() => expect(chat.queries.connection.toArray[0]?.status).toBe("up"))
     await closing.pop()!()

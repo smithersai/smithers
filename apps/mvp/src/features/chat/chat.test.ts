@@ -2,7 +2,6 @@ import { reloadAfter } from "../../test/reloadTiming"
 import { browserSession } from "../../test/browserSession"
 import { CONNECTION } from "./schema"
 import { outboxPrincipal } from "../../device/identity.vibe"
-import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import { Outbox } from "@smthrs/effect-tanstack-db"
 import { WebLock } from "@smthrs/platform-browser"
 import { Context, Deferred, Effect, Exit, Fiber, ManagedRuntime, Metric, Option, Ref, Scope, Stream } from "effect"
@@ -12,7 +11,6 @@ import { read as readTelemetry } from "../../test/otlp"
 import { TabRequests } from "../../flows/requests.vibe"
 import {
   CHATAPI_ORIGIN,
-  type Busy,
   type ChatApiOptions,
   type NodeDevice,
   failingWorker,
@@ -27,7 +25,7 @@ import {
   type TabOptions,
   TestChatApi,
 } from "../../test/chatApi"
-import { EngineFaults, type QuestionFault, QuestionFaults } from "../../test/faults"
+import { EngineFaults, type QuestionFault, QuestionFaults, ShardFaults } from "../../test/faults"
 import { Chat } from "./chat"
 import { DEVICE_ADOPTED_EVENT } from "../auth/contract"
 import { bindConnectivity } from "./connectivity"
@@ -107,12 +105,12 @@ test("a backend-only fixture opens no browser app or telemetry exporter", async 
   expect(api.telemetry).toEqual([])
 })
 
-/** The faulty ChatApi client and shape source's switches on a tab's runtime. */
+/** The faulty ChatApi client and shard reads' switches on a tab's runtime. */
 const switches = async <R, E>(
-  runtime: ManagedRuntime.ManagedRuntime<R | QuestionFaults | ShapeSource.Faults | EngineFaults, E>,
+  runtime: ManagedRuntime.ManagedRuntime<R | QuestionFaults | ShardFaults | EngineFaults, E>,
 ) => {
   const questions = await runtime.runPromise(Effect.service(QuestionFaults))
-  const shapes = await runtime.runPromise(Effect.service(ShapeSource.Faults))
+  const shards = await runtime.runPromise(Effect.service(ShardFaults))
   const engine = await runtime.runPromise(Effect.service(EngineFaults))
   return {
     /** Throws a switch of this tab's engine. */
@@ -120,27 +118,20 @@ const switches = async <R, E>(
     failNext: (fault: QuestionFault) => runtime.runSync(questions.failNext(fault)),
     /** Every question the client was given, in order, sent or not. */
     sentQuestions: () => runtime.runSync(questions.asked),
-    /** Throws a switch of the shape source. */
-    shapes: (fault: (switches: ShapeSource.Switches) => Effect.Effect<void>) => runtime.runSync(fault(shapes)),
+    /** Throws a switch of the tab's reads of messages shards. */
+    shards: (fault: (switches: ShardFaults["Service"]) => Effect.Effect<void>) => runtime.runSync(fault(shards)),
   }
 }
 
-/** A faulty tab, with its switches and the offsets of the `messages` shape requests it sent. */
-const withSwitches = async <T extends { readonly runtime: ManagedRuntime.ManagedRuntime<any, any> }>(tab: T) => {
-  const sources = await tab.runtime.runPromise(Effect.service(ShapeSource.Faults))
-  return {
-    ...tab,
-    ...(await switches(tab.runtime)),
-    shapeRequests: () =>
-      tab.runtime.runSync(sources.sent)
-        .filter((url) => url.pathname.endsWith("/messages"))
-        .map((url) => url.searchParams.get("offset")),
-  }
-}
+/** A faulty tab, with its switches. */
+const withSwitches = async <T extends { readonly runtime: ManagedRuntime.ManagedRuntime<any, any> }>(tab: T) => ({
+  ...tab,
+  ...(await switches(tab.runtime)),
+})
 
-/** A tab with the faulty ChatApi client and shape source, and their switches. */
-const openFaulty = async (options: TabOptions = {}, start?: (switches: ShapeSource.Switches) => Effect.Effect<void>) => {
-  const runtime = openFaultyApp(options, start)
+/** A tab with the faulty ChatApi client and shard reads, and their switches. */
+const openFaulty = async (options: TabOptions = {}) => {
+  const runtime = openFaultyApp(options)
   const tab = await tabOn(runtime)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   return { ...tab, api, onApi: <A>(effect: Effect.Effect<A>) => runtime.runPromise(effect), ...(await switches(runtime)) }
@@ -158,11 +149,11 @@ const until = (assertion: () => void | Promise<void>, timeout = 15_000) =>
 /** Budget for confirmed writes or sync on a loaded machine. */
 const syncWithin = 15_000
 
-// A quick deadline and sync policy, so an outage shows in a test's time.
+// A quick deadline and shard follow, so an outage shows in a test's time.
 const quick: TabOptions = {
   unreachableAfter: "300 millis",
   confirmWithin: "1 second",
-  retry: SyncPolicy.backoff({ initial: "20 millis", max: "50 millis" }),
+  shard: { follow: "20 millis", within: "2 seconds" },
 }
 
 const recordReply = (
@@ -173,11 +164,13 @@ const recordReply = (
 ) =>
   until(async () => {
     const recorded = await tab.onApi(tab.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      sql`UPDATE messages SET text = ${text}, status = ${failure === null ? "done" : "failed"},
+      sql<{ readonly questionId: string }>`UPDATE messages SET text = ${text}, status = ${failure === null ? "done" : "failed"},
           failure = ${failure}, updated_at = clock_timestamp()
           WHERE id = ${answerId} AND role = 'assistant'
-          RETURNING id`)))
+          RETURNING question_id AS "questionId"`)))
     expect(recorded).toHaveLength(1)
+    // Written straight to Postgres, so bridged as ChatApi bridges an answer it records.
+    await tab.onApi(tab.api.bridgeExchange(recorded[0]!.questionId))
   })
 
 describe("asking", () => {
@@ -425,14 +418,14 @@ describe("sending", () => {
     expect(tab.count(Metric.withAttributes(unsentActions, { action: "discard" }))).toBe(1)
   })
 
-  test("a device store in memory whose shape never answers still sends the question again in time", async () => {
-    // The device store couldn't open, so the conversation restores from the network, which never answers: the wait for
-    // the question counts from the restore, and waits for it as long at most.
+  test("a device store in memory whose shard never answers still sends the question again in time", async () => {
+    // The device store couldn't open, and the shard never answers a read: the wait for the question counts from the
+    // send, and waits for it as long at most.
     const { api } = await openApi()
     const device = nodeDevice({ agent: api })
     const memory = { ...device, persistence: { ...device.persistence, open: () => Promise.reject(new Error("no OPFS")) } }
     const tab = await tabOn(
-      openFaultyTab(api, { ...quick, host: memory, confirmWithin: "200 millis" }, (switches) => switches.down()),
+      openFaultyTab(api, { ...quick, host: memory, confirmWithin: "200 millis", shardFaults: (faults) => faults.down() }),
     ).then(withSwitches)
     asked((await tab.actions.ask("hello")))
     await until(() => expect(tab.sentQuestions().length).toBeGreaterThanOrEqual(1))
@@ -440,16 +433,16 @@ describe("sending", () => {
     await until(() => expect(tab.sentQuestions().length).toBeGreaterThanOrEqual(2))
   })
 
-  test("a question Electric doesn't deliver in time is sent again, and shows once Electric delivers it", async () => {
+  test("a question the shard doesn't deliver in time is sent again, and shows once the shard delivers it", async () => {
     const tab = await openFaulty({ ...quick, confirmWithin: "200 millis" })
     await until(() => expect(tab.connection()?.status).toBe("up"))
-    tab.shapes((shapes) => shapes.stall())
+    tab.shards((shards) => shards.stall())
     const { questionId } = asked((await tab.actions.ask("hello")))
     await until(() => expect(tab.sentQuestions().length).toBeGreaterThanOrEqual(1))
     tab.actions.retry()
     await until(() => expect(tab.sentQuestions().length).toBeGreaterThanOrEqual(2))
     expect(tab.shown()).toEqual(["user queued hello"])
-    tab.shapes((shapes) => shapes.heal)
+    tab.shards((shards) => shards.heal)
     tab.actions.retry()
     await until(() => expect(tab.shown()).toEqual(["user done hello", "assistant streaming "]))
     expect((await tab.onApi(tab.api.rows)).filter(({ id }) => id === questionId)).toHaveLength(1)
@@ -656,43 +649,6 @@ describe("the device store", () => {
     await until(() => expect(second.shown().filter((line) => line.startsWith("user unsent"))).toEqual([]))
   })
 
-  test("a tab whose snapshot reaches the device store late never erases a question another tab stored", async () => {
-    // A fresh device's two tabs each start their shape afresh. The second is busy: what it commits reaches the device
-    // store 1.5 s late. Its snapshot, taken before the question, used to land after the first tab stored the question:
-    // it emptied the device of it, and the reload that followed took it from both tabs (docs/work/local-first-conflicts.md).
-    const { api, onApi } = await openApi()
-    for (let seed = 0; seed < 80; seed++) await onApi(api.askElsewhere(`seed ${seed}`))
-    const device = nodeDevice()
-    const busy: Busy = { ms: 0, inFlight: 0 }
-    const down = (switches: ShapeSource.Switches) => switches.down()
-    const one = await tabOn(openFaultyTab(api, { ...quick, host: device }, down)).then(withSwitches)
-    await one.runtime.runPromise(Effect.ignore(one.store.messages.restored))
-    const two = await tabOn(openFaultyTab(api, { ...quick, host: device.busyTab(busy) }, down)).then(withSwitches)
-    await two.runtime.runPromise(Effect.ignore(two.store.messages.restored))
-    const deleted: Array<string> = []
-    for (const tab of [one, two]) {
-      tab.store.messages.tanstack.subscribeChanges((batch) => {
-        for (const change of batch) if (change.type === "delete") deleted.push(String(change.key))
-      })
-    }
-    one.shapes((shapes) => shapes.heal)
-    await until(() => expect(device.stored("chat-messages")).toBe(160), 20_000)
-
-    busy.ms = 1_500
-    two.shapes((shapes) => shapes.heal)
-    // Its snapshot is in: it asks for what comes after it. Its long polls then wait, so the question reaches it only
-    // through the device store.
-    await until(() => expect(two.shapeRequests().some((offset) => offset !== "-1")).toBe(true), 20_000)
-    two.shapes((shapes) => shapes.stall("live"))
-    const { questionId } = await onApi(api.askElsewhere("arrives"))
-    await until(() => expect(one.synced(questionId)).toBe(true), 20_000)
-    await until(() => expect(busy.inFlight).toBe(0), 20_000)
-    two.shapes((shapes) => shapes.heal)
-    await until(() => expect([one.synced(questionId), two.synced(questionId)]).toEqual([true, true]), 20_000)
-    expect(device.stored("chat-messages")).toBe(162)
-    expect(deleted.filter((key) => key === questionId)).toEqual([])
-  }, 90_000)
-
   test("the tab that gets focus leads the outbox at once, and the one that led leads again once that tab closes", async () => {
     const { api, onApi } = await openApi()
     const device = nodeDevice({ agent: api })
@@ -719,19 +675,27 @@ describe("the device store", () => {
     await until(async () => expect(await leads(first)).toBe(true))
   })
 
-  test("a reload restores the conversation from the device before Electric answers", async () => {
+  test("a reload that cannot reach the shard shows nothing of the conversation until ChatApi answers a read, and says so in time", async () => {
     const { api } = await openApi()
     const device = nodeDevice({ agent: api })
     const first = await tabOn(openTab(api, { ...quick, host: device }))
     const { answerId } = asked((await first.actions.ask("hello")))
     await until(() => expect(first.synced(answerId)).toBe(true))
-    await until(() => expect(device.stored("chat-messages")).toBe(2))
+    // Delivered: the outbox no longer holds the question, so the device keeps nothing of it.
+    await until(() => expect(first.queued()).toBe(0))
+    await until(() => expect(first.store.asking.tanstack.size).toBe(0))
     await first.close()
-    // The reload finds Electric unreachable: the conversation is there anyway, and the pill says so in time.
-    const second = await tabOn(openFaultyTab(api, { ...quick, host: device }, (shapes) => shapes.down()))
-    await until(() => expect(second.history()?.opened).toBe(true))
-    expect(second.shown()).toEqual(["user done hello", "assistant streaming "])
+    // Nothing of the conversation's messages is kept on the device: a reload that cannot read the shard has none to
+    // show, has not opened, and the pill says the device is offline in time.
+    const second = await tabOn(openFaultyTab(api, { ...quick, host: device, shardFaults: (faults) => faults.down() })).then(withSwitches)
     await until(() => expect(second.connection()).toMatchObject({ status: "offline", retry: true }))
+    expect(second.history()?.opened).toBe(false)
+    expect(second.shown()).toEqual([])
+    // The shard answers: the conversation opens with what it holds, and the pill comes back up.
+    second.shards((shards) => shards.heal)
+    await until(() => expect(second.shown()).toEqual(["user done hello", "assistant streaming "]))
+    expect(second.history()?.opened).toBe(true)
+    await until(() => expect(second.connection()?.status).toBe("up"))
   })
 
   test("a question queued on one tab is restored by the next and sent once", async () => {
@@ -833,17 +797,22 @@ describe("the connection pill", () => {
     expect(tab.connection()).toMatchObject({ status: "stopped" })
   })
 
-  test("shape requests failing for unreachableAfter show Offline with Retry, and it hides once they succeed", async () => {
-    const tab = await openFaulty(quick)
-    await until(() => expect(tab.connection()?.status).toBe("up"))
-    // Down from the next request on; a change ends the live request Electric holds, so the next one goes.
-    tab.shapes((shapes) => shapes.down())
-    await tab.onApi(tab.api.askElsewhere("while down"))
-    await until(() => expect(tab.connection()).toMatchObject({ status: "offline", retry: true }))
-    expect(tab.count(Metric.withAttributes(connectionDrops, { reason: "unreachable" }))).toBe(1)
-    tab.shapes((shapes) => shapes.heal)
-    await until(() => expect(tab.connection()?.status).toBe("up"))
-  })
+  test.each(["down", "corrupt"] as const)(
+    "shard reads failing (%s) for unreachableAfter show Offline with Retry, and it hides once they succeed",
+    async (fault) => {
+      const tab = await openFaulty(quick)
+      await until(() => expect(tab.connection()?.status).toBe("up"))
+      // Failing from the next read on, on the network or with an answer outside the protocol: either can be retried.
+      tab.shards((shards) => shards[fault]())
+      await until(() => expect(tab.connection()).toMatchObject({ status: "offline", retry: true }))
+      expect(tab.count(Metric.withAttributes(connectionDrops, { reason: "unreachable" }))).toBe(1)
+      tab.shards((shards) => shards.heal)
+      await until(() => expect(tab.connection()?.status).toBe("up"))
+      // The shard is followed again.
+      await tab.onApi(tab.api.askElsewhere("after the outage"))
+      await until(() => expect(tab.shown()).toContain("user done after the outage"))
+    },
+  )
 
   test("sends failing for unreachableAfter show Offline with Retry, and Retry sends at once", async () => {
     const tab = await openFaulty(quick)
@@ -856,22 +825,25 @@ describe("the connection pill", () => {
     expect(tab.shown()).toEqual(["user done hello", "assistant streaming "])
   })
 
-  test.each([
-    ["refuse", "refused"],
-    ["corrupt", "invalid_response"],
-  ] as const)("Electric stopping the shape (%s) shows Sync failed with Retry, which restarts it", async (fault, reason) => {
+  test("a shard read ChatApi refuses (400) shows Sync failed with Retry, which restarts it; the conversation stays", async () => {
     const tab = await openFaulty(quick)
-    // The device is synced and following Postgres live: a change after this point reaches it as a live response.
+    // The device is synced and following the shard: a change after this point reaches it with the next read.
     await tab.onApi(tab.api.askElsewhere("before the fault"))
     await until(() => expect(tab.shown()).toContain("user done before the fault"))
-    tab.shapes((shapes) => (fault === "refuse" ? shapes.refuse(400, "live") : shapes.corrupt("live")))
-    await tab.onApi(tab.api.askElsewhere("wake the shape"))
+    tab.shards((shards) => shards.refuse(400))
     await until(() => expect(tab.connection()).toMatchObject({ status: "failed", retry: true }))
-    expect(tab.count(Metric.withAttributes(connectionDrops, { reason }))).toBe(1)
-    tab.shapes((shapes) => shapes.heal)
+    expect(tab.count(Metric.withAttributes(connectionDrops, { reason: "refused" }))).toBe(1)
+    // A refusal that says nothing of who may read it hides nothing: the conversation stays as it was read.
+    expect(tab.shown()).toContain("user done before the fault")
+    // Stopped: nothing is read again until Retry, so a change meanwhile does not arrive.
+    await tab.onApi(tab.api.askElsewhere("while stopped"))
+    tab.shards((shards) => shards.heal)
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(tab.shown()).not.toContain("user done while stopped")
     tab.actions.retry()
     await until(() => expect(tab.connection()?.status).toBe("up"))
-    // The shape follows Postgres again.
+    // The shard is followed again.
+    await until(() => expect(tab.shown()).toContain("user done while stopped"))
     await tab.onApi(tab.api.askElsewhere("after the restart"))
     await until(() => expect(tab.shown()).toContain("user done after the restart"))
   })

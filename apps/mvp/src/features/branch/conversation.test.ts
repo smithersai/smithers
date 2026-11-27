@@ -3,11 +3,10 @@ import { ConversationOwners } from "../conversations/owners"
 // a person's `/web` on the browser's own layer (`appLayer`) over a Node device whose engine leads, against ChatApi's
 // real handler over the compose Postgres and Electric (src/test/chatApi.ts). Branches are recorded as `POST
 // /api/branches` records them; another device asks in a branch's conversation through ChatApi's real questions route.
-// Replies use the conversation's MCP attachment. Unhappy paths get the faulty ChatApi client and shape source.
-import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
+// Replies use the conversation's MCP attachment. Unhappy paths get the faulty ChatApi client and shard reads.
 import { read as readTelemetry } from "../../test/otlp"
 import type { Outbox } from "@smthrs/effect-tanstack-db"
-import { Effect, type ManagedRuntime, Scheduler, Stream } from "effect"
+import { Effect, Layer, ManagedRuntime, Scheduler, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import * as ConversationPeople from "../../../worker/branch/ConversationPeople.vibe"
@@ -16,8 +15,8 @@ import { shaOf } from "../../../worker/test/branch.ts"
 import { framable } from "../../../worker/test/pages.ts"
 import { FlowDispatch } from "../../flows/dispatch.vibe"
 import { recordedModelFailure } from "../../test/attachedRun"
-import { member, nodeDevice, openFaultyApp, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
-import { QuestionFaults, ShapeRecovery } from "../../test/faults"
+import { faultyTabLayer, member, nodeDevice, openFaultyApp, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
+import { QuestionFaults, ShardFaults } from "../../test/faults"
 import { AuthStore, SESSION } from "../auth/store.vibe"
 import { Chat } from "../chat/chat"
 import { COULDNT_ANSWER, QUESTIONS_ROUTE } from "../chat/contract"
@@ -38,11 +37,11 @@ const until = (assertion: () => void | Promise<void>, timeout = 40_000) => vi.wa
 /** A test's budget: flows on a fresh device's engine, each with its first start, on a loaded machine. */
 const WITHIN = 90_000
 
-// A quick deadline and sync policy, so an outage shows in a test's time.
+// A quick deadline and shard follow, so an outage shows in a test's time.
 const quick: TabOptions = {
   unreachableAfter: "300 millis",
   confirmWithin: "1 second",
-  retry: SyncPolicy.backoff({ initial: "20 millis", max: "50 millis" }),
+  shard: { follow: "20 millis", within: "2 seconds" },
 }
 
 /** A tab on `runtime`, signed in as a Member, with the live queries React starts on first render. */
@@ -113,6 +112,8 @@ const tabOn = async <R, E>(
       const id = crypto.randomUUID()
       await sql((sql) => sql`INSERT INTO messages (id, role, text, status, conversation_id)
         VALUES (${id}, 'user', ${text}, 'done', ${conversationId})`)
+      // Written straight to Postgres, so bridged as ChatApi bridges a question it stores.
+      await runtime.runPromise(api.bridgeExchange(id))
       return id
     },
     /** Asks `text` in conversation `conversationId` as another device does, through ChatApi. */
@@ -222,7 +223,7 @@ describe("a branch's conversation", () => {
 
     expect(second).toBe(first)
     expect(tab.store.opened(branch)).toBe(first)
-    expect(first.messages.id).toBe(`chat-messages:${branch}`)
+    expect(first.messages.id).toBe(`chat-shard-rows:${branch}`)
   }, WITHIN)
 
   test("Retry on a failed answer asks its question again in the conversation shown", async () => {
@@ -316,9 +317,9 @@ describe("a branch's unsent questions", () => {
 })
 
 describe("syncing a branch's conversation", () => {
-  test("Retry on the pill restarts a branch conversation's stopped shape too", async () => {
+  test("Retry on the pill restarts a branch conversation's stopped shard read too", async () => {
     const tab = await tabOn(openFaultyApp(quick))
-    const shapes = await tab.runtime.runPromise(Effect.service(ShapeSource.Faults))
+    const shards = await tab.runtime.runPromise(Effect.service(ShardFaults))
     const branch = await tab.branch("feature/one")
     await tab.chat.actions.show(branch)
     await tab.askIn(branch, "before the fault")
@@ -326,36 +327,35 @@ describe("syncing a branch's conversation", () => {
     const { messages } = tab.store.opened(branch)!
     const latest = () => tab.runtime.runPromise(Stream.runHead(messages.sync))
 
-    // Electric's next live answer comes back cut short: the branch's shape stops, and stays stopped.
-    tab.runtime.runSync(shapes.corrupt("live"))
-    await tab.askIn(branch, "wake the shape")
+    // ChatApi refuses the next read (400): the branch's read stops, and stays stopped.
+    tab.runtime.runSync(shards.refuse(400))
     await until(async () => expect(await latest()).toMatchObject({ _tag: "Some", value: { _tag: "Stopped" } }))
-    tab.runtime.runSync(shapes.heal)
+    await tab.askIn(branch, "while stopped")
+    tab.runtime.runSync(shards.heal)
 
     tab.chat.actions.retry()
 
-    // The shape follows Postgres again.
-    await until(async () => expect(await latest()).toMatchObject({ _tag: "Some", value: { _tag: "Sent" } }))
+    // The shard is followed again, and what was asked while it was stopped arrives.
+    await until(async () => expect(await latest()).toMatchObject({ _tag: "Some", value: { _tag: "Succeeded" } }))
+    await until(() => expect(tab.shown(branch)).toContain("user done while stopped"))
     await tab.askIn(branch, "after the restart")
     await until(() => expect(tab.shown(branch)).toContain("user done after the restart"))
-    // The question in the answer that came back cut short reaches the device too: the restart asks for it again.
-    expect(tab.shown(branch)).toContain("user done wake the shape")
   }, WITHIN)
 })
 
 describe("delivering to a branch's conversation", () => {
   test("a question ChatApi already had is done once its own conversation delivers it, not before", async () => {
     // The client sends the same question twice; ChatApi takes it once and answers the duplicate with 200.
-    const tab = await tabOn(openFaultyApp({ retry: quick.retry }))
+    const tab = await tabOn(openFaultyApp({ shard: quick.shard }))
     const questions = await tab.runtime.runPromise(Effect.service(QuestionFaults))
-    const shapes = await tab.runtime.runPromise(Effect.service(ShapeSource.Faults))
+    const shards = await tab.runtime.runPromise(Effect.service(ShardFaults))
     const branch = await tab.branch("feature/one")
     await tab.chat.actions.show(branch)
     // Rendering the branch starts its live query, whose receipt is distinct from admission.
     tab.shown(branch)
     await until(() => expect(tab.history(branch)).toMatchObject({ opened: true }))
-    // Electric's answers are held, so the device doesn't have the question when ChatApi says it has (200).
-    tab.runtime.runSync(shapes.stall())
+    // The shard's answers are held, so the device doesn't have the question when ChatApi says it has (200).
+    tab.runtime.runSync(shards.stall())
     tab.runtime.runSync(questions.failNext("duplicate"))
 
     const { questionId } = asked((await tab.chat.actions.ask("sent twice")))
@@ -366,7 +366,7 @@ describe("delivering to a branch's conversation", () => {
       expect(tab.store.asking.tanstack.has(questionId)).toBe(true)
       expect(tab.shown(branch)).toEqual(["user queued sent twice"])
     })
-    tab.runtime.runSync(shapes.heal)
+    tab.runtime.runSync(shards.heal)
     await until(() => {
       expect(tab.store.asking.tanstack.has(questionId)).toBe(false)
       expect(tab.shown(branch)).toEqual(["user done sent twice", "assistant streaming "])
@@ -396,13 +396,13 @@ describe("delivering to a branch's conversation", () => {
     expect(seen.filter((frame) => frame.opened && frame.messages === 0)).toEqual([])
   }, WITHIN)
 
-  test("a new branch recovers its conversation and composer after three shape 503s without reload", async () => {
-    const tab = await tabOn(openFaultyApp({ ...quick, shapeFailures: 3 }))
+  test("a new branch recovers its conversation and composer after three shard 503s without reload", async () => {
+    const tab = await tabOn(openFaultyApp({ ...quick, shardFailures: 3 }))
     const branch = await tab.branch("feature/recovery")
     await tab.chat.actions.show(branch)
     tab.shown(branch)
     await until(() => expect(tab.history(branch)).toMatchObject({ opened: true }))
-    expect(await tab.runtime.runPromise(Effect.flatMap(ShapeRecovery, (fault) => fault.failures))).toBe(3)
+    expect(await tab.runtime.runPromise(Effect.flatMap(ShardFaults, (fault) => fault.failures))).toBe(3)
     // Later healthy batches must not report another recovery or failure.
     const { id } = await tab.askIn(branch, "after recovery")
     await until(() => expect(tab.store.opened(branch)?.messages.tanstack.has(id)).toBe(true))
@@ -411,15 +411,16 @@ describe("delivering to a branch's conversation", () => {
     expect(exports).toContain("chat load failed")
     expect(exports).toContain("chat load recovered")
     expect(exports).toContain("chat.messages")
-    // One transition per surface, counted as log lines: the failure counter names the record too.
+    // One transition per surface of each conversation whose first reads failed, the home's and the branch's, counted
+    // as log lines: the failure counter names the record too.
     const lines = readTelemetry(tab.api.telemetry)
-    expect(lines.log("chat load failed")).toHaveLength(2)
-    expect(lines.log("chat load recovered")).toHaveLength(2)
+    expect(lines.log("chat load failed")).toHaveLength(4)
+    expect(lines.log("chat load recovered")).toHaveLength(4)
     expect(exports).not.toContain("after recovery")
   }, WITHIN)
 
   test("a network outage records status zero and recovers through the client's policy", async () => {
-    const tab = await tabOn(openFaultyApp(quick, (faults) => faults.down()))
+    const tab = await tabOn(openFaultyApp({ ...quick, shardFaults: (faults) => faults.down() }))
     const branch = await tab.branch("feature/network-recovery")
     await tab.chat.actions.show(branch)
     tab.shown(branch)
@@ -427,7 +428,7 @@ describe("delivering to a branch's conversation", () => {
     await until(async () => expect(await tab.runtime.runPromise(Stream.runHead(messages.sync))).toMatchObject({
       _tag: "Some", value: { _tag: "Failed" },
     }))
-    await tab.runtime.runPromise(Effect.flatMap(ShapeSource.Faults, (faults) => faults.heal))
+    await tab.runtime.runPromise(Effect.flatMap(ShardFaults, (faults) => faults.heal))
     await until(() => expect(tab.history(branch)).toMatchObject({ opened: true }))
     await tab.runtime.dispose()
     const exports = tab.api.telemetry.map((entry) => entry.body).join("\n")
@@ -436,7 +437,7 @@ describe("delivering to a branch's conversation", () => {
     expect(exports).toContain('"key":"status","value":{"intValue":0}')
   }, WITHIN)
 
-  test("a branch with no messages at all opens empty once its shape has synced", async () => {
+  test("a branch with no messages at all opens empty once its shard has been read", async () => {
     const tab = await openChat()
     const branch = await tab.branch("feature/empty")
     await tab.chat.actions.show(branch)
@@ -444,25 +445,34 @@ describe("delivering to a branch's conversation", () => {
     expect(tab.shown(branch)).toEqual([])
   }, WITHIN)
 
-  test("a cached branch opens its conversation while the reloaded device's shapes are offline", async () => {
+  test("a cached branch reloaded with its shard out of reach shows none of its messages, until ChatApi answers a read", async () => {
     const device = nodeDevice()
     const first = await openChat({ host: device })
     const branch = await first.branch("feature/cached")
     await first.chat.actions.show(branch)
-    await first.askIn(branch, "kept on this device")
-    await until(() => expect(device.stored(`chat-messages:${branch}`)).toBe(2))
+    await first.askIn(branch, "never kept on this device")
+    await until(() => expect(first.shown(branch)).toContain("user done never kept on this device"))
     await until(() => expect(device.refusalMarks!.granted(branch)).toBe(true))
-    await first.runtime.dispose()
-    const offline = await tabOn(openFaultyApp({ ...quick, host: device }, (faults) => faults.down()))
+    // Nothing of a conversation's messages is kept on the device: another tab of it, on the same ChatApi, that cannot
+    // read the shard has none of the branch's to show, and has not opened, so it is never shown empty either.
+    const offline = await tabOn(ManagedRuntime.make(
+      faultyTabLayer(first.api, { ...quick, host: device, shardFaults: (faults) => faults.down() })
+        .pipe(Layer.merge(Layer.succeed(TestChatApi, first.api))),
+    ))
     await offline.chat.actions.show(branch)
-    await until(() => expect(offline.history(branch)).toMatchObject({ opened: true }))
-    await until(() => expect(offline.shown(branch)).toContain("user done kept on this device"))
-    expect(offline.history(branch)?.opened).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(offline.history(branch)).toMatchObject({ opened: false })
+    expect(offline.shown(branch)).toEqual([])
+    // Back online, its read is answered: it opens with what the shard holds.
+    await offline.runtime.runPromise(Effect.flatMap(ShardFaults, (faults) => faults.heal))
+    await until(() => expect(offline.shown(branch)).toContain("user done never kept on this device"))
+    await until(() => expect(offline.history(branch)?.opened).toBe(true))
   }, WITHIN)
 
-  test("a branch's conversation the device can't read stays blank, never empty", async () => {
+  test("on a device whose store can't be read, a branch's rows arrive from its shard and nothing of them shows", async () => {
     const device = nodeDevice()
-    // A database that opens, then fails every statement: no conversation can be restored.
+    // A database that opens, then fails every statement: nothing the device keeps can be restored, its refusals
+    // included, so the data gate never opens (src/features/conversations/owners.ts).
     const broken = {
       ...device,
       persistence: {
@@ -472,12 +482,13 @@ describe("delivering to a branch's conversation", () => {
     }
     const tab = await tabOn(openTestApp({ host: broken }))
     const branch = await tab.branch("feature/one")
+    const { id } = await tab.askIn(branch, "read from the shard")
 
     await tab.chat.actions.show(branch)
 
-    const { messages } = tab.store.opened(branch)!
-    await until(() => expect(messages.tanstack.status).toBe("error"))
-    expect(tab.history(branch)).toMatchObject({ opened: false })
+    await until(() => expect(tab.store.opened(branch)?.messages.tanstack.has(id)).toBe(true))
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(tab.shown(branch)).toEqual([])
   }, WITHIN)
 })
 

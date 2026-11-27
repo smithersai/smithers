@@ -256,6 +256,13 @@ export const make = Effect.fnUntraced(function*(storage: ObjectDatabase.Storage,
   // Rebuild the reducer from the durable snapshot and tail before admitting requests.
   yield* reader.pull.pipe(Effect.orDie)
   const stream = Schema.decodeUnknownSync(ShardProtocol.StreamId)(shard)
+  // Whether the conversation's history in Postgres has been replayed into this shard (decision 0170, slice 5b;
+  // worker/chat/MessagesShardBackfill.vibe). One row, in this object's own SQLite beside the journal, so a storage
+  // that loses the journal loses the mark with it. A shard's head says nothing of this: a shard can hold only the
+  // writes the bridge sent since it started, and none of what Postgres held before.
+  storage.sql.exec(
+    "CREATE TABLE IF NOT EXISTS messages_shard_backfill (id INTEGER PRIMARY KEY CHECK (id = 1), checked_at INTEGER NOT NULL)"
+  )
 
   /** Request-scoped refusals that depend only on the admitted writer and command, never on mutable state. */
   const refusal = (writer: Writer, command: ShardProtocol.Command, payload: ChatCommand): RefusalReason | undefined => {
@@ -329,6 +336,16 @@ export const make = Effect.fnUntraced(function*(storage: ObjectDatabase.Storage,
         )
       }),
     journal: { pull: journal.pull, snapshot: journal.snapshot, head: journal.head },
+    /**
+     * The backfill's mark: `checked` is whether every command of the conversation's history reached an answer that
+     * stands, and `check` records that, once. Checking again keeps the first time.
+     */
+    backfill: {
+      checked: Effect.sync(() => storage.sql.exec("SELECT id FROM messages_shard_backfill WHERE id = 1").toArray().length > 0),
+      check: Effect.sync(() => {
+        storage.sql.exec("INSERT OR IGNORE INTO messages_shard_backfill (id, checked_at) VALUES (1, ?)", Date.now())
+      })
+    },
     state: Effect.sync(() => ({ chat, hash: canonicalHash(chat) })),
     compact: Effect.suspend(() => journal.compact(headSeq, { chat }).pipe(Effect.orDie))
   }

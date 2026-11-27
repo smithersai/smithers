@@ -1,4 +1,3 @@
-import { SyncPolicy } from "@smthrs/effect-electric"
 import { Model, type ModelEvent } from "@smthrs/model"
 import { Deferred, Effect, Stream } from "effect"
 import { SqlClient } from "effect/sql"
@@ -30,7 +29,7 @@ test("the phase follower persists one open goal across the rolling input window"
     const api = await root.runPromise(Effect.service(TestChatApi))
     tab = openTab(api, {
       host: nodeDevice({ agent: api, summaryModel }),
-      retry: SyncPolicy.backoff({ initial: "20 millis", max: "50 millis" }),
+      shard: { follow: "20 millis", within: "2 seconds" },
     })
     const chat = await tab.runPromise(Effect.service(Chat))
     const store = await tab.runPromise(Effect.service(ChatStore))
@@ -52,6 +51,7 @@ test("the phase follower persists one open goal across the rolling input window"
     expect(phaseCalls).toBe(1)
     // Seed settled exchanges on real Postgres in one transaction. Electric delivers the backlog as it would another
     // device's recorded conversation; the real follower, durable engine, model step and HTTP ledger do all the rest.
+    const seeded: Array<string> = []
     await root.runPromise(api.github.run(Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient
       yield* sql.withTransaction(Effect.gen(function* () {
@@ -62,9 +62,12 @@ test("the phase follower persists one open goal across the rolling input window"
             VALUES (${questionId}, 'user', ${`Check checkout validation case ${n}`}, 'done', ${conversation!.conversationId})`
           yield* sql`INSERT INTO messages (id, role, text, status, question_id, conversation_id)
             VALUES (${answerId}, 'assistant', ${answer}, 'done', ${questionId}, ${conversation!.conversationId})`
+          seeded.push(questionId)
         }
       }))
     })))
+    // Written straight to Postgres, so bridged as ChatApi bridges what it records.
+    for (const questionId of seeded) await root.runPromise(api.bridgeExchange(questionId))
     await vi.waitFor(() => {
       const marks = store.messages.tanstack.toArray.flatMap(row => row.phase ? [JSON.parse(row.phase)] : [])
       expect(marks).toHaveLength(1)

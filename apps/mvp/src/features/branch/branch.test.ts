@@ -25,7 +25,6 @@ import {
 } from "../../test/chatApi"
 import { capStorage, fillStorage } from "../../test/writeFailure"
 import { holdRestore } from "../../test/restoreFailure"
-import { CONVERSATION_ID_HEADER, SHAPE_ROUTE } from "../chat/contract"
 import { accessPath } from "../conversations/contract"
 import { SESSION_ROUTE } from "../auth/contract"
 import * as Marks from "../conversations/marks"
@@ -108,6 +107,43 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
 }
 
 const none = { owner: "", repo: "", name: "", status: "none", branchId: null, conversationId: null, mode: null, access: null }
+
+/** A tab that reads every conversation's shard every 20 milliseconds, so a read begins soon after the one before. */
+const following: TabOptions = { shard: { follow: "20 millis", within: "5 seconds" } }
+
+/**
+ * The reads of conversations' shards a tab sends, held at the network by conversation: `hold` makes each later Pull
+ * of it wait there, once sent, until `pass` lets one through; `free` lets all through again. `sent` counts each Pull
+ * sent, held or not, and `waiting` says one is held now. A Pull is sent once its sync has taken its fence (owners.ts
+ * `fence`), so a refusal recorded while one waits is later than its beginning.
+ */
+const readGate = () => {
+  const held = new Map<string, Array<() => void>>()
+  const closed = new Set<string>()
+  const sent = new Map<string, number>()
+  const PULL = /^\/api\/conversations\/([0-9a-f-]{36})\/messages\/pull$/
+  const transport = (fetch: typeof globalThis.fetch): typeof globalThis.fetch => async (input, init) => {
+    const request = new Request(input, init)
+    const conversation = PULL.exec(new URL(request.url).pathname)?.[1]
+    if (conversation === undefined) return fetch(request)
+    sent.set(conversation, (sent.get(conversation) ?? 0) + 1)
+    if (closed.has(conversation)) {
+      await new Promise<void>((resolve) => held.set(conversation, [...(held.get(conversation) ?? []), resolve]))
+    }
+    return fetch(request)
+  }
+  return {
+    transport,
+    sent: (conversation: string) => sent.get(conversation) ?? 0,
+    waiting: (conversation: string) => (held.get(conversation)?.length ?? 0) > 0,
+    hold: (conversation: string) => void closed.add(conversation),
+    pass: (conversation: string) => held.get(conversation)?.shift()?.(),
+    free: (conversation: string) => {
+      closed.delete(conversation)
+      for (const release of held.get(conversation)?.splice(0) ?? []) release()
+    },
+  }
+}
 
 describe("opening a branch", () => {
   test("tracking at once, then ready with its ids and mode; the tab shows and asks in its conversation", async () => {
@@ -353,54 +389,35 @@ describe("opening a branch", () => {
     expect(tab.opened("ready")).toBe(1)
   }, WITHIN)
 
-  test("a refusal goes only with ChatApi's word that the person may read: the home shape's answer to a read begun after it, and branch/track's for a branch, whose shape says nothing", async () => {
-    const tab = await open()
-    const sql = <A, E>(use: (sql: SqlClient.SqlClient) => Effect.Effect<A, E>) =>
-      tab.runtime.runPromise(tab.api.branches.run(Effect.orDie(Effect.flatMap(SqlClient.SqlClient, use))))
+  test("a refusal goes only with ChatApi's word that the person may read: a read of the home's shard, or a branch's, begun after it", async () => {
+    const gate = readGate()
+    const tab = await open({ ...following, transport: gate.transport })
     const branchId = (await tab.actions.open("octo", "hello", "feature/one"))!
     const conversationId = await conversationOf(branchId)
     const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
     owners.shown.tanstack.startSyncImmediate()
     const shown = (id: string) => owners.shown.tanstack.has(id)
-    // The tab reads both conversations' messages from Electric's shapes, the default reader.
-    const chat = await tab.runtime.runPromise(Effect.service(ChatStore))
-    const branchMessages = chat.opened(conversationId)!.messages
-    await tab.runtime.runPromise(Effect.ignore(branchMessages.preload))
     await until(() => expect(owners.home()).toEqual(expect.any(String)))
     const home = owners.home()!
     await until(() => expect([shown(home), shown(conversationId)]).toEqual([true, true]))
-    /** A message in `conversation`, once its shape has answered with it. */
-    const say = async (conversation: string, messages: { readonly tanstack: { readonly has: (id: string) => boolean } }, text: string) => {
-      const id = crypto.randomUUID()
-      await sql((sql) => sql`INSERT INTO messages (id, role, text, status, conversation_id) VALUES (${id}, 'user', ${text}, 'done', ${conversation})`)
-      await until(() => expect(messages.tanstack.has(id)).toBe(true))
-    }
-    // Each shape is up to date, and its next request waits at ChatApi. Both conversations are refused meanwhile.
-    await say(home, chat.messages, "before")
-    await say(conversationId, branchMessages, "before")
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    // Each conversation's next read is sent and waits at the network. Both are refused meanwhile.
+    for (const id of [home, conversationId]) gate.hold(id)
+    await until(() => expect([gate.waiting(home), gate.waiting(conversationId)]).toEqual([true, true]))
     owners.refuse(home)
     owners.refuse(conversationId)
     expect([shown(home), shown(conversationId)]).toEqual([false, false])
-    // The home shape's waiting request is answered: it began before the refusal, which may be later than its
-    // answer, and stands.
-    await say(home, chat.messages, "answered by the read that began before")
+    // The waiting reads are answered whole: each began before its refusal, which may be later than its answer, and
+    // stands. The read after each is sent once its answer is in, and waits.
+    for (const id of [home, conversationId]) gate.pass(id)
+    await until(() => expect([gate.waiting(home), gate.waiting(conversationId)]).toEqual([true, true]))
     await new Promise((resolve) => setTimeout(resolve, 300))
-    expect(shown(home)).toBe(false)
-    // The request after it began after the refusal. Answered whole, it is ChatApi's word that the person may read
-    // their home conversation: it shows again.
-    await say(home, chat.messages, "answered by the read that began after")
-    await until(() => expect(shown(home)).toBe(true))
-    // The branch's shape answers as often, and its refusal stands: ChatApi answers that shape for someone who may
-    // not watch the branch too.
-    await say(conversationId, branchMessages, "first")
-    await say(conversationId, branchMessages, "second")
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    expect(shown(conversationId)).toBe(false)
-    // They open the branch again, and ChatApi answers that they may: it shows.
-    await tab.actions.leave()
-    expect(await tab.actions.open("octo", "hello", "feature/one")).toBe(branchId)
-    expect(shown(conversationId)).toBe(true)
+    expect([owners.refused(home), owners.refused(conversationId)]).toEqual([true, true])
+    expect([shown(home), shown(conversationId)]).toEqual([false, false])
+    // The reads after them began after the refusals. Answered whole, each is ChatApi's word that the person may read
+    // the conversation: both show again.
+    for (const id of [home, conversationId]) gate.free(id)
+    await until(() => expect([shown(home), shown(conversationId)]).toEqual([true, true]))
+    expect([owners.refused(home), owners.refused(conversationId)]).toEqual([false, false])
   }, WITHIN)
 
   test("a device that only lists a branch's conversation, with no route kept for it, still records ChatApi's refusal of the branch when the person leaves as it opens: its run and its wait go", async () => {
@@ -444,37 +461,36 @@ describe("opening a branch", () => {
     expect(tab.current()).toMatchObject(none)
   }, WITHIN)
 
-  test("a home shape with no rows is no word that a Guest may read the home conversation: its refusal stands until ChatApi's answer says they may", async () => {
+  test("a Guest ChatApi refuses the home conversation's shard is refused it at once, and asked again stays refused until ChatApi's answer says they may", async () => {
     const tab = await open({}, { actor: { subject: { kind: "person", id: "person-guest" }, role: "guest" } })
     const sql = <A, E>(use: (sql: SqlClient.SqlClient) => Effect.Effect<A, E>) =>
       tab.runtime.runPromise(tab.api.branches.run(Effect.orDie(Effect.flatMap(SqlClient.SqlClient, use))))
     const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
     owners.shown.tanstack.startSyncImmediate()
     const chat = await tab.runtime.runPromise(Effect.service(ChatStore))
-    // Every answer ChatApi gives the home shape from here on.
-    let answers = 0
+    // Every refusal ChatApi gives a read of the home's shard from here on.
+    let refusals = 0
     tab.runtime.runFork(chat.messages.sync.pipe(Stream.runForEach((event) => Effect.sync(() => {
-      if (event._tag === "Succeeded") answers++
+      if (event._tag === "Stopped") refusals++
     }))))
-    // The session names the deployment's conversation home for a Guest too, who has no share of its branch.
+    // The session names the deployment's conversation home for a Guest too, who has no share of its branch. ChatApi
+    // refuses them its shard: the refusal is recorded in that turn, and nothing of it shows.
     await until(() => expect(owners.home()).toEqual(expect.any(String)))
     const home = owners.home()!
-    await tab.runtime.runPromise(Effect.ignore(chat.messages.preload))
-    // ChatApi answered their home shape with no rows, and that opened nothing.
+    await until(() => expect(owners.refused(home)).toBe(true))
     expect(owners.shown.tanstack.has(home)).toBe(false)
-    // They open the home branch's page: forbidden, recorded as a refusal of the conversation the device kept for it.
+    expect(await tab.runtime.runPromise(chat.messages.toArray)).toEqual([])
+    // They open the home branch's page: forbidden too.
     await tab.runtime.runPromise(tab.cache.restored)
     await tab.runtime.runPromise(tab.cache.insert({ id: "octo/hello/main", conversationId: home }))
     expect(await tab.actions.open("octo", "hello", "main")).toBeUndefined()
     expect(tab.current()).toMatchObject({ status: "forbidden" })
-    expect(owners.refused(home)).toBe(true)
     await tab.actions.leave()
-    // The home shape is asked again, twice, each request begun after the refusal, and ChatApi answers each whole
-    // with no rows: the refusal stands, and nothing of the conversation shows.
+    // The shard is asked again, twice, and refused each time: the refusal stands, and nothing of the conversation shows.
     for (const _ of [1, 2]) {
-      const before = answers
+      const before = refusals
       await tab.runtime.runPromise(chat.messages.reconnect)
-      await until(() => expect(answers).toBeGreaterThan(before), 60_000)
+      await until(() => expect(refusals).toBeGreaterThan(before), 60_000)
     }
     expect(owners.refused(home)).toBe(true)
     expect(owners.shown.tanstack.has(home)).toBe(false)
@@ -518,8 +534,9 @@ describe("opening a branch", () => {
     expect(shown()).toBe(false)
     await tab.runtime.runPromise(retry("button"))
     expect(route.reopened).toBe(1)
-    await until(() => expect(shown()).toBe(true))
-    expect([tab.opened("kept"), tab.dispatched(), owners.refused(conversationId)]).toEqual([1, 3, false])
+    // Either answer is ChatApi's word that they may read it: the branch tracked afresh, or a read of its shard.
+    await until(() => expect([shown(), tab.dispatched()]).toEqual([true, 3]))
+    expect([tab.opened("kept"), owners.refused(conversationId)]).toEqual([1, false])
     // Off the branch, Retry opens no route.
     await tab.actions.leave()
     await tab.runtime.runPromise(retry("button"))
@@ -700,75 +717,64 @@ describe("opening a branch", () => {
     expect([status.shownRuns.tanstack.toArray, status.waits.tanstack.toArray, owners.shown.tanstack.has(conversationId)]).toEqual([[], [], false])
   }, WITHIN)
 
-  test("the home shape's answer covers only the refusals recorded before its own request went: one recorded as the request goes stands, whenever the collection tells of that request", async () => {
-    // What the test does as the home shape's next request reaches the network: after the request began, and before
-    // anything the collection reports of it is heard.
+  test("a read of the home's shard covers only the refusals recorded before it went: one recorded as the request goes stands, whenever the rows tell of that read", async () => {
+    // What the test does as the home's next Pull reaches the network: after its sync took its fence, and before
+    // anything the rows report of it is heard.
     const going: { then?: () => void } = {}
-    const tab = await open({ transport: (fetch) => (input, init) => {
+    const gate = readGate()
+    const tab = await open({ ...following, transport: (fetch) => gate.transport((input, init) => {
       const request = new Request(input, init)
-      const url = new URL(request.url)
-      if (url.pathname === SHAPE_ROUTE && !url.searchParams.has("conversation")) {
+      if (/\/messages\/pull$/.test(new URL(request.url).pathname)) {
         const then = going.then
         delete going.then
         then?.()
       }
       return fetch(request)
-    } })
-    const sql = <A, E>(use: (sql: SqlClient.SqlClient) => Effect.Effect<A, E>) =>
-      tab.runtime.runPromise(tab.api.branches.run(Effect.orDie(Effect.flatMap(SqlClient.SqlClient, use))))
+    }) })
     const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
     owners.shown.tanstack.startSyncImmediate()
-    const chat = await tab.runtime.runPromise(Effect.service(ChatStore))
     await until(() => expect(owners.home()).toEqual(expect.any(String)))
     const home = owners.home()!
     await until(() => expect(owners.shown.tanstack.has(home)).toBe(true))
-    const say = async (text: string) => {
-      const id = crypto.randomUUID()
-      await sql((sql) => sql`INSERT INTO messages (id, role, text, status, conversation_id) VALUES (${id}, 'user', ${text}, 'done', ${home})`)
-      await until(() => expect(chat.messages.tanstack.has(id)).toBe(true))
-    }
-    // The shape is up to date, and its next request waits at ChatApi.
-    await say("before")
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    // The request after that one is refused the conversation as it goes: the refusal is later than its beginning.
+    // The next read is refused the conversation as it goes, and the read after it waits: the refusal is later than
+    // the first one's beginning.
     let refusedAt = 0
     going.then = () => {
       owners.refuse(home)
       refusedAt = owners.fence().seq
+      gate.hold(home)
     }
-    await say("answers the waiting request, and the next one goes")
     await until(() => expect(refusedAt).toBeGreaterThan(0))
     expect(owners.shown.tanstack.has(home)).toBe(false)
-    // ChatApi answers that request whole, saying the person may read: it began before the refusal, which stands.
-    await say("answered by the request that went as the refusal was recorded")
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    // ChatApi answers that read whole, saying the person may read: it began before the refusal, which stands.
+    await until(() => expect(gate.waiting(home)).toBe(true))
+    await new Promise((resolve) => setTimeout(resolve, 300))
     expect([owners.refused(home), owners.shown.tanstack.has(home)]).toEqual([true, false])
-    // The request after it began after the refusal: its answer is ChatApi's word, and the conversation shows.
-    await say("answered by the request that began after")
+    // The read after it began after the refusal: its answer is ChatApi's word, and the conversation shows.
+    gate.free(home)
     await until(() => expect(owners.shown.tanstack.has(home)).toBe(true))
     expect(owners.refused(home)).toBe(false)
   }, WITHIN)
 
-  test("a successful home response only clears the home named at dispatch and delivery", async () => {
+  test("a home read answered whole clears only the home it was sent for, and only while the session still names it home", async () => {
     const arrived = Promise.withResolvers<string>()
     const release = Promise.withResolvers<void>()
-    const continued = Promise.withResolvers<void>()
     let hold = false
-    let delivered = false
     const device = nodeDevice()
     let refreshedHome: string | undefined
-    const tab = await open({ host: device, transport: (fetch) => async (input, init) => {
+    const pulls = new Map<string, number>()
+    const tab = await open({ ...following, host: device, transport: (fetch) => async (input, init) => {
       const request = new Request(input, init)
       const path = new URL(request.url).pathname
-      const homeShape = path === SHAPE_ROUTE
-      if (homeShape && delivered) continued.resolve()
-      const captured = hold && homeShape
+      const conversation = /^\/api\/conversations\/([0-9a-f-]{36})\/messages\/pull$/.exec(path)?.[1]
+      if (conversation !== undefined) pulls.set(conversation, (pulls.get(conversation) ?? 0) + 1)
+      const captured = hold && conversation !== undefined
       if (captured) hold = false
       const response = await fetch(request)
+      // The home's answer, whole, held after it arrived and before the rows read it.
       if (captured) {
-        arrived.resolve(response.headers.get(CONVERSATION_ID_HEADER) ?? "")
+        arrived.resolve(conversation)
         await release.promise
-        delivered = true
       }
       if (path === SESSION_ROUTE && refreshedHome !== undefined) {
         return Response.json({ ...await response.json(), homeConversationId: refreshedHome }, { status: response.status })
@@ -782,24 +788,22 @@ describe("opening a branch", () => {
     const home = owners.home()!
     const next = crypto.randomUUID()
     owners.refuse(next)
-    const say = async () => {
-      const id = crypto.randomUUID()
-      await tab.runtime.runPromise(tab.api.branches.run(Effect.orDie(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-        sql`INSERT INTO messages (id, role, text, status, conversation_id) VALUES (${id}, 'user', 'home', 'done', ${home})`))))
-      return id
-    }
     try {
       hold = true
-      const message = await say()
       expect(await arrived.promise).toBe(home)
+      // The session names another home while the old home's answer is held: the rows move to it.
       refreshedHome = next
       await tab.runtime.runPromise(loadSession)
       expect(owners.home()).toBe(next)
+      owners.refuse(home)
       release.resolve()
-      await until(() => expect(chat.messages.tanstack.has(message)).toBe(true))
-      await continued.promise
+      // The new home is read, and ChatApi has no such conversation for them: refused, it stays so. The old home's
+      // answer, read by nothing once the rows moved, opens neither the old home nor the new one.
+      await until(() => expect(pulls.get(next) ?? 0).toBeGreaterThan(0))
+      await new Promise((resolve) => setTimeout(resolve, 300))
       await device.webStorage.lock(Marks.lockName(DEVICE_PRINCIPAL), async () => {})
-      expect(owners.refused(next)).toBe(true)
+      expect([owners.refused(next), owners.refused(home)]).toEqual([true, true])
+      expect((await tab.runtime.runPromise(chat.messages.toArray)).filter((row) => row.conversationId === home)).toEqual([])
     } finally {
       release.resolve()
     }
@@ -991,7 +995,13 @@ describe("opening a branch", () => {
     expect([shows, onPhone.seen, onPhone.now()]).toEqual([[], [], [[], []]])
     expect([...phone.webStorage.entries.keys()].filter((key) => key.includes(":open:") && key.includes(conversationId))).toEqual([])
     expect(replies).toEqual([403])
-    expect(phone.refusalMarks!.read().map((mark) => mark.conversationId)).toEqual(mode === "retained" ? [conversationId] : [])
+    // The Guest has no share of the home's branch either: ChatApi refuses them its shard too, and that refusal is kept
+    // beside this one.
+    await until(() => expect(owners.home()).toEqual(expect.any(String)))
+    const home = owners.home()!
+    await until(() => expect(owners.refused(home)).toBe(true))
+    await until(() => expect(phone.refusalMarks!.read().map((mark) => mark.conversationId).sort())
+      .toEqual(mode === "retained" ? [conversationId, home].sort() : []))
     if (mode === "memory-only") {
       const allowedAccess: number[] = []
       await sql((sql) => sql`INSERT INTO branch_shares (branch_id, grantee, login, access) VALUES (${branchId}, 'person-guest', 'guest', 'view')`)

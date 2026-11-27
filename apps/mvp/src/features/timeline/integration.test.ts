@@ -1,4 +1,3 @@
-import { SyncPolicy } from "@smthrs/effect-electric"
 import { Model, type ModelEvent, type ModelRequest } from "@smthrs/model"
 import { Effect, Stream } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
@@ -36,7 +35,7 @@ test("an idle page and a page receiving N messages cause at most one summary cal
   })
   /** A tab on its own device, as a second browser or a fresh test context is. */
   const tab = async () => {
-    const runtime = openTab(api, { host: nodeDevice({ agent: api, summaryModel }), retry: SyncPolicy.backoff({ initial: "20 millis", max: "50 millis" }) })
+    const runtime = openTab(api, { host: nodeDevice({ agent: api, summaryModel }), shard: { follow: "20 millis", within: "2 seconds" } })
     opened.push(runtime)
     const chat = await runtime.runPromise(Effect.service(Chat))
     const store = await runtime.runPromise(Effect.service(ChatStore))

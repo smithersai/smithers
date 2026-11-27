@@ -89,7 +89,6 @@ export const ENGINE_SERVICE = "smithers-mvp-engine"
 export const APP_TELEMETRY = {
   records: [
     "chat ready",
-    "chat couldn't restore",
     "persistent storage requested",
     "page error",
     "unhandled rejection",

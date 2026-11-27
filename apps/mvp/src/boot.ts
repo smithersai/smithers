@@ -133,13 +133,12 @@ import type { AppReloadReason } from "./reloadReason"
 import { apiRoute } from "./apiRoutes"
 import { recordUnhandled } from "./boundary.vibe"
 import { markStage, recordStages, type Timeline } from "./bootStages.vibe"
-import { codeOf } from "./errorCode"
 import type { HostRecord, HostRecords } from "./hostRecords"
 import { BROWSER_TELEMETRY, EXPORTED_SPANS, FAILURE_CODES, TELEMETRY_LIMITS, WEB_SERVICE } from "./telemetry"
 
-/** From the page's start to the conversation shown from the device (`performance.timeOrigin` to restored). */
+/** From the page's start to the home conversation's rows whole from its shard (`performance.timeOrigin` to `whole`). */
 export const bootTime = Metric.histogram("smithers_web_boot_ms", {
-  description: "Milliseconds from page start to the conversation restored from the device",
+  description: "Milliseconds from page start to the home conversation read whole from its shard",
   boundaries: Metric.exponentialBoundaries({ start: 50, factor: 2, count: 10 }),
 })
 
@@ -744,13 +743,13 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     // instead of one per collection; each comes as soon as the lock answers, so this never waits on another tab.
     yield* Persistence.reportRoles
     yield* requestPersistentStorage(options.storage).pipe(Effect.forkScoped)
-    yield* store.messages.restored.pipe(
+    // Nothing of the conversation is kept on the device: it is ready once its rows hold what its shard had.
+    yield* store.messages.whole.pipe(
       Effect.andThen(Clock.currentTimeMillis),
       Effect.flatMap((now) => Metric.update(bootTime, now - options.startedAt)),
       Effect.andThen(Effect.logInfo("chat ready")),
-      Effect.catchTag("LoadFailed", (failure) =>
-        Effect.logError("chat couldn't restore").pipe(Effect.annotateLogs({ errorCode: codeOf(failure.cause) }))
-      ),
+      // expected: the rows stop before they are whole only as the store's scope closes, when the page goes
+      Effect.ignore,
     )
     return yield* Effect.never
   }).pipe(Effect.scoped, Effect.annotateLogs({ feature: "app" }))

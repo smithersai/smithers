@@ -1,6 +1,6 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Fiber, Layer, Schema, type Scope, Semaphore, Stream } from "effect"
+import { Context, Effect, Fiber, Layer, Queue, Schema, type Scope, Semaphore, Stream } from "effect"
 import { ConversationRefusalsStore } from "../../device/registry"
 import { signedInChanges, signedInShapeSource } from "../auth/source.vibe"
 import { AuthStore } from "../auth/store.vibe"
@@ -136,6 +136,11 @@ export class ConversationOwners extends Context.Service<
     readonly refused: (conversationId: string) => boolean
     /** The home conversation, as the session answer names it now (`homeNamed`). */
     readonly home: () => string | undefined
+    /**
+     * The home conversation (`home`) now, then each time the session answer names another, none included: told after
+     * `home` answers the new one.
+     */
+    readonly homes: Stream.Stream<string | undefined>
   }
 >()("@smthrs/mvp/conversations/ConversationOwners") {
   /** `marks`: the refusals' second record (marks.ts); a host with no Web Storage keeps none. */
@@ -696,6 +701,8 @@ export class ConversationOwners extends Context.Service<
           })),
           Effect.forkScoped,
         )
+        // Whoever follows the home conversation (`homes`), told of each change once it is decided.
+        const homeWatchers = new Set<(id: string | undefined) => void>()
         const decideHome = () => {
           const next = homeNamed(auth)
           if (next === homeId) return
@@ -703,7 +710,18 @@ export class ConversationOwners extends Context.Service<
           homeId = next
           if (before !== undefined) keep(before)
           if (next !== undefined) keep(next)
+          for (const told of [...homeWatchers]) told(next)
         }
+        const homes = Stream.callback<string | undefined>((queue) =>
+          Effect.acquireRelease(
+            Effect.sync(() => {
+              const told = (id: string | undefined) => void Queue.offerUnsafe(queue, id)
+              told(homeId)
+              homeWatchers.add(told)
+              return told
+            }),
+            (told) => Effect.sync(() => homeWatchers.delete(told)),
+          ))
         yield* follow(() => auth.session.tanstack.subscribeChanges(decideHome, { includeInitialState: true }))
         yield* follow(() => auth.confirmed.tanstack.subscribeChanges(decideHome, { includeInitialState: true }))
         // Another tab's refusal the device's store has not taken reaches this tab through Web Storage.
@@ -802,7 +820,7 @@ export class ConversationOwners extends Context.Service<
             // Each row keeps the key its own collection gives it.
             { getKey: (row) => rows.tanstack.getKeyFromItem(row as unknown as A) },
           ).pipe(Effect.orDie, Effect.map((query) => query as unknown as Gated<A>))
-        return ConversationOwners.of({ mine, shown, ofShown, refuse, refuseBranch, fence: stand, clear, refused: isRefused, routeDenied: (repository, branch) => deniedRoute(`${repository}\0${branch}`), home: () => homeId })
+        return ConversationOwners.of({ mine, shown, ofShown, refuse, refuseBranch, fence: stand, clear, refused: isRefused, routeDenied: (repository, branch) => deniedRoute(`${repository}\0${branch}`), home: () => homeId, homes })
       }),
     ).pipe(Layer.provide(ConversationAccess.layer({ origin: config.origin })))
 }

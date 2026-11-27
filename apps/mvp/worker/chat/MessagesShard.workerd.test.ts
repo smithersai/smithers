@@ -247,3 +247,16 @@ test("an answer at every bound the reducer holds ends in a Durable Object, finis
     expect(ended(abandoned.answerId)).toMatchObject({ status: "failed", failure: "abandoned", ...run, updatedAt: LATER })
     for (const id of [finished.answerId, abandoned.answerId]) expect(ended(id).body.length).toBe(MAX_BODY_LENGTH)
   }))), 60_000)
+
+test("the backfill's mark is kept in each Durable Object's own SQLite in workerd, beside its journal", () =>
+  Effect.runPromise(Effect.gen(function*() {
+    const marked = Messages.shardOf(crypto.randomUUID())
+    const other = Messages.shardOf(crypto.randomUUID())
+    expect(yield* Routes.backfilled(forward, marked)).toBe(false)
+    yield* Routes.markBackfilled(forward, marked)
+    // Marking again keeps the one row.
+    yield* Routes.markBackfilled(forward, marked)
+    expect(yield* Routes.backfilled(forward, marked)).toBe(true)
+    // Another conversation's object holds its own mark.
+    expect(yield* Routes.backfilled(forward, other)).toBe(false)
+  })))

@@ -16,7 +16,6 @@ import { type Outcome, SandboxCall, settle as settleCall } from "../../../worker
 import { shaOf } from "../../../worker/test/branch.ts"
 import {
   asPerson,
-  type ChatApiOptions,
   CHATAPI_ORIGIN,
   member,
   nodeDevice,
@@ -120,11 +119,11 @@ const tab = async (
 }
 
 /** A fresh ChatApi where Ben may sign in too, with GitHub's `octo/hello`; the rooms; the member's tab and Ben's. */
-const open = async (options: Pick<TabOptions, "replace" | "shard"> = {}, chatApi: Pick<ChatApiOptions, "messagesShard"> = {}) => {
+const open = async (options: Pick<TabOptions, "replace" | "shard"> = {}) => {
   const rooms = await roomHost()
   closers.push(rooms.close)
   const as = (id: string, name: string, access: "read" | "write" = "write") => dialing(rooms.origin, { id, name, access })
-  const runtime = openTestApp({ ...options, webSocket: as(member.subject.id, "member") }, { people: { ben }, ...chatApi })
+  const runtime = openTestApp({ ...options, webSocket: as(member.subject.id, "member") }, { people: { ben } })
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   api.branches.github.publish("octo", "hello", {
     defaultBranch: "main",
@@ -461,7 +460,7 @@ describe("a prompt whose conversation ChatApi refuses", () => {
     closers.push(rooms.close)
     const as = (id: string, name: string, access: "read" | "write" = "write") => dialing(rooms.origin, { id, name, access })
     const shard: TabOptions = { shard: { follow: "20 millis", within: "2 seconds" } }
-    const runtime = openTestApp({ ...shard, webSocket: as(member.subject.id, "member") }, { people: { ben }, messagesShard: true })
+    const runtime = openTestApp({ ...shard, webSocket: as(member.subject.id, "member") }, { people: { ben } })
     const api = await runtime.runPromise(Effect.service(TestChatApi))
     api.branches.github.publish("octo", "hello", { defaultBranch: "main", branches: { main: shaOf("main"), "feature/one": shaOf("feature/one") } })
     const owner = await tab(runtime, member.subject.id)
@@ -710,7 +709,7 @@ describe("a shared file", () => {
   }, WITHIN)
 
   test("a read answered 401 hides an open file with its conversation in that turn, for a viewer and for an editor, though the session read after it never answers; it returns with a read answered whole", async () => {
-    const opened = await open({ shard: { follow: "20 millis", within: "2 seconds" } }, { messagesShard: true })
+    const opened = await open({ shard: { follow: "20 millis", within: "2 seconds" } })
     const { api, owner, as } = opened
     // The owner's branch, shared with Ben to view, and a file of its working copy the owner opened. Ben only views;
     // the owner's other device edits. Each of the two is on a page whose reads ChatApi can come to refuse.

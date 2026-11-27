@@ -1,5 +1,5 @@
 import { Persistence } from "@smthrs/effect-tanstack-db"
-import { Deferred, Effect, Fiber, Layer, References } from "effect"
+import { Deferred, Effect, Fiber, Layer, References, Stream } from "effect"
 import ts from "typescript"
 import { expect, test } from "vitest"
 import { ConversationOwners } from "../conversations/owners"
@@ -17,6 +17,7 @@ const everyConversation = Layer.succeed(ConversationOwners, ConversationOwners.o
   routeDenied: () => false,
   refuseBranch: () => Promise.resolve(),
   home: () => undefined,
+  homes: Stream.make(undefined),
   fence: () => ({ seq: 0, principal: undefined, routes: new Map(), epoch: null, memory: 0, standing: { refused: new Map(), open: new Set() } }),
   clear: () => Effect.succeed(true),
   refused: () => false,

@@ -58,6 +58,14 @@ const decodeAdmission = Schema.decodeUnknownOption(Schema.fromJsonString(Admissi
 const decodeSubmitResponse = Schema.decodeUnknownEffect(Schema.fromJsonString(ShardProtocol.SubmitResponse))
 const decodePullResponse = Schema.decodeUnknownEffect(Schema.fromJsonString(ShardProtocol.PullResponse))
 const decodeSnapshotResponse = Schema.decodeUnknownEffect(Schema.fromJsonString(ShardProtocol.SnapshotResponse))
+const decodeBackfill = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ checked: Schema.Boolean })))
+
+/**
+ * The author the Worker's backfill asks the object under (`backfilled`, `markBackfilled`). No route a page or a run
+ * reaches admits anyone as it: `dispatch` admits a reader as `reader` and a writer under an owner name `ownerOf` gives,
+ * which starts with a person's or a run's kind, and forwards no path but submit, pull and snapshot.
+ */
+const BACKFILLER = "worker:backfill"
 
 /** The most entries one Pull answers, whatever `limit` asks: its `through` and `done` then name the page it sent. */
 export const MAX_PULL_LIMIT = 256
@@ -177,6 +185,15 @@ export const handle = (messages: MessagesShard.LiveMessages) =>
       const shard = yield* Schema.decodeUnknownEffect(ShardProtocol.ShardId)(url.searchParams.get("shard"))
       if (shard !== messages.shard) return status(403)
       return respond(yield* messages.journal.snapshot(shard))
+    }
+    // The backfill's mark (worker/chat/MessagesShardBackfill.vibe): read by the Worker's backfill, and set by it, only.
+    if (url.pathname === "/api/messages/backfill") {
+      if (author !== BACKFILLER) return status(403)
+      if (request.method === "GET") return respond({ checked: yield* messages.backfill.checked })
+      if (request.method !== "POST") return status(404)
+      if (!write) return status(403)
+      yield* messages.backfill.check
+      return respond({ checked: true })
     }
     return status(404)
   }).pipe(Effect.catch((error) => {
@@ -389,6 +406,40 @@ export class SubmitFailed extends Data.TaggedError("MessagesSubmitFailed")<{
   readonly refusal?: string
 }> {}
 
+/** Whatever went wrong reaching the object, kept as `unreachable` and nothing more: the failure can quote the request. */
+const unreachable = <A, E, R>(attempt: Effect.Effect<A, E, R>): Effect.Effect<A, SubmitFailed, R> =>
+  attempt.pipe(Effect.catchCause((cause) => {
+    const failure = Cause.squash(cause)
+    return Effect.fail(failure instanceof SubmitFailed ? failure : new SubmitFailed({ reason: "unreachable" }))
+  }))
+
+/**
+ * Asks the object of `shard` for its backfill's mark (`GET`), or sets it (`POST`), from inside the Worker: what the
+ * Worker's backfill uses (worker/chat/MessagesShardBackfill.vibe). The answer is whether the mark is set. Any status
+ * but 200 is `refused`, an answer that is not the mark `invalid_response`, and anything else `unreachable`.
+ */
+const backfillMark = <E, R>(forward: Forward<E, R>, shard: ShardProtocol.ShardId, method: "GET" | "POST") =>
+  unreachable(Effect.gen(function*() {
+    const outgoing = HttpServerRequest.fromWeb(new Request("https://messages.internal/api/messages/backfill", {
+      method,
+      headers: { [admissionHeader]: JSON.stringify({ author: BACKFILLER, write: method === "POST" }) },
+    }))
+    const response = yield* forward(shard, outgoing)
+    if (response.status !== 200) return yield* new SubmitFailed({ reason: "refused", status: response.status })
+    const text = yield* Effect.promise(() => HttpServerResponse.toWeb(response).text())
+    const answer = yield* decodeBackfill(text).pipe(
+      Effect.mapError(() => new SubmitFailed({ reason: "invalid_response", status: 200 })),
+    )
+    return answer.checked
+  }))
+
+/** Whether the object of `shard` holds its conversation's history from Postgres (`backfillMark`). */
+export const backfilled = <E, R>(forward: Forward<E, R>, shard: ShardProtocol.ShardId) => backfillMark(forward, shard, "GET")
+
+/** Marks the object of `shard` as holding its conversation's history from Postgres (`backfillMark`). Idempotent. */
+export const markBackfilled = <E, R>(forward: Forward<E, R>, shard: ShardProtocol.ShardId) =>
+  Effect.asVoid(backfillMark(forward, shard, "POST"))
+
 /**
  * Sequences `request` on its shard for `writer`, from inside the Worker: what ChatApi's own writes use
  * (worker/chat/MessagesShardBridge.ts). The Worker has already decided who writes, so the admission is its own; the
@@ -400,7 +451,7 @@ export const submitAs = <E, R>(
   writer: MessagesShard.Writer,
   request: ShardProtocol.SubmitRequest,
 ): Effect.Effect<ShardProtocol.SubmitResponse, SubmitFailed, R> =>
-  Effect.gen(function*() {
+  unreachable(Effect.gen(function*() {
     const outgoing = HttpServerRequest.fromWeb(new Request("https://messages.internal/api/messages/submit", {
       method: "POST",
       body: JSON.stringify(request),
@@ -429,12 +480,7 @@ export const submitAs = <E, R>(
       return yield* new SubmitFailed({ reason: "invalid_response", status: 200 })
     }
     return answer
-  }).pipe(
-    Effect.catchCause((cause) => {
-      const failure = Cause.squash(cause)
-      return Effect.fail(failure instanceof SubmitFailed ? failure : new SubmitFailed({ reason: "unreachable" }))
-    }),
-  )
+  }))
 
 /**
  * Admits a request to its conversation's shard. Only this Worker can call the bound object, and it overwrites any
@@ -451,15 +497,20 @@ export const submitAs = <E, R>(
  * `writer` (a `GET`) answers the asker's own owner name in the conversation, `{ owner }`: a page writes its messages
  * under it and cannot build it. It is told to whoever may read the conversation, and to nobody about anyone else.
  *
- * `barrier` runs before a Pull or a Snapshot is forwarded, once the asker is known to read the conversation and the
- * read is one the object serves: what the shard is still owed is sent first (worker/chat/MessagesShardSource.ts `drain`), so a reader is never served a shard
- * that lacks a note Postgres committed and could be given. It never fails and never refuses the read.
+ * `before` runs before a Pull, a Snapshot or a Submit is forwarded, once the asker is known to read the conversation
+ * and the request is one the object serves (a read it would answer, a submit the Worker decoded and admits a writer
+ * for): the conversation's history in Postgres is replayed into a shard that does not hold it yet
+ * (worker/chat/MessagesShardBackfill.vibe `ensure`), so no reader is served, and no writer adds to, a shard that lacks
+ * what Postgres held before the bridge. `barrier` then runs before a Pull or a Snapshot only: what the shard is still
+ * owed is sent first (worker/chat/MessagesShardSource.ts `drain`), so a reader is never served a shard that lacks a
+ * note Postgres committed and could be given. Neither fails, and neither refuses the request.
  */
-export const dispatch = <E, R, E2, R2, R3 = never>(
+export const dispatch = <E, R, E2, R2, R3 = never, R4 = never>(
   forward: Forward<E2, R2>,
   access: (actor: Actor, conversationId: string) => Effect.Effect<BranchAccess | undefined, E, R>,
   secret: OwnerSecret | undefined,
   barrier?: (conversationId: string) => Effect.Effect<void, never, R3>,
+  before?: (conversationId: string) => Effect.Effect<void, never, R4>,
 ) => Effect.gen(function*() {
   const request = yield* HttpServerRequest.HttpServerRequest
   const url = new URL(request.url, "https://messages.internal")
@@ -518,6 +569,7 @@ export const dispatch = <E, R, E2, R2, R3 = never>(
   const forwarded = Option.isSome(submitted) && Option.isSome(scoped)
     ? JSON.stringify({ ...submitted.value, command: { ...submitted.value.command, key: scoped.value } })
     : body
+  if (before !== undefined) yield* before(conversationId)
   if (!submits && barrier !== undefined) yield* barrier(conversationId)
   const target = `https://messages.internal/api/messages/${route}${url.search}`
   const outgoing = HttpServerRequest.fromWeb(new Request(target, {

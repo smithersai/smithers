@@ -3,7 +3,7 @@ import { Deferred, Effect } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { shaOf } from "../../../worker/test/branch"
 import { nodeDevice, openFaultyApp, openFaultyTab, openTestApi, TestChatApi } from "../../test/chatApi"
-import { EngineFaults, QuestionFaults } from "../../test/faults"
+import { EngineFaults, QuestionFaults, ShardFaults } from "../../test/faults"
 import { retry, wentOffline } from "../chat/actions"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
@@ -44,7 +44,8 @@ test.each(["browser", "sync"])("reopening a verified branch with %s offline rest
   await first.dispose()
 
   online = outage === "sync"
-  const again = openFaultyTab(api, { host: device, unreachableAfter: "100 millis" }, (shapes) => shapes.down())
+  // Sync down: Electric's shapes, and the reads of conversations' messages shards.
+  const again = openFaultyTab(api, { host: device, unreachableAfter: "100 millis", shardFaults: (shards) => shards.down() }, (shapes) => shapes.down())
   disposals.push(() => again.dispose())
   const [reopened, restored, faults] = await again.runPromise(Effect.all([
     Effect.service(Branch), Effect.service(Chat), Effect.service(EngineFaults),
@@ -63,6 +64,7 @@ test.each(["browser", "sync"])("reopening a verified branch with %s offline rest
   expect(reopens).toBe(0)
   if (outage === "sync") {
     await again.runPromise(Effect.flatMap(ShapeSource.Faults, (shapes) => shapes.heal))
+    await again.runPromise(Effect.flatMap(ShardFaults, (shards) => shards.heal))
     await again.runPromise(faults.releaseStarts)
     await vi.waitFor(() => expect(reopens).toBe(1), { timeout: 10_000 })
     await again.runPromise(retry("online"))

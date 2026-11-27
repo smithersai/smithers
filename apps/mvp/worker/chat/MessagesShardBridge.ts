@@ -129,7 +129,19 @@ export interface NoteResult {
   readonly settled: boolean
 }
 
-/** Bridged writes, by `write` (`asked`, `answered`, `noted`) and `outcome`. */
+/**
+ * What became of one exchange the backfill replayed (worker/chat/MessagesShardBackfill.vibe), its notes included.
+ * `outcome` is the first that was not `ok`, a refusal before a `kept`. `final` says whether every command reached an
+ * answer that sending it again would not change: sequenced, held already, refused by the reducer, in conflict with its
+ * key's receipt, or refused by the object for what it is (`400`, `403`, `413`). A shard that could not be reached,
+ * whose epoch kept moving, or that took too long is not final: the same replay sent later may be taken.
+ */
+export interface Replayed {
+  readonly outcome: Outcome
+  readonly final: boolean
+}
+
+/** Bridged writes, by `write` (`asked`, `answered`, `noted`, `replayed`) and `outcome`. */
 export const writes = Metric.counter("smithers_messages_shard_bridge_writes", {
   description: "ChatApi writes bridged into a conversation's messages shard, by write and outcome",
   incremental: true,
@@ -148,6 +160,16 @@ const REDUCER_REFUSALS: ReadonlySet<string> = new Set(CHAT_REFUSALS)
 const SHARD_REFUSALS: ReadonlySet<string> = new Set(MessagesShard.REFUSAL_REASONS)
 /** A code as a log line carries it: itself when it is one of `known`, `other` for any other text an answer held. */
 const coded = (known: ReadonlySet<string>, code: string): string => (known.has(code) ? code : "other")
+
+/** The answers the same command sent again gets again (`Replayed.final`). */
+const SETTLED_OUTCOMES: ReadonlySet<Outcome> = new Set(["ok", "kept", "refused", "idempotency_conflict"])
+/** The statuses the object refuses a command with for what the command is (MessagesShardRoutes.ts `handle`). */
+const REFUSED_STATUSES: ReadonlySet<number> = new Set([400, 403, 413])
+const isFinal = (result: { readonly outcome: Outcome; readonly reason?: string; readonly status?: number }): boolean =>
+  SETTLED_OUTCOMES.has(result.outcome) ||
+  (result.outcome === "unavailable" &&
+    (result.reason === "invalid_target" ||
+      (result.reason === "refused" && result.status !== undefined && REFUSED_STATUSES.has(result.status))))
 
 type Step = { readonly writer: MessagesShard.Writer; readonly id: string; readonly payload: ChatCommand }
 
@@ -309,6 +331,17 @@ export class MessagesShardBridge extends Context.Service<
     readonly asked: (asked: Asked) => Effect.Effect<Outcome>
     readonly answered: (answered: Answered) => Effect.Effect<Outcome>
     readonly noted: (noted: Noted) => Effect.Effect<NoteResult>
+    /**
+     * Replays what Postgres holds of one exchange, then each of `notes`, as the backfill does
+     * (worker/chat/MessagesShardBackfill.vibe): under the keys `asked`, `answered` and `noted` use, so what the bridge
+     * already sent answers `Duplicate` and nothing is journaled twice. Its notes are not sent when the exchange's
+     * own commands are not final, and later notes not once one is not. Never fails.
+     */
+    readonly replayed: (exchange: Exchange, notes: ReadonlyArray<Noted>) => Effect.Effect<Replayed>
+    /** Whether the conversation's shard holds its history from Postgres (MessagesShardRoutes.ts `backfilled`). */
+    readonly backfilled: (conversationId: string) => Effect.Effect<boolean, MessagesShardRoutes.SubmitFailed>
+    /** Marks the conversation's shard as holding its history from Postgres (MessagesShardRoutes.ts `markBackfilled`). */
+    readonly markBackfilled: (conversationId: string) => Effect.Effect<void, MessagesShardRoutes.SubmitFailed>
   }
 >()("@smthrs/mvp/chat/MessagesShardBridge") {
   /** The bridge over `forward`, the way the Worker reaches a conversation's object. */
@@ -391,12 +424,12 @@ export class MessagesShardBridge extends Context.Service<
         }
       })
     const bridge = (
-      write: "asked" | "answered" | "noted",
+      write: "asked" | "answered" | "noted" | "replayed",
       conversationId: string,
       ids: ReadonlyArray<string | undefined>,
       steps: () => ReadonlyArray<Step>,
       note?: () => Step,
-    ): Effect.Effect<NoteResult> =>
+    ): Effect.Effect<NoteResult & { readonly final: boolean }> =>
       Effect.gen(function*() {
         const named = isUuid(conversationId)
         const { result, settled } = named && ids.every((id) => id !== undefined)
@@ -413,7 +446,7 @@ export class MessagesShardBridge extends Context.Service<
               })
             ),
             Effect.timeoutOrElse({
-              duration: options.within ?? "5 seconds",
+              duration: within,
               orElse: () => Effect.succeed({ result: { outcome: "timeout" } as const, settled: false }),
             }),
           )
@@ -433,9 +466,16 @@ export class MessagesShardBridge extends Context.Service<
             }),
           )
         }
-        return { outcome: result.outcome, settled }
+        return { outcome: result.outcome, settled, final: isFinal(result) }
       }).pipe(Effect.withSpan("chat.shard.bridge", { attributes: { write } }))
     const outcomeOf = (result: NoteResult) => result.outcome
+    const within = options.within ?? "5 seconds"
+    /** A call to the object that takes longer than a bridged write may is one that did not reach it. */
+    const timed = <A>(call: Effect.Effect<A, MessagesShardRoutes.SubmitFailed>) =>
+      Effect.timeoutOrElse(call, {
+        duration: within,
+        orElse: () => Effect.fail(new MessagesShardRoutes.SubmitFailed({ reason: "unreachable" })),
+      })
     // A UUID has equivalent case spellings; a message id and a key have one, as Postgres prints it.
     const lower = <A extends Exchange>(write: A): A => ({
       ...write,
@@ -445,6 +485,23 @@ export class MessagesShardBridge extends Context.Service<
     })
     /** `id` when it is a UUID, as ChatApi's routes already hold every id to; a shard is named, and a key built, from nothing else. */
     const uuid = (id: string) => (isUuid(id) ? id : undefined)
+    /** The ids an exchange's commands are built from: its question's, and its answer's where it has one. */
+    const idsOf = (exchange: Exchange) => [uuid(exchange.questionId), ...(isAsked(exchange) ? [uuid(exchange.answerId)] : [])]
+    const note = (noted: Noted) =>
+      bridge(
+        "noted",
+        noted.conversationId,
+        [
+          uuid(noted.messageId),
+          // A version is a count: nothing else is put in a key or a command.
+          Number.isSafeInteger(noted.version) && noted.version >= 0 ? "version" : undefined,
+          ...(noted.exchange === undefined ? [] : idsOf(noted.exchange)),
+        ],
+        // The message's own exchange first, under the keys `asked` and `answered` used: duplicates when it was
+        // bridged, and the message's first appearance when its note is the first the shard hears of it.
+        () => (noted.exchange === undefined ? [] : stepsOf(lower(noted.exchange))),
+        () => noteStep({ ...noted, messageId: noted.messageId.toLowerCase() }),
+      )
     return MessagesShardBridge.of({
       asked: (asked) =>
         Effect.map(
@@ -457,23 +514,24 @@ export class MessagesShardBridge extends Context.Service<
             answeredSteps(lower(answered))),
           outcomeOf,
         ),
-      noted: (noted) =>
-        bridge(
-          "noted",
-          noted.conversationId,
-          [
-            uuid(noted.messageId),
-            // A version is a count: nothing else is put in a key or a command.
-            Number.isSafeInteger(noted.version) && noted.version >= 0 ? "version" : undefined,
-            ...(noted.exchange === undefined
-              ? []
-              : [uuid(noted.exchange.questionId), ...(isAsked(noted.exchange) ? [uuid(noted.exchange.answerId)] : [])]),
-          ],
-          // The message's own exchange first, under the keys `asked` and `answered` used: duplicates when it was
-          // bridged, and the message's first appearance when its note is the first the shard hears of it.
-          () => (noted.exchange === undefined ? [] : stepsOf(lower(noted.exchange))),
-          () => noteStep({ ...noted, messageId: noted.messageId.toLowerCase() }),
-        ),
+      noted: (noted) => Effect.map(note(noted), ({ outcome, settled }) => ({ outcome, settled })),
+      replayed: (exchange, notes) =>
+        Effect.gen(function*() {
+          const posted = yield* bridge("replayed", exchange.conversationId, idsOf(exchange), () => stepsOf(lower(exchange)))
+          if (!posted.final) return { outcome: posted.outcome, final: false }
+          let outcome = posted.outcome
+          for (const noted of notes) {
+            const result = yield* note(noted)
+            if (!result.final) return { outcome: result.outcome, final: false }
+            // A refusal is what the replay is counted by, ahead of a post the shard held in another form.
+            if (result.outcome !== "ok" && (outcome === "ok" || outcome === "kept")) outcome = result.outcome
+          }
+          return { outcome, final: true }
+        }),
+      backfilled: (conversationId) =>
+        timed(MessagesShardRoutes.backfilled(forward, MessagesShard.shardOf(conversationId))),
+      markBackfilled: (conversationId) =>
+        timed(MessagesShardRoutes.markBackfilled(forward, MessagesShard.shardOf(conversationId))),
     })
   }
 

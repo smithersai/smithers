@@ -1,6 +1,6 @@
 import { canonicalJson, MAX_PARTS, type MessageFailure, MessagePart, MessageRun } from "@smthrs/app-state"
 import { Array as Arr, Effect, type Layer, Option, Schema } from "effect"
-import { SqlClient } from "effect/sql"
+import { SqlClient, type Statement } from "effect/sql"
 import * as MessagesShardBridge from "./MessagesShardBridge.ts"
 
 // What ChatApi's bridge writes into a conversation's messages shard, read from Postgres once the write's transaction
@@ -16,6 +16,9 @@ import * as MessagesShardBridge from "./MessagesShardBridge.ts"
 // each note is written and before each read of the shard (worker/chat/MessagesShardRoutes.ts `dispatch`), so a note
 // whose request died between the commit and the send, or whose shard could not be reached, arrives with the next of
 // either, without the write being made again. A row a send left owed is tried again after every row not yet tried.
+//
+// A conversation whose history Postgres held before the bridge is read whole once (`history`, `notes`), and replayed
+// into its shard by the backfill (worker/chat/MessagesShardBackfill.vibe).
 
 interface ExchangeRow {
   readonly conversationId: string
@@ -58,10 +61,10 @@ export const runOf = (held: Readonly<Record<string, unknown>>): Omit<MessageRun,
 }
 
 /**
- * Question `questionId` and its answer as Postgres holds them now, or nothing when it holds no such question: the
- * question alone when it has no answer beside it, the pair when the answer still streams, and the answer's text, its
- * last write and how it ended once it has: finished, or failed and why. Each time is as Postgres prints one in UTC,
- * which is how Electric delivers it (src/features/chat/view.ts `postgresTime`).
+ * The exchanges Postgres holds now where `where` holds of a question `q`, in their place: each question alone when it
+ * has no answer beside it, the pair when the answer still streams, and the answer's text, its last write and how it
+ * ended once it has: finished, or failed and why. A question with more than one answer is read with its first. Each
+ * time is as Postgres prints one in UTC, which is how Electric delivers it (src/features/chat/view.ts `postgresTime`).
  *
  * The view a question was sent from, and the values sent with it, are read only where every reader of the conversation
  * already syncs them: a form, whose synced `state` names the question that submitted it and its values
@@ -69,12 +72,12 @@ export const runOf = (held: Readonly<Record<string, unknown>>): Omit<MessageRun,
  * `messages.source` and `messages.data` do for every device (worker/Chat.ts `SYNCED_MESSAGE_COLUMNS`): a shard's posts
  * reach every reader of the conversation.
  */
-export const exchange = (questionId: string, conversationId?: string) =>
+const exchanges = (where: (sql: SqlClient.SqlClient) => ReadonlyArray<Statement.Fragment>) =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<ExchangeRow>`
-      SELECT q.conversation_id AS "conversationId", q.id AS "questionId", a.id AS "answerId", q.text,
-        q.position::text AS position, (q.created_at AT TIME ZONE 'UTC')::text || '+00' AS "createdAt",
+    const rows = yield* sql<ExchangeRow>`
+      SELECT DISTINCT ON (q.position) q.conversation_id AS "conversationId", q.id AS "questionId", a.id AS "answerId",
+        q.text, q.position::text AS position, (q.created_at AT TIME ZONE 'UTC')::text || '+00' AS "createdAt",
         CASE WHEN v.id IS NOT NULL THEN q.source END AS source,
         CASE WHEN v.id IS NOT NULL THEN q.data END AS data,
         a.text AS "answerText", a.status AS "answerStatus", a.failure AS "answerFailure",
@@ -87,49 +90,65 @@ export const exchange = (questionId: string, conversationId?: string) =>
       LEFT JOIN messages a ON a.question_id = q.id AND a.role = 'assistant' AND a.conversation_id = q.conversation_id
       LEFT JOIN views v ON v.id::text = q.source->>'viewId' AND v.conversation_id = q.conversation_id
         AND v.template = 'form' AND v.state->>'questionId' = q.id::text
-      WHERE ${sql.and([
-        sql`q.id = ${questionId}`,
-        sql`q.role = 'user'`,
-        // A caller that read the message's conversation first holds the exchange to it: an id another conversation
-        // came to hold between the two reads is no exchange of this one.
-        ...(conversationId === undefined ? [] : [sql`q.conversation_id = ${conversationId}`]),
-      ])}
-      ORDER BY a.position LIMIT 1`
-    if (row === undefined) return Option.none<MessagesShardBridge.Exchange>()
-    const lone: MessagesShardBridge.Lone = {
-      conversationId: row.conversationId,
-      questionId: row.questionId,
-      question: {
-        text: row.text,
-        position: Number(row.position),
-        createdAt: row.createdAt,
-        ...(row.source === null ? {} : { source: { viewId: row.source.viewId, event: row.source.event } }),
-        // One spelling of the values, whatever order Postgres keeps their keys in: the same row, the same command.
-        ...(row.data === null ? {} : { data: canonicalJson(row.data) }),
-      },
-    }
-    // A question Postgres holds with no answer beside it is bridged alone.
-    if (row.answerId === null) return Option.some<MessagesShardBridge.Exchange>(lone)
-    const asked: MessagesShardBridge.Asked = {
-      ...lone,
-      answerId: row.answerId,
-      answer: { position: Number(row.answerPosition), createdAt: row.answerCreatedAt! },
-    }
-    // An answer still streaming is the pending one. One that ended is what Postgres holds of it: its text, when it
-    // was last written, what its run wrote that the reducer takes, and why it failed when it did. It is never rebuilt as empty and streaming,
-    // and never without the steps and the usage a reader of Postgres is shown.
-    if (row.answerStatus === "streaming") return Option.some<MessagesShardBridge.Exchange>(asked)
-    const run = runOf(row.answerRun)
-    return Option.some<MessagesShardBridge.Exchange>({
-      ...asked,
-      text: row.answerText!,
-      updatedAt: row.answerUpdatedAt!,
-      ...(row.answerFailure === null ? {} : { failure: row.answerFailure }),
-      ...(Object.keys(run).length === 0 ? {} : { run }),
-    })
+      WHERE ${sql.and([sql`q.role = 'user'`, ...where(sql)])}
+      ORDER BY q.position, a.position`
+    return rows.map(exchangeOf)
   })
 
-interface NoteRow {
+/** What Postgres holds of one exchange (`exchanges`), as the bridge is told it. */
+const exchangeOf = (row: ExchangeRow): MessagesShardBridge.Exchange => {
+  const lone: MessagesShardBridge.Lone = {
+    conversationId: row.conversationId,
+    questionId: row.questionId,
+    question: {
+      text: row.text,
+      position: Number(row.position),
+      createdAt: row.createdAt,
+      ...(row.source === null ? {} : { source: { viewId: row.source.viewId, event: row.source.event } }),
+      // One spelling of the values, whatever order Postgres keeps their keys in: the same row, the same command.
+      ...(row.data === null ? {} : { data: canonicalJson(row.data) }),
+    },
+  }
+  // A question Postgres holds with no answer beside it is bridged alone.
+  if (row.answerId === null) return lone
+  const asked: MessagesShardBridge.Asked = {
+    ...lone,
+    answerId: row.answerId,
+    answer: { position: Number(row.answerPosition), createdAt: row.answerCreatedAt! },
+  }
+  // An answer still streaming is the pending one. One that ended is what Postgres holds of it: its text, when it
+  // was last written, what its run wrote that the reducer takes, and why it failed when it did. It is never rebuilt as
+  // empty and streaming, and never without the steps and the usage a reader of Postgres is shown.
+  if (row.answerStatus === "streaming") return asked
+  const run = runOf(row.answerRun)
+  return {
+    ...asked,
+    text: row.answerText!,
+    updatedAt: row.answerUpdatedAt!,
+    ...(row.answerFailure === null ? {} : { failure: row.answerFailure }),
+    ...(Object.keys(run).length === 0 ? {} : { run }),
+  }
+}
+
+/**
+ * Question `questionId` and its answer as Postgres holds them now (`exchanges`), or nothing when it holds no such
+ * question.
+ */
+export const exchange = (questionId: string, conversationId?: string) =>
+  Effect.map(
+    exchanges((sql) => [
+      sql`q.id = ${questionId}`,
+      // A caller that read the message's conversation first holds the exchange to it: an id another conversation
+      // came to hold between the two reads is no exchange of this one.
+      ...(conversationId === undefined ? [] : [sql`q.conversation_id = ${conversationId}`]),
+    ]),
+    Arr.head,
+  )
+
+/** Every exchange of conversation `conversationId` as Postgres holds it now (`exchanges`), in Postgres's order. */
+export const history = (conversationId: string) => exchanges((sql) => [sql`q.conversation_id = ${conversationId}`])
+
+export interface NoteRow {
   readonly id: string
   readonly role: "user" | "assistant"
   readonly questionId: string | null
@@ -139,6 +158,50 @@ interface NoteRow {
   readonly arc: string | null
   readonly version: string
 }
+
+/**
+ * The note a row of `messages` holds (`NoteRow`): its summary with its revision, its phase and its arc as Postgres
+ * holds them, `""` for a mark it lacks, under the version Postgres counted for that row's notes. `exchange` is the
+ * exchange its message belongs to, where the caller sends one with it.
+ *
+ * @throws {never}
+ */
+export const notedOf = (
+  conversationId: string,
+  row: NoteRow,
+  exchange?: MessagesShardBridge.Exchange,
+): MessagesShardBridge.Noted => ({
+  conversationId,
+  messageId: row.id,
+  role: row.role,
+  version: Number(row.version),
+  notes: {
+    // A summary Postgres does not hold was never recorded: nothing to say of it.
+    ...(row.summary === null || row.summaryRevision === null
+      ? {}
+      : { summary: row.summary, summaryRevision: row.summaryRevision }),
+    phase: row.phase ?? "",
+    arc: row.arc ?? "",
+  },
+  ...(exchange === undefined ? {} : { exchange }),
+})
+
+/**
+ * The note on every message of conversation `conversationId` the timeline ever wrote one on (`notedOf`), in Postgres's
+ * order: a summary, a phase or an arc it holds, or a version that says notes were written and taken away since.
+ */
+export const notes = (conversationId: string) =>
+  Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    const rows = yield* sql<NoteRow>`
+      SELECT id, role, question_id AS "questionId", summary, summary_revision AS "summaryRevision", phase, arc,
+        notes_version::text AS version
+      FROM messages
+      WHERE conversation_id = ${conversationId}
+        AND (summary IS NOT NULL OR phase IS NOT NULL OR arc IS NOT NULL OR notes_version > 0)
+      ORDER BY position`
+    return rows
+  })
 
 /** What a read that failed, or found nothing to bridge, leaves behind: a fixed code and the write's kind, never a row. */
 const unread = (write: "asked" | "answered" | "noted", reason: "unreadable" | "missing") =>
@@ -221,21 +284,7 @@ export const drain = (conversationId: string) =>
           // A question is its own exchange's; an answer's is its question's, which Postgres never lets it lack.
           Effect.map(exchange(row.questionId ?? row.id, conversationId), (found) => ({
             id: row.id,
-            note: Option.map(found, (held): MessagesShardBridge.Noted => ({
-              conversationId,
-              messageId: row.id,
-              role: row.role,
-              version: Number(row.version),
-              notes: {
-                // A summary Postgres does not hold was never recorded: nothing to say of it.
-                ...(row.summary === null || row.summaryRevision === null
-                  ? {}
-                  : { summary: row.summary, summaryRevision: row.summaryRevision }),
-                phase: row.phase ?? "",
-                arc: row.arc ?? "",
-              },
-              exchange: held,
-            })),
+            note: Option.map(found, (held) => notedOf(conversationId, row, held)),
           })), { concurrency: 4 }),
       )
     }),

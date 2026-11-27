@@ -49,6 +49,7 @@ import * as LiveMount from "../../worker/attach/LiveMount.vibe"
 import { branchAccess } from "../../worker/branch/Access.vibe"
 import { MessagesShardBridge } from "../../worker/chat/MessagesShardBridge.ts"
 import * as MessagesShardRoutes from "../../worker/chat/MessagesShardRoutes.ts"
+import * as MessagesShardBackfill from "../../worker/chat/MessagesShardBackfill.vibe"
 import * as MessagesShardSource from "../../worker/chat/MessagesShardSource.ts"
 import { OWNER_SECRET, type ShardHost, shardHost } from "./messagesShardHost"
 import { challengeFor } from "../../worker/attach/Attach.vibe"
@@ -173,7 +174,7 @@ import { VIEWS_TABLE } from "../features/views/contract"
 import { clientFlows } from "../flows/declarations.vibe"
 import { workerRegistrations } from "../flows/registrations.vibe"
 import type { Endpoint } from "../flows/tabPort.vibe"
-import { faultyServices } from "./faults"
+import { faultyServices, ShardFaults, shardFaults } from "./faults"
 import { tempDirectory } from "./tempDirectory"
 
 /** One presentation realm for every test app in a file: QuickJS compiles once. */
@@ -245,12 +246,6 @@ export interface ChatApiOptions {
   readonly provider?: ProviderReply | ((index: number) => ProviderReply)
   /** What the server holds before the browser app starts, so no request of the app's sees it otherwise. */
   readonly prepare?: (api: TestChatApi["Service"]) => Promise<void>
-  /**
-   * Serves each conversation's messages shard (decision 0170) as ChatApi does: the real route in front of each
-   * conversation's real object handler over SQLite (src/test/messagesShardHost.ts), admitted by the person's real
-   * access to the branch, with ChatApi's own writes bridged into it. Unset: no shard binding, as before the shard.
-   */
-  readonly messagesShard?: boolean
 }
 
 /** The header a test device's requests name their person with (`ChatApiOptions.people`). */
@@ -358,8 +353,12 @@ export class TestChatApi extends Context.Service<
   TestChatApi,
   {
     readonly origin: string
-    /** The conversations' messages shards, where `ChatApiOptions.messagesShard` asks for them. */
-    readonly shards: ShardHost | undefined
+    /**
+     * Each conversation's messages shard (decision 0170), served as ChatApi serves it: the real route in front of each
+     * conversation's real object handler over SQLite (src/test/messagesShardHost.ts), admitted by the person's real
+     * access to the branch, with ChatApi's own writes bridged into it.
+     */
+    readonly shards: ShardHost
     /** The browser's way to ChatApi: each request handed to the handler in this process. */
     readonly fetch: typeof globalThis.fetch
     /** Attaches through LiveMount to the actual conversation where the question was admitted. */
@@ -376,6 +375,12 @@ export class TestChatApi extends Context.Service<
     readonly answerDiagnostics: (answerId: string) => Effect.Effect<AnswerDiagnostics>
     /** The status of every answer to `POST /api/questions` the browser got, in order. */
     readonly questionStatuses: () => ReadonlyArray<number>
+    /**
+     * Bridges what Postgres holds of question `questionId`'s exchange into its conversation's shard, under the keys
+     * ChatApi's bridge writes it under (worker/chat/MessagesShardBridge.ts `replayed`): what a test that writes Postgres
+     * directly runs next, so the shard a tab reads holds that write too.
+     */
+    readonly bridgeExchange: (questionId: string) => Effect.Effect<void>
     /** Asks as another device would, through ChatApi. */
     readonly askElsewhere: (text: string) => Effect.Effect<{ readonly questionId: string; readonly answerId: string }>
     /** The rows in Postgres, in order. */
@@ -867,15 +872,18 @@ export class TestChatApi extends Context.Service<
         const roleChecks = SignIn.RoleChecks.of({ start: () => Effect.void })
 
         const attach = LiveMount.make(database)
-        const shards = options.messagesShard === true ? yield* shardHost() : undefined
+        const shards = yield* shardHost()
         const routed = Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
           const path = request.url.split("?")[0]!
           if (LiveMount.handles(path)) return attach.fetch
           // The messages shard's routes, admitted as ChatApi admits them (worker/ChatApiProgram.ts).
-          if (shards !== undefined && MessagesShardRoutes.handles(path)) {
+          if (MessagesShardRoutes.handles(path)) {
             return MessagesShardRoutes.dispatch(shards.forward, (who, conversationId) =>
               branchAccess(Option.some(who), conversationId, "conversation").pipe(Effect.provide(database)), OWNER_SECRET,
               (conversationId) => MessagesShardSource.drainIn(database, conversationId).pipe(
+                Effect.provideService(MessagesShardBridge, MessagesShardBridge.make(shards.forward))),
+              // Before every read and submit: what Postgres held before the bridge, replayed into an unmarked shard.
+              (conversationId) => MessagesShardBackfill.ensureIn(database, conversationId).pipe(
                 Effect.provideService(MessagesShardBridge, MessagesShardBridge.make(shards.forward))))
           }
           if (path === SESSION_ROUTE) {
@@ -943,10 +951,8 @@ export class TestChatApi extends Context.Service<
         })
 
         const application = routed.pipe(
-          // ChatApi's own question, answer and note writes also reach the conversation's shard, where one is bound.
-          (served) => shards === undefined
-            ? served
-            : Effect.provideService(served, MessagesShardBridge, MessagesShardBridge.make(shards.forward)),
+          // ChatApi's own question, answer and note writes also reach the conversation's shard.
+          (served) => Effect.provideService(served, MessagesShardBridge, MessagesShardBridge.make(shards.forward)),
           // No remote host runs here: every other remote start (a clone) is refused as unavailable.
           Effect.provideService(
             Flows.FlowStarter,
@@ -1160,6 +1166,12 @@ export class TestChatApi extends Context.Service<
               return { answer: answer ?? null, report: report ?? null, engines }
             }).pipe(Effect.orDie),
           questionStatuses: () => [...statuses],
+          bridgeExchange: (questionId) =>
+            Effect.gen(function* () {
+              // Whatever Postgres holds of it: a question alone, the pair while its answer streams, or the ended answer.
+              const found = yield* MessagesShardSource.exchange(questionId)
+              if (Option.isSome(found)) yield* MessagesShardBridge.make(shards.forward).replayed(found.value, [])
+            }).pipe(Effect.provide(database), Effect.orDie),
           askElsewhere: (text) =>
             Effect.promise(async () => {
               const ids = { questionId: crypto.randomUUID(), answerId: crypto.randomUUID() }
@@ -1754,7 +1766,10 @@ const sqliteFile = (path: string, turn: ReturnType<typeof deviceTurn>) => {
 export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">> & {
   /** A display-time service for transient UI assertions; engines and the server retain their own clocks. */
   readonly clock?: Clock.Clock
-  readonly shapeFailures?: number
+  /** How many of a faulty tab's first reads of messages shards answer 503 (`shardFaults`). */
+  readonly shardFailures?: number
+  /** A faulty tab's switches on its reads of messages shards, thrown before it reads anything (`faultyTabLayer`). */
+  readonly shardFaults?: (faults: ShardFaults["Service"]) => Effect.Effect<void>
   readonly answers?: boolean
   /** View-only fixtures start sign-in here; boot-program fixtures bind it on their actual event target instead. */
   readonly sessionLifecycle?: boolean
@@ -1799,7 +1814,8 @@ const app = (
     replace: _replace,
     webSocket: _webSocket,
     sessionLifecycle: _sessionLifecycle,
-    shapeFailures: _shapeFailures,
+    shardFailures: _shardFailures,
+    shardFaults: _shardFaults,
     clock: _clock,
     ...options
   }: TabOptions
@@ -1831,10 +1847,17 @@ export const tabLayer = (api: TestChatApi["Service"], options: TabOptions = {}) 
     : withTabClock(started.pipe(Layer.provide(Layer.succeed(Socket.WebSocketConstructor, options.webSocket))), options.clock)
 }
 
-/** The browser app on `api` with the faulty services and their switches (src/test/faults.ts). */
+/**
+ * The browser app on `api` with the faulty services and their switches (src/test/faults.ts), its reads of messages
+ * shards behind `ShardFaults` among them, thrown before the app reads anything by `options.shardFaults`.
+ */
 export const faultyTabLayer = (api: TestChatApi["Service"], options: TabOptions = {}, start?: StartFaults) => {
-  const tab = app(api, options)
-  const layer = appLayer(tab, isolateShapes.pipe(Layer.provideMerge(Layer.merge(faultyServices(tab, start, options.shapeFailures), options.replace ?? Layer.empty))))
+  const shards = shardFaults(options.shardFailures)
+  if (options.shardFaults !== undefined) Effect.runSync(options.shardFaults(shards.service))
+  const opened = app(api, options)
+  const tab = { ...opened, fetch: shards.wrap(opened.fetch) }
+  const layer = appLayer(tab, isolateShapes.pipe(Layer.provideMerge(Layer.merge(faultyServices(tab, start), options.replace ?? Layer.empty))))
+    .pipe(Layer.merge(Layer.succeed(ShardFaults, shards.service)))
   const started = options.sessionLifecycle === false
     ? layer
     : Layer.effectDiscard(bindSessionConnectivity(new EventTarget())).pipe(Layer.provideMerge(layer))

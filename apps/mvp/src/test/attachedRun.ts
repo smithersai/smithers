@@ -46,9 +46,11 @@ export const finishRun = async (api: TestChatApi["Service"], answerId: string, t
 
 /** Load an existing transcript with a model failure recorded before BYOA. */
 export const recordedModelFailure = async (api: TestChatApi["Service"], answerId: string) => {
-  await questionFor(api, answerId)
+  const questionId = await questionFor(api, answerId)
   await query(api, Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
     UPDATE messages SET status = 'failed', failure = 'model_error', updated_at = now() WHERE id = ${answerId}`))
+  // Written straight to Postgres, so bridged as ChatApi bridges an answer it records.
+  await Effect.runPromise(api.bridgeExchange(questionId))
 }
 
 export const latestAnswerFor = (api: TestChatApi["Service"], text: string, earlierAnswer: string) =>

@@ -7,7 +7,7 @@
  * src/apiRoutes.test.ts fails when a route literal in src/ or worker/ has a word that isn't here.
  */
 export const ROUTE_WORDS: ReadonlySet<string> = new Set([
-  "about", "accounts", "ack", "actions", "admin-receipts", "agent-runs", "alert-channels", "alert-deliveries", "answers", "api", "approvals", "archive", "arrive", "attach", "audit", "auth", "authorize", "blob", "broker",
+  "about", "accounts", "ack", "actions", "admin-receipts", "agent-runs", "alert-channels", "alert-deliveries", "answers", "api", "approvals", "archive", "arrive", "attach", "audit", "auth", "authorize", "backfill", "blob", "broker",
   "branch-publications", "branches", "bug-reports", "bugs", "call", "callback", "calls", "checks", "claim", "claims", "cloud-runs", "codex",
   "comments", "compare", "connections", "consent", "conversations", "create", "creation", "credential", "delete", "docs", "domains", "exchange", "feeds", "file", "fleet",
   "flow-drafts", "flows", "github", "github-sync", "github-writes", "handoff", "home", "hosted-model", "intents", "issue-edges", "item-summaries", "items", "jev", "join", "keys", "launch", "logs", "machines", "mcp", "mcp-tokens", "me", "merge",

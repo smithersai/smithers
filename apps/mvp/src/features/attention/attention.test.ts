@@ -167,7 +167,9 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
     benDevice.attention.actions.open(subject, "page")
     expect(benDevice.host.navigated).toEqual([`/app#${answerId}`])
 
-    // Ann answers from her second device's toast: Read lands, and the question's card takes focus there.
+    // Ann answers from her second device's toast once its conversation holds the run's answer, which it reads from
+    // the shard as it follows it: Read lands, and the question's card takes focus there.
+    await until(async () => expect(await annToo.run(Effect.map(ChatStore, (chat) => chat.messages.tanstack.has(answerId)))).toBe(true))
     annToo.attention.actions.open(subject, "conversation")
     await until(() => expect(annToo.entry(subject)!.unread).toBe(false))
     expect(annToo.focus(answerId)).toBe(1)
@@ -313,10 +315,6 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     const askId = await ask(ann, "Deploy the docs preview")
     const asks = `run:${askId}`
     await waitOnPerson(api, askId, { kind: "question", prompt: "Which branch should I deploy?", options: ["main", "docs-v2"] })
-    // Retained pre-BYOA answers can still include a saved step.
-    const parts = [{ id: crypto.randomUUID(), kind: "step", flow: "app/agent/ask", status: "running" }]
-    await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
-      UPDATE messages SET parts = ${JSON.stringify(parts)}::jsonb WHERE id = ${askId}`)))
     await until(() => expect(ann.entry(asks)).toMatchObject({ state: "needs_you", action: "answer" }))
     // Newest first, whatever the stack's order; both unread; the question waits on her.
     expect(ann.feed()).toEqual([asks, done])
@@ -355,8 +353,6 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
         question: { kind: "question", prompt: "Which branch should I deploy?", options: ["main", "docs-v2"], draft: "" },
       })
     )
-    // Its step so far: the question it asked.
-    await until(() => expect(ann.detail()!.steps).toEqual([expect.objectContaining({ label: "app/agent/ask" })]))
     ann.status.actions.setDraft(askId, "docs-v2")
     await until(() => expect(ann.detail()!.question).toMatchObject({ draft: "docs-v2" }))
     // Expanding another entry forgets the field's focus request; A on an entry with nothing to answer does nothing.
@@ -822,7 +818,7 @@ describe("expanded branch detail", { timeout: ENGINE_WITHIN }, () => {
       yield* sql`INSERT INTO messages (id, role, text, status, conversation_id)
         VALUES (${questionId}, 'user', 'Summarize the branch', 'done', ${conversationId})`
       yield* sql`INSERT INTO messages (id, role, text, status, question_id, conversation_id)
-        VALUES (${answerId}, 'assistant', 'First answer.', 'done', ${questionId}, ${conversationId})`
+        VALUES (${answerId}, 'assistant', '', 'streaming', ${questionId}, ${conversationId})`
       // Already past the toast deadline, so its timer cannot accidentally refresh the detail on the old code.
       yield* sql`INSERT INTO notifications (recipient, subject, kind, state, mine, run_id, repo_id, conversation_id, href, updated_at, occurred_at)
         VALUES ('person-member', ${subject}, 'run', 'done', true, ${answerId}, 'github/octo/hello', ${conversationId},
@@ -831,14 +827,16 @@ describe("expanded branch detail", { timeout: ENGINE_WITHIN }, () => {
     await ann.run(show(conversationId))
     const text = () => ann.run(Effect.flatMap(ChatStore, (chat) => Effect.map(chat.opened(conversationId)!.messages.toArray,
       (messages) => messages.find((message) => message.id === answerId)?.text)))
-    await until(async () => expect(await text()).toBe("First answer."))
+    await until(async () => expect(await text()).toBe(""))
     await ann.run(show(null))
     await until(() => expect(ann.entry(subject)).toMatchObject({ state: "done", here: false, stack: false }))
     ann.attention.actions.openPanel("more", subject)
     await until(() => expect(ann.entry(subject)).toMatchObject({ unread: false }))
-    await until(() => expect(ann.detail()).toMatchObject({ id: subject, note: "First answer." }))
+    await until(() => expect(ann.detail()).toMatchObject({ id: subject }))
+    // The answer is recorded, as its agent records one, and bridged into the conversation's shard.
     await Effect.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      sql`UPDATE messages SET text = 'Updated branch answer.', updated_at = now() WHERE id = ${answerId}`)))
+      sql`UPDATE messages SET text = 'Updated branch answer.', status = 'done', updated_at = now() WHERE id = ${answerId}`)))
+    await Effect.runPromise(api.bridgeExchange(questionId))
     await until(async () => expect(await text()).toBe("Updated branch answer."))
     await until(() => expect(ann.detail()).toMatchObject({ id: subject, note: "Updated branch answer." }), 5_000)
     ann.attention.actions.expand(subject)

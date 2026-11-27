@@ -215,13 +215,11 @@ const faultyEngine = Layer.effectContext(
 )
 
 /**
- * A finite 503 outage on a new branch's message shape (`failures`), and `withhold(route)`: every request for the shape at
- * `route` answers 503 until `release(route)`, as when that one shape's sync is down; `lag(route, duration)`: each of its
+ * `withhold(route)`: every request for the shape at `route` answers 503 until `release(route)`, as when that one shape's sync is down; `lag(route, duration)`: each of its
  * responses reaches the device `duration` after Electric sent it, as on a slow box, until a zero lag. Every other request
  * uses the real source.
  */
 export class ShapeRecovery extends Context.Service<ShapeRecovery, {
-  readonly failures: Effect.Effect<number>
   readonly withhold: (route: string) => Effect.Effect<void>
   readonly release: (route: string) => Effect.Effect<void>
   readonly lag: (route: string, duration: Duration.Input) => Effect.Effect<void>
@@ -231,20 +229,14 @@ export class ShapeRecovery extends Context.Service<ShapeRecovery, {
   "@smthrs/mvp/test/ShapeRecovery",
 ) {}
 
-const recoveringSource = (failures: number) => Layer.effectContext(Effect.gen(function* () {
+const recoveringSource = Layer.effectContext(Effect.gen(function* () {
   const real = yield* ShapeSource.ShapeSource
-  const failed = yield* Ref.make(0)
   const withheld = yield* Ref.make<ReadonlySet<string>>(new Set())
   const lagged = yield* Ref.make<ReadonlyMap<string, Duration.Duration>>(new Map())
   const paused = new Map<string, { readonly entered: Deferred.Deferred<void>; readonly release: Deferred.Deferred<void> }>()
   const source = ShapeSource.ShapeSource.of({ request: (url, init) => Effect.gen(function* () {
     const target = new URL(url)
     if ((yield* Ref.get(withheld)).has(target.pathname)) return new Response(null, { status: 503 })
-    if (target.pathname === "/api/shapes/messages" && target.searchParams.has("conversation") &&
-      (yield* Ref.get(failed)) < failures) {
-      yield* Ref.update(failed, (count) => count + 1)
-      return new Response(null, { status: 503 })
-    }
     const response = yield* real.request(url, init)
     const pause = paused.get(target.pathname)
     if (pause !== undefined) {
@@ -258,7 +250,6 @@ const recoveringSource = (failures: number) => Layer.effectContext(Effect.gen(fu
   }) })
   return Context.make(ShapeSource.ShapeSource, source).pipe(
     Context.add(ShapeRecovery, ShapeRecovery.of({
-      failures: Ref.get(failed),
       withhold: (route) => Ref.update(withheld, (routes) => new Set([...routes, route])),
       release: (route) => Ref.update(withheld, (routes) => new Set([...routes].filter((held) => held !== route))),
       pause: (route) => Effect.gen(function* () {
@@ -292,7 +283,6 @@ const recoveringSource = (failures: number) => Layer.effectContext(Effect.gen(fu
 export const faultyServices = (
   options: Pick<AppOptions, "origin" | "answerWithin">,
   shapes?: (switches: ShapeSource.Switches) => Effect.Effect<void>,
-  recover = 0,
   sessionDown = false,
 ) =>
   Layer.mergeAll(
@@ -300,6 +290,92 @@ export const faultyServices = (
     faultyAuth(sessionDown).pipe(
       Layer.provide(AuthClient.layer({ origin: options.origin, within: options.answerWithin ?? "15 seconds" })),
     ),
-    recoveringSource(recover).pipe(Layer.provideMerge(ShapeSource.layerFaulty(shapes))),
+    recoveringSource.pipe(Layer.provideMerge(ShapeSource.layerFaulty(shapes))),
     faultyEngine,
   )
+
+/** A read of a conversation's messages shard, as the page sends one (src/features/chat/messagesShardClient.ts). */
+const SHARD_READ = /^\/api\/conversations\/[^/]+\/messages\/(?:pull|snapshot)$/
+
+type ShardFault =
+  | { readonly _tag: "Down" }
+  | { readonly _tag: "Refuse"; readonly status: number }
+  | { readonly _tag: "Stall" }
+  | { readonly _tag: "Corrupt" }
+
+/**
+ * The page's reads of its conversations' messages shards (`GET /api/conversations/:id/messages/{pull,snapshot}`)
+ * behind switches at the page's `fetch`, as `ShapeSource.Faults` puts Electric's shapes behind them: `down` fails each
+ * read on the network as it is sent, `refuse` answers each with `status` (default 400) and ChatApi never sees it,
+ * `stall` holds each answer that arrives until `heal` or until the page gives the read up, and `corrupt` answers each
+ * that arrives with a body outside the protocol. `heal` returns to the network and lets stalled answers through.
+ * Submits, and every other request, always go through.
+ */
+export class ShardFaults extends Context.Service<ShardFaults, {
+  readonly down: () => Effect.Effect<void>
+  readonly refuse: (status?: number) => Effect.Effect<void>
+  readonly stall: () => Effect.Effect<void>
+  readonly corrupt: () => Effect.Effect<void>
+  readonly heal: Effect.Effect<void>
+  /** The path of every read sent, in order. */
+  readonly sent: Effect.Effect<ReadonlyArray<string>>
+  /** How many reads of the conversation that failed most answered 503 (`shardFaults`'s `failures`). */
+  readonly failures: Effect.Effect<number>
+}>()("@smthrs/mvp/test/ShardFaults") {}
+
+/**
+ * `ShardFaults` and the page's `fetch` behind them: `wrap` puts them in front of the network a page reads through. The
+ * first `failures` reads of each conversation answer 503, as a finite outage of the shard's route, before any switch
+ * is thrown.
+ */
+export const shardFaults = (failures = 0) => {
+  let fault: ShardFault | undefined
+  const failed = new Map<string, number>()
+  const stalled = new Set<() => void>()
+  const sent: Array<string> = []
+  const set = (next: ShardFault | undefined) => Effect.sync(() => {
+    fault = next
+    if (next !== undefined) return
+    for (const release of [...stalled]) release()
+  })
+  const wrap = (next: typeof globalThis.fetch): typeof globalThis.fetch => async (input, init) => {
+    const request = new Request(input, init)
+    const path = new URL(request.url).pathname
+    if (request.method !== "GET" || !SHARD_READ.test(path)) return next(request)
+    sent.push(path)
+    // Pull and Snapshot of one conversation share its path up to the last segment.
+    const conversation = path.slice(0, path.lastIndexOf("/"))
+    if ((failed.get(conversation) ?? 0) < failures) {
+      failed.set(conversation, (failed.get(conversation) ?? 0) + 1)
+      return new Response(null, { status: 503 })
+    }
+    if (fault?._tag === "Down") throw new TypeError("fetch failed")
+    if (fault?._tag === "Refuse") return new Response(null, { status: fault.status })
+    const response = await next(request)
+    if (fault?._tag === "Stall") {
+      await new Promise<void>((resolve, reject) => {
+        const release = () => {
+          stalled.delete(release)
+          resolve()
+        }
+        stalled.add(release)
+        request.signal.addEventListener("abort", () => {
+          stalled.delete(release)
+          reject(request.signal.reason)
+        })
+      })
+    }
+    if (fault?._tag === "Corrupt") return new Response("{", { status: 200, headers: { "content-type": "application/json" } })
+    return response
+  }
+  const service = ShardFaults.of({
+    down: () => set({ _tag: "Down" }),
+    refuse: (status = 400) => set({ _tag: "Refuse", status }),
+    stall: () => set({ _tag: "Stall" }),
+    corrupt: () => set({ _tag: "Corrupt" }),
+    heal: set(undefined),
+    sent: Effect.sync(() => [...sent]),
+    failures: Effect.sync(() => Math.max(0, ...failed.values())),
+  })
+  return { service, wrap }
+}

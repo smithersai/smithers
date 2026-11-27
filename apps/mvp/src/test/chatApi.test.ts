@@ -107,7 +107,7 @@ test("independent ChatApis and tabs sync independently, including a reopened API
     origins.push(seen)
     const tab = openTab({ ...api, fetch: (input, init) => {
       const url = new URL(input instanceof Request ? input.url : String(input))
-      if (url.pathname === "/api/shapes/messages") seen.add(url.origin)
+      if (/^\/api\/conversations\/[^/]+\/messages\/pull$/.test(url.pathname)) seen.add(url.origin)
       return api.fetch(input, init)
     } }, { answers: false })
     tabs.push(tab)

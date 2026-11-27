@@ -547,6 +547,9 @@ test("an attached agent's answer and its completion are also sequenced into the 
       asked: (asked) => counted.asked(asked).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
       answered: (answered) => counted.answered(answered).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
       noted: counted.noted,
+      replayed: counted.replayed,
+      backfilled: counted.backfilled,
+      markBackfilled: counted.markBackfilled,
     })
     const h = yield* Effect.promise(() => setup(bridge))
     // Asked before the bridge reached this conversation: Postgres holds the pair, the shard nothing.
@@ -605,6 +608,9 @@ const observing = (host: Effect.Success<ReturnType<typeof shardHost>>) => {
   const bridge = MessagesShardBridge.of({
     asked: real.asked,
     noted: real.noted,
+    replayed: real.replayed,
+    backfilled: real.backfilled,
+    markBackfilled: real.markBackfilled,
     answered: (answered: Answered) =>
       Effect.gen(function* () {
         const row = yield* Effect.promise(() => answerRow(answered.answerId))

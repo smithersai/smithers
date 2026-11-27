@@ -169,6 +169,8 @@ export default await WebAssembly.compile(await readFile(new URL(${url})))`
         "worker/chat/MessagesShardBridge.ts",
         // What the bridge is told, read from Postgres after the commit (slice 5a).
         "worker/chat/MessagesShardSource.ts",
+        // The conversation's history in Postgres, replayed once into its shard (slice 5b).
+        "worker/chat/MessagesShardBackfill.vibe",
         "db/migrations/0135_message_note_versions.ts",
         "db/migrations/0011_question_askers.ts",
         // The edge throttle on the open routes (docs/features/chat.md#throttling).

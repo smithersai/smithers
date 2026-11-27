@@ -19,6 +19,7 @@ import * as PlanTreeRoutes from "./plan/PlanTreeRoutes.vibe"
 import { MessagesShardBridge } from "./chat/MessagesShardBridge.ts"
 import * as MessagesShardObject from "./chat/MessagesShardObject.ts"
 import * as MessagesShardRoutes from "./chat/MessagesShardRoutes.ts"
+import * as MessagesShardBackfill from "./chat/MessagesShardBackfill.vibe"
 import * as MessagesShardSource from "./chat/MessagesShardSource.ts"
 import * as SshKeyAccess from "./SshKeyAccess.vibe"
 import * as Artifacts from "./branch/Artifacts.vibe"
@@ -657,6 +658,13 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                   // Before a read: the notes Postgres committed and the shard has not acknowledged are sent first.
                   (conversationId) =>
                     MessagesShardSource.drainIn(database, conversationId).pipe(
+                      Effect.provideService(MessagesShardBridge, shardBridge),
+                      Effect.provideService(RuntimeContext, runtime),
+                    ),
+                  // Before a read or a submit, and before the drain: a shard that does not hold the conversation's
+                  // history from Postgres is given it first (decision 0170, slice 5b).
+                  (conversationId) =>
+                    MessagesShardBackfill.ensureIn(database, conversationId).pipe(
                       Effect.provideService(MessagesShardBridge, shardBridge),
                       Effect.provideService(RuntimeContext, runtime),
                     ),

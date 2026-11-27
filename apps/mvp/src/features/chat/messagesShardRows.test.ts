@@ -1,5 +1,5 @@
 import { ShardProtocol } from "@smthrs/sync"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Schema, Scope, Stream, SubscriptionRef } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Queue, Schema, Scope, Stream, SubscriptionRef } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { expect, test } from "vitest"
 import type { Actor } from "../../../worker/Actor.vibe"
@@ -606,7 +606,7 @@ test("a Pull ChatApi answers 401 hides the conversation as the answer arrives, a
 
     // The store's rows, told of the 401s: hidden with the answer, and the read is reported as ChatApi answered it.
     const seen: { events?: ReadonlyArray<SyncEvent> } = {}
-    const failures = () => (seen.events ?? []).filter((event) => event._tag !== "Succeeded" && event._tag !== "Sent").length
+    const failures = () => (seen.events ?? []).filter((event) => event._tag !== "Succeeded").length
     const { told, refusals: keeping } = keeper(failures)
     const rows = yield* MessagesShardRows.open({
       origin: ORIGIN, conversationId: conversation, follow: "5 millis", within: "150 millis", denials, refusals: keeping,
@@ -779,3 +779,75 @@ test("a replica's status reads as a shape's sync events", () => {
   expect(eventsOf({ state: "refused", through: 4, version: 3, fence: 0, status: 403 })).toEqual([{ _tag: "Stopped", error: { status: 403 } }])
   expect(eventsOf({ state: "refused", through: 4, version: 3, fence: 0 })).toEqual([{ _tag: "Stopped", error: {} }])
 })
+
+test("rows that follow the home read each conversation named, each with its own refusals, and nothing of the one before", () =>
+  run(Effect.gen(function* () {
+    const host = yield* shardHost()
+    const bridge = MessagesShardBridge.make(host.forward)
+    const other = "4a3c9d2f-6e5b-4c8f-8d2e-3b7a1f9c8d6e"
+    expect(yield* bridge.asked(exchange(0, "Home question"))).toBe("ok")
+    expect(yield* bridge.asked({ ...exchange(1, "Other question"), conversationId: other })).toBe("ok")
+    const named = yield* Queue.unbounded<string | undefined>()
+    // Who keeps each conversation's refusals: one keeper each time a conversation is named, bound to it.
+    const keepers: Array<readonly [string, ReturnType<typeof keeper<string>>]> = []
+    const keeperOf = (id: string) => keepers.filter(([named]) => named === id).at(-1)![1]
+    const rows = yield* MessagesShardRows.following({
+      origin: ORIGIN,
+      follow: "5 millis",
+      within: "2 seconds",
+      conversations: Stream.fromQueue(named),
+      refusalsOf: (id) => {
+        const kept = keeper(() => id)
+        keepers.push([id, kept])
+        return kept.refusals
+      },
+    }).pipe(Effect.provide(httpOf(host, ada)))
+    const events = yield* follow(rows)
+    const whole = yield* rows.whole.pipe(Effect.forkScoped({ startImmediately: true }))
+    // Nothing named yet: nothing is read, nothing said, and the rows are not whole. Retry has nothing to sync.
+    yield* rows.reconnect
+    yield* Effect.sleep(40)
+    expect(events.seen).toEqual([])
+    expect(whole.pollUnsafe()).toBeUndefined()
+    expect(yield* rows.toArray).toEqual([])
+
+    // The home is named: its rows, whole, each naming it; its keeper is told it may show.
+    yield* Queue.offer(named, conversation)
+    yield* Fiber.join(whole)
+    yield* reads(rows, ["user done Home question", "assistant streaming "])
+    expect((yield* rows.toArray).every((row) => row.conversationId === conversation)).toBe(true)
+    yield* eventually(Effect.sync(() => keeperOf(conversation).told.some(([refused]) => !refused)))
+    // Named again, it is the same read: no second replica, no second keeper.
+    yield* Queue.offer(named, conversation)
+    yield* Effect.sleep(20)
+    expect(keepers.map(([id]) => id)).toEqual([conversation])
+
+    // Another is named: the rows move to it in one snapshot, and the one before is no longer read or cleared.
+    yield* Queue.offer(named, other)
+    yield* reads(rows, ["user done Other question", "assistant streaming "])
+    expect((yield* rows.toArray).every((row) => row.conversationId === other)).toBe(true)
+    yield* eventually(Effect.sync(() => keeperOf(other).told.some(([refused]) => !refused)))
+    const before = keeperOf(conversation).cleared.length
+    yield* bridge.answered(answered(exchange(0, "Home question"), "Home answer"))
+    yield* Effect.sleep(60)
+    expect(keeperOf(conversation).cleared.length).toBe(before)
+    expect(yield* read(rows)).toEqual(["user done Other question", "assistant streaming "])
+
+    // ChatApi refuses the one named now: its own keeper is told, and its rows go; the home's keeper is told nothing.
+    host.grant((_, id) => (id === other ? undefined : branchOf(id)))
+    yield* eventually(Effect.sync(() => keeperOf(other).told.at(-1)?.[0] === true))
+    yield* reads(rows, [])
+    expect(keeperOf(conversation).told.every(([refused]) => !refused)).toBe(true)
+    host.grant((_, id) => branchOf(id))
+
+    // None is named: the rows are empty, and that is a sync that succeeded. Retry has nothing to sync.
+    yield* Queue.offer(named, undefined)
+    yield* events.next((event) => event._tag === "Succeeded")
+    yield* reads(rows, [])
+    yield* rows.reconnect
+    // The home named again is read again, under a keeper of its own, with what the shard holds now.
+    yield* Queue.offer(named, conversation)
+    yield* reads(rows, ["user done Home question", "assistant done Home answer"])
+    expect(keepers.map(([id]) => id)).toEqual([conversation, other, conversation])
+    yield* eventually(Effect.sync(() => keeperOf(conversation).told.some(([refused]) => !refused)))
+  })))

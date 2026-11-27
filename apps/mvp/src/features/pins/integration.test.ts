@@ -1,5 +1,4 @@
 import { SqlClient } from "effect/sql"
-import { SyncPolicy } from "@smthrs/effect-electric"
 import { Deferred, Effect, Fiber } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { asPerson, member, nodeDevice, openTab, openTestApi, TestChatApi, type NodeDevice } from "../../test/chatApi"
@@ -11,7 +10,7 @@ const opened: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => { for (const r of opened.reverse().splice(0)) await r.dispose() })
 const until = (check: () => void | Promise<void>) => vi.waitFor(check, { timeout: 25_000, interval: 20 })
 const open = async (api: TestChatApi["Service"], device: NodeDevice) => {
-  const runtime = openTab(api, { host: device, retry: SyncPolicy.backoff({ initial: "20 millis", max: "50 millis" }) })
+  const runtime = openTab(api, { host: device, shard: { follow: "20 millis", within: "2 seconds" } })
   opened.push(runtime)
   const chat = await runtime.runPromise(Effect.service(Chat))
   const store = await runtime.runPromise(Effect.service(ChatStore))
@@ -146,8 +145,10 @@ test("the person's durable pin follows two devices, stays outside the window, an
   expect(a.queries.pinCollapsed.toArray[0]?.collapsed).toBe(false)
   const conversationId = (await a.runtime.runPromise(a.store.messages.toArray))[0]!.conversationId!
   // Real later messages push the pinned answer outside the normal 50-message window.
-  await root.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, sql => sql`INSERT INTO messages (id, role, text, status, conversation_id)
-    SELECT gen_random_uuid(), 'user', 'Later message ' || i, 'done', ${conversationId} FROM generate_series(1, 60) i`)))
+  const later = await root.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, sql => sql<{ readonly id: string }>`INSERT INTO messages (id, role, text, status, conversation_id)
+    SELECT gen_random_uuid(), 'user', 'Later message ' || i, 'done', ${conversationId} FROM generate_series(1, 60) i RETURNING id`)))
+  // Written straight to Postgres, so bridged as ChatApi bridges a question it stores.
+  for (const { id } of later) await root.runPromise(api.bridgeExchange(id))
   await until(() => expect(a.queries.conversation.toArray.some(r => r.id === asked.answerId)).toBe(false))
   expect(a.pin()).toEqual(["A garden to discuss."])
   a.actions.pin(asked.questionId)
