@@ -44,7 +44,7 @@ export const LOST_EXIT_CODE = -1
 type ToolError = Effect.Error<ReturnType<Machines["Service"]["tool"]>>
 
 /** Whether `error` means the machine couldn't start or answer, which the step retries. */
-const unavailable = (error: ToolError): boolean =>
+const unavailable = (error: ToolError): error is Extract<ToolError, { _tag: "@smthrs/mvp/branch/SandboxUnavailable" | "@smthrs/mvp/branch/SandboxStartTimedOut" }> =>
   error._tag === "@smthrs/mvp/branch/SandboxUnavailable" || error._tag === "@smthrs/mvp/branch/SandboxStartTimedOut"
 
 const counted = (call: string, outcome: string, target: CiJob.Target, job: CiJob.JobRef) =>
@@ -74,14 +74,31 @@ export const layer = Layer.effect(
           command: `test "$(git rev-parse HEAD)" = ${target.sha}`,
           timeoutSeconds: 60,
         }).pipe(
-          Effect.map((ran) => (ran.result as typeof SandboxTools.RunResult.Type).exitCode === 0),
           (checkout) => effect {
-            return checkout catch effect (error) => {
+            const ran = checkout catch effect (error) => {
               if (unavailable(error)) throw new CiJob.MachineUnavailable()
-              return false
+              if (error._tag === "@smthrs/mvp/branch/CheckoutFailed") {
+                throw new CiJob.CheckoutRefused({ checkoutFailure: error.checkoutFailure ?? "other", exitCode: error.exitCode ?? null })
+              }
+              throw new CiJob.CheckoutRefused({
+                checkoutFailure: error._tag === "@smthrs/sandbox/SandboxTools/ToolLost" ? "tool_lost" : error.reason,
+                exitCode: null,
+              })
             }
+            const result = ran.result as typeof SandboxTools.RunResult.Type
+            if (result.timedOut) throw new CiJob.CheckoutRefused({ checkoutFailure: "timed_out", exitCode: null })
+            if (result.exitCode !== 0) throw new CiJob.CheckoutRefused({ checkoutFailure: "verify", exitCode: result.exitCode })
+            return true
           },
-          Effect.tap((exact) => counted("checkout", exact ? "exact" : "refused", target, job)),
+          Effect.tap(() => counted("checkout", "exact", target, job)),
+          Effect.tapErrorTag("@smthrs/sandbox/CiJob/CheckoutRefused", (refusal) => counted("checkout", "refused", target, job).pipe(
+            Effect.annotateLogs({ checkoutFailure: refusal.checkoutFailure, exitCode: refusal.exitCode }),
+            Effect.andThen(Effect.annotateCurrentSpan({
+              "ci.checkout.failure": refusal.checkoutFailure,
+              ...(refusal.exitCode === null ? {} : { "ci.checkout.exit_code": refusal.exitCode }),
+            })),
+          )),
+          Effect.withSpan("ci.job.checkout"),
         ),
       run: (target, job, index, step) =>
         tool(target, job, `step:${index}`, {

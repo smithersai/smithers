@@ -448,6 +448,8 @@ CiJob.Graph.child({ target, jobs: [build.job, lint.job, unit.job] })
 | `layer`                                   | the actions `ci/job/Checkout`, `ci/job/Step` and `ci/job/Release` over `Machine`                                                                              |
 | `MachineUnavailable`                      | the machine couldn't start or answer; retried 1 s doubling to a minute for 30 minutes, then the job fails                                                     |
 
+`CheckoutFailure` enumerates the bounded stage names, and a host can fail its boolean checkout with `CheckoutRefused`. A checkout receipt can include `checkoutFailure` and its numeric `exitCode` when the machine returned one. The failure identifies a forge read, branch selection, clone, verification, timeout, lost tool or bounded tool refusal. Hosts returning a boolean and historical receipts keep their original shape. Checkout output is never recorded.
+
 - **An outcome, never a failure.** A step that exits non-zero, or runs past its time (600 s at most), fails the job and
   skips the steps after it without running them. A machine that never answers fails the job.
 - **Exactly the commit.** A checkout that isn't exactly `target.sha` fails the job before any step runs.

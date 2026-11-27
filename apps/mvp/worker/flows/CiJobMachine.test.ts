@@ -1,11 +1,11 @@
 // A CI job on the Node host's engine (worker/flows/CiJobMachine.ts, `@smthrs/sandbox`'s `ci/job`): its machine is a
 // test `Machines` that records each call and answers each command's exit code from a table, the only stand-in.
-import { CiJob, type SandboxTools } from "@smthrs/sandbox"
+import { CiJob, SandboxTools } from "@smthrs/sandbox"
 import { Effect, Exit, Layer } from "effect"
 import { describe, expect, test } from "vitest"
 import { noCommands } from "../test/commands.ts"
 import { Machines } from "../branch/Machines.vibe"
-import { SandboxUnavailable } from "../branch/Sandboxes.vibe"
+import { CheckoutFailed, SandboxUnavailable } from "../branch/Sandboxes.vibe"
 import { runFlow } from "../test/flowHost.ts"
 import * as CiJobMachine from "./CiJobMachine.vibe"
 
@@ -24,6 +24,8 @@ interface Call {
  */
 const machine = (options: {
   readonly output?: { stdout: string; stderr: string; truncated: boolean }
+  readonly checkoutFailure?: CheckoutFailed | SandboxTools.ToolRefused
+  readonly timedOut?: boolean
   readonly head?: string
   readonly exits?: Readonly<Record<string, number>>
   readonly lost?: ReadonlyArray<string>
@@ -37,6 +39,7 @@ const machine = (options: {
   const service = Machines.of({
     commands: () => noCommands,
     tool: (branch, owner, callId, call) => {
+      if (options.checkoutFailure !== undefined) return Effect.fail(options.checkoutFailure)
       if (unavailable > 0) {
         unavailable -= 1
         return Effect.fail(new SandboxUnavailable({ reason: "start" }))
@@ -53,7 +56,7 @@ const machine = (options: {
         result: {
           tool: "run" as const,
           exitCode,
-          timedOut: false,
+          timedOut: options.timedOut ?? false,
           stdout: "",
           stderr: "",
           stdoutBytes: 0,
@@ -144,11 +147,45 @@ describe("ci/job on a job machine", { timeout: 60_000 }, () => {
     expect(ran.exit).toEqual(Exit.succeed({
       outcome: "failed",
       steps: [
-        { name: "checkout", outcome: "failed", exitCode: null },
+        { name: "checkout", outcome: "failed", exitCode: 1, checkoutFailure: "verify" },
         { name: "step-0", outcome: "skipped", exitCode: null },
       ],
     }))
     expect(box.calls.map((call) => call.command)).not.toContain("make")
+  })
+
+  test.each([
+    { exitCode: 70, checkoutFailure: "forge" },
+    { exitCode: 71, checkoutFailure: "branch" },
+    { exitCode: 72, checkoutFailure: "clone" },
+    { exitCode: 128, checkoutFailure: "other" },
+  ] as const)("the durable checkout reports the machine's bounded $checkoutFailure failure", async (details) => {
+    const box = machine({ checkoutFailure: new CheckoutFailed(details) })
+    const ran = await runFlow(CiJob.CiJob, { target, job: job("build", "make") }, registration(box.layer))
+    expect(ran.exit).toEqual(Exit.succeed({
+      outcome: "failed",
+      steps: [
+        { name: "checkout", outcome: "failed", ...details },
+        { name: "step-0", outcome: "skipped", exitCode: null },
+      ],
+    }))
+    expect(box.calls).toEqual([])
+  })
+
+  test.each([
+    { fault: { checkoutFailure: new CheckoutFailed() }, checkoutFailure: "other", exitCode: null },
+    { fault: { checkoutFailure: new SandboxTools.ToolRefused({ reason: "path" }) }, checkoutFailure: "path", exitCode: null },
+    { fault: { timedOut: true, head: "c".repeat(40) }, checkoutFailure: "timed_out", exitCode: null },
+  ])("a $checkoutFailure checkout ends the job without running a user step", async ({ fault, checkoutFailure, exitCode }) => {
+    const box = machine(fault)
+    const ran = await runFlow(CiJob.CiJob, { target, job: job("build", "make") }, registration(box.layer))
+    expect(ran.exit).toEqual(Exit.succeed({
+      outcome: "failed",
+      steps: [
+        { name: "checkout", outcome: "failed", checkoutFailure, exitCode },
+        { name: "step-0", outcome: "skipped", exitCode: null },
+      ],
+    }))
   })
 
   test("a checkout the machine lost runs no step", async () => {
@@ -157,7 +194,7 @@ describe("ci/job on a job machine", { timeout: 60_000 }, () => {
     expect(ran.exit).toEqual(Exit.succeed({
       outcome: "failed",
       steps: [
-        { name: "checkout", outcome: "failed", exitCode: null },
+        { name: "checkout", outcome: "failed", exitCode: null, checkoutFailure: "tool_lost" },
         { name: "step-0", outcome: "skipped", exitCode: null },
       ],
     }))

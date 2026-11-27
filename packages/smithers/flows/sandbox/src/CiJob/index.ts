@@ -199,6 +199,30 @@ export const Target = Schema.Struct({
 export type Target = typeof Target.Type
 
 /**
+ * Bounded checkout diagnostics. Hosts never return checkout command output or a provider message.
+ * @category schemas
+ * @since 1.0.0-rc.23
+ */
+export const CheckoutFailure = Schema.Literals([
+  "forge", "branch", "clone", "other", "verify", "timed_out", "tool_lost",
+  "path", "not_found", "not_a_file", "not_a_directory", "not_a_repository", "too_large"
+])
+/** @category models
+ * @since 1.0.0-rc.23
+ */
+export type CheckoutFailure = typeof CheckoutFailure.Type
+
+/**
+ * A terminal checkout failure carrying bounded diagnostics. Machine checkout still answers a boolean on success.
+ * @category errors
+ * @since 1.0.0-rc.23
+ */
+export class CheckoutRefused extends Schema.TaggedError<CheckoutRefused>()("@smthrs/sandbox/CiJob/CheckoutRefused", {
+  checkoutFailure: CheckoutFailure,
+  exitCode: Schema.NullOr(Schema.Int)
+}) {}
+
+/**
  * How one step ended: its outcome and, when it ran to an end, its exit code.
  *
  * @category schemas
@@ -208,6 +232,7 @@ export const StepResult = Schema.Struct({
   name: Schema.String,
   outcome: Outcome,
   exitCode: Schema.NullOr(Schema.Int),
+  checkoutFailure: Schema.optionalKey(CheckoutFailure),
   output: Schema.optionalKey(Schema.Struct({ stdout: Schema.String, stderr: Schema.String, truncated: Schema.Boolean }))
 })
 
@@ -269,7 +294,7 @@ export class MachineUnavailable extends Schema.TaggedError<MachineUnavailable>()
 export class Machine extends Context.Service<
   Machine,
   {
-    readonly checkout: (target: Target, job: JobRef) => Effect.Effect<boolean, MachineUnavailable>
+    readonly checkout: (target: Target, job: JobRef) => Effect.Effect<boolean, MachineUnavailable | CheckoutRefused>
     readonly run: (
       target: Target,
       job: JobRef,
@@ -425,10 +450,16 @@ const machine = Effect.gen(function*() {
 export const layer = Layer.mergeAll(
   Checkout.toLayer(({ job, target }) =>
     Effect.flatMap(machine, (m) => m.checkout(target, refOf(job))).pipe(
-      Effect.map((exact): Result => ({
-        outcome: exact ? "passed" : "failed",
-        steps: [{ name: CHECKOUT, outcome: exact ? "passed" : "failed", exitCode: null }]
-      }))
+      Effect.map((exact): Result => {
+        const outcome = exact ? "passed" : "failed"
+        return { outcome, steps: [{ name: CHECKOUT, outcome, exitCode: null }] }
+      }),
+      Effect.catchTag("@smthrs/sandbox/CiJob/CheckoutRefused", ({ exitCode, checkoutFailure }) =>
+        Effect.succeed<Result>({
+          outcome: "failed",
+          steps: [{ name: CHECKOUT, outcome: "failed", exitCode, checkoutFailure }]
+        })
+      )
     )
   ),
   RunStep.toLayer(({ index, job, sofar, target }) => {

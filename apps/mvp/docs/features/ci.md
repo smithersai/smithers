@@ -240,6 +240,8 @@ A `cron` row starts its flow on a schedule, through `@smthrs/triggers` ([library
 | `github.webhook` | log | gains `dispatched`: the repository a push or pull request dispatched for; `synced`: the repository a default-branch push synced schedules for |
 | `smithers_repo_flow_plans{outcome}`, `smithers_repo_flow_statuses{state,outcome}` | counter | |
 
+A checkout refusal carries `checkoutFailure` on the durable checkout step and, when known, its numeric `exitCode`. `ci.job.call` records the same bounded fields and the `ci.job.checkout` span identifies the failure. The checkout command’s output and the upstream response body stay out of these records. Earlier receipts can omit the stage and carry a null exit code. A failed checkout skips every declared job step.
+
 No record carries a flow's source, a command, its output, an artifact's name or content, or a secret.
 
 ## Tests
