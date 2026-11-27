@@ -81,7 +81,7 @@ const fromView = {
  * every synced one; it never orders synced rows (docs/state.md rule 7). `v` is the row's version in the outbox:
  * version 2 adds the view a question was sent from (`source`) and its values (`data`).
  */
-export const Asking = Schema.Struct({
+export const AskingV2 = Schema.Struct({
   id: Schema.String,
   answerId: Schema.String,
   text: Schema.String,
@@ -91,6 +91,7 @@ export const Asking = Schema.Struct({
   conversationId: Schema.optional(Schema.String),
   ...fromView,
 })
+export const Asking = Schema.Struct({ ...AskingV2.fields, homeConversationId: Schema.optional(Schema.String) })
 export type Asking = typeof Asking.Type
 
 /**
@@ -107,7 +108,7 @@ export type UnsentReason = typeof UnsentReason.Type
  * A question that stays on this device until the person edits or discards it, or, when it was never admitted, sends
  * it again. Keyed by the question's id; kept on the device, so it survives a reload.
  */
-export const Unsent = Schema.Struct({
+export const UnsentV2 = Schema.Struct({
   id: Schema.String,
   answerId: Schema.String,
   text: Schema.String,
@@ -118,6 +119,7 @@ export const Unsent = Schema.Struct({
   /** Version 2: the view it was sent from, and its values, so Retry sends them again. */
   ...fromView,
 })
+export const Unsent = Schema.Struct({ ...UnsentV2.fields, homeConversationId: Schema.optional(Schema.String) })
 export type Unsent = typeof Unsent.Type
 
 /**

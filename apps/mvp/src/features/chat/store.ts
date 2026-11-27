@@ -2,7 +2,7 @@ import { makePins, pendingQuery, pinnedQuery } from "../pins/store.vibe"
 import { observeLoad } from "./load"
 import { makeLane, followPhases, followSummaries, type Lane } from "../timeline/store.vibe"
 import { TimelineNotice } from "../timeline/notice.vibe"
-import { Collection, LiveQuery, Outbox, Persistence } from "@smthrs/effect-tanstack-db"
+import { Collection, LiveQuery, Outbox, Persistence, Query } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import {
   Clock,
@@ -17,6 +17,7 @@ import {
   Ref,
   Scope,
   Semaphore,
+  Schema,
   Stream,
   SubscriptionRef,
 } from "effect"
@@ -27,7 +28,9 @@ import * as MessagesShardRows from "./messagesShardRows"
 import type { SyncedMessages, SyncEvent } from "./messagesShardRows"
 import { ChatWrites } from "./writes"
 import { ViewsStore } from "../views/store"
+import { AuthStore } from "../auth/store.vibe"
 import { ConversationOwners, type Fence } from "../conversations/owners"
+import type { Pending as PinPending } from "../pins/schema"
 import type { Gated } from "../repo/gate"
 import { PAGE_SIZE } from "./contract"
 import { connectionDrops, firstAnswerText } from "./metrics"
@@ -35,6 +38,7 @@ import {
   composerQuery,
   connectionQuery,
   conversationQuery,
+  homeLocalQuery,
   historyQuery,
   latestQuery,
   placeQuery,
@@ -168,6 +172,7 @@ export class ChatStore extends Context.Service<
      */
     readonly messages: SyncedMessages
     readonly shownMessages: Gated<Message>
+    readonly home: () => string | undefined
     readonly asking: Collection.Collection<Asking, string>
     readonly unsent: Collection.Collection<Unsent, string>
     /** Branch-local questions for display; raw asking and unsent rows remain delivery inputs. */
@@ -287,6 +292,20 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     initialData: [{ id: PLACE, conversationId: null, shared: false }],
   })
   const owners = yield* ConversationOwners
+  const auth = yield* AuthStore
+  const terminalHome = () => {
+    const session = auth.session.tanstack.get("session")!
+    return session.status === "signed_out" || (session.status === "signed_in" && session.role === "guest")
+  }
+  const home = yield* Collection.local({
+    id: "chat-home", schema: Schema.Struct({ conversationId: Schema.String }), getKey: (row) => row.conversationId,
+  })
+  const homeChanges = Stream.merge(owners.homes, auth.session.changes({ initial: true }).pipe(Stream.map(() => owners.home())))
+  const homeReads = homeChanges.pipe(Stream.map(() => owners.home() ?? (terminalHome() ? null : undefined)), Stream.changes,
+    Stream.tap((id) => Effect.gen(function* () {
+      for (const before of yield* home.toArray) yield* home.delete(before.conversationId)
+      if (id != null) yield* home.insert({ conversationId: id })
+    }).pipe(Effect.orDie)))
   // Every conversation's messages are read from its shard over the page's own signed-in requests.
   const http = yield* HttpClient.HttpClient
   const shardRead = {
@@ -303,7 +322,8 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   // session answer still names it home. Offline, or before any read is answered, nothing of it shows.
   const messages = yield* MessagesShardRows.following<Fence>({
     ...shardRead,
-    conversations: owners.homes,
+    conversations: homeReads,
+    terminal: (status) => terminalHome() && status.state === "refused" && status.status === 403,
     refusalsOf: (homeId) => ({
       fence: owners.fence,
       refuse: () => owners.refuse(homeId),
@@ -319,12 +339,18 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   // The conversation's views, synced beside its messages (src/features/views/store.ts).
   const viewsStore = yield* ViewsStore
   const shownPendingPins = yield* owners.ofShown(rawPins.pending, "conversationId")
-  const pinState = { ...rawPins, pendingState: yield* pendingQuery(rawPins.pending, shownPendingPins) }
+  const homePins = yield* LiveQuery.make((q) => q.from({ pin: rawPins.pending.tanstack })
+    .innerJoin({ home: home.tanstack }, ({ pin, home }) => Query.eq(pin.serverConversationId, home.conversationId))
+    .select(({ pin }) => pin))
+  const shownHomePins = (yield* owners.ofShown(homePins, "serverConversationId")) as unknown as Gated<PinPending>
+  const pinState = { ...rawPins, pendingState: yield* pendingQuery(rawPins.pending, shownPendingPins, shownHomePins) }
   const { views } = viewsStore
   // What shows of the home conversation goes through the data gate (decision 0110; the coordinator's ruling 3): the
   // conversation the session answer names home is the person's own (ConversationOwners). Its rows name it.
   const shownMessages = (yield* owners.ofShown(messages, "conversationId")) as unknown as Gated<Message>
-  const conversation = yield* conversationQuery(shownMessages, unsent, asking, viewsStore.shownHome, undefined, { messages, unsent })
+  const shownHomeUnsent = (yield* homeLocalQuery(yield* owners.ofShown(unsent, "homeConversationId"), home)) as unknown as Gated<Unsent>
+  const shownHomeAsking = (yield* homeLocalQuery(yield* owners.ofShown(asking, "homeConversationId"), home)) as unknown as Gated<Asking>
+  const conversation = yield* conversationQuery(shownMessages, shownHomeUnsent, shownHomeAsking, viewsStore.shownHome, undefined, { messages, unsent })
   const latest = yield* latestQuery(conversation, pageSize)
   const queued = yield* queuedQuery(conversation)
   // Branch-local writes remain available for delivery, but their display requires known conversation access too.
@@ -539,6 +565,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
       case "Failed":
         return reportShape(source, { shape: "failing", stopReason: null })
       case "Stopped":
+        if (source === HOME_SHAPE && event.error.status === 403 && terminalHome()) return reportShape(source, { shape: "ok", stopReason: null })
         return reportShape(source, {
           shape: "stopped",
           stopReason: event.error.status === undefined ? "invalid_response" : "refused",
@@ -555,11 +582,12 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     timelineNotices,
     timelineNotice: yield* timelineNoticeQuery(timelineNotices),
     pinState,
-    pinned: yield* pinnedQuery(pinState.effective, shownMessages, pinState.pending),
+    pinned: yield* pinnedQuery(pinState.effective, shownMessages, shownHomePins),
     messages,
     shownMessages,
     shownAsking,
     shownUnsent,
+    home: owners.home,
     asking,
     unsent,
     drafts,

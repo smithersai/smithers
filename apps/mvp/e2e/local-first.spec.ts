@@ -388,7 +388,7 @@ test("Retry: syncs at once instead of waiting out the backoff", { annotation: { 
   const retry = a.pill.getByRole("button", { name: "Retry" })
   await expect(retry).toBeVisible({ timeout: 60_000 })
   await a.device.syncUp()
-  const sent = a.page.waitForRequest((request) => new URL(request.url()).pathname === "/api/shapes/messages", { timeout: 1_000 })
+  const sent = a.page.waitForRequest((request) => (/^\/api\/conversations\/[^/]+\/messages\/pull$/).test(new URL(request.url()).pathname), { timeout: 1_000 })
   await retry.click()
   await sent
   await a.expectAnswered(asked, `retry-${devices.word}`)

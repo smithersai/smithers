@@ -31,10 +31,14 @@ export const pinnedQuery = <A extends MessageText, P extends string | number, M 
 })
 
 /** Personal home intents and branch intents whose conversation access is known. */
-export const pendingQuery = (pending: Source<Pending>, shown: Source<Pending>) => LiveQuery.make(q => q
+export const pendingQuery = (pending: Source<Pending>, shown: Source<Pending>, home: Source<Pending>) => LiveQuery.make(q => q
   .from({ row: pending.tanstack })
-  .leftJoin({ permitted: shown.tanstack }, ({ row, permitted }) => Query.eq(Query.coalesce(row.conversationId, ""), permitted.conversationId))
-  .where(({ row, permitted }) => Query.or(Query.eq(row.home, true), Query.not(Query.isUndefined(permitted?.conversationId))))
+  .leftJoin({ permitted: shown.tanstack }, ({ row, permitted }) => Query.eq(row.conversationId, permitted.conversationId))
+  .leftJoin({ home: home.tanstack }, ({ row, home }) => Query.eq(row.conversationId, home.conversationId))
+  .where(({ row, permitted, home }) => Query.or(
+    Query.and(Query.eq(row.home, false), Query.not(Query.isUndefined(permitted?.conversationId))),
+    Query.and(Query.eq(row.home, true), Query.not(Query.isUndefined(home?.serverConversationId))),
+  ))
   .select(({ row }) => row))
 
 /** One personal shape per tab, stored on the device with an explicit schema version. */

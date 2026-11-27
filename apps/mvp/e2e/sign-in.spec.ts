@@ -2,7 +2,7 @@ import { chromiumNetwork } from "./browserCapabilities"
 import { offlineTransport } from "./offlineTransport"
 import { CALLBACK_ROUTE, SIGN_IN, SIGN_OUT } from "../src/features/auth/contract"
 import { signInPrompt } from "./firstRun"
-import { QUESTIONS_ROUTE, SHAPE_ROUTE } from "../src/features/chat/contract"
+import { QUESTIONS_ROUTE } from "../src/features/chat/contract"
 import type { Dialog, Page } from "@playwright/test"
 import { faultyApp, faults } from "./faults"
 import { expect, QUEUED, type Tab, test } from "./devices"
@@ -54,25 +54,21 @@ test("sign out wipes the device: its unsent questions go, and the conversation s
   await a.expectNotSent(kept)
 
   // Sign out. The tab wipes the device's database, the engine's journal and the outbox, then opens as a visitor.
-  // The shape requests of the page signing out opens as: a navigation starts the list over.
-  const shapes: Array<URL> = []
-  page.on("framenavigated", (frame) => {
-    if (frame === page.mainFrame()) shapes.length = 0
-  })
-  page.on("request", (request) => {
-    const url = new URL(request.url())
-    if (url.pathname === SHAPE_ROUTE) shapes.push(url)
-  })
+  // A signed-out page has no home shard to read; a later sign-in starts a fresh replica.
+  const pulls = firstPulls(a)
   await page.getByRole("button", { name: SIGN_OUT }).click()
   await expect(signInPrompt(page)).toBeVisible({ timeout: 30_000 })
 
-  // The unsent question is gone, and the conversation's first request after signing out starts over (offset -1, no
-  // handle): nothing the device stored for the session survived.
+  // No pending text or read of the former home survives the signed-out navigation.
   await expect(a.question(kept)).toHaveCount(0)
-  await expect.poll(() => shapes.length, { timeout: 30_000 }).toBeGreaterThan(0)
-  expect(shapes[0]!.searchParams.get("offset")).toBe("-1")
-  expect(shapes[0]!.searchParams.get("handle")).toBeNull()
+  expect(pulls).toEqual([])
   expect(await outboxSize(page), "the outbox holds nothing").toBe(0)
+
+  await page.getByRole("link", { name: SIGN_IN }).first().click()
+  await expect(a.chatButton).toBeVisible({ timeout: 30_000 })
+  await expect.poll(() => pulls.length, { timeout: 30_000 }).toBeGreaterThan(0)
+  expect(pulls[0]!.searchParams.get("after")).toBe("0")
+  await expect(a.question(kept)).toHaveCount(0)
 })
 
 test("sign out wipes the device for every tab: a tab still holding the data holds the wipe off, and no tab opens on the session's data", { annotation: { type: "summary", description: "Signing out wipes the device only once no tab holds its data, and no tab reopens on it." } }, async ({ devices }) => {
@@ -88,7 +84,7 @@ test("sign out wipes the device for every tab: a tab still holding the data hold
   await one.ask(kept)
   await one.expectNotSent(kept)
   await two.expectNotSent(kept)
-  const shapes = [firstShapes(one), firstShapes(two)]
+  const pulls = [firstPulls(one), firstPulls(two)]
 
   // Tab 2 is slow to unload: a "Leave site?" prompt holds it open, with its databases, until the test answers it.
   // The test adds the prompt, not the app, and a click gives the page the activation the browser requires for one.
@@ -118,10 +114,7 @@ test("sign out wipes the device for every tab: a tab still holding the data hold
   await expect.poll(() => wipeMark(one.page), { message: "the wipe finished", timeout: 30_000 }).toBeNull()
   expect(await outboxSize(one.page), "the outbox holds nothing").toBe(0)
   for (const [index, tab] of [one, two].entries()) {
-    const seen = shapes[index]!
-    await expect.poll(() => seen.length, { timeout: 30_000 }).toBeGreaterThan(0)
-    expect(seen[0]!.searchParams.get("offset"), `${tab.name} syncs from scratch`).toBe("-1")
-    expect(seen[0]!.searchParams.get("handle")).toBeNull()
+    expect(pulls[index]!, `${tab.name} reads no home while signed out`).toEqual([])
   }
   // No row of the session comes back: tab 1 opens again, and the unsent question stays gone from both.
   await one.reload()
@@ -130,17 +123,17 @@ test("sign out wipes the device for every tab: a tab still holding the data hold
   await expect(two.question(kept)).toHaveCount(0)
 })
 
-/** The shape requests `tab` makes from its next navigation on, in order: a navigation starts the list over. */
-const firstShapes = (tab: Tab) => {
-  const shapes: Array<URL> = []
+/** MessagesShard pulls after the next navigation; each page starts a fresh in-memory replica. */
+const firstPulls = (tab: Tab) => {
+  const pulls: Array<URL> = []
   tab.page.on("framenavigated", (frame) => {
-    if (frame === tab.page.mainFrame()) shapes.length = 0
+    if (frame === tab.page.mainFrame()) pulls.length = 0
   })
   tab.page.on("request", (request) => {
     const url = new URL(request.url())
-    if (url.pathname === SHAPE_ROUTE) shapes.push(url)
+    if ((/^\/api\/conversations\/[^/]+\/messages\/pull$/).test(url.pathname)) pulls.push(url)
   })
-  return shapes
+  return pulls
 }
 
 /** Whether the page's boot is waiting to take the device's data from every other tab (the wipe's `smithers-data` lock). */

@@ -787,7 +787,7 @@ test("rows that follow the home read each conversation named, each with its own 
     const other = "4a3c9d2f-6e5b-4c8f-8d2e-3b7a1f9c8d6e"
     expect(yield* bridge.asked(exchange(0, "Home question"))).toBe("ok")
     expect(yield* bridge.asked({ ...exchange(1, "Other question"), conversationId: other })).toBe("ok")
-    const named = yield* Queue.unbounded<string | undefined>()
+    const named = yield* Queue.unbounded<string | null | undefined>()
     // Who keeps each conversation's refusals: one keeper each time a conversation is named, bound to it.
     const keepers: Array<readonly [string, ReturnType<typeof keeper<string>>]> = []
     const keeperOf = (id: string) => keepers.filter(([named]) => named === id).at(-1)![1]
@@ -805,6 +805,7 @@ test("rows that follow the home read each conversation named, each with its own 
     const events = yield* follow(rows)
     const whole = yield* rows.whole.pipe(Effect.forkScoped({ startImmediately: true }))
     // Nothing named yet: nothing is read, nothing said, and the rows are not whole. Retry has nothing to sync.
+    yield* Queue.offer(named, undefined)
     yield* rows.reconnect
     yield* Effect.sleep(40)
     expect(events.seen).toEqual([])
@@ -841,7 +842,7 @@ test("rows that follow the home read each conversation named, each with its own 
     host.grant((_, id) => branchOf(id))
 
     // None is named: the rows are empty, and that is a sync that succeeded. Retry has nothing to sync.
-    yield* Queue.offer(named, undefined)
+    yield* Queue.offer(named, null)
     yield* events.next((event) => event._tag === "Succeeded")
     yield* reads(rows, [])
     yield* rows.reconnect
@@ -850,4 +851,66 @@ test("rows that follow the home read each conversation named, each with its own 
     yield* reads(rows, ["user done Home question", "assistant done Home answer"])
     expect(keepers.map(([id]) => id)).toEqual([conversation, other, conversation])
     yield* eventually(Effect.sync(() => keeperOf(conversation).told.some(([refused]) => !refused)))
+  })))
+
+test("an idle replica hears another reader's raw 401, and its closed scope releases that observer", () =>
+  run(Effect.gen(function* () {
+    const host = yield* shardHost()
+    expect(yield* MessagesShardBridge.make(host.forward).asked(exchange(0))).toBe("ok")
+    const denials = MessagesShardClient.readDenials()
+    const scope = yield* Scope.make()
+    const replica = yield* Effect.gen(function* () {
+      const transport = yield* MessagesShardClient.make({ origin: ORIGIN, conversationId: conversation, within: "2 seconds" })
+      return yield* MessagesShard.make({ conversationId: conversation, node: MessagesShardClient.nodeOf("reader", "idle"), transport, denials })
+    }).pipe(Effect.provide(httpOf(host, ada)), Scope.provide(scope))
+    let refused = 0
+    yield* replica.onRefused(() => { refused++ })
+    yield* replica.resume
+    expect((yield* replica.chat).messages).toHaveLength(2)
+    // Another reader, on the same page's observer, receives the real route's signed-out denial.
+    const read = () => denials.observing(host.fetchAs(null))(`${ORIGIN}/api/conversations/${conversation}/messages/pull`)
+    expect((yield* Effect.promise(read)).status).toBe(401)
+    expect(refused).toBe(1)
+    expect(replica.refused()).toBe(true)
+    expect((yield* replica.chat).messages).toEqual([])
+    yield* Scope.close(scope, Exit.void)
+    expect((yield* Effect.promise(read)).status).toBe(401)
+    expect(refused).toBe(1)
+  })))
+
+test("overlapping dispatched reads retain their refusal handler and observer until both settle after the owner closes", () =>
+  run(Effect.gen(function* () {
+    const host = yield* shardHost()
+    const denials = MessagesShardClient.readDenials()
+    const started = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    let refusing = false
+    let first = true
+    const network = denials.observing(async (input, init) => {
+      if (!refusing) return host.fetchAs(ada)(input, init)
+      if (first) {
+        first = false
+        started.resolve()
+        await release.promise
+      }
+      return new Response(null, { status: 401 })
+    })
+    const http = Layer.provide(FetchHttpClient.layer, Layer.succeed(FetchHttpClient.Fetch, network))
+    const scope = yield* Scope.make()
+    const replica = yield* Effect.gen(function* () {
+      const transport = yield* MessagesShardClient.make({ origin: ORIGIN, conversationId: conversation, within: "2 seconds", denials })
+      return yield* MessagesShard.make({ conversationId: conversation, node: MessagesShardClient.nodeOf("reader", "overlap"), transport, denials })
+    }).pipe(Effect.provide(http), Scope.provide(scope))
+    let refused = 0
+    yield* replica.onRefused(() => { refused++ }).pipe(Scope.provide(scope))
+    yield* replica.resume
+    refusing = true
+    const a = yield* replica.resume.pipe(Effect.exit, Effect.forkScoped({ startImmediately: true }))
+    yield* Effect.promise(() => started.promise)
+    const b = yield* replica.resume.pipe(Effect.exit, Effect.forkScoped({ startImmediately: true }))
+    yield* Scope.close(scope, Exit.void)
+    release.resolve()
+    expect(Exit.isFailure(yield* Fiber.join(a))).toBe(true)
+    expect(Exit.isFailure(yield* Fiber.join(b))).toBe(true)
+    expect(refused).toBe(2)
   })))

@@ -181,6 +181,7 @@ const isTemplateRow = Schema.is(Schema.Union([PageView, FormView, GeneratedView,
  */
 export const View = Schema.Struct({
   id: Schema.String,
+  conversationId: Schema.optional(Schema.String),
   template: Template,
   props: Schema.Record(Schema.String, Schema.Unknown),
   position: Schema.Number,

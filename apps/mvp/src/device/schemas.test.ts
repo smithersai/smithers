@@ -2,7 +2,7 @@ import { Migrations } from "@smthrs/effect-tanstack-db"
 import { Schema } from "effect"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { describe, expect, test } from "vitest"
-import { Unsent } from "../features/chat/schema"
+import { Unsent, UnsentV2 } from "../features/chat/schema"
 import { listed } from "../features/runs/contract"
 import { RepositoryV3 } from "./repo-history"
 import { RunV1, RunV2, RunV3 } from "./runs-history"
@@ -71,14 +71,14 @@ describe("the device's stores", () => {
         store === ChatUnsentStore
           ? Migrations.local({
             id: "chat-unsent",
-            versions: [UnsentV1, Changed],
-            migrations: [Migrations.step(UnsentV1, Changed, (row) => ({ ...row, pinned: false }))],
+            versions: [UnsentV1, UnsentV2, Changed],
+            migrations: [Migrations.step(UnsentV1, UnsentV2, (row) => row), Migrations.step(UnsentV2, Changed, (row) => ({ ...row, pinned: false }))],
             getKey: (row) => row.id,
           })
           : store
       ),
     })
-    expect(explain(Migrations.check(changed, read()))).toEqual([`chat-unsent v2: ${advice.changed_without_version}`])
+    expect(explain(Migrations.check(changed, read()))).toEqual([`chat-unsent v3: ${advice.changed_without_version}`])
   })
 
   test("a local store's new version can't be declared without a migration to it", () => {

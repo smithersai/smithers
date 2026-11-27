@@ -4,7 +4,7 @@ import { Dismissed, Notice, Pending } from "../features/attention/schema"
 import { ConversationRoute } from "../features/branch/schema"
 import { Mine, Pending as ConversationPending, Refused as ConversationRefused } from "../features/conversations/schema"
 import { Confirmed } from "../features/auth/schema"
-import { Asking, ChatDraft, Message, Unsent } from "../features/chat/schema"
+import { Asking, AskingV2, ChatDraft, Message, Unsent, UnsentV2 } from "../features/chat/schema"
 import { Sending as TextSending, TextUpdate } from "../features/coedit/schema"
 import { AnswerRow as FlowAnswerRow, Code as FlowCode, Draft as FlowDraft, FlowRow, Form as FlowForm } from "../features/flows-ui/schema"
 import { FileTabRow } from "../features/files/schema"
@@ -61,9 +61,9 @@ export const ConversationRefusalsStore = Migrations.local({ id: "conversation-re
 /** Questions the server refused or the outbox couldn't take (src/features/chat/store.ts). */
 export const ChatUnsentStore = Migrations.local({
   id: "chat-unsent",
-  versions: [UnsentV1, Unsent],
-  // Version 2 adds a question's view and values; a question kept before has neither.
-  migrations: [Migrations.step(UnsentV1, Unsent, (row) => row)],
+  versions: [UnsentV1, UnsentV2, Unsent],
+  // Version 2 adds view values; version 3 records home provenance. Older rows keep no invented home.
+  migrations: [Migrations.step(UnsentV1, UnsentV2, (row) => row), Migrations.step(UnsentV2, Unsent, (row) => row)],
   getKey: (row) => row.id,
 })
 
@@ -216,9 +216,9 @@ export const MessagesStore = Migrations.synced({ id: "chat-messages", version: 6
 
 /**
  * The conversation's views. Version 2: a page's title, description and icon. Version 3: docs pages. Version 4: forms and
- * generated views. Version 5: a repository's view and its issues view.
+ * generated views. Version 5: repository and issues views. Version 6 preserves the server's source conversation.
  */
-export const ViewsStore = Migrations.synced({ id: "views", version: 5, schema: View, family: true })
+export const ViewsStore = Migrations.synced({ id: "views", version: 6, schema: View, family: true })
 
 const synced = [
   MessagesStore,
@@ -270,9 +270,9 @@ const synced = [
 /** Chat's questions (src/features/chat/store.ts, mutation `ask`). */
 export const AskingPayload = Migrations.payload({
   key: "asking",
-  versions: [AskingV1, Asking],
-  // Version 2 adds a question's view and values; a question queued before has neither.
-  migrations: [Migrations.step(AskingV1, Asking, (row) => ({ ...row, v: 2 as const }))],
+  versions: [AskingV1, AskingV2, Asking],
+  // Version 2 adds view values; version 3 records home provenance without changing delivery.
+  migrations: [Migrations.step(AskingV1, AskingV2, (row) => ({ ...row, v: 2 as const })), Migrations.step(AskingV2, Asking, (row) => row)],
 })
 
 /**

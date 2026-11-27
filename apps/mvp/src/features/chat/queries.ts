@@ -1,8 +1,8 @@
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import type { TimelineNotice } from "../timeline/notice.vibe"
-import type { Effect } from "effect"
+import { Effect } from "effect"
 import { COULDNT_ANSWER, MODEL_QUOTA_SPENT } from "./contract"
-import type { Source } from "../repo/gate"
+import type { Gated, Source } from "../repo/gate"
 import type { View } from "../views/schema"
 import type { Asking, Composer, Connection, History, Message, Place, ShardRow, Unsent } from "./schema"
 
@@ -195,3 +195,12 @@ export const historyQuery = (history: Collection.Collection<History, string>) =>
 /** Which conversation this tab shows and asks in. */
 export const placeQuery = (place: Collection.Collection<Place, string>) =>
   LiveQuery.make((q) => q.from({ place: place.tanstack }).findOne())
+
+
+/** Local home text requires its recorded origin, the current home, and that home's read admission. */
+export const homeLocalQuery = <A extends { readonly homeConversationId?: string }>(
+  rows: Source<A>,
+  home: Source<{ readonly conversationId: string }>,
+) => LiveQuery.make((q) => q.from({ row: rows.tanstack as unknown as Source<{ readonly homeConversationId: string }>["tanstack"] })
+  .innerJoin({ home: home.tanstack }, ({ row, home }) => Query.eq(row.homeConversationId, home.conversationId))
+  .select(({ row }) => row)).pipe(Effect.map((query) => query as unknown as Gated<A>))

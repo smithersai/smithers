@@ -137,7 +137,7 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
       "chat-drafts": `migrated 1→2 migrated ${rowsOf(fixture, "chat-drafts").length} kept 0`,
       "chat-messages": legacy ? "resync 2→6 migrated 0 kept 0" : "resync 3→6 migrated 0 kept 0",
       [branch]: legacy ? "resync 2→6 migrated 0 kept 0" : "resync 3→6 migrated 0 kept 0",
-      "chat-unsent": "migrated 1→2 migrated 1 kept 0",
+      "chat-unsent": "migrated 1→3 migrated 1 kept 0",
       flows: legacy ? "resync 1→2 migrated 0 kept 0" : "current 2→2 migrated 0 kept 0",
       "issue-drafts": "current 1→1 migrated 0 kept 0",
       "issue-items": legacy ? "resync 1→3 migrated 0 kept 0" : "current 3→3 migrated 0 kept 0",
@@ -146,7 +146,7 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
       preferences: "current 1→1 migrated 0 kept 0",
       "repo-repositories": legacy ? "resync 2→4 migrated 0 kept 0" : "resync 3→4 migrated 0 kept 0",
       runs: "resync 1→4 migrated 0 kept 0",
-      views: legacy ? "resync 1→5 migrated 0 kept 0" : "resync 2→5 migrated 0 kept 0"
+      views: legacy ? "resync 1→6 migrated 0 kept 0" : "resync 2→6 migrated 0 kept 0"
     })
     expect(report.epoch).toBe(deviceRegistry.epoch)
     expect(await keptRows(path)).toEqual([])
@@ -249,7 +249,7 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
       JSON.parse(valueOf(upgraded, index)).mutations[0].modified
     // A question is the same question, stamped; an issue write names nobody now.
     expect(Schema.is(Asking)(rowOf(ask!))).toBe(true)
-    expect(JSON.parse(valueOf(ask!, 0)).metadata.versions).toEqual({ asking: 2 })
+    expect(JSON.parse(valueOf(ask!, 0)).metadata.versions).toEqual({ asking: 3 })
     expect(Schema.is(IssueSending)(rowOf(person!))).toBe(true)
     expect(rowOf(person!)).not.toHaveProperty("via")
     if (fixture.build === "7b96f878") {

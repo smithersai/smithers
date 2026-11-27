@@ -168,7 +168,7 @@ export class Chat extends Context.Service<Chat, { readonly queries: ChatQueries;
         const questionAnswerId = awaitAdmission ? question?.answerId ?? retained?.questionAnswerId : undefined
         const text = awaitAdmission ? question?.text ?? retained?.text : undefined
         if (Option.isSome(held) && !held.value.failed && held.value.messageId === (messageId ?? null) && held.value.awaitAdmission === awaitAdmission && held.value.questionAnswerId === questionAnswerId) return
-        const serverConversationId = place ?? (yield* messages.toArray)[0]?.conversationId ?? (Option.isSome(held) ? held.value.serverConversationId : undefined)
+        const serverConversationId = place ?? (awaitAdmission ? question?.homeConversationId ?? retained?.serverConversationId : store.home())
         const synced = serverConversationId === undefined ? Option.none() : yield* store.pinState.pins.get(serverConversationId)
         const at = Math.max(yield* Clock.currentTimeMillis,
           Option.isSome(held) ? held.value.at + 1 : 0,

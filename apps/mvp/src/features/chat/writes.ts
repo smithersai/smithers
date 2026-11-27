@@ -40,6 +40,7 @@ export const keepUnsent = (unsent: Collection.Collection<Unsent, string>, row: A
       queuedAt: row.queuedAt,
       reason,
       ...(row.conversationId === undefined ? {} : { conversationId: row.conversationId }),
+      ...(row.homeConversationId === undefined ? {} : { homeConversationId: row.homeConversationId }),
       ...(row.source === undefined ? {} : { source: row.source }),
       ...(row.data === undefined ? {} : { data: row.data }),
     })
@@ -53,6 +54,7 @@ const ParkedQuestion = Schema.Struct({
   text: Schema.String,
   queuedAt: Schema.Number,
   conversationId: Schema.optional(Schema.String),
+  homeConversationId: Schema.optional(Schema.String),
   source: Schema.optional(Source),
   data: Schema.optional(FormValues),
 })

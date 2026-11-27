@@ -56,10 +56,11 @@ afterEach(async () => {
   for (const runtime of runtimes.splice(0).reverse()) await runtime.dispose()
 })
 
-const tabOn = async <R, E>(runtime: ManagedRuntime.ManagedRuntime<R | Chat | ChatStore, E>) => {
+const tabOn = async <R, E>(runtime: ManagedRuntime.ManagedRuntime<R | Chat | ChatStore, E>, ready = true) => {
   runtimes.push(runtime)
   const { queries, actions } = await runtime.runPromise(Effect.service(Chat))
   const store = await runtime.runPromise(Effect.service(ChatStore))
+  if (ready) await runtime.runPromise(store.messages.whole)
   // What React's live queries start on first render, without waiting for the network: they read the device.
   for (const query of [store.shown, store.queued, store.composerState, store.connectionState, store.historyState]) {
     query.tanstack.startSyncImmediate()
@@ -132,7 +133,7 @@ const withSwitches = async <T extends { readonly runtime: ManagedRuntime.Managed
 /** A tab with the faulty ChatApi client and shard reads, and their switches. */
 const openFaulty = async (options: TabOptions = {}) => {
   const runtime = openFaultyApp(options)
-  const tab = await tabOn(runtime)
+  const tab = await tabOn(runtime, options.shardFaults === undefined && options.shardFailures === undefined)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   return { ...tab, api, onApi: <A>(effect: Effect.Effect<A>) => runtime.runPromise(effect), ...(await switches(runtime)) }
 }
@@ -315,8 +316,8 @@ describe("refused callers", () => {
       expect(state.leader).toBe(true)
     })
     const { questionId } = asked((await tab.actions.ask("hello")))
-    await until(() => expect(tab.shown()).toEqual(["user unsent hello"]))
-    expect(tab.queries.conversation.toArray[0]).toMatchObject({ id: questionId, sendAgain: false })
+    await until(() => expect(tab.store.unsent.tanstack.get(questionId)?.reason).toBe("refused"))
+    expect(tab.shown()).toEqual([])
     expect(tab.store.unsent.tanstack.get(questionId)?.reason).toBe("refused")
     expect(tab.count(Metric.withAttributes(askFailures, { reason: "refused" }))).toBe(1)
     expect(tab.queued()).toBe(0)
@@ -425,7 +426,7 @@ describe("sending", () => {
     const device = nodeDevice({ agent: api })
     const memory = { ...device, persistence: { ...device.persistence, open: () => Promise.reject(new Error("no OPFS")) } }
     const tab = await tabOn(
-      openFaultyTab(api, { ...quick, host: memory, confirmWithin: "200 millis", shardFaults: (faults) => faults.down() }),
+      openFaultyTab(api, { ...quick, host: memory, confirmWithin: "200 millis", shardFaults: (faults) => faults.down() }), false,
     ).then(withSwitches)
     asked((await tab.actions.ask("hello")))
     await until(() => expect(tab.sentQuestions().length).toBeGreaterThanOrEqual(1))
@@ -687,7 +688,7 @@ describe("the device store", () => {
     await first.close()
     // Nothing of the conversation's messages is kept on the device: a reload that cannot read the shard has none to
     // show, has not opened, and the pill says the device is offline in time.
-    const second = await tabOn(openFaultyTab(api, { ...quick, host: device, shardFaults: (faults) => faults.down() })).then(withSwitches)
+    const second = await tabOn(openFaultyTab(api, { ...quick, host: device, shardFaults: (faults) => faults.down() }), false).then(withSwitches)
     await until(() => expect(second.connection()).toMatchObject({ status: "offline", retry: true }))
     expect(second.history()?.opened).toBe(false)
     expect(second.shown()).toEqual([])
@@ -747,7 +748,7 @@ describe("the device store", () => {
 
 describe("the connection pill", () => {
   test("hides while online; shows Offline at once on the browser's offline event, with the questions queued", async () => {
-    const tab = await openFaulty(quick)
+    const tab = await openFaulty({ ...quick, answers: false })
     const target = new EventTarget()
     await tab.runtime.runPromise(Scope.provide(bindConnectivity(target), await tab.runtime.runPromise(Scope.make())))
     await until(() => expect(tab.connection()).toMatchObject({ status: "up" }))
@@ -769,7 +770,7 @@ describe("the connection pill", () => {
   })
 
   test("the device adopted in place sends a waiting question at once, as the browser coming back online does", async () => {
-    const tab = await openFaulty(quick)
+    const tab = await openFaulty({ ...quick, answers: false })
     const target = new EventTarget()
     await tab.runtime.runPromise(Scope.provide(bindConnectivity(target), await tab.runtime.runPromise(Scope.make())))
     await until(() => expect(tab.connection()).toMatchObject({ status: "up" }))

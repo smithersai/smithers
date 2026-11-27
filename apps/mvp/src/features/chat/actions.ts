@@ -1,4 +1,4 @@
-import type { Outbox } from "@smthrs/effect-tanstack-db"
+import type { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { Clock, Deferred, Effect, Metric, Option, Ref, type Types } from "effect"
 import { Clipboard } from "../../clipboard.vibe"
 import { codeOf } from "../../errorCode"
@@ -109,13 +109,16 @@ const keepDraft = (draft: string, awaitPersistence = false) =>
     const revision = yield* Ref.get(draftRevision)
     const generation = (yield* composerNow).generation
     const kept = yield* drafts.get(key)
-    const write = Option.isSome(kept)
-      ? kept.value.text === draft && kept.value.generation === generation
-        ? undefined
-        : yield* draft === "" ? drafts.delete(key) : drafts.update(key, (row) => { row.text = draft; row.generation = generation })
-      : draft === ""
-      ? undefined
-      : yield* drafts.insert({ id: key, text: draft, ...(generation === undefined ? {} : { generation }) })
+    let write: Collection.Transaction | undefined
+    if (Option.isSome(kept)) {
+      const unchanged = kept.value.text === draft && kept.value.generation === generation
+      if (!unchanged) {
+        if (draft === "") write = yield* drafts.delete(key)
+        else write = yield* drafts.update(key, (row) => { row.text = draft; row.generation = generation })
+      }
+    } else if (draft !== "") {
+      write = yield* drafts.insert({ id: key, text: draft, ...(generation === undefined ? {} : { generation }) })
+    }
     if (write !== undefined) {
       const persisted = yield* Effect.cached(persistDraft(write, key))
       draftWrites.set(key, { generation, text: draft, persisted })
@@ -284,6 +287,7 @@ const askAdmitted = (question: string, from: FromView | undefined, conversationI
     const restored = Math.max(latestQueued(yield* store.asking.toArray), latestQueued(yield* store.unsent.toArray))
     const queuedAt = yield* Ref.updateAndGet(store.lastQueuedAt, (last) => Math.max(askedAt, restored + 1, last + 1))
     const queued = Option.getOrThrow(yield* store.connection.get(CONNECTION)).status !== "up"
+    const homeConversationId = conversationId === undefined ? store.home() : undefined
     yield* admit({
       id: questionId,
       answerId,
@@ -291,6 +295,7 @@ const askAdmitted = (question: string, from: FromView | undefined, conversationI
       queuedAt,
       v: 2,
       ...(conversationId === undefined ? {} : { conversationId }),
+      ...(homeConversationId === undefined ? {} : { homeConversationId }),
       ...(from === undefined ? {} : { source: from.source }),
       ...(from?.data === undefined ? {} : { data: from.data }),
     }).pipe(
@@ -366,7 +371,7 @@ export const resendUnsent = (id: string) =>
   Effect.gen(function* () {
     const row = yield* unsentRow(id)
     if (Option.isNone(row)) return
-    const { answerId, text, queuedAt, conversationId, source, data } = row.value
+    const { answerId, text, queuedAt, conversationId, homeConversationId, source, data } = row.value
     // The unsent row goes only once the outbox has the question again, so it never vanishes in between: until then
     // it hides the queued row. It is sent to the conversation it was asked in, from the view it was sent from.
     const again: Asking = {
@@ -376,6 +381,7 @@ export const resendUnsent = (id: string) =>
       queuedAt,
       v: 2,
       ...(conversationId === undefined ? {} : { conversationId }),
+      ...(homeConversationId === undefined ? {} : { homeConversationId }),
       ...(source === undefined ? {} : { source }),
       ...(data === undefined ? {} : { data }),
     }

@@ -1,13 +1,14 @@
 import { testChatDatabase } from "./test/chatApi"
 import { LogFailures } from "@smthrs/observability"
-import { Effect, Fiber, Layer, ManagedRuntime, Metric } from "effect"
+import { Effect, Fiber, Layer, ManagedRuntime, Metric, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, expect, test, vi } from "vitest"
-import { boot, logHostRecords, logPageErrors, realServices, start } from "./boot"
+import { boot, bootTime, logHostRecords, logPageErrors, realServices, start } from "./boot"
 import { markStage, stageTimes } from "./bootStages.vibe"
 import { hostRecords } from "./hostRecords"
 import { Auth } from "./features/auth/auth.vibe"
+import { check } from "./features/auth/actions.vibe"
 import { AuthStore, SESSION } from "./features/auth/store.vibe"
 import { Chat, type ChatView } from "./features/chat/chat"
 import { storagePersisted } from "./features/chat/metrics"
@@ -40,13 +41,16 @@ import { Workbench } from "./features/workbench/store.vibe"
 import { FirstRun } from "./features/first-run/firstRun.vibe"
 import { Mcp } from "./features/mcp/store.vibe"
 import { Pulls } from "./features/pulls/pulls.vibe"
-import { StoragePersistence } from "@smthrs/platform-browser"
+import { PendingSnapshot, StoragePersistence, TabChannel } from "@smthrs/platform-browser"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "./test/chatApi"
 import { inProcessWorker } from "./test/languageServer"
-import { faultyServices, shardFaults } from "./test/faults"
+import { AuthFaults, faultyServices, shardFaults } from "./test/faults"
 import { read } from "./test/otlp"
 import { PluginsUi } from "./plugins/ui.vibe"
 import { Secrets } from "./features/secrets/secrets.vibe"
+import { BugTabs } from "./features/bugs/flows.vibe"
+import { TabRequests } from "./flows/requests.vibe"
+import { ConversationOwners } from "./features/conversations/owners"
 
 // The browser program and its boundary, on the app's own layer over a Node device, against ChatApi's real handler.
 // Records are read back from the OTLP exports the browser sent.
@@ -463,6 +467,114 @@ test("start is the boundary: it builds the one runtime, renders the chat layer o
     "unhandledrejection",
   ])
   expect(chat!.queries.conversation.status).toBe("cleaned-up")
+})
+
+test("the app wires optional editor storage and browser context, and retains refusals without Web Storage marks", async () => {
+  const api = await chatApi()
+  const values = new Map<string, string>()
+  const snapshot = PendingSnapshot.make({
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => void values.set(key, value),
+    removeItem: (key) => void values.delete(key),
+  }, "boot-pending-form")
+  const { refusalMarks: _marks, ...device } = nodeDevice()
+  const host = {
+    ...device,
+    formSnapshot: snapshot,
+    editorTabPersistent: false,
+    editorTabRefusal: "lock_held",
+    screen: () => ({ browser: "BootBrowser/1.0", viewport: "1280x800" }),
+  }
+  const runtime = openTab(api, { host })
+  runtimes.push(runtime)
+  const flows = await runtime.runPromise(Effect.service(FlowsUi))
+  flows.queries.editor.startSyncImmediate()
+  flows.queries.form.startSyncImmediate()
+  await flows.actions.openNew(undefined)
+  await until(() => expect(flows.queries.editor.toArray[0]?.state).toBe("session"))
+  flows.actions.setRequest("Session input at the page boundary")
+  expect(snapshot.read()?.value).toMatchObject({ request: "Session input at the page boundary" })
+
+  const request = crypto.randomUUID()
+  await runtime.runPromise(Effect.flatMap(TabRequests, (requests) => requests.add(request, "button")))
+  const context = await Effect.runPromise(Effect.scoped(
+    Effect.flatMap(BugTabs, (tabs) => tabs.ask(request)).pipe(
+      Effect.provide(BugTabs.layerChannel({ name: host.engineName, within: "2 seconds" }).pipe(
+        Layer.provide(TabChannel.layer),
+      )),
+    ),
+  ))
+  expect(Option.getOrThrow(context)).toMatchObject({ browser: "BootBrowser/1.0", viewport: "1280x800" })
+
+  const chat = await runtime.runPromise(Effect.service(ChatStore))
+  await runtime.runPromise(chat.messages.whole)
+  const owners = await runtime.runPromise(Effect.service(ConversationOwners))
+  const home = owners.home()!
+  owners.refuse(home)
+  expect(owners.refused(home)).toBe(true)
+})
+
+test("a cold session leaves home history and the boot metric pending until an authorized home pull completes", async () => {
+  const api = await chatApi()
+  const before = Effect.runSync(Metric.value(bootTime)).count
+  const page = { origin: api.origin, fetch: api.fetch, reload: api.reload, host: nodeDevice() }
+  const rendered: Array<ChatView> = []
+  const { runtime, stop } = start(
+    { ...page, target: new EventTarget(), startedAt: Date.now(), render: (chat) => rendered.push(chat) },
+    faultyServices(page, () => Effect.void, true),
+  )
+  try {
+    const store = await runtime.runPromise(Effect.service(ChatStore))
+    const auth = await runtime.runPromise(Effect.service(AuthStore))
+    await until(() => expect(rendered).toHaveLength(1))
+    await until(() => expect(auth.session.tanstack.get(SESSION)?.status).toBe("unreachable"))
+    expect(store.home()).toBeUndefined()
+    expect(store.history.tanstack.get("history")?.opened).toBe(false)
+    expect(runtime.runSync(Metric.value(bootTime)).count).toBe(before)
+
+    await runtime.runPromise(Effect.flatMap(AuthFaults, (faults) => faults.heal))
+    await runtime.runPromise(check("retry"))
+    await until(() => expect(store.home()).toBeDefined())
+    await until(() => expect(store.history.tanstack.get("history")?.opened).toBe(true))
+    await until(() => expect(runtime.runSync(Metric.value(bootTime)).count).toBe(before + 1))
+  } finally {
+    await stop()
+  }
+})
+
+test("start binds the first-paint issue search through the real client and releases its host when stopped", async () => {
+  const api = await chatApi()
+  let bound = false
+  let unbound = false
+  const page = {
+    origin: api.origin,
+    fetch: api.fetch,
+    reload: api.reload,
+    host: {
+      ...nodeDevice(),
+      earlyIssueSearch: {
+        bind: (ask: (owner: string, name: string, query: string) => void, forget: () => void) => {
+          expect(typeof ask).toBe("function")
+          expect(typeof forget).toBe("function")
+          bound = true
+          return () => { unbound = true }
+        },
+      },
+    },
+  }
+  const rendered: Array<ChatView> = []
+  const { stop } = start(
+    { ...page, target: new EventTarget(), startedAt: Date.now(), render: (chat) => rendered.push(chat) },
+    realServices(page),
+  )
+  try {
+    await until(() => expect(rendered).toHaveLength(1))
+    expect(bound).toBe(true)
+    expect(unbound).toBe(false)
+  } finally {
+    await stop()
+  }
+  expect(unbound).toBe(true)
 })
 
 test("start takes faulty services in place of the real ones, as the end-to-end entry gives them", async () => {

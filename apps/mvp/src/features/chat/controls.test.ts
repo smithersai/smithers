@@ -1,5 +1,5 @@
 import type { Outbox } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Exit, Fiber, Layer, Logger, Metric, Option, Scope, Stream } from "effect"
+import { Context, Effect, Exit, Fiber, Layer, Logger, Metric, Option, Ref, Scope, Stream } from "effect"
 import * as Arr from "effect/Array"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -69,6 +69,8 @@ const openOn = async (api: TestChatApi["Service"], device: NodeDevice, faulty = 
   runtimes.push(runtime)
   const { queries, actions } = await runtime.runPromise(Effect.service(Chat))
   const store = await runtime.runPromise(Effect.service(ChatStore))
+  // Establish this home's authorized origin before queuing local text, even when only the outbox is offline.
+  await runtime.runPromise(store.messages.whole)
   for (const query of [store.shown, store.queued, store.composerState, store.connectionState, store.historyState]) {
     query.tanstack.startSyncImmediate()
   }
@@ -570,6 +572,14 @@ describe("drafts and delivery stay in their own conversation", () => {
       queuedAt: Date.now(),
       conversationId
     }, "refused")))
+    // A redelivered refusal cannot overwrite the retained record or its original conversation.
+    await tab.run(Effect.flatten(keepUnsent(tab.store.unsent, {
+      v: 2, id: unsentId, answerId: crypto.randomUUID(), text: "Replacement private text", queuedAt: Date.now(),
+      homeConversationId: tab.store.home(),
+    }, "conflict")))
+    expect(Option.getOrThrow(await tab.run(tab.store.unsent.get(unsentId)))).toMatchObject({
+      conversationId, text: "unsent private text", reason: "refused",
+    })
     const view = tab.queries.of(conversationId)
     view.conversation.startSyncImmediate()
     view.pinned.startSyncImmediate()
@@ -897,4 +907,52 @@ describe("drafts and delivery stay in their own conversation", () => {
     )
     expect(Exit.hasInterrupts(interrupted)).toBe(true)
   })
+})
+
+test("an older durable draft receipt never marks a newer composer value saved", async () => {
+  const { api, device } = await openApi()
+  let armed = false
+  let entered!: () => void
+  let release!: () => void
+  const saving = new Promise<void>((resolve) => { entered = resolve })
+  const held = new Promise<void>((resolve) => { release = resolve })
+  const host = {
+    ...device,
+    persistence: {
+      ...device.persistence,
+      open: async () => {
+        const database = await device.persistence.open()
+        return { ...database, execute: async <T>(sql: string, params?: ReadonlyArray<unknown>) => {
+          if (armed && /INSERT INTO/i.test(sql)) {
+            armed = false
+            entered()
+            await held
+          }
+          return database.execute<T>(sql, params)
+        } }
+      },
+    },
+  } as NodeDevice
+  const tab = await openOn(api, host)
+  await tab.run(tab.store.drafts.restored)
+  armed = true
+  await tab.run(setDraft("Earlier draft"))
+  try {
+    await saving
+    const revision = await tab.run(Ref.get(tab.store.draftRevision))
+    // A collection source can change the composer while this tab's actual SQLite receipt is held.
+    // It does not issue a second local draft write or advance that write's revision.
+    await tab.run(tab.store.composer.update("composer", (row) => {
+      row.draft = "Newer composer value"
+      row.generation = "newer-source"
+      row.saved = false
+    }))
+    expect(await tab.run(Ref.get(tab.store.draftRevision))).toBe(revision)
+    release()
+    await until(() => expect(tab.store.draftWrites.has(HOME_DRAFT)).toBe(false))
+    await until(() => expect(device.storedRows("chat-drafts")).toMatchObject([{ text: "Earlier draft" }]))
+    expect(tab.composer()).toMatchObject({ draft: "Newer composer value", generation: "newer-source", saved: false })
+  } finally {
+    release()
+  }
 })

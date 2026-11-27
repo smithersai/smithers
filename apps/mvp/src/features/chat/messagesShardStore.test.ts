@@ -3,10 +3,11 @@ import { Effect, Metric, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, expect, test, vi } from "vitest"
 import { shaOf } from "../../../worker/test/branch"
-import { DEVICE_PRINCIPAL, type NodeDevice, nodeDevice, openTab, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
+import { DEVICE_PRINCIPAL, member, type NodeDevice, nodeDevice, openTab, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { boundFetch } from "../../device/identity.vibe"
 import { ada, ownerIn } from "../../test/messagesShardHost"
 import { failWrites, fillStorage } from "../../test/writeFailure"
+import { AuthStore } from "../auth/store.vibe"
 import { SESSION_ROUTE } from "../auth/contract"
 import { Branch } from "../branch/branch.vibe"
 import { BranchStore } from "../branch/store.vibe"
@@ -90,6 +91,7 @@ const openOn = async (
   runtimes.push(runtime)
   const { queries, actions } = await runtime.runPromise(Effect.service(Chat))
   const store = await runtime.runPromise(Effect.service(ChatStore))
+  if (fault(SESSION_ROUTE) === undefined) await runtime.runPromise(store.messages.whole)
   for (const query of [store.shown, store.queued, store.composerState, store.connectionState, store.historyState]) {
     query.tanstack.startSyncImmediate()
   }
@@ -1086,4 +1088,203 @@ test("a conversation read a page at a time opens once it is whole: never on the 
   expect(heldWhenOpened).toEqual([4])
   expect(await tab.shown(conversationId)).toEqual(whole)
   expect(shardOf(tab.requests, conversationId).filter((request) => request.includes("limit=1")).length).toBeGreaterThan(4)
+}, 120_000)
+
+test("a cold unconfirmed session keeps home history unopened until its authorized first pull", async () => {
+  const api = await openApi()
+  const tab = await openOn(api, nodeDevice({ agent: api }), fromShard, path => path === SESSION_ROUTE ? "stall" : undefined)
+  const owners = await tab.run(Effect.service(ConversationOwners))
+  await new Promise(resolve => setTimeout(resolve, 100))
+  expect(owners.home()).toBeUndefined()
+  expect(Option.getOrThrow(await tab.run(tab.store.history.get(HISTORY))).opened).toBe(false)
+  expect(tab.requests.filter(request => /messages\/pull/.test(request))).toEqual([])
+})
+
+test.each([401, 403, 404])("a late home %s refuses A after the active home switched to B", async status => {
+  const api = await openApi()
+  const denials = readDenials()
+  let home: string | undefined
+  let armed = false
+  let start!: () => void
+  let finish!: () => void
+  const started = new Promise<void>(resolve => { start = resolve })
+  const finished = new Promise<void>(resolve => { finish = resolve })
+  const tab = await openOn(api, nodeDevice({ agent: api }), { ...fromShard, readDenials: denials }, () => undefined, network => denials.observing(async (input, init) => {
+    const request = new Request(input, init)
+    if (armed && new URL(request.url).pathname === `/api/conversations/${home}/messages/pull`) {
+      armed = false
+      start()
+      await finished
+      return new Response(null, { status })
+    }
+    return network(request)
+  }))
+  const owners = await tab.run(Effect.service(ConversationOwners))
+  await until(() => expect(owners.home()).toBeDefined())
+  home = owners.home()!
+  await tab.run(tab.store.messages.whole)
+  const other = await tab.show("other")
+  armed = true
+  await started
+  const auth = await tab.run(Effect.service(AuthStore))
+  await tab.run(auth.session.update("session", row => { row.homeConversationId = other }))
+  await until(() => expect(owners.home()).toBe(other))
+  finish()
+  await until(() => expect(owners.refused(home!)).toBe(true))
+  expect(owners.home()).toBe(other)
+}, 120_000)
+
+test("home refusal hides retained queued, unsent and optimistic pin text through reload without deleting delivery records", async () => {
+  const api = await openApi()
+  const device = nodeDevice({ agent: api })
+  const tab = await openOn(api, device, fromShard)
+  const owners = await tab.run(Effect.service(ConversationOwners))
+  await tab.run(tab.store.messages.whole)
+  const home = owners.home()!
+  tab.store.pinned.tanstack.startSyncImmediate()
+  tab.store.pinState.pendingState.tanstack.startSyncImmediate()
+  tab.net.fault = path => path === QUESTIONS_ROUTE ? "offline" : undefined
+  const asked = await tab.actions.ask("Queued private question")
+  if (!asked.asked) throw new Error(asked.reason)
+  const unsent = { id: crypto.randomUUID(), answerId: crypto.randomUUID(), text: "Refused private question", queuedAt: Date.now(), reason: "refused" as const, homeConversationId: home }
+  const kept = await tab.run(tab.store.unsent.insert(unsent))
+  await tab.run(kept.persisted)
+  const pending = { conversationId: "home", serverConversationId: home, personId: "", messageId: asked.questionId, changedAt: "", at: Date.now(), home: true, failed: false, awaitAdmission: true, text: "Pinned private preview" }
+  await tab.run((await tab.run(tab.store.pinState.pending.insert(pending))).persisted)
+  await until(() => expect(tab.queries.conversation.toArray.map(row => row.text)).toContain("Queued private question"))
+  await until(() => expect(tab.queries.pinned.toArray.map(row => row.text)).toEqual(["Pinned private preview"]))
+  tab.net.fault = path => path === QUESTIONS_ROUTE ? "offline" : path === `/api/conversations/${home}/messages/pull` ? 403 : undefined
+  await until(() => expect(owners.refused(home)).toBe(true))
+  const hidden = async (reader: typeof tab) => {
+    expect(await reader.run(reader.store.conversation.toArray)).toEqual([])
+    expect(await reader.run(reader.store.pinned.toArray)).toEqual([])
+    expect(await reader.run(reader.store.pinState.pendingState.toArray)).toEqual([])
+    expect((await reader.run(reader.store.asking.toArray)).map(row => row.text)).toContain("Queued private question")
+    expect((await reader.run(reader.store.unsent.toArray)).map(row => row.text)).toContain("Refused private question")
+    expect((await reader.run(reader.store.pinState.pending.toArray)).map(row => row.text)).toEqual(["Pinned private preview"])
+  }
+  await hidden(tab)
+  await until(() => expect(device.stored("message-pin-pending")).toBe(1))
+  await tab.close()
+  const restored = await openOn(api, device, fromShard, () => "offline")
+  restored.store.pinned.tanstack.startSyncImmediate()
+  restored.store.pinState.pendingState.tanstack.startSyncImmediate()
+  await until(async () => expect((await restored.run(restored.store.asking.toArray)).length).toBe(1))
+  await restored.run(restored.store.unsent.restored)
+  await restored.run(restored.store.pinState.pending.restored)
+  await hidden(restored)
+}, 120_000)
+
+test("a new home grant cannot expose a retained view from the refused old home", async () => {
+  const api = await openApi()
+  const tab = await openOn(api, nodeDevice({ agent: api }), fromShard)
+  await tab.run(tab.store.messages.whole)
+  const owners = await tab.run(Effect.service(ConversationOwners))
+  const home = owners.home()!
+  const other = await tab.show("other")
+  const views = await tab.run(Effect.service(ViewsStore))
+  const id = crypto.randomUUID()
+  await sqlOn(api)(sql => sql`INSERT INTO views (id, template, props, conversation_id)
+    VALUES (${id}, 'link', '{"url":"https://example.com/private"}'::jsonb, ${home})`)
+  views.shownHome.tanstack.startSyncImmediate()
+  await until(async () => expect((await tab.run(views.shownHome.toArray)).map(row => row.id)).toEqual([id]))
+  owners.refuse(home)
+  await tab.run(views.knowHome(other))
+  await tab.run(owners.clear(other, owners.fence()))
+  expect((await tab.run(views.views.toArray)).map(row => row.id)).toContain(id)
+  expect((await tab.run(views.shownHome.toArray)).map(row => row.id)).toEqual([])
+  expect(owners.refused(home)).toBe(true)
+}, 120_000)
+
+test("a Guest's denied home does not fail the connection on a readable branch", async () => {
+  const runtime = openTestApp({ answers: false }, { actor: { ...member, role: "guest" } })
+  runtimes.push(runtime)
+  const api = await runtime.runPromise(Effect.service(TestChatApi))
+  api.branches.github.publish("octo", "hello", { defaultBranch: "main", branches: { main: shaOf("main"), feature: shaOf("feature") } })
+  const branchId = crypto.randomUUID()
+  const conversationId = crypto.randomUUID()
+  await sqlOn(api)(sql => sql`INSERT INTO branches (id, repo_id, name, mode, created_by)
+    VALUES (${branchId}, 'github/octo/hello', 'feature', 'open', 'person-owner')`)
+  await sqlOn(api)(sql => sql`INSERT INTO conversations (id, repo_id, branch_id)
+    VALUES (${conversationId}, 'github/octo/hello', ${branchId})`)
+  await sqlOn(api)(sql => sql`INSERT INTO branch_shares (branch_id, grantee, login, access)
+    VALUES (${branchId}, 'person-member', 'member', 'view')`)
+  const tab = await openOn(api, nodeDevice({ agent: api }), fromShard)
+  const owners = await tab.run(Effect.service(ConversationOwners))
+  await until(() => expect(owners.home()).toBeDefined())
+  await until(() => expect(owners.refused(owners.home()!)).toBe(true))
+  expect(await tab.show("feature")).toBe(conversationId)
+  await tab.run(tab.store.opened(conversationId)!.messages.whole)
+  await until(() => expect(tab.connection()).toMatchObject({ status: "up", retry: false }))
+  expect(Option.getOrThrow(await tab.run(tab.store.history.get(HISTORY))).opened).toBe(true)
+}, 120_000)
+
+test.each([false, true])("a newly admitted home never adopts retained local text with no recorded home origin (populated: %s)", async populated => {
+  const api = await openApi()
+  const tab = await openOn(api, nodeDevice({ agent: api }), fromShard)
+  await tab.run(tab.store.messages.whole)
+  if (populated) {
+    const asked = await tab.actions.ask("Current home content")
+    if (!asked.asked) throw new Error(asked.reason)
+    await tab.run(tab.store.messages.awaitRow(row => row.id === asked.questionId, "5 seconds"))
+    await until(() => expect(tab.queries.conversation.toArray.map(row => row.text)).toContain("Current home content"))
+  }
+  tab.store.pinned.tanstack.startSyncImmediate()
+  tab.store.pinState.pendingState.tanstack.startSyncImmediate()
+  const id = crypto.randomUUID()
+  const kept = await tab.run(tab.store.unsent.insert({ id, answerId: crypto.randomUUID(), text: "Unknown old home question", queuedAt: 1, reason: "not_admitted" }))
+  await tab.run(kept.persisted)
+  const intent = await tab.run(tab.store.pinState.pending.insert({ conversationId: "home", personId: "", messageId: id, changedAt: "", at: 1, home: true, failed: false, awaitAdmission: true, text: "Unknown old home preview" }))
+  await tab.run(intent.persisted)
+  // Projection can retain delivery intent under its effective key, but that is never a preview admission.
+  await until(async () => expect((await tab.run(tab.store.pinState.effective.toArray)).find(row => row.messageId === id)?.conversationId)
+    .toBe(populated ? tab.store.home() : "home"))
+  expect((await tab.run(tab.store.conversation.toArray)).map(row => row.text)).not.toContain("Unknown old home question")
+  expect(await tab.run(tab.store.pinned.toArray)).toEqual([])
+  expect(await tab.run(tab.store.pinState.pendingState.toArray)).toEqual([])
+  expect((await tab.run(tab.store.unsent.toArray)).map(row => row.text)).toEqual(["Unknown old home question"])
+  expect((await tab.run(tab.store.pinState.pending.toArray)).map(row => row.text)).toEqual(["Unknown old home preview"])
+}, 120_000)
+
+test.each([
+  { retained: false, known: false },
+  { retained: true, known: false },
+  { retained: true, known: true },
+])("a local pin preserves its recorded origin without adopting the current home (retained: $retained, known: $known)", async ({ retained, known }) => {
+  const { openFaultyTab } = await import("../../test/chatApi")
+  const { EngineFaults } = await import("../../test/faults")
+  const api = await openApi()
+  const tab = openFaultyTab(api, { host: nodeDevice({ agent: api }) })
+  runtimes.push(tab)
+  const chat = await tab.runPromise(Effect.service(Chat))
+  const store = await tab.runPromise(Effect.service(ChatStore))
+  await tab.runPromise(store.messages.whole)
+  const origin = store.home()!
+  expect(origin).toBeDefined()
+  const current = await tab.runPromise(api.askElsewhere("Current home content"))
+  await until(async () => expect((await tab.runPromise(store.messages.toArray)).some(row => row.id === current.questionId)).toBe(true))
+  store.pinned.tanstack.startSyncImmediate()
+  await tab.runPromise(Effect.flatMap(EngineFaults, faults => faults.holdStarts))
+  const id = crypto.randomUUID()
+  await tab.runPromise(store.unsent.insert({
+    id, answerId: crypto.randomUUID(), text: "Older local question", queuedAt: 1, reason: "not_admitted",
+    ...(known ? { homeConversationId: origin } : {}),
+  }))
+  if (retained) await tab.runPromise(store.pinState.pending.insert({
+    conversationId: "home", personId: "", messageId: id, changedAt: "", at: 1,
+    home: true, failed: true, awaitAdmission: true, text: "Retained preview",
+    ...(known ? { serverConversationId: origin } : {}),
+  }))
+  if (known) {
+    chat.actions.discardUnsent(id)
+    await until(async () => expect(await tab.runPromise(store.unsent.toArray)).toEqual([]))
+  }
+  chat.actions.pin(id, true)
+  await until(async () => expect((await tab.runPromise(store.pinState.pending.toArray))[0]).toMatchObject({
+    failed: false, awaitAdmission: true, text: known ? "Retained preview" : "Older local question",
+  }))
+  const pending = (await tab.runPromise(store.pinState.pending.toArray))[0]!
+  expect(pending.serverConversationId).toBe(known ? origin : undefined)
+  await until(async () => expect((await tab.runPromise(store.pinned.toArray)).map(row => row.text)).toEqual(known ? ["Retained preview"] : []))
+  if (!known) expect((await tab.runPromise(store.unsent.toArray)).map(row => row.text)).toEqual(["Older local question"])
 }, 120_000)

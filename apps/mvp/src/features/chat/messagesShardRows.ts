@@ -78,6 +78,8 @@ export interface RowsOptions<F = number> {
   /** How often the replica syncs with its shard. */
   readonly follow: Duration.Input
   /** Whoever keeps the conversation's refusals (src/features/conversations/owners.ts). */
+  /** An explicit terminal home denial can finish readiness without admitting any rows. */
+  readonly terminal?: (status: MessagesShardStatus) => boolean
   readonly refusals?: Refusals<F>
 }
 
@@ -144,6 +146,7 @@ const rowsOver = Effect.fnUntraced(function* (
   current: SubscriptionRef.SubscriptionRef<Generation>,
   batches: Stream.Stream<Batch>,
   follow: Duration.Input,
+  terminal: (status: MessagesShardStatus) => boolean = () => false,
 ) {
   const scope = yield* Effect.scope
   const generations = SubscriptionRef.changes(current)
@@ -171,7 +174,7 @@ const rowsOver = Effect.fnUntraced(function* (
   // stopped before that never committed it, and says so (`JournalStopped`): no caller reads that as committed.
   const committed = (status: MessagesShardStatus) => rows.reached(status.version)
   const whole = rows.preload.pipe(
-    Effect.andThen(statuses.pipe(Stream.filter((status) => status.state === "ok"), Stream.take(1), Stream.runHead)),
+    Effect.andThen(statuses.pipe(Stream.filter((status) => status.state === "ok" || terminal(status)), Stream.take(1), Stream.runHead)),
     Effect.flatMap((status) => committed(Option.getOrThrow(status))),
   )
   const synced: SyncedMessages = {
@@ -256,7 +259,7 @@ const tell = <F>(
  */
 export const make = Effect.fnUntraced(function* <F = number>(replica: MessagesShardReplica, options: RowsOptions<F>) {
   const current = yield* SubscriptionRef.make<Generation>({ replica, base: 0, pending: false })
-  const { synced, committed } = yield* rowsOver(replica.conversationId.toLowerCase(), current, batchesOf({ replica, base: 0, pending: false }), options.follow)
+  const { synced, committed } = yield* rowsOver(replica.conversationId.toLowerCase(), current, batchesOf({ replica, base: 0, pending: false }), options.follow, options.terminal)
   if (options.refusals !== undefined) yield* tell(replica, 0, options.refusals, committed)
   return synced
 })
@@ -302,8 +305,8 @@ export const open = <F = number>(options: OpenOptions<F>): Effect.Effect<SyncedM
   })
 
 export interface FollowingOptions<F = number> extends Omit<OpenOptions<F>, "conversationId" | "refusals"> {
-  /** Which conversation to read: the one named now, then each one named after it; none is empty rows. */
-  readonly conversations: Stream.Stream<string | undefined>
+  /** Which conversation to read: undefined is unknown; null explicitly confirms there is none. */
+  readonly conversations: Stream.Stream<string | null | undefined>
   /** Whoever keeps the refusals of each conversation the rows come to read. */
   readonly refusalsOf: (conversationId: string) => Refusals<F>
 }
@@ -321,7 +324,7 @@ export const following = <F = number>(options: FollowingOptions<F>): Effect.Effe
     const current = yield* SubscriptionRef.make<Generation>({ replica: undefined, base: 0, pending: true })
     // A conversation named after another starts the rows again from its own snapshot.
     const batches = SubscriptionRef.changes(current).pipe(Stream.switchMap(batchesOf))
-    const { synced, committed } = yield* rowsOver("following", current, batches, options.follow)
+    const { synced, committed } = yield* rowsOver("following", current, batches, options.follow, options.terminal)
     const context = yield* Effect.context<HttpClient.HttpClient>()
     let generation = 0
     // The scopes of the conversations the rows read: the one named now, and the one before until the rows move.
@@ -335,7 +338,7 @@ export const following = <F = number>(options: FollowingOptions<F>): Effect.Effe
           const base = ++generation * GENERATION
           const scope = yield* Scope.make()
           held.push(scope)
-          if (conversationId !== undefined) {
+          if (conversationId != null) {
             const refusals = options.refusalsOf(conversationId)
             const replica = yield* replicaOf({ ...options, conversationId, refusals }).pipe(
               Effect.provideContext(context),
@@ -343,7 +346,7 @@ export const following = <F = number>(options: FollowingOptions<F>): Effect.Effe
             )
             yield* tell(replica, base, refusals, committed).pipe(Scope.provide(scope))
             yield* SubscriptionRef.set(current, { replica, base, pending: false })
-          } else yield* SubscriptionRef.set(current, { replica: undefined, base, pending: false })
+          } else yield* SubscriptionRef.set(current, { replica: undefined, base, pending: conversationId === undefined })
           // The conversation before goes once the rows read the next: its replica, its sync and its refusals.
           yield* release(1)
         })),

@@ -315,6 +315,8 @@ export const make = Effect.fnUntraced(function* (options: ReplicaOptions) {
   const subscribers = new Set<(batch: Batch) => void>()
   const watchers = new Set<() => void>()
   const refusals = new Set<() => void>()
+  const dispatched = new Map<symbol, { readonly listeners: ReadonlyArray<() => void>; denied: boolean }>()
+  let inScope = true
   const shown = (): Chat => (hidden ? emptyChat : chat)
   const snapshotBatch = (): Batch => ({
     snapshot: true,
@@ -331,7 +333,7 @@ export const make = Effect.fnUntraced(function* (options: ReplicaOptions) {
     // Told first, in this turn: what else shows of the conversation is hidden before its rows are taken away. Every
     // refusal is told, one that finds the conversation hidden already included: a read another reader began after the
     // first refusal may be answered after this one, and its answer must not undo it (owners.ts `refuse`).
-    if (!visible) for (const refusal of refusals) refusal()
+    if (!visible) for (const refusal of new Set([...refusals, ...[...dispatched.values()].flatMap((read) => read.listeners)])) refusal()
     if (hidden === !visible) return
     hidden = !visible
     publish(snapshotBatch())
@@ -341,17 +343,17 @@ export const make = Effect.fnUntraced(function* (options: ReplicaOptions) {
   // refused or, when the page's transport never returns it, as whatever became of the request: hidden either way, until
   // a sync ChatApi answers whole.
   const { denials } = options
-  // Whether a `401` to a read of the conversation arrived while the sync now under way was: its own, told already.
-  let denied = false
-  if (denials !== undefined) {
-    yield* Effect.acquireRelease(
-      Effect.sync(() => denials.watch(options.conversationId, () => {
-        denied = true
-        show(false)
-      })),
-      (stop) => Effect.sync(stop),
-    )
-  }
+  // Keep the idle replica informed too. Closing its owner releases this observer only after dispatched reads settle.
+  const stopWatch = yield* Effect.acquireRelease(
+    Effect.sync(() => denials?.watch(options.conversationId, () => {
+      for (const read of dispatched.values()) read.denied = true
+      show(false)
+    }) ?? (() => {})),
+    (stop) => Effect.sync(() => {
+      inScope = false
+      if (dispatched.size === 0) stop()
+    }),
+  )
   const apply = (delivery: ShardClient.Delivery) =>
     Effect.try({
       try: () => {
@@ -408,7 +410,9 @@ export const make = Effect.fnUntraced(function* (options: ReplicaOptions) {
   const sync = Effect.suspend(() => {
     // Taken before the first request: a refusal recorded from here on is not one this sync's answer is later than.
     const fence = fenceNow()
-    denied = false
+    const dispatch = Symbol()
+    const read = { listeners: [...refusals], denied: false }
+    dispatched.set(dispatch, read)
     return client.sync.pipe(
       // Answered whole: the person may read the conversation, so what was hidden shows again, before the status says so.
       Effect.tap(() => Effect.andThen(reveal(true), report("ok", fence))),
@@ -416,10 +420,13 @@ export const make = Effect.fnUntraced(function* (options: ReplicaOptions) {
         Effect.andThen(
           // Each refused read is told once: a `401` was told as it arrived, where the page tells them. Any other
           // refusal is told here, whatever else was heard meanwhile.
-          lostAccess(error) && !(denied && error.status === 401) ? reveal(false) : Effect.void,
+          lostAccess(error) && !(read.denied && error.status === 401) ? reveal(false) : Effect.void,
           report(stateOf(error), fence, error._tag === "MessagesShardUnavailable" ? error.status : undefined),
         )),
-    )
+    ).pipe(Effect.ensuring(Effect.sync(() => {
+      dispatched.delete(dispatch)
+      if (!inScope && dispatched.size === 0) stopWatch()
+    })))
   }).pipe(Effect.annotateLogs({ feature: "chat", conversationId: options.conversationId }))
 
   /** Takes this write's refusals out of the store, so each is reported once and the store stays bounded. */

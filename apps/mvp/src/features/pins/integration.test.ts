@@ -14,6 +14,7 @@ const open = async (api: TestChatApi["Service"], device: NodeDevice) => {
   opened.push(runtime)
   const chat = await runtime.runPromise(Effect.service(Chat))
   const store = await runtime.runPromise(Effect.service(ChatStore))
+  await runtime.runPromise(store.messages.whole)
   for (const q of [store.shown, store.pinned, store.pinState.collapseState]) q.tanstack.startSyncImmediate()
   return { runtime, ...chat, store, pin: () => chat.queries.pinned.toArray.map(r => r.text) }
 }
@@ -29,6 +30,7 @@ test("Retry preserves a refused local pin's identity and saved text after its or
   opened.push(a)
   const chat = await a.runPromise(Effect.service(Chat))
   const store = await a.runPromise(Effect.service(ChatStore))
+  await a.runPromise(store.messages.whole)
   store.shown.tanstack.startSyncImmediate(); store.pinned.tanstack.startSyncImmediate()
   await a.runPromise(Effect.flatMap(QuestionFaults, f => f.failNext("bad_request")))
   const asked = (await chat.actions.ask("Keep this refused local copy"))
@@ -60,6 +62,7 @@ test("a first unsent question can be pinned, restored and unpinned before Postgr
   opened.push(first)
   const chat = await first.runPromise(Effect.service(Chat))
   const store = await first.runPromise(Effect.service(ChatStore))
+  await first.runPromise(store.messages.whole)
   store.shown.tanstack.startSyncImmediate()
   store.pinned.tanstack.startSyncImmediate()
   await first.runPromise(Effect.flatMap(QuestionFaults, faults => faults.failNext("bad_request")))
@@ -210,6 +213,7 @@ test("an unfinished personal pin resumes after the tab closes before its engine 
   opened.push(first)
   const chat = await first.runPromise(Effect.service(Chat))
   const store = await first.runPromise(Effect.service(ChatStore))
+  await first.runPromise(store.messages.whole)
   store.pinned.tanstack.startSyncImmediate()
   const asked = await root.runPromise(api.askElsewhere("Keep this after reload"))
   await until(async () => expect((await first.runPromise(store.messages.toArray)).some(r => r.id === asked.questionId)).toBe(true))
@@ -240,6 +244,7 @@ test("a late refused pin cannot fail a newer unpin, and a refused unpin remains 
   opened.push(a)
   const chat = await a.runPromise(Effect.service(Chat))
   const store = await a.runPromise(Effect.service(ChatStore))
+  await a.runPromise(store.messages.whole)
   store.pinned.tanstack.startSyncImmediate()
   await until(() => expect(chat.queries.pinned.toArray.map(r => r.id)).toEqual([one.questionId]))
   const faults = await a.runPromise(Effect.service(EngineFaults))
@@ -300,6 +305,7 @@ test("a refused launch rolls the pin back, keeps a retryable intent, and chat st
   opened.push(faulty)
   const chat = await faulty.runPromise(Effect.service(Chat))
   const store = await faulty.runPromise(Effect.service(ChatStore))
+  await faulty.runPromise(store.messages.whole)
   store.composerState.tanstack.startSyncImmediate()
   store.pinned.tanstack.startSyncImmediate()
   store.pinState.pendingState.tanstack.startSyncImmediate()
@@ -345,3 +351,4 @@ test("a refused launch rolls the pin back, keeps a retryable intent, and chat st
   await until(async () => expect(await reloaded.runtime.runPromise(reloaded.store.pinState.pending.toArray)).toEqual([]))
   expect(reloaded.pin()).toEqual(["A message to pin"])
 }, 120_000)
+

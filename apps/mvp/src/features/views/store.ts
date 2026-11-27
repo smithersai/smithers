@@ -43,23 +43,21 @@ export const shownQuery = (views: Source<View>, showing: Collection.Collection<S
 export const rowsQuery = (views: Source<View>) => LiveQuery.make((q) => q.from({ view: views.tanstack }))
 
 /**
- * Branch conversation `conversationId`'s views, each naming it: its shape's rows carry no conversation of their own, and
- * the data gate joins a conversation's rows by it (src/features/conversations/owners.ts).
+ * Branch conversation `conversationId`'s views, retaining the source conversation each server row names.
  */
 export const ofConversation = (views: Source<View>, conversationId: string) =>
   LiveQuery.make(
-    (q) => q.from({ view: views.tanstack }).select(({ view }) => ({ ...view, conversationId })),
+    (q) => q.from({ view: views.tanstack }).where(({ view }) => Query.eq(view.conversationId, conversationId)),
     { getKey: (row) => row.id },
   )
 
-/** Which conversation is the home one, once the session answer names it: its views' shape names none. */
+/** Which conversation the session currently names home. */
 export const HOME = "home"
 export const HomeConversation = Schema.Struct({ id: Schema.Literal(HOME), conversationId: Schema.String })
 export type HomeConversation = typeof HomeConversation.Type
 
 /**
- * The home conversation's views, each naming the home conversation once this tab knows it (`knowHome`): none before.
- * The join's left side is an expression that is always "home", so every view meets the one row.
+ * Only views whose own source conversation is the current home; a new home never relabels retained rows.
  */
 export const ofHome = (views: Source<View>, home: Source<HomeConversation>) =>
   LiveQuery.make(
@@ -67,8 +65,8 @@ export const ofHome = (views: Source<View>, home: Source<HomeConversation>) =>
       q
         .from({ view: views.tanstack })
         .innerJoin({ home: home.tanstack }, ({ view, home }) =>
-          Query.eq(Query.coalesce((view as unknown as { readonly home?: string }).home, HOME), home.id))
-        .select(({ view, home }) => ({ ...view, conversationId: home.conversationId })),
+          Query.eq(view.conversationId, home.conversationId))
+        .select(({ view }) => view),
     { getKey: (row) => row.id },
   )
 
@@ -128,7 +126,7 @@ export class ViewsStore extends Context.Service<
           schema: View,
           getKey: (row) => row.id,
           syncMode: "eager",
-          persist: { schemaVersion: 5 },
+          persist: { schemaVersion: 6 },
           shape: {
             url: `${config.origin}${VIEWS_SHAPE_ROUTE}`,
             columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -148,9 +146,11 @@ export class ViewsStore extends Context.Service<
           initialData: [{ id: OPENED, viewId: null, template: null, repo: null, returnTo: null }],
         })
         const home = yield* Collection.local<HomeConversation, string>({ id: "views-home", schema: HomeConversation, getKey: (row) => row.id })
-        const setHome = (conversationId: string) => {
+        const setHome = (conversationId: string | undefined) => {
           const held = home.tanstack.get(HOME)
-          if (held === undefined) home.tanstack.insert({ id: HOME, conversationId })
+          if (conversationId === undefined) {
+            if (held !== undefined) home.tanstack.delete(HOME)
+          } else if (held === undefined) home.tanstack.insert({ id: HOME, conversationId })
           else if (held.conversationId !== conversationId) home.tanstack.update(HOME, (draft) => void (draft.conversationId = conversationId))
         }
         const knowHome = (conversationId: string) => Effect.sync(() => setHome(conversationId))
@@ -158,8 +158,7 @@ export class ViewsStore extends Context.Service<
         const auth = yield* Effect.serviceOption(AuthStore)
         if (Option.isSome(auth)) {
           const decide = () => {
-            const named = homeNamed(auth.value)
-            if (named !== undefined) setHome(named)
+            setHome(homeNamed(auth.value))
           }
           for (const rows of [auth.value.session.tanstack, auth.value.confirmed.tanstack] as const) {
             yield* Effect.acquireRelease(
@@ -187,7 +186,7 @@ export class ViewsStore extends Context.Service<
               schema: View,
               getKey: (row) => row.id,
               syncMode: "eager",
-              persist: { schemaVersion: 5 },
+              persist: { schemaVersion: 6 },
               shape: {
                 url: `${config.origin}${VIEWS_SHAPE_ROUTE}?conversation=${encodeURIComponent(conversationId)}`,
                 columnMapper: ElectricCollection.snakeCamelMapper(),
