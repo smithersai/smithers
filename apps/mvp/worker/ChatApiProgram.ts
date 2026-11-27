@@ -59,6 +59,8 @@ import * as BugsApi from "./bugs/Api.vibe"
 import * as Chat from "./Chat.ts"
 import * as Dispatch from "./ci/Dispatch.vibe"
 import * as RepoFlow from "./ci/RepoFlow.vibe"
+import { repoRunsRoute } from "../src/features/actions/contract.ts"
+import * as RepoRuns from "./RepoRuns.vibe"
 import * as RunsApi from "./ci/RunsApi.vibe"
 import * as DatabaseRoutes from "./DatabaseRoutes.ts"
 import * as DocsApi from "./docs/Api.vibe"
@@ -111,7 +113,7 @@ import { SecretKeys } from "./secrets/Keys.vibe"
 import * as SignIn from "./SignIn.vibe"
 import * as SocketAccess from "./SocketAccess.vibe"
 import * as SocketChecks from "./SocketChecks.vibe"
-import type { Sessions } from "./Actor.vibe"
+import { Sessions } from "./Actor.vibe"
 import * as StackApi from "./stack/Api.vibe"
 import * as IssueRead from "./stack/IssueRead.vibe"
 import * as Stack from "./stack/Stack.vibe"
@@ -815,6 +817,39 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                       docsSource: docsSvc,
                     }).pipe(Effect.map((liveDeps): McpTools.McpToolDeps => ({
                       ...liveDeps,
+                      workflows: {
+                        start: (actor, owner, name, id, flow, input) => Effect.gen(function* () {
+                          const req = new Request(new URL(repoRunsRoute(owner, name), "https://smithers.internal"), {
+                            method: "POST", headers: { "content-type": "application/json" },
+                            body: JSON.stringify({ id, flow, ref: "", input }),
+                          })
+                          const response = yield* repoRunsApi.startDefaultBranch.pipe(
+                            Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(req)),
+                            Effect.provideService(Sessions, Sessions.of({ resolve: Effect.succeed(Option.some(actor)) })),
+                            Effect.provideService(Flows.FlowStarter, starter),
+                            Effect.provideService(RuntimeContext, runtime),
+                          )
+                          const result = yield* Effect.tryPromise({
+                            try: () => HttpServerResponse.toWeb(response).json() as Promise<{ runId?: string; code?: string }>,
+                            catch: () => new McpToolError({ code: "unavailable", message: "Workflow admission unavailable" }),
+                          })
+                          if (response.status < 300 && typeof result.runId === "string") return { runId: result.runId }
+                          return yield* new McpToolError({
+                            code: response.status === 401 ? "authentication" : response.status === 403 ? "forbidden"
+                              : response.status === 404 ? "not_found" : response.status === 409 ? "conflict"
+                              : response.status === 429 ? "rate_limited" : response.status >= 500 ? "unavailable" : "invalid_params",
+                            message: result.code ?? "Workflow admission unavailable",
+                          })
+                        }),
+                        inspect: (repoId, runId) => RepoRuns.manualStatus(repoId, runId).pipe(
+                          Effect.provide(database), Effect.provideService(RuntimeContext, runtime),
+                          Effect.mapError(() => new McpToolError({ code: "unavailable", message: "Workflow status unavailable" })),
+                          Effect.flatMap(Option.match({
+                            onNone: () => Effect.fail(new McpToolError({ code: "not_found", message: "Workflow run not found" })),
+                            onSome: Effect.succeed,
+                          })),
+                        ),
+                      },
                       cloudFactory: {
                         database: database as Layer.Layer<SqlClient.SqlClient, unknown>,
                         policy: artifactPolicy,

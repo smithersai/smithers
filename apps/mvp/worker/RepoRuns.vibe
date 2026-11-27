@@ -67,6 +67,15 @@ export const record = (run: RepoRun) =>
     return rows.length === 1
   } |> withSpan(%, "repo.run.record")
 
+/** Public status fields for one manual run, restricted to its recorded repository. */
+export const manualStatus = (repoId: string, execution: string) => effect {
+  const sql = try SqlClient.SqlClient
+  const rows = try sql<{ readonly runId: string; readonly flow: string; readonly status: string; readonly sha: string; readonly ref: string }>`
+    SELECT execution AS "runId", flow, status, sha, ref FROM runs
+    WHERE repo_id = ${repoId} AND execution = ${execution} AND event = 'manual'`
+  return Option.fromNullishOr(rows[0])
+}
+
 /** The commit `execution`'s row recorded, when it has one: a start sent again replays the run at it. */
 export const recordedSha = (execution: string) => effect {
   const sql = try SqlClient.SqlClient

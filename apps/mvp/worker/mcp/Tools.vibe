@@ -12,7 +12,7 @@ import {
 } from "../../src/features/issues/work.ts"
 import { MCP_BLOCKED_ACTS, mcpAgentLabel } from "../../src/features/mcp/contract.ts"
 import type { SqlClient } from "effect/sql"
-import { rankOf, type Role } from "../Actor.vibe"
+import { rankOf, type Actor, type Role } from "../Actor.vibe"
 import * as DeploymentPolicy from "../DeploymentPolicy.vibe"
 import * as FleetMcpTools from "../fleet/FleetMcpTools.vibe"
 import * as CloudFactoryTools from "./CloudFactoryTools.vibe"
@@ -220,6 +220,10 @@ export interface WriteParams {
 
 /** Every external call an MCP tool makes. Each fails only with `McpToolError`. */
 export interface McpToolDeps {
+  readonly workflows?: {
+    readonly start: (actor: Actor, owner: string, name: string, id: string, flow: string, input: Readonly<Record<string, string | boolean | number>>) => unknown!McpToolError
+    readonly inspect: (repoId: string, runId: string) => unknown!McpToolError
+  }
   readonly cloudFactory?: CloudFactoryTools.CloudFactoryDeps | undefined
   readonly fleet?: {
     readonly database: Layer.Layer<SqlClient.SqlClient, unknown>
@@ -360,6 +364,11 @@ const RepoArgs = {
 const TreeArgs = Schema.Struct({ ...RepoArgs, ref: Schema.optional(Ref) })
 const ReadFileArgs = Schema.Struct({ ...RepoArgs, path: RepoPath, ref: Schema.optional(Ref) })
 const RepoOnlyArgs = Schema.Struct(RepoArgs)
+const WorkflowStartArgs = Schema.Struct({
+  ...RepoArgs, flow: FlowId, input: Schema.optional(Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Boolean, Schema.Number]))),
+  idempotencyKey: IdempotencyKey,
+})
+const WorkflowInspectArgs = Schema.Struct({ ...RepoArgs, runId: Line(256) })
 const FlowGetArgs = Schema.Struct({ ...RepoArgs, id: FlowId, ref: Schema.optional(Ref) })
 const IssuesListArgs = Schema.Struct({
   ...RepoArgs,
@@ -563,6 +572,17 @@ export const TOOL_SPECS: ReadonlyArray<ToolSpec> = [
       path: { type: "string", maxLength: 512, description: "Page path starting with '/', from docs_list." },
     },
     required: ["path"],
+  },
+  {
+    name: "workflow_start", access: "write", minimum: "member", idempotent: true,
+    description: "Start a manually declared repository workflow at its default branch. Reuse the idempotency key for a retry.",
+    properties: { flow: { type: "string" }, input: { type: "object", additionalProperties: { type: ["boolean", "number", "string"] } }, idempotencyKey: { type: "string", maxLength: 200 } },
+    required: ["flow", "idempotencyKey"],
+  },
+  {
+    name: "workflow_run_get", access: "read", minimum: "member",
+    description: "Read a manual repository workflow run's recorded status and revision.",
+    properties: { runId: { type: "string", maxLength: 256 } }, required: ["runId"],
   },
   {
     name: "flows_list",
@@ -910,6 +930,26 @@ export const makeMcpToolRegistry = effect (deps: McpToolDeps) => {
       }
     },
 
+    workflow_start: effect (raw, ctx, seen) => {
+      if (Object.hasOwn(raw, "ref")) throw new McpToolError({ code: "invalid_params", message: "Workflow starts use the default branch" })
+      const args = try decodeArgs(WorkflowStartArgs, raw)
+      const repo = try resolveRepoArgs(args, ctx.defaultRepo)
+      const { principal, access } = try writeAccess(seen, ctx, repo, "member")
+      if (deps.workflows === undefined) throw new McpToolError({ code: "unavailable", message: "Workflow starts are unavailable" })
+      const id = try mcpWriteId(principal.tokenId, "workflow_start", `${access.repoId}:${args.idempotencyKey}`)
+      const receipt = try deps.workflows.start(principal.actor, repo.owner, repo.name, id, args.flow, args.input ?? {})
+      return { content: json(receipt) }
+    },
+
+    workflow_run_get: effect (raw, ctx, seen) => {
+      const args = try decodeArgs(WorkflowInspectArgs, raw)
+      const repo = try resolveRepoArgs(args, ctx.defaultRepo)
+      const access = try readAccess(seen, ctx, repo, "member")
+      if (deps.workflows === undefined) throw new McpToolError({ code: "unavailable", message: "Workflow inspection is unavailable" })
+      const receipt = try deps.workflows.inspect(access.repoId, args.runId)
+      return { content: json(receipt) }
+    },
+
     flows_list: effect (raw, ctx, seen) => {
       const args = try decodeArgs(TreeArgs, raw)
       const repo = try resolveRepoArgs(args, ctx.defaultRepo)
@@ -1191,6 +1231,7 @@ export const makeMcpToolRegistry = effect (deps: McpToolDeps) => {
       const isPublic = Option.isSome(access) ? access.value.isPublic : defaultRepo === undefined
       const base = TOOL_SPECS.filter((spec) =>
         !isBlockedName(spec.name)
+        && (deps.workflows !== undefined || (spec.name !== "workflow_start" && spec.name !== "workflow_run_get"))
         && (spec.name !== "todo_draft" || deps.draftTodo !== noDraftStorage) && visible(spec, role, principal, isPublic)
       ).map(descriptorOf)
       const fleetTools = deps.fleet === undefined

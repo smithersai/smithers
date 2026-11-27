@@ -9,14 +9,14 @@ import { settled } from "../../src/features/runs/contract.ts"
 import { type Actor, Sessions } from "../Actor.vibe"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
-import { FlowStarter } from "../Flows.vibe"
+import { FlowStarter, StartConflict } from "../Flows.vibe"
 import { withToken } from "../github/Calls.ts"
 import { type GitHubApp, type Repository, repositoryOf } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.vibe"
 import * as Tokens from "../github/Tokens.vibe"
 import * as RepoRuns from "../RepoRuns.vibe"
 import * as ShapeAccess from "../ShapeAccess.vibe"
-import { stillAdmitted } from "../RunAuthority.vibe"
+import { stillAdmitted, stillAdmittedMcp } from "../RunAuthority.vibe"
 import { mayRead } from "../stack/Access.vibe"
 import * as Realm from "./Realm.vibe"
 import * as RepoFlow from "./RepoFlow.vibe"
@@ -222,22 +222,31 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
        * Flow `flow` at branch `ref`'s head, or at commit `at` for a run recorded before: its commit and its inputs, or
        * why not.
        */
-      const flowAt = (flow: string, ref: string, at: Option.Option<string> = Option.none()) =>
+      const flowAt = (flow: string, ref: string | undefined, at: Option.Option<string> = Option.none()) =>
         effect {
-          if (!(try manualFlows).flows.some((manual) => manual.name === flow)) {
+          const manual = try manualFlows
+          const branch = ref ?? manual.defaultBranch
+          if (!manual.flows.some((entry) => entry.name === flow)) {
             return { _tag: "refused", code: "not_manual" } as const
           }
           const head = Option.isSome(at)
             ? Option.some({ sha: at.value })
-            : try asApp(GitHub.Refs.getBranch(repository.owner, repository.name, ref))
+            : try asApp(GitHub.Refs.getBranch(repository.owner, repository.name, branch))
           if (Option.isNone(head)) return { _tag: "refused", code: "not_found" } as const
+          if (ref === undefined) {
+            // Agent starts bind the manual declaration and executable to the very same default-branch revision.
+            const manifest = try asApp(GitHub.Contents.getText(repository.owner, repository.name, Triggers.MANIFEST_PATH, { ref: head.value.sha }))
+            if (Option.isNone(manifest) || !Triggers.manualFlows(Triggers.triggersOf(manifest.value.text)).some((entry) => entry.name === flow)) {
+              return { _tag: "refused", code: "not_manual" } as const
+            }
+          }
           const source = try asApp(
             RepoFlow.readWorkflow(repository, flow, head.value.sha),
           )
           if (Option.isNone(source)) return { _tag: "refused", code: "not_found" } as const
           const described = try Effect.provide(Realm.describe(flow, source.value.text), options.variant)
           if (described._tag === "refused") return { _tag: "refused", code: "inputs" } as const
-          return { _tag: "found", sha: head.value.sha, inputs: described.inputs } as const
+          return { _tag: "found", branch, sha: head.value.sha, inputs: described.inputs } as const
         }
 
       return { manualFlows, flowAt }
@@ -262,6 +271,17 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
         // The ownership insert acquired the run's lock. Refusal must fail the transaction, leaving no row behind.
         const refusal = try stillAdmitted(actor, authority)
         if (refusal !== undefined) throw new AdmissionRefused({ code: refusal })
+        if (request.startedVia === "mcp_agent") {
+          const revoked = try stillAdmittedMcp(actor, repository.id,
+            repository.id === options.roles.repository.id && options.roles.workBasis?.(repository, true) !== "local")
+          if (revoked !== undefined) throw new AdmissionRefused({ code: revoked })
+        }
+        if (!fresh && request.startedVia === "mcp_agent") {
+          const prior = try RepoRuns.manualStatus(repository.id, request.run)
+          if (Option.isNone(prior) || prior.value.ref !== request.ref || prior.value.sha !== request.sha || prior.value.flow !== request.flow) {
+            throw new StartConflict()
+          }
+        }
         // Not new: its row is there, with the commit it recorded.
         const sha = fresh
           ? request.sha
@@ -304,7 +324,7 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
         return { _tag: "found", request: { ...request, only: names } } as const
       }.pipe(Effect.provide(inspection), Effect.provide(options.engine))
 
-    const fetch = effect {
+    const answer = (defaultBranchOnly: boolean) => effect {
       const request = try HttpServerRequest.HttpServerRequest
       const url = new URL(request.url, "http://localhost")
       const route = parsePath(url.pathname)!
@@ -367,7 +387,7 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
           const found = try retried(repository, retryOf, failed)
           if (found._tag === "refused") return refused(found.code)
           const run = try sync(() => manualExecutionId(found.request.flow, id))
-          const { only, ...again } = found.request
+          const { only, startedVia: _previousVia, ...again } = found.request
           const next: RepoFlow.RunRequest = { ...again, run, ...(failed && only !== undefined ? { only } : {}) }
           const started = try startRun(repository, next, actor.value.value, admitted)
           if (started !== "started" && started !== "existing") return refused(started)
@@ -378,13 +398,13 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
         const { id, flow, ref, input = {} } = body.value
         fields.kind = "manual"
         fields.flow = flow
-        if (!(try sync(() => GitHub.Refs.isBranch(ref))) || new TextEncoder().encode(JSON.stringify(input)).length > MAX_INPUT_BYTES) {
+        if ((!defaultBranchOnly && !(try sync(() => GitHub.Refs.isBranch(ref)))) || new TextEncoder().encode(JSON.stringify(input)).length > MAX_INPUT_BYTES) {
           return refused("invalid")
         }
         const run = try sync(() => manualExecutionId(flow, id))
         // A request sent again reads the form at the commit its run recorded, so it replays the same run.
         const recorded = try Effect.provide(RepoRuns.recordedSha(run), database)
-        const found = try github.flowAt(flow, ref, recorded)
+        const found = try github.flowAt(flow, defaultBranchOnly ? undefined : ref, recorded)
         if (found._tag === "refused") return refused(found.code)
         if (!fits(found.inputs, input)) return refused("inputs")
         const started = try startRun(repository, {
@@ -392,11 +412,12 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
           repo: full,
           flow,
           sha: found.sha,
-          ref: `refs/heads/${ref}`,
+          ref: `refs/heads/${found.branch}`,
           event: "manual",
           // A Member started it from the repository itself: its jobs may have the repository's secrets.
           secrets: true,
           input: withDefaults(found.inputs, input),
+          ...(defaultBranchOnly ? { startedVia: "mcp_agent" as const } : {}),
         }, actor.value.value, admitted)
         if (started !== "started" && started !== "existing") return refused(started)
         fields.outcome = started
@@ -427,5 +448,5 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
       return response
     }.pipe(withSpan("repo.runs", { kind: "server" }))
 
-    return { fetch }
+    return { fetch: answer(false), startDefaultBranch: answer(true) }
   })

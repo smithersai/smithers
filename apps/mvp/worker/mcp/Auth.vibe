@@ -315,34 +315,8 @@ export const makeMcpAuthService = <E, R, R2>(
      * on `roles.repository.id`, which would otherwise read `actor.role === null`).
      */
     const readFreshDeploymentRole = (personId: string): Effect.Effect<Role | null, RepoRoles.RoleRefused> =>
-      withDb(
-        effect {
-          const sql = try SqlClient.SqlClient
-          const windowMs = try SessionStore.RoleFreshMs
-          const rows = try sql<{
-            readonly role: Role | null
-            readonly verifiedAt: string | null
-            readonly nowMs: string
-          }>`
-            SELECT
-              ${SessionStore.latestRole(sql, sql`p.id`)} AS role,
-              extract(epoch FROM ${SessionStore.latestRoleVerifiedAt(sql, sql`p.id`)}) * 1000 AS "verifiedAt",
-              extract(epoch FROM clock_timestamp()) * 1000 AS "nowMs"
-            FROM people p
-            WHERE p.id = ${personId}::uuid`
-          const row = rows[0]
-          if (row === undefined || row.verifiedAt === null) return null
-          if (!(try sync(() => SessionStore.roleFresh(Number(row.verifiedAt), Number(row.nowMs), windowMs)))) {
-            throw new RepoRoles.RoleRefused({ code: "unavailable", stage: "database" })
-          }
-          return row.role
-        },
-      ).pipe(
-        Effect.mapError((error) =>
-          error instanceof RepoRoles.RoleRefused
-            ? error
-            : new RepoRoles.RoleRefused({ code: "unavailable", stage: "database" }),
-        ),
+      withDb(SessionStore.freshDeploymentRole(personId)).pipe(
+        Effect.mapError(() => new RepoRoles.RoleRefused({ code: "unavailable", stage: "database" })),
       )
 
     /** Resolves `actor`'s live role on `repository`, never trusting any cached/frozen role on an agent credential. */

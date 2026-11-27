@@ -1,7 +1,7 @@
 import { SqlClient } from "effect/sql"
-import type { Actor } from "./Actor.vibe"
+import { memberOrAbove, type Actor } from "./Actor.vibe"
 import * as RepoRoles from "./github/RepoRoles.vibe"
-import { authority, roleFresh, RoleFreshMs } from "./SessionStore.vibe"
+import { authority, freshDeploymentRole, roleFresh, RoleFreshMs } from "./SessionStore.vibe"
 import { mayRead } from "./stack/Access.vibe"
 
 /** Inside a run start or stop transaction: lock the authority's rows, then judge them by Postgres' current clock. */
@@ -37,4 +37,24 @@ export const stillAdmitted = (actor: Actor, resolved: RepoRoles.Resolved) => eff
     }
   }
   return mayRead(Option.some({ ...actor, role })) ? undefined : "forbidden" as const
+}
+
+/** Recheck the MCP grant under the admission transaction after GitHub and the workflow description have answered. */
+export const stillAdmittedMcp = (actor: Actor, repoId: string, deploymentRole: boolean) => effect {
+  if (actor.act?.kind !== "agent" || !actor.act.id.startsWith("mcp:")) return "authentication" as const
+  const tokenId = actor.act.id.slice(4)
+  const sql = try SqlClient.SqlClient
+  const [locked] = try sql`SELECT p.id FROM people p JOIN mcp_tokens t ON t.person_id = p.id
+    WHERE p.id::text = ${actor.subject.id} AND t.id::text = ${tokenId} FOR SHARE OF p, t`
+  if (locked === undefined) return "authentication" as const
+  const [grant] = try sql`SELECT 1 FROM mcp_tokens WHERE id::text = ${tokenId}
+    AND revoked_at IS NULL AND expires_at > clock_timestamp()
+    AND 'mcp:write' = ANY(scopes) AND (repo_scope IS NULL OR lower(repo_scope) = ${repoId})`
+  if (grant === undefined) return "authentication" as const
+  if (deploymentRole) {
+    const result = try Effect.result(freshDeploymentRole(actor.subject.id))
+    if (result._tag === "Failure") return "unavailable" as const
+    if (!memberOrAbove(result.success)) return "forbidden" as const
+  }
+  return undefined
 }

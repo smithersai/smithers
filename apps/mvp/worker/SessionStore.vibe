@@ -123,6 +123,19 @@ export const latestRoleVerifiedAt = (sql: SqlClient.SqlClient, person: Statement
   ORDER BY authority.role_generation DESC, authority.role_checked_at DESC, authority.created_at DESC, authority.id DESC LIMIT 1
 )`
 
+/** An agent's deployment role, confirmed by the person's latest receipt against the database clock. */
+export const freshDeploymentRole = (personId: string) => effect {
+  const sql = try SqlClient.SqlClient
+  const [row] = try sql<{ role: Role | null; verifiedAt: string | null; nowMs: string }>`
+    SELECT ${latestRole(sql, sql`p.id`)} AS role,
+      extract(epoch FROM ${latestRoleVerifiedAt(sql, sql`p.id`)}) * 1000 AS "verifiedAt",
+      extract(epoch FROM clock_timestamp()) * 1000 AS "nowMs"
+    FROM people p WHERE p.id = ${personId}::uuid`
+  if (row === undefined || row.verifiedAt === null) return null
+  if (!roleFresh(Number(row.verifiedAt), Number(row.nowMs), try RoleFreshMs)) throw new SessionsUnavailable()
+  return row.role
+}
+
 const latestGeneration = (sql: SqlClient.SqlClient, person: Statement.Fragment) => sql`(
   SELECT max(authority.role_generation) FROM (
     SELECT role_generation FROM sessions WHERE person_id = ${person}

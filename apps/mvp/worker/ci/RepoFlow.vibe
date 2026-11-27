@@ -76,6 +76,8 @@ export const RunRequest = Schema.Struct({
   event: Schema.Literals(RUN_EVENTS),
   /** Whether the run's jobs may have the repository's secrets: never for a fork's pull request. */
   secrets: Schema.Boolean,
+  /** The authenticated MCP agent admitted this manual request. Recorded with the durable intent. */
+  startedVia: Schema.optionalKey(Schema.Literal("mcp_agent")),
   /** A run by hand's inputs, which the flow's body receives beside the run's own fields. */
   input: Schema.optionalKey(Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Number, Schema.Boolean]))),
   /** Only these of the flow's jobs, by name: Retry failed's (docs/features/actions.md#acts). */

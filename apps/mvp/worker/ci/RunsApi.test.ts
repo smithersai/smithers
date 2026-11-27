@@ -122,6 +122,7 @@ const routes = async (
     /** Sessions that can't be read. */
     readonly sessionsDown?: boolean
     readonly sessions?: Layer.Layer<Actor.Sessions>
+    readonly defaultBranchOnly?: boolean
     readonly roleRepository?: string
     readonly repoFlows?: boolean
     readonly app?: boolean
@@ -185,7 +186,7 @@ const routes = async (
     }),
   })
   const handler = HttpEffect.toWebHandler(
-    api.fetch.pipe(
+    (options.defaultBranchOnly ? api.startDefaultBranch : api.fetch).pipe(
       Effect.provide(
         options.sessions ?? (options.sessionsDown === true
           ? Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.fail(new Actor.SessionsUnavailable()) }))
@@ -945,4 +946,33 @@ test("withDefaults: a left-out field gets its default; one given keeps its value
   }
   expect(RunsApi.withDefaults(inputs, {})).toEqual({ dry: true, n: 3 })
   expect(RunsApi.withDefaults(inputs, { dry: false, n: 0, tag: "x" })).toEqual({ dry: false, n: 0, tag: "x" })
+})
+
+test("an agent's default-branch workflow pins the declared revision into the durable admission", async () => {
+  const { github, sha } = repository()
+  const tokenId = uuid()
+  await runtime.runPromise(Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`INSERT INTO mcp_oauth_clients (client_id, client_name, redirect_uris)
+      VALUES ('workflow-test', 'Workflow integration', ARRAY['https://localhost/callback']) ON CONFLICT DO NOTHING`
+    yield* sql`INSERT INTO mcp_tokens (id, person_id, client_id, client_name, token_sha256, repo_scope, scopes, expires_at)
+      VALUES (${tokenId}::uuid, ${MAYA}::uuid, 'workflow-test', 'Workflow integration', ${"a".repeat(64)},
+        'github/acme/widgets', ARRAY['mcp:write'], now() + interval '1 hour')`
+  }))
+  const actor = { ...maya, act: { kind: "agent" as const, id: `mcp:${tokenId}` } }
+  const h = await routes(github, { actor, defaultBranchOnly: true })
+  const id = uuid()
+  const runId = manualExecutionId("release", id)
+  const path = repoRunsRoute(REPOSITORY.owner, REPOSITORY.name)
+  const request = post({ id, flow: "release", ref: "", input: { channel: "next" } })
+  expect(await answer(await h.fetch(path, request))).toEqual([202, { runId }])
+  expect(h.starts[0]).toMatchObject({ executionId: runId, payload: { sha, ref: "refs/heads/main", flow: "release", startedVia: "mcp_agent" } })
+  const status = (repoId: string) => runtime.runPromise(RepoRuns.manualStatus(repoId, runId))
+  expect(Option.getOrUndefined(await status("github/acme/widgets"))).toEqual({ runId, flow: "release", status: "working", sha, ref: "refs/heads/main" })
+  expect(await status("github/acme/other")).toEqual(Option.none())
+  expect(await answer(await h.fetch(path, request))).toEqual([200, { runId }])
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE mcp_tokens SET revoked_at = now() WHERE id = ${tokenId}::uuid`))
+  const nextId = uuid()
+  expect(await answer(await h.fetch(path, post({ id: nextId, flow: "release", ref: "", input: { channel: "next" } })))).toEqual([401, { code: "authentication" }])
+  expect(await rows()).toHaveLength(1)
 })

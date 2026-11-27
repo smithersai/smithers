@@ -45,7 +45,7 @@ and model credential writes remain the person's.
 ## Tools
 
 `tools/list` is the client-facing catalog. `tools/call` checks repository access and the action's permissions on every
-call. The catalog covers repository files and refs (`repo_tree`, `repo_read_file`, `repo_refs`), docs (`docs_list`, `docs_read`), issues and pull requests (`issues_list`, `issue_get`, `pulls_list`, `pull_get`, `pull_files`), and workflows (`flows_list`, `flow_get`). Where the person's
+call. The catalog covers repository files and refs (`repo_tree`, `repo_read_file`, `repo_refs`), docs (`docs_list`, `docs_read`), issues and pull requests (`issues_list`, `issue_get`, `pulls_list`, `pull_get`, `pull_files`), and workflows (`flows_list`, `flow_get`, `workflow_start`, `workflow_run_get`). Where the person's
 role permits, the agent can open issues, comment, draft TODOs and post work links. Workflows the client fetches for
 local execution run on the client's machine.
 
@@ -55,6 +55,8 @@ projection has nothing yet, `worker/mcp/LiveDeps.ts` reads GitHub's REST API wit
 Anonymous reads share GitHub's 60-per-hour limit across all of Cloudflare's egress addresses and run out within
 minutes, so the token is the default. A 403 that is not quota exhaustion is retried once anonymously, and a private
 repository still answers `not_found`. Quota exhaustion surfaces as the `rate_limited` tool error.
+
+`workflow_start` starts a manually declared repository workflow with `flow`, `idempotencyKey`, and optional `input`. A member with write scope starts it as an agent. Smithers pins the declaration and executable to the same default-branch revision. Repeating the request returns its run ID. `workflow_run_get` reads that repository's manual run status, flow, revision, and branch for members with read scope.
 
 ## Attach to a conversation
 

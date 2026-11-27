@@ -1,3 +1,4 @@
+import { repoId } from "../../src/features/repo/contract.ts"
 // The MCP tool catalog (worker/mcp/Tools.ts) over fake deps and a fake McpAuthService: no network, no database.
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Effect, Exit, Layer, Option } from "effect"
@@ -174,7 +175,7 @@ const fakeAuth = McpAuthService.of({
     Effect.succeed({
       owner,
       name,
-      repoId: `${owner}/${name}`,
+      repoId: repoId(owner, name),
       role: Option.match(principal, { onNone: () => null, onSome: (p) => ROLES[p.login] ?? null }),
       isPublic: true,
     }),
@@ -184,7 +185,7 @@ const fakeAuth = McpAuthService.of({
       if (!principal.value.scopes.includes("mcp:write")) return yield* new McpToolError({ code: "forbidden", message: "needs mcp:write" })
       const role = ROLES[principal.value.login] ?? null
       if (rankOf(role) < rankOf(minimum)) return yield* new McpToolError({ code: "forbidden", message: `needs ${minimum}` })
-      return { principal: principal.value, access: { owner, name, repoId: `${owner}/${name}`, role, isPublic: true } }
+      return { principal: principal.value, access: { owner, name, repoId: repoId(owner, name), role, isPublic: true } }
     }),
   listTokens: () => Effect.succeed([]),
   revokeToken: () => Effect.succeed(false),
@@ -577,4 +578,22 @@ test("an absent Fleet admin list grants no Fleet access", async () => {
 
 test("a fractional preview budget is bounded to a whole byte", () => {
   expect(previewText("ab", 1.5)).toEqual({ text: "a", bytes: 2, truncated: true })
+})
+
+test("workflow tools use the member agent, a stable intent ID, and repository-scoped status", async () => {
+  const { ctx, payload, callExit, registry } = setup({ workflows: {
+    start: (actor, owner, repo, id, flow, input) => Effect.succeed({ actor: actor.act, owner, repo, id, flow, input }),
+    inspect: (repoId, runId) => Effect.succeed({ repoId, runId }),
+  } })
+  const args = { flow: "ci", input: { report: true }, idempotencyKey: "ci-report" }
+  const first = await payload("workflow_start", args, ctx("mia", "first"))
+  expect(first).toMatchObject({ actor: { kind: "agent", id: "mcp:token-mia" }, owner: "evmts", repo: "voltaire", input: { report: true } })
+  expect(await payload("workflow_start", args, ctx("mia", "again"))).toEqual(first)
+  expect(codeOf(await callExit("workflow_start", { ...args, ref: "feature" }, ctx("mia")))).toBe("invalid_params")
+  expect(codeOf(await callExit("workflow_start", args, ctx("alice")))).toBe("forbidden")
+  expect(codeOf(await callExit("workflow_start", args, ctx("mia", "id", ["mcp:read"])))).toBe("forbidden")
+  expect(await payload("workflow_run_get", { runId: "ci:123" }, ctx("mia"))).toEqual({ repoId: "github/evmts/voltaire", runId: "ci:123" })
+  expect(codeOf(await callExit("workflow_run_get", { runId: "ci:123" }, ctx("mia", "id", ["mcp:write"])))).toBe("forbidden")
+  const tools = await Effect.runPromise(registry.listTools(Option.some(principalOf("mia")), VOLTAIRE))
+  expect(tools.map((entry) => entry.name)).toEqual(expect.arrayContaining(["workflow_start", "workflow_run_get"]))
 })
