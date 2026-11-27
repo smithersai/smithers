@@ -361,15 +361,18 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement, scrollByRead
     const content = viewport?.firstElementChild;
     if (content) observer?.observe(content);
   };
+  const disclosure = rail.closest<HTMLElement>(".sui-timeline-disclosure");
   const remeasure = () => {
     const room = roomOf(rail);
-    const host = rail.closest<HTMLElement>(".sui-timeline-disclosure");
-    if (room !== undefined && host !== null) host.style.setProperty("--sui-timeline-room", px(room));
+    if (room !== undefined && disclosure !== null && (!(disclosure instanceof HTMLDetailsElement) || disclosure.open)) {
+      disclosure.style.setProperty("--sui-timeline-room", px(room));
+    }
     measure();
     schedule();
     // Columns ease to a new width: the lines follow them there.
     follow(performance.now() + 320);
   };
+  disclosure?.addEventListener("toggle", remeasure);
   const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(remeasure);
   observer?.observe(rail);
   observer?.observe(box);
@@ -493,6 +496,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement, scrollByRead
       if (followFrame !== 0) cancelAnimationFrame(followFrame);
       viewport?.removeEventListener("scroll", scrolled);
       for (const event of ["wheel", "touchstart", "pointerdown", "keydown"]) viewport?.removeEventListener(event, releaseRead);
+      disclosure?.removeEventListener("toggle", remeasure);
       window.removeEventListener("resize", remeasure);
       for (const event of ["pointerdown", "click", "keydown", "wheel", "touchstart"]) transcript?.removeEventListener(event, transcriptActivity, { capture: true });
       rail.removeEventListener("wheel", wheel);

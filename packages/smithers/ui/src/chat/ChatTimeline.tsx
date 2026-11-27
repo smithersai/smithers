@@ -84,10 +84,11 @@ const useBox = (box: RefObject<HTMLDivElement | null>) => {
       if (width > 0 && height > 0) setSize(now => now.width === width && now.height === height ? now : { width, height });
     };
     read();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(read);
-    observer.observe(element);
-    return () => observer.disconnect();
+    const disclosure = element.closest(".sui-timeline-disclosure");
+    disclosure?.addEventListener("toggle", read);
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(read);
+    observer?.observe(element);
+    return () => { disclosure?.removeEventListener("toggle", read); observer?.disconnect(); };
   }, [box]);
   return size;
 };

@@ -16,6 +16,7 @@ test("one named message log excludes timeline navigation; Escape returns to its 
     expect(logs[0]!.getAttribute("aria-label")).toBe("Messages");
     expect(logs[0]!.querySelector("nav")).toBeNull();
     const details = host.querySelector("details")!;
+    expect(details.open).toBe(false);
     details.open = true;
     await act(async () => details.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(details.open).toBe(false);
@@ -23,11 +24,9 @@ test("one named message log excludes timeline navigation; Escape returns to its 
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
-test("the disclosure stays open while the rail stands beside the transcript, because WebKit draws nothing of a closed one", async () => {
+test("the timeline disclosure starts collapsed on wide viewports too, and Escape collapses it back to its toggle", async () => {
   const wide = window.matchMedia;
-  const listeners = new Set<() => void>();
-  const viewport = { matches: true, addEventListener: (_: string, listener: () => void) => listeners.add(listener), removeEventListener: (_: string, listener: () => void) => listeners.delete(listener) };
-  window.matchMedia = (() => viewport) as unknown as typeof window.matchMedia;
+  window.matchMedia = (() => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} })) as unknown as typeof window.matchMedia;
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -36,15 +35,12 @@ test("the disclosure stays open while the rail stands beside the transcript, bec
   try {
     await act(async () => root.render(createElement(ChatTranscript, { rail: createElement("nav", { "aria-label": "Timeline" }, "Events") })));
     const details = host.querySelector("details")!;
-    expect(details.open).toBe(true);
-    await act(async () => details.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-    expect(details.open).toBe(true);
-    viewport.matches = false;
-    for (const listener of listeners) listener();
+    const summary = details.querySelector("summary")!;
     expect(details.open).toBe(false);
-    viewport.matches = true;
-    for (const listener of listeners) listener();
-    expect(details.open).toBe(true);
+    details.open = true;
+    await act(async () => details.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(details.open).toBe(false);
+    expect(document.activeElement === summary).toBe(true);
   } finally {
     await act(async () => root.unmount());
     host.remove();
@@ -52,5 +48,4 @@ test("the disclosure stays open while the rail stands beside the transcript, bec
     if (clientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth);
     else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
   }
-  expect(listeners.size).toBe(0);
 });

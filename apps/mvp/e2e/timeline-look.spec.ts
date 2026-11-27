@@ -44,6 +44,12 @@ const answer = (n: number) => `Topic: ${topicOf(n)}. ${n % 3 === 0
 requires("chromium")
 
 const rail = (page: Page) => page.getByRole("navigation", { name: "Conversation timeline" })
+const openRail = async (page: Page) => {
+  const disclosure = page.locator(".sui-timeline-disclosure")
+  await expect(disclosure.locator("summary")).toBeVisible({ timeout: 30_000 })
+  if ((await disclosure.getAttribute("open")) === null) await disclosure.locator("summary").click()
+  await expect(rail(page)).toBeVisible()
+}
 
 /** Snapshot names are stable; a normal run fails when its reviewed reference is missing or differs. */
 const snapshot = async (page: Page, name: string) => {
@@ -88,6 +94,7 @@ test("Timeline: phases read as what happened, levels arrive, and hover adds deta
         fixtureIds.push(id, answerId)
       }
       a = await devices.openNew(`Timeline look ${name}`, scriptedAgent("echo"))
+      await openRail(a.page)
       // All recorded fixture IDs must arrive before grading total counts; a late dirty snapshot cannot satisfy an empty read.
       const recorded = fixtureIds.map(id => `[aria-controls="${id}"]`).join(",")
       await expect(rail(a.page).locator(`ol[data-level="0"] button:is(${recorded})`)).toHaveCount(count * 2, { timeout: 90_000 })
@@ -244,9 +251,10 @@ test("Timeline: phases read as what happened, levels arrive, and hover adds deta
     await snapshot(a.page, "long-drag-dark")
   })
   await test.step("The phone sheet and reduced motion retain bounded geometry", async () => {
+    const disclosure = a.page.locator(".sui-timeline-disclosure")
+    if ((await disclosure.getAttribute("open")) !== null) await disclosure.locator("summary").click()
     await a.page.setViewportSize({ width: 390, height: 844 })
     await a.page.emulateMedia({ reducedMotion: "reduce" })
-    const disclosure = a.page.locator(".sui-timeline-disclosure")
     await disclosure.locator("summary").click()
     // Capture the live edge explicitly: opening the differently sized sheet releases the desktop drag anchor.
     const viewport = a.page.locator('[data-slot="message-scroller-viewport"]')
@@ -261,6 +269,7 @@ test("Timeline: phases read as what happened, levels arrive, and hover adds deta
     await a.page.keyboard.press("Escape")
     await expect(disclosure).not.toHaveAttribute("open", "")
     await a.page.setViewportSize({ width: 1280, height: 800 })
+    await openRail(a.page)
     await viewport.evaluate(el => { el.scrollTop = el.scrollHeight })
     await expect(rail(a.page).locator('ol[data-level="0"] button').last()).toHaveAttribute("aria-current", "location")
     await bounded(a.page)
@@ -305,6 +314,7 @@ test("Timeline: marks sit where their messages are, the band matches the screen,
   }
   await expect.poll(() => row.count(), { timeout: 90_000 }).toBeGreaterThanOrEqual(base + 28)
   await expect.poll(() => rail(a.page).locator('ol[data-level="1"] [data-summary="ready"]').count(), { timeout: 200_000 }).toBeGreaterThan(1)
+  await openRail(a.page)
   const viewport = a.page.locator('[data-slot="message-scroller-viewport"]')
   for (const size of [{ width: 1190, height: 785 }, { width: 1440, height: 900 }] as const) await test.step(`Geometry at ${size.width}`, async () => {
     await a.page.setViewportSize(size)
@@ -421,10 +431,12 @@ test("Timeline: every label reads at every desktop width, and the chat keeps its
   await expect.poll(() => rail(a.page).locator('ol[data-level="0"] [data-summary="ready"]').count(), { timeout: 120_000 }).toBeGreaterThanOrEqual(base + 24)
   await expect.poll(() => rail(a.page).locator('ol[data-level="1"] [data-summary="ready"]').count(), { timeout: 200_000 }).toBeGreaterThan(1)
   const viewport = a.page.locator('[data-slot="message-scroller-viewport"]')
+  await expect(rail(a.page)).toBeHidden()
+  await openRail(a.page)
   for (const size of [{ width: 1190, height: 785 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }, { width: 1600, height: 1000 }] as const) await test.step(`Labels at ${size.width}`, async () => {
     await a.page.setViewportSize(size)
     await a.page.mouse.move(size.width - 10, size.height - 10)
-    await expect(a.page.locator(".sui-timeline-disclosure > summary")).toBeHidden()
+    await expect(a.page.locator(".sui-timeline-disclosure > summary")).toBeVisible()
     for (const at of [1, .5]) {
       await viewport.evaluate((el, at) => { el.scrollTop = (el.scrollHeight - el.clientHeight) * at }, at)
       await settled(a.page)
@@ -447,8 +459,9 @@ test("Timeline: every label reads at every desktop width, and the chat keeps its
     }
   })
   await test.step("A phone opens the rail as a sheet whose labels read", async () => {
-    await a.page.setViewportSize({ width: 390, height: 844 })
     const sheet = a.page.locator(".sui-timeline-disclosure")
+    if ((await sheet.getAttribute("open")) !== null) await sheet.locator("summary").click()
+    await a.page.setViewportSize({ width: 390, height: 844 })
     await sheet.locator("summary").click()
     await viewport.evaluate(el => { el.scrollTop = el.scrollHeight })
     await settled(a.page)

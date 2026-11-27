@@ -36,6 +36,7 @@ test("timeline previews use readable times", async ({ devices }) => {
   const [tab] = await devices.open("Reader")
   await tab.page.goto("/app")
   const timeline = tab.page.getByRole("navigation", { name: "Conversation timeline" })
+  if (!(await timeline.isVisible())) await tab.page.locator(".sui-timeline-disclosure > summary").click()
   await timeline.getByRole("button").first().hover()
   const preview = tab.page.getByRole("tooltip").first()
   await expect(preview).toBeVisible()

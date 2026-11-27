@@ -547,10 +547,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
             await expect(page.locator('[data-slot="needs-you"]').first()).toBeVisible({ timeout: 60_000 })
             const rail = page.getByRole("navigation", { name: "Conversation timeline" })
             const disclosure = page.locator(".sui-timeline-disclosure > summary")
-            if (viewport.width < 1280) {
-              await audit(page, info, "conversation")
-              await disclosure.click()
-            }
+            await audit(page, info, "conversation")
+            await disclosure.click()
             await expect(rail.locator("button > span").filter({ hasText: "Release regression check completed" }).first()).toBeVisible({ timeout: 30_000 })
             await expect(async () => {
               const errors = await rail.evaluate((element) => {
@@ -575,11 +573,9 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
               expect(errors).toEqual([])
             }).toPass({ timeout: 10_000 })
             await audit(page, info, viewport.width < 1280 ? "timeline" : "conversation", viewport.width < 1280 ? rail : undefined)
-            if (viewport.width < 1280) {
-              await disclosure.click()
-              await expect(rail).toBeHidden()
-              await expect(composer).toBeVisible()
-            }
+            await disclosure.click()
+            await expect(rail).toBeHidden()
+            await expect(composer).toBeVisible()
             await page.keyboard.press("Escape")
             await page.keyboard.press("g")
             await page.keyboard.press("q")

@@ -28,6 +28,10 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
     await expect(a.conversation.locator('[data-role="assistant"]', { hasText: word })).toHaveCount(8, { timeout: 30_000 })
   })
   const rail = a.page.getByRole("navigation", { name: "Conversation timeline" })
+  const toggle = a.page.locator(".sui-timeline-disclosure > summary")
+  await expect(toggle).toBeVisible()
+  await expect(rail).toBeHidden()
+  await toggle.click()
   await expect(rail).toBeVisible()
   const detail = rail.locator('ol[data-level="0"]')
   const transcriptWidth = (await a.conversation.boundingBox())!.width
@@ -117,6 +121,9 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
     await expect(detail.locator(`button[aria-controls="${lastId}"]`)).toHaveAttribute("aria-current", "location")
     await detail.getByRole("button").nth(1).press("End")
     await expect(detail.getByRole("button").last()).toBeFocused()
+    await toggle.click()
+    await expect(rail).toBeHidden()
+    await expect(toggle).toBeVisible()
   })
   for (const viewport of [{ width: 1024, height: 800 }, { width: 1024, height: 600 }, { width: 390, height: 844 }]) await test.step(`Keep the open rail reachable at ${viewport.width}×${viewport.height}`, async () => {
     await a.page.setViewportSize(viewport)

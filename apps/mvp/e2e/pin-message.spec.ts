@@ -27,7 +27,7 @@ for (const width of [390, 768, 1280]) {
       await reply.hover()
       await reply.getByRole("button", { name: "Pin message", exact: true }).click()
       await expect(pinned).toHaveAttribute("data-message-id", id)
-      if (width === 1280) await expect(first!.page.getByRole("navigation", { name: "Conversation timeline", exact: true })).toBeInViewport()
+      if (width === 1280) await expect(first!.page.locator(".sui-timeline-disclosure > summary")).toBeInViewport()
       await expect(second!.page.getByRole("region", { name: "Pinned message", exact: true })).toHaveAttribute("data-message-id", id)
       await expect(other!.page.getByRole("region", { name: "Pinned message", exact: true })).toHaveCount(0)
     })

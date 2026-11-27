@@ -25,6 +25,10 @@ test("Timeline summaries: each question and answer keeps its own recorded words 
   }))
   const rail = a.page.getByRole("navigation", { name: "Conversation timeline" })
   const summaries = async () => {
+    const toggle = a.page.locator(".sui-timeline-disclosure > summary")
+    await expect(toggle).toBeVisible()
+    await expect(rail).toBeHidden()
+    await toggle.click()
     await expect(rail).toBeVisible()
     const labels: string[] = []
     for (const row of exchanges) for (const [id, expected] of [[row.id, row.question], [row.answerId, row.answer]]) {

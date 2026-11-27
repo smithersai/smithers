@@ -37,7 +37,18 @@ for (const entries of [120, 1200]) for (const width of [390, 1180, 1280]) test(`
   try {
     await page.goto(`${origin}?entries=${entries}`)
     await page.locator(".mvp-pinned-message").waitFor()
-    if (width === 390) await page.getByText("Timeline", { exact: true }).click()
+    // Collapsed by default at every width, with the Timeline toggle visible and chat centered on desktop.
+    const disclosure = page.locator(".sui-timeline-disclosure")
+    const toggle = page.getByText("Timeline", { exact: true })
+    await toggle.waitFor({ state: "visible" })
+    expect(await disclosure.getAttribute("open")).toBeNull()
+    expect(await page.locator(".sui-chat-timeline").isVisible()).toBe(false)
+    if (width >= 1180) {
+      const center = (await page.locator(".app-shell-center").boundingBox())!
+      expect(Math.abs(center.x - (width - (center.x + center.width)))).toBeLessThanOrEqual(2)
+    }
+    await toggle.click()
+    expect(await disclosure.getAttribute("open")).not.toBeNull()
     await page.locator(".sui-chat-timeline button").first().waitFor()
     // FE-16/FE-19/FE-22: entry labels may sit away from their short marks,
     // and phase titles wrap. Measure the words the rail actually shows.
@@ -101,5 +112,10 @@ for (const entries of [120, 1200]) for (const width of [390, 1180, 1280]) test(`
     const transcript = (await page.locator(".sui-chat-transcript").boundingBox())!
     expect(pin.y + pin.height).toBeLessThanOrEqual(transcript.y)
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    // Collapsing again hides the rail and keeps the toggle visible.
+    await toggle.click()
+    expect(await disclosure.getAttribute("open")).toBeNull()
+    expect(await page.locator(".sui-chat-timeline").isVisible()).toBe(false)
+    await toggle.waitFor({ state: "visible" })
   } finally { await page.close() }
 })

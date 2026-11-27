@@ -5,9 +5,12 @@ import { tokens as t } from "../tokens.ts";
 export const chatTimelineCss = `
 .sui-chat-transcript:has(> .sui-timeline-disclosure){position:relative;overflow:visible;container-type:inline-size}
 .sui-timeline-disclosure{position:absolute;inset-inline-end:8px;top:6px;z-index:9}
-.sui-timeline-disclosure>summary{cursor:pointer;font-size:12px;color:var(--text-muted,#665f54);padding:4px 10px;border-radius:6px;background:var(--bg,#f7f4ee);border:1px solid var(--border-strong,rgba(33, 29, 24, 0.14));list-style:none}
+.sui-timeline-disclosure>summary{cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:12px;color:var(--text-muted,#665f54);padding:4px 10px;border-radius:6px;background:var(--bg,#f7f4ee);border:1px solid var(--border-strong,rgba(33, 29, 24, 0.14));list-style:none}
+.sui-timeline-disclosure>summary::before{content:"";width:5px;height:5px;border-inline-end:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform 150ms ease;flex:none}
+.sui-timeline-disclosure[open]>summary::before{transform:rotate(45deg)}
 .sui-timeline-disclosure>summary::-webkit-details-marker{display:none}
-.sui-timeline-disclosure[open]>summary{color:var(--text,#211d18)}
+.sui-timeline-disclosure>summary:hover,.sui-timeline-disclosure>summary:focus-visible,.sui-timeline-disclosure[open]>summary{color:var(--text,#211d18)}
+.sui-timeline-disclosure>summary:focus-visible{outline:2px solid var(--brand,#0f766e);outline-offset:2px}
 @media(max-width:960px){.sui-timeline-disclosure>summary{min-width:32px;min-height:${t.controlHeight};box-sizing:border-box;display:flex;align-items:center}}
 @media(max-width:1179px){.sui-chat-transcript:has(> .sui-timeline-disclosure[open]){z-index:41}}
 .sui-chat-transcript:has(> .sui-timeline-disclosure) .sui-chat-messages::before{content:"";display:block;flex:none;height:34px}
@@ -23,11 +26,12 @@ export const chatTimelineCss = `
 .sui-timeline-disclosure[open] .sui-chat-timeline{width:min(380px,calc(100cqi - 16px));height:min(560px,70vh);padding:14px 14px 14px 10px;background:var(--surface,#fffefa);border:1px solid var(--border-strong,rgba(33, 29, 24, 0.14));border-radius:12px;box-shadow:${t.shadow2}}
 .sui-timeline-box{position:relative;width:100%;height:100%}
 @media(min-width:1180px){@container(min-width:600px){
-.sui-timeline-disclosure,.sui-timeline-disclosure[open]{inset-inline-end:calc(100% + 8px);top:22px;bottom:22px;width:var(--sui-timeline-room,342px);z-index:1}
-.sui-timeline-disclosure>summary,.sui-timeline-disclosure[open]>summary{display:none}
+.sui-timeline-disclosure{inset-inline-end:calc(100% + 8px);top:6px;bottom:auto;width:auto;z-index:2}
+.sui-timeline-disclosure[open]{inset-inline-end:calc(100% + 8px);top:40px;bottom:22px;width:var(--sui-timeline-room,342px);z-index:1}
+.sui-timeline-disclosure[open]>summary{position:absolute;top:-34px;inset-inline-end:0;z-index:2}
 .sui-chat-transcript:has(> .sui-timeline-disclosure) .sui-chat-messages::before{display:none}
-.sui-timeline-disclosure::details-content{display:block;content-visibility:visible;height:100%}
-.sui-timeline-disclosure .sui-chat-timeline,.sui-timeline-disclosure[open] .sui-chat-timeline{display:block;width:100%;height:100%;padding:0;background:none;border:0;border-radius:0;box-shadow:none}
+.sui-timeline-disclosure[open]::details-content{display:block;height:100%}
+.sui-timeline-disclosure[open] .sui-chat-timeline{display:block;width:100%;height:100%;padding:0;background:none;border:0;border-radius:0;box-shadow:none}
 .sui-chat-timeline:not(:hover):not(:focus-within){--q-tx:var(--sui-tl-faint);--q-tx-in:var(--sui-tl-muted);--q-off:.85;--q-mk:30%;--q-mk-in:56%;--q-st:62%;--q-ui:30%;--q-dot:68%;--q-line:20%}
 }}
 .sui-tl-lv{position:absolute;top:0;transition:left 240ms cubic-bezier(.2,.7,.2,1),width 240ms cubic-bezier(.2,.7,.2,1)}

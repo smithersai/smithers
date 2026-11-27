@@ -516,3 +516,24 @@ test("levels that grow twice in a row run one funnel frame loop, and disposal ca
     host.remove();
   }
 });
+
+test("toggling a collapsed disclosure open measures --sui-timeline-room without caching closed width", async () => {
+  const { timelineDriver } = await import("../src/chat/timelineDriver");
+  const host = document.createElement("div"); host.className = "sui-chat-transcript";
+  host.innerHTML = `<div data-slot="message-scroller-viewport"></div><details class="sui-timeline-disclosure"><summary>Timeline</summary><nav><div class="sui-timeline-box"><div class="sui-tl-lv" data-level="0"><div class="sui-tl-clip"><div class="sui-tl-inner"></div></div></div></div></nav></details>`;
+  document.body.append(host);
+  const details = host.querySelector<HTMLDetailsElement>("details")!;
+  const rail = host.querySelector<HTMLElement>("nav")!;
+  const box = rail.firstElementChild as HTMLElement;
+  let left = 272;
+  host.getBoundingClientRect = () => ({ top: 0, bottom: 800, left, right: left + 736, width: 736, height: 800, x: left, y: 0, toJSON: () => ({}) } as DOMRect);
+  const driver = timelineDriver(rail, box);
+  try {
+    driver.sync({ ids: ["m0"], asks: [true], levels: 1, spans: [], arcs: [] });
+    expect(details.style.getPropertyValue("--sui-timeline-room")).toBe("");
+    left = 398;
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+    expect(details.style.getPropertyValue("--sui-timeline-room")).toBe("380px");
+  } finally { driver.dispose(); host.remove(); }
+});

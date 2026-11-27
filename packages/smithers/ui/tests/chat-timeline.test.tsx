@@ -329,3 +329,10 @@ test("pending messages without host labels keep the transcript's state words", (
   expect([...host.querySelectorAll('ol[data-level="0"] .sui-tl-tx')].map(element => element.textContent)).toEqual(["Not sent", "Working"]);
   expect(host.querySelectorAll('ol[data-level="0"] [data-summary="pending"]').length).toBe(2);
 });
+
+test("desktop timeline disclosure stays collapsible and collapsed by default", () => {
+  expect(chatTimelineCss).not.toContain(".sui-timeline-disclosure>summary,.sui-timeline-disclosure[open]>summary{display:none}");
+  expect(chatTimelineCss).not.toContain(".sui-timeline-disclosure::details-content{display:block;content-visibility:visible");
+  expect(chatTimelineCss).toContain(".sui-timeline-disclosure[open]::details-content{display:block;height:100%}");
+  expect(chatTimelineCss).toContain(".sui-timeline-disclosure[open]>summary{position:absolute;top:-34px;inset-inline-end:0;z-index:2}");
+});
