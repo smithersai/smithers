@@ -14,7 +14,6 @@ import {
   JournalScrubber,
   journalPosition,
   StepInspector,
-  StatusPill,
   LoadingBar,
   Skeleton,
   Tabs,
@@ -26,6 +25,7 @@ import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
 import { ANSWER, OPEN, REFUSAL_WORDS, RESUME, RETRY, RETRY_FAILED, RETRY_FROM, RETRY_LATEST, STOP } from "../contract"
 import { actsOf, agentStopOf, journalOf, missingOf, placeOf, repoRunStateOf, retriesFrom, selectedStep } from "../page"
+import { RunJobResults } from "./RunJobResults"
 import { reportedJobs } from "../jobResults"
 import { headerStatusOf } from "../todoRun"
 import { graphOf, runTitle } from "../graph"
@@ -140,17 +140,7 @@ function ReadRunPage({ page, view, actions, fromRuns }: { page: RunPage; view: R
       {transcribed(inspection.steps) ? <TranscriptPanel runId={run.runId} /> : null}
       {at === null && page.childReads === "loading" ? <LoadingBar loading placement="inline" label="Loading run details" /> : null}
       {at === null && page.childReads === "unavailable" ? <p role="status">Some run details are unavailable.</p> : null}
-      {jobs.length > 0 ? (
-        <section aria-label="Jobs" className="run-page-jobs">
-          {jobs.map((job) => <section key={job.name} aria-label={job.name}>
-            <h2>{job.name} <StatusPill status={job.outcome} /></h2>
-            {job.steps.length > 0 ? <ul>{job.steps.map((step, index) => <li key={index}>
-              {step.name} <StatusPill status={step.outcome} />
-              {step.exitCode != null && step.exitCode !== 0 ? <span>Exit {step.exitCode}</span> : null}
-            </li>)}</ul> : null}
-          </section>)}
-        </section>
-      ) : null}
+      <RunJobResults jobs={jobs} />
       <div className="run-page-values">
         <JsonValue label="Input" value={run.input} />
         {run.result === null ? null : <JsonValue label="Result" value={run.result} />}
