@@ -36,7 +36,7 @@ describe("paletteItemsOf", () => {
   const commands = [
     { id: "factory/open", flow: "app/navigate", title: "Factory", minimum: "anyone" as const, palette: true, args: { to: "/{repo}/-/factory" } },
     { id: "factory/decide", flow: "app/navigate", title: "Factory decisions", minimum: "maintainer" as const, palette: true, args: { to: "/{repo}/-/factory/for-you" } },
-    { id: "tour/open", flow: "app/navigate", title: "Take a tour", minimum: "anyone" as const, palette: true, args: { to: "/app/tour" } },
+    { id: "bugs/report", flow: "app/navigate", title: "Report a bug", minimum: "anyone" as const, palette: true, args: { to: "/app/bugs/new" } },
     { id: "hidden/cmd", flow: "app/navigate", title: "Hidden", minimum: "anyone" as const, palette: false, args: { to: "/app" } },
     { id: "plain/action", flow: "app/theme/set", title: "Toggle theme", minimum: "anyone" as const, palette: true },
   ]
@@ -44,7 +44,7 @@ describe("paletteItemsOf", () => {
   test("filters core and plugin commands by viewer role and skips unresolved /{repo}/ commands", () => {
     const visitor = paletteItemsOf("", { viewer: { signedIn: false, role: null }, commands })
     expect(visitor.map((item) => item.id)).toContain("go:chat")
-    expect(visitor.map((item) => item.id)).toContain("cmd:tour/open")
+    expect(visitor.map((item) => item.id)).toContain("cmd:bugs/report")
     expect(visitor.map((item) => item.id)).toContain("cmd:plain/action")
     expect(visitor.map((item) => item.id)).not.toContain("go:flows")
     expect(visitor.map((item) => item.id)).not.toContain("cmd:factory/open")

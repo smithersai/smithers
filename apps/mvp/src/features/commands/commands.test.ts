@@ -176,7 +176,7 @@ describe("the catalog", () => {
       { name: "queue", flow: "app/navigate", minimum: "member", description: "Queue", fields: [], args: { to: "/app/queue" } },
       { name: "home", flow: "app/navigate", minimum: "anyone", description: "Home", fields: [] },
     ])
-    expect(PLUGIN_COMMANDS.map(({ name }) => name)).toEqual(["bug", "bugs", "factory", "lanes", "decide", "fleet", "queue", "tour", "wiki"])
+    expect(PLUGIN_COMMANDS.map(({ name }) => name)).toEqual(["bug", "bugs", "factory", "lanes", "decide", "fleet", "queue", "wiki"])
   })
 
   test("names are command syntax, one per flow, and each slash door's flow carries a description", () => {
@@ -956,7 +956,7 @@ test("repository-scoped plugin slash commands resolve /{repo}/ from the open rep
   // Global palette actions open, search, highlight, choose, and close cleanly
   const commands = await tab.runtime.runPromise(Effect.service(Commands))
   commands.actions.openPalette()
-  commands.actions.setPaletteQuery("tour")
+  commands.actions.setPaletteQuery("queue")
   commands.actions.highlightPalette(1)
   commands.actions.togglePalette()
   commands.actions.openPalette()

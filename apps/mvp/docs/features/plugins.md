@@ -138,15 +138,9 @@ The fourth plugin (`plugins/fleet/`, [fleet.md](fleet.md)): a repository's agent
 `core/agent-runs` and `core/machines`, each asked with `{ repo: "owner/name" }` and served from one Electric shape per
 repository (`src/features/fleet/store.ts`). It dispatches nothing: a run links to its TODO's page.
 
-## Guided tour
-
-The fifth plugin (`plugins/tour/`): an interactive 8-stop guided product walkthrough at `/app/tour` (`g t` or `/tour`,
-`minimum: "anyone"`), with keyboard stepping (`←`/`→`, `j`/`k`), interactive per-stop previews, and direct links to the
-zero-backend `/app?agent=mock` interactive demo and `/app`.
-
 ## Repository wiki
 
-The sixth plugin (`plugins/wiki/`): an Obsidian-compatible repository knowledge base at `/<owner>/<repo>/-/wiki`
+The fifth plugin (`plugins/wiki/`): an Obsidian-compatible repository knowledge base at `/<owner>/<repo>/-/wiki`
 (`/wiki`, `repo.tabs` entry, `minimum: "anyone"`), built over `core/feeds` with YAML frontmatter, `[[wikilinks]]`,
 automatic backlinks (`BacklinksPanel`), heading outlines (`OutlineView`), folder grouping, and full-text filtering.
 

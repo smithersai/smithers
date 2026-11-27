@@ -30,9 +30,6 @@ export function Landing() {
             <Button asChild variant="solid" size="lg">
               <Link to="/app">{session?.status === "signed_in" ? "Open Smithers" : "Get started for free"}</Link>
             </Button>
-            <Button asChild variant="outline" size="lg">
-              <Link to="/app/$plugin" params={{ plugin: "tour" }}>Take a tour</Link>
-            </Button>
           </nav>
         </main>
       </div>
