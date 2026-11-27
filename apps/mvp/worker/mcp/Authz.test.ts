@@ -1,10 +1,11 @@
 import { digestSync } from "@smthrs/crypto"
 import { Effect, Layer, Option } from "effect"
-import { HttpServerRequest } from "effect/http"
+import { HttpEffect, HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import {
   MCP_BLOCKED_ACTS,
+  repoMcpRoute,
   mcpAgentLabel,
   type McpScope,
 } from "../../src/features/mcp/contract.ts"
@@ -25,7 +26,8 @@ import {
   timingSafeEqual,
   timingSafeEqualString,
 } from "./Auth.vibe"
-import { McpAuthService, type McpPrincipal } from "./Contract.vibe"
+import * as Api from "./Api.vibe"
+import { McpAuthService, McpToolError, McpToolRegistry, type McpPrincipal } from "./Contract.vibe"
 import { generateMcpToken } from "./OAuth.vibe"
 import { makeLiveToolDeps, makeMcpToolRegistry } from "./Tools.vibe"
 
@@ -108,6 +110,8 @@ const makeAuthzHarness = (options: {
     Effect.try(() => {
       if (options.failDb) throw new Error("Simulated Postgres outage")
       const q = normalize(strings)
+
+      if (q.includes("FROM one_time_auth_tokens") || q.includes("INSERT INTO repo_contributors")) return []
 
       if (q.includes("FROM mcp_tokens t INNER JOIN people p")) {
         const tokenSha256 = values[0] as string
@@ -262,6 +266,7 @@ const makeAuthzHarness = (options: {
 
   return {
     service,
+    database,
     people,
     tokens,
     sessionReceipts,
@@ -610,4 +615,66 @@ test("deployment role lookup distinguishes a disappeared person from a database 
   const brokenPrincipal = await broken.principalOf(broken.mint({ personId: CAROL_ID }).raw)
   await expect(Effect.runPromise(Effect.flip(broken.service.resolveRepoAccess(brokenPrincipal, "smithersai", "smithers"))))
     .resolves.toMatchObject({ code: "unavailable" })
+})
+
+test("pull_create checks current Member access and the grant before contacting GitHub", async () => {
+  const h = makeAuthzHarness()
+  const attempts: string[] = []
+  const registry = await Effect.runPromise(makeMcpToolRegistry(makeLiveToolDeps({
+    cloudFactory: {
+      database: h.database,
+      policy: { admins: new Set() },
+      createPull: ({ login, head, draft }) => {
+        attempts.push(login + " " + head)
+        if (head === "orgadmin:smithers/status") {
+          return Effect.succeed({ number: 17, url: "https://github.test/evmts/voltaire/pull/17", state: "open", draft })
+        }
+        return Effect.fail(new McpToolError({ code: "unavailable", message: "GitHub offline" }))
+      },
+    },
+  })).pipe(Effect.provideService(McpAuthService, h.service)))
+  const handle = HttpEffect.toWebHandler(Api.make().fetch.pipe(
+    Effect.provideService(McpAuthService, h.service),
+    Effect.provideService(McpToolRegistry, registry),
+  ))
+  const call = (token: string, head = "smithers/fix-status") => handle(new Request(
+    "https://smithers.test" + repoMcpRoute("evmts", "voltaire"), {
+      method: "POST",
+      headers: {
+        authorization: "Bearer " + token,
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call",
+        params: { name: "pull_create", arguments: { title: "Fix status", head, base: "stable" } } }),
+    },
+  ))
+  const error = async (token: string, head?: string) => {
+    const response = await call(token, head)
+    expect(response.status).toBe(200)
+    const rpc = await response.json() as { result: { isError: boolean, content: { text: string }[] } }
+    expect(rpc.result.isError).toBe(true)
+    return JSON.parse(rpc.result.content[0]!.text)
+  }
+  for (const personId of [BOB_ID, CAROL_ID, ADMIN_ID]) {
+    expect(await error(h.mint({ personId }).raw)).toEqual({ code: "unavailable", message: "GitHub offline" })
+  }
+  const admin = h.mint({ personId: ADMIN_ID }).raw
+  const opened = await call(admin, "orgadmin:smithers/status")
+  expect(opened.status).toBe(200)
+  const receipt = await opened.json() as { result: { content: { text: string }[] } }
+  expect(JSON.parse(receipt.result.content[0]!.text)).toEqual({
+    number: 17, url: "https://github.test/evmts/voltaire/pull/17", state: "open", draft: true,
+    repository: "evmts/voltaire", attributedTo: "@orgadmin (agent)",
+  })
+  expect(await error(h.mint({ personId: ADMIN_ID, scopes: ["mcp:read"] }).raw)).toMatchObject({ code: "forbidden" })
+  expect((await call(h.mint({ personId: ADMIN_ID, repoScope: PRIVATE_REPO }).raw)).status).toBe(403)
+  expect(await error(admin, "bad branch")).toMatchObject({ code: "invalid_params" })
+  for (const personId of [ALICE_ID, OUTSIDER_ID]) {
+    expect(await error(h.mint({ personId }).raw)).toMatchObject({ code: "forbidden" })
+  }
+  h.roleTable.set(ADMIN_ID + ":" + PUBLIC_REPO, "guest")
+  expect(await error(admin)).toMatchObject({ code: "forbidden" })
+  expect((await call(h.mint({ personId: BOB_ID, revoked: true }).raw)).status).toBe(401)
+  expect(attempts).toEqual(["bob smithers/fix-status", "roninjin10 smithers/fix-status", "orgadmin smithers/fix-status", "orgadmin orgadmin:smithers/status"])
 })

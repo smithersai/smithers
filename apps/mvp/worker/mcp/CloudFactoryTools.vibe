@@ -324,7 +324,7 @@ export const CLOUD_FACTORY_TOOL_DESCRIPTORS: ReadonlyArray<McpToolDescriptor> = 
   {
     name: "pull_create",
     description:
-      "Open a pull request attributed to you as your agent. Requires write access (Member or Maintainer); agents never approve or merge pull requests.",
+      "Open a pull request attributed to you as your agent. Requires Member access or above; agents never approve or merge pull requests.",
     inputSchema: {
       type: "object",
       properties: {
@@ -601,7 +601,7 @@ export effect function callCloudFactoryTool(
   }
 
   // Write tools require an authenticated MCP principal with `mcp:write`.
-  const writePrincipal = try auth.requireWriteAccess(ctx.principal, target.owner, target.name, "guest")
+  const writePrincipal = try auth.requireWriteAccess(ctx.principal, target.owner, target.name, name === "pull_create" ? "member" : "guest")
   const caller = writePrincipal.principal
   const liveRole = writePrincipal.access.role
   const sandboxAttested = try isVerifiedSandboxToken(caller.tokenId, target.owner, target.name).pipe(
@@ -939,12 +939,6 @@ export effect function callCloudFactoryTool(
       return jsonResult(minted)
     }
     case "pull_create": {
-      if (liveRole !== "maintainer" && liveRole !== "member") {
-        throw new McpToolError({
-          code: "forbidden",
-          message: "Opening a pull request via MCP requires Member or Maintainer access. Use changeset_create to propose stacked changes.",
-        })
-      }
       const title = strArg(args, "title")?.trim()
       const head = strArg(args, "head")?.trim()
       const base = (strArg(args, "base") ?? "main").trim()
@@ -953,10 +947,10 @@ export effect function callCloudFactoryTool(
       if (!title || title.length > 256) {
         throw new McpToolError({ code: "invalid_params", message: "title is required (1 to 256 characters)" })
       }
-      if (!head || head.length > 256 || head.includes("..") || /[ -s]/.test(head)) {
+      if (!head || head.length > 256 || head.includes("..") || /[\u0000-\u001f\u007f\s]/.test(head)) {
         throw new McpToolError({ code: "invalid_params", message: "head branch name is invalid" })
       }
-      if (!base || base.length > 256 || base.includes("..") || /[ -s]/.test(base)) {
+      if (!base || base.length > 256 || base.includes("..") || /[\u0000-\u001f\u007f\s]/.test(base)) {
         throw new McpToolError({ code: "invalid_params", message: "base branch name is invalid" })
       }
       if (body.length > 60_000) {
