@@ -1,5 +1,5 @@
 import { NotSentChanges } from "../../features/todos/components/NotSentChanges"
-import { Button, Breadcrumbs, Card, CardContent, ConfirmButton, EmptyState, ItemAsideSection, ItemConversation, ItemStateIcon, PageBody, Skeleton, StageStrip } from "@smthrs/ui"
+import { Button, Breadcrumbs, Card, CardContent, ConfirmButton, EmptyState, ItemAsideSection, ItemConversation, ItemStateIcon, PageBody, StageStrip } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -78,11 +78,6 @@ export function TodoScreen() {
         {screen.kind === "waiting" ? (
           <Card><CardContent>
             <p role="status">Syncing TODO…</p>
-            <div className="stack-loading" aria-hidden>
-              <Skeleton className="stack-loading-title" />
-              <Skeleton className="stack-loading-body" />
-              <Skeleton className="stack-loading-body" />
-            </div>
           </CardContent></Card>
         ) : null}
         {screen.kind === "missing" ? <Card><CardContent><EmptyState title={NOT_FOUND} /></CardContent></Card> : null}

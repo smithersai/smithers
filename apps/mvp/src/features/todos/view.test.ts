@@ -491,6 +491,13 @@ describe("a TODO's page as GitHub's issue page", () => {
     expect(dropped.events.at(-1)).toEqual({ id: "dropped", kind: "dropped", text: "Dropped", createdAt: "2026-10-20T11:00:00+00:00" })
   })
 
+  test("the stack identifies a missing coding model and preserves earlier implementation failures", () => {
+    const failureText = (failure: "no_seat" | "implement") =>
+      todoPageOf(card({ state: "failed", failure }), "octo", "hello").events.at(-1)?.text
+    expect(failureText("no_seat")).toBe("Coding model unavailable")
+    expect(failureText("implement")).toBe("Implementation failed")
+  })
+
   test("a failed TODO shows its safe failure reason and retains the run for diagnosis", () => {
     const RUN = "todo:6f1c2a7e-3b4d-4c5e-8f90-1a2b3c4d5e6f"
     const page = todoPageOf(card({ state: "failed", failure: "empty_change", branch: "smithers/t4-retry", runId: RUN, settledAt: "2026-10-20 11:00:00+00" }), "octo", "hello")

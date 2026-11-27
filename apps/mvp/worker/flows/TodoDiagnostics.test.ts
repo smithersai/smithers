@@ -2,6 +2,7 @@ import { Budget } from "@smthrs/agent"
 import { HarnessError, Sandbox } from "@smthrs/harness"
 import { Evaluator, ModelError } from "@smthrs/model"
 import { expect, test } from "vitest"
+import { failureOf } from "./Todo.vibe"
 import { agentFailureCodes } from "./TodoDiagnostic.vibe"
 
 test("TODO failure diagnostics keep typed agent and model codes without messages", () => {
@@ -96,4 +97,12 @@ test.each([
 ])("diagnostics keep the harness code while discarding an incomplete or invalid cause (%j)", (cause) => {
   expect(agentFailureCodes({ _tag: "/harness/HarnessError", code: "engine_failed", cause }))
     .toEqual({ ...noCodes, harnessCode: "engine_failed" })
+})
+
+test("a coding route lost after admission retains the same cause as route selection", () => {
+  const failure = (code: "no_route" | "rate_limited") => new HarnessError.HarnessError({
+    code: "model_failed", message: "model failed", cause: new ModelError.ModelError({ code, message: "unavailable" }),
+  })
+  expect(failureOf(failure("no_route"))).toBe("no_seat")
+  expect(failureOf(failure("rate_limited"))).toBe("implement")
 })

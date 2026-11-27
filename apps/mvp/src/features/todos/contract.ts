@@ -107,6 +107,7 @@ export type TodoStep = (typeof TODO_STEPS)[number]
 export const TODO_FAILURES = [
   "plan",
   "implement",
+  "no_seat",
   "empty_change",
   "publish_refused",
   "pr_refused",

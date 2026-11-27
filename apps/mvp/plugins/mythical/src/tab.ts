@@ -200,4 +200,4 @@ export const make = (host: PluginHostShape) =>
     } satisfies MythicalTab
   })
 
-export const tab = make
+export const tab = Effect.flatMap(Host.PluginHost, make)

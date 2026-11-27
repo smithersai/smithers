@@ -1,34 +1,34 @@
 import type { Host } from "@smthrs/plugin"
-import { type ComponentType, Suspense, use } from "react"
+import { type ComponentType, lazy, Suspense, useMemo } from "react"
 import { Boundary } from "./Boundary"
 import { usePlugins } from "./PluginsContext"
 
-// A `component` render of a built-in plugin: its chunk and its tab load on first use, then the named export renders
-// with the tab, `{ queries, actions }`, and on a repository's page that repository (`Host.Rendered`). Nothing else
-// reaches it.
-
+// An active plugin owns its tab and component chunk. React keeps one lazy component for this export
+// across suspended renders. The host shares both resources with the plugin's other contributions.
 interface Props {
   readonly plugin: string
   readonly name: string
   readonly repository?: Host.Repository | undefined
 }
 
-function Loaded({ plugin, name, repository }: Props) {
+function Contribution({ plugin, name, repository }: Props) {
   const { actions } = usePlugins()
-  const components = use(actions.components(plugin))
-  const tab = use(actions.tab(plugin))
-  const Rendered = components[name] as ComponentType<Host.Rendered<unknown>> | undefined
-  if (Rendered === undefined) throw new Error(`${plugin} exports no ${name}`)
-  return <Rendered tab={tab} repository={repository} />
+  const Loaded = useMemo(() => lazy(async () => {
+    const components = await actions.components(plugin)
+    const tab = await actions.tab(plugin)
+    const Rendered = components[name] as ComponentType<Host.Rendered<unknown>> | undefined
+    if (Rendered === undefined) throw new Error(`${plugin} exports no ${name}`)
+    return { default: (props: Pick<Props, "repository">) => <Rendered tab={tab} repository={props.repository} /> }
+  }), [actions, plugin, name])
+
+  return <Suspense fallback={null}><Loaded repository={repository} /></Suspense>
 }
 
-export function Contributed({ plugin, name, repository }: Props) {
+export function Contributed(props: Props) {
   const { actions } = usePlugins()
   return (
-    <Boundary plugin={plugin} report={(error) => actions.failed(plugin, error)}>
-      <Suspense fallback={null}>
-        <Loaded plugin={plugin} name={name} repository={repository} />
-      </Suspense>
+    <Boundary plugin={props.plugin} report={(error) => actions.failed(props.plugin, error)}>
+      <Contribution {...props} />
     </Boundary>
   )
 }

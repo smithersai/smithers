@@ -305,8 +305,9 @@ export const Fail = Action.make("todo/Fail", {
  * The TODO failure code a run that gave up ends with: a step's own, its step's, `stopped` for an external agent a
  * person stopped, or the agent's `implement`.
  */
-export const failureOf = (error: Failure): StepFailure => {
+export const failureOf = (error: Failure, modelCode = agentFailureCodes(error).modelCode): StepFailure => {
   if (error instanceof TodoFailed) return error.failure
+  if (error instanceof NoSeat || modelCode === "no_route") return "no_seat"
   if (error instanceof ExternalAgent.AgentFailed && error.reason === "cancelled") return "stopped"
   if (error instanceof TodoUnavailable) {
     return error.step === "begin" || error.step === "publish" ? "publish_refused" : error.step === "collect"
@@ -951,8 +952,8 @@ export const steps = <E, R>(services: Services<E, R>) => {
 
   const fail = ({ request, error }: typeof Fail.payloadSchema.Type) =>
     effect {
-      const failure = failureOf(error)
       const { harnessCode, modelCode, budgetScope, causeCode } = try Effect.sync(() => agentFailureCodes(error))
+      const failure = failureOf(error, modelCode)
       try Effect.logWarning("todo.fail").pipe(
         Effect.annotateLogs({ attemptId: request.attemptId, todoId: request.todoId, failure, errorCode: codeOf(error), harnessCode, modelCode, budgetScope, causeCode }),
       )
@@ -971,7 +972,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
         }
         try Fleet.raiseAll(request.attemptId, [alert], services.fleet.raise, () => Effect.void)
       }
-      if (reported.outcome !== "stale" && (error instanceof NoSeat || modelCode === "no_route")) {
+      if (reported.outcome !== "stale" && failure === "no_seat") {
         throw new NoSeat()
       }
       return { state: reported.outcome === "stale" ? "ended" : "failed" } satisfies Ran

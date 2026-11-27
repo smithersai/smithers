@@ -428,3 +428,7 @@ A held stack change retains its durable row. Stack changes share a repository ke
 ## Public TODO visibility on public repositories
 
 On public, non-ops repositories (`smithersai/Smithers-Ops` remains strictly admin-in-person only), `GET /api/shapes/todos?repo=owner/name` and the `todo_list` MCP tool are publicly readable so contributors and viewers can inspect the live TODO stack. All stack mutations (`todo_draft`, commit, reorder, drop) and private repository stacks remain gated by live repository role and person-only approval boundaries.
+
+### Coding model unavailable
+
+If the TODO owner has no usable coding route, the durable run fails with `NoSeat` and the stack records `no_seat`. The owner's Settings → Your model accepts a Codex subscription through its device-code link. A registered repository coding agent can also run the TODO. Retry starts a new attempt and resolves the route again. Earlier `implement` rows still display “Implementation failed.” Their durable journals may contain a more specific cause.

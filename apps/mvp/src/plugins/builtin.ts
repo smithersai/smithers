@@ -1,3 +1,5 @@
+import type { Host } from "@smthrs/plugin"
+import type { Effect, Scope } from "effect"
 import { bugs, factory, fleet, mythical, queue, uphill, wiki } from "./manifests"
 
 // The built-in plugins (decision 0017, "What stays hardcoded"): the one place the core names a plugin, as webpack's
@@ -9,7 +11,7 @@ import { bugs, factory, fleet, mythical, queue, uphill, wiki } from "./manifests
 export interface BuiltIn {
   readonly manifest: unknown
   /** The tab entry: a module whose `tab` builds `{ queries, actions }` from `PluginHost`. */
-  readonly tab: () => Promise<{ readonly tab: unknown }>
+  readonly tab: () => Promise<{ readonly tab: Effect.Effect<unknown, unknown, Host.PluginHost | Scope.Scope> }>
   /** The components: a module whose exports are the names a `component` render names. */
   readonly components: () => Promise<Readonly<Record<string, unknown>>>
 }

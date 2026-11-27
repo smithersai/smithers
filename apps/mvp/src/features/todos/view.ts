@@ -364,6 +364,7 @@ export interface TodoPage {
 export const TODO_FAILURE_WORDS: Readonly<Record<TodoFailure, string>> = {
   plan: "Couldn't plan",
   implement: "Implementation failed",
+  no_seat: "Coding model unavailable",
   empty_change: "No changes",
   publish_refused: "Publish refused",
   pr_refused: "Pull request refused",

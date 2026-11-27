@@ -422,21 +422,32 @@ describe("the todo run", { timeout: 120_000 }, () => {
     expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(0)
   })
 
-  test("a deployment-paid TODO without a coding seat reports NoSeat without calling the legacy agent model", async () => {
+  test("a missing coding seat is recorded before implementation and Retry uses the newly connected model", async () => {
     await runtime.runPromise(ModelRoles.set({
       role: "agent",
       model: { protocol: "openai-chat", baseUrl: OPENAI_ORIGIN, modelId: "legacy-agent", credential: "LEGACY" },
     }, { actorId: maya.id, invocationKey: crypto.randomUUID() }))
-    const provider = scriptedProvider({ text: "legacy agent answered" })
+    const provider = scriptedProvider({ text: '```cell\nctx.done({ summary: "Nothing to do." })\n```' })
     const ctx = await setup({ requireCoding: true, personal: provider.fetch })
     const start = (await commit("No coding seat", "Nothing can answer."))!
     const ran = await ctx.run(start)
     expect(Exit.isFailure(ran.exit) && Cause.squash(ran.exit.cause)).toBeInstanceOf(ModelSeats.NoSeat)
     expect(ran.status).toBe("failed")
-    expect(await todo()).toMatchObject({ state: "failed", failure: "implement" })
+    expect(await todo()).toMatchObject({ state: "failed", failure: "no_seat" })
     expect(provider.seen).toEqual([])
     expect(ctx.agent.requests).toEqual([])
     expect(ctx.github.pulls.size).toBe(0)
+    await seed(runtime, maya.id)
+    const retried = await runtime.runPromise(Stack.apply({
+      opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya, via: "person",
+      op: { kind: "retry", number: start.number },
+    }, { runs: true }))
+    if (retried.kind !== "applied") throw new Error("retry refused")
+    expect(retried.receipt.starts).toEqual([expect.objectContaining({ ordinal: 2 })])
+    const next = await ctx.run(retried.receipt.starts[0]!)
+    expect(next.exit).toEqual(Exit.succeed({ state: "failed" }))
+    expect(await todo()).toMatchObject({ state: "failed", failure: "empty_change" })
+    expect(provider.seen.length).toBeGreaterThan(0)
   })
 
   test("its committer's own model answers the run's agent, with their key, outside the deployment's budget", async () => {

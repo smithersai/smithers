@@ -20,6 +20,7 @@ import { nodeDevice, openTab, openTestApp, TestChatApi } from "../test/chatApi"
 import { shaOf } from "../../worker/test/branch"
 import { read as readTelemetry } from "../test/otlp"
 import type { BuiltIn } from "./builtin"
+import type { MythicalTab } from "../../plugins/mythical/src/tab"
 import { pluginKeys } from "./keymap.vibe"
 import { hostFor, loads, pathOf, Plugins, presses, settledOf, shownView, viewAt, viewById } from "./plugins"
 import { draftKey } from "./schema"
@@ -107,6 +108,8 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     expect(a.count(Metric.withAttributes(loads, { outcome: "active", tier: "built-in", reason: "none" }))).toBe(7)
 
     const answerId = await a.ask("Deploy the preview", question("preview"))
+    const history = await a.plugins.actions.tab("mythical") as MythicalTab
+    expect(history.actions.href({ owner: "octo", name: "hello" })).toBe("/octo/hello/-/mythical")
     const tab = (await a.plugins.actions.tab("queue")) as QueueTab
     // Built once: the same tab on every use.
     expect(await a.plugins.actions.tab("queue")).toBe(tab)

@@ -137,6 +137,7 @@ import m0136 from "./migrations/0136_compute_billing.ts"
 import m0137 from "./migrations/0137_repo_forks.ts"
 import m0138 from "./migrations/0138_cloud_object_store_and_one_time_auth.ts"
 import m0139 from "./migrations/0139_messages_shard_pending.ts"
+import m0140 from "./migrations/0140_todo_no_seat.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -278,4 +279,5 @@ export const migrations = {
   "0137_repo_forks": m0137,
   "0138_cloud_object_store_and_one_time_auth": m0138,
   "0139_messages_shard_pending": m0139,
+  "0140_todo_no_seat": m0140,
 }

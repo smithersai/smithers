@@ -68,8 +68,7 @@ export const buildTab = (plugin: string) =>
     if (entry === undefined) return try die(new Error(`no active plugin ${plugin}`))
     const module = try promise(entry.tab)
     const host = try hostFor(plugin)
-    const tab = module.tab as Effect.Effect<unknown, unknown, Host.PluginHost | Scope.Scope>
-    return try Scope.provide(provideService(tab, Host.PluginHost, host), plugins.scope)
+    return try Scope.provide(provideService(module.tab, Host.PluginHost, host), plugins.scope)
   }
 
 export class PluginsUi extends Context.Service<PluginsUi, PluginsView>()("@smthrs/mvp/plugins/PluginsUi") {
