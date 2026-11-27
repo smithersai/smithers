@@ -11,7 +11,7 @@ head:
       href: /docs/index.md
 ---
 
-Automate maintaining your codebase with Smithers. Browse repositories, configure your own models, and collaborate with coding agents at [smithers.sh](https://smithers.sh), or run agents locally on your Mac and subscription with the `smthrs` CLI.
+Automate maintaining your codebase with Smithers. Accelerate existing CI with zero stale passes via `bunx smithers-ci` ([ci.smithers.sh](https://ci.smithers.sh)), browse public repositories and Uphill continuous metrics at [smithers.sh](https://smithers.sh), and attach your own coding agent (Claude Code, Codex, Antigravity, Cursor) over BYOA MCP via `smthrs node serve`.
 
 <figure class="docs-diagram not-content">
 <div class="diagram-canvas">

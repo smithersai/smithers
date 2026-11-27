@@ -13,11 +13,18 @@
 
 Smithers maintains your codebase. It turns issues into tested changes for you to review and, when enabled, keeps the project wiki current. Flows beside your code define how.
 
-## Open Smithers
+## Fast CI for agents (`smithers-ci`)
+
+Speed up existing GitHub Actions and local test loops with syscall-verified caching (`smthrs-observe`), Lean 4 reference specs, and zero stale passes ([ci.smithers.sh](https://ci.smithers.sh)):
+
+```bash
+bunx smithers-ci --commits 5
+```
+
+## Open Smithers (`smithers.sh`)
 
 Open [the Smithers repository](https://smithers.sh/smithersai/smithers) in your browser.
-Explore its files, ask questions in chat, and inspect runs and changes in the conversation.
-Sign in with GitHub when you are ready to contribute.
+Explore files, inspect Uphill continuous metrics, review diffs and runs, fork in one click, or attach your own agent (Claude Code, Codex, Antigravity, Cursor) over BYOA MCP (`smthrs node serve`).
 Follow the [app quickstart](https://smithers.sh/docs/quickstart/).
 
 For local execution and authoring, use the CLI and libraries described below.

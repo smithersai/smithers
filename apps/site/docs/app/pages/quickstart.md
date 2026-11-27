@@ -26,7 +26,7 @@ https://github.com/smithersai/vibelang
 https://smithers.sh/smithersai/vibelang
 ```
 
-Open `https://smithers.sh/smithersai/vibelang`. The repository lands on **Home**; choose **Code** to browse the file tree and switch branches.
+Open `https://smithers.sh/smithersai/vibelang`. The repository opens on **Home**; choose **Code** to browse the file tree and switch branches.
 
 ![The smithersai/vibelang repository on its Home tab](images/quickstart-repo-home.webp)
 

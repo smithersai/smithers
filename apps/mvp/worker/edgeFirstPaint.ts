@@ -211,6 +211,7 @@ const renderReadmeSnippet = (about: EdgeAbout): string => {
 export const renderLandingShell = (): string =>
   `<div class="edge-shell edge-landing" data-edge-first-paint="landing">` +
   `<nav class="edge-landing-top" aria-label="Site">` +
+  `<a href="https://ci.smithers.sh" target="_blank" rel="noopener noreferrer">CI</a>` +
   `<a href="/docs">Docs</a>` +
   `<a href="/app/waitlist">Host a repo</a>` +
   `<a href="https://github.com/smithersai/smithers" target="_blank" rel="noopener noreferrer">Source</a>` +
@@ -221,6 +222,7 @@ export const renderLandingShell = (): string =>
   `<p class="edge-landing-tagline">Automate maintaining your codebase</p>` +
   `<nav class="edge-landing-actions" aria-label="Start">` +
   `<a class="edge-btn edge-btn-solid" href="/app">Get started for free</a>` +
+  `<a class="edge-btn" href="/smithersai/smithers">Explore live repo</a>` +
   `</nav>` +
   `</main>` +
   `</div>` +

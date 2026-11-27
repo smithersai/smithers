@@ -41,6 +41,10 @@ const customDomainLocation = async (env: Env, url: URL): Promise<string | undefi
 export default {
   fetch: async (request: Request, env: Env, ctx?: ExecutionContext) => {
     const url = new URL(request.url)
+    if (url.pathname === "/api/health" && (request.method === "GET" || request.method === "HEAD")) {
+      const headers = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store" })
+      return new Response(request.method === "HEAD" ? null : JSON.stringify({ ok: true, service: "smithers" }), { status: 200, headers })
+    }
     if (url.pathname.startsWith("/api/")) {
       const cachedAbout = await cachedPublicAbout(request, env.CHAT_API, ctx)
       if (cachedAbout !== undefined) return cachedAbout

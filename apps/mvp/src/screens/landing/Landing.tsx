@@ -13,6 +13,7 @@ export function Landing() {
   return (
     <div className="landing">
       <nav className="landing-top" aria-label="Site">
+        <a href="https://ci.smithers.sh" target="_blank" rel="noopener noreferrer">CI</a>
         <a href="/docs">Docs</a>
         <Link to="/app/waitlist">Host a repo</Link>
         <a href={SOURCE_URL} target="_blank" rel="noopener noreferrer">Source</a>
@@ -29,6 +30,9 @@ export function Landing() {
           <nav className="landing-actions" aria-label="Start">
             <Button asChild variant="solid" size="lg">
               <Link to="/app">{session?.status === "signed_in" ? "Open Smithers" : "Get started for free"}</Link>
+            </Button>
+            <Button asChild variant="outline" size="lg">
+              <Link to="/$owner/$repo" params={{ owner: "smithersai", repo: "smithers" }}>Explore live repo</Link>
             </Button>
           </nav>
           <section className="landing-paths" aria-label="Ways to contribute">

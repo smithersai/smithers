@@ -232,7 +232,7 @@ Replace `/path/to/your/origin.git` with your repository's remote URL, and push t
 # Welcome to Smithers
 https://smithers.sh/docs/
 
-Automate maintaining your codebase with Smithers. Browse repositories, configure your own models, and collaborate with coding agents at [smithers.sh](https://smithers.sh), or run agents locally on your Mac and subscription with the `smthrs` CLI.
+Automate maintaining your codebase with Smithers. Accelerate existing CI with zero stale passes via `bunx smithers-ci` ([ci.smithers.sh](https://ci.smithers.sh)), browse public repositories and Uphill continuous metrics at [smithers.sh](https://smithers.sh), and attach your own coding agent (Claude Code, Codex, Antigravity, Cursor) over BYOA MCP via `smthrs node serve`.
 
 ```text
 +-----------------------+    reads    +------------------------------+    +---------------------+
@@ -304,7 +304,7 @@ https://github.com/smithersai/vibelang
 https://smithers.sh/smithersai/vibelang
 ```
 
-Open `https://smithers.sh/smithersai/vibelang`. The repository lands on **Home**; choose **Code** to browse the file tree and switch branches.
+Open `https://smithers.sh/smithersai/vibelang`. The repository opens on **Home**; choose **Code** to browse the file tree and switch branches.
 
 ![The smithersai/vibelang repository on its Home tab](https://smithers.sh/images/docs/quickstart-repo-home.light.webp)
 

@@ -212,3 +212,19 @@ test("public GET /api/repos/:owner/:name/about is served from Cloudflare edge ca
     ;(globalThis as { caches?: unknown }).caches = prev
   }
 })
+
+test("GET and HEAD /api/health answer 200 JSON with no-store at the edge without touching CHAT_API", async () => {
+  let called = 0
+  const env = {
+    ASSETS: { fetch: async () => new Response("unexpected", { status: 500 }) } as unknown as Fetcher,
+    CHAT_API: { fetch: async () => { called += 1; return new Response("unexpected", { status: 500 }) } } as unknown as Fetcher,
+  }
+  const getRes = await site.fetch(new Request("https://smithers.test/api/health") as Parameters<typeof site.fetch>[0], env)
+  expect(getRes.status).toBe(200)
+  expect(getRes.headers.get("cache-control")).toBe("no-store")
+  expect(await getRes.json()).toEqual({ ok: true, service: "smithers" })
+  const headRes = await site.fetch(new Request("https://smithers.test/api/health", { method: "HEAD" }) as Parameters<typeof site.fetch>[0], env)
+  expect(headRes.status).toBe(200)
+  expect(await headRes.text()).toBe("")
+  expect(called).toBe(0)
+})
