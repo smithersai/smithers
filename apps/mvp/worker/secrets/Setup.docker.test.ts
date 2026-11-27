@@ -142,6 +142,28 @@ describe.skipIf(!present)("the trust setup of a box without secrets in a real co
   }, 300_000)
   afterAll(() => machine?.remove())
 
+  personTest("a sandbox user can install a frozen Bun project and run its audit", () => {
+    const result = machine.login([
+      "set -eu",
+      "cd \"$(mktemp -d)\"",
+      "bun --version",
+      "mkdir fixture-dep",
+      "printf '%s\\n' '{\"name\":\"fixture-dep\",\"version\":\"1.0.0\",\"main\":\"index.js\"}' > fixture-dep/package.json",
+      "printf '%s\\n' 'exports.add = (a, b) => a + b' > fixture-dep/index.js",
+      "printf '%s\\n' '{\"name\":\"sandbox-bun-check\",\"dependencies\":{\"fixture-dep\":\"file:./fixture-dep\"},\"scripts\":{\"audit\":\"bun audit-fixture.ts\"}}' > package.json",
+      "printf '%s\\n' 'import { add } from \"fixture-dep\"; console.log(\"audit result\", add(2, 3))' > audit-fixture.ts",
+      "bun install --lockfile-only",
+      "test -s bun.lock",
+      "sha256sum bun.lock > expected.lock",
+      "bun install --frozen-lockfile",
+      "sha256sum -c expected.lock",
+      "bun run audit",
+    ].join("\n"))
+    expect(result.status).toBe(0)
+    expect(result.stdout).toMatch(/^1\.4\.4$/m)
+    expect(result.stdout).toContain("audit result 5")
+  }, 60_000)
+
   personTest("the image carries Go, Python and a C toolchain on the default PATH", () => {
     // beforeAll built a Go program and made a venv with them.
     const tools = machine.login("go version && command -v go gofmt gcc g++ make python3 && python3 -m pip --version")

@@ -1,5 +1,5 @@
 # The branch sandbox's image (decision 0013 §9): Debian trixie with git, tmux, bash and CA certificates, the Node and
-# pnpm the repository pins (.node-version, package.json's packageManager), Go, Python with pip and venv, and a C and C++
+# pnpm the repository pins (.node-version, package.json's packageManager), Bun, Go, Python with pip and venv, and a C and C++
 # toolchain for native packages, so most repositories install and build in a branch's, a TODO's or a check job's box
 # (ruling ARCH-15). It holds no credentials: the forge proxy (worker/BranchSandboxes.ts) adds the read token outside the
 # box, and the box reaches only the package registries, through its egress (worker/branch/RegistryEgress.ts), whose
@@ -89,6 +89,22 @@ RUN cd /opt/smthrs \
   && npm cache clean --force \
   && ln -s /opt/smthrs/node_modules/@smthrs/cli/bin/smithers.mjs /usr/local/bin/smthrs \
   && smthrs --version
+# Keep the branch and CI hosts on the build sandbox's Bun release. Verify the archive for the native architecture.
+ARG BUN_VERSION=1.4.4
+ARG BUN_SHA256_AMD64=bf8ccbfb2b0b80159e0f9a6d15c55317add8077534dbc6130a3edb52fccb395c
+ARG BUN_SHA256_ARM64=baa6bb36f51d6e58561e02bbea825038a9df454f673d6d776e8bbf86f8c7850e
+RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+      amd64) bunarch=x64; sum=$BUN_SHA256_AMD64 ;; \
+      arm64) bunarch=aarch64; sum=$BUN_SHA256_ARM64 ;; \
+      *) exit 1 ;; \
+    esac \
+  && curl -fsSLo /tmp/bun.zip "https://github.com/oven-sh/bun/releases/download/bun-v$BUN_VERSION/bun-linux-$bunarch.zip" \
+  && echo "$sum  /tmp/bun.zip" | sha256sum -c - \
+  && python3 -m zipfile -e /tmp/bun.zip /tmp/bun-dist \
+  && install -m 0755 "/tmp/bun-dist/bun-linux-$bunarch/bun" /usr/local/bin/bun \
+  && ln -s bun /usr/local/bin/bunx \
+  && rm -rf /tmp/bun.zip /tmp/bun-dist \
+  && test "$(bun --version)" = "$BUN_VERSION"
 ENV LANG=C.UTF-8 TERM=xterm-256color
 USER smithers
 WORKDIR /workspace
