@@ -1,7 +1,7 @@
 import { applyDocumentLocale } from "./documentLocale"
 import { PendingSnapshot } from "@smthrs/platform-browser"
 import { hostRecords, thrownName } from "./hostRecords"
-import { applyRelease, type ReleaseReason, watchInstalls, watchUpdates } from "./pwa"
+import { applyRelease, preloadKind, preloadWindow, type ReleaseReason, watchInstalls, watchUpdates } from "./pwa"
 import { reloadedBecause, reloadFor } from "./reloadReason"
 import { Button, EmptyState, SmithersUiStyles } from "@smthrs/ui"
 import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
@@ -93,6 +93,22 @@ const reloadWith = reloadFor({
   reload: () => window.location.reload(),
 })
 let updateReloading = false
+const delivery = preloadWindow(() => performance.now())
+const loggedPreloads = new Set<string>()
+let checkAfterPreload: (() => void) | undefined
+let activePreload: (() => void) | undefined
+// Installed before the deferred service worker registration. No request URL, exception or component props enter records.
+window.addEventListener("vite:preloadError", (event) => {
+  const network = navigator.onLine ? "online" : "offline"
+  const kind = preloadKind((event as Event & { payload?: unknown }).payload)
+  const key = network + kind
+  if (!loggedPreloads.has(key)) {
+    loggedPreloads.add(key)
+    records.record({ _tag: "pwa.preload", kind, network, controlled: navigator.serviceWorker?.controller != null, activated: updateReloading })
+  }
+  delivery.failed(kind, network === "online", updateReloading ? undefined : checkAfterPreload)
+  if (kind !== "other" && network === "online") activePreload?.()
+})
 const editorUpdateParked = () => {
   records.record({ _tag: "pwa.update", outcome: "editor_unpersisted" })
   window.alert("Couldn't save your edit on this device. Copy it before reloading.")
@@ -116,6 +132,26 @@ const reloadWhenSafe = async (reason: ReleaseReason) => {
   }
 }
 
+const releaseActivated = () => {
+  if (updateReloading) return
+  updateReloading = true
+  records.record({ _tag: "pwa.update", outcome: "activated" })
+  applyRelease({
+    hidden: () => document.visibilityState === "hidden",
+    listen: (signal, listener) => {
+      if (signal === "visibility") {
+        document.addEventListener("visibilitychange", listener)
+        return () => document.removeEventListener("visibilitychange", listener)
+      }
+      // The old page can't load the module: its import still fails, so the page's error shows (with Retry) until the
+      // editors' gate lets the reload run.
+      activePreload = listener
+      return () => { activePreload = undefined }
+    },
+    reload: (reason) => void reloadWhenSafe(reason),
+  }, delivery.recent() && navigator.onLine)
+}
+
 // Defer service-worker registration until the initial page load settles so SW precaching never contends with
 // critical-path JS, CSS or API traffic on a cold visit.
 const startServiceWorker = () => {
@@ -123,6 +159,10 @@ const startServiceWorker = () => {
     immediate: true,
     onRegistered: (registration) => {
       if (!registration) return
+      checkAfterPreload = () => {
+        void registration.update().catch(() => records.record({ _tag: "pwa.update.check", trigger: "preload" }))
+      }
+      if (!updateReloading) delivery.check(checkAfterPreload)
       watchInstalls(registration, () => records.record({ _tag: "pwa.install" }))
       watchUpdates(registration, {
         visible: () => document.visibilityState === "visible",
@@ -142,25 +182,7 @@ const startServiceWorker = () => {
     },
     // A new release activated: it waits until the page is hidden, or needs a module only the old release had (src/pwa.ts
     // `applyRelease`, decision 0131); then the editors' gate above holds the reload until every edit is saved.
-    onNeedReload: () => {
-      if (updateReloading) return
-      updateReloading = true
-      records.record({ _tag: "pwa.update", outcome: "activated" })
-      applyRelease({
-        hidden: () => document.visibilityState === "hidden",
-        listen: (signal, listener) => {
-          if (signal === "visibility") {
-            document.addEventListener("visibilitychange", listener)
-            return () => document.removeEventListener("visibilitychange", listener)
-          }
-          // The old page can't load the module: its import still fails, so the page's error shows (with Retry) until the
-          // editors' gate lets the reload run.
-          window.addEventListener("vite:preloadError", listener)
-          return () => window.removeEventListener("vite:preloadError", listener)
-        },
-        reload: (reason) => void reloadWhenSafe(reason),
-      })
-    },
+    onNeedReload: releaseActivated,
     onRegisterError: (error: unknown) => records.record({ _tag: "pwa.register", name: thrownName(error) }),
   })
 }

@@ -139,6 +139,39 @@ export const watchUpdates = (registration: { readonly update: () => Promise<unkn
   return () => { for (const stop of stops) stop() }
 }
 
+/** Closed categories for Vite preload errors. Only a browser fetch or stylesheet failure is a delivery signal. */
+export const preloadKind = (error: unknown): "module" | "stylesheet" | "other" => {
+  if (!(error instanceof Error)) return "other"
+  if (error.message.startsWith("Unable to preload CSS for ")) return "stylesheet"
+  return error instanceof TypeError && /^(Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module)/i.test(error.message)
+    ? "module" : "other"
+}
+
+/** An old failure stops influencing recovery after five minutes. */
+export const PRELOAD_RECOVERY_MS = 5 * 60_000
+
+/** Remember the last online delivery failure and throttle worker checks independently. */
+export const preloadWindow = (now: () => number) => {
+  let failedAt: number | undefined
+  let checkedAt: number | undefined
+  const recent = () => failedAt !== undefined && now() - failedAt <= PRELOAD_RECOVERY_MS
+  const check = (update?: () => void) => {
+    if (update && recent() && (checkedAt === undefined || now() - checkedAt > PRELOAD_RECOVERY_MS)) {
+      checkedAt = now()
+      update()
+    }
+  }
+  return {
+    recent,
+    check,
+    failed: (kind: ReturnType<typeof preloadKind>, online: boolean, update?: () => void) => {
+      if (!online || kind === "other") return
+      failedAt = now()
+      check(update)
+    },
+  }
+}
+
 /** Why a new release reloads the page (src/reloadReason.ts). */
 export type ReleaseReason = "pwa_update" | "stale_module"
 
@@ -159,7 +192,11 @@ export interface ReleaseHost {
  * the first time it is hidden (`pwa_update`), at once when it already is. If before then it needs a module only the old
  * release had, it can't go on, and reloads then (`stale_module`). Reloads once (decision 0131).
  */
-export const applyRelease = (host: ReleaseHost): void => {
+export const applyRelease = (host: ReleaseHost, missedPreload = false): void => {
+  if (missedPreload) {
+    host.reload("stale_module")
+    return
+  }
   if (host.hidden()) {
     host.reload("pwa_update")
     return

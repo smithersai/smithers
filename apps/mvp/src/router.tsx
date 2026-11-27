@@ -1,6 +1,7 @@
+import { preloadKind } from "./pwa"
 import { ROUTE_PATHS } from "./routePaths"
 import { openBranchPage } from "./features/branch/navigation"
-import { createRootRouteWithContext, createRoute, createRouter, lazyRouteComponent, notFound, redirect, type AnyRouter, type RouterHistory } from "@tanstack/react-router"
+import { createRootRouteWithContext, createRoute, createRouter, lazyRouteComponent as lazyTanStackComponent, notFound, redirect, type AnyRouter, type RouterHistory } from "@tanstack/react-router"
 import type { BranchView } from "./features/branch/branch.vibe"
 import type { DomainsView } from "./features/domains/domains.vibe"
 import type { FlowsUiView } from "./features/flows-ui/flowsUi.vibe"
@@ -39,6 +40,18 @@ import { RouteNotFound } from "./screens/root/RouteNotFound"
 import { RouteError } from "./screens/root/RouteError"
 import { runOriginSearch, runsSearch } from "./features/runs/page"
 import type { PluginsView } from "./plugins/ui.vibe"
+
+// TanStack automatically reloads synchronously for an unwrapped browser import failure. Smithers owns release
+// recovery so an unavailable route cannot discard an editor or an in-memory draft before the new worker activates.
+function lazyRouteComponent<T extends Record<string, unknown>, K extends keyof T>(load: () => Promise<T>, name: K) {
+  return lazyTanStackComponent(async () => {
+    try { return await load() }
+    catch (error) {
+      if (preloadKind(error) === "module") throw new Error("Route module unavailable")
+      throw error
+    }
+  }, name)
+}
 
 // Route-level code splitting: every screen loads lazily in its own chunk and preloads on link hover/focus
 // (`defaultPreload: "intent"`), keeping heavy editors, diffs, syntax highlighters, terminal and chat off the entry path.

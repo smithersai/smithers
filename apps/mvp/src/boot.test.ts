@@ -37,6 +37,8 @@ import { Docs } from "./features/docs/docs.vibe"
 import { Domains } from "./features/domains/domains.vibe"
 import { PersonalModel } from "./features/personal-model/personalModel.vibe"
 import { Profile } from "./features/profile/profile.vibe"
+import { Billing } from "./features/billing/store.vibe"
+import { Fork } from "./features/fork/store.vibe"
 import { Workbench } from "./features/workbench/store.vibe"
 import { FirstRun } from "./features/first-run/firstRun.vibe"
 import { Mcp } from "./features/mcp/store.vibe"
@@ -137,6 +139,8 @@ test("renders the chat, sign-in, theme, repository, slash-command, views, web-pa
       Effect.service(Mcp),
       Effect.service(Profile),
       Effect.service(Workbench),
+      Effect.service(Billing),
+      Effect.service(Fork),
     ]),
   )
   expect(views[0]).toHaveLength(layers.length)
@@ -332,6 +336,7 @@ test("logs what the page's host saw, those from before it listened first: render
     host.record({ _tag: "pwa.register", name: "SecurityError" })
     host.record({ _tag: "pwa.install" })
     host.record({ _tag: "pwa.update.check", trigger: "navigation" })
+    host.record({ _tag: "pwa.preload", kind: "module", network: "online", controlled: true, activated: false })
     host.record({ _tag: "pwa.update", outcome: "activated" })
     host.record({ _tag: "pwa.update", outcome: "editor_unpersisted" })
     host.record({ _tag: "page.reload", reason: "pwa_update" })
@@ -349,6 +354,7 @@ test("logs what the page's host saw, those from before it listened first: render
   expect(lines("pwa.register")).toEqual([
     { severity: "Warn", attributes: { feature: "app", outcome: "failed", name: "SecurityError" } },
   ])
+  expect(lines("pwa.preload")).toEqual([{ severity: "Warn", attributes: { feature: "app", kind: "module", outcome: "online", stage: "controlled" } }])
   expect(lines("pwa.install")).toEqual([{ severity: "Warn", attributes: { feature: "app", outcome: "failed" } }])
   expect(lines("pwa.update.check")).toEqual([
     { severity: "Warn", attributes: { feature: "app", outcome: "failed", trigger: "navigation" } },

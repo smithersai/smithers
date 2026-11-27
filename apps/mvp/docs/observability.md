@@ -1360,3 +1360,10 @@ Credential read-lock refusal carries only `stage=credential_lock` and `wait=dead
 ### Fleet overview
 
 A successful deployment-wide fleet read records `fleet.overview` with three counts. `staleHosts` counts last-reported online hosts outside the reachability window. `liveSandboxLeases` counts every live BranchSandbox admission lease and `returnedSandboxLeases` counts the detailed rows returned (up to 60).
+
+
+### Preload failures across releases
+
+`pwa.preload` identifies the first failure of each asset class (`module`, `stylesheet`, `other`) and network state per page, including failures before worker registration. Its `kind` is the asset class, `outcome` is online or offline, and `stage` is uncontrolled, controlled or activated. Six records per document is the maximum. No asset URL, route, exception text or draft content is recorded.
+
+An online module or stylesheet delivery failure requests a worker update. If the page observes a new worker activate within five minutes of the failure, the existing editor and draft gates run before a single `stale_module` reload. An offline import failure or a module evaluation error cannot initiate this recovery. The next boot reports the reload reason.

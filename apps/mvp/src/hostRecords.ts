@@ -14,10 +14,12 @@ export type HostRecord =
   | { readonly _tag: "render"; readonly boundary: "caught" | "uncaught"; readonly name: string }
   /** The service worker couldn't be registered. */
   | { readonly _tag: "pwa.register"; readonly name: string }
+  /** First Vite preload failure per page and network state; no asset URL or error message. */
+  | { readonly _tag: "pwa.preload"; readonly kind: "module" | "stylesheet" | "other"; readonly network: "online" | "offline"; readonly controlled: boolean; readonly activated: boolean }
   /** A service worker that was installing became redundant before it installed. */
   | { readonly _tag: "pwa.install" }
   /** Asking the browser to check for a new service worker failed. */
-  | { readonly _tag: "pwa.update.check"; readonly trigger: UpdateTrigger }
+  | { readonly _tag: "pwa.update.check"; readonly trigger: UpdateTrigger | "preload" }
   /** A new release activated and the page reloads into it, or an editor's unsaved write held the reload back. */
   | { readonly _tag: "pwa.update"; readonly outcome: "activated" | "editor_unpersisted" }
   /** This boot is a reload, and why (src/reloadReason.ts). */

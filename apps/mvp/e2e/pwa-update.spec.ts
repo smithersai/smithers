@@ -6,6 +6,7 @@ import { build } from "vite"
 import { serveBuilds } from "./builds"
 import { expect, step, test } from "./fixtures"
 import { requires } from "./target"
+import { expectServerError } from "./watch"
 
 test.use({ serviceWorkers: "allow" })
 
@@ -44,6 +45,11 @@ test("release: an open tab discovers a second production build on navigation and
         })
         await expect(page.locator('meta[name="release-test"]')).toHaveAttribute("content", "old")
       })
+      // This case covers a route the old client can still render. The separate cold-import case covers a removed chunk.
+      await page.getByRole("link", { name: "Flows", exact: true }).click()
+      await page.waitForURL("**/app/flows")
+      await page.goBack()
+      await expect(page.getByRole("main", { name: "App", exact: true })).toBeVisible()
       await step("Deploy a release while this tab stays open", async () => {
         builds.use("new")
         await expect(page.locator('meta[name="release-test"]')).toHaveAttribute("content", "old")
@@ -76,5 +82,66 @@ test("release: an open tab discovers a second production build on navigation and
       // Leave the release before its server stops, so the reloaded page's own requests don't fail mid-flight.
       await page.goto("about:blank")
     } finally { await builds.close() }
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test("a route import lost before a new worker activates recovers once through the new shell", async ({ page }) => {
+  requires("localServer")
+  test.setTimeout(300_000)
+  const root = join(import.meta.dirname, "..")
+  const directory = await mkdtemp(join(tmpdir(), "pwa-import-"))
+  const records: string[] = []
+  page.on("console", (message) => {
+    if (message.text().startsWith("page.reload")) records.push(message.text())
+  })
+  let documents = 0
+  page.on("request", (request) => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents++ })
+  let activate!: () => void
+  const beforeNewWorker = new Promise<void>((resolve) => { activate = resolve })
+  try {
+    for (const version of ["old", "new"]) {
+      await build({ root, logLevel: "error", build: { outDir: join(directory, version), emptyOutDir: true },
+        plugins: [{ name: "release-marker",
+          transformIndexHtml: (html) => html.replace("<head>", `<head><meta name="release-test" content="${version}">`)
+            .replace("<body>", '<body><input aria-label="Unsaved test input" type="password">'),
+          transform: (source, id) => id.endsWith("/screens/flows/FlowsScreen.tsx")
+            ? source + `\ndocument.documentElement.dataset.flowsRelease = "${version}";` : undefined,
+        }],
+      })
+    }
+    const builds = await serveBuilds({ old: join(directory, "old"), new: join(directory, "new"), beforeNewWorker })
+    try {
+      await page.goto(`${builds.url}/app`)
+      await expect(page.getByRole("link", { name: "Flows", exact: true })).toBeVisible()
+      await page.evaluate(async () => {
+        await navigator.serviceWorker.ready
+        if (!navigator.serviceWorker.controller) await new Promise<void>((resolve) =>
+          navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true }))
+      })
+      const unsaved = page.getByLabel("Unsaved test input")
+      await unsaved.fill("fixture")
+      const before = documents
+      builds.use("new")
+      const lost = page.waitForResponse((r) => r.status() === 404 && /\/assets\/[^/]+\.js$/.test(new URL(r.url()).pathname))
+      await page.getByRole("link", { name: "Flows", exact: true }).click()
+      expectServerError(404, new URL((await lost).url()).pathname)
+      await expect(page.getByText("Couldn't show this page", { exact: true })).toBeVisible()
+      expect(records).toEqual([])
+      expect(documents).toBe(before)
+      await expect(unsaved).toHaveValue("fixture")
+      const controlling = page.evaluate(() => new Promise<void>((resolve) =>
+        navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true })))
+      activate()
+      await controlling
+      await expect(unsaved).toHaveValue("fixture")
+      await expect(page.locator('meta[name="release-test"]')).toHaveAttribute("content", "old")
+      expect(records).toEqual([])
+      await unsaved.fill("")
+      await expect(page.locator("html")).toHaveAttribute("data-flows-release", "new", { timeout: 30_000 })
+      await expect(page.locator('meta[name="release-test"]')).toHaveAttribute("content", "new")
+      expect(documents).toBe(before + 1)
+      expect(records.filter((line) => line.includes("stale_module"))).toHaveLength(1)
+      await page.goto("about:blank")
+    } finally { activate(); await builds.close() }
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

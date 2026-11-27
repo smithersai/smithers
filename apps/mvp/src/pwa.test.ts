@@ -4,6 +4,9 @@ import { join } from "node:path"
 import { describe, expect, test } from "vitest"
 import {
   applyRelease,
+  preloadKind,
+  preloadWindow,
+  PRELOAD_RECOVERY_MS,
   DOCS_SITE,
   DOCS_SITE_PATHS,
   FRAME_POLICY,
@@ -146,6 +149,46 @@ describe("a new release that activated", () => {
     const fire = (signal: "visibility" | "stale_module") => listeners.get(signal)?.()
     return { state, listeners, reloads, host, fire }
   }
+
+  test("a new worker recovers an earlier delivery failure immediately and registers no further reloads", () => {
+    const tab = page(false)
+    applyRelease(tab.host, true)
+    tab.fire("visibility")
+    tab.fire("stale_module")
+    expect(tab.reloads).toEqual(["stale_module"])
+    expect(tab.listeners.size).toBe(0)
+  })
+
+  test("offline and evaluation failures do not arm a reload; recent online failures share one worker check", () => {
+    let now = 0
+    let checks = 0
+    const check = () => { checks++ }
+    const delivery = preloadWindow(() => now)
+    delivery.failed("module", false, check)
+    delivery.failed("other", true, check)
+    expect(delivery.recent()).toBe(false)
+    expect(checks).toBe(0)
+    delivery.failed("module", true)
+    delivery.check(check)
+    now = PRELOAD_RECOVERY_MS - 1
+    delivery.failed("stylesheet", true, check)
+    now += 2
+    expect(delivery.recent()).toBe(true)
+    expect(checks).toBe(1)
+    now += PRELOAD_RECOVERY_MS
+    expect(delivery.recent()).toBe(false)
+    delivery.failed("module", true, check)
+    expect(checks).toBe(2)
+  })
+
+  test("only browser asset failures receive a delivery category", () => {
+    expect(preloadKind(new TypeError("Failed to fetch dynamically imported module: https://example.test/private"))).toBe("module")
+    expect(preloadKind(new TypeError("Importing a module script failed."))).toBe("module")
+    expect(preloadKind(new TypeError("error loading dynamically imported module"))).toBe("module")
+    expect(preloadKind(new Error("Unable to preload CSS for /assets/private.css"))).toBe("stylesheet")
+    expect(preloadKind(new Error("Component failed to render"))).toBe("other")
+    expect(preloadKind(undefined)).toBe("other")
+  })
 
   test("never reloads a visible page: it waits until the page is hidden, then reloads once", () => {
     const tab = page(false)

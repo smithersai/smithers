@@ -48,7 +48,7 @@ export type Build = "old" | "new"
  * Serves `old`'s files, then `new`'s files or the dev server's pages (`use("new")`), at one HTTPS origin, with `/api/*` on the dev
  * server (`DEV_UPSTREAM`, default http://localhost:1337, the plain HTTP dev server `pnpm dev` runs). Close it when done.
  */
-export const serveBuilds = async (options: { readonly old: string; readonly new?: string }) => {
+export const serveBuilds = async (options: { readonly old: string; readonly new?: string; readonly beforeNewWorker?: Promise<void> }) => {
   let build: Build = "old"
   const front = await serve({
     port: 0,
@@ -57,7 +57,10 @@ export const serveBuilds = async (options: { readonly old: string; readonly new?
     answer: (request, response) => {
       const path = new URL(request.url, "https://localhost").pathname
       if (path.startsWith("/api/") || (build === "new" && !options.new)) return false
-      void sendFile(build === "new" ? options.new! : options.old, path, response)
+      const root = build === "new" ? options.new! : options.old
+      if (build === "new" && path === "/sw.js" && options.beforeNewWorker !== undefined) {
+        void options.beforeNewWorker.then(() => sendFile(root, path, response))
+      } else void sendFile(root, path, response)
       return true
     },
   })
