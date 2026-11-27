@@ -65,6 +65,7 @@ export const versionedSources = [
     path: "packages/smithers/migrate/src/internal/Versions.ts",
     declaration: "smithersVersion",
     declarationStamp: { constant: "smithersVersion" },
+    declarationReexports: ["packages/smithers/migrate/src/flow/Archive.ts"],
     pattern: /(export const smithersVersion = ")([^"]*)(")/
   },
   {

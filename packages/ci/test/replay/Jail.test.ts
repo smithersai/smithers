@@ -844,6 +844,36 @@ describe("confine", () => {
     expect(places.normal.jail?.masks).toEqual([{ path: others, directory: true, readable: [tool] }])
   })
 
+  it("keeps an npx install inside a temporary home visible beside a checkout under the same temp root", async () => {
+    const root = directory("stranger")
+    const home = join(root, "home")
+    const checkout = join(root, "repository")
+    const npxRoot = join(home, ".npm", "_npx", "4c98ec30")
+    const smthrsBin = join(npxRoot, "node_modules", "@smthrs", "cli", "bin", "smthrs")
+    mkdirSync(join(npxRoot, "node_modules", "@smthrs", "cli", "bin"), { recursive: true })
+    mkdirSync(join(npxRoot, "node_modules", "@smthrs", "build"), { recursive: true })
+    mkdirSync(checkout, { recursive: true })
+    writeFileSync(join(home, ".npmrc"), "@smthrs:registry=http://127.0.0.1/\n")
+    writeFileSync(smthrsBin, "#!/bin/sh\n", { mode: 0o755 })
+    writeFileSync(join(npxRoot, "node_modules", "@smthrs", "build", "package.json"), "{}\n")
+    const asked = () => ({
+      bwrap: "/usr/bin/bwrap",
+      home,
+      hidden: [],
+      daemons: [],
+      tmp: "/var/tmp",
+      caches: [],
+      tools: { reads: [join(npxRoot, "node_modules", "@smthrs", "cli")], links: [], homes: [] }
+    })
+    const work = directory("work")
+    const places = await scoped(confine(work, asked, () => Effect.void, [smthrsBin], false, {}, checkout))
+    const visible = places.normal.jail?.visible ?? []
+    expect(visible).toContain(npxRoot)
+    expect(visible).not.toContain(root)
+    expect(visible).not.toContain(home)
+    expect(visible).not.toContain(checkout)
+  })
+
   it("says once why there is no jail", async () => {
     const said: Array<string> = []
     const say = (line: string) => Effect.sync(() => void said.push(line))

@@ -1,0 +1,222 @@
+import {
+  canonicalHash,
+  decidePin,
+  emptyPins,
+  evolvePin,
+  PinCommand,
+  PinEvent,
+  Pins,
+} from "@smthrs/app-state"
+import { DoSqliteShard, type ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { ShardClient, ShardProtocol } from "@smthrs/sync"
+import { Effect, Option, Schema } from "effect"
+import { withTransactionSync } from "../chat/MessagesShard.ts"
+
+schema Snapshot {
+  readonly pins: Pins
+}
+const decodeSnapshot = Schema.decodeUnknownSync(Snapshot)
+const decodeEvent = Schema.decodeUnknownSync(PinEvent)
+const decodeCommandSync = Schema.decodeUnknownSync(PinCommand)
+const decodeCommand = Schema.decodeUnknownOption(PinCommand)
+
+/** Default maximum client clock skew allowed ahead of server wall time in live `submit` calls (60 seconds). */
+export const DEFAULT_MAX_CLOCK_SKEW_MS = 60_000
+
+/** Structured refusal raised before journaling when a pin command is malformed, out of fence, or future-dated. */
+export schema error PinShardRefused {
+  readonly reason: Schema.String
+}
+
+/** One command replayed by lazy Postgres backfill into a person-private pins shard. */
+export interface BackfillPinCommand {
+  readonly id: string
+  readonly payload: Schema.Json
+}
+
+/** Result of applying one backfill batch into a person-private pins shard. */
+export interface BackfillPinResult {
+  readonly applied: number
+  readonly kept: number
+  readonly checked: boolean
+  readonly rejected?: { readonly index: number; readonly code: string }
+}
+
+/** Options configuring wall-clock skew protection for live pin writes. */
+export interface PinsShardOptions {
+  readonly now?: () => number
+  readonly maxClockSkewMs?: number
+}
+
+/** Whether `origin` belongs to `personId` (`person:<id>` or `person:<id>/<device>`). */
+export const ownsOrigin = (personId: string, origin: string): boolean => {
+  const owner = `person:${personId}`
+  return origin === owner || (origin.length > owner.length + 1 && origin.startsWith(`${owner}/`))
+}
+
+/** Applies one `ShardClient.Delivery` onto `pins`, returning the new canonical state. */
+export const apply = (pins: Pins, delivery: ShardClient.Delivery): Pins => {
+  if (delivery._tag === "Reset") {
+    return delivery.snapshot.state === null ? emptyPins : decodeSnapshot(delivery.snapshot.state).pins
+  }
+  return delivery.entries.reduce<Pins>(
+    (state, entry) =>
+      entry.events.reduce<Pins>((current, event) => evolvePin(current, decodeEvent(event), entry.seq), state),
+    pins,
+  )
+}
+
+/**
+ * Opens a person-private Durable Object SQLite pins shard (ADR 0170 Slice 6a).
+ *
+ * Every write is fenced to `personId` (shard, stream, origin, payload, and clock skew), validated
+ * through `@smthrs/app-state`'s pure `decidePin`/`evolvePin` LWW reducer, and persisted atomically
+ * in `DoSqliteShard` via prototype-safe `withTransactionSync`. Lazy Postgres backfill keys each row
+ * by `id@atMs` so newer Postgres updates win LWW on retry, and settles only `stale_pin` and
+ * `IdempotencyConflict` as `kept`.
+ */
+export const make = effect (
+  storage: ObjectDatabase.Storage,
+  shard: ShardProtocol.ShardId,
+  personId: string,
+  options?: PinsShardOptions,
+) => {
+  const now = options?.now ?? Date.now
+  const maxClockSkewMs = options?.maxClockSkewMs ?? DEFAULT_MAX_CLOCK_SKEW_MS
+
+  const exec = <A extends Record<string, ArrayBuffer | string | number | null>>(
+    sql: string,
+    ...bindings: ReadonlyArray<ArrayBuffer | string | number | null>
+  ): Array<A> => storage.sql.exec<A>(sql, ...bindings).toArray()
+
+  try sync(() => {
+    exec(
+      "CREATE TABLE IF NOT EXISTS pins_shard_backfill (id INTEGER PRIMARY KEY CHECK (id = 1), checked_at INTEGER NOT NULL)",
+    )
+  })
+  const checkedNow = (): boolean => exec("SELECT 1 FROM pins_shard_backfill WHERE id = 1").length > 0
+
+  const stream = Schema.decodeUnknownSync(ShardProtocol.StreamId)(shard)
+  let pins: Pins = emptyPins
+  let headSeq = 0
+  let pendingPins: Pins = emptyPins
+  let pendingSeq = 0
+  let hasPending = false
+
+  const trackedStorage = try sync(() => withTransactionSync(storage, <T>(closure: () => T): T => {
+    pendingPins = pins
+    pendingSeq = headSeq
+    hasPending = false
+    try {
+      const value = storage.transactionSync(closure)
+      if (hasPending) {
+        pins = pendingPins
+        headSeq = pendingSeq
+      }
+      return value
+    } finally {
+      hasPending = false
+    }
+  }))
+
+  const { shard: journal } = try DoSqliteShard.make(trackedStorage, {
+    shard,
+    decide: (command) => {
+      const decision = decidePin(pendingPins, decodeCommandSync(command.payload), personId)
+      return decision._tag === "Refused"
+        ? { _tag: "Refused", reason: decision.reason }
+        : { _tag: "Accepted", events: decision.events }
+    },
+    beforeCommit: (entry) => {
+      pendingPins = apply(pendingPins, {
+        _tag: "Entries",
+        entries: [entry],
+        through: { shard, epoch: entry.epoch, seq: entry.seq },
+      })
+      pendingSeq = entry.seq
+      hasPending = true
+    },
+  })
+
+  const reader = try ShardClient.make({
+    shard,
+    node: "authority",
+    transport: journal,
+    store: try sync(() => ShardClient.memoryStore()),
+    apply: (delivery) =>
+      sync(() => {
+        pins = apply(pins, delivery)
+        headSeq = delivery._tag === "Reset" ? delivery.snapshot.position.seq : delivery.through.seq
+      }),
+  })
+  try reader.pull
+
+  const admit = effect (request: ShardProtocol.SubmitRequest) => {
+    if (request.shard !== shard || request.command.stream !== stream) {
+      throw new PinShardRefused({ reason: "wrong_shard" })
+    }
+    if (!ownsOrigin(personId, request.command.key[0])) {
+      throw new PinShardRefused({ reason: "wrong_origin" })
+    }
+    const parsed = decodeCommand(request.command.payload)
+    if (Option.isNone(parsed)) throw new PinShardRefused({ reason: "invalid" })
+    if (parsed.value.personId !== personId) throw new PinShardRefused({ reason: "wrong_person" })
+    if (parsed.value.atMs > now() + maxClockSkewMs) {
+      throw new PinShardRefused({ reason: "future_clock" })
+    }
+    return try orDie(journal.submit({ ...request, command: { ...request.command, payload: parsed.value } }))
+  }
+
+  const backfillOne = effect (command: BackfillPinCommand) => {
+    const parsed = decodeCommand(command.payload)
+    if (Option.isNone(parsed)) return "invalid"
+    if (parsed.value.personId !== personId) return "wrong_person"
+    const head = try journal.head
+    const answer = try orDie(journal.submit({
+      version: ShardProtocol.protocolVersion,
+      shard,
+      epoch: head.epoch,
+      command: {
+        // Key includes `atMs` so a newer Postgres pin update on retry gets its own key and wins LWW.
+        key: [`person:${personId}/backfill`, `${command.id}@${parsed.value.atMs}`],
+        stream,
+        payload: parsed.value,
+      },
+    }))
+    if (answer._tag === "Accepted" || answer._tag === "Duplicate") return "ok"
+    return "kept"
+  }
+
+  return {
+    submit: admit,
+    head: journal.head,
+    pull: journal.pull,
+    snapshot: journal.snapshot,
+    backfill: {
+      checked: sync(checkedNow),
+      check: sync(() => {
+        exec("INSERT OR IGNORE INTO pins_shard_backfill (id, checked_at) VALUES (1, ?)", now())
+      }),
+      batch: effect (commands: ReadonlyArray<BackfillPinCommand>, done: boolean): BackfillPinResult!! => {
+        let applied = 0
+        let kept = 0
+        for (const [index, command] of commands.entries()) {
+          const outcome = try backfillOne(command)
+          if (outcome === "ok") applied++
+          else if (outcome === "kept") kept++
+          else return { applied, kept, checked: checkedNow(), rejected: { index, code: outcome } }
+        }
+        if (done) {
+          try sync(() => {
+            storage.transactionSync(() => {
+              exec("INSERT OR IGNORE INTO pins_shard_backfill (id, checked_at) VALUES (1, ?)", now())
+            })
+          })
+        }
+        return { applied, kept, checked: checkedNow() }
+      },
+    },
+    state: sync(() => ({ pins, hash: canonicalHash(pins) })),
+    compact: Effect.suspend(() => orDie(journal.compact(headSeq, { pins }))),
+  }
+}

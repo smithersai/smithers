@@ -5180,8 +5180,8 @@ directly. Both packages are on npm under the `next` tag.
 ```json
 {
   "devDependencies": {
-    "@smthrs/build-cli": "1.0.0-rc.19",
-    "@smthrs/targets": "1.0.0-rc.19",
+    "@smthrs/build-cli": "1.0.0-rc.20",
+    "@smthrs/targets": "1.0.0-rc.20",
     "effect": "4.1.1"
   }
 }
@@ -51263,7 +51263,7 @@ a `data:image/…` URL; `Preview` and `Checked` accept that larger inline value.
 # CLI reference
 https://smithers.sh/docs/reference/cli/
 
-Install discovery for `smthrs` 1.0.0-rc.19, plus additional local commands, as their `--help` describes them.
+Install discovery for `smthrs` 1.0.0-rc.20, plus additional local commands, as their `--help` describes them.
 
 Other callable library commands stay outside install discovery. Use their explicit `--help`; see the [library command reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/README.md) and [CLI API](/docs/reference/api/cli/).
 

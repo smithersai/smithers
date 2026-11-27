@@ -60,6 +60,10 @@ it("normalizes the actual migration version stamp while retaining independent li
       join(root, dir, "dist/esm/Report.d.ts"),
       `export declare const tool: { readonly name: "@smthrs/migrate"; readonly version: "${version}" };\n`
     )
+    writeFileSync(
+      join(root, dir, "dist/esm/flow/Archive.d.ts"),
+      `export declare const smithersVersion = "${version}";\n`
+    )
     return apiSurface(root)
   }
   try {

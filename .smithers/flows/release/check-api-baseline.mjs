@@ -78,8 +78,9 @@ export const canonicalDeclaration = (text) => {
 
 /** Replace only the emitted type or initializer of an explicitly stamped source declaration. */
 const normalizeVersionStamp = (text, dir, file, version) => {
-  const stamp = versionedSources.find(({ path, declarationStamp }) =>
-    declarationStamp !== undefined && path === `${dir}/src/${file.replace(/\.d\.ts$/, ".ts")}`
+  const sourcePath = `${dir}/src/${file.replace(/\.d\.ts$/, ".ts")}`
+  const stamp = versionedSources.find(({ declarationReexports, declarationStamp, path }) =>
+    declarationStamp !== undefined && (path === sourcePath || (declarationReexports?.includes(sourcePath) ?? false))
   )?.declarationStamp
   if (!stamp || typeof version !== "string") return text
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)

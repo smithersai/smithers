@@ -7191,7 +7191,7 @@
         "SqliteStoreNode.d.ts": "5cb2e6ae7e6af86e8edd78e7d89773d66205444dcfb4a40763a69bec80ea81d7",
         "Units.d.ts": "d2afffe389895c3065cb7e85ced70c185e9faf7b59cdae018b6ef9e98b3127a7",
         "ZodSchemaHints.d.ts": "a812e183b0e239ac64dd060b331eb4a52192d44474d0dffd7ec6090c40b12451",
-        "flow/Archive.d.ts": "901c660245da3022561cba36dd15a92f18e3df6f7d12ce8cd88f357033e75551",
+        "flow/Archive.d.ts": "ef319a755c080b1be2723da3b208a6ca4e59d0854cd7517997c45e15fc2c8e1e",
         "flow/Checkpoint.d.ts": "4ead487b7a24a3083a0ed3bb3e19cf9d87e8625eab45d46717e8d92911804c75",
         "flow/Cli.d.ts": "475176366d8b592ae7a89ade2bbbe362176ff150497eb81a89f1c1e4ef244349",
         "flow/Command.d.ts": "90de8863f1fe971a7ebe2363a77ef9d69115800f3459e9b5dfc96b345d3d8a9e",
