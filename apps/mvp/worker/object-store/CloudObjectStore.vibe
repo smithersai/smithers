@@ -1,0 +1,581 @@
+/**
+ * Shared Smithers Cloud Object Store.
+ *
+ * Backs artifacts, Lighthouse/Uphill backpressure audit reports, project wiki snapshots, mythical history records,
+ * changeset manifests, and trusted build cache entries under one R2 + Postgres metadata plane.
+ *
+ * Security invariants:
+ * - Every write passes through `ExecutionTrust.authorizeObjectWrite` before touching bytes or Postgres.
+ * - Untrusted executions can NEVER write `cache` or canonical `mythical`, and their `audit-report` and `wiki`
+ *   writes are isolated under `untrusted/<login>/` and `proposed/<login>/` with `gateEligible = false`.
+ * - Every read passes through `ExecutionTrust.canReadCloudObject`; unauthorized reads return 404 (no existence leak).
+ * - Content is SHA-256 hashed on write and stored in R2 (with inline Postgres fallback for small <=256 KiB objects when
+ *   running without an R2 binding in local dev or tests).
+ */
+
+import { getR2Bytes, putR2Bytes, safeJsonStringify, sanitizeServeContentType, sha256BytesAsync } from "./ObjectBytes.ts"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { SqlClient } from "effect/sql"
+import { isRepository, repoId } from "../../src/features/repo/contract.ts"
+import {
+  type CloudObjectSummary,
+  type ExecutionTrust,
+  isTrustedExecution,
+  MAX_INLINE_OBJECT_BYTES,
+  MAX_OBJECT_HTTP_BYTES,
+  type ObjectNamespace,
+} from "../../src/features/trust/contract.ts"
+import { type Actor, type Role, Sessions } from "../Actor.vibe"
+import { codeOf } from "../ErrorCode.ts"
+import type * as Artifacts from "../branch/Artifacts.vibe"
+import { repositoryOf } from "../github/Config.vibe"
+import type { RepoRoles } from "../github/RepoRoles.vibe"
+import * as Visibility from "../ops/ArtifactVisibility.ts"
+import {
+  authorizeObjectWrite,
+  canReadCloudObject,
+  classifyExecutionTrust,
+  isObjectNamespace,
+  resolveObjectVisibility,
+  type TrustWriteRefusal,
+} from "../trust/ExecutionTrust.vibe"
+
+export const objectOps = Metric.counter("smithers_cloud_object_ops", {
+  description: "Shared Smithers Cloud object store operations by op, namespace, trust, and outcome",
+  incremental: true,
+})
+
+export schema error ObjectStoreError {
+  readonly code:
+    | "untrusted_cache_write"
+    | "untrusted_mythical_write"
+    | "invalid_object_key"
+    | "invalid_namespace"
+    | "ops_repo_forbidden"
+    | "not_found"
+    | "unauthorized"
+    | "too_large"
+    | "unavailable"
+  readonly message: string
+}
+
+/** Optional R2 bytes backing store. When absent (local dev / unit tests), small objects store inline in Postgres. */
+export interface R2ByteBacking {
+  readonly put: (key: string, bytes: Uint8Array) => void!ObjectStoreError
+  readonly get: (key: string) => Option.Option<Uint8Array>!ObjectStoreError
+}
+
+/** Build an `R2ByteBacking` over a Cloudflare R2 bucket binding (`Artifacts.Bucket`). */
+export function r2BackingOf(bucket: Artifacts.Bucket): R2ByteBacking {
+  return {
+    put: effect (key, bytes) => {
+      try tryPromise({
+        try: () => putR2Bytes(bucket, key, bytes),
+        catch: () => new ObjectStoreError({ code: "unavailable", message: "Object store write failed" }),
+      })
+    },
+    get: effect (key) => {
+      const buf = try tryPromise({
+        try: () => getR2Bytes(bucket, key),
+        catch: () => new ObjectStoreError({ code: "unavailable", message: "Object store read failed" }),
+      })
+      return buf === null ? Option.none<Uint8Array>() : Option.some(buf)
+    },
+  }
+}
+
+export function r2KeyFor(canonicalRepo: string, namespace: ObjectNamespace, canonicalKey: string, sha256: string): string {
+  return `cloud/${canonicalRepo}/${namespace}/${canonicalKey}@${sha256.slice(0, 16)}`
+}
+
+export interface PutObjectInput {
+  readonly owner: string
+  readonly name: string
+  readonly isPublicRepo: boolean
+  readonly namespace: string
+  readonly key: string
+  readonly bytes: Uint8Array
+  readonly contentType: string
+  readonly requestedVisibility?: Visibility.Visibility | undefined
+  readonly trust: ExecutionTrust
+  readonly actor: Actor
+  readonly commitSha?: string | null | undefined
+  readonly refName?: string | null | undefined
+  readonly runId?: string | null | undefined
+  readonly metadata?: Readonly<Record<string, unknown>> | undefined
+  readonly policy: Visibility.Policy
+}
+
+interface CloudObjectRow {
+  readonly id: string
+  readonly repo_id: string
+  readonly namespace: ObjectNamespace
+  readonly object_key: string
+  readonly r2_key: string
+  readonly sha256: string
+  readonly content_type: string
+  readonly bytes: number | string
+  readonly visibility: Visibility.Visibility
+  readonly execution_trust: ExecutionTrust
+  readonly gate_eligible: boolean
+  readonly commit_sha: string | null
+  readonly ref_name: string | null
+  readonly run_id: string | null
+  readonly created_by_person_id: string | null
+  readonly created_by_login: string | null
+  readonly inline_body: Uint8Array | null
+  readonly metadata: Readonly<Record<string, unknown>> | null
+  readonly created_at: Date | string
+  readonly updated_at: Date | string
+}
+
+const isoOf = (value: Date | string): string => (value instanceof Date ? value.toISOString() : String(value))
+
+const toSummary = (row: CloudObjectRow): CloudObjectSummary => ({
+  id: row.id,
+  repoId: row.repo_id,
+  namespace: row.namespace,
+  key: row.object_key,
+  sha256: row.sha256,
+  contentType: row.content_type,
+  bytes: Number(row.bytes),
+  visibility: row.visibility,
+  executionTrust: row.execution_trust,
+  gateEligible: row.gate_eligible,
+  commitSha: row.commit_sha,
+  refName: row.ref_name,
+  runId: row.run_id,
+  createdByLogin: row.created_by_login,
+  metadata: row.metadata ?? {},
+  createdAt: isoOf(row.created_at),
+  updatedAt: isoOf(row.updated_at),
+})
+
+
+
+/** Stores an object in the shared Smithers Cloud object store after enforcing trust and visibility rules. */
+export effect function putObject(
+  input: PutObjectInput,
+  r2?: R2ByteBacking | undefined,
+): CloudObjectSummary!ObjectStoreError!SqlClient.SqlClient {
+  const fullName = `${input.owner}/${input.name}`
+  const canonicalRepo = repoId(input.owner, input.name)
+  if (input.bytes.byteLength > MAX_OBJECT_HTTP_BYTES) {
+    throw new ObjectStoreError({ code: "too_large", message: "Object exceeds maximum allowed size" })
+  }
+  const authz = authorizeObjectWrite({
+    repoFullName: fullName,
+    namespace: input.namespace,
+    key: input.key,
+    trust: input.trust,
+    actor: input.actor,
+    login: input.actor.login,
+    policy: input.policy,
+  })
+  if (!authz.ok) {
+    try Metric.update(Metric.withAttributes(objectOps, { op: "put", namespace: input.namespace, trust: input.trust, outcome: authz.reason }), 1)
+    throw new ObjectStoreError({
+      code: authz.reason,
+      message: authz.reason === "untrusted_cache_write"
+        ? "Untrusted executions cannot write to the shared trusted build cache"
+        : authz.reason === "untrusted_mythical_write"
+        ? "Untrusted executions cannot write canonical mythical history"
+        : `Object write refused (${authz.reason})`,
+    })
+  }
+  if (r2 === undefined && input.bytes.byteLength > MAX_INLINE_OBJECT_BYTES) {
+    throw new ObjectStoreError({ code: "too_large", message: "Object exceeds inline fallback limit without R2 backing" })
+  }
+  const visibility = resolveObjectVisibility({
+    repoFullName: fullName,
+    isPublicRepo: input.isPublicRepo,
+    namespace: authz.namespace,
+    requested: input.requestedVisibility,
+    trust: input.trust,
+    policy: input.policy,
+  })
+  if (input.commitSha !== undefined && input.commitSha !== null && !/^[0-9a-fA-F]{7,64}$/.test(input.commitSha)) {
+    throw new ObjectStoreError({ code: "invalid_object_key", message: "Invalid commitSha format" })
+  }
+  if (input.refName !== undefined && input.refName !== null && (input.refName.length === 0 || input.refName.length > 255)) {
+    throw new ObjectStoreError({ code: "invalid_object_key", message: "Invalid refName length" })
+  }
+  if (input.runId !== undefined && input.runId !== null && (input.runId.length === 0 || input.runId.length > 256)) {
+    throw new ObjectStoreError({ code: "invalid_object_key", message: "Invalid runId length" })
+  }
+  const sha256 = try Effect.mapError(
+    Effect.promise(() => sha256BytesAsync(input.bytes)),
+    () => new ObjectStoreError({ code: "unavailable", message: "SHA-256 digest unavailable" }),
+  )
+  const r2Key = r2KeyFor(canonicalRepo, authz.namespace, authz.canonicalKey, sha256)
+  if (r2 !== undefined) {
+    try r2.put(r2Key, input.bytes)
+  }
+  const inlineBody = r2 === undefined || input.bytes.byteLength <= MAX_INLINE_OBJECT_BYTES ? input.bytes : null
+  const sql = try SqlClient.SqlClient
+  const rows = try Effect.mapError(
+    sql<CloudObjectRow>`
+      INSERT INTO cloud_objects (
+        repo_id, namespace, object_key, r2_key, sha256, content_type, bytes,
+        visibility, execution_trust, gate_eligible, commit_sha, ref_name, run_id,
+        created_by_person_id, created_by_login, approved_public_by, inline_body, metadata
+      ) VALUES (
+        ${canonicalRepo},
+        ${authz.namespace},
+        ${authz.canonicalKey},
+        ${r2Key},
+        ${sha256},
+        ${input.contentType.slice(0, 128) || "application/octet-stream"},
+        ${input.bytes.byteLength},
+        ${visibility},
+        ${input.trust},
+        ${authz.gateEligible},
+        ${input.commitSha ?? null},
+        ${input.refName ?? null},
+        ${input.runId ?? null},
+        ${input.actor.subject.kind === "person" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.actor.subject.id) ? input.actor.subject.id : null},
+        ${input.actor.login ?? null},
+        ${visibility === "public" && input.actor.act === undefined ? (input.actor.login ?? null) : null},
+        ${inlineBody},
+        ${safeJsonStringify(input.metadata ?? {})}::jsonb
+      )
+      ON CONFLICT (repo_id, namespace, object_key) DO UPDATE SET
+        r2_key = EXCLUDED.r2_key,
+        sha256 = EXCLUDED.sha256,
+        content_type = EXCLUDED.content_type,
+        bytes = EXCLUDED.bytes,
+        visibility = EXCLUDED.visibility,
+        execution_trust = EXCLUDED.execution_trust,
+        gate_eligible = EXCLUDED.gate_eligible,
+        commit_sha = EXCLUDED.commit_sha,
+        ref_name = EXCLUDED.ref_name,
+        run_id = EXCLUDED.run_id,
+        created_by_person_id = EXCLUDED.created_by_person_id,
+        created_by_login = EXCLUDED.created_by_login,
+        approved_public_by = EXCLUDED.approved_public_by,
+        inline_body = EXCLUDED.inline_body,
+        metadata = EXCLUDED.metadata,
+        updated_at = now()
+      WHERE ${isTrustedExecution(input.trust)} OR (
+        cloud_objects.execution_trust = 'untrusted_contributor'
+        AND (cloud_objects.created_by_login IS NULL OR lower(cloud_objects.created_by_login) = lower(EXCLUDED.created_by_login))
+      )
+      RETURNING id, repo_id, namespace, object_key, r2_key, sha256, content_type, bytes,
+        visibility, execution_trust, gate_eligible, commit_sha, ref_name, run_id,
+        created_by_person_id, created_by_login, NULL::bytea AS inline_body, metadata, created_at, updated_at
+    `,
+    (cause) => new ObjectStoreError({ code: "unavailable", message: `Database error storing object metadata (${codeOf(cause)})` }),
+  )
+  const stored = rows[0]
+  if (stored === undefined) {
+    throw new ObjectStoreError({ code: "ops_repo_forbidden", message: "Untrusted caller cannot overwrite a trusted or another contributor object" })
+  }
+  try Metric.update(Metric.withAttributes(objectOps, { op: "put", namespace: authz.namespace, trust: input.trust, outcome: "ok" }), 1)
+  return toSummary(stored)
+}
+
+/** Lists readable objects for a repository, optionally filtered by namespace and execution trust. */
+export effect function listObjects(params: {
+  readonly owner: string
+  readonly name: string
+  readonly isPublicRepo: boolean
+  readonly namespace?: ObjectNamespace | undefined
+  readonly trust?: ExecutionTrust | undefined
+  readonly limit?: number | undefined
+  readonly actor: Actor | undefined
+  readonly role: Role | null
+  readonly policy: Visibility.Policy
+}): ReadonlyArray<CloudObjectSummary>!ObjectStoreError!SqlClient.SqlClient {
+  const fullName = `${params.owner}/${params.name}`
+  const canonicalRepo = repoId(params.owner, params.name)
+  const limit = Math.max(1, Math.min(200, params.limit ?? 50))
+  const sql = try SqlClient.SqlClient
+  const rows = try Effect.mapError(
+    params.namespace !== undefined && params.trust !== undefined
+      ? sql<CloudObjectRow>`
+          SELECT id, repo_id, namespace, object_key, r2_key, sha256, content_type, bytes,
+            visibility, execution_trust, gate_eligible, commit_sha, ref_name, run_id,
+            created_by_person_id, created_by_login, NULL::bytea AS inline_body, metadata, created_at, updated_at
+          FROM cloud_objects
+          WHERE repo_id = ${canonicalRepo} AND namespace = ${params.namespace} AND execution_trust = ${params.trust}
+          ORDER BY updated_at DESC
+          LIMIT ${limit}
+        `
+      : params.namespace !== undefined
+      ? sql<CloudObjectRow>`
+          SELECT id, repo_id, namespace, object_key, r2_key, sha256, content_type, bytes,
+            visibility, execution_trust, gate_eligible, commit_sha, ref_name, run_id,
+            created_by_person_id, created_by_login, NULL::bytea AS inline_body, metadata, created_at, updated_at
+          FROM cloud_objects
+          WHERE repo_id = ${canonicalRepo} AND namespace = ${params.namespace}
+          ORDER BY updated_at DESC
+          LIMIT ${limit}
+        `
+      : sql<CloudObjectRow>`
+          SELECT id, repo_id, namespace, object_key, r2_key, sha256, content_type, bytes,
+            visibility, execution_trust, gate_eligible, commit_sha, ref_name, run_id,
+            created_by_person_id, created_by_login, NULL::bytea AS inline_body, metadata, created_at, updated_at
+          FROM cloud_objects
+          WHERE repo_id = ${canonicalRepo}
+          ORDER BY updated_at DESC
+          LIMIT ${limit}
+        `,
+    () => new ObjectStoreError({ code: "unavailable", message: "Database error listing cloud objects" }),
+  )
+  return rows
+    .filter((row) => canReadCloudObject({
+      repoFullName: fullName,
+      isPublicRepo: params.isPublicRepo,
+      visibility: row.visibility,
+      createdByPersonId: row.created_by_person_id,
+      actor: params.actor,
+      role: params.role,
+      policy: params.policy,
+    }))
+    .map(toSummary)
+}
+
+/** Reads one cloud object's metadata and bytes after enforcing visibility and ops-repo rules. */
+export effect function getObject(
+  params: {
+    readonly owner: string
+    readonly name: string
+    readonly isPublicRepo: boolean
+    readonly namespace: ObjectNamespace
+    readonly key: string
+    readonly actor: Actor | undefined
+    readonly role: Role | null
+    readonly policy: Visibility.Policy
+  },
+  r2?: R2ByteBacking | undefined,
+): { readonly summary: CloudObjectSummary; readonly bytes: Uint8Array }!ObjectStoreError!SqlClient.SqlClient {
+  const fullName = `${params.owner}/${params.name}`
+  const canonicalRepo = repoId(params.owner, params.name)
+  const sql = try SqlClient.SqlClient
+  const rows = try Effect.mapError(
+    sql<CloudObjectRow>`
+      SELECT id, repo_id, namespace, object_key, r2_key, sha256, content_type, bytes,
+        visibility, execution_trust, gate_eligible, commit_sha, ref_name, run_id,
+        created_by_person_id, created_by_login, inline_body, metadata, created_at, updated_at
+      FROM cloud_objects
+      WHERE repo_id = ${canonicalRepo} AND namespace = ${params.namespace} AND object_key = ${params.key}
+      LIMIT 1
+    `,
+    () => new ObjectStoreError({ code: "unavailable", message: "Database error reading cloud object" }),
+  )
+  const row = rows[0]
+  if (
+    row === undefined
+    || !canReadCloudObject({
+      repoFullName: fullName,
+      isPublicRepo: params.isPublicRepo,
+      visibility: row.visibility,
+      createdByPersonId: row.created_by_person_id,
+      actor: params.actor,
+      role: params.role,
+      policy: params.policy,
+    })
+  ) {
+    throw new ObjectStoreError({ code: "not_found", message: "Object not found" })
+  }
+  let bytes: Uint8Array | undefined
+  if (r2 !== undefined) {
+    const fromR2 = try r2.get(row.r2_key)
+    if (Option.isSome(fromR2)) bytes = fromR2.value
+  }
+  if (bytes === undefined && row.inline_body !== null) {
+    bytes = row.inline_body instanceof Uint8Array ? row.inline_body : new Uint8Array(row.inline_body)
+  }
+  if (bytes === undefined) {
+    throw new ObjectStoreError({ code: "not_found", message: "Object bytes not found in store" })
+  }
+  try Metric.update(Metric.withAttributes(objectOps, { op: "get", namespace: params.namespace, trust: row.execution_trust, outcome: "ok" }), 1)
+  return { summary: toSummary(row), bytes }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// HTTP Route Adapter: GET/PUT /api/repos/<owner>/<name>/objects[/:namespace/:key...]
+// ---------------------------------------------------------------------------------------------------------------------
+
+const OBJECTS_ROUTE_RE = /^\/api\/repos\/([^/]+)\/([^/]+)\/objects(?:\/([^/]+)\/(.+))?$/
+const NO_STORE = { "cache-control": "no-store" }
+
+export function handles(pathname: string): boolean {
+  return OBJECTS_ROUTE_RE.test(pathname)
+}
+
+export function parseObjectsPath(pathname: string):
+  | {
+    readonly owner: string
+    readonly name: string
+    readonly namespace?: string | undefined
+    readonly key?: string | undefined
+  }
+  | undefined
+{
+  const match = OBJECTS_ROUTE_RE.exec(pathname)
+  if (match === null) return undefined
+  try {
+    const owner = decodeURIComponent(match[1]!)
+    const name = decodeURIComponent(match[2]!)
+    if (!isRepository(owner, name)) return undefined
+    const namespace = match[3] === undefined ? undefined : decodeURIComponent(match[3])
+    const key = match[4] === undefined ? undefined : match[4].split("/").map(decodeURIComponent).join("/")
+    return { owner, name, namespace, key }
+  } catch {
+    return undefined
+  }
+}
+
+export function makeRoutes<E, R>(options: {
+  readonly database: Layer.Layer<SqlClient.SqlClient, E, R>
+  readonly roles: RepoRoles<R>
+  readonly policy: Visibility.Policy
+  readonly isPublicRepo: (owner: string, name: string) => boolean!never!R
+  readonly r2?: R2ByteBacking | undefined
+}) {
+  const fetch = withSpan(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const url = new URL(request.url, "https://objects.internal")
+    const parsed = parseObjectsPath(url.pathname)
+    if (parsed === undefined) {
+      return HttpServerResponse.jsonUnsafe({ error: "not_found" }, { status: 404, headers: NO_STORE })
+    }
+    const sessions = try Sessions
+    const actorOpt = try sessions.resolve
+    const actor = Option.getOrUndefined(actorOpt)
+    const target = repositoryOf(`${parsed.owner}/${parsed.name}`)
+    const isPublic = try options.isPublicRepo(parsed.owner, parsed.name)
+    let role: Role | null = null
+    if (actor !== undefined) {
+      const resolved = try Effect.result(options.roles.resolve(actor, target))
+      if (resolved._tag === "Success") role = resolved.success.role
+    }
+    if (request.method === "GET" && parsed.namespace === undefined) {
+      const nsParam = url.searchParams.get("namespace") ?? undefined
+      if (nsParam !== undefined && !isObjectNamespace(nsParam)) {
+        return HttpServerResponse.jsonUnsafe({ error: "invalid_namespace" }, { status: 400, headers: NO_STORE })
+      }
+      const limitParam = url.searchParams.get("limit")
+      const limit = limitParam !== null && /^\d+$/.test(limitParam) ? Number(limitParam) : 50
+      const listed = try Effect.result(
+        listObjects({
+          owner: parsed.owner,
+          name: parsed.name,
+          isPublicRepo: isPublic,
+          namespace: nsParam,
+          limit,
+          actor,
+          role,
+          policy: options.policy,
+        }).pipe(Effect.provide(options.database)),
+      )
+      if (listed._tag === "Failure") {
+        return HttpServerResponse.jsonUnsafe({ error: "unavailable" }, { status: 503, headers: NO_STORE })
+      }
+      return HttpServerResponse.jsonUnsafe({ objects: listed.success }, { status: 200, headers: NO_STORE })
+    }
+    if (request.method === "GET" && parsed.namespace !== undefined && parsed.key !== undefined) {
+      if (!isObjectNamespace(parsed.namespace)) {
+        return HttpServerResponse.jsonUnsafe({ error: "not_found" }, { status: 404, headers: NO_STORE })
+      }
+      const read = try Effect.result(
+        getObject(
+          {
+            owner: parsed.owner,
+            name: parsed.name,
+            isPublicRepo: isPublic,
+            namespace: parsed.namespace,
+            key: parsed.key,
+            actor,
+            role,
+            policy: options.policy,
+          },
+          options.r2,
+        ).pipe(Effect.provide(options.database)),
+      )
+      if (read._tag === "Failure") {
+        const isNotFound = read.failure instanceof ObjectStoreError && read.failure.code === "not_found"
+        return HttpServerResponse.jsonUnsafe(
+          { error: isNotFound ? "not_found" : "unavailable" },
+          { status: isNotFound ? 404 : 503, headers: NO_STORE },
+        )
+      }
+      const served = sanitizeServeContentType(read.success.summary.contentType)
+      return HttpServerResponse.raw(read.success.bytes, {
+        status: 200,
+        contentType: served.contentType,
+        headers: {
+          "cache-control": "private, no-store",
+          "content-security-policy": "default-src 'none'; sandbox",
+          "content-disposition": served.disposition,
+          "x-content-type-options": "nosniff",
+          "x-smithers-sha256": read.success.summary.sha256,
+          "x-smithers-execution-trust": read.success.summary.executionTrust,
+          "x-smithers-gate-eligible": String(read.success.summary.gateEligible),
+        },
+      })
+    }
+    if (request.method === "PUT" && parsed.namespace !== undefined && parsed.key !== undefined) {
+      if (actor === undefined) {
+        return HttpServerResponse.jsonUnsafe({ error: "unauthorized" }, { status: 401, headers: NO_STORE })
+      }
+      const secFetchSite = request.headers["sec-fetch-site"]
+      if (secFetchSite === "cross-site") {
+        return HttpServerResponse.jsonUnsafe({ error: "forbidden" }, { status: 403, headers: NO_STORE })
+      }
+      if (!isPublic && role === null) {
+        return HttpServerResponse.jsonUnsafe({ error: "not_found" }, { status: 404, headers: NO_STORE })
+      }
+      const rawBuf = try Effect.result(request.arrayBuffer)
+      if (rawBuf._tag === "Failure") {
+        return HttpServerResponse.jsonUnsafe({ error: "invalid" }, { status: 400, headers: NO_STORE })
+      }
+      const bytes = new Uint8Array(rawBuf.success)
+      const sandboxAttested = actor.act?.kind === "sandbox"
+      const trust = classifyExecutionTrust({ role, sandboxAttested })
+      const requestedVis = url.searchParams.get("visibility")
+      const requestedVisibility: Visibility.Visibility | undefined =
+        requestedVis === "public" || requestedVis === "repo_members" || requestedVis === "owner_only"
+          ? requestedVis
+          : undefined
+      const stored = try Effect.result(
+        putObject(
+          {
+            owner: parsed.owner,
+            name: parsed.name,
+            isPublicRepo: isPublic,
+            namespace: parsed.namespace,
+            key: parsed.key,
+            bytes,
+            contentType: request.headers["content-type"] ?? "application/octet-stream",
+            requestedVisibility,
+            trust,
+            actor,
+            commitSha: url.searchParams.get("commit"),
+            refName: url.searchParams.get("ref"),
+            runId: url.searchParams.get("runId"),
+            policy: options.policy,
+          },
+          options.r2,
+        ).pipe(Effect.provide(options.database)),
+      )
+      if (stored._tag === "Failure") {
+        const err = stored.failure
+        const code = err instanceof ObjectStoreError ? err.code : "unavailable"
+        const status = code === "untrusted_cache_write" || code === "untrusted_mythical_write" || code === "ops_repo_forbidden"
+          ? 403
+          : code === "too_large"
+          ? 413
+          : code === "invalid_namespace" || code === "invalid_object_key"
+          ? 400
+          : 503
+        return HttpServerResponse.jsonUnsafe({ error: code }, { status, headers: NO_STORE })
+      }
+      return HttpServerResponse.jsonUnsafe(stored.success, { status: 201, headers: NO_STORE })
+    }
+    return HttpServerResponse.empty({ status: 405, headers: { ...NO_STORE, allow: "GET, PUT" } })
+  }, "cloud_object_store.http")
+
+  return { fetch }
+}

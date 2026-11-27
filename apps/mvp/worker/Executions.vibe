@@ -4,6 +4,7 @@ import { EdgeCache, type ExecutionObject } from "@smthrs/platform-cloudflare"
 import { RuntimeContext } from "alchemy"
 import { Cause, Effect, Layer, Option, Predicate, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
+import { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
 import { applyExecutionId } from "../src/features/issues/contract.ts"
 import { todoExecutionId } from "../src/features/pulls/contract.ts"
@@ -18,6 +19,7 @@ import * as GitHubCreation from "./branch/GitHubCreation.vibe"
 import * as JobMachines from "./branch/JobMachines.vibe"
 import * as BranchSandboxes from "./BranchSandboxes.vibe"
 import * as Cron from "./ci/Cron.vibe"
+import * as CiDispatch from "./ci/Dispatch.vibe"
 import * as RepoFlow from "./ci/RepoFlow.vibe"
 import * as DomainsConfig from "./domains/Config.vibe"
 import { DomainProvider } from "./domains/Provider.vibe"
@@ -47,6 +49,7 @@ import { PersonalModels } from "./personal/Models.vibe"
 import * as Placement from "./Placement.vibe"
 import * as RepoConfig from "./RepoConfig.vibe"
 import * as RepoRuns from "./RepoRuns.vibe"
+import * as RepoStateStore from "./object-store/RepoStateStore.vibe"
 import * as Fleet from "./runners/Fleet.vibe"
 import * as Overflow from "./runners/Overflow.vibe"
 import { SecretKeys } from "./secrets/Keys.vibe"
@@ -479,6 +482,68 @@ const object = <E, R>(
               signalTodo: (executionId: string, number: number) =>
                 executions.getByName(executionId).signal(pullClosed(number).name).pipe(
                   Effect.provideService(RuntimeContext, runtime)
+                ),
+              onMerged: (merged: { readonly repository: { readonly id: string; readonly owner: string; readonly name: string }; readonly mergeSha: string; readonly pullNumber: number }) =>
+                Effect.gen(function* () {
+                  const sql = yield* SqlClient.SqlClient
+                  const rows = yield* sql<{ readonly base_ref: string; readonly author_login: string | null }>`
+                    SELECT p.base_ref, i.author_login
+                    FROM pulls p
+                    LEFT JOIN items i ON i.id = p.item_id
+                    WHERE p.repo_id = ${merged.repository.id} AND p.number = ${merged.pullNumber}
+                    LIMIT 1
+                  `
+                  const baseRef = rows[0]?.base_ref ?? "main"
+                  const authorLogin = rows[0]?.author_login ?? null
+                  if (authorLogin !== null && authorLogin.length > 0) {
+                    yield* Effect.ignore(
+                      RepoStateStore.recordContribution({
+                        owner: merged.repository.owner,
+                        name: merged.repository.name,
+                        githubLogin: authorLogin,
+                        kind: "pr",
+                      }),
+                    )
+                  }
+                  // Verify the PR base matches the repository's configured default branch before dispatching trusted post-merge flows.
+                  const repoRows = yield* sql<{ readonly default_branch: string }>`
+                    SELECT default_branch FROM repositories WHERE id = ${merged.repository.id} LIMIT 1
+                  `
+                  const defaultBranch = repoRows[0]?.default_branch ?? "main"
+                  if (baseRef !== defaultBranch) return
+                  const delivery = `post-merge-${merged.mergeSha}`
+                  const intent = yield* ExecutionHost.intent(CiDispatch.Dispatch, {
+                    executionId: delivery,
+                    payload: {
+                      delivery,
+                      repo: `${merged.repository.owner}/${merged.repository.name}`,
+                      defaultBranch,
+                      event: "push",
+                      ref: `refs/heads/${defaultBranch}`,
+                      branch: defaultBranch,
+                      tag: null,
+                      action: null,
+                      sha: merged.mergeSha,
+                      trusted: true,
+                    },
+                  })
+                  yield* executions.getByName(delivery).start(intent)
+                  yield* Effect.logInfo("github.merge.post_merge_dispatched").pipe(
+                    Effect.annotateLogs({
+                      repo: `${merged.repository.owner}/${merged.repository.name}`,
+                      pullNumber: merged.pullNumber,
+                      mergeSha: merged.mergeSha,
+                      baseRef,
+                    }),
+                  )
+                }).pipe(
+                  Effect.provide(appDatabase),
+                  Effect.provideService(RuntimeContext, runtime),
+                  Effect.catch((cause) =>
+                    Effect.logWarning("github.merge.post_merge_failed").pipe(
+                      Effect.annotateLogs({ errorCode: codeOf(cause), mergeSha: merged.mergeSha }),
+                    ),
+                  ),
                 )
             }
           }

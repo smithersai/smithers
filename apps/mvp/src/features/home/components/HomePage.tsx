@@ -2,7 +2,7 @@ import { ConnectionPill } from "../../chat/components/ConnectionPill"
 import { OFFLINE } from "../../chat/contract"
 import { useRepoAnswer } from "../../repo/components/RepoContext"
 import { mayAsk } from "../../auth/contract"
-import { RepositoryHome, type RepositoryHomeLive, SegmentedControl, Skeleton } from "@smthrs/ui"
+import { Badge, Button, RepositoryHome, type RepositoryHomeLive, SegmentedControl, Skeleton } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate } from "@tanstack/react-router"
 import type { ReactNode } from "react"
@@ -86,17 +86,27 @@ function HomeContent({ tree }: { readonly tree: ReactNode }) {
   return (
     <>
     {page.views.length === 0 ? null : (
-      <SegmentedControl
-        className="home-views"
-        size="sm"
-        aria-label={VIEW_AS}
-        value={page.audience}
-        options={page.views.map((view) => ({ value: view, label: VIEW_WORDS[view] }))}
-        onValueChange={(value) => {
-          const view = page.views.find((each) => each === value)
-          if (view !== undefined) actions.view(view)
-        }}
-      />
+      <div className="home-views-bar" style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+        <SegmentedControl
+          className="home-views"
+          size="sm"
+          aria-label={VIEW_AS}
+          value={page.audience}
+          options={page.views.map((view) => ({ value: view, label: VIEW_WORDS[view] }))}
+          onValueChange={(value) => {
+            const view = page.views.find((each) => each === value)
+            if (view !== undefined) actions.view(view)
+          }}
+        />
+        {page.views[0] !== undefined && page.audience !== page.views[0] ? (
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
+            <Badge variant="muted">Viewing as {VIEW_WORDS[page.audience]}</Badge>
+            <Button variant="ghost" size="sm" onClick={() => actions.view(page.views[0]!)}>
+              Return to {VIEW_WORDS[page.views[0]]}
+            </Button>
+          </div>
+        ) : null}
+      </div>
     )}
     {current.failure === null ? null : <p className="home-notice" role="status">{ACTION_FAILED}</p>}
     <RepositoryHome

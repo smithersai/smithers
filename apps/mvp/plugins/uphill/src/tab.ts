@@ -1,7 +1,7 @@
 import { Host } from "@smthrs/plugin"
 import type { Uphill } from "@smthrs/rpc"
 import { Effect, Scope, Stream } from "effect"
-import { extractUphill, type FeedDocument, stepCategory, type UphillSummary } from "./model"
+import { extractUphill, type FeedDocument, stepCategory, type UntrustedUphillRun, type UphillSummary } from "./model"
 
 // The Uphill tab (plugins/uphill): reads a repository's `core/feeds` through `PluginHost`, decodes its
 // `uphill` report feed and optional `uphill/history`, and tracks the selected category per repository.
@@ -39,6 +39,7 @@ export interface RepoUphillState {
   readonly updatedAt: string | null
   readonly history: ReadonlyArray<Uphill.HistoryPoint>
   readonly selectedCategory: string | null
+  readonly untrustedRuns: ReadonlyArray<UntrustedUphillRun>
 }
 
 export interface UphillTab {
@@ -91,6 +92,7 @@ export const make = (host: PluginHostShape) =>
           updatedAt: null,
           history: [],
           selectedCategory: null,
+          untrustedRuns: [],
         })
         entry.summary.set(EMPTY_SUMMARY)
         return
@@ -115,6 +117,7 @@ export const make = (host: PluginHostShape) =>
         updatedAt: extracted.updatedAt,
         history: extracted.history,
         selectedCategory: entry.selectedCategory,
+        untrustedRuns: extracted.untrustedRuns,
       })
     }
 
@@ -133,6 +136,7 @@ export const make = (host: PluginHostShape) =>
           updatedAt: null,
           history: [],
           selectedCategory: null,
+          untrustedRuns: [],
         }),
         summary: cell<UphillSummary>(EMPTY_SUMMARY),
         docs: [],

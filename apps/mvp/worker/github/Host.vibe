@@ -92,7 +92,9 @@ export const services = <E, R>(
 })
 
 /** Registers `github/Apply`, `github/Reconcile`, `github/Relations`, `github/Write`, `github/MachineDispatch`, `triage/Run` and `pr/Merge` over `services`. */
-export const registration = <E, R>(services: Triage.Services<E, R>) =>
+export type HostServices<E, R> = Triage.Services<E, R> & { readonly onMerged?: Merge.MergeServices<E, R>["onMerged"] }
+
+export const registration = <E, R>(services: HostServices<E, R>) =>
   Layer.mergeAll(
     Apply.registration(services),
     Reconcile.registration(services),

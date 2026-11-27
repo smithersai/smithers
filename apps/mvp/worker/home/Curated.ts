@@ -1,6 +1,9 @@
 import { Home } from "@smthrs/views"
 import type { Section } from "../../src/features/home/schema.ts"
 import effect from "./curated/effect-ts-effect.json"
+import smithers from "./curated/smithersai-smithers.json"
+import vibelang from "./curated/smithersai-vibelang.json"
+import zevm from "./curated/evmts-zevm.json"
 
 // Smithers' own homes for repositories that declare none (docs/features/home.md#curated-homes): data kept in this
 // directory, one JSON file per repository, in the very format a repository commits as `.smithers/home.json` under
@@ -25,7 +28,7 @@ export interface CuratedHome {
 }
 
 /** Every curated file, in one list. */
-export const files: ReadonlyArray<CuratedFile> = [effect]
+export const files: ReadonlyArray<CuratedFile> = [smithers, vibelang, zevm, effect]
 
 /** A repository's key as GitHub compares names: without case. */
 const keyOf = (owner: string, name: string): string => `${owner}/${name}`.toLowerCase()

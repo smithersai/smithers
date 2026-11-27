@@ -1,4 +1,4 @@
-import { bugs, factory, fleet, queue, uphill, wiki } from "./manifests"
+import { bugs, factory, fleet, mythical, queue, uphill, wiki } from "./manifests"
 
 // The built-in plugins (decision 0017, "What stays hardcoded"): the one place the core names a plugin, as webpack's
 // `WebpackOptionsApply` lists its own. Each is a manifest, read without running plugin code, and two chunks loaded only
@@ -40,6 +40,11 @@ export const BUILTIN: ReadonlyArray<BuiltIn> = [
     manifest: uphill,
     tab: () => import("../../plugins/uphill/src/tab"),
     components: () => import("../../plugins/uphill/src/components/index"),
+  },
+  {
+    manifest: mythical,
+    tab: () => import("../../plugins/mythical/src/tab"),
+    components: () => import("../../plugins/mythical/src/components/index"),
   },
   {
     manifest: wiki,

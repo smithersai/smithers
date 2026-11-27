@@ -1,0 +1,525 @@
+/**
+ * One-time-use authentication for sandboxes, agents, and CI jobs.
+ *
+ * Flow:
+ * 1. An authenticated person (or trusted maintainer agent via MCP) calls `POST /api/repos/:owner/:repo/auth/one-time`
+ *    (or the `auth_one_time_mint` MCP tool) to mint a short-lived, single-use `smot_<64 hex>` token.
+ * 2. Only `SHA-256(token)` is persisted in `one_time_auth_tokens`. The plaintext token is printed ONCE to the caller
+ *    with `cache-control: no-store` alongside copy-paste shell and MCP redemption snippets.
+ * 3. Inside the sandbox or agent, `POST /api/auth/one-time/redeem` atomically marks the row `redeemed_at = now()`
+ *    (compare-and-swap on `redeemed_at IS NULL AND expires_at > now()`) and issues an attenuated, short-lived
+ *    `sma_<64 hex>` MCP bearer token in `mcp_tokens` scoped strictly to that repository, purpose, and execution trust.
+ * 4. Replay is mathematically impossible: a second redeem of the same token always returns `401 token_already_used`.
+ * 5. Trust never escalates: a non-maintainer can mint one-time tokens for untrusted contributor runs (encouraged!),
+ *    always stamped `untrusted_contributor`, never `trusted_sandbox` or `trusted_maintainer`.
+ */
+
+import { generateMcpBearerToken, generateOneTimeToken, randomUuid, sha256Hex } from "./OneTimeCrypto.ts"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { SqlClient } from "effect/sql"
+import {
+  MCP_MAX_ACTIVE_TOKENS_PER_PERSON,
+  MCP_SCOPES,
+  MCP_TOKEN_PREFIX,
+  type McpScope,
+  repoMcpUrl,
+} from "../../src/features/mcp/contract.ts"
+import { isRepository, repoId } from "../../src/features/repo/contract.ts"
+import {
+  type ExecutionTrust,
+  isTrustedExecution,
+  ONE_TIME_AUTH_PURPOSES,
+  ONE_TIME_AUTH_REDEEM_ROUTE,
+  ONE_TIME_REDEEMED_TOKEN_TTL_SECONDS,
+  ONE_TIME_TOKEN_DEFAULT_TTL_SECONDS,
+  ONE_TIME_TOKEN_MAX_TTL_SECONDS,
+  ONE_TIME_TOKEN_MIN_TTL_SECONDS,
+  ONE_TIME_TOKEN_PREFIX,
+  type OneTimeAuthMintResult,
+  type OneTimeAuthPurpose,
+  type OneTimeAuthRedeemResult,
+  repoOneTimeAuthRoute,
+} from "../../src/features/trust/contract.ts"
+import { type Role, Sessions } from "../Actor.vibe"
+import { readBounded } from "../Body.vibe"
+import { repositoryOf } from "../github/Config.vibe"
+import * as Visibility from "../ops/ArtifactVisibility.ts"
+import type { RepoRoles } from "../github/RepoRoles.vibe"
+import { classifyExecutionTrust, mintTrustFor } from "../trust/ExecutionTrust.vibe"
+
+export const ONE_TIME_TOKEN_PATTERN = /^smot_[0-9a-f]{64}$/
+const ONE_TIME_OAUTH_CLIENT_ID = "smithers-one-time-auth"
+const ONE_TIME_OAUTH_CLIENT_NAME = "Smithers One-Time Auth"
+const NO_STORE = { "cache-control": "no-store", pragma: "no-cache" }
+const MAX_BODY_BYTES = 16 * 1024
+
+export const oneTimeAuthOps = Metric.counter("smithers_one_time_auth_ops", {
+  description: "One-time sandbox/agent authentication mint and redeem operations by op, purpose, trust, and outcome",
+  incremental: true,
+})
+
+export schema error OneTimeAuthError {
+  readonly code:
+    | "unauthorized"
+    | "forbidden"
+    | "invalid_params"
+    | "invalid_token"
+    | "token_already_used"
+    | "token_expired"
+    | "token_limit"
+    | "unavailable"
+  readonly message: string
+}
+
+export { generateMcpBearerToken, generateOneTimeToken }
+
+export function isValidOneTimeToken(raw: string): boolean {
+  return ONE_TIME_TOKEN_PATTERN.test(raw)
+}
+
+export function isOneTimePurpose(raw: string): raw is OneTimeAuthPurpose {
+  return (ONE_TIME_AUTH_PURPOSES as ReadonlyArray<string>).includes(raw)
+}
+
+export function clampTtlSeconds(raw: number | undefined): number {
+  if (raw === undefined || !Number.isFinite(raw)) return ONE_TIME_TOKEN_DEFAULT_TTL_SECONDS
+  return Math.max(ONE_TIME_TOKEN_MIN_TTL_SECONDS, Math.min(ONE_TIME_TOKEN_MAX_TTL_SECONDS, Math.floor(raw)))
+}
+
+export function normalizeScopes(raw: ReadonlyArray<string> | undefined): ReadonlyArray<McpScope> {
+  if (raw === undefined || raw.length === 0) return ["mcp:read", "mcp:write"]
+  const allowed = new Set<string>(MCP_SCOPES)
+  const picked = raw.filter((s): s is McpScope => allowed.has(s))
+  return picked.length > 0 ? Array.from(new Set(picked)) : ["mcp:read"]
+}
+
+export function buildSnippets(params: {
+  readonly origin: string
+  readonly owner: string
+  readonly name: string
+  readonly oneTimeToken: string
+  readonly purpose: OneTimeAuthPurpose
+}): { readonly redeemUrl: string; readonly mcpUrl: string; readonly shellSnippet: string; readonly mcpSnippet: string } {
+  const cleanOrigin = params.origin.replace(/\/+$/, "")
+  const redeemUrl = `${cleanOrigin}${ONE_TIME_AUTH_REDEEM_ROUTE}`
+  const mcpUrl = repoMcpUrl(cleanOrigin, params.owner, params.name)
+  const shellSnippet = [
+    `export SMITHERS_ONE_TIME_TOKEN="${params.oneTimeToken}"`,
+    `export SMITHERS_MCP_TOKEN="$(curl -sfS -X POST "${redeemUrl}" -H 'content-type: application/json' -d "{\\"token\\":\\"$SMITHERS_ONE_TIME_TOKEN\\"}" | node -e 'console.log(JSON.parse(require("fs").readFileSync(0,"utf8")).accessToken)')"`,
+    `unset SMITHERS_ONE_TIME_TOKEN`,
+  ].join("\n")
+  const mcpSnippet = `claude mcp add --transport http smithers-${params.name} "${mcpUrl}" --header "Authorization: Bearer $SMITHERS_MCP_TOKEN"`
+  return { redeemUrl, mcpUrl, shellSnippet, mcpSnippet }
+}
+
+/** Mints a single-use `smot_` token stored only as SHA-256 in Postgres. */
+export effect function mintOneTimeToken(params: {
+  readonly origin: string
+  readonly owner: string
+  readonly name: string
+  readonly personId: string
+  readonly login: string
+  readonly role: Role | null
+  readonly isDeploymentAdmin?: boolean | undefined
+  readonly sandboxAttested?: boolean | undefined
+  readonly purpose: OneTimeAuthPurpose
+  readonly scopes?: ReadonlyArray<string> | undefined
+  readonly ttlSeconds?: number | undefined
+  readonly label?: string | undefined
+}): OneTimeAuthMintResult!OneTimeAuthError!SqlClient.SqlClient {
+  const canonicalRepo = try sync(() => repoId(params.owner, params.name))
+  const callerTrust = classifyExecutionTrust({
+    role: params.role,
+    isDeploymentAdmin: params.isDeploymentAdmin,
+    sandboxAttested: params.sandboxAttested,
+  })
+  const executionTrust = mintTrustFor(callerTrust, params.purpose)
+  const ttlSeconds = clampTtlSeconds(params.ttlSeconds)
+  const scopes = normalizeScopes(params.scopes)
+  const rawToken = try sync(() => generateOneTimeToken())
+  const tokenSha256 = try sync(() => sha256Hex(rawToken))
+  const clientName = `${params.purpose}:${executionTrust}`.slice(0, 120)
+  const safeLabel = params.label !== undefined && params.label.trim().length > 0
+    ? params.label.trim().slice(0, 120)
+    : null
+  const sql = try SqlClient.SqlClient
+  const rows = try Effect.mapError(
+    sql<{ readonly id: string; readonly expires_at: Date | string }>`
+      INSERT INTO one_time_auth_tokens (
+        token_sha256, repo_id, person_id, minted_by_login, purpose,
+        execution_trust, scopes, client_name, label, expires_at
+      ) VALUES (
+        ${tokenSha256},
+        ${canonicalRepo},
+        ${params.personId}::uuid,
+        ${params.login},
+        ${params.purpose},
+        ${executionTrust},
+        ${[...scopes]}::text[],
+        ${clientName},
+        ${safeLabel},
+        clock_timestamp() + make_interval(secs => ${ttlSeconds})
+      )
+      RETURNING id, expires_at
+    `,
+    () => new OneTimeAuthError({ code: "unavailable", message: "Database error minting one-time auth token" }),
+  )
+  const row = rows[0]
+  if (row === undefined) {
+    throw new OneTimeAuthError({ code: "unavailable", message: "Failed to persist one-time token" })
+  }
+  const expiresAt = row.expires_at instanceof Date ? row.expires_at.toISOString() : String(row.expires_at)
+  const snippets = buildSnippets({
+    origin: params.origin,
+    owner: params.owner,
+    name: params.name,
+    oneTimeToken: rawToken,
+    purpose: params.purpose,
+  })
+  try Metric.update(Metric.withAttributes(oneTimeAuthOps, {
+    op: "mint",
+    purpose: params.purpose,
+    trust: executionTrust,
+    outcome: "ok",
+  }), 1)
+  return {
+    id: row.id,
+    oneTimeToken: rawToken,
+    expiresAt,
+    purpose: params.purpose,
+    executionTrust,
+    repository: `${params.owner}/${params.name}`,
+    scopes,
+    ...snippets,
+  }
+}
+
+interface OneTimeRow {
+  readonly id: string
+  readonly repo_id: string
+  readonly person_id: string
+  readonly minted_by_login: string
+  readonly purpose: OneTimeAuthPurpose
+  readonly execution_trust: ExecutionTrust
+  readonly scopes: ReadonlyArray<string>
+  readonly client_name: string
+  readonly expires_at: Date | string
+  readonly redeemed_at: Date | string | null
+}
+
+/**
+ * Atomically redeems a single-use `smot_` token ONCE and issues an attenuated `sma_` MCP bearer token.
+ * Concurrent calls racing the same token are serialized by the Postgres row lock in `UPDATE ... WHERE redeemed_at IS NULL`.
+ */
+export effect function redeemOneTimeToken(params: {
+  readonly origin: string
+  readonly token: string
+}): OneTimeAuthRedeemResult!OneTimeAuthError!SqlClient.SqlClient {
+  const raw = params.token.trim()
+  if (!isValidOneTimeToken(raw)) {
+    try Metric.update(Metric.withAttributes(oneTimeAuthOps, {
+      op: "redeem",
+      purpose: "unknown",
+      trust: "unknown",
+      outcome: "invalid_token",
+    }), 1)
+    throw new OneTimeAuthError({ code: "invalid_token", message: "Invalid one-time auth token format" })
+  }
+  const tokenSha256 = try sync(() => sha256Hex(raw))
+  const sql = try SqlClient.SqlClient
+
+  return try Effect.mapError(
+    sql.withTransaction(
+      effect {
+      const updated = try Effect.mapError(
+        sql<OneTimeRow>`
+          UPDATE one_time_auth_tokens
+          SET redeemed_at = clock_timestamp()
+          WHERE token_sha256 = ${tokenSha256}
+            AND redeemed_at IS NULL
+            AND expires_at > clock_timestamp()
+          RETURNING id, repo_id, person_id, minted_by_login, purpose, execution_trust, scopes, client_name, expires_at, redeemed_at
+        `,
+        () => new OneTimeAuthError({ code: "unavailable", message: "Database error redeeming one-time token" }),
+      )
+
+      const claimed = updated[0]
+      if (claimed === undefined) {
+        const existing = try Effect.mapError(
+          sql<{ readonly redeemed_at: Date | string | null; readonly expires_at: Date | string }>`
+            SELECT redeemed_at, expires_at FROM one_time_auth_tokens WHERE token_sha256 = ${tokenSha256} LIMIT 1
+          `,
+          () => new OneTimeAuthError({ code: "unavailable", message: "Database error verifying one-time token" }),
+        )
+        const found = existing[0]
+        const code = found === undefined
+          ? "invalid_token"
+          : found.redeemed_at !== null
+          ? "token_already_used"
+          : "token_expired"
+        try Metric.update(Metric.withAttributes(oneTimeAuthOps, {
+          op: "redeem",
+          purpose: "unknown",
+          trust: "unknown",
+          outcome: code,
+        }), 1)
+        throw new OneTimeAuthError({
+          code,
+          message: code === "token_already_used"
+            ? "One-time token has already been used"
+            : code === "token_expired"
+            ? "One-time token has expired"
+            : "Unknown one-time token",
+        })
+      }
+
+      // Serialize per-person active token count checks within this transaction.
+      try Effect.mapError(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${claimed.person_id}::text))`,
+        () => new OneTimeAuthError({ code: "unavailable", message: "Database error locking token quota" }),
+      )
+
+      const active = try Effect.mapError(
+        sql<{ readonly count: number | string }>`
+          SELECT COUNT(*)::int AS count
+          FROM mcp_tokens
+          WHERE person_id = ${claimed.person_id}::uuid
+            AND revoked_at IS NULL
+            AND (expires_at IS NULL OR expires_at > clock_timestamp())
+        `,
+        () => new OneTimeAuthError({ code: "unavailable", message: "Database error checking active MCP tokens" }),
+      )
+      if (Number(active[0]?.count ?? 0) >= MCP_MAX_ACTIVE_TOKENS_PER_PERSON) {
+        try Metric.update(Metric.withAttributes(oneTimeAuthOps, {
+          op: "redeem",
+          purpose: claimed.purpose,
+          trust: claimed.execution_trust,
+          outcome: "token_limit",
+        }), 1)
+        throw new OneTimeAuthError({ code: "token_limit", message: "Active MCP token limit reached for this account" })
+      }
+
+      try Effect.mapError(
+        sql`
+          INSERT INTO mcp_oauth_clients (client_id, client_name, redirect_uris)
+          VALUES (${ONE_TIME_OAUTH_CLIENT_ID}, ${ONE_TIME_OAUTH_CLIENT_NAME}, ARRAY['https://smithers.sh/mcp/callback'])
+          ON CONFLICT (client_id) DO NOTHING
+        `,
+        () => new OneTimeAuthError({ code: "unavailable", message: "Database error ensuring OAuth client row" }),
+      )
+
+      const bearer = try sync(() => generateMcpBearerToken())
+      const bearerSha256 = try sync(() => sha256Hex(bearer))
+      const tokenId = try sync(() => randomUuid())
+      const inserted = try Effect.mapError(
+        sql<{ readonly id: string; readonly expires_at: Date | string }>`
+          INSERT INTO mcp_tokens (
+            id,
+            token_sha256,
+            person_id,
+            client_id,
+            client_name,
+            scopes,
+            repo_scope,
+            expires_at
+          ) VALUES (
+            ${tokenId}::uuid,
+            ${bearerSha256},
+            ${claimed.person_id}::uuid,
+            ${ONE_TIME_OAUTH_CLIENT_ID},
+            ${claimed.client_name},
+            ${[...claimed.scopes]}::text[],
+            ${claimed.repo_id},
+            clock_timestamp() + make_interval(secs => ${ONE_TIME_REDEEMED_TOKEN_TTL_SECONDS})
+          )
+          RETURNING id, expires_at
+        `,
+        () => new OneTimeAuthError({ code: "unavailable", message: "Database error issuing MCP token" }),
+      )
+      const issued = inserted[0]
+      if (issued === undefined) {
+        throw new OneTimeAuthError({ code: "unavailable", message: "Issued MCP token row missing" })
+      }
+
+      try Effect.mapError(
+        sql`UPDATE one_time_auth_tokens SET redeemed_token_id = ${issued.id}::uuid WHERE id = ${claimed.id}::uuid`,
+        () => new OneTimeAuthError({ code: "unavailable", message: "Database error linking redeemed token" }),
+      )
+
+      const slug = claimed.repo_id.replace(/^github\//, "")
+      const trusted = isTrustedExecution(claimed.execution_trust)
+      const expiresAt = issued.expires_at instanceof Date ? issued.expires_at.toISOString() : String(issued.expires_at)
+
+      try Metric.update(Metric.withAttributes(oneTimeAuthOps, {
+        op: "redeem",
+        purpose: claimed.purpose,
+        trust: claimed.execution_trust,
+        outcome: "ok",
+      }), 1)
+
+      return {
+        tokenId: issued.id,
+        accessToken: bearer,
+        tokenType: "Bearer",
+        expiresAt,
+        repository: slug,
+        purpose: claimed.purpose,
+        executionTrust: claimed.execution_trust,
+        gateEligible: trusted,
+        cacheWriteAllowed: trusted,
+        scopes: claimed.scopes,
+        mcpUrl: `${params.origin.replace(/\/$/, "")}/${slug}/mcp`,
+      }
+      },
+    ),
+    (e) => e instanceof OneTimeAuthError ? e : new OneTimeAuthError({ code: "unavailable", message: "Database transaction failed" }),
+  )
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// HTTP Route Adapter
+// ---------------------------------------------------------------------------------------------------------------------
+
+const MINT_ROUTE_RE = /^\/api\/repos\/([^/]+)\/([^/]+)\/auth\/one-time$/
+
+export function handles(pathname: string): boolean {
+  return pathname === ONE_TIME_AUTH_REDEEM_ROUTE || MINT_ROUTE_RE.test(pathname)
+}
+
+export function parseMintPath(pathname: string): { readonly owner: string; readonly name: string } | undefined {
+  const match = MINT_ROUTE_RE.exec(pathname)
+  if (match === null) return undefined
+  try {
+    const owner = decodeURIComponent(match[1]!)
+    const name = decodeURIComponent(match[2]!)
+    return isRepository(owner, name) ? { owner, name } : undefined
+  } catch {
+    return undefined
+  }
+}
+
+const originOf = (request: HttpServerRequest.HttpServerRequest): string => {
+  if (URL.canParse(request.originalUrl)) return new URL(request.originalUrl).origin
+  return Option.match(HttpServerRequest.toURL(request), { onNone: () => "https://smithers.sh", onSome: (u) => u.origin })
+}
+
+export function makeRoutes<E, R>(options: {
+  readonly database: Layer.Layer<SqlClient.SqlClient, E, R>
+  readonly roles: RepoRoles<R>
+  readonly isPublicRepo?: ((owner: string, name: string) => boolean!never!R) | undefined
+  readonly admins?: ReadonlySet<string> | undefined
+}) {
+  const fetch = withSpan(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const pathname = request.url.split("?")[0]!
+    if (request.method !== "POST") {
+      return HttpServerResponse.empty({ status: 405, headers: { ...NO_STORE, allow: "POST" } })
+    }
+    const origin = originOf(request)
+    const bodyText = try Effect.result(readBounded(request, MAX_BODY_BYTES))
+    if (bodyText._tag === "Failure") {
+      return HttpServerResponse.jsonUnsafe({ error: "invalid" }, { status: 400, headers: NO_STORE })
+    }
+    let body: Record<string, unknown> = {}
+    if (bodyText.success.trim().length > 0) {
+      const parsed = try Effect.result(Effect.try(() => JSON.parse(bodyText.success) as unknown))
+      if (parsed._tag === "Failure" || typeof parsed.success !== "object" || parsed.success === null || Array.isArray(parsed.success)) {
+        return HttpServerResponse.jsonUnsafe({ error: "invalid_params" }, { status: 400, headers: NO_STORE })
+      }
+      body = parsed.success as Record<string, unknown>
+    }
+
+    if (pathname === ONE_TIME_AUTH_REDEEM_ROUTE) {
+      const token = typeof body.token === "string" ? body.token.trim() : ""
+      const redeemed = try Effect.result(
+        redeemOneTimeToken({ origin, token }).pipe(Effect.provide(options.database)),
+      )
+      if (redeemed._tag === "Failure") {
+        const err = redeemed.failure
+        const code = err instanceof OneTimeAuthError ? err.code : "unavailable"
+        const status = code === "invalid_token" || code === "token_already_used" || code === "token_expired"
+          ? 401
+          : code === "token_limit"
+          ? 403
+          : 503
+        return HttpServerResponse.jsonUnsafe({ error: code }, { status, headers: NO_STORE })
+      }
+      return HttpServerResponse.jsonUnsafe(redeemed.success, { status: 200, headers: NO_STORE })
+    }
+
+    const targetRepo = parseMintPath(pathname)
+    if (targetRepo === undefined) {
+      return HttpServerResponse.jsonUnsafe({ error: "not_found" }, { status: 404, headers: NO_STORE })
+    }
+    const sessions = try Sessions
+    const actorOpt = try sessions.resolve
+    if (Option.isNone(actorOpt)) {
+      return HttpServerResponse.jsonUnsafe({ error: "unauthorized" }, { status: 401, headers: NO_STORE })
+    }
+    const actor = actorOpt.value
+    if (actor.act !== undefined) {
+      return HttpServerResponse.jsonUnsafe({ error: "forbidden" }, { status: 403, headers: NO_STORE })
+    }
+    if (request.headers["sec-fetch-site"] === "cross-site") {
+      return HttpServerResponse.jsonUnsafe({ error: "forbidden" }, { status: 403, headers: NO_STORE })
+    }
+    const ct = (request.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase()
+    if (ct !== "application/json") {
+      return HttpServerResponse.jsonUnsafe({ error: "invalid_params" }, { status: 400, headers: NO_STORE })
+    }
+    if (actor.login === undefined || actor.login.trim().length === 0) {
+      return HttpServerResponse.jsonUnsafe({ error: "unauthorized" }, { status: 401, headers: NO_STORE })
+    }
+    const fullName = `${targetRepo.owner}/${targetRepo.name}`
+    if (try sync(() => Visibility.isOpsRepository({ fullName, private: true }, { admins: options.admins ?? new Set() }))) {
+      return HttpServerResponse.jsonUnsafe({ error: "not_found" }, { status: 404, headers: NO_STORE })
+    }
+    const rawPurpose = typeof body.purpose === "string" ? body.purpose : "sandbox"
+    if (!isOneTimePurpose(rawPurpose)) {
+      return HttpServerResponse.jsonUnsafe({ error: "invalid_params" }, { status: 400, headers: NO_STORE })
+    }
+    const scopes = Array.isArray(body.scopes)
+      ? body.scopes.filter((s): s is string => typeof s === "string")
+      : undefined
+    const ttlSeconds = typeof body.ttlSeconds === "number" ? body.ttlSeconds : undefined
+    const label = typeof body.label === "string" ? body.label : undefined
+    const target = try sync(() => repositoryOf(fullName))
+    const resolved = try Effect.result(options.roles.resolve(actor, target))
+    if (resolved._tag === "Failure") {
+      return HttpServerResponse.jsonUnsafe({ error: "unavailable" }, { status: 503, headers: NO_STORE })
+    }
+    const role: Role | null = resolved.success.role
+    const isPublic = options.isPublicRepo !== undefined ? try options.isPublicRepo(targetRepo.owner, targetRepo.name) : false
+    if (!isPublic && role === null) {
+      return HttpServerResponse.jsonUnsafe({ error: "not_found" }, { status: 404, headers: NO_STORE })
+    }
+    const minted = try Effect.result(
+      mintOneTimeToken({
+        origin,
+        owner: targetRepo.owner,
+        name: targetRepo.name,
+        personId: actor.subject.id,
+        login: actor.login,
+        role,
+        isDeploymentAdmin: false,
+        sandboxAttested: false,
+        purpose: rawPurpose,
+        scopes,
+        ttlSeconds,
+        label,
+      }).pipe(Effect.provide(options.database)),
+    )
+    if (minted._tag === "Failure") {
+      const err = minted.failure
+      const code = err instanceof OneTimeAuthError ? err.code : "unavailable"
+      const status = code === "invalid_params" ? 400 : code === "forbidden" || code === "token_limit" ? 403 : 503
+      return HttpServerResponse.jsonUnsafe({ error: code }, { status, headers: NO_STORE })
+    }
+    return HttpServerResponse.jsonUnsafe(minted.success, {
+      status: 201,
+      headers: { ...NO_STORE, location: try sync(() => repoOneTimeAuthRoute(targetRepo.owner, targetRepo.name)) },
+    })
+  }, "one_time_auth.http")
+
+  return { fetch }
+}

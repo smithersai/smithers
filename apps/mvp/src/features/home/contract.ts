@@ -24,7 +24,7 @@ export const VIEW_AS = "View as"
 export const VIEW_WORDS: Readonly<Record<Home.Audience, string>> = {
   maintainer: "Maintainer",
   contributor: "Contributor",
-  everyone: "User",
+  everyone: "Viewer",
 }
 
 /** The one line over the tree when a declared home can't show. */
@@ -48,8 +48,18 @@ export const HOME_SEGMENT = "home"
  * no role, or someone signed out, sees everyone's sections, unless the home opens its contributors' to anyone
  * (`Home.widen`).
  */
-export const audienceOf = (role: Role | null): Home.Audience =>
-  role === "admin" || role === "maintainer" ? "maintainer" : role === null ? "everyone" : "contributor"
+/**
+ * Classifies a person into one of three personalized coding factory audiences:
+ * - `maintainer`: repository Maintainer or Admin.
+ * - `contributor`: Member with write access, or anyone who has contributed at least one item to this repository.
+ * - `everyone` (rendered as Viewer): signed-out visitors and signed-in users with zero contributions so far.
+ */
+export const audienceOf = (role: Role | null, contributionCount = 0): Home.Audience =>
+  role === "admin" || role === "maintainer"
+    ? "maintainer"
+    : role === "member" || contributionCount >= 1
+    ? "contributor"
+    : "everyone"
 
 /** `/$owner/$repo/tree/<default branch>`: the code at the default branch, and its workspace with the composer. */
 export const codeHref = (owner: string, name: string, defaultBranch: string): string =>

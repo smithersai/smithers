@@ -319,13 +319,41 @@ export type HistoryPoint = z.infer<typeof HistoryPointSchema>
  * @since 1.0.0
  * @category schemas
  */
+/**
+ * Server-verified execution trust provenance attached to a published Uphill audit report.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ExecutionTrustSchema = z.enum(["trusted_sandbox", "trusted_maintainer", "untrusted_contributor"])
+export type ExecutionTrust = z.infer<typeof ExecutionTrustSchema>
+
+/**
+ * Execution provenance metadata showing whether a report ran in a controlled sandbox or by a maintainer,
+ * or as an untrusted community run isolated from the shared cache and merge gates.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ProvenanceSchema = z.object({
+  trust: ExecutionTrustSchema,
+  gateEligible: z.boolean(),
+  cacheWriteAllowed: z.boolean(),
+  runner: z.string().nullable().optional().default(null),
+  actor: z.string().nullable().optional().default(null),
+  objectUrl: z.string().nullable().optional().default(null),
+  sha256: z.string().nullable().optional().default(null)
+})
+export type Provenance = z.infer<typeof ProvenanceSchema>
+
 export const FeedEnvelopeSchema = z.object({
   report: ReportSchema,
   commit: z.string().nullable().optional().default(null),
   branch: z.string().nullable().optional().default(null),
   updatedAt: z.string().nullable().optional().default(null),
   history: z.array(HistoryPointSchema).optional().default([]),
-  rules: z.string().nullable().optional().default(null)
+  rules: z.string().nullable().optional().default(null),
+  provenance: ProvenanceSchema.nullable().optional().default(null)
 })
 /**
  * The decoded value accepted by {@link FeedEnvelopeSchema}.
@@ -446,7 +474,8 @@ export function decodeFeedBody(body: unknown): FeedEnvelope | undefined {
       branch: null,
       updatedAt: null,
       history: [],
-      rules: null
+      rules: null,
+      provenance: null
     }
   }
   return undefined

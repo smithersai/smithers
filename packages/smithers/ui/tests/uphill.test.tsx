@@ -117,4 +117,58 @@ describe("UphillScorecard", () => {
     const html = renderToStaticMarkup(<UphillScorecard report={{ categories: [] }} />);
     expect(html).toContain("No Uphill categories scored");
   });
+
+  test("renders Lighthouse provenance banner for trusted sandbox, trusted maintainer, and untrusted contributor runs", () => {
+    const trusted = renderToStaticMarkup(
+      <UphillScorecard
+        report={REPORT}
+        provenance={{
+          trust: "trusted_sandbox",
+          runner: "smithers-sandbox/sbx-42",
+          gateEligible: true,
+          cacheWriteAllowed: true,
+          sha256: "abcdef0123456789abcdef0123456789",
+        }}
+      />,
+    );
+    expect(trusted).toContain("Trusted sandbox");
+    expect(trusted).toContain("Gate eligible");
+    expect(trusted).toContain("Shared cache verified");
+    expect(trusted).toContain("smithers-sandbox/sbx-42");
+    expect(trusted).toContain("sha256 abcdef012345");
+    expect(trusted).toContain("0 to 49");
+    expect(trusted).toContain("50 to 89");
+    expect(trusted).toContain("90 to 100");
+
+    const maintainer = renderToStaticMarkup(
+      <UphillScorecard
+        report={REPORT}
+        provenance={{
+          trust: "trusted_maintainer",
+          runner: "roninjin10",
+          gateEligible: true,
+          cacheWriteAllowed: true,
+        }}
+      />,
+    );
+    expect(maintainer).toContain("Trusted maintainer");
+    expect(maintainer).toContain("roninjin10");
+
+    const untrusted = renderToStaticMarkup(
+      <UphillScorecard
+        report={REPORT}
+        provenance={{
+          trust: "untrusted_contributor",
+          runner: "alice",
+          gateEligible: false,
+          cacheWriteAllowed: false,
+        }}
+        onVerifyTrusted={() => {}}
+      />,
+    );
+    expect(untrusted).toContain("Untrusted community run");
+    expect(untrusted).toContain("Informational only");
+    expect(untrusted).toContain("Cache isolated");
+    expect(untrusted).toContain("Re-run in Smithers sandbox");
+  });
 });

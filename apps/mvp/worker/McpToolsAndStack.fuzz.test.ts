@@ -72,7 +72,7 @@ const CATALOG: Readonly<Record<string, { readonly minimum: Role | null; readonly
   pull_files: { minimum: null, writes: false },
   issue_create: { minimum: "guest", writes: true },
   issue_comment: { minimum: "guest", writes: true },
-  todo_list: { minimum: "member", writes: false },
+  todo_list: { minimum: null, writes: false },
   todo_draft: { minimum: "member", writes: true },
   work_link_post: { minimum: "maintainer", writes: true },
 }

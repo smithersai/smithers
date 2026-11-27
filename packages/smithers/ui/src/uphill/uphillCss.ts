@@ -223,6 +223,51 @@ export const uphillCss = `
 @media (prefers-reduced-motion: reduce) {
   .sui-uphill-gauge-card { transition: none; }
 }
+
+.sui-uphill-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.625rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--sui-radius-md, 0.5rem);
+  border: 1px solid var(--sui-border, rgba(127, 127, 127, 0.22));
+  background: var(--sui-surface-subtle, rgba(127, 127, 127, 0.05));
+}
+.sui-uphill-provenance[data-trust="trusted_sandbox"],
+.sui-uphill-provenance[data-trust="trusted_maintainer"] {
+  border-color: color-mix(in srgb, var(--sui-success, #0c9c59) 35%, transparent);
+}
+.sui-uphill-provenance[data-trust="untrusted_contributor"] {
+  border-color: color-mix(in srgb, var(--sui-warning, #d97706) 45%, transparent);
+}
+.sui-uphill-provenance-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.sui-uphill-provenance-detail {
+  font-size: 0.75rem;
+  color: var(--sui-muted-fg, #6b7280);
+  font-variant-numeric: tabular-nums;
+}
+.sui-uphill-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  font-size: 0.75rem;
+  color: var(--sui-muted-fg, #6b7280);
+}
+.sui-uphill-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-variant-numeric: tabular-nums;
+}
 `;
 
 export function useUphillCss(): void {

@@ -1,0 +1,138 @@
+/**
+ * Post-merge automation planner and dispatcher.
+ *
+ * When a merge from Smithers Cloud lands on GitHub's default branch (via `worker/github/Merge.vibe` or a `push`
+ * webhook to the default branch), Smithers Cloud reads the repository's `.smithers/factory.json` rules
+ * (`on["change.landed"]`, `on["github.push:<defaultBranch>"]`, `on["github.push:main"]`) and dispatches every
+ * declared post-merge automation flow (releases, docs publishing, wiki refresh, mythical history fold, and
+ * trusted backpressure audit reports) as a trusted `repo/Run` execution (`secrets: true`, deterministic
+ * execution id `post-merge:<flow>:<mergeSha>`).
+ *
+ * Security invariants:
+ * - Only merges targeting the repository's default branch trigger post-merge trusted flows.
+ * - Flow names are strictly validated against `FLOW_NAME` before dispatch (no path traversal or arbitrary injection).
+ * - Deduplicated by `(flow, mergeSha)` so both `pr/Merge` and the subsequent GitHub `push` webhook share one
+ *   idempotent durable execution id and never double-publish a release.
+ */
+
+import { FLOW_NAME, type RunRequest } from "./RepoFlow.vibe"
+
+export const postMergeDispatches = Metric.counter("smithers_post_merge_dispatches", {
+  description: "Post-merge flows planned and dispatched after a default-branch merge, by flow and outcome",
+  incremental: true,
+})
+
+/** Default post-merge flow order when a factory declares multiple hooks. */
+export const POST_MERGE_ORDER: ReadonlyArray<string> = [
+  "backpressure-audit",
+  "uphill",
+  "wiki-refresh",
+  "mythical-fold",
+  "docs-publish",
+  "release",
+]
+
+export interface PostMergeTriggerInput {
+  readonly repo: string
+  readonly defaultBranch: string
+  readonly targetBranch: string
+  readonly mergeSha: string
+  readonly factoryJson: unknown
+}
+
+export interface PlannedPostMergeFlow {
+  readonly flow: string
+  readonly runId: string
+  readonly request: typeof RunRequest.Type
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v)
+
+/** Extracts validated post-merge flow ids declared in `.smithers/factory.json` for `defaultBranch`. */
+export function extractPostMergeFlowIds(factoryJson: unknown, defaultBranch: string): ReadonlyArray<string> {
+  if (!isRecord(factoryJson)) return []
+  const on = factoryJson["on"]
+  const rawIds: Array<string> = []
+
+  const collectFlowField = (rule: unknown) => {
+    if (!isRecord(rule)) return
+    const flowVal = rule["flow"]
+    if (typeof flowVal === "string") rawIds.push(flowVal)
+    else if (Array.isArray(flowVal)) {
+      for (const item of flowVal) {
+        if (typeof item === "string") rawIds.push(item)
+      }
+    }
+  }
+
+  const keys = new Set([
+    "change.landed",
+    `github.push:${defaultBranch}`,
+    "merge.default",
+  ])
+
+  if (Array.isArray(on)) {
+    for (const row of on) {
+      if (isRecord(row) && typeof row["event"] === "string" && keys.has(row["event"])) {
+        collectFlowField(row)
+      }
+    }
+  } else if (isRecord(on)) {
+    for (const key of keys) {
+      collectFlowField(on[key])
+    }
+  }
+
+  // Normalize slash-delimited flow names (e.g. `coding/wiki` -> `wiki-refresh` alias if exact name fails FLOW_NAME).
+  const seen = new Set<string>()
+  const valid: Array<string> = []
+  for (const raw of rawIds) {
+    const trimmed = raw.trim().toLowerCase()
+    if (FLOW_NAME.test(trimmed) && !seen.has(trimmed)) {
+      seen.add(trimmed)
+      valid.push(trimmed)
+    }
+  }
+
+  return valid.sort((a, b) => {
+    const ia = POST_MERGE_ORDER.indexOf(a)
+    const ib = POST_MERGE_ORDER.indexOf(b)
+    if (ia !== -1 && ib !== -1) return ia - ib
+    if (ia !== -1) return -1
+    if (ib !== -1) return 1
+    return a.localeCompare(b)
+  })
+}
+
+/** Deterministic idempotent execution id for one post-merge flow on one merge commit. */
+export function postMergeRunId(flow: string, mergeSha: string): string {
+  return `post-merge:${flow}:${mergeSha.slice(0, 40)}`
+}
+
+/**
+ * Plans the exact trusted `repo/Run` requests to dispatch after `mergeSha` lands on `targetBranch`.
+ * Returns an empty list if `targetBranch !== defaultBranch` or `mergeSha` is malformed.
+ */
+export function planPostMergeFlows(input: PostMergeTriggerInput): ReadonlyArray<PlannedPostMergeFlow> {
+  if (input.targetBranch !== input.defaultBranch) return []
+  if (!/^[0-9a-fA-F]{7,40}$/.test(input.mergeSha)) return []
+  const flows = extractPostMergeFlowIds(input.factoryJson, input.defaultBranch)
+  const ref = `refs/heads/${input.defaultBranch}`
+  return flows.map((flow) => {
+    const runId = postMergeRunId(flow, input.mergeSha)
+    return {
+      flow,
+      runId,
+      request: {
+        run: runId,
+        repo: input.repo,
+        flow,
+        sha: input.mergeSha,
+        ref,
+        event: "push",
+        secrets: true,
+      },
+    }
+  })
+}

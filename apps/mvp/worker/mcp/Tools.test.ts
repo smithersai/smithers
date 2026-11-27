@@ -372,12 +372,12 @@ describe("external Guest alice (agent)", () => {
     await expect(call("flow_get", { id: "issue/repro" }, ctx("alice"))).resolves.toBeDefined()
   })
 
-  test("is refused todo_list, todo_draft and work_link_post with forbidden", async () => {
-    const { calls, callExit, ctx } = setup()
-    expect(codeOf(await callExit("todo_list", {}, ctx("alice")))).toBe("forbidden")
+  test("may read public todo_list and is refused todo_draft and work_link_post with forbidden", async () => {
+    const { calls, call, callExit, ctx } = setup()
+    await expect(call("todo_list", {}, ctx("alice"))).resolves.toBeDefined()
     expect(codeOf(await callExit("todo_draft", { title: "t", prompt: "p" }, ctx("alice")))).toBe("forbidden")
     expect(codeOf(await callExit("work_link_post", { number: 1, kind: "pr", ref: "#2", status: "open" }, ctx("alice")))).toBe("forbidden")
-    expect(calls.todos).toEqual([])
+    expect(calls.todos).toEqual(["evmts/voltaire"])
     expect(calls.drafts).toEqual([])
     expect(calls.links).toEqual([])
   })
@@ -388,7 +388,7 @@ describe("external Guest alice (agent)", () => {
     expect(names).toEqual([
       "repo_tree", "repo_read_file", "repo_refs", "docs_list", "docs_read", "flows_list", "flow_get",
       "issues_list", "issue_get", "pulls_list", "pull_get", "pull_files",
-      "issue_create", "issue_comment",
+      "issue_create", "issue_comment", "todo_list",
     ])
   })
 
@@ -396,7 +396,7 @@ describe("external Guest alice (agent)", () => {
     const { registry } = setup()
     const tools = await Effect.runPromise(registry.listTools(Option.none(), VOLTAIRE))
     expect(tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true)
-    expect(tools.map((tool) => tool.name)).not.toContain("todo_list")
+    expect(tools.map((tool) => tool.name)).toContain("todo_list")
   })
 })
 

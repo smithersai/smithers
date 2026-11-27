@@ -1,0 +1,996 @@
+/**
+ * First-class Smithers Cloud MCP tools for full agent dogfooding:
+ * - Shared Cloud Object Store: `artifact_list`, `artifact_get`, `artifact_put`
+ * - Stacked Changesets: `changeset_stack_list`, `changeset_create`
+ * - Project Wiki: `wiki_list`, `wiki_read`, `wiki_write`
+ * - Mythical History: `mythical_history_list`, `mythical_history_record`
+ * - Lighthouse / Uphill Backpressure Audit Reports: `audit_report_list`, `audit_report_get`, `audit_report_publish`
+ * - One-Time Sandbox & Agent Auth: `auth_one_time_mint`
+ *
+ * Security invariants:
+ * - Every call resolves live repository access through `McpAuthService` (never frozen token roles).
+ * - Execution trust is ALWAYS computed server-side from live role / sandbox attestation, never from tool args.
+ * - Untrusted contributors are encouraged to publish untrusted audit reports, artifacts, changesets, and wiki
+ *   proposals, while being strictly refused from poisoning `cache`, canonical `mythical`, or trusted merge gates.
+ * - Ops repos (`Smithers-Ops`) are fenced to deployment admins acting in person (never exposed through MCP agents).
+ * - Person-only acts (`pull/merge`, `todo/commit`, `todo/drop`, `secrets/write`) remain strictly blocked.
+ */
+
+import { SqlClient } from "effect/sql"
+import { isRepository, repoId } from "../../src/features/repo/contract.ts"
+import {
+  isTrustedExecution,
+  MAX_OBJECT_MCP_BYTES,
+  OBJECT_NAMESPACES,
+  ONE_TIME_AUTH_PURPOSES,
+  type MythicalCommitNote,
+  type ObjectNamespace,
+  type OneTimeAuthPurpose,
+} from "../../src/features/trust/contract.ts"
+import * as DeploymentPolicy from "../DeploymentPolicy.vibe"
+import * as CloudObjectStore from "../object-store/CloudObjectStore.vibe"
+import { safeJsonStringify } from "../object-store/ObjectBytes.ts"
+import * as RepoStateStore from "../object-store/RepoStateStore.vibe"
+import * as Visibility from "../ops/ArtifactVisibility.ts"
+import { classifyExecutionTrust, isObjectNamespace } from "../trust/ExecutionTrust.vibe"
+import {
+  McpAuthService,
+  type McpContentBlock,
+  type McpPrincipal,
+  type McpToolContext,
+  type McpToolDescriptor,
+  McpToolError,
+} from "./Contract.vibe"
+import * as OneTimeAuth from "./OneTimeAuth.vibe"
+
+export interface CloudFactoryToolResult {
+  readonly content: ReadonlyArray<McpContentBlock>
+  readonly isError?: boolean
+}
+
+export interface CreatePullParams {
+  readonly owner: string
+  readonly name: string
+  readonly title: string
+  readonly body: string
+  readonly head: string
+  readonly base: string
+  readonly draft: boolean
+  readonly login: string
+}
+
+export interface CreatePullReceipt {
+  readonly number: number
+  readonly url: string
+  readonly state: string
+  readonly draft: boolean
+}
+
+export interface CloudFactoryDeps {
+  readonly database: Layer.Layer<SqlClient.SqlClient, unknown>
+  readonly policy: Visibility.Policy
+  readonly r2?: CloudObjectStore.R2ByteBacking | undefined
+  readonly origin?: string | undefined
+  readonly createPull?: ((params: CreatePullParams) => CreatePullReceipt!McpToolError) | undefined
+}
+
+export const CLOUD_FACTORY_TOOL_NAMES = [
+  "artifact_list",
+  "artifact_get",
+  "artifact_put",
+  "changeset_stack_list",
+  "changeset_create",
+  "wiki_list",
+  "wiki_read",
+  "wiki_write",
+  "mythical_history_list",
+  "mythical_history_record",
+  "audit_report_list",
+  "audit_report_get",
+  "audit_report_publish",
+  "auth_one_time_mint",
+  "pull_create",
+] as const
+
+export type CloudFactoryToolName = (typeof CLOUD_FACTORY_TOOL_NAMES)[number]
+
+export function isCloudFactoryTool(name: string): name is CloudFactoryToolName {
+  return (CLOUD_FACTORY_TOOL_NAMES as ReadonlyArray<string>).includes(name)
+}
+
+const repoProps = {
+  owner: { type: "string", description: "Repository owner. Omit to use this endpoint repository." },
+  repo: { type: "string", description: "Repository name. Omit to use this endpoint repository." },
+  repository: { type: "string", description: "`owner/name`, instead of `owner` and `repo`." },
+}
+
+export const CLOUD_FACTORY_TOOL_DESCRIPTORS: ReadonlyArray<McpToolDescriptor> = [
+  {
+    name: "artifact_list",
+    description: "List objects stored in the repository shared Smithers Cloud object store.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        ...repoProps,
+        namespace: { type: "string", enum: [...OBJECT_NAMESPACES] },
+        limit: { type: "integer", minimum: 1, maximum: 200 },
+      },
+    },
+  },
+  {
+    name: "artifact_get",
+    description: "Read one object from the shared Smithers Cloud object store with its SHA-256 and trust metadata.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["key"],
+      properties: {
+        ...repoProps,
+        namespace: { type: "string", enum: [...OBJECT_NAMESPACES], default: "artifact" },
+        key: { type: "string", minLength: 1, maxLength: 200 },
+      },
+    },
+  },
+  {
+    name: "artifact_put",
+    description: "Store an artifact or report in the shared Smithers Cloud object store. Untrusted runs cannot write trusted cache or canonical mythical history.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["key", "content"],
+      properties: {
+        ...repoProps,
+        namespace: { type: "string", enum: [...OBJECT_NAMESPACES], default: "artifact" },
+        key: { type: "string", minLength: 1, maxLength: 200 },
+        content: { type: "string", maxLength: MAX_OBJECT_MCP_BYTES },
+        contentType: { type: "string", maxLength: 128 },
+        visibility: { type: "string", enum: ["public", "repo_members", "owner_only"] },
+        commitSha: { type: "string", maxLength: 64 },
+        refName: { type: "string", maxLength: 255 },
+        runId: { type: "string", maxLength: 256 },
+      },
+    },
+  },
+  {
+    name: "changeset_stack_list",
+    description: "List stacked changesets for the repository, including execution trust and gate status.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        ...repoProps,
+        stackKey: { type: "string", maxLength: 120 },
+      },
+    },
+  },
+  {
+    name: "changeset_create",
+    description: "Create or update a changeset in a stack. Gate status is derived server-side from live execution trust.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["stackKey", "position", "title", "branchName"],
+      properties: {
+        ...repoProps,
+        stackKey: { type: "string", minLength: 1, maxLength: 120 },
+        position: { type: "integer", minimum: 1, maximum: 500 },
+        title: { type: "string", minLength: 1, maxLength: 256 },
+        summary: { type: "string", maxLength: 8000 },
+        branchName: { type: "string", minLength: 1, maxLength: 255 },
+        baseBranch: { type: "string", minLength: 1, maxLength: 255 },
+        headSha: { type: "string", maxLength: 64 },
+        prNumber: { type: "integer", minimum: 1 },
+        status: { type: "string", enum: ["draft", "open", "verified", "merged", "abandoned"] },
+        checksPassed: { type: "boolean" },
+        artifactRef: { type: "string", maxLength: 256 },
+      },
+    },
+  },
+  {
+    name: "wiki_list",
+    description: "List project wiki pages stored in Smithers Cloud for this repository.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { ...repoProps, limit: { type: "integer", minimum: 1, maximum: 200 } },
+    },
+  },
+  {
+    name: "wiki_read",
+    description: "Read a project wiki page markdown document from Smithers Cloud.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["page"],
+      properties: {
+        ...repoProps,
+        page: { type: "string", minLength: 1, maxLength: 200 },
+      },
+    },
+  },
+  {
+    name: "wiki_write",
+    description: "Write a project wiki page to Smithers Cloud. Contributors write proposals under proposed/<login>/; maintainers publish canonical pages.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["page", "markdown"],
+      properties: {
+        ...repoProps,
+        page: { type: "string", minLength: 1, maxLength: 200 },
+        markdown: { type: "string", minLength: 1, maxLength: MAX_OBJECT_MCP_BYTES },
+        title: { type: "string", maxLength: 200 },
+      },
+    },
+  },
+  {
+    name: "mythical_history_list",
+    description: "List the clean narrative mythical history stack for this repository, with epics, git notes, and tree-equality status.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { ...repoProps, limit: { type: "integer", minimum: 1, maximum: 200 } },
+    },
+  },
+  {
+    name: "mythical_history_record",
+    description: "Record or fold a clean mythical history commit with git-note evidence (maintainers and trusted sandboxes only).",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["position", "epic", "title"],
+      properties: {
+        ...repoProps,
+        position: { type: "integer", minimum: 1 },
+        epic: { type: "string", minLength: 1, maxLength: 120 },
+        title: { type: "string", minLength: 1, maxLength: 256 },
+        summary: { type: "string", maxLength: 8000 },
+        commitSha: { type: "string", maxLength: 64 },
+        mainFoldedSha: { type: "string", maxLength: 64 },
+        treeEqualToMain: { type: "boolean" },
+        prNumber: { type: "integer", minimum: 1 },
+        notes: {
+          type: "array",
+          maxItems: 20,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["kind", "summary"],
+            properties: {
+              kind: { type: "string", enum: ["decision", "evidence", "abandoned", "folded"] },
+              summary: { type: "string", minLength: 1, maxLength: 1000 },
+              ref: { type: "string", maxLength: 256 },
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    name: "audit_report_list",
+    description: "List Lighthouse/Uphill backpressure audit reports for this repository, distinguishing trusted gate runs from untrusted community runs.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { ...repoProps, limit: { type: "integer", minimum: 1, maximum: 100 } },
+    },
+  },
+  {
+    name: "audit_report_get",
+    description: "Read one Lighthouse/Uphill backpressure audit report JSON and its trust provenance from the shared object store.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        ...repoProps,
+        key: { type: "string", minLength: 1, maxLength: 200, description: "Defaults to latest.json" },
+      },
+    },
+  },
+  {
+    name: "audit_report_publish",
+    description: "Publish a Lighthouse/Uphill backpressure audit report. Trusted runs update the live gate report; untrusted contributor runs are encouraged and stored isolated without poisoning gates.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["report"],
+      properties: {
+        ...repoProps,
+        key: { type: "string", minLength: 1, maxLength: 200, description: "Defaults to latest.json" },
+        report: { type: "object", description: "Uphill / Lighthouse audit report JSON payload" },
+        commitSha: { type: "string", maxLength: 64 },
+        branch: { type: "string", maxLength: 255 },
+        rules: { type: "string", maxLength: 60_000 },
+      },
+    },
+  },
+  {
+    name: "auth_one_time_mint",
+    description: "Mint and print a single-use short-lived authentication token (smot_) for a sandbox, agent, or CI runner. Never escalates above caller live trust.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        ...repoProps,
+        purpose: { type: "string", enum: [...ONE_TIME_AUTH_PURPOSES], default: "sandbox" },
+        ttlSeconds: { type: "integer", minimum: 60, maximum: 900 },
+        scopes: { type: "array", items: { type: "string", enum: ["mcp:read", "mcp:write"] } },
+        label: { type: "string", maxLength: 120 },
+      },
+    },
+  },
+
+  {
+    name: "pull_create",
+    description:
+      "Open a pull request attributed to you as your agent. Requires write access (Member or Maintainer); agents never approve or merge pull requests.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...repoProps,
+        title: { type: "string", maxLength: 256 },
+        body: { type: "string", maxLength: 60_000 },
+        head: { type: "string", maxLength: 256, description: "Head branch name (or owner:branch)." },
+        base: { type: "string", maxLength: 256, description: "Base branch name (default: main)." },
+        draft: { type: "boolean", description: "Open as draft pull request (default: true)." },
+      },
+      required: ["title", "head"],
+    },
+  },
+]
+
+const WRITE_TOOLS: ReadonlySet<string> = new Set([
+  "artifact_put",
+  "changeset_create",
+  "wiki_write",
+  "mythical_history_record",
+  "audit_report_publish",
+  "auth_one_time_mint",
+  "pull_create",
+])
+
+/** Returns descriptors visible to `principal` (all read tools on public repos; write tools require `mcp:write`). */
+export function visibleDescriptors(principal: Option.Option<McpPrincipal>): ReadonlyArray<McpToolDescriptor> {
+  const canWrite = Option.isSome(principal) && principal.value.scopes.includes("mcp:write")
+  return CLOUD_FACTORY_TOOL_DESCRIPTORS.filter((d) => !WRITE_TOOLS.has(d.name) || canWrite)
+}
+
+const jsonResult = (value: unknown): CloudFactoryToolResult => ({
+  content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
+})
+
+const strArg = (args: Record<string, unknown>, key: string): string | undefined =>
+  typeof args[key] === "string" && args[key].trim().length > 0 ? args[key].trim() : undefined
+
+const numArg = (args: Record<string, unknown>, key: string): number | undefined =>
+  typeof args[key] === "number" && Number.isFinite(args[key]) ? args[key] : undefined
+
+const resolveTargetRepo = (
+  args: Record<string, unknown>,
+  defaultRepo: { readonly owner: string; readonly name: string } | undefined,
+): { readonly owner: string; readonly name: string }!McpToolError => {
+  const repository = strArg(args, "repository")
+  const owner = strArg(args, "owner")
+  const repo = strArg(args, "repo")
+  if (repository !== undefined) {
+    const parts = repository.split("/")
+    if (parts.length !== 2 || !(isRepository(parts[0]!, parts[1]!))) {
+      return Effect.fail(new McpToolError({ code: "invalid_params", message: "Invalid repository format; expected owner/name" }))
+    }
+    return Effect.succeed({ owner: parts[0]!, name: parts[1]! })
+  }
+  if (owner !== undefined && repo !== undefined) {
+    if (!isRepository(owner, repo)) {
+      return Effect.fail(new McpToolError({ code: "invalid_params", message: "Invalid owner or repo name" }))
+    }
+    return Effect.succeed({ owner, name: repo })
+  }
+  if (defaultRepo !== undefined) return Effect.succeed(defaultRepo)
+  return Effect.fail(new McpToolError({ code: "invalid_params", message: "Provide owner and repo, or repository: owner/name" }))
+}
+
+const encoder = new TextEncoder()
+const decoder = new TextDecoder("utf-8", { fatal: false })
+
+effect function isVerifiedSandboxToken(
+  tokenId: string,
+  owner: string,
+  name: string,
+): boolean!never!SqlClient.SqlClient {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tokenId)) return false
+  const canonicalRepo = repoId(owner, name)
+  const sql = try SqlClient.SqlClient
+  const res = try Effect.result(sql<{ readonly ok: number }>`
+    SELECT 1 AS ok
+    FROM one_time_auth_tokens
+    WHERE redeemed_token_id = ${tokenId}::uuid
+      AND repo_id = ${canonicalRepo}
+      AND execution_trust = 'trusted_sandbox'
+    LIMIT 1
+  `)
+  return res._tag === "Success" && res.success.length > 0
+}
+
+/** Executes one Cloud Factory MCP tool with full live role and execution-trust enforcement. */
+export effect function callCloudFactoryTool(
+  name: CloudFactoryToolName,
+  args: Record<string, unknown>,
+  ctx: McpToolContext,
+  deps: CloudFactoryDeps,
+  auth: McpAuthService["Service"],
+): CloudFactoryToolResult!McpToolError {
+  const target = try resolveTargetRepo(args, ctx.defaultRepo)
+  const fullName = `${target.owner}/${target.name}`
+  if (try sync(() => Visibility.isOpsRepository({ fullName, private: true }, deps.policy))) {
+    throw new McpToolError({ code: "not_found", message: "Repository not found or access denied" })
+  }
+  const access = try auth.resolveRepoAccess(ctx.principal, target.owner, target.name)
+  const principalOpt = ctx.principal
+  const principal = Option.getOrUndefined(principalOpt)
+  const actor = principal?.actor
+
+  if (!WRITE_TOOLS.has(name)) {
+    if (!access.isPublic) {
+      if (access.role === null) {
+        throw new McpToolError({ code: "not_found", message: "Repository not found or access denied" })
+      }
+      if (principal === undefined || !principal.scopes.includes("mcp:read")) {
+        throw new McpToolError({ code: "forbidden", message: "This token does not grant mcp:read access" })
+      }
+    }
+    switch (name) {
+      case "artifact_list": {
+        const nsRaw = strArg(args, "namespace")
+        if (nsRaw !== undefined && !isObjectNamespace(nsRaw)) {
+          throw new McpToolError({ code: "invalid_params", message: "Unknown object namespace" })
+        }
+        const limit = numArg(args, "limit")
+        const objects = try Effect.mapError(
+          CloudObjectStore.listObjects({
+            owner: target.owner,
+            name: target.name,
+            isPublicRepo: access.isPublic,
+            namespace: nsRaw,
+            limit,
+            actor,
+            role: access.role,
+            policy: deps.policy,
+          }).pipe(Effect.provide(deps.database)),
+          (e) => new McpToolError({ code: "unavailable", message: e instanceof CloudObjectStore.ObjectStoreError ? e.message : "Object store unavailable" }),
+        )
+        return jsonResult({ repository: `${target.owner}/${target.name}`, objects })
+      }
+      case "artifact_get": {
+        const nsRaw = strArg(args, "namespace") ?? "artifact"
+        const key = strArg(args, "key")
+        if (!isObjectNamespace(nsRaw) || key === undefined) {
+          throw new McpToolError({ code: "invalid_params", message: "Valid namespace and key are required" })
+        }
+        const loaded = try Effect.mapError(
+          CloudObjectStore.getObject(
+            {
+              owner: target.owner,
+              name: target.name,
+              isPublicRepo: access.isPublic,
+              namespace: nsRaw,
+              key,
+              actor,
+              role: access.role,
+              policy: deps.policy,
+            },
+            deps.r2,
+          ).pipe(Effect.provide(deps.database)),
+          (e) => new McpToolError({
+            code: e instanceof CloudObjectStore.ObjectStoreError && e.code === "not_found" ? "not_found" : "unavailable",
+            message: e instanceof CloudObjectStore.ObjectStoreError ? e.message : "Failed to read object",
+          }),
+        )
+        const text = try sync(() => decoder.decode(loaded.bytes))
+        return jsonResult({ summary: loaded.summary, content: text })
+      }
+      case "changeset_stack_list": {
+        const stackKey = strArg(args, "stackKey")
+        const changesets = try Effect.mapError(
+          RepoStateStore.listChangesets(target.owner, target.name, stackKey).pipe(Effect.provide(deps.database)),
+          () => new McpToolError({ code: "unavailable", message: "Failed to list changeset stacks" }),
+        )
+        return jsonResult({ repository: `${target.owner}/${target.name}`, changesets })
+      }
+      case "wiki_list": {
+        const limit = numArg(args, "limit")
+        const pages = try Effect.mapError(
+          CloudObjectStore.listObjects({
+            owner: target.owner,
+            name: target.name,
+            isPublicRepo: access.isPublic,
+            namespace: "wiki",
+            limit,
+            actor,
+            role: access.role,
+            policy: deps.policy,
+          }).pipe(Effect.provide(deps.database)),
+          () => new McpToolError({ code: "unavailable", message: "Failed to list wiki pages" }),
+        )
+        return jsonResult({ repository: `${target.owner}/${target.name}`, pages })
+      }
+      case "wiki_read": {
+        const page = strArg(args, "page")
+        if (page === undefined) {
+          throw new McpToolError({ code: "invalid_params", message: "page is required" })
+        }
+        const loaded = try Effect.mapError(
+          CloudObjectStore.getObject(
+            {
+              owner: target.owner,
+              name: target.name,
+              isPublicRepo: access.isPublic,
+              namespace: "wiki",
+              key: page,
+              actor,
+              role: access.role,
+              policy: deps.policy,
+            },
+            deps.r2,
+          ).pipe(Effect.provide(deps.database)),
+          (e) => new McpToolError({
+            code: e instanceof CloudObjectStore.ObjectStoreError && e.code === "not_found" ? "not_found" : "unavailable",
+            message: "Wiki page not found",
+          }),
+        )
+        return jsonResult({ page: loaded.summary.key, summary: loaded.summary, markdown: try sync(() => decoder.decode(loaded.bytes)) })
+      }
+      case "mythical_history_list": {
+        const limit = numArg(args, "limit")
+        const commits = try Effect.mapError(
+          RepoStateStore.listMythicalCommits(target.owner, target.name, limit).pipe(Effect.provide(deps.database)),
+          () => new McpToolError({ code: "unavailable", message: "Failed to list mythical history" }),
+        )
+        return jsonResult({ repository: `${target.owner}/${target.name}`, commits })
+      }
+      case "audit_report_list": {
+        const limit = numArg(args, "limit")
+        const reports = try Effect.mapError(
+          CloudObjectStore.listObjects({
+            owner: target.owner,
+            name: target.name,
+            isPublicRepo: access.isPublic,
+            namespace: "audit-report",
+            limit,
+            actor,
+            role: access.role,
+            policy: deps.policy,
+          }).pipe(Effect.provide(deps.database)),
+          () => new McpToolError({ code: "unavailable", message: "Failed to list audit reports" }),
+        )
+        return jsonResult({
+          repository: `${target.owner}/${target.name}`,
+          trustedReports: reports.filter((r) => r.gateEligible),
+          untrustedReports: reports.filter((r) => !r.gateEligible),
+        })
+      }
+      case "audit_report_get": {
+        const key = strArg(args, "key") ?? "latest.json"
+        const loaded = try Effect.mapError(
+          CloudObjectStore.getObject(
+            {
+              owner: target.owner,
+              name: target.name,
+              isPublicRepo: access.isPublic,
+              namespace: "audit-report",
+              key,
+              actor,
+              role: access.role,
+              policy: deps.policy,
+            },
+            deps.r2,
+          ).pipe(Effect.provide(deps.database)),
+          (e) => new McpToolError({
+            code: e instanceof CloudObjectStore.ObjectStoreError && e.code === "not_found" ? "not_found" : "unavailable",
+            message: "Audit report not found",
+          }),
+        )
+        const text = try sync(() => decoder.decode(loaded.bytes))
+        const parsed = try Effect.result(Effect.try(() => JSON.parse(text) as unknown))
+        return jsonResult({
+          summary: loaded.summary,
+          report: parsed._tag === "Success" ? parsed.success : text,
+        })
+      }
+    }
+  }
+
+  // Write tools require an authenticated MCP principal with `mcp:write`.
+  const writePrincipal = try auth.requireWriteAccess(ctx.principal, target.owner, target.name, "guest")
+  const caller = writePrincipal.principal
+  const liveRole = writePrincipal.access.role
+  const sandboxAttested = try isVerifiedSandboxToken(caller.tokenId, target.owner, target.name).pipe(
+    Effect.provide(deps.database),
+    Effect.catch(() => Effect.succeed(false)),
+  )
+  const trust = classifyExecutionTrust({
+    role: liveRole,
+    isDeploymentAdmin: false,
+    sandboxAttested,
+  })
+
+  switch (name) {
+    case "artifact_put": {
+      const nsRaw = strArg(args, "namespace") ?? "artifact"
+      const key = strArg(args, "key")
+      const content = typeof args.content === "string" ? args.content : undefined
+      if (!isObjectNamespace(nsRaw) || key === undefined || content === undefined) {
+        throw new McpToolError({ code: "invalid_params", message: "Valid namespace, key, and content are required" })
+      }
+      const bytes = try sync(() => encoder.encode(content))
+      if (bytes.byteLength > MAX_OBJECT_MCP_BYTES) {
+        throw new McpToolError({ code: "invalid_params", message: "Content exceeds MCP artifact limit (512 KiB)" })
+      }
+      const visRaw = strArg(args, "visibility")
+      const requestedVisibility: Visibility.Visibility | undefined =
+        visRaw === "public" || visRaw === "repo_members" || visRaw === "owner_only" ? visRaw : undefined
+      const stored = try Effect.mapError(
+        CloudObjectStore.putObject(
+          {
+            owner: target.owner,
+            name: target.name,
+            isPublicRepo: writePrincipal.access.isPublic,
+            namespace: nsRaw,
+            key,
+            bytes,
+            contentType: strArg(args, "contentType") ?? "text/plain; charset=utf-8",
+            requestedVisibility,
+            trust,
+            actor: caller.actor,
+            commitSha: strArg(args, "commitSha"),
+            refName: strArg(args, "refName"),
+            runId: strArg(args, "runId"),
+            policy: deps.policy,
+          },
+          deps.r2,
+        ).pipe(Effect.provide(deps.database)),
+        (e) => new McpToolError({
+          code: e instanceof CloudObjectStore.ObjectStoreError && (
+            e.code === "untrusted_cache_write" || e.code === "untrusted_mythical_write" || e.code === "ops_repo_forbidden"
+          ) ? "forbidden" : "invalid_params",
+          message: e instanceof CloudObjectStore.ObjectStoreError ? e.message : "Object store write failed",
+        }),
+      )
+      try Effect.ignore(
+        RepoStateStore.recordContribution({
+          owner: target.owner,
+          name: target.name,
+          githubLogin: caller.login,
+          kind: "artifact",
+        }).pipe(Effect.provide(deps.database)),
+      )
+      return jsonResult(stored)
+    }
+
+    case "changeset_create": {
+      const stackKey = strArg(args, "stackKey")
+      const position = numArg(args, "position")
+      const title = strArg(args, "title")
+      const branchName = strArg(args, "branchName")
+      if (stackKey === undefined || position === undefined || title === undefined || branchName === undefined) {
+        throw new McpToolError({ code: "invalid_params", message: "stackKey, position, title, and branchName are required" })
+      }
+      const statusRaw = strArg(args, "status")
+      const status =
+        statusRaw === "draft" || statusRaw === "open" || statusRaw === "verified" || statusRaw === "merged" || statusRaw === "abandoned"
+          ? statusRaw
+          : "draft"
+      const entry = try Effect.mapError(
+        RepoStateStore.upsertChangeset({
+          owner: target.owner,
+          name: target.name,
+          stackKey,
+          position: Math.floor(position),
+          title,
+          summary: strArg(args, "summary") ?? "",
+          branchName,
+          baseBranch: strArg(args, "baseBranch") ?? "main",
+          headSha: strArg(args, "headSha"),
+          prNumber: numArg(args, "prNumber"),
+          status,
+          checksPassed: typeof args.checksPassed === "boolean" ? args.checksPassed : null,
+          trust,
+          authorPersonId: caller.personId,
+          authorLogin: caller.login,
+          artifactRef: strArg(args, "artifactRef"),
+        }).pipe(Effect.provide(deps.database)),
+        () => new McpToolError({ code: "unavailable", message: "Failed to save changeset" }),
+      )
+      return jsonResult(entry)
+    }
+
+    case "wiki_write": {
+      const page = strArg(args, "page")
+      const markdown = typeof args.markdown === "string" ? args.markdown : undefined
+      if (page === undefined || markdown === undefined || markdown.trim().length === 0) {
+        throw new McpToolError({ code: "invalid_params", message: "page and markdown are required" })
+      }
+      const bytes = try sync(() => encoder.encode(markdown))
+      if (bytes.byteLength > MAX_OBJECT_MCP_BYTES) {
+        throw new McpToolError({ code: "invalid_params", message: "Wiki page exceeds maximum size" })
+      }
+      const stored = try Effect.mapError(
+        CloudObjectStore.putObject(
+          {
+            owner: target.owner,
+            name: target.name,
+            isPublicRepo: writePrincipal.access.isPublic,
+            namespace: "wiki",
+            key: page,
+            bytes,
+            contentType: "text/markdown; charset=utf-8",
+            requestedVisibility: writePrincipal.access.isPublic ? "public" : "repo_members",
+            trust,
+            actor: caller.actor,
+            metadata: { title: strArg(args, "title") ?? page },
+            policy: deps.policy,
+          },
+          deps.r2,
+        ).pipe(Effect.provide(deps.database)),
+        (e) => new McpToolError({
+          code: "forbidden",
+          message: e instanceof CloudObjectStore.ObjectStoreError ? e.message : "Wiki write failed",
+        }),
+      )
+      const trustedWiki = try sync(() => isTrustedExecution(trust))
+      if (trustedWiki) {
+        const feedRepo = `${target.owner}/${target.name}`.toLowerCase()
+        const feedName = `wiki/${stored.key}`.slice(0, 200)
+        const feedId = `${feedRepo}:${feedName}`
+        const feedBody = JSON.stringify({ path: stored.key, title: strArg(args, "title") ?? stored.key, markdown })
+        try Effect.ignore(
+          (effect {
+            const sql = try SqlClient.SqlClient
+            try sql`
+              INSERT INTO feed_documents (id, repo, name, visibility, body, updated_at)
+              VALUES (${feedId}, ${feedRepo}, ${feedName}, ${writePrincipal.access.isPublic ? "public" : "maintainers"}, ${feedBody}::jsonb, now())
+              ON CONFLICT (repo, name) DO UPDATE SET visibility = EXCLUDED.visibility, body = EXCLUDED.body, updated_at = now()
+            `
+          }).pipe(Effect.provide(deps.database)),
+        )
+      }
+      return jsonResult({
+        ...stored,
+        proposedOnly: !trustedWiki,
+      })
+    }
+
+    case "mythical_history_record": {
+      if (!(try sync(() => isTrustedExecution(trust)))) {
+        throw new McpToolError({
+          code: "forbidden",
+          message: "Recording canonical mythical history requires a maintainer or controlled Smithers sandbox.",
+        })
+      }
+      const position = numArg(args, "position")
+      const epic = strArg(args, "epic")
+      const title = strArg(args, "title")
+      if (position === undefined || epic === undefined || title === undefined) {
+        throw new McpToolError({ code: "invalid_params", message: "position, epic, and title are required" })
+      }
+      const rawNotes = Array.isArray(args.notes) ? args.notes : []
+      const notes: Array<MythicalCommitNote> = []
+      for (const n of rawNotes) {
+        if (typeof n === "object" && n !== null && !Array.isArray(n)) {
+          const rec = n as Record<string, unknown>
+          const kind = rec.kind
+          const summary = rec.summary
+          if (
+            (kind === "decision" || kind === "evidence" || kind === "abandoned" || kind === "folded")
+            && typeof summary === "string" && summary.trim().length > 0
+          ) {
+            notes.push({
+              kind,
+              summary: summary.trim().slice(0, 1000),
+              ...(typeof rec.ref === "string" && rec.ref.trim().length > 0 ? { ref: rec.ref.trim().slice(0, 256) } : {}),
+            })
+          }
+        }
+      }
+      const saved = try Effect.mapError(
+        RepoStateStore.upsertMythicalCommit({
+          owner: target.owner,
+          name: target.name,
+          position: Math.floor(position),
+          epic,
+          title,
+          summary: strArg(args, "summary") ?? "",
+          commitSha: strArg(args, "commitSha"),
+          mainFoldedSha: strArg(args, "mainFoldedSha"),
+          treeEqualToMain: args.treeEqualToMain === true,
+          prNumber: numArg(args, "prNumber"),
+          notes,
+          authorLogin: caller.login,
+        }).pipe(Effect.provide(deps.database)),
+        () => new McpToolError({ code: "unavailable", message: "Failed to record mythical history commit" }),
+      )
+      return jsonResult(saved)
+    }
+
+    case "audit_report_publish": {
+      if (typeof args.report !== "object" || args.report === null || Array.isArray(args.report)) {
+        throw new McpToolError({ code: "invalid_params", message: "report must be a JSON object" })
+      }
+      const trusted = try sync(() => isTrustedExecution(trust))
+      const key = strArg(args, "key") ?? "latest.json"
+      const commitSha = strArg(args, "commitSha") ?? null
+      const branch = strArg(args, "branch") ?? null
+      const rules = typeof args.rules === "string" ? args.rules : null
+      const envelope = {
+        report: args.report,
+        commit: commitSha,
+        branch,
+        rules,
+        updatedAt: new Date(try Clock.currentTimeMillis).toISOString(),
+        provenance: {
+          trust,
+          gateEligible: trusted,
+          cacheWriteAllowed: trusted,
+          actor: caller.login,
+          runner: trust === "trusted_sandbox"
+            ? "Smithers Cloud Sandbox"
+            : trust === "trusted_maintainer"
+            ? `Maintainer (${caller.login})`
+            : `Community runner (${caller.login})`,
+        },
+      }
+      const serialized = safeJsonStringify(envelope)
+      const bytes = try sync(() => encoder.encode(serialized))
+      if (bytes.byteLength > MAX_OBJECT_MCP_BYTES) {
+        throw new McpToolError({ code: "invalid_params", message: "Audit report exceeds maximum size (512 KiB)" })
+      }
+      const stored = try Effect.mapError(
+        CloudObjectStore.putObject(
+          {
+            owner: target.owner,
+            name: target.name,
+            isPublicRepo: writePrincipal.access.isPublic,
+            namespace: "audit-report",
+            key,
+            bytes,
+            contentType: "application/json; charset=utf-8",
+            requestedVisibility: writePrincipal.access.isPublic ? "public" : "repo_members",
+            trust,
+            actor: caller.actor,
+            commitSha,
+            refName: branch,
+            metadata: { gateEligible: trusted, runner: envelope.provenance.runner },
+            policy: deps.policy,
+          },
+          deps.r2,
+        ).pipe(Effect.provide(deps.database)),
+        (e) => new McpToolError({
+          code: "forbidden",
+          message: e instanceof CloudObjectStore.ObjectStoreError ? e.message : "Failed to publish audit report",
+        }),
+      )
+      // Mirror trusted reports to feed_documents (`uphill`) and untrusted community runs to `uphill/untrusted-<login>`
+      // so the Lighthouse Uphill UI updates live via Electric without manual feed keys or gate poisoning.
+      const feedRepo = `${target.owner}/${target.name}`.toLowerCase()
+      const feedName = trusted ? "uphill" : `uphill/untrusted-${caller.login.toLowerCase().replace(/[^a-z0-9-]/g, "")}`
+      const feedId = `${feedRepo}:${feedName}`
+      const feedVisibility = writePrincipal.access.isPublic ? "public" : "maintainers"
+      try Effect.ignore(
+        (effect {
+          const sql = try SqlClient.SqlClient
+          try sql`
+            INSERT INTO feed_documents (id, repo, name, visibility, body, updated_at)
+            VALUES (${feedId}, ${feedRepo}, ${feedName}, ${feedVisibility}, ${serialized}::jsonb, now())
+            ON CONFLICT (repo, name) DO UPDATE SET
+              visibility = EXCLUDED.visibility,
+              body = EXCLUDED.body,
+              updated_at = now()
+          `
+        }).pipe(Effect.provide(deps.database)),
+      )
+      try Effect.ignore(
+        RepoStateStore.recordContribution({
+          owner: target.owner,
+          name: target.name,
+          githubLogin: caller.login,
+          kind: "audit",
+        }).pipe(Effect.provide(deps.database)),
+      )
+      return jsonResult({
+        ...stored,
+        gateEligible: trusted,
+        cacheWriteAllowed: trusted,
+        note: trusted
+          ? "Published trusted audit report eligible for merge gates."
+          : "Published untrusted community audit report. Visible for review, isolated from trusted cache and merge gates.",
+      })
+    }
+
+    case "auth_one_time_mint": {
+      const purposeRaw = strArg(args, "purpose") ?? "sandbox"
+      const purpose: OneTimeAuthPurpose = OneTimeAuth.isOneTimePurpose(purposeRaw) ? purposeRaw : "sandbox"
+      const requestedScopes = Array.isArray(args.scopes)
+        ? args.scopes.filter((s): s is string => typeof s === "string")
+        : [...caller.scopes]
+      const scopes = requestedScopes.filter((s) => (caller.scopes as ReadonlyArray<string>).includes(s))
+      if (scopes.length === 0) {
+        throw new McpToolError({ code: "forbidden", message: "Requested scopes exceed caller token permissions" })
+      }
+      const minted = try Effect.mapError(
+        OneTimeAuth.mintOneTimeToken({
+          origin: deps.origin ?? ctx.origin ?? "https://smithers.sh",
+          owner: target.owner,
+          name: target.name,
+          personId: caller.personId,
+          login: caller.login,
+          role: liveRole,
+          isDeploymentAdmin: false,
+          sandboxAttested,
+          purpose,
+          scopes,
+          ttlSeconds: numArg(args, "ttlSeconds"),
+          label: strArg(args, "label"),
+        }).pipe(Effect.provide(deps.database)),
+        (e) => new McpToolError({
+          code: "unavailable",
+          message: e instanceof OneTimeAuth.OneTimeAuthError ? e.message : "Failed to mint one-time auth token",
+        }),
+      )
+      return jsonResult(minted)
+    }
+    case "pull_create": {
+      if (liveRole !== "maintainer" && liveRole !== "member") {
+        throw new McpToolError({
+          code: "forbidden",
+          message: "Opening a pull request via MCP requires Member or Maintainer access. Use changeset_create to propose stacked changes.",
+        })
+      }
+      const title = strArg(args, "title")?.trim()
+      const head = strArg(args, "head")?.trim()
+      const base = (strArg(args, "base") ?? "main").trim()
+      const body = strArg(args, "body") ?? ""
+      const draft = args.draft === false ? false : true
+      if (!title || title.length > 256) {
+        throw new McpToolError({ code: "invalid_params", message: "title is required (1 to 256 characters)" })
+      }
+      if (!head || head.length > 256 || head.includes("..") || /[ -s]/.test(head)) {
+        throw new McpToolError({ code: "invalid_params", message: "head branch name is invalid" })
+      }
+      if (!base || base.length > 256 || base.includes("..") || /[ -s]/.test(base)) {
+        throw new McpToolError({ code: "invalid_params", message: "base branch name is invalid" })
+      }
+      if (body.length > 60_000) {
+        throw new McpToolError({ code: "invalid_params", message: "body exceeds 60,000 characters" })
+      }
+      if (deps.createPull === undefined) {
+        throw new McpToolError({ code: "unavailable", message: "GitHub pull request creation is not configured on this server" })
+      }
+      const receipt = try deps.createPull({
+        owner: target.owner,
+        name: target.name,
+        title,
+        body,
+        head,
+        base,
+        draft,
+        login: caller.login,
+      })
+      try Effect.ignore(
+        RepoStateStore.recordContribution({
+          owner: target.owner,
+          name: target.name,
+          githubLogin: caller.login,
+          kind: "pr",
+        }).pipe(Effect.provide(deps.database)),
+      )
+      return jsonResult({
+        ...receipt,
+        repository: `${target.owner}/${target.name}`,
+        attributedTo: `@${caller.login} (agent)`,
+      })
+    }
+
+    default:
+      throw new McpToolError({ code: "not_found", message: "Unknown cloud factory tool" })
+  }
+}

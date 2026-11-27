@@ -53,3 +53,18 @@ documentation:
   broken-doc-links:
     description: "Keep all relative links in apps/mvp/docs/features/*.md valid."
     poor: 10
+
+factory:
+  run: bun .agents/uphill/metrics/factory.ts
+  # Shared cloud object store, execution trust isolation, one-time sandbox auth, and MCP surface.
+  cloud-trust-surface:
+    description: "Maintain shared cloud object store, execution trust isolation, one-time sandbox auth, and cloud MCP tools."
+  # Post-merge workflows automatically trigger releases, docs publishing, wiki refresh, mythical fold, and audit reports.
+  post-merge-workflows:
+    description: "Declare executable post-merge workflows under .smithers/workflows/."
+  # Personalized coding factory UI tailored to maintainers, contributors, and viewers.
+  personalized-audiences:
+    description: "Customize .smithers/home.json for maintainer, contributor, and viewer (everyone) audiences."
+  # Project wiki and mythical history surfaces stay populated and registered.
+  knowledge-surfaces:
+    description: "Maintain project wiki pages and the registered mythical history plugin."

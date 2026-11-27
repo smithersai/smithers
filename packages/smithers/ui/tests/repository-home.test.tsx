@@ -854,6 +854,7 @@ describe("RepositoryHome: sections", () => {
       <RepositoryHome
         askHref={ASK}
         offered={() => true}
+        onRun={() => {}}
         sections={home.sections}
         files={Object.fromEntries(markdown.map((path) => [path, { state: "text", text: "# Fixed" }]))}
       />,

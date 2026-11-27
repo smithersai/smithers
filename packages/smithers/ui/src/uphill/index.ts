@@ -14,6 +14,7 @@ export {
   type UphillItemData,
   type UphillMetricData,
   type UphillOpportunityData,
+  type UphillProvenanceData,
   type UphillReportData,
   type UphillScorecardProps,
 } from "./UphillScorecard";

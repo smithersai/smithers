@@ -1,0 +1,74 @@
+{
+  "repository": "smithersai/vibelang",
+  "defaultBranch": "main",
+  "home": {
+    "docs": "https://vibelang.sh/llms.txt",
+    "sections": [
+      {
+        "title": "Maintainer control room",
+        "audience": "maintainer",
+        "blocks": [
+          { "type": "action", "flow": "branch.new", "title": "New branch", "key": "b" },
+          { "type": "stack" },
+          { "type": "issues" },
+          { "type": "runs" }
+        ]
+      },
+      {
+        "title": "Contributor workspace",
+        "audience": "contributor",
+        "blocks": [
+          {
+            "type": "code",
+            "title": "Connect your agent to VibeLang MCP",
+            "language": "sh",
+            "code": "claude mcp add --transport http vibelang https://smithers.sh/smithersai/vibelang/mcp"
+          },
+          { "type": "stack" },
+          { "type": "flows", "title": "Compiler and audit flows" },
+          {
+            "type": "links",
+            "title": "Factory surfaces",
+            "links": [
+              { "label": "Backpressure audit", "url": "https://smithers.sh/smithersai/vibelang/-/uphill" },
+              { "label": "Project wiki", "url": "https://smithers.sh/smithersai/vibelang/-/wiki" },
+              { "label": "Mythical history", "url": "https://smithers.sh/smithersai/vibelang/-/mythical" },
+              { "label": "Public TODO stack", "url": "https://smithers.sh/smithersai/vibelang/stack" }
+            ]
+          }
+        ]
+      },
+      {
+        "audience": "everyone",
+        "blocks": [
+          {
+            "type": "hero",
+            "title": "VibeLang",
+            "tagline": "A language built for Effect",
+            "text": "Compiled to clean TypeScript with native Effect syntax, zero runtime overhead, continuous Uphill backpressure audits, and an authenticated MCP coding factory on Smithers Cloud.",
+            "install": "claude mcp add --transport http vibelang https://smithers.sh/smithersai/vibelang/mcp",
+            "actions": [
+              { "label": "Backpressure audit", "url": "https://smithers.sh/smithersai/vibelang/-/uphill" },
+              { "label": "Project wiki", "url": "https://smithers.sh/smithersai/vibelang/-/wiki" },
+              { "label": "Add your repo", "url": "https://smithers.sh/#waitlist" }
+            ]
+          },
+          {
+            "type": "stats",
+            "stats": [
+              { "value": "Public", "label": "TODOs and factory" },
+              { "value": "Cloud R2", "label": "Shared object store" },
+              { "value": "Isolated", "label": "Community audit runs" },
+              { "value": "Auto", "label": "Post-merge releases" }
+            ]
+          },
+          {
+            "type": "prompt",
+            "title": "Ask about VibeLang",
+            "placeholder": "Ask about compiler passes, Effect ergonomics, or open TODOs…"
+          }
+        ]
+      }
+    ]
+  }
+}

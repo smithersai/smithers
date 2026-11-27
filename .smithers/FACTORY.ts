@@ -75,12 +75,12 @@ export const factory = S.Factory({
     // every landing and GitHub main pull, then refreshes the wiki on the
     // folded tip (coding/wiki); these rows declare the flows it runs.
     "change.landed": {
-      flow: ["coding/wiki"],
-      description: "Refresh the wiki"
+      flow: ["backpressure-audit", "wiki-refresh", "mythical-fold", "docs-publish", "release"],
+      description: "Run backpressure audit, refresh wiki, fold mythical history, publish docs, and trigger release"
     },
     "github.push:main": {
-      flow: "coding/wiki",
-      description: "Refresh the wiki after outside merges"
+      flow: ["backpressure-audit", "wiki-refresh", "mythical-fold", "docs-publish", "release"],
+      description: "Run backpressure audit, refresh wiki, fold mythical history, publish docs, and trigger release on main"
     },
     "schedule:0 9 * * 1-5": { flow: "review", description: "Weekday morning review of main" },
     "schedule:0 2 * * *": { flow: "security-audit", description: "Audit security nightly" },
@@ -106,9 +106,9 @@ export const factory = S.Factory({
   // issues under the maintainer's account). The factory's lanes spend at
   // most dailyTokens a day.
   github: S.Github.Policy({
-    mirror: "pull",
+    mirror: "push",
     issues: "two-way",
-    changes: "send-upstream",
+    changes: "land",
     maintainers: ["roninjin10"],
     dailyTokens: 2_000_000_000
   })

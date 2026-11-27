@@ -12,6 +12,7 @@ import { isRepository, repoId } from "../../src/features/repo/contract.ts"
 import { type Actor, rankOf, type Role, Sessions } from "../Actor.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { type Repository, repositoryOf } from "../github/Config.vibe"
+import * as Visibility from "../ops/ArtifactVisibility.ts"
 import * as RepoRoles from "../github/RepoRoles.vibe"
 import * as GitHubStore from "../github/Store.vibe"
 import * as SessionStore from "../SessionStore.vibe"
@@ -415,6 +416,12 @@ export const makeMcpAuthService = <E, R, R2>(
         }
 
         const canonicalId = try sync(() => repoId(owner, name))
+        if (try sync(() => Visibility.isOpsRepository({ fullName: `${owner}/${name}`, private: true }, { admins: new Set() }))) {
+          throw new McpToolError({
+            code: "not_found",
+            message: "Repository not found or access denied.",
+          })
+        }
         const repository = try sync(() => repositoryOf(`${owner}/${name}`))
 
         // Enforce repo pinning BEFORE any GitHub or DB lookup so scoped tokens cannot probe other repos.

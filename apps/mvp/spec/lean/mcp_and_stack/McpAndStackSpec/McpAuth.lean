@@ -40,7 +40,7 @@ def catalog : List ToolSpec := [
   ⟨u16! "pull_files", .read, none⟩,
   ⟨u16! "issue_create", .write, some .guest⟩,
   ⟨u16! "issue_comment", .write, some .guest⟩,
-  ⟨u16! "todo_list", .read, some .member⟩,
+  ⟨u16! "todo_list", .read, none⟩,
   ⟨u16! "todo_draft", .write, some .member⟩,
   ⟨u16! "work_link_post", .write, some .maintainer⟩]
 

@@ -139,7 +139,7 @@ export const withRepoClone = <ROut, E, R, CE, CR>(flows: Flows<ROut, E, R>, serv
  */
 export const withGitHub = <ROut, E, R, GE, GR, SE, SR>(
   flows: Flows<ROut, E, R>,
-  services: Triage.Services<GE, GR>!SE!SR,
+  services: GitHubHost.HostServices<GE, GR>!SE!SR,
 ) => ({
   flows: [...flows.flows, ...GitHubHost.flows],
   registration: Layer.merge(flows.registration, Layer.unwrap(Effect.map(services, GitHubHost.registration))),

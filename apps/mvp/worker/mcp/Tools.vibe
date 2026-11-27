@@ -15,6 +15,7 @@ import type { SqlClient } from "effect/sql"
 import { rankOf, type Role } from "../Actor.vibe"
 import * as DeploymentPolicy from "../DeploymentPolicy.vibe"
 import * as FleetMcpTools from "../fleet/FleetMcpTools.vibe"
+import * as CloudFactoryTools from "./CloudFactoryTools.vibe"
 import {
   McpAuthService,
   type McpContentBlock,
@@ -219,6 +220,7 @@ export interface WriteParams {
 
 /** Every external call an MCP tool makes. Each fails only with `McpToolError`. */
 export interface McpToolDeps {
+  readonly cloudFactory?: CloudFactoryTools.CloudFactoryDeps | undefined
   readonly fleet?: {
     readonly database: Layer.Layer<SqlClient.SqlClient, unknown>
     readonly admins?: ReadonlySet<string>
@@ -273,6 +275,7 @@ const noDraftStorage = unavailable("todo_draft")
  * `github/Write` admission, the stack, WorkLinks.write) and every missing one fails `unavailable` instead of crashing.
  */
 export const makeLiveToolDeps = (deps: Partial<McpToolDeps>): McpToolDeps => ({
+  ...(deps.cloudFactory === undefined ? {} : { cloudFactory: deps.cloudFactory }),
   ...(deps.fleet === undefined ? {} : { fleet: deps.fleet }),
   readTree: deps.readTree ?? unavailable("repo_tree"),
   readFile: deps.readFile ?? unavailable("repo_read_file"),
@@ -646,8 +649,8 @@ export const TOOL_SPECS: ReadonlyArray<ToolSpec> = [
   {
     name: "todo_list",
     access: "read",
-    minimum: "member",
-    description: "List the repository's TODO stack.",
+    minimum: null,
+    description: "List the repository's TODO stack (public on public repositories).",
     properties: {},
   },
   {
@@ -1125,7 +1128,7 @@ export const makeMcpToolRegistry = effect (deps: McpToolDeps) => {
     todo_list: effect (raw, ctx, seen) => {
       const args = try decodeArgs(RepoOnlyArgs, raw)
       const repo = try resolveRepoArgs(args, ctx.defaultRepo)
-      try readAccess(seen, ctx, repo, "member")
+      try readAccess(seen, ctx, repo, null)
       return { content: json({ todos: try deps.listTodos(repo.owner, repo.name) }) }
     },
 
@@ -1193,7 +1196,8 @@ export const makeMcpToolRegistry = effect (deps: McpToolDeps) => {
       const fleetTools = deps.fleet === undefined
         ? []
         : FleetMcpTools.visibleDescriptors(principal, deps.fleet.admins ?? DeploymentPolicy.DEFAULT_ADMINS)
-      return [...base, ...fleetTools]
+      const factoryTools = deps.cloudFactory === undefined ? [] : CloudFactoryTools.visibleDescriptors(principal)
+      return [...base, ...factoryTools, ...fleetTools]
     },
 
     callTool: (name, args, ctx) => {
@@ -1203,6 +1207,12 @@ export const makeMcpToolRegistry = effect (deps: McpToolDeps) => {
           code: "person_only",
           message: `${name} is person-only and is never available to an agent. A person must do it on Smithers.`,
         }))))
+      }
+      if (deps.cloudFactory !== undefined && CloudFactoryTools.isCloudFactoryTool(name)) {
+        return CloudFactoryTools.callCloudFactoryTool(name, args, ctx, deps.cloudFactory, auth).pipe(
+          Effect.tap(() => record(name, null, "ok")),
+          Effect.tapError((error) => record(name, null, error.code)),
+        )
       }
       if (deps.fleet !== undefined && FleetMcpTools.isFleetTool(name)) {
         const admins = deps.fleet.admins ?? DeploymentPolicy.DEFAULT_ADMINS

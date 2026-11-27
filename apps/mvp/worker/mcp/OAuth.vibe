@@ -249,12 +249,15 @@ export const validateRedirectUri = (value: unknown): RedirectUriValidation => {
 export const isValidRedirectUri = (value: unknown): value is string => validateRedirectUri(value).ok
 
 /** Validates & trims `client_name` (1..120 UTF-8 bytes, no control or bidi-override characters). */
+const RESERVED_CLIENT_PREFIX = /^(sandbox|agent|ci):/i
+
 export const validateClientName = (raw: unknown): string | null => {
   if (typeof raw !== "string") return null
   if (CONTROL_CHARS.test(raw) || BIDI_OVERRIDE_CHARS.test(raw)) return null
   const trimmed = raw.trim()
   const bytes = encoder.encode(trimmed).byteLength
   if (bytes < 1 || bytes > MAX_CLIENT_NAME_BYTES) return null
+  if (RESERVED_CLIENT_PREFIX.test(trimmed)) return null
   return trimmed
 }
 

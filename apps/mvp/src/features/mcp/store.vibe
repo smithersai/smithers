@@ -4,6 +4,7 @@ import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/h
 import { runners } from "../../boundary.vibe"
 import { ROLES } from "../auth/contract"
 import { MCP_CLIENTS, MCP_OAUTH_AUTHORIZE_ROUTE, MCP_SCOPES, MCP_TOKENS_ROUTE, type McpClientId } from "./contract"
+import { EXECUTION_TRUST_TIERS, ONE_TIME_AUTH_PURPOSES, type OneTimeAuthPurpose, repoOneTimeAuthRoute } from "../trust/contract"
 import { searchOf, verifiedRedirect } from "./view"
 
 // Bring Your Own Agent on this tab: three local-only TanStack DB collections of one row each, in memory and never kept
@@ -74,6 +75,33 @@ export type TokensRow = typeof TokensRow.Type
 export const DECISIONS = ["approve", "deny"] as const
 export type Decision = (typeof DECISIONS)[number]
 
+/** One-time sandbox/agent auth mint response. */
+export const OneTimeMintSchema = Schema.Struct({
+  id: Schema.String,
+  oneTimeToken: Schema.String,
+  expiresAt: Schema.String,
+  purpose: Schema.Literals(ONE_TIME_AUTH_PURPOSES),
+  executionTrust: Schema.Literals(EXECUTION_TRUST_TIERS),
+  repository: Schema.String,
+  scopes: Schema.Array(Schema.String),
+  redeemUrl: Schema.String,
+  mcpUrl: Schema.String,
+  shellSnippet: Schema.String,
+  mcpSnippet: Schema.String,
+})
+export type OneTimeMint = typeof OneTimeMintSchema.Type
+
+/** The one `oneTime` row's key. */
+export const ONE_TIME = "one_time"
+export const OneTimeRow = Schema.Struct({
+  id: Schema.Literal(ONE_TIME),
+  status: Schema.Literals(["idle", "minting", "ready", "failed"]),
+  purpose: Schema.Literals(ONE_TIME_AUTH_PURPOSES),
+  minted: Schema.NullOr(OneTimeMintSchema),
+  error: Schema.NullOr(Schema.String),
+})
+export type OneTimeRow = typeof OneTimeRow.Type
+
 /** The one `consent` row's key. */
 export const CONSENT = "consent"
 /**
@@ -112,6 +140,7 @@ const decodeTokens = Schema.decodeUnknownEffect(
 )
 const decodeDetails = Schema.decodeUnknownEffect(ConsentDetails)
 const decodeDecided = Schema.decodeUnknownEffect(Schema.Struct({ redirectTo: Schema.String }))
+const decodeOneTime = Schema.decodeUnknownEffect(OneTimeMintSchema)
 
 /** ChatApi's MCP routes for a signed-in person, as a service. A test of a route that fails provides a faulty one. */
 export class McpClient extends Context.Service<
@@ -125,6 +154,8 @@ export class McpClient extends Context.Service<
     readonly consent: (search: string) => Effect.Effect<ConsentDetails, McpNotTaken>
     /** `POST /api/mcp/oauth/authorize<search> { decision }`: where the browser goes next. */
     readonly decide: (decision: Decision, search: string) => Effect.Effect<string, McpNotTaken>
+    /** `POST /api/repos/<owner>/<name>/auth/one-time`: mint a single-use sandbox/agent auth token. */
+    readonly mintOneTime?: (owner: string, name: string, purpose: OneTimeAuthPurpose) => Effect.Effect<OneTimeMint, McpNotTaken>
   }
 >()("@smthrs/mvp/mcp/McpClient") {
   /** The real client: ChatApi at `origin`. */
@@ -174,6 +205,14 @@ export class McpClient extends Context.Service<
               [200],
               (response) => response.json.pipe(Effect.flatMap(decodeDecided), Effect.map((body) => body.redirectTo)),
             ),
+          mintOneTime: (owner, name, purpose) =>
+            send(
+              HttpClientRequest.post(`${options.origin}${repoOneTimeAuthRoute(owner, name)}`).pipe(
+                HttpClientRequest.bodyJsonUnsafe({ purpose }),
+              ),
+              [201],
+              (response) => Effect.flatMap(response.json, decodeOneTime),
+            ),
         })
       }),
     )
@@ -184,6 +223,8 @@ const connectQuery = (rows: Collection.Collection<ConnectRow, string>) =>
 const tokensQuery = (rows: Collection.Collection<TokensRow, string>) =>
   LiveQuery.make((q) => q.from({ row: rows.tanstack }).findOne())
 const consentQuery = (rows: Collection.Collection<ConsentRow, string>) =>
+  LiveQuery.make((q) => q.from({ row: rows.tanstack }).findOne())
+const oneTimeQuery = (rows: Collection.Collection<OneTimeRow, string>) =>
   LiveQuery.make((q) => q.from({ row: rows.tanstack }).findOne())
 
 type Query<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>>
@@ -198,6 +239,8 @@ export class McpStore extends Context.Service<
     readonly tokensState: Query<typeof tokensQuery>
     readonly consent: Collection.Collection<ConsentRow, string>
     readonly consentState: Query<typeof consentQuery>
+    readonly oneTime: Collection.Collection<OneTimeRow, string>
+    readonly oneTimeState: Query<typeof oneTimeQuery>
     readonly scope: Scope.Scope
   }
 >()("@smthrs/mvp/mcp/McpStore") {
@@ -224,6 +267,12 @@ export class McpStore extends Context.Service<
         getKey: (row) => row.id,
         initialData: [{ id: CONSENT, status: "idle", details: null, submitting: null, error: null, redirectTo: null }],
       })
+      const oneTime = try Collection.local<OneTimeRow, string>({
+        id: "mcp-one-time",
+        schema: OneTimeRow,
+        getKey: (row) => row.id,
+        initialData: [{ id: ONE_TIME, status: "idle", purpose: "sandbox", minted: null, error: null }],
+      })
       return McpStore.of({
         connect,
         connectState: try connectQuery(connect),
@@ -231,6 +280,8 @@ export class McpStore extends Context.Service<
         tokensState: try tokensQuery(tokens),
         consent,
         consentState: try consentQuery(consent),
+        oneTime,
+        oneTimeState: try oneTimeQuery(oneTime),
         scope,
       })
     },
@@ -244,6 +295,26 @@ const setTokens = (change: Partial<Omit<TokensRow, "id">>) =>
   Effect.flatMap(McpStore, ({ tokens }) => Effect.asVoid(Effect.orDie(tokens.update(TOKENS, (draft) => void Object.assign(draft, change)))))
 const setConsent = (change: Partial<Omit<ConsentRow, "id">>) =>
   Effect.flatMap(McpStore, ({ consent }) => Effect.asVoid(Effect.orDie(consent.update(CONSENT, (draft) => void Object.assign(draft, change)))))
+const setOneTime = (change: Partial<Omit<OneTimeRow, "id">>) =>
+  Effect.flatMap(McpStore, ({ oneTime }) => Effect.asVoid(Effect.orDie(oneTime.update(ONE_TIME, (draft) => void Object.assign(draft, change)))))
+
+export const selectOneTimePurpose = (purpose: OneTimeAuthPurpose) => setOneTime({ purpose })
+export const clearOneTime = setOneTime({ status: "idle", minted: null, error: null })
+export const mintOneTime = (owner: string, name: string, purpose: OneTimeAuthPurpose) =>
+  effect {
+    const client = try McpClient
+    if (client.mintOneTime === undefined) {
+      try setOneTime({ status: "failed", minted: null, error: "unavailable" })
+      return
+    }
+    try setOneTime({ status: "minting", purpose, minted: null, error: null })
+    try client.mintOneTime(owner, name, purpose).pipe(
+      Effect.matchEffect({
+        onSuccess: (minted) => setOneTime({ status: "ready", purpose, minted, error: null }),
+        onFailure: (refused) => setOneTime({ status: "failed", minted: null, error: codeOf(refused) }),
+      }),
+    )
+  }.pipe(Effect.annotateLogs({ feature: "mcp.one_time" }))
 
 /** A refusal's code for the views: ChatApi's, else `authentication` for a `401`, else `unavailable`. */
 const codeOf = (refused: McpNotTaken): string => refused.code ?? (refused.status === 401 ? "authentication" : "unavailable")
@@ -251,8 +322,8 @@ const codeOf = (refused: McpNotTaken): string => refused.code ?? (refused.status
 /** Opens the Connect agent dialog for `owner/name`, on the client last shown. */
 export const openConnect = (owner: string, name: string) => setConnect({ open: true, owner, name })
 
-/** Closes the dialog. */
-export const closeConnect = setConnect({ open: false })
+/** Closes the dialog and clears any printed one-time token from memory. */
+export const closeConnect = Effect.andThen(setConnect({ open: false }), clearOneTime)
 
 /** Shows `client`'s snippet. */
 export const selectClient = (client: McpClientId) => setConnect({ client })
@@ -342,6 +413,7 @@ export interface McpQueries {
   readonly connect: Store["connectState"]["tanstack"]
   readonly tokens: Store["tokensState"]["tanstack"]
   readonly consent: Store["consentState"]["tanstack"]
+  readonly oneTime: Store["oneTimeState"]["tanstack"]
 }
 
 /** What a person does, as plain functions with no Effect in sight. */
@@ -356,6 +428,8 @@ export interface McpActions {
   readonly loadConsent: (search: string) => Promise<void>
   /** Resolves with the verified callback URL to leave for, or nothing when the screen stays. */
   readonly submitConsent: (decision: Decision, search: string) => Promise<string | undefined>
+  readonly selectOneTimePurpose: (purpose: OneTimeAuthPurpose) => void
+  readonly mintOneTime: (owner: string, name: string, purpose: OneTimeAuthPurpose) => Promise<void>
 }
 
 /** MCP as a frontend sees it: live queries to read and plain functions to act. */
@@ -370,7 +444,7 @@ export class Mcp extends Context.Service<Mcp, { readonly queries: McpQueries; re
       const context = try Effect.context<McpStore | McpClient>()
       const { runSync: run, runPromise: promise } = runners(context, "mcp")
       return Mcp.of({
-        queries: { connect: store.connectState.tanstack, tokens: store.tokensState.tanstack, consent: store.consentState.tanstack },
+        queries: { connect: store.connectState.tanstack, tokens: store.tokensState.tanstack, consent: store.consentState.tanstack, oneTime: store.oneTimeState.tanstack },
         actions: {
           openConnect: (owner, name) => run(openConnect(owner, name)),
           closeConnect: () => run(closeConnect),
@@ -379,6 +453,8 @@ export class Mcp extends Context.Service<Mcp, { readonly queries: McpQueries; re
           revokeToken: (tokenId) => promise(revokeToken(tokenId)),
           loadConsent: (search) => promise(loadConsent(search)),
           submitConsent: (decision, search) => promise(submitConsent(decision, search)),
+          selectOneTimePurpose: (purpose) => run(selectOneTimePurpose(purpose)),
+          mintOneTime: (owner, name, purpose) => promise(mintOneTime(owner, name, purpose)),
         },
       })
     },

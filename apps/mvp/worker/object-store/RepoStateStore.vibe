@@ -1,0 +1,326 @@
+/**
+ * Postgres persistence helpers for stacked changesets, mythical history commits, and repository contributor tracking
+ * (distinguishing `contributor` with >= 1 contribution from `viewer` with 0 contributions).
+ */
+
+import { SqlClient } from "effect/sql"
+import { repoId } from "../../src/features/repo/contract.ts"
+import { safeJsonStringify } from "./ObjectBytes.ts"
+import {
+  type ChangesetEntry,
+  type ExecutionTrust,
+  type MythicalCommitEntry,
+  type MythicalCommitNote,
+} from "../../src/features/trust/contract.ts"
+import { changesetGateStatus } from "../trust/ExecutionTrust.vibe"
+
+export schema error RepoStateError {
+  readonly code: "invalid" | "forbidden" | "not_found" | "unavailable"
+  readonly message: string
+}
+
+interface ChangesetRow {
+  readonly id: string
+  readonly repo_id: string
+  readonly stack_key: string
+  readonly position: number
+  readonly title: string
+  readonly summary: string
+  readonly branch_name: string
+  readonly base_branch: string
+  readonly head_sha: string | null
+  readonly pr_number: number | null
+  readonly status: "draft" | "open" | "verified" | "merged" | "abandoned"
+  readonly execution_trust: ExecutionTrust
+  readonly gate_status: "pending" | "passed" | "failed" | "untrusted_only"
+  readonly author_login: string
+  readonly artifact_ref: string | null
+  readonly metadata: Readonly<Record<string, unknown>> | null
+  readonly created_at: Date | string
+  readonly updated_at: Date | string
+}
+
+interface MythicalRow {
+  readonly id: string
+  readonly repo_id: string
+  readonly position: number
+  readonly epic: string
+  readonly title: string
+  readonly summary: string
+  readonly commit_sha: string | null
+  readonly main_folded_sha: string | null
+  readonly tree_equal_to_main: boolean
+  readonly pr_number: number | null
+  readonly notes: ReadonlyArray<MythicalCommitNote> | null
+  readonly author_login: string
+  readonly created_at: Date | string
+  readonly updated_at: Date | string
+}
+
+const isoOf = (value: Date | string): string => (value instanceof Date ? value.toISOString() : String(value))
+
+const toChangeset = (row: ChangesetRow): ChangesetEntry => ({
+  id: row.id,
+  repoId: row.repo_id,
+  stackKey: row.stack_key,
+  position: Number(row.position),
+  title: row.title,
+  summary: row.summary,
+  branchName: row.branch_name,
+  baseBranch: row.base_branch,
+  headSha: row.head_sha,
+  prNumber: row.pr_number,
+  status: row.status,
+  executionTrust: row.execution_trust,
+  gateStatus: row.gate_status,
+  authorLogin: row.author_login,
+  artifactRef: row.artifact_ref,
+  metadata: row.metadata ?? {},
+  createdAt: isoOf(row.created_at),
+  updatedAt: isoOf(row.updated_at),
+})
+
+const toMythical = (row: MythicalRow): MythicalCommitEntry => ({
+  id: row.id,
+  repoId: row.repo_id,
+  position: Number(row.position),
+  epic: row.epic,
+  title: row.title,
+  summary: row.summary,
+  commitSha: row.commit_sha,
+  mainFoldedSha: row.main_folded_sha,
+  treeEqualToMain: Boolean(row.tree_equal_to_main),
+  prNumber: row.pr_number,
+  notes: Array.isArray(row.notes) ? row.notes : [],
+  authorLogin: row.author_login,
+  createdAt: isoOf(row.created_at),
+  updatedAt: isoOf(row.updated_at),
+})
+
+/** Records a verified contribution for `githubLogin` on `owner/name` so their audience upgrades from viewer to contributor. */
+export effect function recordContribution(params: {
+  readonly owner: string
+  readonly name: string
+  readonly githubLogin: string
+  readonly kind: "pr" | "commit" | "issue" | "changeset" | "artifact" | "audit"
+}): void!RepoStateError!SqlClient.SqlClient {
+  const canonicalRepo = repoId(params.owner, params.name)
+  const login = params.githubLogin.trim().toLowerCase()
+  if (login.length === 0) return
+  const sql = try SqlClient.SqlClient
+  try Effect.mapError(
+    sql`
+      INSERT INTO repo_contributors (repo_id, github_login, contribution_count, last_kind)
+      VALUES (${canonicalRepo}, ${login}, 1, ${params.kind})
+      ON CONFLICT (repo_id, github_login) DO UPDATE SET
+        contribution_count = repo_contributors.contribution_count + 1,
+        last_contribution_at = now(),
+        last_kind = EXCLUDED.last_kind
+    `,
+    () => new RepoStateError({ code: "unavailable", message: "Database error recording contribution" }),
+  )
+}
+
+/**
+ * Returns how many recorded contributions `githubLogin` has on `owner/name` across `repo_contributors`,
+ * `changeset_stacks`, `cloud_objects`, and synced GitHub `items` (issues/PRs).
+ */
+export effect function contributionCountOf(
+  owner: string,
+  name: string,
+  githubLogin: string | null | undefined,
+): number!never!SqlClient.SqlClient {
+  const login = (githubLogin ?? "").trim().toLowerCase()
+  if (login.length === 0) return 0
+  const canonicalRepo = repoId(owner, name)
+  const sql = try SqlClient.SqlClient
+  const queried = try Effect.result(sql<{ readonly count: number | string }>`
+    SELECT GREATEST(
+      COALESCE((SELECT contribution_count FROM repo_contributors WHERE repo_id = ${canonicalRepo} AND github_login = ${login}), 0),
+      (SELECT COUNT(*)::int FROM changeset_stacks WHERE repo_id = ${canonicalRepo} AND lower(author_login) = ${login} AND status IN ('verified', 'merged')),
+      (SELECT COUNT(*)::int FROM items WHERE repo_id = ${canonicalRepo} AND lower(author_login) = ${login})
+    ) AS count
+  `)
+  if (queried._tag === "Failure") return 0
+  return Number(queried.success[0]?.count ?? 0)
+}
+
+/** Lists stacked changesets for a repository (optionally filtered to one stack key). */
+export effect function listChangesets(
+  owner: string,
+  name: string,
+  stackKey?: string | undefined,
+): ReadonlyArray<ChangesetEntry>!RepoStateError!SqlClient.SqlClient {
+  const canonicalRepo = repoId(owner, name)
+  const sql = try SqlClient.SqlClient
+  const rows = try Effect.mapError(
+    stackKey !== undefined
+      ? sql<ChangesetRow>`
+          SELECT * FROM changeset_stacks
+          WHERE repo_id = ${canonicalRepo} AND stack_key = ${stackKey}
+          ORDER BY position ASC
+          LIMIT 200
+        `
+      : sql<ChangesetRow>`
+          SELECT * FROM changeset_stacks
+          WHERE repo_id = ${canonicalRepo}
+          ORDER BY updated_at DESC, stack_key ASC, position ASC
+          LIMIT 200
+        `,
+    () => new RepoStateError({ code: "unavailable", message: "Database error listing changeset stacks" }),
+  )
+  return rows.map(toChangeset)
+}
+
+/** Creates or updates one changeset entry inside a stack with server-enforced execution trust and gate status. */
+export effect function upsertChangeset(params: {
+  readonly owner: string
+  readonly name: string
+  readonly stackKey: string
+  readonly position: number
+  readonly title: string
+  readonly summary: string
+  readonly branchName: string
+  readonly baseBranch: string
+  readonly headSha?: string | null | undefined
+  readonly prNumber?: number | null | undefined
+  readonly status?: "draft" | "open" | "verified" | "merged" | "abandoned" | undefined
+  readonly checksPassed?: boolean | null | undefined
+  readonly trust: ExecutionTrust
+  readonly authorPersonId: string | null
+  readonly authorLogin: string
+  readonly artifactRef?: string | null | undefined
+  readonly metadata?: Readonly<Record<string, unknown>> | undefined
+}): ChangesetEntry!RepoStateError!SqlClient.SqlClient {
+  const canonicalRepo = repoId(params.owner, params.name)
+  const gateStatus = changesetGateStatus(params.trust, params.checksPassed ?? null)
+  // An untrusted caller can never self-mark a changeset as `verified` or `merged`.
+  const safeStatus =
+    (params.status === "verified" || params.status === "merged") && gateStatus !== "passed"
+      ? "open"
+      : (params.status ?? "draft")
+  const sql = try SqlClient.SqlClient
+  const rows = try Effect.mapError(
+    sql<ChangesetRow>`
+      INSERT INTO changeset_stacks (
+        repo_id, stack_key, position, title, summary, branch_name, base_branch, head_sha,
+        pr_number, status, execution_trust, gate_status, author_person_id, author_login, artifact_ref, metadata
+      ) VALUES (
+        ${canonicalRepo},
+        ${params.stackKey},
+        ${params.position},
+        ${params.title},
+        ${params.summary},
+        ${params.branchName},
+        ${params.baseBranch},
+        ${params.headSha ?? null},
+        ${params.prNumber ?? null},
+        ${safeStatus},
+        ${params.trust},
+        ${gateStatus},
+        ${params.authorPersonId},
+        ${params.authorLogin},
+        ${params.artifactRef ?? null},
+        ${safeJsonStringify(params.metadata ?? {})}::jsonb
+      )
+      ON CONFLICT (repo_id, stack_key, position) DO UPDATE SET
+        title = EXCLUDED.title,
+        summary = EXCLUDED.summary,
+        branch_name = EXCLUDED.branch_name,
+        base_branch = EXCLUDED.base_branch,
+        head_sha = COALESCE(EXCLUDED.head_sha, changeset_stacks.head_sha),
+        pr_number = COALESCE(EXCLUDED.pr_number, changeset_stacks.pr_number),
+        status = EXCLUDED.status,
+        execution_trust = EXCLUDED.execution_trust,
+        gate_status = EXCLUDED.gate_status,
+        artifact_ref = COALESCE(EXCLUDED.artifact_ref, changeset_stacks.artifact_ref),
+        metadata = EXCLUDED.metadata,
+        updated_at = now()
+      RETURNING *
+    `,
+    () => new RepoStateError({ code: "unavailable", message: "Database error saving changeset" }),
+  )
+  const row = rows[0]
+  if (row === undefined) {
+    throw new RepoStateError({ code: "unavailable", message: "Changeset row not returned" })
+  }
+  try Effect.ignore(recordContribution({ owner: params.owner, name: params.name, githubLogin: params.authorLogin, kind: "changeset" }))
+  return toChangeset(row)
+}
+
+/** Lists mythical history commits for a repository, newest position first. */
+export effect function listMythicalCommits(
+  owner: string,
+  name: string,
+  limit = 100,
+): ReadonlyArray<MythicalCommitEntry>!RepoStateError!SqlClient.SqlClient {
+  const canonicalRepo = repoId(owner, name)
+  const bounded = Math.max(1, Math.min(200, limit))
+  const sql = try SqlClient.SqlClient
+  const rows = try Effect.mapError(
+    sql<MythicalRow>`
+      SELECT * FROM mythical_commits
+      WHERE repo_id = ${canonicalRepo}
+      ORDER BY position DESC
+      LIMIT ${bounded}
+    `,
+    () => new RepoStateError({ code: "unavailable", message: "Database error listing mythical history" }),
+  )
+  return rows.map(toMythical)
+}
+
+/** Records or updates a clean mythical commit (maintainer/trusted sandbox only). */
+export effect function upsertMythicalCommit(params: {
+  readonly owner: string
+  readonly name: string
+  readonly position: number
+  readonly epic: string
+  readonly title: string
+  readonly summary: string
+  readonly commitSha?: string | null | undefined
+  readonly mainFoldedSha?: string | null | undefined
+  readonly treeEqualToMain: boolean
+  readonly prNumber?: number | null | undefined
+  readonly notes?: ReadonlyArray<MythicalCommitNote> | undefined
+  readonly authorLogin: string
+}): MythicalCommitEntry!RepoStateError!SqlClient.SqlClient {
+  const canonicalRepo = repoId(params.owner, params.name)
+  const sql = try SqlClient.SqlClient
+  const rows = try Effect.mapError(
+    sql<MythicalRow>`
+      INSERT INTO mythical_commits (
+        repo_id, position, epic, title, summary, commit_sha, main_folded_sha,
+        tree_equal_to_main, pr_number, notes, author_login
+      ) VALUES (
+        ${canonicalRepo},
+        ${params.position},
+        ${params.epic},
+        ${params.title},
+        ${params.summary},
+        ${params.commitSha ?? null},
+        ${params.mainFoldedSha ?? null},
+        ${params.treeEqualToMain},
+        ${params.prNumber ?? null},
+        ${safeJsonStringify(params.notes ?? [])}::jsonb,
+        ${params.authorLogin}
+      )
+      ON CONFLICT (repo_id, position) DO UPDATE SET
+        epic = EXCLUDED.epic,
+        title = EXCLUDED.title,
+        summary = EXCLUDED.summary,
+        commit_sha = COALESCE(EXCLUDED.commit_sha, mythical_commits.commit_sha),
+        main_folded_sha = COALESCE(EXCLUDED.main_folded_sha, mythical_commits.main_folded_sha),
+        tree_equal_to_main = EXCLUDED.tree_equal_to_main,
+        pr_number = COALESCE(EXCLUDED.pr_number, mythical_commits.pr_number),
+        notes = EXCLUDED.notes,
+        updated_at = now()
+      RETURNING *
+    `,
+    () => new RepoStateError({ code: "unavailable", message: "Database error saving mythical commit" }),
+  )
+  const row = rows[0]
+  if (row === undefined) {
+    throw new RepoStateError({ code: "unavailable", message: "Mythical commit row not returned" })
+  }
+  return toMythical(row)
+}

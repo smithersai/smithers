@@ -62,6 +62,7 @@ interface RouteOptions {
   readonly maySync?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<boolean>
   readonly mayRead?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<Readable>
   readonly mayBrowse?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<Readable>
+  readonly contributionCount?: (owner: string, name: string, login: string | undefined) => Effect.Effect<number>
 }
 
 /**
@@ -96,6 +97,7 @@ const route = async (options: RouteOptions = {}) => {
       ...(options.maySync === undefined ? {} : { maySync: options.maySync }),
       ...(options.mayRead === undefined ? {} : { mayRead: options.mayRead }),
       ...(options.mayBrowse === undefined ? {} : { mayBrowse: options.mayBrowse }),
+      ...(options.contributionCount === undefined ? {} : { contributionCount: options.contributionCount }),
     }).fetch.pipe(
       Effect.provide(options.sessions ?? Actor.signedOut),
       Effect.provideService(Tracer.Tracer, tracer),
@@ -166,7 +168,7 @@ describe("GET /api/repos/<owner>/<name>/home", () => {
     const seen = async (role: Actor.Role | null) =>
       shape(await answerOf(await (await route({ sessions: signedIn(person(role)) })).get(EFFECT)))
     expect(await seen(null)).toEqual(["everyone:"])
-    expect(await seen("guest")).toEqual(["contributor:Your work", "everyone:"])
+    expect(await seen("guest")).toEqual(["everyone:"])
     expect(await seen("member")).toEqual(["contributor:Your work", "everyone:"])
     expect(await seen("maintainer")).toEqual(["maintainer:Today", "contributor:Your work", "everyone:"])
     expect(await seen("admin")).toEqual(["maintainer:Today", "contributor:Your work", "everyone:"])
@@ -277,9 +279,9 @@ describe("roles per repository (decision 0079, ruling SCOPE-14)", () => {
     ["admin", "maintainer", ["maintainer:Today", "contributor:Your work", "everyone:"]],
     ["maintain", "maintainer", ["maintainer:Today", "contributor:Your work", "everyone:"]],
     ["write", "contributor", ["contributor:Your work", "everyone:"]],
-    ["triage", "contributor", ["contributor:Your work", "everyone:"]],
-    // GitHub answers read for anyone signed in on a public repository: they may contribute, so they see Contribute.
-    ["read", "contributor", ["contributor:Your work", "everyone:"]],
+    ["triage", "everyone", ["everyone:"]],
+    // GitHub answers read for anyone signed in on a public repository: with 0 contributions they are a Viewer (everyone).
+    ["read", "everyone", ["everyone:"]],
   ] as const)("another repository the App is installed on: GitHub's %s there is the %s view", async (permission, audience, sections) => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", permission)
@@ -304,12 +306,12 @@ describe("roles per repository (decision 0079, ruling SCOPE-14)", () => {
     expect(github.seen("GET", /\/permission$/)).toHaveLength(1)
   })
 
-  test("nor the other way: a Maintainer of acme/widgets who is a Guest on the deployment's own repository is a contributor there", async () => {
+  test("nor the other way: a Maintainer of acme/widgets who is a Guest with 0 contributions on the deployment's own repository is a Viewer there", async () => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", "maintain")
     const r = await route({ sessions: signedIn(person("guest")), github })
     expect((await answerOf(await r.get(WIDGETS))).audience).toBe("maintainer")
-    expect((await answerOf(await r.get(EFFECT))).audience).toBe("contributor")
+    expect((await answerOf(await r.get(EFFECT))).audience).toBe("everyone")
     // The role GitHub gave on acme/widgets is kept for that repository alone.
     expect(await sql(runtime, `SELECT repo_id, role FROM github_repo_roles`)).toEqual([
       { repo_id: "github/acme/widgets", role: "maintainer" },
@@ -325,7 +327,7 @@ describe("roles per repository (decision 0079, ruling SCOPE-14)", () => {
     expect((await answerOf(await r.get(WIDGETS))).audience).toBe("maintainer")
     expect(github.seen("GET", /\/permission$/)).toHaveLength(1)
     await sql(runtime, `UPDATE github_repo_roles SET checked_at = now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds'`)
-    expect((await answerOf(await r.get(WIDGETS))).audience).toBe("contributor")
+    expect((await answerOf(await r.get(WIDGETS))).audience).toBe("everyone")
     expect(github.seen("GET", /\/permission$/)).toHaveLength(2)
   })
 
@@ -638,5 +640,29 @@ test.each([
   expect(await response.json()).toEqual({ code })
   expect(r.logs.find(log => log.message === "github.repo_role")?.annotations).toMatchObject({
     code, stage, upstreamStatus: status, failureSource: "fresh", ray: "0123456789abcdef-SJC",
+  })
+})
+
+describe("personalized 3-audience contributor promotion & smithersai/smithers home", () => {
+  test("a signed-in guest with 0 contributions is a Viewer (everyone), and with >= 1 contribution becomes a Contributor", async () => {
+    const asViewer = await route({ sessions: signedIn(person("guest")), contributionCount: () => Effect.succeed(0) })
+    const viewerAnswer = await answerOf(await asViewer.get(EFFECT))
+    expect(viewerAnswer.audience).toBe("everyone")
+    expect(shape(viewerAnswer)).toEqual(["everyone:"])
+
+    const asContributor = await route({ sessions: signedIn(person("guest")), contributionCount: () => Effect.succeed(2) })
+    const contributorAnswer = await answerOf(await asContributor.get(EFFECT))
+    expect(contributorAnswer.audience).toBe("contributor")
+    expect(contributorAnswer.contributionCount).toBe(2)
+    expect(shape(contributorAnswer)).toEqual(["contributor:Your work", "everyone:"])
+  })
+
+  test("smithersai/smithers curated home decodes with zero skipped blocks for all three audiences", () => {
+    const found = Curated.find("smithersai", "smithers")
+    expect(found).not.toBe("invalid")
+    expect(found).toBeDefined()
+    if (found && found !== "invalid") {
+      expect(found.sections.map((s) => s.audience)).toEqual(["maintainer", "contributor", "everyone"])
+    }
   })
 })

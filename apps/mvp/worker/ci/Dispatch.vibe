@@ -10,6 +10,7 @@ import { withToken } from "../github/Calls.ts"
 import { repositoryOf } from "../github/Config.vibe"
 import type { GitHubTokens } from "../github/Tokens.vibe"
 import * as RepoRuns from "../RepoRuns.vibe"
+import * as PostMerge from "./PostMerge.vibe"
 import * as RepoFlow from "./RepoFlow.vibe"
 import * as Triggers from "./Triggers.vibe"
 
@@ -251,7 +252,17 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const read = (path: string) => app.value.read(path, request.defaultBranch)
       const manifest = try read(Triggers.MANIFEST_PATH)
       if (Option.isNone(manifest)) return { flows: [], outcome: "no_manifest" } satisfies Matched
-      const wanted = try sync(() => Triggers.flowsFor(Triggers.triggersOf(manifest.value), request))
+      const baseWanted = try sync(() => Triggers.flowsFor(Triggers.triggersOf(manifest.value), request))
+      const postMergeWanted = request.event === "push" && request.branch === request.defaultBranch
+        ? try sync(() => {
+            try {
+              return PostMerge.extractPostMergeFlowIds(JSON.parse(manifest.value) as unknown, request.defaultBranch)
+            } catch {
+              return [] as ReadonlyArray<string>
+            }
+          })
+        : [] as ReadonlyArray<string>
+      const wanted = Array.from(new Set([...baseWanted, ...postMergeWanted]))
       const active: Array<string> = []
       for (const flow of wanted) {
         if (Option.isSome(try app.value.workflow(flow, request.defaultBranch))) active.push(flow)
@@ -284,7 +295,8 @@ export const steps = <E, R>(services: Services<E, R>) => {
         return []
       }
       return try forEach(flows, (flow) => {
-        const executionId = runExecutionId(flow, request.delivery)
+        const isDefaultPush = request.event === "push" && request.branch === request.defaultBranch
+        const executionId = isDefaultPush ? PostMerge.postMergeRunId(flow, request.sha) : runExecutionId(flow, request.delivery)
         const payload: RepoFlow.RunRequest = {
           run: executionId,
           repo: request.repo,

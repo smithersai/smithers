@@ -1,0 +1,230 @@
+/**
+ * Server-side execution trust policy for Smithers Cloud.
+ *
+ * Security invariants:
+ * 1. Execution trust is ALWAYS derived server-side from live role, deployment admin authority, or signed sandbox
+ *    attestation, NEVER from client-supplied claims.
+ * 2. Untrusted community/contributor executions are allowed and encouraged to run checks, publish untrusted audit
+ *    reports, upload artifacts, and propose wiki/changeset updates.
+ * 3. Untrusted executions can NEVER write to the trusted `cache` namespace, overwrite canonical trusted audit reports,
+ *    write canonical `mythical` history, or satisfy merge/release gates.
+ * 4. Public repositories expose read-only `cache` and `public` objects (audit reports, wiki, mythical history, public
+ *    artifacts) so contributors get fast builds and full visibility without cache-poisoning risk.
+ * 5. Private ops repositories (`Smithers-Ops`) are ALWAYS `owner_only` for deployment admins in person.
+ */
+
+import {
+  type ExecutionTrust,
+  isTrustedExecution,
+  OBJECT_NAMESPACES,
+  type ObjectNamespace,
+  type OneTimeAuthPurpose,
+} from "../../src/features/trust/contract.ts"
+import { type Actor, rankOf, type Role } from "../Actor.vibe"
+import { holdsDeploymentAuthority } from "../DeploymentPolicy.vibe"
+import * as Visibility from "../ops/ArtifactVisibility.ts"
+
+const OBJECT_KEY_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
+const MAX_OBJECT_KEY_LENGTH = 200
+const MAX_OBJECT_KEY_SEGMENTS = 6
+const LOGIN_SAFE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
+
+export type TrustWriteRefusal =
+  | "untrusted_cache_write"
+  | "untrusted_mythical_write"
+  | "invalid_object_key"
+  | "invalid_namespace"
+  | "ops_repo_forbidden"
+
+export interface TrustClassificationInput {
+  readonly role: Role | null
+  readonly isDeploymentAdmin?: boolean | undefined
+  readonly sandboxAttested?: boolean | undefined
+}
+
+/** Classifies an execution's trust tier strictly from server-verified provenance. */
+export function classifyExecutionTrust(input: TrustClassificationInput): ExecutionTrust {
+  if (input.sandboxAttested === true) return "trusted_sandbox"
+  if (input.role === "admin" || input.role === "maintainer" || input.isDeploymentAdmin === true) {
+    return "trusted_maintainer"
+  }
+  return "untrusted_contributor"
+}
+
+/**
+ * Classifies the trust tier granted to a newly minted one-time token.
+ * A non-maintainer can NEVER mint a `trusted_sandbox` or `trusted_maintainer` token.
+ */
+export function mintTrustFor(
+  callerTrust: ExecutionTrust,
+  purpose: OneTimeAuthPurpose,
+): ExecutionTrust {
+  if (!isTrustedExecution(callerTrust)) return "untrusted_contributor"
+  return purpose === "sandbox" ? "trusted_sandbox" : "trusted_maintainer"
+}
+
+/** Whether a trust tier may satisfy merge, promotion, or release gates. */
+export function canSatisfyGate(trust: ExecutionTrust): boolean {
+  return isTrustedExecution(trust)
+}
+
+/** Whether a trust tier may write entries into the shared build cache. */
+export function canWriteTrustedCache(trust: ExecutionTrust): boolean {
+  return isTrustedExecution(trust)
+}
+
+/** Whether a raw string is a valid shared object store namespace. */
+export function isObjectNamespace(raw: string): raw is ObjectNamespace {
+  return (OBJECT_NAMESPACES as ReadonlyArray<string>).includes(raw)
+}
+
+/** Validates a relative object key (no traversal, no empty/dot segments, bounded length). */
+export function isValidObjectKey(key: string): boolean {
+  if (key.length === 0 || key.length > MAX_OBJECT_KEY_LENGTH) return false
+  if (key.startsWith("/") || key.endsWith("/") || key.includes("\\") || key.includes("..")) return false
+  const segments = key.split("/")
+  if (segments.length === 0 || segments.length > MAX_OBJECT_KEY_SEGMENTS) return false
+  for (const segment of segments) {
+    if (!OBJECT_KEY_SEGMENT.test(segment)) return false
+  }
+  return true
+}
+
+/** Normalizes a GitHub login into a safe path segment for untrusted isolation prefixes. */
+export function safeLoginSegment(login: string | null | undefined, fallbackId?: string | null | undefined): string {
+  const cleaned = (login ?? "").trim().toLowerCase()
+  if (LOGIN_SAFE.test(cleaned)) return cleaned
+  const fallback = (fallbackId ?? "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 32)
+  return fallback.length > 0 && LOGIN_SAFE.test(fallback) ? `id-${fallback}` : "anonymous"
+}
+
+/**
+ * Evaluates whether `trust` may write to `namespace` on a repository, and computes the isolated canonical key.
+ * - Untrusted `cache` writes are hard-refused (`untrusted_cache_write`).
+ * - Untrusted `mythical` writes are hard-refused (`untrusted_mythical_write`).
+ * - Untrusted `audit-report` writes are accepted and isolated under `untrusted/<login>/<key>` with `gateEligible: false`.
+ * - Untrusted `wiki` writes are accepted as proposals under `proposed/<login>/<key>`.
+ * - Ops repositories allow writes ONLY from deployment admins acting in person.
+ */
+export function authorizeObjectWrite(params: {
+  readonly repoFullName: string
+  readonly namespace: string
+  readonly key: string
+  readonly trust: ExecutionTrust
+  readonly actor: Actor
+  readonly login: string | null | undefined
+  readonly policy: Visibility.Policy
+}):
+  | {
+    readonly ok: true
+    readonly namespace: ObjectNamespace
+    readonly canonicalKey: string
+    readonly gateEligible: boolean
+  }
+  | { readonly ok: false; readonly reason: TrustWriteRefusal }
+{
+  if (!isObjectNamespace(params.namespace)) return { ok: false, reason: "invalid_namespace" }
+  if (!isValidObjectKey(params.key)) return { ok: false, reason: "invalid_object_key" }
+  if (Visibility.isOpsRepository({ fullName: params.repoFullName, private: true }, params.policy)) {
+    if (!holdsDeploymentAuthority(params.actor, params.policy.admins)) {
+      return { ok: false, reason: "ops_repo_forbidden" }
+    }
+  }
+  const trusted = isTrustedExecution(params.trust)
+  if (params.namespace === "cache" && !trusted) {
+    return { ok: false, reason: "untrusted_cache_write" }
+  }
+  if (params.namespace === "mythical" && !trusted) {
+    return { ok: false, reason: "untrusted_mythical_write" }
+  }
+  if (!trusted && (params.namespace === "audit-report" || params.namespace === "artifact" || params.namespace === "changeset")) {
+    const seg = safeLoginSegment(params.login, params.actor.subject.id)
+    const prefix = `untrusted/${seg}/`
+    const canonicalKey = params.key.startsWith(prefix) ? params.key : `${prefix}${params.key}`
+    if (!isValidObjectKey(canonicalKey)) return { ok: false, reason: "invalid_object_key" }
+    return { ok: true, namespace: params.namespace, canonicalKey, gateEligible: false }
+  }
+  if (!trusted && params.namespace === "wiki") {
+    const seg = safeLoginSegment(params.login, params.actor.subject.id)
+    const prefix = `proposed/${seg}/`
+    const canonicalKey = params.key.startsWith(prefix) ? params.key : `${prefix}${params.key}`
+    if (!isValidObjectKey(canonicalKey)) return { ok: false, reason: "invalid_object_key" }
+    return { ok: true, namespace: params.namespace, canonicalKey, gateEligible: false }
+  }
+  return {
+    ok: true,
+    namespace: params.namespace,
+    canonicalKey: params.key,
+    gateEligible: trusted && (params.namespace === "audit-report" || params.namespace === "changeset"),
+  }
+}
+
+/**
+ * Resolves effective stored visibility for a new object.
+ * - Ops repos are ALWAYS `owner_only`.
+ * - Private repos can NEVER be `public`.
+ * - Public repos default `audit-report`, `wiki`, `mythical`, `cache`, and `changeset` to `public` unless restricted;
+ *   `artifact` defaults to `repo_members` unless `requested === "public"` on a public repo.
+ */
+export function resolveObjectVisibility(params: {
+  readonly repoFullName: string
+  readonly isPublicRepo: boolean
+  readonly namespace: ObjectNamespace
+  readonly requested?: Visibility.Visibility | undefined
+  readonly trust?: ExecutionTrust | undefined
+  readonly policy: Visibility.Policy
+}): Visibility.Visibility {
+  if (Visibility.isOpsRepository({ fullName: params.repoFullName, private: true }, params.policy)) {
+    return "owner_only"
+  }
+  if (!params.isPublicRepo) {
+    return params.requested === "owner_only" ? "owner_only" : "repo_members"
+  }
+  const untrusted = params.trust === "untrusted_contributor"
+  if (untrusted && (params.namespace === "artifact" || params.namespace === "changeset")) {
+    return params.requested === "owner_only" ? "owner_only" : "repo_members"
+  }
+  if (params.requested !== undefined) return params.requested
+  if (params.namespace === "artifact") return "repo_members"
+  return "public"
+}
+
+/**
+ * Whether `actor` (possibly anonymous) with live repository `role` may read an object with `visibility`.
+ * Enforces ops-repo lock to deployment admins in person and blocks private repo leaks.
+ */
+export function canReadCloudObject(params: {
+  readonly repoFullName: string
+  readonly isPublicRepo: boolean
+  readonly visibility: Visibility.Visibility
+  readonly createdByPersonId: string | null
+  readonly actor: Actor | undefined
+  readonly role: Role | null
+  readonly policy: Visibility.Policy
+}): boolean {
+  if (Visibility.isOpsRepository({ fullName: params.repoFullName, private: true }, params.policy)) {
+    return params.actor !== undefined && holdsDeploymentAuthority(params.actor, params.policy.admins)
+  }
+  if (params.visibility === "public" && params.isPublicRepo) {
+    return true
+  }
+  if (params.visibility === "owner_only") {
+    return (
+      params.actor !== undefined
+      && params.actor.act === undefined
+      && params.createdByPersonId !== null
+      && params.actor.subject.id === params.createdByPersonId
+    )
+  }
+  return params.actor !== undefined && rankOf(params.role) >= rankOf("member")
+}
+
+/** Gate status a changeset receives based on execution trust and check outcome. */
+export function changesetGateStatus(
+  trust: ExecutionTrust,
+  checksPassed: boolean | null,
+): "pending" | "passed" | "failed" | "untrusted_only" {
+  if (checksPassed === null) return "pending"
+  if (!isTrustedExecution(trust)) return "untrusted_only"
+  return checksPassed ? "passed" : "failed"
+}

@@ -8,6 +8,12 @@ import { withRequestRay } from "./RequestRay.vibe"
 // the Worker first builds its program, not when Cloudflare starts the Worker, so its modules are evaluated then and
 // count against the first request's CPU instead of the Worker's startup limit (docs/infrastructure.md#limits).
 import * as ArtifactRoutes from "./ops/ArtifactRoutes.vibe"
+import * as ArtifactVisibility from "./ops/ArtifactVisibility.ts"
+import * as CloudObjectStore from "./object-store/CloudObjectStore.vibe"
+import * as RepoStateStore from "./object-store/RepoStateStore.vibe"
+import * as PublicFactoryRoutes from "./object-store/PublicFactoryRoutes.vibe"
+import * as OneTimeAuth from "./mcp/OneTimeAuth.vibe"
+import * as GitHubVisibility from "./github/Visibility.vibe"
 import * as Waitlist from "./waitlist/Waitlist.vibe"
 import * as PlanTreeRoutes from "./plan/PlanTreeRoutes.vibe"
 import { MessagesShardBridge } from "./chat/MessagesShardBridge.ts"
@@ -78,7 +84,7 @@ import * as RepoRoles from "./github/RepoRoles.vibe"
 import * as HomeApi from "./home/Api.vibe"
 import * as McpApi from "./mcp/Api.vibe"
 import * as McpAuth from "./mcp/Auth.vibe"
-import { McpToolRegistry } from "./mcp/Contract.vibe"
+import { McpToolError, McpToolRegistry } from "./mcp/Contract.vibe"
 import * as McpLiveDeps from "./mcp/LiveDeps.vibe"
 import * as McpTools from "./mcp/Tools.vibe"
 import * as PersonalApi from "./personal/Api.vibe"
@@ -363,15 +369,38 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     })
     // TODOs and the stack (docs/features/todos.md): the one route that changes a stack, through its one writer, and the
     // TODOs' shapes.
+    const deploymentAdmins = yield* DeploymentPolicy.configuredAdmins().pipe(Effect.orElseSucceed(() => DeploymentPolicy.DEFAULT_ADMINS))
     const refreshIssue = Option.isSome(app) ? yield* IssueRead.make(app.value) : undefined
-    const stack = yield* StackApi.make(database, roles, refreshIssue === undefined ? {} : { refreshIssue })
+    const sharedVisibilityHttp = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer))
+    const sharedVisibilityToken = yield* ReadToken.fromConfig.pipe(
+      Effect.provideService(HttpClient.HttpClient, sharedVisibilityHttp),
+      Effect.orDie,
+    )
+    const sharedVisibility = GitHubVisibility.make(
+      Option.isSome(app) ? app.value.apiBaseUrl : "https://api.github.com",
+      sharedVisibilityToken,
+      sharedVisibilityHttp,
+    )
+    const isPublicNonOpsRepo = (owner: string, name: string) =>
+      Effect.gen(function* () {
+        if (ArtifactVisibility.isOpsRepository({ fullName: `${owner}/${name}`, private: true }, { admins: deploymentAdmins })) {
+          return false
+        }
+        const visible = yield* sharedVisibility(GitHubConfig.repositoryOf(`${owner}/${name}`))
+        return Option.getOrElse(visible, () => false)
+      })
+    const stack = yield* StackApi.make(database, roles, {
+      ...(refreshIssue === undefined ? {} : { refreshIssue }),
+      isPublicRepo: (target) => isPublicNonOpsRepo(target.owner, target.name),
+      admins: deploymentAdmins,
+    })
     // Contributor forks & upstream sync (decision 0175, docs/features/fork.md).
     const forkApi = yield* ForkApi.make(database, {
       app,
       keys: Option.map(signIn.configured, (configured) => configured.keys),
     })
     // The fleet's shapes: a repository's agent runs and runner machines (docs/features/fleet.md#the-shapes).
-    const deploymentAdmins = yield* DeploymentPolicy.configuredAdmins().pipe(Effect.orElseSucceed(() => DeploymentPolicy.DEFAULT_ADMINS))
+    
     const fleet = yield* FleetApi.make(roles)
     const fleetShapes = yield* FleetShapes.make(deploymentAdmins)
     // A TODO's run, watched from its page (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare), and a repository's
@@ -413,7 +442,22 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const runTodos = yield* Todo.enabled
     // A repository's home (docs/features/home.md): who the asker is on it, by their role there (decision 0079), and
     // Smithers' curated home for it.
-    const home = HomeApi.make({ roles, mayRead: github.mayRead, mayBrowse: github.mayBrowse, maySync: github.maySync })
+    const home = HomeApi.make({
+      contributionCount: (owner, name, login) =>
+        RepoStateStore.contributionCountOf(owner, name, login).pipe(
+          Effect.provide(database),
+          Effect.catch((cause) =>
+            Effect.logWarning("home.contribution_count.unavailable").pipe(
+              Effect.annotateLogs({ errorCode: codeOf(cause) }),
+              Effect.as(0),
+            ),
+          ),
+        ),
+      roles,
+      mayRead: github.mayRead,
+      mayBrowse: github.mayBrowse,
+      maySync: github.maySync,
+    })
     // Bring Your Own Agent via MCP (docs/features/mcp.md): Streamable HTTP MCP + OAuth 2.1 + token management.
     const mcpApi = McpApi.make()
     const attach = Attach.make(database)
@@ -449,7 +493,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       yield* Config.option(Config.Redacted("SESSION_SEAL_SECRET")).pipe(Effect.orDie),
       (secret) => Redacted.value(secret).length >= 32,
     ))
-    const artifactBucket = machines.includes(JobMachines.GATE) ? yield* Cloudflare.R2.ReadWriteBucket(CiArtifacts) : undefined
+    const artifactBucket = yield* Cloudflare.R2.ReadWriteBucket(CiArtifacts)
     const artifactStorage = artifactBucket?.raw as unknown as Effect.Effect<Artifacts.Bucket, never, RuntimeContext> | undefined
     const artifactPolicy = { admins: deploymentAdmins }
     // The edge throttle on the open routes (worker/Throttle.vibe): requests per network per minute, counted per Cloudflare
@@ -618,6 +662,30 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                     ),
                 ).pipe(Effect.provideService(RuntimeContext, runtime), Effect.provide(signedIn))
               }
+              if (OneTimeAuth.handles(path)) {
+                const oneTimeRoutes = OneTimeAuth.makeRoutes({ database, roles, isPublicRepo: isPublicNonOpsRepo, admins: deploymentAdmins })
+                return yield* oneTimeRoutes.fetch.pipe(Effect.provideService(RuntimeContext, runtime), Effect.provide(signedIn))
+              }
+              if (CloudObjectStore.handles(path)) {
+                const r2Backing = artifactStorage === undefined ? undefined : CloudObjectStore.r2BackingOf(yield* artifactStorage)
+                const objectRoutes = CloudObjectStore.makeRoutes({
+                  database,
+                  roles,
+                  policy: artifactPolicy,
+                  isPublicRepo: isPublicNonOpsRepo,
+                  r2: r2Backing,
+                })
+                return yield* objectRoutes.fetch.pipe(Effect.provideService(RuntimeContext, runtime), Effect.provide(signedIn))
+              }
+              if (PublicFactoryRoutes.handles(path)) {
+                const factoryRoutes = PublicFactoryRoutes.makeRoutes({
+                  database,
+                  roles,
+                  policy: artifactPolicy,
+                  isPublicRepo: isPublicNonOpsRepo,
+                })
+                return yield* factoryRoutes.fetch.pipe(Effect.provideService(RuntimeContext, runtime), Effect.provide(signedIn))
+              }
               if (ArtifactRoutes.handles(path)) {
                 return yield* ArtifactRoutes.read(roles, artifactPolicy,
                   (id) => executions.getByName(id).repositoryRun(),
@@ -728,6 +796,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                   McpToolRegistry,
                   Effect.gen(function* () {
                     const docsSvc = yield* DocsSource.DocsSource
+                    const mcpR2Backing = artifactStorage === undefined ? undefined : CloudObjectStore.r2BackingOf(yield* artifactStorage)
                     return yield* McpLiveDeps.makeLiveDeps({
                       database,
                       reads: repos.reads,
@@ -735,7 +804,55 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                       starter,
                       githubReadToken: mcpReadToken,
                       docsSource: docsSvc,
-                    }).pipe(Effect.map((liveDeps): McpTools.McpToolDeps => ({ ...liveDeps, fleet: { database: database as Layer.Layer<SqlClient.SqlClient, unknown>, admins: deploymentAdmins } })))
+                    }).pipe(Effect.map((liveDeps): McpTools.McpToolDeps => ({
+                      ...liveDeps,
+                      cloudFactory: {
+                        database: database as Layer.Layer<SqlClient.SqlClient, unknown>,
+                        policy: artifactPolicy,
+                        r2: mcpR2Backing,
+                        createPull: Option.isSome(githubApp)
+                          ? (params) =>
+                              Effect.gen(function* () {
+                                const app = yield* GitHub.AppAuth.make({
+                                  appId: githubApp.value.appId,
+                                  privateKey: githubApp.value.privateKey,
+                                  apiBaseUrl: githubApp.value.apiBaseUrl,
+                                })
+                                const inst = yield* app.installation(params.owner, params.name)
+                                const minted = yield* app.installationToken({
+                                  installationId: inst.id,
+                                  repositories: [params.name],
+                                  permissions: { pull_requests: "write", contents: "read" },
+                                })
+                                const attributedBody = params.body.trim().length > 0
+                                  ? `${params.body}\n\n---\n_Opened via Smithers Cloud MCP by @${params.login} (agent)_`
+                                  : `_Opened via Smithers Cloud MCP by @${params.login} (agent)_`
+                                const created = yield* GitHub.Pulls.createPull(params.owner, params.name, {
+                                  title: params.title,
+                                  body: attributedBody,
+                                  head: params.head,
+                                  base: params.base,
+                                  draft: params.draft,
+                                }).pipe(
+                                  GitHub.Calls.withToken(minted.token, githubApp.value.apiBaseUrl),
+                                )
+                                return {
+                                  number: created.number,
+                                  url: `https://github.com/${params.owner}/${params.name}/pull/${created.number}`,
+                                  state: created.state,
+                                  draft: created.draft,
+                                }
+                              }).pipe(
+                                Effect.provide(FetchHttpClient.layer),
+                                Effect.mapError((cause) => new McpToolError({
+                                  code: "unavailable",
+                                  message: `Could not open pull request (${codeOf(cause)})`,
+                                })),
+                              )
+                          : undefined,
+                      },
+                      fleet: { database: database as Layer.Layer<SqlClient.SqlClient, unknown>, admins: deploymentAdmins },
+                    })))
                   }).pipe(
                     Effect.provide(Layer.merge(FetchHttpClient.layer, docsSource)),
                     Effect.flatMap(McpTools.makeMcpToolRegistry)

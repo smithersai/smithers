@@ -29,6 +29,7 @@ export type Curated = typeof Curated.Type
  */
 export const HomeAnswer = Schema.Struct({
   audience: Home.Audience,
+  contributionCount: Schema.optionalKey(Schema.Number),
   curated: Schema.NullOr(Curated),
 })
 export type HomeAnswer = typeof HomeAnswer.Type

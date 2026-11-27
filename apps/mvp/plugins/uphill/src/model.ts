@@ -21,6 +21,16 @@ export interface UphillSummary {
 }
 
 /** Decoded Uphill data extracted from a repository's feeds. */
+export interface UntrustedUphillRun {
+  readonly id: string
+  readonly name: string
+  readonly actor: string
+  readonly overall: number | null
+  readonly band: Uphill.ScoreBand
+  readonly updatedAt: string | null
+  readonly envelope: Uphill.FeedEnvelope
+}
+
 export interface ExtractedUphill {
   readonly hasFeed: boolean
   readonly envelope: Uphill.FeedEnvelope | undefined
@@ -28,6 +38,7 @@ export interface ExtractedUphill {
   readonly band: Uphill.ScoreBand
   readonly updatedAt: string | null
   readonly history: ReadonlyArray<Uphill.HistoryPoint>
+  readonly untrustedRuns: ReadonlyArray<UntrustedUphillRun>
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -52,15 +63,33 @@ const extractHistoryDoc = (doc: FeedDocument | undefined): ReadonlyArray<Uphill.
 export const extractUphill = (docs: ReadonlyArray<FeedDocument>): ExtractedUphill => {
   const mainDoc = docs.find((d) => d.name === "uphill" || d.name === "uphill/latest")
   const historyDoc = docs.find((d) => d.name === "uphill/history")
+  const untrustedRuns: Array<UntrustedUphillRun> = []
+  for (const doc of docs) {
+    if (!doc.name.startsWith("uphill/untrusted-")) continue
+    const decoded = Uphill.decodeFeedBody(doc.body)
+    if (decoded === undefined) continue
+    const runOverall = Uphill.overallScore(decoded.report)
+    const runFailed = decoded.report.categories.some((c) => c.error != null) && runOverall === null
+    untrustedRuns.push({
+      id: doc.id,
+      name: doc.name,
+      actor: decoded.provenance?.actor ?? doc.name.slice("uphill/untrusted-".length),
+      overall: runOverall,
+      band: Uphill.scoreBand(runOverall, runFailed),
+      updatedAt: decoded.updatedAt ?? doc.updatedAt ?? null,
+      envelope: decoded,
+    })
+  }
   const envelope = mainDoc === undefined ? undefined : Uphill.decodeFeedBody(mainDoc.body)
   if (envelope === undefined) {
     return {
-      hasFeed: false,
+      hasFeed: untrustedRuns.length > 0,
       envelope: undefined,
       overall: null,
       band: "none",
       updatedAt: null,
       history: [],
+      untrustedRuns,
     }
   }
   const overall = Uphill.overallScore(envelope.report)
@@ -74,6 +103,7 @@ export const extractUphill = (docs: ReadonlyArray<FeedDocument>): ExtractedUphil
     band: Uphill.scoreBand(overall, failed),
     updatedAt: envelope.updatedAt ?? mainDoc?.updatedAt ?? null,
     history,
+    untrustedRuns,
   }
 }
 

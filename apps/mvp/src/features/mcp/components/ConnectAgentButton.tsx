@@ -1,4 +1,5 @@
-import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Snippet } from "@smthrs/ui"
+import { Badge, Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Snippet } from "@smthrs/ui"
+import { ONE_TIME_AUTH_PURPOSES, trustLabel } from "../../trust/contract"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useLocation } from "@tanstack/react-router"
 import { useAuth } from "../../auth/components/AuthContext"
@@ -26,6 +27,7 @@ function ConnectAgentButtonInner({ owner, name, mcp }: { readonly owner: string;
   const auth = useAuth()
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: connect } = useLiveQuery(queries.connect)
+  const { data: oneTime } = useLiveQuery(queries.oneTime)
   const answer = useRepoAnswer(owner, name)
   const location = useLocation()
   const open = connect?.open === true && connect.owner === owner && connect.name === name
@@ -61,6 +63,49 @@ function ConnectAgentButtonInner({ owner, name, mcp }: { readonly owner: string;
                   <p>{view.snippet.label}</p>
                   <Snippet code={view.snippet.command} copyLabel={COPY_SNIPPET} />
                 </div>
+                {view.signedIn ? (
+                  <section className="connect-agent-onetime" aria-label="One-time sandbox authentication">
+                    <div className="connect-agent-onetime-head">
+                      <p>One-time sandbox and agent auth</p>
+                      <div className="connect-agent-clients" role="group" aria-label="One-time token purpose">
+                        {ONE_TIME_AUTH_PURPOSES.map((p) => (
+                          <Button
+                            key={p}
+                            size="sm"
+                            variant={(oneTime?.purpose ?? "sandbox") === p ? "secondary" : "ghost"}
+                            aria-pressed={(oneTime?.purpose ?? "sandbox") === p}
+                            onClick={() => actions.selectOneTimePurpose(p)}
+                          >
+                            {p}
+                          </Button>
+                        ))}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={oneTime?.status === "minting"}
+                        onClick={() => void actions.mintOneTime(owner, name, oneTime?.purpose ?? "sandbox")}
+                      >
+                        {oneTime?.status === "minting" ? "Minting…" : "Print one-time token"}
+                      </Button>
+                    </div>
+                    {oneTime?.status === "failed" ? (
+                      <p role="status">Could not mint one-time token ({oneTime.error ?? "unavailable"})</p>
+                    ) : null}
+                    {oneTime?.status === "ready" && oneTime.minted !== null ? (
+                      <div className="connect-agent-onetime-result">
+                        <div className="connect-agent-onetime-meta">
+                          <Badge variant={oneTime.minted.executionTrust === "untrusted_contributor" ? "warning" : "success"}>
+                            {trustLabel(oneTime.minted.executionTrust)}
+                          </Badge>
+                          <Badge variant="muted">Single use</Badge>
+                          <Badge variant="muted">Expires in 5 min</Badge>
+                        </div>
+                        <Snippet code={`${oneTime.minted.shellSnippet}\n${oneTime.minted.mcpSnippet}`} copyLabel="Copy one-time bootstrap" />
+                      </div>
+                    ) : null}
+                  </section>
+                ) : null}
                 <AgentPermissions
                   roleLabel={view.roleLabel}
                   allowed={view.allowed}

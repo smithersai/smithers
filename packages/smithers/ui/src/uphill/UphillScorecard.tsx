@@ -71,6 +71,16 @@ export interface UphillReportData {
   } | null | undefined;
 }
 
+export interface UphillProvenanceData {
+  readonly trust: "trusted_sandbox" | "trusted_maintainer" | "untrusted_contributor";
+  readonly gateEligible: boolean;
+  readonly cacheWriteAllowed: boolean;
+  readonly runner?: string | null | undefined;
+  readonly actor?: string | null | undefined;
+  readonly objectUrl?: string | null | undefined;
+  readonly sha256?: string | null | undefined;
+}
+
 export interface UphillHistoryPointData {
   readonly commit: string;
   readonly overall: number | null;
@@ -94,6 +104,10 @@ export type UphillScorecardProps = Omit<ComponentProps<"section">, "children"> &
   onOpportunityAction?: ((opportunity: UphillOpportunityData) => void) | undefined;
   /** Label for the opportunity action button. */
   opportunityActionLabel?: string | undefined;
+  /** Optional server-verified execution trust provenance for this audit report. */
+  provenance?: UphillProvenanceData | null | undefined;
+  /** Optional maintainer action to re-run an untrusted report inside a controlled Smithers sandbox. */
+  onVerifyTrusted?: (() => void) | undefined;
 };
 
 function trimFixed(value: number, digits: number): string {
@@ -182,6 +196,8 @@ export function UphillScorecard({
   onSelectCategory,
   onOpportunityAction,
   opportunityActionLabel = "Climb",
+  provenance,
+  onVerifyTrusted,
   className,
   ...props
 }: UphillScorecardProps) {
@@ -223,6 +239,42 @@ export function UphillScorecard({
         ) : null}
       </header>
 
+      {provenance ? (
+        <div
+          className="sui-uphill-provenance"
+          data-trust={provenance.trust}
+          role="region"
+          aria-label="Execution provenance"
+        >
+          <div className="sui-uphill-provenance-pills">
+            <Badge variant={provenance.gateEligible ? "success" : "warning"}>
+              {provenance.trust === "trusted_sandbox"
+                ? "Trusted sandbox"
+                : provenance.trust === "trusted_maintainer"
+                ? "Trusted maintainer"
+                : "Untrusted community run"}
+            </Badge>
+            <Badge variant={provenance.gateEligible ? "secondary" : "muted"}>
+              {provenance.gateEligible ? "Gate eligible" : "Informational only"}
+            </Badge>
+            <Badge variant="muted">
+              {provenance.cacheWriteAllowed ? "Shared cache verified" : "Cache isolated"}
+            </Badge>
+            {provenance.runner ? <span className="sui-uphill-provenance-detail">{provenance.runner}</span> : null}
+            {provenance.sha256 ? (
+              <span className="sui-uphill-provenance-detail" title={provenance.sha256}>
+                sha256 {provenance.sha256.slice(0, 12)}
+              </span>
+            ) : null}
+          </div>
+          {!provenance.gateEligible && onVerifyTrusted ? (
+            <Button size="sm" variant="outline" onClick={onVerifyTrusted}>
+              Re-run in Smithers sandbox
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="sui-uphill-gauges" role="group" aria-label="Category scores">
         {report.categories.map((category) => {
           const failed = category.error != null;
@@ -247,6 +299,12 @@ export function UphillScorecard({
             </button>
           );
         })}
+      </div>
+
+      <div className="sui-uphill-legend" aria-label="Lighthouse score scale">
+        <span className="sui-uphill-legend-item"><span className="sui-uphill-dot" data-band="poor" aria-hidden="true" />0 to 49</span>
+        <span className="sui-uphill-legend-item"><span className="sui-uphill-dot" data-band="warn" aria-hidden="true" />50 to 89</span>
+        <span className="sui-uphill-legend-item"><span className="sui-uphill-dot" data-band="good" aria-hidden="true" />90 to 100</span>
       </div>
 
       {opportunities.length > 0 ? (

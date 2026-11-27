@@ -174,3 +174,11 @@ Asking from a home stays fenced to the deployment’s own repository (decision 0
 
 An unreadable home says Offline while the host connection is offline. Retained home sections and tree content remain available.
 The home also retains the shared connection pill while cached sections render or load.
+
+## Personalized three-audience coding factory
+
+Every repository home adapts across three audiences (`Maintainer`, `Contributor`, and `Viewer`):
+
+- **Maintainer**: full control room (`stack`, `issues`, `runs`, post-merge controls, and a `View as` switcher to preview Contributor and Viewer views).
+- **Contributor**: anyone with write access (`member`) or at least one recorded contribution (`repo_contributors`, `changeset_stacks`, `cloud_objects`, or synced GitHub `items`).
+- **Viewer**: first-time visitors and signed-out readers (`0` contributions), shown the public project overview, live backpressure audit links, wiki, mythical history, and onboarding entry points.

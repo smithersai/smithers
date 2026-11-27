@@ -15,6 +15,15 @@ import {
 } from "../../src/features/pulls/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import type { Services } from "./Apply.vibe"
+
+export type MergeServices<E, R> = Services<E, R> & {
+  /** Optional post-merge automation hook triggered after a pull request merges cleanly on GitHub. */
+  readonly onMerged?: (event: {
+    readonly repository: ReturnType<typeof repositoryOf>
+    readonly mergeSha: string
+    readonly pullNumber: number
+  }) => void!never
+}
 import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.vibe"
 import * as Metrics from "./Metrics.vibe"
@@ -153,7 +162,7 @@ export const refusalOf = (status: number): WriteFailure =>
     : "not_allowed"
 
 /** The steps over `services`. */
-export const steps = <E, R>(services: Services<E, R>) => {
+export const steps = <E, R>(services: MergeServices<E, R>) => {
   const settled = effect (
     write: Store.Write,
     settlement: Store.Settlement,
@@ -394,6 +403,9 @@ export const steps = <E, R>(services: Services<E, R>) => {
         return try failedSend(write, failure, "github")
       }
       const merged = outcome.success
+      if (services.onMerged !== undefined) {
+        try Effect.ignore(services.onMerged({ repository, mergeSha: merged.sha, pullNumber: payload.number }))
+      }
       return try settled(
         write,
         { status: "done", itemNumber: payload.number, githubId: null, mergeFlow: "github" },
@@ -433,7 +445,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
 }
 
 /** Registers `pr/Merge` with its steps over `services`. */
-export const registration = <E, R>(services: Services<E, R>) => {
+export const registration = <E, R>(services: MergeServices<E, R>) => {
   const implementation = steps(services)
   return Interpreter.layerWithImplementations(
     Merge,

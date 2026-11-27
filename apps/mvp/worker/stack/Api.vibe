@@ -32,6 +32,8 @@ import {
 import { type Actor, refusesPersonOnly, Sessions } from "../Actor.vibe"
 import * as ComputeAccess from "../billing/ComputeAccess.vibe"
 import { readBounded } from "../Body.vibe"
+import { holdsDeploymentAuthority } from "../DeploymentPolicy.vibe"
+import * as Visibility from "../ops/ArtifactVisibility.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { repositoryOf as repositoryNamed } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.vibe"
@@ -182,23 +184,36 @@ export const make = effect <E, R>(
   options: {
     /** Reads one issue from GitHub into the projection. None on a deployment with no App: the projection decides. */
     readonly refreshIssue?: (repository: ReturnType<typeof repositoryNamed>, number: number) => void!unknown!SqlClient.SqlClient
+    /** Whether a repository is public (enables public read-only access to the TODO stack shape; private/ops stay fenced). */
+    readonly isPublicRepo?: (repository: ReturnType<typeof repositoryNamed>) => boolean!never
+    readonly admins?: ReadonlySet<string> | undefined
   } = {},
 ) => {
   const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
 
-  /** A shape of one repository's rows of `table`, for a Member or above. */
-  const shape = (table: string, columns: ReadonlyArray<string>, name: string, metric: Metric.Counter<number>) =>
+  /** A shape of one repository's rows of `table`. Public TODOs are readable on public repos when `allowPublic` is true. */
+  const shape = (table: string, columns: ReadonlyArray<string>, name: string, metric: Metric.Counter<number>, allowPublic: boolean) =>
     ShapeProxy.make({
       ...connection,
       shape: effect {
         const request = try HttpServerRequest.HttpServerRequest
+        const repository = repositoryOf(request.url)
+        if (repository !== undefined && allowPublic && options.isPublicRepo !== undefined) {
+          if (try options.isPublicRepo(repository)) {
+            return { table, where: "repo_id = $1", params: { "1": repository.id }, columns }
+          }
+        }
         const actor = try ShapeAccess.actor
         if (Option.isNone(actor)) throw new ShapeProxy.Refused({ status: 401 })
-        const repository = repositoryOf(request.url)
         // A request that names no repository reads no repository's rows.
         if (repository === undefined) {
           if (!mayRead(actor)) throw new ShapeProxy.Refused({ status: 403 })
           return { table, where: "repo_id = $1", params: { "1": NO_REPOSITORY }, columns }
+        }
+        if (try sync(() => Visibility.isOpsRepository({ fullName: `${repository.owner}/${repository.name}`, private: true }, { admins: options.admins ?? new Set() }))) {
+          if (!holdsDeploymentAuthority(actor.value, options.admins ?? new Set())) {
+            throw new ShapeProxy.Refused({ status: 403 })
+          }
         }
         const resolved = try roles.resolve(actor.value, repository).pipe(mapError(shapeRefusal))
         if (!mayRead(Option.some<Actor>({ ...actor.value, role: resolved.role }))) {
@@ -209,8 +224,8 @@ export const make = effect <E, R>(
       name,
       metric,
     })
-  const todos = shape(TODOS_TABLE, TODO_COLUMNS, "stack.shape.todos", todoShapes)
-  const todoRequests = shape(TODO_REQUESTS_TABLE, TODO_REQUEST_COLUMNS, "stack.shape.todo_requests", requestShapes)
+  const todos = shape(TODOS_TABLE, TODO_COLUMNS, "stack.shape.todos", todoShapes, true)
+  const todoRequests = shape(TODO_REQUESTS_TABLE, TODO_REQUEST_COLUMNS, "stack.shape.todo_requests", requestShapes, false)
 
   /** The shared TODO status, behind the same repository role check as its Electric shape. */
   const status = (target: { readonly owner: string; readonly name: string; readonly number: number }) =>

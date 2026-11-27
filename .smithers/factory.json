@@ -2055,14 +2055,24 @@
     {
       "event": "change.landed",
       "flow": [
-        "coding/wiki"
+        "backpressure-audit",
+        "wiki-refresh",
+        "mythical-fold",
+        "docs-publish",
+        "release"
       ],
-      "description": "Refresh the wiki"
+      "description": "Run backpressure audit, refresh wiki, fold mythical history, publish docs, and trigger release"
     },
     {
       "event": "github.push:main",
-      "flow": "coding/wiki",
-      "description": "Refresh the wiki after outside merges"
+      "flow": [
+        "backpressure-audit",
+        "wiki-refresh",
+        "mythical-fold",
+        "docs-publish",
+        "release"
+      ],
+      "description": "Run backpressure audit, refresh wiki, fold mythical history, publish docs, and trigger release"
     },
     {
       "event": "schedule:0 9 * * 1-5",
@@ -2081,9 +2091,9 @@
     }
   ],
   "github": {
-    "mirror": "pull",
+    "mirror": "push",
     "issues": "two-way",
-    "changes": "send-upstream",
+    "changes": "land",
     "maintainers": [
       "roninjin10"
     ],

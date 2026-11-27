@@ -1,0 +1,97 @@
+/**
+ * Public read routes for a repository's Mythical History (`GET /api/repos/:owner/:repo/mythical`) and
+ * Stacked Changesets (`GET /api/repos/:owner/:repo/changesets`), enforcing repository visibility and ops-repo fences.
+ */
+
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { SqlClient } from "effect/sql"
+import { isRepository } from "../../src/features/repo/contract.ts"
+import { rankOf, type Role, Sessions } from "../Actor.vibe"
+import { holdsDeploymentAuthority } from "../DeploymentPolicy.vibe"
+import { repositoryOf } from "../github/Config.vibe"
+import type { RepoRoles } from "../github/RepoRoles.vibe"
+import * as Visibility from "../ops/ArtifactVisibility.ts"
+import * as RepoStateStore from "./RepoStateStore.vibe"
+
+const ROUTE_RE = /^\/api\/repos\/([^/]+)\/([^/]+)\/(mythical|changesets)$/
+const NO_STORE = { "cache-control": "no-store" }
+
+export function handles(pathname: string): boolean {
+  return ROUTE_RE.test(pathname)
+}
+
+export function parsePath(pathname: string):
+  | { readonly owner: string; readonly name: string; readonly kind: "mythical" | "changesets" }
+  | undefined
+{
+  const match = ROUTE_RE.exec(pathname)
+  if (match === null) return undefined
+  try {
+    const owner = decodeURIComponent(match[1]!)
+    const name = decodeURIComponent(match[2]!)
+    const kind = match[3] as "mythical" | "changesets"
+    return isRepository(owner, name) ? { owner, name, kind } : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function makeRoutes<E, R>(options: {
+  readonly database: Layer.Layer<SqlClient.SqlClient, E, R>
+  readonly roles: RepoRoles<R>
+  readonly policy: Visibility.Policy
+  readonly isPublicRepo: (owner: string, name: string) => boolean!never!R
+}) {
+  const fetch = withSpan(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const url = new URL(request.url, "https://factory.internal")
+    const parsed = parsePath(url.pathname)
+    if (parsed === undefined) {
+      return HttpServerResponse.jsonUnsafe({ error: "not_found" }, { status: 404, headers: NO_STORE })
+    }
+    if (request.method !== "GET") {
+      return HttpServerResponse.empty({ status: 405, headers: { ...NO_STORE, allow: "GET" } })
+    }
+    const fullName = `${parsed.owner}/${parsed.name}`
+    const sessions = try Sessions
+    const actor = Option.getOrUndefined(try sessions.resolve)
+    if (try sync(() => Visibility.isOpsRepository({ fullName, private: true }, options.policy))) {
+      if (actor === undefined || !holdsDeploymentAuthority(actor, options.policy.admins)) {
+        return HttpServerResponse.jsonUnsafe({ error: "not_found" }, { status: 404, headers: NO_STORE })
+      }
+    } else {
+      const isPublic = try options.isPublicRepo(parsed.owner, parsed.name)
+      if (!isPublic) {
+        if (actor === undefined) {
+          return HttpServerResponse.jsonUnsafe({ error: "not_found" }, { status: 404, headers: NO_STORE })
+        }
+        const target = try sync(() => repositoryOf(fullName))
+        let role: Role | null = null
+        const resolved = try Effect.result(options.roles.resolve(actor, target))
+        if (resolved._tag === "Success") role = resolved.success.role
+        if (rankOf(role) < rankOf("member")) {
+          return HttpServerResponse.jsonUnsafe({ error: "not_found" }, { status: 404, headers: NO_STORE })
+        }
+      }
+    }
+    if (parsed.kind === "mythical") {
+      const commits = try Effect.result(
+        RepoStateStore.listMythicalCommits(parsed.owner, parsed.name).pipe(Effect.provide(options.database)),
+      )
+      if (commits._tag === "Failure") {
+        return HttpServerResponse.jsonUnsafe({ error: "unavailable" }, { status: 503, headers: NO_STORE })
+      }
+      return HttpServerResponse.jsonUnsafe({ repository: fullName, commits: commits.success }, { status: 200, headers: NO_STORE })
+    }
+    const stackKey = url.searchParams.get("stack") ?? undefined
+    const changesets = try Effect.result(
+      RepoStateStore.listChangesets(parsed.owner, parsed.name, stackKey).pipe(Effect.provide(options.database)),
+    )
+    if (changesets._tag === "Failure") {
+      return HttpServerResponse.jsonUnsafe({ error: "unavailable" }, { status: 503, headers: NO_STORE })
+    }
+    return HttpServerResponse.jsonUnsafe({ repository: fullName, changesets: changesets.success }, { status: 200, headers: NO_STORE })
+  }, "public_factory_routes.http")
+
+  return { fetch }
+}

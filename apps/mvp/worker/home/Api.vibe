@@ -91,6 +91,8 @@ export interface Options<R> {
   readonly mayBrowse?: (target: ReturnType<typeof repositoryOf>) => Readable!never!R
   /** Whether the deployment syncs the repository's issues and pull requests (decision 0079 slice 1b), for anyone. */
   readonly maySync?: (target: ReturnType<typeof repositoryOf>) => boolean!never!R
+  /** Optional lookup returning how many contributions a GitHub login has on this repository. */
+  readonly contributionCount?: (owner: string, name: string, login: string | undefined) => number!never!R
   /** The curated homes: worker/home/curated/ unless a test gives its own. */
   readonly files?: ReadonlyArray<Curated.CuratedFile>
 }
@@ -104,7 +106,7 @@ interface Decided {
 }
 
 /** The routes. They read who is asking from `Sessions`. */
-export const make = <R>({ roles, files = Curated.files, mayRead, mayBrowse, maySync }: Options<R>) => {
+export const make = <R>({ roles, files = Curated.files, mayRead, mayBrowse, maySync, contributionCount }: Options<R>) => {
   /**
    * The person's role on `target`: none signed out, or where the deployment can't act; a role GitHub or Postgres can't
    * say now is the refusal, never a guess.
@@ -178,10 +180,13 @@ export const make = <R>({ roles, files = Curated.files, mayRead, mayBrowse, mayS
       return try record(refusedAnswer(decided.failure), { outcome: "role_unavailable", refused: decided.failure.code, refusal: decided.failure })
     }
     const { role, ...why } = decided.success
-    const ownView = try sync(() => audienceOf(role))
+    const contributions = Option.isSome(actor.success) && role === "guest" && contributionCount !== undefined
+      ? try contributionCount(target.owner, target.name, actor.success.value.login)
+      : 0
+    const ownView = try sync(() => audienceOf(role, contributions))
     const found = try sync(() => Curated.find(target.owner, target.name, files))
     if (found === undefined || found === "invalid") {
-      const answer: HomeAnswer = { audience: ownView, curated: null }
+      const answer: HomeAnswer = { audience: ownView, ...(contributions > 0 ? { contributionCount: contributions } : {}), curated: null }
       return try record(HttpServerResponse.jsonUnsafe(answer, { headers }), {
         outcome: found === undefined ? "absent" : "invalid",
         audience: ownView,
@@ -192,6 +197,7 @@ export const make = <R>({ roles, files = Curated.files, mayRead, mayBrowse, mayS
     const sections = try sync(() => Home.visible(found.sections, audience))
     const answer: HomeAnswer = {
       audience,
+      ...(contributions > 0 ? { contributionCount: contributions } : {}),
       curated: {
         defaultBranch: found.defaultBranch,
         sections,

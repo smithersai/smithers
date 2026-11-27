@@ -1,0 +1,74 @@
+{
+  "repository": "evmts/zevm",
+  "defaultBranch": "main",
+  "home": {
+    "docs": "https://zevm.sh/llms.txt",
+    "sections": [
+      {
+        "title": "Maintainer control room",
+        "audience": "maintainer",
+        "blocks": [
+          { "type": "action", "flow": "branch.new", "title": "New branch", "key": "b" },
+          { "type": "stack" },
+          { "type": "issues" },
+          { "type": "runs" }
+        ]
+      },
+      {
+        "title": "Contributor workspace",
+        "audience": "contributor",
+        "blocks": [
+          {
+            "type": "code",
+            "title": "Connect your agent to ZEVM MCP",
+            "language": "sh",
+            "code": "claude mcp add --transport http zevm https://smithers.sh/evmts/zevm/mcp"
+          },
+          { "type": "stack" },
+          { "type": "flows", "title": "Execution and qualification flows" },
+          {
+            "type": "links",
+            "title": "Factory surfaces",
+            "links": [
+              { "label": "Backpressure audit", "url": "https://smithers.sh/evmts/zevm/-/uphill" },
+              { "label": "Project wiki", "url": "https://smithers.sh/evmts/zevm/-/wiki" },
+              { "label": "Mythical history", "url": "https://smithers.sh/evmts/zevm/-/mythical" },
+              { "label": "Public TODO stack", "url": "https://smithers.sh/evmts/zevm/stack" }
+            ]
+          }
+        ]
+      },
+      {
+        "audience": "everyone",
+        "blocks": [
+          {
+            "type": "hero",
+            "title": "ZEVM",
+            "tagline": "Embeddable Zig Ethereum node built on Smithers Cloud",
+            "text": "Execution on guillotine-mini, primitives from Voltaire, JSON-RPC, a beacon light client, and C and Node-API bindings verified by Lighthouse backpressure audits and a shared remote cache.",
+            "install": "claude mcp add --transport http zevm https://smithers.sh/evmts/zevm/mcp",
+            "actions": [
+              { "label": "Backpressure audit", "url": "https://smithers.sh/evmts/zevm/-/uphill" },
+              { "label": "Project wiki", "url": "https://smithers.sh/evmts/zevm/-/wiki" },
+              { "label": "Add your repo", "url": "https://smithers.sh/#waitlist" }
+            ]
+          },
+          {
+            "type": "stats",
+            "stats": [
+              { "value": "Zig", "label": "Embeddable EVM" },
+              { "value": "Public", "label": "TODOs and factory" },
+              { "value": "Cloud R2", "label": "Shared build cache" },
+              { "value": "Isolated", "label": "Untrusted community runs" }
+            ]
+          },
+          {
+            "type": "prompt",
+            "title": "Ask about ZEVM",
+            "placeholder": "Describe an execution, JSON-RPC, light-client, or binding issue…"
+          }
+        ]
+      }
+    ]
+  }
+}

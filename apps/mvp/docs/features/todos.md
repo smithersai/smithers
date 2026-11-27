@@ -424,3 +424,7 @@ and `smithers_write_wait_timeouts`. See [the complete bound and transport limits
 ### Held-write ordering
 
 A held stack change retains its durable row. Stack changes share a repository key because numbering and dependent operations are ordered by that stack. Another repository and other features can send. Ordering and the held sign-in prompt survive reload and a change of leading tab.
+
+## Public TODO visibility on public repositories
+
+On public, non-ops repositories (`smithersai/Smithers-Ops` remains strictly admin-in-person only), `GET /api/shapes/todos?repo=owner/name` and the `todo_list` MCP tool are publicly readable so contributors and viewers can inspect the live TODO stack. All stack mutations (`todo_draft`, commit, reorder, drop) and private repository stacks remain gated by live repository role and person-only approval boundaries.
