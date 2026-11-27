@@ -4,38 +4,56 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta name="description" content="Give your agent a faster CI feedback loop with incremental, cached runs.">
+<meta name="description" content="Fast CI for agents. Read your existing CI, record exact file reads at the kernel boundary, and reuse steps with zero stale passes.">
+<meta property="og:title" content="Smithers CI · Fast CI for agents">
+<meta property="og:description" content="Incremental, kernel-recorded CI caching with zero stale passes. Measure speedup on your own git history before changing a single file.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ci.smithers.sh/">
 <title>Smithers CI · Fast CI for agents</title>
 <!-- Splash page. Self-contained: no network resource of any kind. -->
 <style>
   :root {
     --bg: #fbfbf9;
     --surface: #ffffff;
-    --code-bg: #f2f3f0;
-    --text: #1b2421;
-    --muted: #55615c;
-    --line: #dfe3df;
+    --surface-2: #f4f6f4;
+    --code-bg: #111715;
+    --code-text: #e6efe9;
+    --code-muted: #8fa399;
+    --code-inline-bg: #eef1ee;
+    --text: #161f1c;
+    --muted: #505e58;
+    --line: #dde2de;
     --accent: #0b6e5b;
+    --accent-bright: #119178;
     --accent-soft: #e2f1ec;
     --accent-text: #ffffff;
+    --ok: #137a4c;
+    --warn: #a15c07;
     --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #111614;
-      --surface: #171d1b;
-      --code-bg: #0c100f;
-      --text: #e8ede9;
-      --muted: #a3afa9;
-      --line: #2a3330;
+      --bg: #0d1210;
+      --surface: #131a18;
+      --surface-2: #18211e;
+      --code-bg: #080b0a;
+      --code-text: #e8f0ec;
+      --code-muted: #7f948a;
+      --code-inline-bg: #1c2623;
+      --text: #e9efec;
+      --muted: #9aa9a2;
+      --line: #24302c;
       --accent: #4fd1b1;
-      --accent-soft: #15302a;
-      --accent-text: #08201b;
+      --accent-bright: #6ce0c3;
+      --accent-soft: #132e27;
+      --accent-text: #061b16;
+      --ok: #5be0a1;
+      --warn: #f0b44c;
     }
   }
   *, *::before, *::after { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
   body {
     margin: 0;
     background: var(--bg);
@@ -44,90 +62,173 @@
     font-size: 1rem;
     line-height: 1.6;
   }
-  a { color: var(--accent); }
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:hover { color: var(--accent-bright); }
   :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
-  code { font-family: var(--mono); font-size: 0.92em; }
+  code { font-family: var(--mono); font-size: 0.9em; }
+  p code, li code, td code {
+    padding: 0.12rem 0.35rem;
+    border-radius: 5px;
+    background: var(--code-inline-bg);
+  }
   .wrap { max-width: 1120px; margin: 0 auto; padding: 0 1.5rem; }
 
+  /* Nav */
+  .nav {
+    position: sticky; top: 0; z-index: 20;
+    backdrop-filter: blur(10px);
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav__inner {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    min-height: 3.5rem;
+  }
+  .brand {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    color: var(--text); font-weight: 750; letter-spacing: -0.02em; text-decoration: none;
+  }
+  .brand__dot {
+    width: 0.65rem; height: 0.65rem; border-radius: 999px;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-soft);
+  }
+  .nav__links { display: flex; flex-wrap: wrap; gap: 1.15rem; font-size: 0.92rem; font-weight: 550; }
+  .nav__links a { color: var(--muted); text-decoration: none; }
+  .nav__links a:hover { color: var(--text); }
+
   /* Hero */
-  .hero { position: relative; padding: 5rem 0 4rem; overflow: hidden; }
+  .hero { position: relative; padding: 4.5rem 0 3.75rem; overflow: hidden; }
   .hero__art {
     position: absolute; inset: 0; pointer-events: none;
     background-image:
-      radial-gradient(circle at 70% 40%, color-mix(in srgb, var(--accent) 14%, transparent) 0, transparent 50%),
-      linear-gradient(color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px),
-      linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px);
+      radial-gradient(circle at 72% 35%, color-mix(in srgb, var(--accent) 16%, transparent) 0, transparent 52%),
+      linear-gradient(color-mix(in srgb, var(--accent) 6%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--accent) 6%, transparent) 1px, transparent 1px);
     background-size: auto, 42px 42px, 42px 42px;
-    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 15%, #000 70%, transparent);
-    mask-image: linear-gradient(to bottom, transparent, #000 15%, #000 70%, transparent);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 72%, transparent);
+    mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 72%, transparent);
   }
   .hero__grid {
     position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 440px);
-    gap: 4rem;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 3rem;
     align-items: center;
   }
   .eyebrow {
-    margin: 0 0 0.8rem;
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    margin: 0 0 0.9rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
     color: var(--accent);
-    font-size: 0.78rem;
+    font-size: 0.76rem;
     font-weight: 700;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
   }
   h1 {
-    margin: 0 0 1.5rem;
-    font-size: clamp(3rem, 9vw, 5.5rem);
-    font-weight: 750;
-    letter-spacing: -0.055em;
-    line-height: 0.95;
+    margin: 0 0 1.25rem;
+    font-size: clamp(2.8rem, 7vw, 4.8rem);
+    font-weight: 800;
+    letter-spacing: -0.05em;
+    line-height: 0.96;
   }
   h1 span { color: var(--accent); }
-  .tagline { margin: 0; max-width: 32rem; color: var(--muted); font-size: 1.25rem; line-height: 1.55; }
-  .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 2rem; }
+  .tagline { margin: 0; max-width: 34rem; color: var(--muted); font-size: 1.18rem; line-height: 1.55; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1.75rem; }
   .button {
     display: inline-flex; align-items: center; justify-content: center;
-    min-height: 2.6rem; padding: 0 1.1rem;
-    border: 1px solid var(--line); border-radius: 8px;
+    min-height: 2.65rem; padding: 0 1.15rem;
+    border: 1px solid var(--line); border-radius: 9px;
     background: var(--surface); color: var(--text);
     font: inherit; font-weight: 600; text-decoration: none; cursor: pointer;
     white-space: nowrap;
   }
-  .button:hover { border-color: var(--accent); }
-  .button--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); min-width: 9.5rem; }
+  .button:hover { border-color: var(--accent); color: var(--text); }
+  .button--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); min-width: 10rem; }
+  .button--primary:hover { background: var(--accent-bright); border-color: var(--accent-bright); color: var(--accent-text); }
+  .hero__note { margin: 0.85rem 0 0; color: var(--muted); font-size: 0.86rem; }
 
-  /* Install panel */
-  .try { display: flex; flex-direction: column; gap: 1.5rem; }
-  .install {
-    border: 1px solid var(--line); border-radius: 12px;
-    background: var(--surface);
-    overflow: hidden;
-  }
-  .install__label {
-    margin: 0; padding: 0.6rem 1rem;
-    border-bottom: 1px solid var(--line);
-    color: var(--muted); font-size: 0.8rem; font-weight: 600;
-  }
-  .install pre {
-    margin: 0; padding: 1.1rem 1rem;
+  /* Terminal panel */
+  .terminal {
+    border: 1px solid var(--line);
+    border-radius: 13px;
     background: var(--code-bg);
-    font-family: var(--mono); font-size: 1.05rem;
-    overflow-x: auto;
+    color: var(--code-text);
+    overflow: hidden;
+    box-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.45);
   }
-  .install pre code::before { content: "$ "; color: var(--muted); }
+  .terminal__bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    padding: 0.55rem 0.9rem;
+    border-bottom: 1px solid #222d29;
+    background: #0b0f0e;
+  }
+  .terminal__dots { display: flex; gap: 0.4rem; }
+  .terminal__dots i { width: 0.62rem; height: 0.62rem; border-radius: 999px; background: #2c3834; display: block; }
+  .terminal__tabs { display: flex; gap: 0.25rem; }
+  .terminal__tab {
+    border: 1px solid transparent; border-radius: 6px;
+    background: transparent; color: var(--code-muted);
+    font: 600 0.76rem/1 var(--mono); padding: 0.35rem 0.55rem; cursor: pointer;
+  }
+  .terminal__tab[aria-selected="true"] {
+    background: #172420; border-color: #2b453d; color: #6ce0c3;
+  }
+  .terminal__cmd {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid #1b2421;
+    font-family: var(--mono); font-size: 0.95rem;
+  }
+  .terminal__cmd code::before { content: "$ "; color: #4fd1b1; }
+  .terminal__out {
+    margin: 0; padding: 0.9rem 1rem 1.05rem;
+    font-family: var(--mono); font-size: 0.8rem; line-height: 1.55;
+    color: var(--code-text); overflow-x: auto; white-space: pre;
+  }
+  .t-dim { color: var(--code-muted); }
+  .t-ok { color: #5be0a1; font-weight: 600; }
+  .t-hi { color: #6ce0c3; font-weight: 700; }
+  .t-warn { color: #f0b44c; }
+
+  /* Proof strip */
+  .proof {
+    padding: 1.5rem 0;
+    border-top: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .proof__grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+  }
+  .stat { padding: 0.35rem 0.25rem; }
+  .stat__val {
+    display: block;
+    font-size: 1.55rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.15;
+    color: var(--text);
+  }
+  .stat__val span { color: var(--accent); }
+  .stat__lbl { display: block; margin-top: 0.2rem; color: var(--muted); font-size: 0.85rem; }
 
   /* Sections */
-  section { padding: 3.5rem 0; border-top: 1px solid var(--line); }
-  h2 { margin: 0 0 1.5rem; font-size: 1.6rem; letter-spacing: -0.02em; line-height: 1.2; }
-  h3 { margin: 0 0 0.4rem; font-size: 1.05rem; }
+  section { padding: 3.75rem 0; border-top: 1px solid var(--line); }
+  h2 { margin: 0 0 0.65rem; font-size: 1.75rem; letter-spacing: -0.025em; line-height: 1.2; }
+  .lead { margin: 0 0 1.75rem; max-width: 44rem; color: var(--muted); font-size: 1.02rem; }
+  h3 { margin: 0 0 0.45rem; font-size: 1.05rem; }
   .steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
   .card {
-    padding: 1.25rem;
+    padding: 1.3rem;
     border: 1px solid var(--line); border-radius: 12px;
     background: var(--surface);
   }
   .card p { margin: 0; color: var(--muted); }
+  .card p + p { margin-top: 0.65rem; }
   .steps .card { counter-increment: step; }
   .steps .card h3::before {
     content: counter(step);
@@ -137,21 +238,47 @@
     background: var(--accent-soft); color: var(--accent);
     font-size: 0.85rem; font-weight: 700;
   }
-  .modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
-  .commands { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.75rem 2rem; margin: 0; }
-  .commands dt code { padding: 0.2rem 0.45rem; border-radius: 6px; background: var(--code-bg); white-space: nowrap; }
+  .pill {
+    display: inline-block;
+    margin-bottom: 0.55rem;
+    padding: 0.16rem 0.5rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.74rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .metric {
+    margin: 0.55rem 0 0.45rem;
+    font-size: 1.85rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1;
+    color: var(--text);
+  }
+  .metric span { color: var(--accent); }
+  .commands { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.8rem 2rem; margin: 0; }
+  .commands dt code { padding: 0.25rem 0.55rem; border-radius: 6px; background: var(--code-inline-bg); white-space: nowrap; }
   .commands dd { margin: 0; color: var(--muted); }
-  footer { padding: 2rem 0 3rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.93rem; }
+  th, td { text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; background: var(--surface-2); }
+  .badge-ok { color: var(--ok); font-weight: 650; }
+  .badge-warn { color: var(--warn); font-weight: 650; }
+
+  footer { padding: 2.25rem 0 3.25rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; }
+  .footer__inner { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; }
+  .footer__links { display: flex; flex-wrap: wrap; gap: 1.25rem; }
 
   @media (max-width: 960px) {
-    .hero__grid { grid-template-columns: minmax(0, 1fr); gap: 2.5rem; }
-    .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .hero__grid { grid-template-columns: minmax(0, 1fr); gap: 2.25rem; }
+    .steps, .proof__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 640px) {
     .wrap { padding: 0 1.1rem; }
-    .hero { padding: 3rem 0 2.5rem; }
-    .tagline { font-size: 1.1rem; }
-    .steps, .modes { grid-template-columns: minmax(0, 1fr); }
+    .hero { padding: 2.75rem 0 2.25rem; }
+    .tagline { font-size: 1.06rem; }
+    .steps, .grid-2, .proof__grid { grid-template-columns: minmax(0, 1fr); }
     .commands { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; }
     .commands dd { margin-bottom: 0.9rem; }
     .commands dt code { white-space: normal; }
@@ -159,67 +286,251 @@
 </style>
 </head>
 <body>
-<header class="hero">
+<nav class="nav" aria-label="Primary">
+  <div class="wrap nav__inner">
+    <a class="brand" href="#top"><span class="brand__dot" aria-hidden="true"></span>Smithers CI</a>
+    <div class="nav__links">
+      <a href="#how">How it works</a>
+      <a href="#benchmarks">Benchmarks</a>
+      <a href="#soundness">Soundness</a>
+      <a href="#examples">Examples</a>
+      <a href="/docs">Docs</a>
+      <a href="https://github.com/smithersai/smithers/tree/main/packages/ci">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
   <div class="hero__art" aria-hidden="true"></div>
   <div class="wrap hero__grid">
     <div>
-      <p class="eyebrow">Fast CI for agents</p>
+      <p class="eyebrow">Fast CI for agents · Linux &amp; macOS</p>
       <h1>Smithers <span>CI</span></h1>
-      <p class="tagline">Give your agent a faster CI feedback loop with incremental, cached runs.</p>
+      <p class="tagline">Keep your existing CI. Record every file a step actually reads at the Linux kernel boundary, cache exact verdicts, and prove the speedup on your own git history before changing a single file.</p>
       <div class="actions">
         <button type="button" class="button button--primary" id="copy" data-command="bunx smithers-ci">Copy command</button>
-        <a class="button" href="https://github.com/smithersai/smithers/tree/main/packages/ci/docs">Docs</a>
+        <a class="button" href="/docs">Read the docs</a>
+        <a class="button" href="/benchmarks">Benchmarks</a>
         <a class="button" href="https://github.com/smithersai/smithers/tree/main/packages/ci">Source</a>
       </div>
+      <p class="hero__note">Changes nothing in your repository until you run <code>bunx smithers-ci apply</code>. Node.js 22.19+ and Git required.</p>
     </div>
-    <div class="try">
-      <div class="install">
-        <p class="install__label">In a repository</p>
-        <pre><code id="command">bunx smithers-ci</code></pre>
+
+    <div class="terminal" aria-label="Interactive command preview">
+      <div class="terminal__bar">
+        <span class="terminal__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <div class="terminal__tabs" role="tablist" aria-label="Command examples">
+          <button type="button" class="terminal__tab" role="tab" aria-selected="true" data-tab="replay">replay</button>
+          <button type="button" class="terminal__tab" role="tab" aria-selected="false" data-tab="fast">fast mode</button>
+          <button type="button" class="terminal__tab" role="tab" aria-selected="false" data-tab="apply">apply</button>
+        </div>
       </div>
+      <div class="terminal__cmd"><code id="command">bunx smithers-ci</code></div>
+      <pre class="terminal__out" id="terminal-out"><span class="t-dim">smithers-ci: reading .github/workflows/tests.yml (tj/commander.js)
+smithers-ci: replaying 4 commits · smthrs-observe + bubblewrap jail</span>
+
+commit   files  baseline  normal  reused     verdict
+16f4e45      1       76s     10s  18 of 25   <span class="t-ok">same</span>
+8519088      1       75s      8s  18 of 25   <span class="t-ok">same</span>
+3431f07      1       75s      8s  18 of 25   <span class="t-ok">same</span>
+a5a7dc0      2      207s    224s   0 of 25   <span class="t-ok">same</span>
+
+<span class="t-hi">1.74× faster</span> over 4 commits · <span class="t-ok">0 mismatches</span> · 0 stale passes
+<span class="t-dim">baseline 434s → normal 250s · nothing written to your repo</span></pre>
     </div>
   </div>
 </header>
 
+<div class="proof" aria-label="Verified engineering guarantees">
+  <div class="wrap proof__grid">
+    <div class="stat">
+      <span class="stat__val"><span>0</span> stale passes</span>
+      <span class="stat__lbl">Any mismatch fails replay with exit 1 and hides speedup</span>
+    </div>
+    <div class="stat">
+      <span class="stat__val"><span>1.02–1.16×</span></span>
+      <span class="stat__lbl">Native seccomp <code>smthrs-observe</code> recording overhead</span>
+    </div>
+    <div class="stat">
+      <span class="stat__val"><span>104</span> syscalls</span>
+      <span class="stat__lbl">Linux 7.0 file &amp; network boundary table; unknowns refused</span>
+    </div>
+    <div class="stat">
+      <span class="stat__val"><span>387+</span> theorems</span>
+      <span class="stat__lbl">Lean 4 reference specs (0 <code>sorry</code>) + 7 independent ship reviews</span>
+    </div>
+  </div>
+</div>
+
 <main class="wrap">
-  <section aria-labelledby="how">
-    <h2 id="how">How it works</h2>
+  <section id="how" aria-labelledby="how-heading">
+    <h2 id="how-heading">How it works</h2>
+    <p class="lead">No migration to a proprietary YAML dialect. Point Smithers CI at your repository and measure exact parity on real commits first.</p>
     <ol class="steps">
-      <li class="card"><h3>Read</h3><p>Your CI: GitHub Actions, Justfile, Makefile, package.json, Turborepo.</p></li>
-      <li class="card"><h3>Cache</h3><p>A step reruns only when a file it reads changes.</p></li>
-      <li class="card"><h3>Replay</h3><p>Runs your past commits both ways: your CI, and cached.</p></li>
-      <li class="card"><h3>Report</h3><p>The time each way, and every result that differs.</p></li>
+      <li class="card"><h3>Read</h3><p>Parses GitHub Actions, Justfile, Makefile, <code>package.json</code> scripts, and Turborepo into an explicit inventory.</p></li>
+      <li class="card"><h3>Cache</h3><p><code>smthrs-observe</code> traces exact file reads inside bubblewrap; a step reruns only when an input it read changes.</p></li>
+      <li class="card"><h3>Replay</h3><p>Replays recent commits in isolated copies both ways — baseline CI vs cached — without touching your checkout or <code>$HOME</code>.</p></li>
+      <li class="card"><h3>Report</h3><p>Prints wall time, CPU seconds, why every step ran or hit cache, and flags every differing verdict immediately.</p></li>
     </ol>
   </section>
 
-  <section aria-labelledby="modes">
-    <h2 id="modes">Two modes</h2>
-    <div class="modes">
-      <div class="card"><h3>Normal mode</h3><p>Runs everything a change affects. Same results as your CI.</p></div>
-      <div class="card"><h3>Fast mode</h3><p>Also skips tests a model predicts the change cannot break. A skip is reported as a skip, never as a pass.</p></div>
+  <section id="modes" aria-labelledby="modes-heading">
+    <h2 id="modes-heading">Two modes</h2>
+    <p class="lead">Strict cryptographic parity by default, with opt-in predictive test selection when you want an even shorter agent loop.</p>
+    <div class="grid-2">
+      <div class="card">
+        <span class="pill">Default · Zero stale passes</span>
+        <h3>Normal mode</h3>
+        <p>Runs every target whose recorded inputs changed and reuses a result only when every read file, directory entry, and env dependency matches. Same results as your CI.</p>
+      </div>
+      <div class="card">
+        <span class="pill">Opt-in · Honest reporting</span>
+        <h3>Fast mode</h3>
+        <p>Also skips tests a model predicts the change cannot break (via <code>AI_GATEWAY_API_KEY</code> or a signed-in Claude/Codex CLI). A skip is always reported as a skip, never as a pass, and never written to cache.</p>
+      </div>
     </div>
   </section>
 
-  <section aria-labelledby="commands">
-    <h2 id="commands">Commands</h2>
-    <dl class="commands">
-      <dt><code>bunx smithers-ci</code></dt><dd>Replay past commits and print the speedup. Changes nothing.</dd>
-      <dt><code>bunx smithers-ci inventory</code></dt><dd>Print what your CI runs.</dd>
-      <dt><code>bunx smithers-ci replay</code></dt><dd>The replay alone.</dd>
-      <dt><code>bunx smithers-ci apply</code></dt><dd>Write the cached CI into the repository.</dd>
-    </dl>
+  <section id="benchmarks" aria-labelledby="benchmarks-heading">
+    <h2 id="benchmarks-heading">Measured on real repositories</h2>
+    <p class="lead">Every number below comes from real packed-tarball replays with zero mocked processes. When a repository reuses too little to win, Smithers CI prints that plainly too.</p>
+    <div class="grid-3">
+      <div class="card">
+        <span class="pill">JavaScript · GitHub Actions</span>
+        <h3>tj/commander.js</h3>
+        <p class="metric"><span>1.74×</span> faster</p>
+        <p>434s baseline → 250s normal across 4 commits in a 4 vCPU Cloudflare box (1.61×–1.83× on bare metal). 18 of 25 steps reused on one-file edits, 0 mismatches.</p>
+      </div>
+      <div class="card">
+        <span class="pill">Zig · 3,350 tests</span>
+        <h3>smithersai/needlefish</h3>
+        <p class="metric"><span>1.8s</span> warm leaf</p>
+        <p>Cold 4-core Linux suite cut from 590s → 299s; 56% of the last 600 real commits run under 30s locally; 18–139s on 4-core GitHub runners. <a href="https://needlefish-ci.smithers.sh">View live CI atlas →</a></p>
+      </div>
+      <div class="card">
+        <span class="pill">TypeScript · Smithers build</span>
+        <h3>smithersai/vibelang</h3>
+        <p class="metric"><span>1.3×</span> faster</p>
+        <p>Native Smithers build target replay verified with 0 mismatches across compiler and bundler packages using content-addressed caching.</p>
+      </div>
+    </div>
   </section>
 
+  <section id="soundness" aria-labelledby="soundness-heading">
+    <h2 id="soundness-heading">Why you can trust the cache</h2>
+    <p class="lead">CI caches fail silently when a tool reads an undeclared file, calls a local daemon, or mutates an input in place. Smithers CI treats unsoundness as a release blocker.</p>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Kernel-level observation (<code>smthrs-observe</code>)</h3>
+        <p>Compiled C supervisor using Linux seccomp <code>USER_NOTIF</code> (with <code>strace</code> fallback). Tracks all 104 file/network syscalls, refuses <code>io_uring</code>, detects unconnected UDP/Unix sends to external daemons, records directory link counts, and keeps job background servers alive only for their job's lifetime.</p>
+      </div>
+      <div class="card">
+        <h3>Isolated, tamper-checked execution</h3>
+        <p>Every job runs in its own bubblewrap jail with an isolated <code>$HOME</code> and non-pushable Git config. Content-addressed store verified against 7 tampering attacks with 0 stale passes. Untrusted repositories replay strictly inside Cloudflare Sandboxes via <code>box-replay.mjs</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="examples" aria-labelledby="examples-heading">
+    <h2 id="examples-heading">Example repositories</h2>
+    <p class="lead">Real open-source and showcase repositories using Smithers build, Smithers CI, and coding-factory workflows.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Repository</th><th>Stack</th><th>What it demonstrates</th><th>CI / Isolation</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a href="https://github.com/smithersai/needlefish"><code>smithersai/needlefish</code></a></td>
+            <td>Zig 0.17.1</td>
+            <td>Cycle-free Zig build graph, 25-job inventory, deterministic sim &amp; fuzz flows, <a href="https://needlefish-ci.smithers.sh">visual CI atlas</a></td>
+            <td class="badge-ok">Linux · Verified</td>
+          </tr>
+          <tr>
+            <td><a href="https://github.com/smithersai/vibelang"><code>smithersai/vibelang</code></a></td>
+            <td>TypeScript / Go</td>
+            <td>Native <code>PACKAGE.ts</code> workspace targets, evals, 1.3× replay speedup</td>
+            <td class="badge-ok">Linux · Verified</td>
+          </tr>
+          <tr>
+            <td><a href="https://github.com/smithersai/claude-p"><code>smithersai/claude-p</code></a></td>
+            <td>Zig / Node</td>
+            <td>Complete <code>.smithers/{FACTORY,PACKAGE,WORKSPACE}.ts</code> + projection-freshness CI tests</td>
+            <td class="badge-ok">Linux &amp; macOS</td>
+          </tr>
+          <tr>
+            <td><a href="https://github.com/smithersai/foldkit"><code>smithersai/foldkit</code></a></td>
+            <td>TypeScript / pnpm</td>
+            <td>Tailored Smithers flows + Vitest Story/Scene regression checks</td>
+            <td class="badge-ok">Workspace</td>
+          </tr>
+          <tr>
+            <td><a href="https://github.com/smithersai/eliza"><code>smithersai/eliza</code></a></td>
+            <td>TypeScript / Bun</td>
+            <td>Untrusted repository pattern: strictly isolated Cloudflare Sandbox execution, zero host secrets</td>
+            <td class="badge-warn">Cloudflare Sandbox only</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="commands" aria-labelledby="commands-heading">
+    <h2 id="commands-heading">Commands</h2>
+    <dl class="commands">
+      <dt><code>bunx smithers-ci</code></dt><dd>Replay recent commits and print the speedup. Changes nothing in your repository.</dd>
+      <dt><code>bunx smithers-ci inventory</code></dt><dd>Print every job, step, and unsupported action parsed from your CI.</dd>
+      <dt><code>bunx smithers-ci replay --commits 5</code></dt><dd>Run the replay on the last 5 commits (add <code>--mode both</code> for fast mode).</dd>
+      <dt><code>bunx smithers-ci apply</code></dt><dd>Write <code>WORKSPACE.smithers</code> and <code>.github/workflows/smithers-ci.yml</code> when you trust the replay.</dd>
+    </dl>
+  </section>
 </main>
 
 <footer>
-  <div class="wrap">Smithers CI is part of <a href="https://github.com/smithersai/smithers">Smithers</a>. MIT licensed.</div>
+  <div class="wrap footer__inner">
+    <div>Smithers CI is part of <a href="https://github.com/smithersai/smithers">Smithers</a>. MIT licensed.</div>
+    <div class="footer__links">
+      <a href="/docs">Documentation</a>
+      <a href="/benchmarks">Benchmarks</a>
+      <a href="/blog/launch">Launch post</a>
+      <a href="https://smithers.sh">smithers.sh</a>
+      <a href="https://github.com/smithersai/smithers/tree/main/packages/ci">GitHub</a>
+    </div>
+  </div>
 </footer>
 
 <script>
   (function () {
     var button = document.getElementById("copy");
     var command = document.getElementById("command");
+    var out = document.getElementById("terminal-out");
+    var tabs = document.querySelectorAll(".terminal__tab");
+    var views = {
+      replay: {
+        cmd: "bunx smithers-ci",
+        html: '<span class="t-dim">smithers-ci: reading .github/workflows/tests.yml (tj/commander.js)\nsmithers-ci: replaying 4 commits · smthrs-observe + bubblewrap jail</span>\n\ncommit   files  baseline  normal  reused     verdict\n16f4e45      1       76s     10s  18 of 25   <span class="t-ok">same</span>\n8519088      1       75s      8s  18 of 25   <span class="t-ok">same</span>\n3431f07      1       75s      8s  18 of 25   <span class="t-ok">same</span>\na5a7dc0      2      207s    224s   0 of 25   <span class="t-ok">same</span>\n\n<span class="t-hi">1.74× faster</span> over 4 commits · <span class="t-ok">0 mismatches</span> · 0 stale passes\n<span class="t-dim">baseline 434s → normal 250s · nothing written to your repo</span>'
+      },
+      fast: {
+        cmd: "bunx smithers-ci --mode both --commits 5",
+        html: '<span class="t-dim">smithers-ci: scoring targets with predictive selection (score 0.2, cap 0.5)</span>\n\nmode     wall    targets run  test recall  change recall  mismatches\nnormal   250s     32 of 100       100.0%         100.0%           <span class="t-ok">0</span>\nfast     158s     20 of 100        80.0%         100.0%           <span class="t-ok">0</span>\n\n<span class="t-warn">note:</span> skipped targets are always reported as skipped, never cached or marked passed.'
+      },
+      apply: {
+        cmd: "bunx smithers-ci apply",
+        html: '<span class="t-dim">smithers-ci: writing generated CI files</span>\n\n  <span class="t-ok">+</span> WORKSPACE.smithers\n  <span class="t-ok">+</span> .smithers/ci/target-map.json\n  <span class="t-ok">+</span> .github/workflows/smithers-ci.yml\n  <span class="t-dim">~</span> .gitignore (4 cache paths ignored)\n\n<span class="t-hi">Ready.</span> Commit these files to enable cached CI runs on GitHub Actions.'
+      }
+    };
+    tabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        var key = tab.getAttribute("data-tab");
+        var view = views[key];
+        if (!view) return;
+        tabs.forEach(function (t) { t.setAttribute("aria-selected", t === tab ? "true" : "false"); });
+        command.textContent = view.cmd;
+        button.setAttribute("data-command", view.cmd);
+        out.innerHTML = view.html;
+      });
+    });
+
     var reset;
     function done() {
       button.textContent = "Copied";
@@ -232,7 +543,7 @@
       var selection = window.getSelection();
       selection.removeAllRanges();
       selection.addRange(range);
-      try { if (document.execCommand("copy")) done(); } catch (error) { /* the text stays selected */ }
+      try { if (document.execCommand("copy")) done(); } catch (error) { /* text stays selected */ }
     }
     button.addEventListener("click", function () {
       var text = button.getAttribute("data-command");

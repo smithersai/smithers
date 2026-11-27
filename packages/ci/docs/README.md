@@ -38,6 +38,7 @@ See [Normal mode and fast mode](concepts/modes.md).
 | [Fast mode](fast-mode.md)                              | What fast mode skips, what its three numbers mean, and their limits.                            |
 | [Its own targets](concepts/own-targets.md)             | What happens on a repository that already builds with Smithers build.                           |
 | [The cache](concepts/cache.md)                         | What is cached, when it is reused, hosting it, and pointing CI at it.                           |
+| [Benchmarks](about/benchmarks.md)                      | Verified repository speedups, recording overhead, and soundness measurements.                   |
 | [Repositories](about/repositories.md)                  | What Smithers CI reads, and what it does not run.                                               |
 | [A repository you do not trust](about/untrusted.md)    | Replay it in a Cloudflare Container and take back only its text results.                        |
 | [Command reference](reference/cli.md)                  | Every command, flag and exit code.                                                              |
