@@ -108,7 +108,7 @@ export const fileProps = (row: BlobRow | undefined): FileProps => {
  * - `ready`: nothing.
  */
 export type Header =
-  | { readonly kind: "unknown" | "cloning" | "ready" | "missing" | "unavailable" }
+  | { readonly kind: "unknown" | "cloning" | "ready" | "missing" | "unavailable" | "sync_failed" }
   | { readonly kind: "clone"; readonly status?: string }
   | { readonly kind: "sign_in"; readonly text: string; readonly status?: string }
   | { readonly kind: "refused"; readonly text: string; readonly retry?: boolean }
@@ -145,7 +145,11 @@ export const headerOf = (
   signedIn: boolean | null,
   answered = true,
   about?: AboutRow,
+  readyRefs = false,
 ): Header => {
+  // The refs endpoint also checks the ready row. A local transport failure can outlive that row’s arrival.
+  const ready = repository?.status === "ready" || (repository === undefined && readyRefs)
+  if (ready && (clone === undefined || clone.status === "failed" || clone.status === "requesting")) return { kind: "ready" }
   if (clone !== undefined) {
     switch (clone.status) {
       case "requesting":
@@ -340,6 +344,13 @@ export interface ViewState {
   readonly repository?: Repository | undefined
   readonly clone?: CloneRow | undefined
   readonly about?: AboutRow | undefined
+}
+
+/** Two live queries can update at different times during navigation. Only this route's gated refs confirm readiness. */
+export const routedHeaderOf = ({ view, repository, clone, about }: ViewState, refs?: RefsRow): Header => {
+  const readyRefs = !view.answered && refs !== undefined && refs.repoId === view.repoId && refs.key === view.refsKey && refs.state === "ready"
+  const header = headerOf(repository, clone, view.signedIn, view.answered, about, readyRefs)
+  return header.kind === "unknown" && view.syncFailed ? { kind: "sync_failed" } : header
 }
 
 /**

@@ -15,7 +15,7 @@ import { CLONE, TRY_AGAIN } from "../contract"
 import { cloneHeaderOf } from "../cloneHeader"
 import { minimizedOf } from "../embedView"
 import { exampleForkOf } from "../exampleForks"
-import { aboutOf, headerOf } from "../view"
+import { aboutOf, routedHeaderOf } from "../view"
 import { Slot } from "../../../plugins/components/Slot"
 import { useRepo, useRepoAnswer } from "./RepoContext"
 import { RepoHeaderControls } from "./RepoHeaderControls"
@@ -34,13 +34,14 @@ import { ForkActions } from "../../fork/components/ForkActions"
 export function RepoHeader({ backTarget, notices = true }: { readonly backTarget?: Minimized; readonly notices?: boolean } = {}) {
   const { queries, actions } = useRepo()
   const { data } = useLiveQuery(queries.view)
+  const { data: refs } = useLiveQuery(queries.refs)
   const auth = useAuth()
   const { data: session } = useLiveQuery(auth.queries.session)
   const location = useLocation()
   const answer = useRepoAnswer(data?.view.owner ?? "", data?.view.name ?? "")
   if (data === undefined || data.view.repoId === null) return null
-  const { view, repository, clone, about } = data
-  const header = cloneHeaderOf(headerOf(repository, clone, view.signedIn, view.answered, about), view.signedIn, answer)
+  const { view, repository, about } = data
+  const header = cloneHeaderOf(routedHeaderOf(data, refs?.refs), view.signedIn, answer)
   const defaultBranch = repository?.defaultBranch ?? aboutOf(about)?.defaultBranch ?? null
   const fork = exampleForkOf(view.owner, view.name)
   const sections = header.kind === "missing" || header.kind === "unavailable" ? undefined : (
@@ -85,6 +86,9 @@ export function RepoHeader({ backTarget, notices = true }: { readonly backTarget
                 <a href={signInHref(`${location.pathname}${location.searchStr}`)}>{header.text}</a>
               </Button>
             )
+            : null}
+          {header.kind === "sync_failed"
+            ? <Button variant="outline" onClick={() => void actions.retrySync()}>Retry clone status</Button>
             : null}
           {header.kind === "refused"
             ? (

@@ -60,6 +60,8 @@ export interface RepoActions {
 
   /** Clone pressed; `false` for an invalid name or insufficient/unavailable repository authority. */
   readonly clone: (owner: string, name: string) => boolean
+  /** Reconnect the read-only repositories shape and wait for its installed snapshot. */
+  readonly retrySync: () => Promise<void>
   /** Try again on a failed or refused clone. */
   readonly retryClone: (owner: string, name: string) => boolean
   /** Try the public About read again after its durable retry window ends. */
@@ -135,6 +137,7 @@ export class Repo extends Context.Service<
           canonicalName: (owner, name) => promise(Effect.map(aboutOf(owner, name), (row) => row.about?.name)),
           knownName: (owner, name) => run(knownName(owner, name)),
           clone: (owner, name) => run(clone(owner, name)),
+          retrySync: () => promise(store.repositories.reconnect.pipe(Effect.andThen(store.firstSync))),
           retryClone: (owner, name) => run(retryClone(owner, name)),
           retryAbout: (owner, name) => run(retryAbout(owner, name)),
           refresh: (target) => run(refresh(target)),

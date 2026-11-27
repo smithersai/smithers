@@ -211,7 +211,9 @@ describe("cloning when RepoApi doesn't take it", () => {
     tab.repo.actions.clone("o", "n")
     await waitFor(() => expect(client.launches).toEqual(["o/n c1", "o/n c1"]))
     expect(client.calls).toEqual(["o/n"])
-    expect(tab.lines("repo.clone.launch").map((line) => line.annotations.outcome)).toEqual(["unavailable", "launched"])
+    expect(tab.lines("repo.clone.launch").map(({ annotations }) => [annotations.outcome, annotations.cloneId])).toEqual([
+      ["unavailable", "c1"], ["launched", "c1"],
+    ])
   })
 
   test("a launch RepoApi refuses is final: Members can clone. once the role there is gone, and it isn't asked again", async () => {
@@ -247,7 +249,7 @@ describe("cloning when RepoApi doesn't take it", () => {
     expect(tab.count(clones, { outcome: "started" })).toBe(1)
     expect(tab.lines("repo.clone.unconfirmed")[0]).toMatchObject({
       level: "WARN",
-      annotations: { feature: "repo", outcome: "unconfirmed", reason: "not_delivered" },
+      annotations: { feature: "repo", outcome: "unconfirmed", reason: "not_delivered", cloneId: "c1" },
     })
   })
 
@@ -296,6 +298,18 @@ describe("cloning when RepoApi doesn't take it", () => {
 })
 
 describe("the repositories' first sync", () => {
+  test("a failed preload may succeed after reconnect and its success stays cached", async () => {
+    let attempts = 0
+    const initial = await Effect.runPromise(firstSyncOf(Effect.suspend(() => {
+      attempts += 1
+      return attempts === 1 ? Effect.fail(new Collection.LoadFailed({ cause: new Error("offline") })) : Effect.void
+    })))
+    await Effect.runPromise(initial)
+    await Effect.runPromise(initial)
+    await Effect.runPromise(initial)
+    expect(attempts).toBe(2)
+  })
+
   // Electric waits out a stopped shape, so `preload` fails only when the collection itself fails; the collection's
   // `preload` is injected failing here (test.faults-by-injection).
   test("one that fails settles each wait on the device's rows, and is logged once", async () => {

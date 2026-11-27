@@ -91,7 +91,7 @@ export const launchClone = ({ repo, cloneId }: { readonly repo: string; readonly
       }),
     )
     throw failure
-  }.pipe(Effect.withSpan("repo.clone.launch"))
+  }.pipe(Effect.annotateLogs({ cloneId }), Effect.withSpan("repo.clone.launch", { attributes: { cloneId } }))
 
 /** Registers `repo/clone` with its steps, asking through the host's `RepoClient`. */
 export const registration = Interpreter.layerWithImplementations(

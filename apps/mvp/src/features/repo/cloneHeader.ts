@@ -5,7 +5,9 @@ import type { Header } from "./view"
 
 /** Clone spends this repository's budget: its role answer, never the session's role, admits the button. */
 export const cloneHeaderOf = (header: Header, signedIn: boolean | null, answer: (RepoAnswer & { readonly failure?: string }) | undefined): Header => {
-  if (header.kind !== "clone" && header.kind !== "refused") return header
+  if (header.kind === "sync_failed" && signedIn !== false &&
+    (answer === undefined || answer.failure !== undefined || mayAsk(answer.role))) return header
+  if (header.kind !== "clone" && header.kind !== "refused" && header.kind !== "sync_failed") return header
   if (signedIn === false) return { kind: "sign_in", text: SIGN_IN_TO_CLONE }
   if (signedIn !== true || answer === undefined) return { kind: "unknown" }
   if (answer.failure !== undefined) return header.kind === "refused" ? { ...header, retry: false } : { kind: "unknown" }

@@ -102,7 +102,7 @@ export const VIEW = "view"
  * RepoApi's refs before Electric delivered that row.
  * `missing` when the URL names no repository or a ref the repository doesn't have; `failure` when the branches and
  * tags the ref needed couldn't load, and why. `signedIn` is sign-in's answer, `null` until it gives one. `answered`:
- * the repositories' shape has answered once, with its rows or a failure.
+ * the eager repositories collection has finished its initial sync. A terminal sync error sets `syncFailed`.
  */
 export const ViewRow = Schema.Struct({
   id: Schema.Literal(VIEW),
@@ -133,6 +133,7 @@ export const ViewRow = Schema.Struct({
   manifestKey: Schema.NullOr(Schema.String),
   signedIn: Schema.NullOr(Schema.Boolean),
   answered: Schema.Boolean,
+  syncFailed: Schema.Boolean,
 })
 export type ViewRow = typeof ViewRow.Type
 
@@ -162,6 +163,7 @@ export const emptyView: ViewRow = {
   manifestKey: null,
   signedIn: null,
   answered: false,
+  syncFailed: false,
 }
 
 /**

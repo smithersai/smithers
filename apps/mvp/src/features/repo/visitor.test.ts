@@ -1,13 +1,14 @@
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schedule, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { testFile } from "../../../worker/test/harness"
 import { type RepoHarness, repoHarness, resetRepos } from "../../../worker/test/repos"
 import { type DeviceOptions, openTab, type Tab } from "../../test/repoDevice"
 import { RepoClient, RepoRefused } from "./api"
-import { NOT_CLONED, NOT_FOUND } from "./contract"
+import { NOT_CLONED, NOT_FOUND, REPOSITORIES_SHAPE_ROUTE } from "./contract"
 import { headLoadMs, locateMs } from "./metrics"
-import { pageOf } from "./view"
+import { RepoStore } from "./store.vibe"
+import { pageOf, routedHeaderOf } from "./view"
 
 // A visitor's file page (docs/features/repo.md#the-browser): a device with no repository rows yet opens a file by its
 // URL, as a link from anywhere does. Only the repositories' shape would tell the device the clone is ready, and a cold
@@ -59,6 +60,79 @@ const withRefs = (h: RepoHarness, refs: (real: RepoClient["Service"]) => RepoCli
 const RENDER_WITHIN_MS = 5_000
 
 describe("a visitor's file page, while the repositories' shape hasn't answered", () => {
+  test("an installed initial snapshot still answers after a live poll fails", async () => {
+    const h = await repoHarness(server)
+    const release = Promise.withResolvers<void>()
+    const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), h.origin)
+      if (url.pathname === REPOSITORIES_SHAPE_ROUTE && url.searchParams.get("live") === "true") {
+        await release.promise
+        return new Response(null, { status: 503 })
+      }
+      return h.fetch(input, init)
+    }) as typeof globalThis.fetch
+    const tab = await open(h, { shapes: "real", fetch, retry: Schedule.recurs(0) })
+    const store = await tab.runtime.runPromise(RepoStore)
+    try {
+      await tab.runtime.runPromise(store.firstSync)
+    } finally {
+      release.resolve()
+    }
+    await tab.runtime.runPromise(store.repositories.sync.pipe(Stream.filter((event) => event._tag === "Stopped"), Stream.runHead))
+    await tab.runtime.runPromise(store.firstSync.pipe(Effect.timeout("1 second")))
+    expect(tab.view().view).toMatchObject({ answered: true, syncFailed: false })
+  })
+
+  test("retrying clone status restarts a stopped shape without requesting a clone", async () => {
+    const h = await repoHarness(server)
+    h.github.publish("octocat", "Spoon-Knife")
+    const tab = await open(h, { shapes: "down", retry: Schedule.recurs(0) })
+    tab.repo.actions.open({ owner: "octocat", name: "Spoon-Knife", kind: "tree", ref: "main", path: "", line: 10, lineEnd: null })
+    await waitFor(() => expect(routedHeaderOf(tab.view())).toEqual({ kind: "sync_failed" }))
+    await tab.heal()
+    await tab.repo.actions.retrySync()
+    await waitFor(() => expect(routedHeaderOf(tab.view())).toEqual({ kind: "clone" }))
+    expect(h.started()).toHaveLength(0)
+  })
+
+  test("an initial shape page cannot offer Clone before Electric's up-to-date page", async () => {
+    const h = await repoHarness(server)
+    await seedPublic(h)
+    const nextPage = Promise.withResolvers<void>()
+    const resume = Promise.withResolvers<void>()
+    let heldPage: Response | undefined
+    let requests = 0
+    // Hold page two of the real snapshot. If Electric fits it in one response, deliver its messages on page two.
+    const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), h.origin)
+      if (url.pathname !== REPOSITORIES_SHAPE_ROUTE) return h.fetch(input, init)
+      requests += 1
+      if (requests === 2) {
+        nextPage.resolve()
+        await resume.promise
+        return heldPage ?? h.fetch(input, init)
+      }
+      const response = await h.fetch(input, init)
+      if (requests !== 1 || !response.ok) return response
+      const messages = await response.clone().json() as Array<{ headers: { control?: string } }>
+      if (messages.at(-1)?.headers.control !== "up-to-date") return response
+      heldPage = response
+      const headers = new Headers(response.headers)
+      headers.delete("electric-up-to-date")
+      return Response.json([], { headers })
+    }) as typeof globalThis.fetch
+    const tab = await open(h, { shapes: "real", fetch })
+    try {
+      await nextPage.promise
+      tab.repo.actions.open({ owner: "octocat", name: "Spoon-Knife", kind: "tree", ref: null, path: "", line: null, lineEnd: null })
+      expect(routedHeaderOf(tab.view(), undefined)).toEqual({ kind: "unknown" })
+      expect(tab.view().view.answered).toBe(false)
+    } finally {
+      resume.resolve()
+    }
+    await waitFor(() => expect(tab.view().view.answered).toBe(true))
+  })
+
   test("shows the file as soon as RepoApi answers: its head from the refs, then the file", async () => {
     const h = await repoHarness(server)
     const { id, headSha } = await seedPublic(h)
@@ -81,6 +155,9 @@ describe("a visitor's file page, while the repositories' shape hasn't answered",
     expect(tab.file().file?.contents).toContain("# Fixture")
     // The refs' answer carried the branches, so the picker needs no second read.
     expect(tab.refs().refs).toMatchObject({ state: "ready", branches: [{ name: "main", sha: headSha }] })
+    expect(routedHeaderOf(tab.view(), tab.refs().refs)).toEqual({ kind: "ready" })
+    const previous = { ...tab.refs().refs!, repoId: "github/other/repository" }
+    expect(routedHeaderOf(tab.view(), previous).kind).not.toBe("ready")
     expect(tab.lines("repo.head.load").map((line) => line.annotations.outcome)).toEqual(["ready"])
     expect(tab.lines("repo.locate")[0]!.annotations).toMatchObject({ source: "refs", outcome: "located" })
     expect(tab.histogramCount(locateMs, { source: "refs", outcome: "located" })).toBe(1)

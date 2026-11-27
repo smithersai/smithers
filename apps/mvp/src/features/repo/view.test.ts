@@ -169,6 +169,15 @@ describe("headerOf", () => {
     expect(headerOf(undefined, clone("failed"), true)).toEqual({ kind: "refused", text: FAILURE_COPY.unavailable })
   })
 
+  test("a delivered ready row or confirmed refs settle an uncertain local clone", () => {
+    for (const pending of [undefined, clone("requesting"), clone("failed")]) {
+      expect(headerOf(repository(), pending, true)).toEqual({ kind: "ready" })
+      expect(headerOf(undefined, pending, true, false, undefined, true)).toEqual({ kind: "ready" })
+    }
+    expect(headerOf(repository({ status: "cloning" }), undefined, true, true, undefined, true)).toEqual({ kind: "cloning" })
+    expect(headerOf(repository(), clone("forbidden"), true)).toEqual({ kind: "refused", text: MEMBERS_CLONE })
+  })
+
   test("no repository is Clone, or sign-in for a signed-out person", () => {
     expect(headerOf(undefined, undefined, true)).toEqual({ kind: "clone" })
     expect(headerOf(undefined, undefined, null)).toEqual({ kind: "clone" })

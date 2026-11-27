@@ -1,7 +1,7 @@
 import { WebCrypto } from "effect/crypto/WebCrypto"
 import { ElectricCollection, type ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Clock, Context, Deferred, Duration, Effect, Fiber, FiberHandle, Layer, Option, Ref, Stream, type Schedule, SubscriptionRef } from "effect"
+import { Clock, Context, Deferred, Duration, Effect, Fiber, FiberHandle, Layer, Option, Ref, Stream, type Schedule, SubscriptionRef, SynchronizedRef } from "effect"
 import { codeOf } from "../../errorCode"
 import { RepoRole, Session } from "../auth/schema"
 import { makeVisibility } from "./gate"
@@ -35,14 +35,14 @@ export interface RepoConfig {
 const signedInOf = (session: { readonly status: string }): boolean | null =>
   session.status === "signed_in" ? true : session.status === "signed_out" ? false : null
 
-/**
- * The repositories' first sync as a page waits for it, from the collection's `preload`. One that fails leaves the page
- * reading the rows the device has as all there are, so it is logged as `repo.repositories.load`, once per store: every
- * later wait answers the same failure.
- */
+/** Share the first installed snapshot. A failed wait can be retried; a successful wait stays complete offline. */
 export const firstSyncOf = (preload: Effect.Effect<void, Collection.LoadFailed>) =>
-  Effect.map(Ref.make(false), (logged) =>
-    preload.pipe(
+  effect {
+    const done = try SynchronizedRef.make(false)
+    const logged = try Ref.make(false)
+    return SynchronizedRef.updateEffect(done, (installed) =>
+      installed ? Effect.succeed(true) : preload.pipe(Effect.as(true))
+    ).pipe(
       Effect.catch((failure) =>
         Effect.flatMap(Ref.getAndSet(logged, true), (already) => effect {
           if (already) return
@@ -52,7 +52,8 @@ export const firstSyncOf = (preload: Effect.Effect<void, Collection.LoadFailed>)
           )
         })
       ),
-    ))
+    )
+  }
 
 /**
  * Writes `row` as the whole of what this tab knows of the person's authority on its repository: nothing of an earlier
@@ -166,16 +167,23 @@ const make = (config: RepoConfig) => effect {
     initialData: [emptyView],
   })
 
-  // The repositories' shape's first answer, rows or a failure: until then the header offers no Clone for a repository
-  // this device hasn't seen (`headerOf`).
+  // A shape may deliver several historical pages before it catches up. Only the eager collection's readiness
+  // confirms absence. Earlier HTTP responses and failures cannot authorize an offer to clone a missing row.
+  const syncFailed = Effect.orDie(view.update(VIEW, (row) => void (row.syncFailed = !row.answered)))
+  const firstSync = try firstSyncOf(repositories.preload.pipe(
+    Effect.andThen(repositories.currentApplied),
+    Effect.andThen(Effect.orDie(view.update(VIEW, (row) => {
+      row.answered = true
+      row.syncFailed = false
+    }))),
+    Effect.tapError(() => syncFailed),
+  ))
+  try Effect.forkScoped(firstSync)
   try repositories.sync.pipe(
-    Stream.filter((event) => event._tag !== "Sent"),
-    Stream.runHead,
-    Effect.andThen(Effect.orDie(view.update(VIEW, (row) => void (row.answered = true)))),
+    Stream.filter((event) => event._tag === "Stopped"),
+    Stream.runForEach(() => syncFailed),
     Effect.forkScoped,
   )
-
-  const firstSync = try firstSyncOf(repositories.preload)
 
   // Who is signed in, from sign-in's own row when the app has sign-in: Clone gives way to the sign-in link.
   const auth = try Effect.serviceOption(AuthStore)
@@ -200,6 +208,17 @@ const make = (config: RepoConfig) => effect {
     abouts: try visibility.gate(abouts),
     embeds: try visibility.gate(embeds),
   }
+  const viewState = try viewQuery(view, shown.repositories, clones, shown.abouts)
+  // A delivered ready row settles this tab's transport failure. A later eviction must not resurrect its retry.
+  try viewState.rows.pipe(
+    Stream.runForEach((rows) => effect {
+      const current = rows[0]
+      if (current?.repository?.status !== "ready" || current.clone?.status !== "failed") return
+      const latest = try clones.get(current.clone.id)
+      if (Option.isSome(latest) && latest.value.status === "failed") try Effect.orDie(clones.delete(current.clone.id))
+    }),
+    Effect.forkScoped,
+  )
   if (Option.isSome(auth)) {
     try auth.value.sessionState.rows.pipe(
       Stream.runForEach((rows) =>
@@ -251,7 +270,7 @@ const make = (config: RepoConfig) => effect {
     shownRepositories: shown.repositories,
     shownTrees: shown.trees,
     shownBlobs: shown.blobs,
-    viewState: try viewQuery(view, shown.repositories, clones, shown.abouts),
+    viewState,
     embedsState: try embedsQuery(shown.embeds, shown.repositories, shown.abouts, shown.trees, shown.blobs),
     aboutState: try aboutQuery(view, shown.abouts),
     manifestState: try manifestQuery(view, shown.blobs),

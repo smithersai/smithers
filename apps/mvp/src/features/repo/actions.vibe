@@ -91,7 +91,7 @@ const send = (row: CloneRow) =>
     if ((try Effect.result(delivered))._tag === "Failure") {
       try put<CloneRow>(store.clones, row.id, { ...row, status: "failed" })
       return try Effect.logWarning("repo.clone.unconfirmed").pipe(
-        Effect.annotateLogs({ outcome: "unconfirmed", reason: "not_delivered" }),
+        Effect.annotateLogs({ outcome: "unconfirmed", reason: "not_delivered", cloneId: accepted.cloneId }),
       )
     }
     try Effect.orDie(store.clones.delete(row.id))

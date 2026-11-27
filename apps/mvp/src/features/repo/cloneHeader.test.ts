@@ -21,3 +21,11 @@ for (const header of [{ kind: "clone" }, { kind: "refused", text: "Try again" }]
     for (const own of [false, true]) expect(cloneHeaderOf(header, true, { role, own })).toBe(header)
   })
 }
+
+
+test("a stopped shape gives signed-out people sign-in and preserves a known repository role refusal", () => {
+  const header = { kind: "sync_failed" } as const
+  expect(cloneHeaderOf(header, false, undefined)).toEqual({ kind: "sign_in", text: SIGN_IN_TO_CLONE })
+  expect(cloneHeaderOf(header, true, { role: "guest", own: false })).toEqual({ kind: "refused", text: MEMBERS_CLONE, retry: false })
+  expect(cloneHeaderOf(header, true, { role: "member", own: false })).toBe(header)
+})

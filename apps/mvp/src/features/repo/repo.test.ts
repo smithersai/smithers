@@ -1,6 +1,6 @@
 import { Action } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
-import { Collection } from "@smthrs/effect-tanstack-db"
+import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { Cause, Deferred, Effect, Exit, Layer, Option, Schedule } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, beforeEach, describe, expect, onTestFailed, onTestFinished, test, vi } from "vitest"
@@ -9,6 +9,7 @@ import { testFile } from "../../../worker/test/harness"
 import { type RepoHarness, repoHarness, resetRepos } from "../../../worker/test/repos"
 import { runFlow } from "../../../worker/test/flowHost"
 import { repoFlows } from "../../flows/registrations.vibe"
+import { nodeDevice } from "../../test/chatApi"
 import { openTab, type Tab } from "../../test/repoDevice"
 import { persistenceOn } from "../../test/deviceFixture"
 import { tempDirectory } from "../../test/tempDirectory"
@@ -24,7 +25,7 @@ import { TabClipboard } from "./copy"
 import { RepoCloneRequest, RepoCopy, RepoCopyRefused, RepoRead, RepoRefs, RepoTree } from "./flows.vibe"
 import { aliasChecks, aboutLoadMs, blobLoadMs, clones, copies, refsLoadMs, roleAnswers, treeLoadMs } from "./metrics"
 import { NotCopied } from "./repo.vibe"
-import { aboutOf, generatedLinksFor, headerOf, previewReadmeOf, previewTreeOf } from "./view"
+import { aboutOf, generatedLinksFor, headerOf, routedHeaderOf, previewReadmeOf, previewTreeOf } from "./view"
 import * as Repos from "../../../worker/Repos.vibe"
 import * as RepoMetrics from "../../../worker/RepoMetrics.vibe"
 
@@ -112,6 +113,45 @@ describe("cloning from a tab", () => {
       await tab.dispose()
       tabs.pop()
     }
+  })
+
+  test("a watching tab cannot confirm absence before the writer installs the repository snapshot", async () => {
+    const h = await repoHarness(server, { codeStorage: "none" })
+    const id = "github/octocat/spoon-knife"
+    await server.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO repositories (id, owner, name, status, default_branch, head_sha)
+      VALUES (${id}, 'octocat', 'Spoon-Knife', 'ready', 'main', ${"a".repeat(40)})`))
+    const device = nodeDevice()
+    const options = { origin: h.origin, fetch: h.fetch, persistence: Persistence.layer({ ...device.persistence, lock: device.lock }) }
+    const writer = await openTab({ ...options, shapes: "stalled" })
+    tabs.push(writer)
+    const writerStore = await writer.runtime.runPromise(RepoStore)
+    await waitFor(() => expect(writerStore.repositories.tanstack.status).toBe("loading"))
+    const watcher = await openTab(options)
+    tabs.push(watcher)
+    const store = await watcher.runtime.runPromise(RepoStore)
+    await watcher.runtime.runPromise(store.view.update(VIEW, (row) => { row.repoId = id }))
+    await watcher.runtime.runPromise(store.repositories.preload)
+    expect(watcher.view().repository).toBeUndefined()
+    expect(watcher.view().view.answered).toBe(false)
+    await writer.heal()
+    await waitFor(() => expect(watcher.view().view.answered).toBe(true))
+    expect(header(watcher)).toEqual({ kind: "ready" })
+  })
+
+  cloneTest("a clone confirmed late shows ready on its original attempt without pressing retry", async ({ cloningRepo: h }) => {
+    h.scripted.publish("octocat", "Spoon-Knife")
+    const tab = await openTab({ origin: h.origin, fetch: h.fetch, shapes: "stalled", confirmWithin: "100 millis" })
+    tabs.push(tab)
+    tab.repo.actions.open(root("octocat", "Spoon-Knife"))
+    tab.repo.actions.clone("octocat", "Spoon-Knife")
+    await waitFor(() => expect(tab.lines("repo.clone.unconfirmed")).toHaveLength(1))
+    await h.settled()
+    await tab.heal()
+    await waitFor(() => expect(header(tab)).toEqual({ kind: "ready" }))
+    await waitFor(() => expect(tab.view().clone).toBeUndefined())
+    expect(tab.view().repository).toMatchObject({ status: "ready", attempt: 1 })
+    expect(tab.count(clones, { outcome: "started" })).toBe(1)
   })
 
   cloneTest("Clone shows cloning, Electric delivers the row, and the view opens at its README", async ({ cloningRepo: h }) => {
@@ -602,6 +642,8 @@ describe("branches, tags and commits", () => {
     tab.repo.actions.open(root("octocat", "Spoon-Knife"))
     await waitFor(() => expect(tab.view().view.sha).toBe(headSha))
     const store = await tab.runtime.runPromise(RepoStore)
+    await waitFor(() => expect(tab.view().view).toMatchObject({ answered: false, syncFailed: true }))
+    expect(routedHeaderOf(tab.view())).toEqual({ kind: "sync_failed" })
     // A terminal preload failure uses the real first-sync handler over a faulty collection boundary.
     const firstSync = await tab.runtime.runPromise(firstSyncOf(Effect.fail(new Collection.LoadFailed({ cause: new Error("offline") }))))
     expect(tab.repo.lookups.repository(id)).toBeUndefined()
