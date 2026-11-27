@@ -64,4 +64,3 @@ export const openStorage = (path: string) => {
     hibernate: () => db.close()
   }
 }
-

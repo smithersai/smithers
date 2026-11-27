@@ -334,12 +334,13 @@ const simulate = (seed: number): Trace => {
           stats.bridgedPosts++
           // A position past the ceiling is no position: the bridge's post is anchored like anyone's.
           if (born.position !== undefined && placeOf(born) === undefined) stats.inadmissiblePositions++
-        }
-        else {
+        } else {
           // No backdating: a post the bridge did not place reads after everything that was there, whatever position
           // it names.
           const place = placesOf(world.hub.state.chat.messages)[earlier.length]!
-          if (placesOf(earlier).some((other) => other >= place)) fail(`${born.id} reads before a message that was there`)
+          if (placesOf(earlier).some((other) => other >= place)) {
+            fail(`${born.id} reads before a message that was there`)
+          }
           if (born.position !== undefined) stats.ignoredPositions++
         }
       }

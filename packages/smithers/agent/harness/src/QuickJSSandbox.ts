@@ -1206,7 +1206,9 @@ const openRuntime = (
     // closes, and the context and runtime are disposed. Finalizers run in
     // reverse, so these handles are still released before them.
     const newDeferred = yield* Effect.acquireRelease(
-      Effect.sync(() => evaluated(context, context.evalCode(deferredFactory), "The realm could not install its deferred factory")),
+      Effect.sync(() =>
+        evaluated(context, context.evalCode(deferredFactory), "The realm could not install its deferred factory")
+      ),
       (handle) =>
         Effect.sync(() => {
           if (!broken) handle.dispose()
@@ -1230,7 +1232,9 @@ const openRuntime = (
 
     // Captured beside it, before the prelude or any cell runs.
     const describe = yield* Effect.acquireRelease(
-      Effect.sync(() => evaluated(context, context.evalCode(describeThrown), "The realm could not install its describer")),
+      Effect.sync(() =>
+        evaluated(context, context.evalCode(describeThrown), "The realm could not install its describer")
+      ),
       (handle) =>
         Effect.sync(() => {
           if (!broken) handle.dispose()

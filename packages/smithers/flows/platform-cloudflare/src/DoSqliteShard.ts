@@ -32,9 +32,9 @@ import { ShardProtocol, ShardServer } from "@smthrs/sync"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Reactivity from "effect/reactivity/Reactivity"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
-import * as Reactivity from "effect/reactivity/Reactivity"
 import * as SqlClient from "effect/sql/SqlClient"
 import type { Storage } from "./ObjectDatabase.ts"
 
@@ -184,9 +184,10 @@ export const make: (
   },
   never,
   Scope.Scope | Reactivity.Reactivity
-> =
-  Effect.fnUntraced(function*(storage: Storage, options: Options) {
-  const shard = yield* Schema.decodeUnknownEffect(ShardProtocol.PullRequest.fields.shard)(options.shard).pipe(Effect.orDie)
+> = Effect.fnUntraced(function*(storage: Storage, options: Options) {
+  const shard = yield* Schema.decodeUnknownEffect(ShardProtocol.PullRequest.fields.shard)(options.shard).pipe(
+    Effect.orDie
+  )
   const client = yield* SqliteClient.make({ storage })
   const exec = <T>(query: string, ...bindings: Array<unknown>): Array<T> =>
     storage.sql.exec(query, ...bindings).toArray() as unknown as Array<T>
@@ -201,18 +202,19 @@ export const make: (
   })
   let pending: Array<Entry> = []
   const store: ShardServer.ShardStore = {
-    atomic: (body) => storage.transactionSync(() => {
-      const outer = pending
-      const entries: Array<Entry> = []
-      pending = entries
-      try {
-        const result = body()
-        for (const entry of entries) options.beforeCommit?.(entry)
-        return result
-      } finally {
-        pending = outer
-      }
-    }),
+    atomic: (body) =>
+      storage.transactionSync(() => {
+        const outer = pending
+        const entries: Array<Entry> = []
+        pending = entries
+        try {
+          const result = body()
+          for (const entry of entries) options.beforeCommit?.(entry)
+          return result
+        } finally {
+          pending = outer
+        }
+      }),
     head: () => {
       const row = exec<HeadRow>(
         `SELECT h.epoch, h.head, COALESCE(s.floor, 0) AS floor, COALESCE(s.state, 'null') AS state
@@ -228,40 +230,57 @@ export const make: (
           `INSERT INTO shard_snapshot (shard, floor, state) VALUES (?, ?, ?)
            ON CONFLICT(shard) DO UPDATE SET floor = excluded.floor, state = excluded.state
            WHERE floor <> excluded.floor OR state <> excluded.state`,
-          shard, next.floor, JSON.stringify(next.snapshot)
+          shard,
+          next.floor,
+          JSON.stringify(next.snapshot)
         )
       } else {
         exec(`DELETE FROM shard_snapshot WHERE shard = ?`, shard)
       }
     },
-    receipt: (key) => exec<ShardServer.Receipt>(
-      `SELECT hash, epoch, seq, reason FROM shard_receipts WHERE shard = ? AND origin_node = ? AND command_id = ?`,
-      shard, ...key
-    )[0],
+    receipt: (key) =>
+      exec<ShardServer.Receipt>(
+        `SELECT hash, epoch, seq, reason FROM shard_receipts WHERE shard = ? AND origin_node = ? AND command_id = ?`,
+        shard,
+        ...key
+      )[0],
     putReceipt: (key, receipt) => {
       exec(
         `INSERT INTO shard_receipts (shard, origin_node, command_id, hash, epoch, seq, reason) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        shard, ...key, receipt.hash, receipt.epoch, receipt.seq, receipt.reason
+        shard,
+        ...key,
+        receipt.hash,
+        receipt.epoch,
+        receipt.seq,
+        receipt.reason
       )
     },
     append: (entry) => {
       exec(
         `INSERT INTO shard_entries (shard, seq, epoch, origin_node, command_id, stream, events) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        shard, entry.seq, entry.epoch, ...entry.key, entry.stream, JSON.stringify(entry.events)
+        shard,
+        entry.seq,
+        entry.epoch,
+        ...entry.key,
+        entry.stream,
+        JSON.stringify(entry.events)
       )
       pending.push(entry)
     },
-    read: (after, limit) => exec<EntryRow>(
-      `SELECT seq, epoch, origin_node, command_id, stream, events
+    read: (after, limit) =>
+      exec<EntryRow>(
+        `SELECT seq, epoch, origin_node, command_id, stream, events
        FROM shard_entries WHERE shard = ? AND seq > ? ORDER BY seq LIMIT ?`,
-      shard, after, limit
-    ).map((row) => ({
-      seq: row.seq,
-      epoch: row.epoch,
-      key: [row.origin_node, row.command_id],
-      stream: row.stream,
-      events: JSON.parse(row.events) as ReadonlyArray<Json>
-    })),
+        shard,
+        after,
+        limit
+      ).map((row) => ({
+        seq: row.seq,
+        epoch: row.epoch,
+        key: [row.origin_node, row.command_id],
+        stream: row.stream,
+        events: JSON.parse(row.events) as ReadonlyArray<Json>
+      })),
     dropThrough: (seq) => {
       exec(`DELETE FROM shard_entries WHERE shard = ? AND seq <= ?`, shard, seq)
     }

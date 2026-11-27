@@ -441,6 +441,12 @@ a5a7dc0      2      207s    224s   0 of 25   <span class="t-ok">same</span>
         </thead>
         <tbody>
           <tr>
+            <td><a href="https://github.com/smithersai/smithers-ci-example"><code>smithersai/smithers-ci-example</code></a></td>
+            <td>Node 22+ / ESM</td>
+            <td>Live generated <code>.github/workflows/smithers-ci.yml</code> + <code>.smithers/WORKSPACE.smithers</code>, 4.4× faster on docs commits, 0 mismatches</td>
+            <td class="badge-ok">Live · Applied</td>
+          </tr>
+          <tr>
             <td><a href="https://github.com/smithersai/needlefish"><code>smithersai/needlefish</code></a></td>
             <td>Zig 0.17.1</td>
             <td>Cycle-free Zig build graph, 25-job inventory, deterministic sim &amp; fuzz flows, <a href="https://needlefish-ci.smithers.sh">visual CI atlas</a></td>
@@ -481,7 +487,7 @@ a5a7dc0      2      207s    224s   0 of 25   <span class="t-ok">same</span>
       <dt><code>bunx smithers-ci</code></dt><dd>Replay recent commits and print the speedup. Changes nothing in your repository.</dd>
       <dt><code>bunx smithers-ci inventory</code></dt><dd>Print every job, step, and unsupported action parsed from your CI.</dd>
       <dt><code>bunx smithers-ci replay --commits 5</code></dt><dd>Run the replay on the last 5 commits (add <code>--mode both</code> for fast mode).</dd>
-      <dt><code>bunx smithers-ci apply</code></dt><dd>Write <code>WORKSPACE.smithers</code> and <code>.github/workflows/smithers-ci.yml</code> when you trust the replay.</dd>
+      <dt><code>bunx smithers-ci apply</code></dt><dd>Write <code>.smithers/WORKSPACE.smithers</code> and <code>.github/workflows/smithers-ci.yml</code> when you trust the replay.</dd>
     </dl>
   </section>
 </main>
@@ -516,7 +522,7 @@ a5a7dc0      2      207s    224s   0 of 25   <span class="t-ok">same</span>
       },
       apply: {
         cmd: "bunx smithers-ci apply",
-        html: '<span class="t-dim">smithers-ci: writing generated CI files</span>\n\n  <span class="t-ok">+</span> WORKSPACE.smithers\n  <span class="t-ok">+</span> .smithers/ci/target-map.json\n  <span class="t-ok">+</span> .github/workflows/smithers-ci.yml\n  <span class="t-dim">~</span> .gitignore (4 cache paths ignored)\n\n<span class="t-hi">Ready.</span> Commit these files to enable cached CI runs on GitHub Actions.'
+        html: '<span class="t-dim">smithers-ci: writing generated CI files</span>\n\n  <span class="t-ok">+</span> .github/workflows/smithers-ci.yml\n  <span class="t-ok">+</span> .smithers/WORKSPACE.smithers\n  <span class="t-ok">+</span> .smithers/.npmignore\n  <span class="t-ok">+</span> .smithers/ci/NOT-REPRODUCED.txt\n\n<span class="t-hi">Ready.</span> Commit these files to enable cached CI runs on GitHub Actions.'
       }
     };
     tabs.forEach(function (tab) {

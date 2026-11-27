@@ -426,7 +426,11 @@ export const make = (
         prototype.dispose()
         // `null` and `undefined` have no properties to ask for, so each is named as itself.
         const text = thrownText(context, value) ??
-          (context.typeof(value) === "undefined" ? "undefined" : context.sameValue(value, context.null) ? "null" : undefined)
+          (context.typeof(value) === "undefined"
+            ? "undefined"
+            : context.sameValue(value, context.null)
+            ? "null"
+            : undefined)
         return text !== undefined
           ? { genuine: matches, name: undefined, message: text }
           : {
@@ -476,7 +480,10 @@ export const make = (
         return outcome
       }
       arm(limits.loadMs, Number.POSITIVE_INFINITY)
-      const sources = [[listStrings, "boundary.js"], [prelude, "prelude.js"], [options.bundle, "presentation.js"]] as const
+      const sources = [[listStrings, "boundary.js"], [prelude, "prelude.js"], [
+        options.bundle,
+        "presentation.js"
+      ]] as const
       for (const [code, filename] of sources) {
         const result = context.evalCode(code, filename)
         if (result.error !== undefined) {
@@ -495,7 +502,9 @@ export const make = (
       if (context.typeof(names) === "object") {
         const listed = context.callFunction(lister, context.undefined, names)
         /* v8 ignore next -- the realm has no Proxy and the lister reads own descriptors through intrinsics captured before the bundle ran, so it always answers; only the load's time limit expiring inside it can stop it */
-        text = listed.error === undefined ? listed.value.consume((value) => stringOf(context, value, componentsUnits)) : listed.error.consume(() => "")
+        text = listed.error === undefined
+          ? listed.value.consume((value) => stringOf(context, value, componentsUnits))
+          : listed.error.consume(() => "")
       }
       lister.dispose()
       names.dispose()
@@ -512,7 +521,10 @@ export const make = (
         render.dispose()
         reduce.dispose()
         return abandon(
-          failed("load_failed", `The bundle names its components in more than ${componentsUnits} UTF-16 code units of JSON`)
+          failed(
+            "load_failed",
+            `The bundle names its components in more than ${componentsUnits} UTF-16 code units of JSON`
+          )
         )
       }
       const components = namesOf(text)

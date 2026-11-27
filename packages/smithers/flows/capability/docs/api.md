@@ -363,9 +363,9 @@ Classifies an exact capability.
 
 | Tier           | Actions                                                                                                                                      |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sealed`       | `fs:read`, `net:get`, `model:call`, `memory:read`, `messages:read`, `jj:status`, `jj:diff`, `jj:root`                                                         |
+| `sealed`       | `fs:read`, `net:get`, `model:call`, `memory:read`, `messages:read`, `jj:status`, `jj:diff`, `jj:root`                                        |
 | `compensable`  | `jj:snapshot`, `jj:restore`, `jj:workspace-add`, `jj:workspace-forget`, `jj:revert`, `jj:op-restore`, and an `fs:write` inside the workspace |
-| `irreversible` | `net:post`, `net:private`, `proc:spawn`, `memory:write`, `messages:write`, `remote:acquire`, and an `fs:write` that escapes the workspace                      |
+| `irreversible` | `net:post`, `net:private`, `proc:spawn`, `memory:write`, `messages:write`, `remote:acquire`, and an `fs:write` that escapes the workspace    |
 
 Workspace containment is lexical, so symlinks are invisible: a caller that
 materializes workspace snapshots resolves real paths before classifying a

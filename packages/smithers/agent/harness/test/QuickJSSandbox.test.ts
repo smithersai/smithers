@@ -592,9 +592,12 @@ Object.defineProperty(globalThis.probedArray, "0", {
     )
     // Coercion traps never run: the host asks for no string the realm did not already hold.
     expect(
-      await outcomeOf(`throw { toString() { for (;;) {} }, valueOf() { for (;;) {} }, [Symbol.toPrimitive]() { for (;;) {} } }`, {
-        limits
-      })
+      await outcomeOf(
+        `throw { toString() { for (;;) {} }, valueOf() { for (;;) {} }, [Symbol.toPrimitive]() { for (;;) {} } }`,
+        {
+          limits
+        }
+      )
     ).toStrictEqual(new Cell.Raised({ name: "Error", message: "{}" }))
     // A value JSON cannot carry is named as one, and a throwing accessor is only an absent message.
     expect(await outcomeOf(`const loop = {}; loop.self = loop; throw loop`, { limits })).toStrictEqual(
@@ -847,24 +850,31 @@ describe("QuickJSSandbox settlement", () => {
     })
   }, 60_000)
 
-  it("settles every reply size around the heap ceiling as a value or a heap refusal, and the module survives", async () => {
-    for (const count of [1_000, 2_000, 3_000, 4_000, 5_000, 6_000, 8_000, 12_000]) {
-      const exit = await evaluate(`const listed = await ctx.call("fs/list", {}); ctx.done(String(listed.length))`, {
-        limits: { memoryBytes: Sandbox.minimumMemoryBytes, steps: Number.MAX_SAFE_INTEGER },
-        call: () =>
-          Effect.succeed(
-            Cell.CallResult.new({ outcome: "success", value: Array.from({ length: count }, (_, index) => ({ index })) })
-          )
-      })
-      expect(Exit.isSuccess(exit)).toBe(true)
-      if (Exit.isSuccess(exit)) {
-        expect(
-          exit.value._tag === "settled" || (exit.value._tag === "rejected" && exit.value.reason === "heap")
-        ).toBe(true)
+  it(
+    "settles every reply size around the heap ceiling as a value or a heap refusal, and the module survives",
+    async () => {
+      for (const count of [1_000, 2_000, 3_000, 4_000, 5_000, 6_000, 8_000, 12_000]) {
+        const exit = await evaluate(`const listed = await ctx.call("fs/list", {}); ctx.done(String(listed.length))`, {
+          limits: { memoryBytes: Sandbox.minimumMemoryBytes, steps: Number.MAX_SAFE_INTEGER },
+          call: () =>
+            Effect.succeed(
+              Cell.CallResult.new({
+                outcome: "success",
+                value: Array.from({ length: count }, (_, index) => ({ index }))
+              })
+            )
+        })
+        expect(Exit.isSuccess(exit)).toBe(true)
+        if (Exit.isSuccess(exit)) {
+          expect(
+            exit.value._tag === "settled" || (exit.value._tag === "rejected" && exit.value.reason === "heap")
+          ).toBe(true)
+        }
       }
-    }
-    expect(await outcomeOf(`ctx.done("still usable")`)).toMatchObject({ _tag: "settled" })
-  }, 60_000)
+      expect(await outcomeOf(`ctx.done("still usable")`)).toMatchObject({ _tag: "settled" })
+    },
+    60_000
+  )
 })
 
 describe("QuickJSSandbox boundary sizes", () => {

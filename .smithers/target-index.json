@@ -5566,6 +5566,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/ci/docs/about/benchmarks.md"
+      },
+      {
+        "kind": "file",
         "path": "packages/ci/docs/about/repositories.md"
       },
       {
@@ -54481,7 +54485,7 @@
       },
       {
         "kind": "file",
-        "path": "apps/mvp/src/flows/registry.ts"
+        "path": "apps/mvp/src/flows/registry.vibe"
       },
       {
         "kind": "file",

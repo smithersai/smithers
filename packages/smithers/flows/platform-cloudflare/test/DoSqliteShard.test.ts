@@ -6,14 +6,14 @@
  * when it throws. The database lives in a file, so closing it and opening the
  * same file again is a hibernated object waking with its disk.
  */
-import { ShardProtocol } from "@smthrs/sync"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { describe, expect, it } from "@effect/vitest"
+import { ShardProtocol } from "@smthrs/sync"
 import * as Effect from "effect/Effect"
-import * as Schema from "effect/Schema"
 import * as Exit from "effect/Exit"
-import * as SqlClient from "effect/sql/SqlClient"
 import * as Reactivity from "effect/reactivity/Reactivity"
+import * as Schema from "effect/Schema"
+import * as SqlClient from "effect/sql/SqlClient"
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -74,7 +74,8 @@ describe("DoSqliteShard", () => {
     return Effect.scoped(Effect.gen(function*() {
       const { receipt, shard: journal } = yield* DoSqliteShard.make(object.storage, {
         shard,
-        decide: (cmd) => cmd.payload === "bad" ? { _tag: "Refused", reason: "bad" } : { _tag: "Accepted", events: [cmd.payload] }
+        decide: (cmd) =>
+          cmd.payload === "bad" ? { _tag: "Refused", reason: "bad" } : { _tag: "Accepted", events: [cmd.payload] }
       })
       expect(receipt(["a", "1"])).toBeUndefined()
       yield* journal.submit({ version: 2, shard, epoch: 0, command: command("a", "1", "one") })
@@ -82,10 +83,13 @@ describe("DoSqliteShard", () => {
       expect(receipt(["a", "1"])).toMatchObject({ epoch: 0, seq: 1, reason: null })
       expect(receipt(["a", "2"])).toMatchObject({ epoch: 0, seq: null, reason: "bad" })
       expect(receipt(["b", "1"])).toBeUndefined()
-    })).pipe(Effect.provide(Reactivity.layer), Effect.ensuring(Effect.sync(() => {
-      object.hibernate()
-      cleanup()
-    })))
+    })).pipe(
+      Effect.provide(Reactivity.layer),
+      Effect.ensuring(Effect.sync(() => {
+        object.hibernate()
+        cleanup()
+      }))
+    )
   })
 
   it.effect("rolls back a submit whose transaction faults before commit", () => {
@@ -134,11 +138,17 @@ describe("DoSqliteShard", () => {
             { seq: 1, epoch: 0, key: ["legacy-node", "0"], stream: "legacy/unscoped stream", events: [{ index: 0 }] },
             { seq: 2, epoch: 0, key: ["legacy-node", "1"], stream: "", events: [{ index: 1 }] },
             {
-              seq: 3, epoch: 0, key: ["legacy-node", ""], stream: "",
+              seq: 3,
+              epoch: 0,
+              key: ["legacy-node", ""],
+              stream: "",
               events: [{ legacy: ["legacy-node", ""] }]
             },
             {
-              seq: 4, epoch: 0, key: ["", "legacy-command"], stream: "",
+              seq: 4,
+              epoch: 0,
+              key: ["", "legacy-command"],
+              stream: "",
               events: [{ legacy: ["", "legacy-command"] }]
             }
           ],
@@ -155,11 +165,13 @@ describe("DoSqliteShard", () => {
           command: { key: ["new-node", "0"], stream: "legacy/unscoped stream", payload: null }
         }
         const journal = yield* DoSqliteShard.DoSqliteShard
-        for (const invalid of [
-          newCommand,
-          { ...newCommand, command: command("", "0", null) },
-          { ...newCommand, command: command("new-node", "", null) }
-        ]) {
+        for (
+          const invalid of [
+            newCommand,
+            { ...newCommand, command: command("", "0", null) },
+            { ...newCommand, command: command("new-node", "", null) }
+          ]
+        ) {
           expect(() => Schema.decodeUnknownSync(ShardProtocol.SubmitRequest)(invalid)).toThrow()
           expect(yield* Effect.flip(journal.submit(invalid as ShardProtocol.SubmitRequest)))
             .toMatchObject({ reason: "out_of_range" })
@@ -179,9 +191,15 @@ describe("DoSqliteShard", () => {
     const { path, cleanup } = scratch()
     return Effect.gen(function*() {
       const fresh = openStorage(":memory:")
-      const opening = yield* Effect.exit(Effect.provide(DoSqliteShard.DoSqliteShard, DoSqliteShard.layer(
-        fresh.storage, { shard: "" }
-      )).pipe(Effect.ensuring(Effect.sync(fresh.hibernate))))
+      const opening = yield* Effect.exit(
+        Effect.provide(
+          DoSqliteShard.DoSqliteShard,
+          DoSqliteShard.layer(
+            fresh.storage,
+            { shard: "" }
+          )
+        ).pipe(Effect.ensuring(Effect.sync(fresh.hibernate)))
+      )
       expect(Exit.isFailure(opening)).toBe(true)
       copyFileSync(new URL("./fixtures/legacy-shard.sqlite", import.meta.url), path)
       const object = openStorage(path)
@@ -190,13 +208,20 @@ describe("DoSqliteShard", () => {
         const request = yield* ShardProtocol.decodePullQuery(new URLSearchParams("v=2&shard=&epoch=0&after=0&limit=1"))
         const page = yield* journal.pull(request)
         expect(Schema.decodeUnknownSync(ShardProtocol.PullResponse)(JSON.parse(JSON.stringify(page)))).toEqual({
-          _tag: "Page", shard: "", epoch: 0, entries: [
+          _tag: "Page",
+          shard: "",
+          epoch: 0,
+          entries: [
             { seq: 1, epoch: 0, key: ["", ""], stream: "", events: [{ legacy: ["", ""] }] }
-          ], head: 1, through: 1, done: true
+          ],
+          head: 1,
+          through: 1,
+          done: true
         })
         const snapshot = yield* journal.snapshot(request.shard)
         expect(Schema.decodeUnknownSync(ShardProtocol.SnapshotResponse)(snapshot)).toEqual({
-          position: { shard: "", epoch: 0, seq: 0 }, state: null
+          position: { shard: "", epoch: 0, seq: 0 },
+          state: null
         })
         const submit = { version: 2 as const, shard: request.shard, epoch: 0, command: command("new", "0", null) }
         expect(() => Schema.decodeUnknownSync(ShardProtocol.SubmitRequest)(submit)).toThrow()
@@ -229,7 +254,12 @@ describe("DoSqliteShard", () => {
           key: ["a", "1"],
           position: { shard, epoch: 0, seq: 1 }
         })
-        expect(yield* submit(command("a", "2", "bad"))).toEqual({ _tag: "Refused", shard, key: ["a", "2"], reason: "bad" })
+        expect(yield* submit(command("a", "2", "bad"))).toEqual({
+          _tag: "Refused",
+          shard,
+          key: ["a", "2"],
+          reason: "bad"
+        })
         // Every JSON shape hashes: null and arrays included.
         expect(yield* submit(command("a", "3", [null, { z: [true] }]))).toMatchObject({
           _tag: "Accepted",
@@ -239,7 +269,12 @@ describe("DoSqliteShard", () => {
           _tag: "Duplicate",
           position: { seq: 2 }
         })
-        expect(yield* submit(command("a", "2", "bad"))).toEqual({ _tag: "Refused", shard, key: ["a", "2"], reason: "bad" })
+        expect(yield* submit(command("a", "2", "bad"))).toEqual({
+          _tag: "Refused",
+          shard,
+          key: ["a", "2"],
+          reason: "bad"
+        })
         expect(yield* submit(command("a", "2", "good"))).toEqual({
           _tag: "IdempotencyConflict",
           shard,
@@ -297,25 +332,31 @@ describe("DoSqliteShard", () => {
   it.effect("persists a compacted snapshot and retains command receipts after restart", () => {
     const { path, cleanup } = scratch()
     return Effect.gen(function*() {
-      const first = yield* withObject({ path }, Effect.gen(function*() {
-        const object = yield* DoSqliteShard.DoSqliteShard
-        yield* submit(command("a", "1", "first"))
-        yield* submit(command("a", "2", "second"))
-        expect(yield* Effect.flip(object.compact(3, null))).toMatchObject({ reason: "out_of_range" })
-        expect(yield* object.compact(1, { value: "first" })).toEqual({ shard, epoch: 0, seq: 1 })
-      }))
+      const first = yield* withObject(
+        { path },
+        Effect.gen(function*() {
+          const object = yield* DoSqliteShard.DoSqliteShard
+          yield* submit(command("a", "1", "first"))
+          yield* submit(command("a", "2", "second"))
+          expect(yield* Effect.flip(object.compact(3, null))).toMatchObject({ reason: "out_of_range" })
+          expect(yield* object.compact(1, { value: "first" })).toEqual({ shard, epoch: 0, seq: 1 })
+        })
+      )
       expect(first.object.count("shard_entries")).toBe(1)
       first.object.hibernate()
-      const second = yield* withObject({ path }, Effect.gen(function*() {
-        const object = yield* DoSqliteShard.DoSqliteShard
-        expect(yield* pull(0)).toEqual({ _tag: "Resync", shard, epoch: 0, snapshotSeq: 1 })
-        expect(yield* object.snapshot(shard)).toEqual({
-          position: { shard, epoch: 0, seq: 1 },
-          state: { value: "first" }
+      const second = yield* withObject(
+        { path },
+        Effect.gen(function*() {
+          const object = yield* DoSqliteShard.DoSqliteShard
+          expect(yield* pull(0)).toEqual({ _tag: "Resync", shard, epoch: 0, snapshotSeq: 1 })
+          expect(yield* object.snapshot(shard)).toEqual({
+            position: { shard, epoch: 0, seq: 1 },
+            state: { value: "first" }
+          })
+          expect(yield* pull(1)).toMatchObject({ _tag: "Page", entries: [{ seq: 2 }], through: 2 })
+          expect(yield* submit(command("a", "1", "first"))).toMatchObject({ _tag: "Duplicate", position: { seq: 1 } })
         })
-        expect(yield* pull(1)).toMatchObject({ _tag: "Page", entries: [{ seq: 2 }], through: 2 })
-        expect(yield* submit(command("a", "1", "first"))).toMatchObject({ _tag: "Duplicate", position: { seq: 1 } })
-      }))
+      )
       second.object.hibernate()
     }).pipe(Effect.ensuring(Effect.sync(cleanup)))
   })
@@ -348,5 +389,4 @@ describe("DoSqliteShard", () => {
       })
     ).pipe(Effect.ensuring(Effect.sync(cleanup)))
   })
-
 })
