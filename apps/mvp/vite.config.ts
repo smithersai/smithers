@@ -9,8 +9,23 @@ import { devHttps } from "./dev/https.ts"
 import { commandMaxSeconds } from "./src/features/sandbox/config.ts"
 import { DOCS_SITE, FRAME_POLICY, PAGE_HEADERS, shellCaches } from "./src/pwa.ts"
 
-// The app's shell, for the service worker to precache: everything a reload needs before it reaches the network.
-const SHELL = ["**/*.{js,css,html,woff2,svg,png,wasm}"]
+// The app's offline shell, for the service worker to precache: ONLY the core shell and worker, never hundreds of
+// lazy syntax grammars, editors or route screens (which runtimeCaching caches on first use).
+const SHELL = [
+  "index.html",
+  "manifest.webmanifest",
+  "icon*.{svg,png}",
+  "assets/index-*.{js,css}",
+  "assets/engine.worker-*.js",
+  "assets/wa-sqlite-*.wasm",
+  "assets/rolldown-runtime-*.js",
+  "assets/vendor-react-*.js",
+  "assets/vendor-effect-*.js",
+  "assets/vendor-tanstack-*.js",
+  "assets/vendor-radix-*.js",
+  "assets/app-shared-*.js",
+  "assets/inter-latin-*-normal-*.woff2",
+]
 
 // Never the service worker's: ChatApi, the Electric shape proxy, the telemetry relay and the model endpoint.
 const API = /^\/api\//
@@ -83,9 +98,16 @@ export default defineConfig(({ command }) => ({
         // The docs site answers its own paths on the app's hostname (infra/DocsSite.ts); the shell never stands in.
         navigateFallbackDenylist: [API, DOCS_SITE],
         cleanupOutdatedCaches: true,
-        // A module the precache doesn't list (under the dev server, every one) is kept from the last visit, so an
-        // offline reload still has it. The network answers first whenever it can.
+        // A module the precache doesn't list (lazy routes, editors, grammars, or dev modules) is kept once fetched so an
+        // offline reload still has it. Content-hashed `/assets/*` are immutable and answer cache-first; everything else
+        // answers network-first.
         runtimeCaching: [
+          {
+            urlPattern: ({ url, sameOrigin, request }: { readonly url: URL; readonly sameOrigin: boolean; readonly request: { readonly method: string } }) =>
+              sameOrigin && request.method === "GET" && url.pathname.startsWith("/assets/"),
+            handler: "CacheFirst",
+            options: { cacheName: "smithers-assets" },
+          },
           {
             // Never an embedded page: another origin's, which this worker never sees (src/pwa.ts).
             urlPattern: shellCaches,
@@ -136,6 +158,27 @@ export default defineConfig(({ command }) => ({
         },
       ],
     },
+    // Preload the engine worker and wa-sqlite WASM in parallel with the entry bundle so worker activation starts
+    // immediately instead of waiting sequentially behind JS download and parse.
+    {
+      name: "smithers-preload-worker",
+      transformIndexHtml: {
+        order: "post",
+        handler: (_html, ctx) => {
+          const bundle = ctx.bundle
+          if (bundle === undefined) return []
+          const tags: Array<{ tag: string; attrs: Record<string, string | boolean>; injectTo: "head" }> = []
+          for (const fileName of Object.keys(bundle)) {
+            if (/^assets\/engine\.worker-.*\.js$/.test(fileName)) {
+              tags.push({ tag: "link", attrs: { rel: "preload", href: `/${fileName}`, as: "script", crossorigin: true }, injectTo: "head" })
+            } else if (/^assets\/wa-sqlite-.*\.wasm$/.test(fileName)) {
+              tags.push({ tag: "link", attrs: { rel: "preload", href: `/${fileName}`, as: "fetch", crossorigin: true }, injectTo: "head" })
+            }
+          }
+          return tags
+        },
+      },
+    },
   ],
   define: { "globalThis.__SANDBOX_COMMAND_MAX_SECONDS__": JSON.stringify(COMMAND_MAX_SECONDS) },
   // A build gives web workers only these plugins, not the app's: the engine worker imports `.vibe` modules too.
@@ -154,5 +197,23 @@ export default defineConfig(({ command }) => ({
     fs: { strict: true },
     warmup: { clientFiles: ["./src/main.tsx", "./src/flows/engine.worker.vibe", "./src/features/code-intel/language.worker.ts"] },
   },
-  build: { target: "esnext" },
+  build: {
+    target: "esnext",
+    rolldownOptions: {
+      output: {
+        // Group stable core vendor libraries and entry-shared modules (`$initial` only) into long-lived immutable
+        // chunks so initial load stays at ~6 JS files while every lazy route, editor, diff viewer, terminal and syntax
+        // grammar stays strictly on-demand.
+        codeSplitting: {
+          groups: [
+            { name: "vendor-react", test: /node_modules\/(react|react-dom|scheduler)\//, tags: ["$initial"], priority: 40 },
+            { name: "vendor-effect", test: /node_modules\/effect\//, tags: ["$initial"], priority: 35 },
+            { name: "vendor-tanstack", test: /node_modules\/(@tanstack|@electric-sql)\//, tags: ["$initial"], priority: 30 },
+            { name: "vendor-radix", test: /node_modules\/(@radix-ui|@floating-ui)\//, tags: ["$initial"], priority: 25 },
+            { name: "app-shared", tags: ["$initial"], minShareCount: 2, priority: 10 },
+          ],
+        },
+      },
+    },
+  },
 }))

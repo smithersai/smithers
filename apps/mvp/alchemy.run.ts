@@ -127,8 +127,23 @@ export default Alchemy.Stack(
     const site = yield* Cloudflare.Website.Vite("smithers-mvp", {
       main: "worker/index.ts",
       compatibility: { date: "2026-10-01", flags: ["enable_request_signal"] },
-      // HTML must pass through the site Worker to resolve social image URLs on this request’s origin.
-      assets: { notFoundHandling: "single-page-application", runWorkerFirst: true },
+      // HTML must pass through the site Worker to resolve social image URLs and edge first-paint on this request's origin,
+      // while content-hashed static assets and icons bypass the Worker and serve directly from Cloudflare's CDN edge.
+      assets: {
+        notFoundHandling: "single-page-application",
+        runWorkerFirst: [
+          "/*",
+          "!/assets/*",
+          "!/icon.svg",
+          "!/icon-192.png",
+          "!/icon-512.png",
+          "!/icon-maskable-512.png",
+          "!/social-card.png",
+          "!/manifest.webmanifest",
+          "!/sw.js",
+          "!/workbox-*.js",
+        ],
+      },
       // The aliases' pages, which `/` on each alias redirects to (worker/aliases.ts).
       env: {
         CHAT_API: chatApi,

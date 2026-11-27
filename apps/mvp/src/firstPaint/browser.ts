@@ -1,4 +1,5 @@
 import { FIRST_PAINT_GLOBAL, SETTLED_ATTRIBUTE, startShell } from "./shell"
+import { REPO_PREFETCH_GLOBAL, startRepoPrefetch } from "./repoPrefetch"
 
 // The shell's inline script (src/firstPaint/shell.ts): vite.config.ts bundles this module into index.html's `<body>`,
 // before `#root` and the app's module, so the first paint's read starts as the document parses. It hands the browser's
@@ -21,4 +22,14 @@ export const startInline = (fetch: typeof globalThis.fetch) => {
     mark: (name, detail) => void performance.mark(name, { detail }),
   })
   if (shell !== undefined) (window as unknown as Record<string, unknown>)[FIRST_PAINT_GLOBAL] = shell
+  const repoPrefetch = startRepoPrefetch({
+    window,
+    document,
+    locks: navigator.locks,
+    fetch,
+    marks: { getItem: (key) => localStorage.getItem(key) },
+    channel: (name) => new BroadcastChannel(name),
+    now: () => Date.now(),
+  })
+  if (repoPrefetch !== undefined) (window as unknown as Record<string, unknown>)[REPO_PREFETCH_GLOBAL] = repoPrefetch
 }

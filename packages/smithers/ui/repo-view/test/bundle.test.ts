@@ -28,14 +28,15 @@ test("the repository view's entry chunk leaves Milkdown and every grammar to lat
     const first = readFileSync(join(dir, "out", "entry.js"), "utf8");
     // Guard the detector: the entry names the modules it bundles, so a missing path means a missing module.
     expect(first).toContain("node_modules/react");
-    expect(first).toContain("node_modules/@pierre/diffs");
     expect({
+      pierreDiffs: first.includes("node_modules/@pierre/diffs"),
       milkdown: first.includes("node_modules/@milkdown"),
       grammar: /"scopeName": ?"/.test(first),
       vibe: first.includes("source.vibe"),
       underThreeMegabytes: first.length < 3_000_000,
-    }).toEqual({ milkdown: false, grammar: false, vibe: false, underThreeMegabytes: true });
+    }).toEqual({ pierreDiffs: false, milkdown: false, grammar: false, vibe: false, underThreeMegabytes: true });
     // And they are still there, one dynamic import away.
+    expect(chunks.some((chunk) => chunk.includes("node_modules/@pierre/diffs"))).toBe(true);
     expect(chunks.some((chunk) => chunk.includes("node_modules/@milkdown/crepe"))).toBe(true);
     expect(chunks.some((chunk) => chunk.includes("source.vibe"))).toBe(true);
     expect(chunks.filter((chunk) => /"scopeName": ?"/.test(chunk)).length).toBeGreaterThan(100);

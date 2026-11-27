@@ -8,7 +8,7 @@ import {
   MAX_REQUEST_CHARS,
   NAME_PATTERN,
 } from "./contract"
-import { PLACEMENTS } from "./source"
+import { PLACEMENTS } from "./sourceConstants"
 
 // Your own flows' rows and route bodies (decision 0014 §1): what Postgres keeps, what Electric syncs to the device and
 // what ChatApi's routes take and answer. A row stored on the device is read by the next version of the app too: change

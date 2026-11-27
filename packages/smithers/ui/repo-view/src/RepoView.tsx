@@ -1,11 +1,13 @@
 /** @jsxImportSource react */
 import { type BreadcrumbItem, Breadcrumbs, DirectoryListing, type DirectoryTarget, FileTree, isPlainNavigationClick, Skeleton } from "@smthrs/ui";
 import { cn } from "@smthrs/ui-css";
-import { type ComponentProps, type ReactNode, useMemo, useState } from "react";
-import { CodeFileView, type CodeFileViewProps, type CodeViewMode } from "./CodeFileView";
+import { type ComponentProps, lazy, type ReactNode, Suspense, useMemo, useState } from "react";
+import type { CodeFileViewProps, CodeViewMode } from "./CodeFileView";
 import { HtmlPreview } from "./HtmlPreview";
-import { LiveMarkdownEditor } from "./LiveMarkdownEditor";
 import type { MarkdownEditorProps } from "./MarkdownEditor";
+
+const LazyCodeFileView = lazy(() => import("./CodeFileView").then((m) => ({ default: m.CodeFileView })));
+const LazyLiveMarkdownEditor = lazy(() => import("./LiveMarkdownEditor").then((m) => ({ default: m.LiveMarkdownEditor })));
 import {
   ancestorsOf,
   directoriesOf,
@@ -217,28 +219,39 @@ function FileBody({
     return markdownPreview;
   }
   if (file.contents === "") return <div className="sui-repo-note">Empty file</div>;
+  const fileSkeleton = (
+    <div className="sui-repo-loading" role="status" aria-label={`Loading ${path}`}>
+      <Skeleton className="sui-repo-skeleton" />
+      <Skeleton className="sui-repo-skeleton" />
+      <Skeleton className="sui-repo-skeleton sui-repo-skeleton-short" />
+    </div>
+  );
   if (isMarkdown(path) && markdownMode === "preview") {
     return (
-      <LiveMarkdownEditor
-        {...markdownEditor}
-        value={file.contents}
-        resetKey={path}
-        readOnly
-        aria-label={path}
-        onLinkClick={onLink}
-      />
+      <Suspense fallback={fileSkeleton}>
+        <LazyLiveMarkdownEditor
+          {...markdownEditor}
+          value={file.contents}
+          resetKey={path}
+          readOnly
+          aria-label={path}
+          onLinkClick={onLink}
+        />
+      </Suspense>
     );
   }
   const code = (
-    <CodeFileView
-      {...intelligence}
-      className="sui-repo-code"
-      name={path}
-      contents={file.contents}
-      line={line}
-      lineEnd={lineEnd}
-      mode={codeMode}
-    />
+    <Suspense fallback={fileSkeleton}>
+      <LazyCodeFileView
+        {...intelligence}
+        className="sui-repo-code"
+        name={path}
+        contents={file.contents}
+        line={line}
+        lineEnd={lineEnd}
+        mode={codeMode}
+      />
+    </Suspense>
   );
   if (!isHtml(path) || htmlMode === "code") return code;
   const preview = <HtmlPreview className="sui-repo-html-preview" html={file.contents} title={`Preview of ${path}`} />;

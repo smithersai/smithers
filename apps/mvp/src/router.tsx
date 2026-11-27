@@ -1,6 +1,6 @@
 import { ROUTE_PATHS } from "./routePaths"
 import { openBranchPage } from "./features/branch/navigation"
-import { createRootRouteWithContext, createRoute, createRouter, notFound, redirect, type AnyRouter, type RouterHistory } from "@tanstack/react-router"
+import { createRootRouteWithContext, createRoute, createRouter, lazyRouteComponent, notFound, redirect, type AnyRouter, type RouterHistory } from "@tanstack/react-router"
 import type { BranchView } from "./features/branch/branch.vibe"
 import type { DomainsView } from "./features/domains/domains.vibe"
 import type { FlowsUiView } from "./features/flows-ui/flowsUi.vibe"
@@ -24,53 +24,56 @@ import type { ProfileView } from "./features/profile/profile.vibe"
 import { canonicalProfileHref, profileSearch } from "./features/profile/view"
 import type { TerminalView } from "./features/terminal/terminal.vibe"
 import type { ViewsView } from "./features/views/views.vibe"
-import { AppScreen } from "./screens/app/AppScreen"
-import { BlobScreen, TreeScreen } from "./screens/branch/BranchScreen"
 import { BranchPendingScreen } from "./screens/branch/BranchPendingScreen"
 import { FlowPendingScreen } from "./screens/flows/FlowPendingScreen"
-import { CodeScreen } from "./screens/flows/CodeScreen"
-import { DraftScreen } from "./screens/flows/DraftScreen"
-import { FlowsScreen } from "./screens/flows/FlowsScreen"
-import { NewFlowScreen } from "./screens/flows/NewFlowScreen"
-import { IssueScreen } from "./screens/issues/IssueScreen"
-import { PullScreen } from "./screens/pulls/PullScreen"
-import { PullsScreen } from "./screens/pulls/PullsScreen"
-import { StackScreen } from "./screens/stack/StackScreen"
-import { TodoScreen } from "./screens/stack/TodoScreen"
 import { listSearch } from "./features/issues/list"
 import { commitmentSearch } from "./features/issues/lifecycle"
 import { workSearch } from "./features/issues/workView"
-import { ActionRunScreen } from "./screens/actions/ActionRunScreen"
-import { ActionsScreen } from "./screens/actions/ActionsScreen"
 import { IssuesPendingScreen } from "./screens/issues/IssuesPendingScreen"
 import { IssuePendingScreen } from "./screens/issues/IssuePendingScreen"
-import { IssuesScreen } from "./screens/issues/IssuesScreen"
-import { NewIssueScreen } from "./screens/issues/NewIssueScreen"
-import { Landing } from "./screens/landing/Landing"
-import { DocsScreen } from "./screens/docs/DocsScreen"
-import { RepoHomeScreen } from "./screens/repo/RepoHomeScreen"
-import { BranchesScreen } from "./screens/repo/BranchesScreen"
-import { RepoPendingScreen } from "./screens/repo/RepoPendingScreen"
-import { RepoScreen } from "./screens/repo/RepoScreen"
 import { repoGated } from "./features/repo/components/RepoGate"
 import { Root } from "./screens/root/Root"
 import { RouteNotFound } from "./screens/root/RouteNotFound"
 import { RouteError } from "./screens/root/RouteError"
-import { RunScreen } from "./screens/runs/RunScreen"
-import { ConversationsScreen } from "./screens/conversations/ConversationsScreen"
 import { runOriginSearch, runsSearch } from "./features/runs/page"
-import { RunsScreen } from "./screens/runs/RunsScreen"
-import { SecretsScreen } from "./screens/secrets/SecretsScreen"
-import { RepoSettingsScreen } from "./screens/repo-settings/RepoSettingsScreen"
-import { SettingsScreen } from "./screens/settings/SettingsScreen"
-import { McpAuthorizeScreen } from "./screens/mcp/McpAuthorizeScreen"
-import { WaitlistScreen } from "./screens/waitlist/WaitlistScreen"
-import { WorkbenchScreen } from "./screens/workbench/WorkbenchScreen"
-import { ProfileScreen } from "./screens/profile/ProfileScreen"
-import { PluginScreen } from "./screens/plugin/PluginScreen"
-import { RepoPluginScreen } from "./screens/plugin/RepoPluginScreen"
 import type { PluginsView } from "./plugins/ui.vibe"
-import { ViewScreen } from "./screens/view/ViewScreen"
+
+// Route-level code splitting: every screen loads lazily in its own chunk and preloads on link hover/focus
+// (`defaultPreload: "intent"`), keeping heavy editors, diffs, syntax highlighters, terminal and chat off the entry path.
+const AppScreen = lazyRouteComponent(() => import("./screens/app/AppScreen"), "AppScreen")
+const TreeScreen = lazyRouteComponent(() => import("./screens/branch/BranchScreen"), "TreeScreen")
+const BlobScreen = lazyRouteComponent(() => import("./screens/branch/BranchScreen"), "BlobScreen")
+const CodeScreen = lazyRouteComponent(() => import("./screens/flows/CodeScreen"), "CodeScreen")
+const DraftScreen = lazyRouteComponent(() => import("./screens/flows/DraftScreen"), "DraftScreen")
+const FlowsScreen = lazyRouteComponent(() => import("./screens/flows/FlowsScreen"), "FlowsScreen")
+const NewFlowScreen = lazyRouteComponent(() => import("./screens/flows/NewFlowScreen"), "NewFlowScreen")
+const IssueScreen = lazyRouteComponent(() => import("./screens/issues/IssueScreen"), "IssueScreen")
+const IssuesScreen = lazyRouteComponent(() => import("./screens/issues/IssuesScreen"), "IssuesScreen")
+const NewIssueScreen = lazyRouteComponent(() => import("./screens/issues/NewIssueScreen"), "NewIssueScreen")
+const PullScreen = lazyRouteComponent(() => import("./screens/pulls/PullScreen"), "PullScreen")
+const PullsScreen = lazyRouteComponent(() => import("./screens/pulls/PullsScreen"), "PullsScreen")
+const StackScreen = lazyRouteComponent(() => import("./screens/stack/StackScreen"), "StackScreen")
+const TodoScreen = lazyRouteComponent(() => import("./screens/stack/TodoScreen"), "TodoScreen")
+const ActionRunScreen = lazyRouteComponent(() => import("./screens/actions/ActionRunScreen"), "ActionRunScreen")
+const ActionsScreen = lazyRouteComponent(() => import("./screens/actions/ActionsScreen"), "ActionsScreen")
+const Landing = lazyRouteComponent(() => import("./screens/landing/Landing"), "Landing")
+const DocsScreen = lazyRouteComponent(() => import("./screens/docs/DocsScreen"), "DocsScreen")
+const RepoHomeScreen = lazyRouteComponent(() => import("./screens/repo/RepoHomeScreen"), "RepoHomeScreen")
+const BranchesScreen = lazyRouteComponent(() => import("./screens/repo/BranchesScreen"), "BranchesScreen")
+const RepoScreen = lazyRouteComponent(() => import("./screens/repo/RepoScreen"), "RepoScreen")
+const RunScreen = lazyRouteComponent(() => import("./screens/runs/RunScreen"), "RunScreen")
+const ConversationsScreen = lazyRouteComponent(() => import("./screens/conversations/ConversationsScreen"), "ConversationsScreen")
+const RunsScreen = lazyRouteComponent(() => import("./screens/runs/RunsScreen"), "RunsScreen")
+const SecretsScreen = lazyRouteComponent(() => import("./screens/secrets/SecretsScreen"), "SecretsScreen")
+const RepoSettingsScreen = lazyRouteComponent(() => import("./screens/repo-settings/RepoSettingsScreen"), "RepoSettingsScreen")
+const SettingsScreen = lazyRouteComponent(() => import("./screens/settings/SettingsScreen"), "SettingsScreen")
+const McpAuthorizeScreen = lazyRouteComponent(() => import("./screens/mcp/McpAuthorizeScreen"), "McpAuthorizeScreen")
+const WaitlistScreen = lazyRouteComponent(() => import("./screens/waitlist/WaitlistScreen"), "WaitlistScreen")
+const WorkbenchScreen = lazyRouteComponent(() => import("./screens/workbench/WorkbenchScreen"), "WorkbenchScreen")
+const ProfileScreen = lazyRouteComponent(() => import("./screens/profile/ProfileScreen"), "ProfileScreen")
+const PluginScreen = lazyRouteComponent(() => import("./screens/plugin/PluginScreen"), "PluginScreen")
+const RepoPluginScreen = lazyRouteComponent(() => import("./screens/plugin/RepoPluginScreen"), "RepoPluginScreen")
+const ViewScreen = lazyRouteComponent(() => import("./screens/view/ViewScreen"), "ViewScreen")
 
 // The app's routes. A repository's are GitHub's paths (decision 0006 §2): swapping github.com for the app's domain
 // opens the same view. Each route opens what it shows through the layers main.tsx hands the router, so nothing loads
@@ -487,21 +490,27 @@ const repoRoute = createRoute({
   path: ROUTE_PATHS.repo,
   component: repoGated(RepoHomeScreen),
   validateSearch: lineSearch,
-  beforeLoad: ({ context, params, search, ...load }) =>
-    enterRepo(
+  beforeLoad: ({ context, params, search, ...load }) => {
+    // On a cold first load (no previous page on screen to preserve), open immediately instead of waiting up to
+    // pageWait (1 s) for Electric's repositories shape before mounting RepoHomeScreen.
+    const coldLoad = !load.preload && shownPath(context) === undefined
+    return enterRepo(
       context,
       params,
       load,
-      () =>
-        Promise.all([
-          context.repo.actions.warmRoute("tree", params, search),
-          context.home.actions.warm(params.owner, params.repo),
-        ]),
+      coldLoad
+        ? local
+        : () =>
+            Promise.all([
+              context.repo.actions.warmRoute("tree", params, search),
+              context.home.actions.warm(params.owner, params.repo),
+            ]),
       () => {
         context.repo.actions.openRoute("tree", params, search)
         context.home.actions.open(params.owner, params.repo)
       },
-    ),
+    )
+  },
 })
 
 /** Repository browsing infrastructure: the same visible refs as the picker, at GitHub's branch-list URL. */

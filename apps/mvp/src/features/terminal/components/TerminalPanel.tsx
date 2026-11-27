@@ -1,10 +1,12 @@
-import { Badge, Button, Card, EmptyState, LoadingBar } from "@smthrs/ui"
-import { TerminalFrame } from "@smthrs/terminal-frame"
+import { Badge, Button, Card, EmptyState, LoadingBar, Skeleton } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useParams } from "@tanstack/react-router"
+import { lazy, Suspense } from "react"
 import { useShownMode } from "../../theme/components/ThemeButton"
 import { OPEN_TERMINAL, panelViewOf, WAITING_FOR_SANDBOX } from "../view"
 import { useTerminal } from "./TerminalContext"
+
+const LazyTerminalFrame = lazy(() => import("@smthrs/terminal-frame").then((m) => ({ default: m.TerminalFrame })))
 
 // The branch's terminal (decision 0013 §3, §5): our xterm in an opaque-origin frame, attached to a shell on the
 // branch's machine, typing for anyone who may edit the branch and read-only for anyone who may only view it. Its tabs
@@ -55,16 +57,18 @@ export function TerminalPanel({ canOpen, deploymentMember = true }: { readonly c
       )}
       <Card className="terminal-panel-screen" data-screen={screen.kind}>
         {screen.kind === "frame" ? (
-          <TerminalFrame
-            key={screen.terminalId}
-            className="terminal-panel-frame"
-            title="Terminal"
-            theme={mode}
-            readOnly={screen.readOnly}
-            stream={(write) => actions.attach(screen.terminalId, write)}
-            onInput={actions.input}
-            onResize={actions.resize}
-          />
+          <Suspense fallback={<Skeleton className="terminal-panel-frame" />}>
+            <LazyTerminalFrame
+              key={screen.terminalId}
+              className="terminal-panel-frame"
+              title="Terminal"
+              theme={mode}
+              readOnly={screen.readOnly}
+              stream={(write) => actions.attach(screen.terminalId, write)}
+              onInput={actions.input}
+              onResize={actions.resize}
+            />
+          </Suspense>
         ) : screen.kind === "open" ? openButton : screen.text === undefined ? null : <EmptyState title={screen.text} />}
       </Card>
     </section>

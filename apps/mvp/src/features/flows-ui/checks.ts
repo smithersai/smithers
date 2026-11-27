@@ -3,7 +3,7 @@ import { Option } from "effect"
 import { forbidden } from "./callable"
 import { FLOW_MODEL_ROLE, MAX_CALLS, MAX_DESCRIPTION_CHARS, MAX_SOURCE_BYTES, NAME_PATTERN, RESERVED_NAMES } from "./contract"
 import type { DraftCheck } from "./schema"
-import { SOURCE_PATH } from "./source"
+import { SOURCE_PATH } from "./sourceConstants"
 
 // Decision 0014's static checks over a person's flow source (./source.ts): every revision, drafted or written by hand,
 // is read the one way the registry reads a repository's `flow.ts`, with @smthrs/registry's `ModuleFlow`, without

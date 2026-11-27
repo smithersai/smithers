@@ -31,6 +31,7 @@ import { followingOutbox } from "./outboxFollower"
 import { readDenials as shardReadDenials } from "./features/chat/messagesShardClient"
 import * as RefusalMarks from "./features/conversations/marks"
 import { followRoute, takeShell, verifyingFetch } from "./firstPaint/page"
+import { prefetchingFetch, takeRepoPrefetch } from "./firstPaint/repoPrefetch"
 
 // The boot's first stage: the bundle has loaded and runs (src/bootStages.ts).
 markStage(performance, "page")
@@ -38,6 +39,8 @@ markStage(performance, "page")
 // (src/firstPaint/shell.ts): this page adopts its `smithers-data` hold and checks its viewer against every session answer.
 const firstPaint = takeShell(window)
 followRoute(firstPaint, router.history)
+const repoPrefetch = takeRepoPrefetch(window)
+if (repoPrefetch !== undefined) router.history.subscribe(() => repoPrefetch.revoke())
 
 // The build this bundle is, which vite.config.ts names from the deployed revision (`version.json` beside the app);
 // `dev` under the dev server and wherever the build named none.
@@ -113,50 +116,61 @@ const reloadWhenSafe = async (reason: ReleaseReason) => {
   }
 }
 
-registerSW({
-  immediate: true,
-  onRegistered: (registration) => {
-    if (!registration) return
-    watchInstalls(registration, () => records.record({ _tag: "pwa.install" }))
-    watchUpdates(registration, {
-      visible: () => document.visibilityState === "visible",
-      listen: (trigger, check) => {
-        if (trigger === "navigation") return router.subscribe("onResolved", check)
-        const target = trigger === "visible" ? document : window
-        const event = trigger === "visible" ? "visibilitychange" : "focus"
-        target.addEventListener(event, check)
-        return () => target.removeEventListener(event, check)
-      },
-      // The console line is the release end-to-end test's (e2e/pwa-update.spec.ts); a failed check is the app's record.
-      record: (trigger, outcome) => {
-        console.info("pwa.update.check", { trigger, outcome })
-        if (outcome === "failed") records.record({ _tag: "pwa.update.check", trigger })
-      },
-    })
-  },
-  // A new release activated: it waits until the page is hidden, or needs a module only the old release had (src/pwa.ts
-  // `applyRelease`, decision 0131); then the editors' gate above holds the reload until every edit is saved.
-  onNeedReload: () => {
-    if (updateReloading) return
-    updateReloading = true
-    records.record({ _tag: "pwa.update", outcome: "activated" })
-    applyRelease({
-      hidden: () => document.visibilityState === "hidden",
-      listen: (signal, listener) => {
-        if (signal === "visibility") {
-          document.addEventListener("visibilitychange", listener)
-          return () => document.removeEventListener("visibilitychange", listener)
-        }
-        // The old page can't load the module: its import still fails, so the page's error shows (with Retry) until the
-        // editors' gate lets the reload run.
-        window.addEventListener("vite:preloadError", listener)
-        return () => window.removeEventListener("vite:preloadError", listener)
-      },
-      reload: (reason) => void reloadWhenSafe(reason),
-    })
-  },
-  onRegisterError: (error: unknown) => records.record({ _tag: "pwa.register", name: thrownName(error) }),
-})
+// Defer service-worker registration until the initial page load settles so SW precaching never contends with
+// critical-path JS, CSS or API traffic on a cold visit.
+const startServiceWorker = () => {
+  registerSW({
+    immediate: true,
+    onRegistered: (registration) => {
+      if (!registration) return
+      watchInstalls(registration, () => records.record({ _tag: "pwa.install" }))
+      watchUpdates(registration, {
+        visible: () => document.visibilityState === "visible",
+        listen: (trigger, check) => {
+          if (trigger === "navigation") return router.subscribe("onResolved", check)
+          const target = trigger === "visible" ? document : window
+          const event = trigger === "visible" ? "visibilitychange" : "focus"
+          target.addEventListener(event, check)
+          return () => target.removeEventListener(event, check)
+        },
+        // The console line is the release end-to-end test's (e2e/pwa-update.spec.ts); a failed check is the app's record.
+        record: (trigger, outcome) => {
+          console.info("pwa.update.check", { trigger, outcome })
+          if (outcome === "failed") records.record({ _tag: "pwa.update.check", trigger })
+        },
+      })
+    },
+    // A new release activated: it waits until the page is hidden, or needs a module only the old release had (src/pwa.ts
+    // `applyRelease`, decision 0131); then the editors' gate above holds the reload until every edit is saved.
+    onNeedReload: () => {
+      if (updateReloading) return
+      updateReloading = true
+      records.record({ _tag: "pwa.update", outcome: "activated" })
+      applyRelease({
+        hidden: () => document.visibilityState === "hidden",
+        listen: (signal, listener) => {
+          if (signal === "visibility") {
+            document.addEventListener("visibilitychange", listener)
+            return () => document.removeEventListener("visibilitychange", listener)
+          }
+          // The old page can't load the module: its import still fails, so the page's error shows (with Retry) until the
+          // editors' gate lets the reload run.
+          window.addEventListener("vite:preloadError", listener)
+          return () => window.removeEventListener("vite:preloadError", listener)
+        },
+        reload: (reason) => void reloadWhenSafe(reason),
+      })
+    },
+    onRegisterError: (error: unknown) => records.record({ _tag: "pwa.register", name: thrownName(error) }),
+  })
+}
+const scheduleServiceWorker = () => {
+  const idle = (window as { readonly requestIdleCallback?: (cb: () => void, opts?: { readonly timeout: number }) => number }).requestIdleCallback
+  if (idle !== undefined) idle(startServiceWorker, { timeout: 2_000 })
+  else window.setTimeout(startServiceWorker, 0)
+}
+if (document.readyState === "complete") scheduleServiceWorker()
+else window.addEventListener("load", scheduleServiceWorker, { once: true })
 // React reports every render error here: one a boundary caught (a page's, a plugin's, or the app's own, which shows
 // instead of a blank page) and one nothing caught. Under the dev server the console keeps React's own report.
 const root = createRoot(document.getElementById("root")!, {
@@ -668,7 +682,7 @@ const page = {
   // Every request to ChatApi waits for the activation and carries the device's owner while this page has its data
   // open. Every session answer, Auth's at startup and on reconnect alike, checks the activation again: one naming
   // someone else, or a person signing in while this page is sealed until they do, reopens every page.
-  fetch: boundFetch(readDenials.observing(verifyingFetch(window.fetch.bind(window), firstPaint)), {
+  fetch: boundFetch(readDenials.observing(verifyingFetch(prefetchingFetch(window.fetch.bind(window), repoPrefetch), firstPaint)), {
     origin: window.location.origin,
     principal: () => (activation.state() === "retained" && deviceOwner !== undefined ? deviceOwner : NO_DEVICE_DATA),
     sessionTag: () => deviceSessionTag,
@@ -728,6 +742,7 @@ void Promise.all([Promise.resolve(firstPaint?.handOver()).then((held) => wipe.op
   const opened = { ...page, host: wiped ? tabHost : unwiped(tabHost) }
   const leaving = (stop: () => Promise<void>) =>
     wipe.started(() => {
+      repoPrefetch?.revoke()
       tabHost.formSnapshot?.clear()
       tabHost.writeSnapshot?.clear()
       root.unmount()

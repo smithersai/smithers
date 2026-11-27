@@ -14,8 +14,10 @@ import {
   Skeleton,
   Snippet,
 } from "@smthrs/ui"
-import { LiveMarkdownEditor, RepoView, type RepoViewLocation } from "@smthrs/repo-view"
-import { Fragment, type ReactNode } from "react"
+import { RepoView, type RepoViewLocation } from "@smthrs/repo-view"
+import { Fragment, lazy, type ReactNode, Suspense } from "react"
+
+const LazyLiveMarkdownEditor = lazy(() => import("@smthrs/repo-view/live-markdown-editor").then((m) => ({ default: m.LiveMarkdownEditor })))
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, Navigate, useLocation, useNavigate } from "@tanstack/react-router"
 import {
@@ -287,11 +289,13 @@ export function RepoPage({ editFiles = false, liveMarkdown }: {
       markdownPreview={editing === undefined ? undefined : (
         <Fragment key={editing.id}>
           <GeneratedFileWarning path={view.path} contents={editing.text} />
-          <LiveMarkdownEditor
-            value={editing.text}
-            aria-label={view.path}
-            onChange={(markdown, { base }) => coedit.actions.type(editing.id, markdown, { base })}
-          />
+          <Suspense fallback={<Skeleton className="repo-page-loading" />}>
+            <LazyLiveMarkdownEditor
+              value={editing.text}
+              aria-label={view.path}
+              onChange={(markdown, { base }) => coedit.actions.type(editing.id, markdown, { base })}
+            />
+          </Suspense>
         </Fragment>
       )}
       fileBadges={view.kind === "blob"

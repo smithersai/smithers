@@ -1,5 +1,8 @@
 import { parse } from "@babel/parser"
 import type { Node } from "@babel/types"
+import { PLACEMENTS, type Placement, SOURCE_PATH } from "./sourceConstants"
+
+export { PLACEMENTS, type Placement, SOURCE_PATH }
 
 // A person's flow is flow source (decision 0014 §1, as Will ruled on 2026-10-20: "prompt flows are just a type of code
 // flow"): one `flow.ts` module whose default export is `Flow.make("<name>", { ... })` from @smthrs/flow, the shape a
@@ -14,13 +17,6 @@ import type { Node } from "@babel/types"
 // - `sandbox`: code that needs a machine: it imports a module only a machine provides, or declares a capability only a
 //   machine grants. It runs only on a host that runs a person's code on a machine (decision 0005), and none does yet,
 //   so a run is refused with that reason (`FlowNeedsSandbox`).
-
-/** A flow's one file. */
-export const SOURCE_PATH = "flow.ts"
-
-/** Where a revision runs. */
-export const PLACEMENTS = ["client", "sandbox"] as const
-export type Placement = (typeof PLACEMENTS)[number]
 
 /** What a drafted flow is made of: everything `renderSource` writes that isn't the system's own code. */
 export interface Generated {

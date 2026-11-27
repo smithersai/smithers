@@ -169,3 +169,46 @@ test("an active custom domain redirects / to its repository page, preserving que
     expect(await fallback.text()).toBe("ASSETS")
   }
 })
+
+test("public GET /api/repos/:owner/:name/about is served from Cloudflare edge cache when caches.default exists", async () => {
+  const store = new Map<string, Response>()
+  const prev = (globalThis as { caches?: unknown }).caches
+  ;(globalThis as { caches?: unknown }).caches = {
+    default: {
+      match: async (req: Request) => store.get(req.url)?.clone(),
+      put: async (req: Request, res: Response) => {
+        store.set(req.url, res.clone())
+      },
+    },
+  }
+  try {
+    let calls = 0
+    const env = {
+      CHAT_API: {
+        fetch: async () => {
+          calls++
+          return new Response(JSON.stringify({ name: "acme/app" }), {
+            status: 200,
+            headers: { "content-type": "application/json", "cache-control": "public, max-age=60" },
+          })
+        },
+      } as unknown as Fetcher,
+      ASSETS: binding("ASSETS", []),
+    }
+    const first = await site.fetch(
+      new Request("https://smithers.test/api/repos/Acme/App/about") as Parameters<typeof site.fetch>[0],
+      env,
+    )
+    expect(first.status).toBe(200)
+    expect(calls).toBe(1)
+
+    const second = await site.fetch(
+      new Request("https://smithers.test/api/repos/acme/app/about") as Parameters<typeof site.fetch>[0],
+      env,
+    )
+    expect(await second.json()).toEqual({ name: "acme/app" })
+    expect(calls).toBe(1)
+  } finally {
+    ;(globalThis as { caches?: unknown }).caches = prev
+  }
+})

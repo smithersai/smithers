@@ -1,5 +1,5 @@
 import { useLiveQuery } from "@tanstack/react-db"
-import { useParams } from "@tanstack/react-router"
+import { type AsyncRouteComponent, useParams } from "@tanstack/react-router"
 import type { ComponentType, ReactNode } from "react"
 import { Button, Card, CardContent, EmptyState, PageBody, PageHeader } from "@smthrs/ui"
 import { useAuth } from "../../auth/components/AuthContext"
@@ -73,9 +73,18 @@ export const RepoGate = ({ owner, name, children, page = false }: { readonly own
 }
 
 /** A repository route's component behind `RepoGate`: router.tsx builds every `/$owner/$repo` route with it. */
-export const repoGated = <P extends object>(Component: ComponentType<P>) =>
+export const repoGated = <P = unknown>(Component: AsyncRouteComponent<P>) => {
+  const Inner = Component as ComponentType<Record<string, unknown>>
   function Gated(props: P) {
     const { owner, repo } = useParams({ strict: false }) as { readonly owner?: string; readonly repo?: string }
-    if (owner === undefined || repo === undefined) return <Component {...props} />
-    return <RepoGate owner={owner} name={repo} page><Component {...props} /></RepoGate>
+    const rendered = <Inner {...(props as Record<string, unknown>)} />
+    if (owner === undefined || repo === undefined) return rendered
+    return <RepoGate owner={owner} name={repo} page>{rendered}</RepoGate>
   }
+  if (Component.preload !== undefined) {
+    ;(Gated as typeof Gated & { preload?: () => Promise<void> }).preload = async () => {
+      await Component.preload?.()
+    }
+  }
+  return Gated
+}

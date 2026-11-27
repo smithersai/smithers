@@ -10,6 +10,7 @@ import {
 import { DOCS_SITE_FOLDERS } from "../src/pwa.ts"
 import { aliasLocation } from "./aliases.ts"
 import { isAppRoute } from "./appRoute.ts"
+import { cachedPublicAbout, injectEdgeFirstPaint } from "./edgeFirstPaint.ts"
 
 interface Env {
   readonly ASSETS: Fetcher
@@ -38,9 +39,13 @@ const customDomainLocation = async (env: Env, url: URL): Promise<string | undefi
 }
 
 export default {
-  fetch: async (request, env) => {
+  fetch: async (request: Request, env: Env, ctx?: ExecutionContext) => {
     const url = new URL(request.url)
-    if (url.pathname.startsWith("/api/")) return env.CHAT_API.fetch(request)
+    if (url.pathname.startsWith("/api/")) {
+      const cachedAbout = await cachedPublicAbout(request, env.CHAT_API, ctx)
+      if (cachedAbout !== undefined) return cachedAbout
+      return env.CHAT_API.fetch(request)
+    }
     if (
       url.pathname === MCP_OAUTH_PROTECTED_RESOURCE_ROUTE ||
       url.pathname.startsWith(`${MCP_OAUTH_PROTECTED_RESOURCE_ROUTE}/`) ||
@@ -70,7 +75,11 @@ export default {
     headers.delete("etag")
     const status = url.pathname === "/index.html" || isAppRoute(url.pathname) ? 200 : 404
     if (status === 404) headers.set("x-robots-tag", "noindex")
-    return new Response((await response.text()).replaceAll("__SMITHERS_ORIGIN__", url.origin), {
+    let html = (await response.text()).replaceAll("__SMITHERS_ORIGIN__", url.origin)
+    if (status === 200) {
+      html = await injectEdgeFirstPaint(html, url, request, env.CHAT_API, ctx)
+    }
+    return new Response(html, {
       status,
       headers,
     })

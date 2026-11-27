@@ -80,6 +80,7 @@ export default await WebAssembly.compile(await readFile(new URL(${url})))`
         "worker/Placement.vibe",
         "worker/DurableObjectFailure.vibe",
         "worker/index.ts",
+        "worker/edgeFirstPaint.ts",
         // Injected development-host fault boundaries used by old and new browser builds.
         "worker/DevFaults.vibe",
         "worker/ci/*.{ts,vibe}",
