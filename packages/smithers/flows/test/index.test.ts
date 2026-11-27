@@ -175,13 +175,18 @@ describe("barrel", () => {
     // package. The private repo-targets package owns repository policy macros,
     // the private agent regression suite is an evaluation tool, the private
     // vendored LemmaScript generates Dafny and Lean proofs from annotated source,
-    // and `ci` is the smithers-ci executable.
+    // `ci` is the smithers-ci executable, `comments` is the private comment-workflow
+    // tool, `smithers/app-core` is the principal-bound core and client adapters, and
+    // `smithers/app-state` is the pure Lean-mirrored reference state machine.
     expect(packageNamesForGroup("tooling").sort()).toEqual([
       "ci",
+      "comments",
       "lemmascript",
       "repo-targets",
       "rpc",
       "smithers/agent/regression",
+      "smithers/app-core",
+      "smithers/app-state",
       "smithers/build",
       "smithers/build/build-cli",
       "smithers/build/infra",

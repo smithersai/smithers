@@ -45,6 +45,11 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number, why: string
   ["kernel/src/test/HostContract.ts", 1, testSupport],
   ["platform-browser/src/BrowserSqlite.ts", 1, wrappedCause],
   [
+    "platform-cloudflare/src/DoSqliteShard.ts",
+    1,
+    "refuses to create a new unnamed shard during initialization; a caller defect (legacy unnamed shards stay readable)"
+  ],
+  [
     "platform-node/src/EgressHttpClient.ts",
     1,
     "a refused dispatch, which Undici rejects and the Effect HTTP client reports as a tagged TransportError"

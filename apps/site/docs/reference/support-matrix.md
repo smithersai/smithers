@@ -75,6 +75,7 @@ The release roster comes from [readWorkspaceManifests and publishedPackages](htt
 | Published package             | `engines.node` | Source of truth                                                                                                       |
 | ----------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `@smthrs/agent`               | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/package.json)                     |
+| `@smthrs/app-core`            | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/app-core/package.json)                  |
 | `@smthrs/artifacts`           | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/package.json)           |
 | `@smthrs/build`               | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/build/package.json)                     |
 | `@smthrs/build-cli`           | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/build/build-cli/package.json)           |
