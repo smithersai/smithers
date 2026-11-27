@@ -874,6 +874,35 @@ describe("confine", () => {
     expect(visible).not.toContain(checkout)
   })
 
+  it("keeps a sibling program install under a temporary root visible beside a checkout without exposing root or home", async () => {
+    const root = directory("published")
+    const home = join(root, "home")
+    const consumer = join(root, "consumer")
+    const checkout = join(root, "repository")
+    const smthrsBin = join(consumer, "node_modules", "@smthrs", "cli", "bin", "smithers.mjs")
+    mkdirSync(dirname(smthrsBin), { recursive: true })
+    mkdirSync(home, { recursive: true })
+    mkdirSync(checkout, { recursive: true })
+    writeFileSync(join(home, ".npmrc"), "@smthrs:registry=http://127.0.0.1/\n")
+    writeFileSync(smthrsBin, "#!/bin/sh\n", { mode: 0o755 })
+    const asked = () => ({
+      bwrap: "/usr/bin/bwrap",
+      home,
+      hidden: [],
+      daemons: [],
+      tmp: "/var/tmp",
+      caches: [],
+      tools: { reads: [], links: [], homes: [] }
+    })
+    const work = directory("work")
+    const places = await scoped(confine(work, asked, () => Effect.void, [smthrsBin], false, {}, checkout))
+    const visible = places.normal.jail?.visible ?? []
+    expect(visible).toContain(consumer)
+    expect(visible).not.toContain(root)
+    expect(visible).not.toContain(home)
+    expect(visible).not.toContain(checkout)
+  })
+
   it("says once why there is no jail", async () => {
     const said: Array<string> = []
     const say = (line: string) => Effect.sync(() => void said.push(line))
