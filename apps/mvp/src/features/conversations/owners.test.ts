@@ -8,6 +8,7 @@ import { failRestore, holdRestore } from "../../test/restoreFailure"
 import { asOneTab, capStorage, deferEvents, fillStorage } from "../../test/writeFailure"
 import { DEVICE_ADOPTED_EVENT } from "../auth/contract"
 import { AuthStore, SESSION } from "../auth/store.vibe"
+import { StatusStore } from "../status/store"
 import { accessOf } from "./contract"
 import { BranchStore } from "../branch/store.vibe"
 import * as Marks from "./marks"
@@ -808,6 +809,26 @@ test("a row of the person's list opens nothing by itself: ChatApi is asked wheth
   expect(mirrored(device)).toEqual([gone])
   await until(() => expect(kept(device)).toEqual([gone]))
   expect(askedOf(gone)).toBe(1)
+
+  // Both runs reach the raw shape. Only the one whose conversation was admitted can surface its run and wait.
+  const status = await first.runtime.runPromise(Effect.service(StatusStore))
+  status.shownRuns.tanstack.startSyncImmediate()
+  status.waits.tanstack.startSyncImmediate()
+  const allowedRun = crypto.randomUUID()
+  const deniedRun = crypto.randomUUID()
+  const wait = JSON.stringify({ execution: "run/call/0.0", kind: "question", prompt: "Which branch?", options: ["main", "release"] })
+  await sqlOn(first.api)((sql) => sql`
+    INSERT INTO runs (id, flow, status, waiting, wait, launched_by, conversation_id, branch_id, repo_id)
+    SELECT r.id, 'chat/Answer', 'needs_you', 'input', ${wait}::jsonb, ${DEVICE_PRINCIPAL}, c.id, c.branch_id, c.repo_id
+    FROM (VALUES (${allowedRun}::uuid, ${topic}::uuid), (${deniedRun}::uuid, ${gone}::uuid)) AS r(id, conversation_id)
+    JOIN conversations c ON c.id = r.conversation_id`)
+  await until(() => {
+    expect(status.runs.tanstack.has(deniedRun)).toBe(true)
+    expect(status.shownRuns.tanstack.toArray.map((row) => row.id)).toContain(allowedRun)
+    expect(status.waits.tanstack.toArray.map((row) => row.runId)).toContain(allowedRun)
+  })
+  expect(status.shownRuns.tanstack.toArray.map((row) => row.id)).not.toContain(deniedRun)
+  expect(status.waits.tanstack.toArray.map((row) => row.runId)).not.toContain(deniedRun)
   watching.unsubscribe()
   // The key is lost, as on a device that held the row before it kept such keys. The next load holds the row and no
   // word that the conversation is open: ChatApi is asked again. The one it refused is not asked of: it is refused.

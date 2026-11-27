@@ -25,7 +25,7 @@ const check = async (fetch: typeof globalThis.fetch) => {
   return { answer, logged: logs.filter((line) => line.message === "conversation.access.unanswered").map((line) => line.annotations.reason) }
 }
 
-test("only ChatApi's own word opens or refuses: its 200 with allowed, and its 401, 403 and 404 with the code it gives each", async () => {
+test("only ChatApi's own word opens or refuses: its 200 decisions and its 401, 403 and 404 with the code it gives each", async () => {
   const asked: Array<{ readonly url: string; readonly method: string }> = []
   const allowed = await check(async (input, init) => {
     const request = new Request(input, init)
@@ -34,6 +34,10 @@ test("only ChatApi's own word opens or refuses: its 200 with allowed, and its 40
   })
   expect(allowed).toEqual({ answer: "allowed", logged: [] })
   expect(asked).toEqual([{ url: `http://chat.test/api/conversations/${ID}/access`, method: "GET" }])
+  for (const code of ["forbidden", "not_found"]) {
+    expect(await check(async () => Response.json({ allowed: false, code })), code).toEqual({ answer: "refused", logged: [] })
+  }
+  expect(await check(async () => Response.json({ allowed: false })), "bare").toEqual({ answer: "refused", logged: [] })
   for (const [status, code] of [[401, "sign_in"], [403, "forbidden"], [404, "not_found"]] as const) {
     expect(await check(async () => Response.json({ code }, { status })), code).toEqual({ answer: "refused", logged: [] })
   }
@@ -51,7 +55,9 @@ test("anything else is no answer, and is said: a deployment with no such route, 
   for (const response of [
     () => new Response("<html></html>", { status: 404 }),
     () => new Response("ok"),
-    () => Response.json({ allowed: false }),
+    () => Response.json({ allowed: false, code: "sign_in" }),
+    () => Response.json({ allowed: "true" }),
+    () => Response.json({ allowed: true, code: "forbidden" }),
     () => Response.json({}, { status: 403 }),
   ]) expect((await check(async () => response())).answer).toBe("unanswered")
   expect((await check(async () => new Response("ok"))).logged).toHaveLength(1)

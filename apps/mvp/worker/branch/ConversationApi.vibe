@@ -36,7 +36,7 @@ export const archives = Metric.counter("smithers_conversation_archives", {
 
 /**
  * `GET /api/conversations/<conversationId>/access` requests, by `outcome`: `allowed`, `sign_in`, `forbidden`,
- * `not_found`, `method` or `unavailable`.
+ * `not_found`, `invalid`, `method` or `unavailable`.
  */
 export const accessChecks = Metric.counter("smithers_conversation_access_checks", {
   description: "GET /api/conversations/<conversationId>/access requests, by outcome",
@@ -160,12 +160,18 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           }
           const actor = try (try Sessions).resolve
           if (Option.isNone(actor)) return refusal(401, "sign_in")
-          if (!isUuid(named)) return refusal(404, "not_found")
+          if (!isUuid(named)) return refusal(400, "invalid")
           const conversationId = named.toLowerCase()
           fields.conversationId = conversationId
           const found = try Effect.provide(branchAccess(actor, conversationId, "conversation"), database)
-          if (found === undefined) return refusal(404, "not_found")
-          if (!canView(found.access)) return refusal(403, "forbidden")
+          if (found === undefined) {
+            fields.outcome = "not_found"
+            return HttpServerResponse.jsonUnsafe({ allowed: false, code: "not_found" }, { headers: noStore })
+          }
+          if (!canView(found.access)) {
+            fields.outcome = "forbidden"
+            return HttpServerResponse.jsonUnsafe({ allowed: false, code: "forbidden" }, { headers: noStore })
+          }
           return HttpServerResponse.jsonUnsafe({ allowed: true }, { headers: noStore })
         }, (cause) =>
           sync(() => {
@@ -176,7 +182,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         fields.status = response.status
         fields.durationMs = (try Clock.currentTimeMillis) - startedAt
         const outcome = response.status === 200
-          ? "allowed"
+          ? String(fields.outcome ?? "allowed")
           : response.status === 401
           ? "sign_in"
           : response.status === 405
@@ -184,7 +190,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           : codeFor(response.status)
         try Metric.update(Metric.withAttributes(accessChecks, { outcome }), 1)
         try annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
-        try (logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+        try (logWithLevel(response.status >= 500 ? "Error" : outcome === "allowed" ? "Info" : "Warn")(
           "conversation.access",
         ) |> annotateLogs(%, { ...fields, outcome }))
         return response

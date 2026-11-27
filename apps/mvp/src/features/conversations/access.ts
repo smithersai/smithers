@@ -7,15 +7,18 @@ import { ACCESS_WITHIN, accessPath } from "./contract"
 // through Effect's HttpClient, with one deadline covering the whole exchange. The route reads only.
 
 /**
- * What ChatApi said: `allowed`, its `200 { allowed: true }`; `refused`, its own `401`, `403` or `404` with the code
+ * What ChatApi said: `allowed`, its `200 { allowed: true }`; `refused`, its `200 { allowed: false, code }` or its `401`, `403` or `404` with the code
  * it gives each; `unanswered` for anything else, offline, a deadline passed, a `5xx`, or an answer that is not
  * ChatApi's own, such as a deployment that has no such route yet. Only its own word opens or refuses anything.
  */
 export type Access = "allowed" | "refused" | "unanswered"
 
-const Allowed = Schema.Struct({ allowed: Schema.Literal(true) })
+const Answer = Schema.Union([
+  Schema.Struct({ allowed: Schema.Literal(true) }),
+  Schema.Struct({ allowed: Schema.Literal(false), code: Schema.optional(Schema.Literals(["forbidden", "not_found"])) }),
+])
 const Refused = Schema.Struct({ code: Schema.String })
-const decodeAllowed = Schema.decodeUnknownEffect(Allowed)
+const decodeAnswer = Schema.decodeUnknownEffect(Answer, { onExcessProperty: "error" })
 const decodeRefused = Schema.decodeUnknownEffect(Refused)
 
 /** The code ChatApi gives each refusal, by its status. */
@@ -40,7 +43,10 @@ export class ConversationAccess extends Context.Service<
             const response = yield* client.execute(HttpClientRequest.get(`${options.origin}${accessPath(conversationId)}`))
             yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
             const body = yield* response.json
-            if (response.status === 200) return yield* Effect.as(decodeAllowed(body), "allowed" as const)
+            if (response.status === 200) {
+              const answer = yield* decodeAnswer(body)
+              return answer.allowed ? "allowed" as const : "refused" as const
+            }
             const refusal = yield* decodeRefused(body)
             return refusal.code === REFUSALS[response.status] ? "refused" as const : "unanswered" as const
           }, (effect) =>
