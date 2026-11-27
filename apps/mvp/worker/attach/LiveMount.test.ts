@@ -1,5 +1,5 @@
 import { Deferred, Effect, Layer, Metric, Option } from "effect"
-import { shardHost } from "../../src/test/messagesShardHost.ts"
+import { ada, branchOf, OWNER_SECRET, shardHost } from "../../src/test/messagesShardHost.ts"
 import { MAX_BODY_LENGTH } from "@smthrs/app-state"
 import { type Answered, answerOwner, MessagesShardBridge, questionOwner, writes as bridgeWrites } from "../chat/MessagesShardBridge.ts"
 import { FetchHttpClient, HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -28,7 +28,11 @@ import * as SessionStore from "../SessionStore.vibe"
 import * as Throttle from "../Throttle.vibe"
 import { afterBody } from "../WriteAdmission.vibe"
 import { RunCredentials } from "../RunCredentials.vibe"
-import { testFile } from "../test/harness.ts"
+import * as MessagesShardBackfill from "../chat/MessagesShardBackfill.vibe"
+import * as Shards from "../chat/MessagesShard.ts"
+import * as MessagesShardRoutes from "../chat/MessagesShardRoutes.ts"
+import * as MessagesShardSource from "../chat/MessagesShardSource.ts"
+import { signedIn, testFile } from "../test/harness.ts"
 import { cookie, signInHarness } from "../test/signIn.ts"
 import { ATTACH_LIMITS, challengeFor } from "./Attach.vibe"
 import * as LiveMount from "./LiveMount.vibe"
@@ -550,6 +554,8 @@ test("an attached agent's answer and its completion are also sequenced into the 
       replayed: counted.replayed,
       backfilled: counted.backfilled,
       markBackfilled: counted.markBackfilled,
+      backfillState: counted.backfillState,
+      backfillBatch: counted.backfillBatch,
     })
     const h = yield* Effect.promise(() => setup(bridge))
     // Asked before the bridge reached this conversation: Postgres holds the pair, the shard nothing.
@@ -595,6 +601,53 @@ test("an attached agent's answer and its completion are also sequenced into the 
     expect(row).toEqual({ text: "Answer", status: "done" })
   }))))
 
+test("an answer committed after the backfill read its history, whose bridge then failed, is acknowledged and reaches the next pull", () =>
+  Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const host = yield* shardHost()
+    const live = MessagesShardBridge.make(host.forward)
+    // The mount's own bridge cannot reach the object: every post-commit send it makes is lost.
+    const h = yield* Effect.promise(() => setup(MessagesShardBridge.make(() => Effect.fail("the object cannot be reached"))))
+    const question = yield* Effect.promise(() => h.ask())
+    const conversation = h.target.conversation
+    // A page's pull through ChatApi's route, with the backfill and the drain wired as worker/ChatApiProgram.ts wires them.
+    const pull = Effect.gen(function* () {
+      const shard = Shards.shardOf(conversation)
+      const query = new URLSearchParams({ v: "2", shard, epoch: "0", after: "0", limit: "256" })
+      const response = yield* MessagesShardRoutes.dispatch(
+        host.forward,
+        (_, id) => Effect.succeed(branchOf(id)),
+        OWNER_SECRET,
+        (id) => MessagesShardSource.drainIn(h.database, id),
+        (id) => MessagesShardBackfill.ensureIn(h.database, id),
+      ).pipe(
+        Effect.provideService(MessagesShardBridge, live),
+        Effect.provide(signedIn(ada)),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request(
+          `https://smithers.example/api/conversations/${conversation}/messages/pull?${query}`,
+          { headers: { [DEVICE_PERSON_HEADER]: NO_DEVICE_DATA } },
+        ))),
+      )
+      expect(response.status).toBe(200)
+      return (yield* Effect.map(host.state(conversation), ({ chat }) => chat.messages))
+        .map((message) => [message.id, message.body, message.status])
+    })
+    // The first pull backfills the conversation as Postgres holds it now: the question and its answer, still streaming.
+    expect(yield* pull).toEqual([[question.id, "Question", "posted"], [question.answerId, "", "streaming"]])
+    expect(yield* live.backfilled(conversation)).toBe(true)
+    // The agent answers. Postgres commits it, the mount acknowledges it, and its bridge to the shard fails.
+    const { token } = yield* Effect.promise(() => h.attach())
+    const answered = yield* Effect.promise(async () =>
+      (await h.post(mcp, tool("conversation_respond", { questionId: question.id, text: "Answer" }), bearer(token))).json())
+    expect(answered).toMatchObject({ result: { structuredContent: { answered: true, answerId: question.answerId } } })
+    expect((yield* Effect.map(host.state(conversation), ({ chat }) => chat.messages))[1]).toMatchObject({ status: "streaming" })
+    // The commit left the answer owed to the shard. The shard is marked, so the backfill reads nothing again: the next
+    // pull's drain delivers the answer, and takes the obligation away.
+    expect(yield* pull).toEqual([[question.id, "Question", "posted"], [question.answerId, "Answer", "complete"]])
+    const owed = yield* Effect.provide(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`SELECT message_id FROM messages_shard_pending WHERE conversation_id = ${conversation}`), h.database)
+    expect(owed).toEqual([])
+  }))), 30_000)
+
 const answerRow = (answerId: string) =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql<{ readonly text: string | null; readonly status: string }>`SELECT text, status FROM messages WHERE id = ${answerId}`))
@@ -611,6 +664,8 @@ const observing = (host: Effect.Success<ReturnType<typeof shardHost>>) => {
     replayed: real.replayed,
     backfilled: real.backfilled,
     markBackfilled: real.markBackfilled,
+    backfillState: real.backfillState,
+    backfillBatch: real.backfillBatch,
     answered: (answered: Answered) =>
       Effect.gen(function* () {
         const row = yield* Effect.promise(() => answerRow(answered.answerId))

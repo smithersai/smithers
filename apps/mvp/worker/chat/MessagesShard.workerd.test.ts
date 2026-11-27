@@ -3,7 +3,7 @@
 // (worker/test/workerd/messages.ts, run by Miniflare). ChatApi's bridge writes a transcript into it, and a tab's read
 // adapter (src/features/chat/messagesShardRows.ts) reads it back through ChatApi's real route. Node's SQLite can't
 // show this: only workerd runs `transactionSync` over a Durable Object's storage, one object per shard name.
-import { emptyChat, MAX_BODY_LENGTH, MAX_LABEL_LENGTH, MAX_PARTS } from "@smthrs/app-state"
+import { emptyChat, MAX_BODY_LENGTH, MAX_LABEL_LENGTH, MAX_PARTS, placesOf } from "@smthrs/app-state"
 import { ShardProtocol } from "@smthrs/sync"
 import { build } from "esbuild"
 import { Effect, Layer, Redacted } from "effect"
@@ -260,3 +260,111 @@ test("the backfill's mark is kept in each Durable Object's own SQLite in workerd
     // Another conversation's object holds its own mark.
     expect(yield* Routes.backfilled(forward, other)).toBe(false)
   })))
+
+test("a backfill's batches are applied by a Durable Object's own SQLite in workerd: 200 exchanges in six calls, resumed at its cursor", () =>
+  Effect.runPromise(Effect.gen(function*() {
+    const at = crypto.randomUUID()
+    const to = Messages.shardOf(at)
+    let calls = 0
+    const counted: Routes.Forward = (shard, request) => Effect.suspend(() => {
+      calls++
+      return forward(shard, request)
+    })
+    // 200 ended exchanges, as the backfill reads them from Postgres: six commands each.
+    const exchanges = Array.from({ length: 200 }, (_, n): Bridge.Answered => ({
+      conversationId: at,
+      questionId: crypto.randomUUID(),
+      answerId: crypto.randomUUID(),
+      question: { text: `Question ${n}`, position: 1 + 2 * n, createdAt: AT },
+      answer: { position: 2 + 2 * n, createdAt: AT },
+      text: `Answer ${n}`,
+      updatedAt: LATER,
+    }))
+    const commands = exchanges.flatMap((exchange) => Bridge.backfillCommands(exchange, []))
+    expect(commands).toHaveLength(1200)
+    const batch = (index: number, done = false): Messages.BackfillBatch => ({
+      // 200 commands hold 33 whole exchanges and two commands of the 34th: the cursor is the 33rd question's place.
+      cursor: exchanges[Math.floor(((index + 1) * 200) / 6) - 1]!.question.position,
+      done,
+      commands: commands.slice(index * 200, (index + 1) * 200),
+    })
+    expect(yield* Routes.backfillState(counted, to)).toEqual({ checked: false, cursor: 0 })
+    // Two batches, then the backfill is cut short: the cursor stands where the second left it, and nothing is marked.
+    expect(yield* Routes.backfillBatch(counted, to, batch(0))).toEqual({ applied: 200, kept: 0, cursor: 65, checked: false })
+    expect(yield* Routes.backfillBatch(counted, to, batch(1))).toEqual({ applied: 200, kept: 0, cursor: 131, checked: false })
+    // The second batch sent again is its receipts: nothing is journaled twice, and the cursor never goes back.
+    expect(yield* Routes.backfillBatch(counted, to, batch(1))).toEqual({ applied: 200, kept: 0, cursor: 131, checked: false })
+    expect(yield* Routes.backfillBatch(counted, to, { ...batch(0), commands: [] })).toMatchObject({ cursor: 131 })
+    // The rest, the last batch marking the shard.
+    for (const index of [2, 3, 4]) yield* Routes.backfillBatch(counted, to, batch(index))
+    expect(yield* Routes.backfillBatch(counted, to, batch(5, true))).toEqual({ applied: 200, kept: 0, cursor: 399, checked: true })
+    expect(yield* Routes.backfillState(counted, to)).toEqual({ checked: true, cursor: 399 })
+    expect(calls).toBe(1 + 6 + 2 + 1)
+    expect(calls - 2 /* the repeats */).toBeLessThanOrEqual(10)
+    const pulled = yield* Effect.promise(async () => {
+      const response = await fetchAs(ada)(`${ORIGIN}/api/conversations/${at}/messages/pull?${
+        ShardProtocol.pullQuery({ version: 2, shard: to, epoch: 0, after: 0, limit: 256 })
+      }`)
+      return await response.json() as ShardProtocol.PullResponse
+    })
+    if (pulled._tag !== "Page") throw new Error("expected a page")
+    expect(pulled.head).toBe(1200)
+  })), 60_000)
+
+test("a pair bridged with no place is given the place the backfill read for it, by a Durable Object in workerd", () =>
+  Effect.runPromise(Effect.gen(function*() {
+    const at = crypto.randomUUID()
+    const to = Messages.shardOf(at)
+    const older: Bridge.Answered = {
+      conversationId: at, questionId: crypto.randomUUID(), answerId: crypto.randomUUID(),
+      question: { text: "Older", position: 101, createdAt: AT }, answer: { position: 102, createdAt: AT },
+      text: "Older answer", updatedAt: LATER,
+    }
+    const newer: Bridge.Answered = {
+      conversationId: at, questionId: crypto.randomUUID(), answerId: crypto.randomUUID(),
+      question: { text: "Newer", position: 201, createdAt: AT }, answer: { position: 202, createdAt: AT },
+      text: "Newer answer", updatedAt: LATER,
+    }
+    // The newer pair as slice 4c's bridge posted it: under the same keys, with no place.
+    const stream = to as unknown as ShardProtocol.StreamId
+    for (const [author, id, payload] of [
+      [Bridge.questionOwner(newer.questionId), `question:${newer.questionId}`, { _tag: "PostMessage", messageId: newer.questionId, author: Bridge.questionOwner(newer.questionId), body: "Newer", role: "user" }],
+      [Bridge.answerOwner(newer.answerId), `answer:${newer.answerId}`, { _tag: "PostMessage", messageId: newer.answerId, author: Bridge.answerOwner(newer.answerId), body: "", role: "assistant", questionId: newer.questionId }],
+    ] as const) {
+      yield* Routes.submitAs(forward, { author }, {
+        version: 2, shard: to, epoch: 0,
+        command: { key: [`${author}/${Bridge.BRIDGE_DEVICE}`, id], stream, payload: payload as never },
+      })
+    }
+    const result = yield* Routes.backfillBatch(forward, to, {
+      cursor: 201,
+      done: true,
+      commands: [...Bridge.backfillCommands(older, []), ...Bridge.backfillCommands(newer, [])],
+    })
+    expect(result).toEqual({ applied: 10, kept: 2, cursor: 201, checked: true })
+    const pulled = yield* Effect.promise(async () => {
+      const response = await fetchAs(ada)(`${ORIGIN}/api/conversations/${at}/messages/pull?${
+        ShardProtocol.pullQuery({ version: 2, shard: to, epoch: 0, after: 0, limit: 256 })
+      }`)
+      return await response.json() as ShardProtocol.PullResponse
+    })
+    if (pulled._tag !== "Page") throw new Error("expected a page")
+    const chat = Messages.apply(emptyChat, { _tag: "Entries", entries: pulled.entries, through: { shard: to, epoch: 0, seq: pulled.through } })
+    const places = placesOf(chat.messages)
+    const order = chat.messages.map((message, index) => [message.id, places[index]!] as const)
+      .sort((left, right) => left[1] - right[1]).map(([id]) => id)
+    expect(order).toEqual([older.questionId, older.answerId, newer.questionId, newer.answerId])
+  })), 60_000)
+
+test("no page reaches the backfill's mark or its batches through ChatApi's route in workerd", async () => {
+  for (const path of ["backfill", "backfill-mark", "backfill-batch"]) {
+    for (const method of ["GET", "POST"]) {
+      const response = await fetchAs(ada)(`${ORIGIN}/api/conversations/${conversation}/messages/${path}`, {
+        method,
+        ...(method === "POST" ? { body: JSON.stringify({ cursor: 0, done: true, commands: [] }) } : {}),
+      })
+      expect([path, method, response.status]).toEqual([path, method, 404])
+    }
+  }
+  expect(await Effect.runPromise(Routes.backfilled(forward, shard))).toBe(false)
+})

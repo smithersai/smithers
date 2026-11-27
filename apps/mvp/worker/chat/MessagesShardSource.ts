@@ -9,13 +9,16 @@ import * as MessagesShardBridge from "./MessagesShardBridge.ts"
 // is the same commands under the same keys. Nothing here fails: a row that cannot be read is a log line, and the
 // request that wrote it goes on.
 //
-// A note the timeline writes is owed to the shard from its commit: Postgres keeps one row per message whose notes the
-// shard has not acknowledged (`messages_shard_pending`, written by a trigger in the transaction that wrote the note:
-// db/migrations/0135_message_note_versions.ts). `drain` sends what a conversation is owed and takes a row away only
-// once the shard has answered the note's own command for its version (`MessagesShardBridge.NoteResult`). It runs after
-// each note is written and before each read of the shard (worker/chat/MessagesShardRoutes.ts `dispatch`), so a note
-// whose request died between the commit and the send, or whose shard could not be reached, arrives with the next of
-// either, without the write being made again. A row a send left owed is tried again after every row not yet tried.
+// Every write of a message is owed to the shard from its commit: Postgres keeps one row per message the shard has not
+// acknowledged (`messages_shard_pending`), written by triggers in the transaction that wrote the message: a question
+// asked, an answer recorded, ended or changed, and the timeline's notes (db/migrations/0135_message_note_versions.ts,
+// db/migrations/0139_messages_shard_pending.ts). ChatApi's own bridge of a question or an answer takes its rows away
+// once the shard settled what it sent (`asked`, `answered`). `drain` sends whatever a conversation is still owed and
+// takes a row away only once the shard has settled the message's exchange and, for a note, answered the note's own
+// command for its version (`MessagesShardBridge.NoteResult`). It runs after each note is written and before each read
+// of the shard (worker/chat/MessagesShardRoutes.ts `dispatch`), so a write whose request died between the commit and
+// the send, or whose shard could not be reached, arrives with the next of either, without the write being made again.
+// A row a send left owed is tried again after every row not yet tried.
 //
 // A conversation whose history Postgres held before the bridge is read whole once (`history`, `notes`), and replayed
 // into its shard by the backfill (worker/chat/MessagesShardBackfill.vibe).
@@ -63,8 +66,11 @@ export const runOf = (held: Readonly<Record<string, unknown>>): Omit<MessageRun,
 /**
  * The exchanges Postgres holds now where `where` holds of a question `q`, in their place: each question alone when it
  * has no answer beside it, the pair when the answer still streams, and the answer's text, its last write and how it
- * ended once it has: finished, or failed and why. A question with more than one answer is read with its first. Each
- * time is as Postgres prints one in UTC, which is how Electric delivers it (src/features/chat/view.ts `postgresTime`).
+ * ended once it has: finished, or failed and why. A question with more than one answer is one exchange per answer,
+ * in the answers' place and then their ids, so every row Postgres holds is read and the same rows read again are the
+ * same exchanges in the same order. At most `limit` exchanges, the first in that order, where a caller gives one.
+ * Each time is as Postgres prints one in UTC, which is how Electric delivers it (src/features/chat/view.ts
+ * `postgresTime`).
  *
  * The view a question was sent from, and the values sent with it, are read only where every reader of the conversation
  * already syncs them: a form, whose synced `state` names the question that submitted it and its values
@@ -72,11 +78,11 @@ export const runOf = (held: Readonly<Record<string, unknown>>): Omit<MessageRun,
  * `messages.source` and `messages.data` do for every device (worker/Chat.ts `SYNCED_MESSAGE_COLUMNS`): a shard's posts
  * reach every reader of the conversation.
  */
-const exchanges = (where: (sql: SqlClient.SqlClient) => ReadonlyArray<Statement.Fragment>) =>
+const exchanges = (where: (sql: SqlClient.SqlClient) => ReadonlyArray<Statement.Fragment>, limit?: number) =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
     const rows = yield* sql<ExchangeRow>`
-      SELECT DISTINCT ON (q.position) q.conversation_id AS "conversationId", q.id AS "questionId", a.id AS "answerId",
+      SELECT q.conversation_id AS "conversationId", q.id AS "questionId", a.id AS "answerId",
         q.text, q.position::text AS position, (q.created_at AT TIME ZONE 'UTC')::text || '+00' AS "createdAt",
         CASE WHEN v.id IS NOT NULL THEN q.source END AS source,
         CASE WHEN v.id IS NOT NULL THEN q.data END AS data,
@@ -91,7 +97,7 @@ const exchanges = (where: (sql: SqlClient.SqlClient) => ReadonlyArray<Statement.
       LEFT JOIN views v ON v.id::text = q.source->>'viewId' AND v.conversation_id = q.conversation_id
         AND v.template = 'form' AND v.state->>'questionId' = q.id::text
       WHERE ${sql.and([sql`q.role = 'user'`, ...where(sql)])}
-      ORDER BY q.position, a.position`
+      ORDER BY q.position, a.position, a.id${limit === undefined ? sql`` : sql` LIMIT ${limit}`}`
     return rows.map(exchangeOf)
   })
 
@@ -131,22 +137,27 @@ const exchangeOf = (row: ExchangeRow): MessagesShardBridge.Exchange => {
 }
 
 /**
- * Question `questionId` and its answer as Postgres holds them now (`exchanges`), or nothing when it holds no such
- * question.
+ * Question `questionId` with each of its answers as Postgres holds them now (`exchanges`): nothing when it holds no
+ * such question, and the question alone when it has no answer.
  */
-export const exchange = (questionId: string, conversationId?: string) =>
-  Effect.map(
-    exchanges((sql) => [
-      sql`q.id = ${questionId}`,
-      // A caller that read the message's conversation first holds the exchange to it: an id another conversation
-      // came to hold between the two reads is no exchange of this one.
-      ...(conversationId === undefined ? [] : [sql`q.conversation_id = ${conversationId}`]),
-    ]),
-    Arr.head,
-  )
+export const exchangesOf = (questionId: string, conversationId?: string) =>
+  exchanges((sql) => [
+    sql`q.id = ${questionId}`,
+    // A caller that read the message's conversation first holds the exchange to it: an id another conversation
+    // came to hold between the two reads is no exchange of this one.
+    ...(conversationId === undefined ? [] : [sql`q.conversation_id = ${conversationId}`]),
+  ])
 
-/** Every exchange of conversation `conversationId` as Postgres holds it now (`exchanges`), in Postgres's order. */
-export const history = (conversationId: string) => exchanges((sql) => [sql`q.conversation_id = ${conversationId}`])
+/** Question `questionId` and its first answer as Postgres holds them now (`exchangesOf`), or nothing. */
+export const exchange = (questionId: string, conversationId?: string) =>
+  Effect.map(exchangesOf(questionId, conversationId), Arr.head)
+
+/**
+ * The first `limit` exchanges of conversation `conversationId` whose question Postgres placed after `after`, as
+ * Postgres holds them now (`exchanges`), in Postgres's order.
+ */
+export const history = (conversationId: string, after: number, limit: number) =>
+  exchanges((sql) => [sql`q.conversation_id = ${conversationId}`, sql`q.position > ${after}`], limit)
 
 export interface NoteRow {
   readonly id: string
@@ -161,16 +172,11 @@ export interface NoteRow {
 
 /**
  * The note a row of `messages` holds (`NoteRow`): its summary with its revision, its phase and its arc as Postgres
- * holds them, `""` for a mark it lacks, under the version Postgres counted for that row's notes. `exchange` is the
- * exchange its message belongs to, where the caller sends one with it.
+ * holds them, `""` for a mark it lacks, under the version Postgres counted for that row's notes.
  *
  * @throws {never}
  */
-export const notedOf = (
-  conversationId: string,
-  row: NoteRow,
-  exchange?: MessagesShardBridge.Exchange,
-): MessagesShardBridge.Noted => ({
+export const notedOf = (conversationId: string, row: NoteRow): MessagesShardBridge.Noted => ({
   conversationId,
   messageId: row.id,
   role: row.role,
@@ -183,22 +189,24 @@ export const notedOf = (
     phase: row.phase ?? "",
     arc: row.arc ?? "",
   },
-  ...(exchange === undefined ? {} : { exchange }),
 })
 
 /**
- * The note on every message of conversation `conversationId` the timeline ever wrote one on (`notedOf`), in Postgres's
- * order: a summary, a phase or an arc it holds, or a version that says notes were written and taken away since.
+ * The note on each message `ids` names in conversation `conversationId` that the timeline ever wrote one on
+ * (`notedOf`), in Postgres's order: a summary, a phase or an arc it holds, or a version that says notes were written
+ * and taken away since. None when `ids` names none.
  */
-export const notes = (conversationId: string) =>
+export const notes = (conversationId: string, ids: ReadonlyArray<string>) =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
+    if (ids.length === 0) return []
     const rows = yield* sql<NoteRow>`
       SELECT id, role, question_id AS "questionId", summary, summary_revision AS "summaryRevision", phase, arc,
         notes_version::text AS version
       FROM messages
       WHERE conversation_id = ${conversationId}
         AND (summary IS NOT NULL OR phase IS NOT NULL OR arc IS NOT NULL OR notes_version > 0)
+        AND id IN ${sql.in(ids)}
       ORDER BY position`
     return rows
   })
@@ -220,92 +228,168 @@ const bridged = <A, E, R>(
       Effect.catchCause(() => unread(write, "unreadable")),
     ))
 
-/** The pair a found exchange holds: nothing for a question with no answer beside it. */
-const pairOf = (found: MessagesShardBridge.Exchange): Option.Option<MessagesShardBridge.Asked> =>
-  MessagesShardBridge.isAsked(found) ? Option.some(found) : Option.none()
+/**
+ * One row of what the shard is owed (`messages_shard_pending`, db/migrations/0139_messages_shard_pending.ts): the
+ * message, and `obligation`, which every write of the row raises. A row is taken away only under the obligation it
+ * was read with, so a write committed while the shard was being sent the row stays owed.
+ */
+interface Owed {
+  readonly id: string
+  readonly obligation: string
+}
 
-/** Bridges question `questionId` and its pending answer as Postgres committed them. Never fails. */
+/**
+ * The answers a write owed to the shard is settled by: the shard sequenced it, held it already, or decided against it
+ * with a receipt that answers it for ever (`MessagesShardBridge.Outcome`). An object that could not be reached, an
+ * epoch that kept moving, a time out and a refusal by the object for what the command is leave it owed.
+ */
+const SETTLED: ReadonlySet<MessagesShardBridge.Outcome> = new Set(["ok", "kept", "refused", "idempotency_conflict"])
+
+/** Takes away each of `owed` in conversation `conversationId`, only under the obligation it was read with. */
+const settle = (conversationId: string, owed: ReadonlyArray<Owed>) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    Effect.forEach(owed, (row) => sql`
+      DELETE FROM messages_shard_pending
+      WHERE conversation_id = ${conversationId} AND message_id = ${row.id} AND obligation = ${row.obligation}`, {
+      discard: true,
+    }))
+
+/**
+ * What question `questionId` and its answers are owed, of the rows ChatApi's own write settles: a message with notes
+ * is owed them too, and only `drain` sends a note.
+ */
+const owedOf = (questionId: string) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql<Owed>`
+      SELECT p.message_id AS id, p.obligation::text AS obligation FROM messages_shard_pending p
+      WHERE p.notes_version = 0
+        AND p.message_id IN (SELECT m.id FROM messages m WHERE m.id = ${questionId} OR m.question_id = ${questionId})`)
+
+/**
+ * Reads what question `questionId` is owed, then each of its exchanges `pick` keeps, and bridges them with `send`:
+ * the rows read first are taken away once every exchange is settled (`SETTLED`). Nothing found is `missing`.
+ */
+const exchanged = <A extends MessagesShardBridge.Exchange>(
+  write: "asked" | "answered",
+  questionId: string,
+  pick: (exchange: MessagesShardBridge.Exchange) => exchange is A,
+  send: (bridge: MessagesShardBridge.MessagesShardBridge["Service"], exchange: A) => Effect.Effect<MessagesShardBridge.Outcome>,
+) =>
+  bridged(
+    write,
+    Effect.gen(function*() {
+      const owed = yield* owedOf(questionId)
+      const found = (yield* exchangesOf(questionId)).filter(pick)
+      return found.length === 0 ? Option.none() : Option.some({ owed, found })
+    }),
+    ({ owed, found }, bridge) =>
+      Effect.gen(function*() {
+        const outcomes = yield* Effect.forEach(found, (exchange) => send(bridge, exchange))
+        if (outcomes.every((outcome) => SETTLED.has(outcome))) yield* settle(found[0]!.conversationId, owed)
+      }),
+  )
+
+/**
+ * Bridges question `questionId` and each pending answer as Postgres committed them, and takes away what they were
+ * owed (`exchanged`). Never fails.
+ */
 export const asked = (questionId: string) =>
-  bridged("asked", Effect.map(exchange(questionId), Option.flatMap(pairOf)), (found, bridge) => bridge.asked(found))
+  exchanged("asked", questionId, MessagesShardBridge.isAsked, (bridge, found) => bridge.asked(found))
 
 /** `asked`, reading through `database`, which is built only where a bridge is provided. */
 export const askedIn = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, questionId: string) =>
-  bridged(
-    "asked",
-    Effect.provide(Effect.map(exchange(questionId), Option.flatMap(pairOf)), database),
-    (found, bridge) => bridge.asked(found),
-  )
+  Effect.flatMap(Effect.serviceOption(MessagesShardBridge.MessagesShardBridge), (service) =>
+    Option.isNone(service)
+      ? Effect.void
+      : Effect.provide(asked(questionId), database).pipe(Effect.catchCause(() => unread("asked", "unreadable"))))
 
 /**
- * Bridges question `questionId`'s ended answer as Postgres committed it, finished or failed, and the question with it.
- * An answer Postgres still holds streaming is not bridged. Never fails.
+ * Bridges each of question `questionId`'s ended answers as Postgres committed them, finished or failed, and the
+ * question with them, and takes away what they were owed (`exchanged`). An answer Postgres still holds streaming is
+ * not bridged. Never fails.
  */
 export const answered = (questionId: string) =>
-  bridged(
-    "answered",
-    Effect.map(exchange(questionId), Option.filter(MessagesShardBridge.isAnswered)),
-    (found, bridge) => bridge.answered(found),
-  )
+  exchanged("answered", questionId, MessagesShardBridge.isAnswered, (bridge, found) => bridge.answered(found))
 
-/** The most notes one `drain` sends: what is left is sent by the next, so no request waits on a whole backlog. */
+/** The most messages one `drain` sends: what is left is sent by the next, so no request waits on a whole backlog. */
 export const DRAIN_LIMIT = 64
 
+/** Whether a row of `messages` holds notes the timeline wrote, or once wrote and took away (`notes`). */
+const hasNotes = (row: NoteRow) => row.summary !== null || row.phase !== null || row.arc !== null || Number(row.version) > 0
+
 /**
- * Sends conversation `conversationId`'s shard the notes it is owed, at most `DRAIN_LIMIT` of them: for each message
- * Postgres keeps as pending, its summary with its revision, its phase and its arc as Postgres holds them now, `""` for
- * a mark it lacks, under the version Postgres counted for that row's notes. One row is one tuple, so the notes and
- * their version are of one commit: a read that sees a later write carries a higher version, and the shard keeps the
- * highest whatever order the reads arrive in. Each note is sent with the exchange its message belongs to, read the
- * same way and held to this conversation, so the shard holds the message before it is told the note.
+ * Sends conversation `conversationId`'s shard what it is owed, for at most `DRAIN_LIMIT` messages: every write Postgres
+ * committed of a message, a question asked, an answer recorded or changed, or its notes, leaves its message owed from
+ * that commit (`messages_shard_pending`), whatever becomes of the request that wrote it. Each owed message's exchange
+ * is read as Postgres holds it now and replayed (`MessagesShardBridge.replayed`), every answer of a question, under
+ * the bridge's own keys, so what the shard holds already answers `Duplicate`. Then a message with notes is sent them:
+ * its summary with its revision, its phase and its arc as Postgres holds them now, `""` for a mark it lacks, under the
+ * version Postgres counted for that row's notes. One row is one tuple, so the notes and their version are of one
+ * commit: a read that sees a later write carries a higher version, and the shard keeps the highest whatever order the
+ * reads arrive in.
  *
- * A message is no longer pending once the shard has answered the note's own command for the version sent
- * (`NoteResult.settled`), and only if Postgres has counted no later one meanwhile: a note written while this one was
- * sent stays owed. Nothing else takes a row away: not a command posted before the note that the shard decided
- * against, and not a note that could not be sent. Such a row stays pending, and so does one whose exchange Postgres
- * no longer holds in this conversation.
+ * A message is no longer owed once the shard has settled every exchange it belongs to (`SETTLED`) and, where it has
+ * notes, answered the note's own command for the version sent (`NoteResult.settled`), and only if Postgres has raised
+ * no later obligation for it meanwhile: a write committed while this one was sent stays owed. Nothing else takes a row
+ * away: not a command that could not be sent, and not a note whose exchange did not settle. Such a row stays owed, and
+ * so does one whose message or exchange Postgres no longer holds in this conversation.
  *
- * The rows never tried are sent first, oldest first, then the ones tried longest ago: a row left owed is marked
- * tried, so it waits behind every row that has not been, and 64 rows the shard keeps declining never hold a later
- * one out of a drain. Never fails.
+ * The owed rows are read alone first, from their own index and without `messages`: a conversation that is owed
+ * nothing, which is every read of a shard the bridge keeps up with, asks Postgres nothing else. The rows never tried
+ * are sent first, oldest first, then the ones tried longest ago: a row left owed is marked tried, so it waits behind
+ * every row that has not been, and 64 rows the shard keeps declining never hold a later one out of a drain. Never
+ * fails.
  */
 export const drain = (conversationId: string) =>
   bridged(
     "noted",
     Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
+      const owed = yield* sql<Owed>`
+        SELECT message_id AS id, obligation::text AS obligation FROM messages_shard_pending
+        WHERE conversation_id = ${conversationId}
+        ORDER BY attempted_at ASC NULLS FIRST, enqueued_at ASC, obligation ASC LIMIT ${DRAIN_LIMIT}`
+      if (owed.length === 0) return Option.some({ owed, groups: [] })
       const rows = yield* sql<NoteRow>`
-        SELECT m.id, m.role, m.question_id AS "questionId", m.summary,
-          m.summary_revision AS "summaryRevision", m.phase, m.arc, m.notes_version::text AS version
-        FROM messages_shard_pending p JOIN messages m ON m.id = p.message_id AND m.conversation_id = p.conversation_id
-        WHERE p.conversation_id = ${conversationId}
-        ORDER BY p.attempted_at ASC NULLS FIRST, p.enqueued_at ASC, m.position ASC LIMIT ${DRAIN_LIMIT}`
-      return Option.some(
-        yield* Effect.forEach(rows, (row) =>
-          // A question is its own exchange's; an answer's is its question's, which Postgres never lets it lack.
-          Effect.map(exchange(row.questionId ?? row.id, conversationId), (found) => ({
-            id: row.id,
-            note: Option.map(found, (held) => notedOf(conversationId, row, held)),
-          })), { concurrency: 4 }),
-      )
+        SELECT id, role, question_id AS "questionId", summary, summary_revision AS "summaryRevision", phase, arc,
+          notes_version::text AS version
+        FROM messages WHERE conversation_id = ${conversationId} AND id IN ${sql.in(owed.map((row) => row.id))}`
+      const obligations = new Map(owed.map((row) => [row.id, row.obligation]))
+      // A question is its own exchange's; an answer's is its question's, which Postgres never lets it lack.
+      const questions = Arr.dedupe(rows.map((row) => row.questionId ?? row.id))
+      const groups = yield* Effect.forEach(questions, (questionId) =>
+        Effect.map(exchangesOf(questionId, conversationId), (exchanges) => ({
+          exchanges,
+          rows: rows.filter((row) => (row.questionId ?? row.id) === questionId)
+            .map((row) => ({ row, obligation: obligations.get(row.id)! })),
+        })), { concurrency: 4 })
+      return Option.some({ owed, groups })
     }),
-    (rows, bridge) =>
+    ({ owed, groups }, bridge) =>
       Effect.gen(function*() {
-        const sql = yield* SqlClient.SqlClient
-        // A row whose exchange left this conversation between the two reads has no note: it is sent nothing.
-        const settled = yield* Effect.forEach(Arr.getSomes(rows.map(({ note }) => note)), (note) =>
+        if (owed.length === 0) return
+        const settled = yield* Effect.forEach(groups, ({ exchanges, rows }) =>
           Effect.gen(function*() {
-            if (!(yield* bridge.noted(note)).settled) return []
-            // Only the version sent is settled, and only in this conversation: a later write of the row's notes
-            // raised the pending row's past it.
-            yield* sql`
-              DELETE FROM messages_shard_pending
-              WHERE conversation_id = ${conversationId} AND message_id = ${note.messageId}
-                AND notes_version <= ${note.version}`
-            return [note.messageId]
+            const replays = yield* Effect.forEach(exchanges, (exchange) =>
+              Effect.map(bridge.replayed(exchange, []), (replay) => ({
+                answerId: MessagesShardBridge.isAsked(exchange) ? exchange.answerId : undefined,
+                settled: replay.final && SETTLED.has(replay.outcome),
+              })))
+            return yield* Effect.forEach(rows, ({ row, obligation }) =>
+              Effect.gen(function*() {
+                // A question belongs to every exchange of its own, an answer to its own alone.
+                const mine = replays.filter((replay) => row.role === "user" || replay.answerId === row.id)
+                if (mine.length === 0 || !mine.every((replay) => replay.settled)) return []
+                if (hasNotes(row) && !(yield* bridge.noted(notedOf(conversationId, row))).settled) return []
+                return [{ id: row.id, obligation }]
+              }))
           }), { concurrency: 4 })
-        const done = new Set(settled.flat())
-        const pending = rows.map(({ id }) => id).filter((id) => !done.has(id))
+        const done = settled.flat(2)
+        yield* settle(conversationId, done)
+        const left = new Set(done.map((row) => row.id))
+        const pending = owed.map(({ id }) => id).filter((id) => !left.has(id))
         if (pending.length === 0) return
+        const sql = yield* SqlClient.SqlClient
         // Tried, and still owed: behind every row not tried yet, so the next drain starts with those.
         yield* sql`
           UPDATE messages_shard_pending SET attempted_at = clock_timestamp()

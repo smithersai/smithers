@@ -2,6 +2,7 @@ import {
   CHAT_REFUSALS,
   type ChatCommand,
   MAX_BODY_LENGTH,
+  MAX_DATA_LENGTH,
   type MessageFailure,
   type MessageNotes,
   type MessageRun,
@@ -89,7 +90,11 @@ export interface Answered extends Asked {
 /** What Postgres holds of an exchange: its question alone, the pair while the answer streams, or the ended answer. */
 export type Exchange = Lone | Asked | Answered
 
-/** Whether Postgres holds an answer beside the question. */
+/**
+ * Whether Postgres holds an answer beside the question.
+ *
+ * @throws {never}
+ */
 export const isAsked = (exchange: Exchange): exchange is Asked | Answered => "answerId" in exchange
 
 /** Whether what Postgres holds of an exchange is its ended answer too. */
@@ -173,7 +178,11 @@ const isFinal = (result: { readonly outcome: Outcome; readonly reason?: string; 
 
 type Step = { readonly writer: MessagesShard.Writer; readonly id: string; readonly payload: ChatCommand }
 
-/** The question's post: one key, whoever writes it first. */
+/**
+ * The question's post: one key, whoever writes it first. A question Postgres holds past the reducer's bounds, stored
+ * before the bounds were, is posted as the reducer takes it: its text cut as an answer's is (`bodyWithin`), and values
+ * longer than a post carries (`MAX_DATA_LENGTH`) left out, the view it was sent from kept.
+ */
 const questionStep = (lone: Lone): Step => {
   const asker = questionOwner(lone.questionId)
   const { text, position, createdAt, source, data } = lone.question
@@ -184,12 +193,12 @@ const questionStep = (lone: Lone): Step => {
       _tag: "PostMessage",
       messageId: lone.questionId,
       author: asker,
-      body: text,
+      body: bodyWithin(text),
       role: "user",
       position,
       createdAt,
       ...(source === undefined ? {} : { source }),
-      ...(data === undefined ? {} : { data }),
+      ...(data === undefined || data.length > MAX_DATA_LENGTH ? {} : { data }),
     },
   }
 }
@@ -227,10 +236,13 @@ const exchangeSteps = (asked: Asked): ReadonlyArray<Step> => {
  * cut never parts a surrogate pair, so what is kept is whole Unicode text, which the reducer takes. An answer cut
  * here still ends: the status that follows its body is sent, where a body the shard refused left it streaming.
  */
-export const bodyWithin = (text: string): string => {
-  if (text.length <= MAX_BODY_LENGTH) return text
-  const last = text.charCodeAt(MAX_BODY_LENGTH - 1)
-  return text.slice(0, last >= 0xd800 && last <= 0xdbff ? MAX_BODY_LENGTH - 1 : MAX_BODY_LENGTH)
+export const bodyWithin = (text: string): string => clipped(text, MAX_BODY_LENGTH)
+
+/** The longest whole prefix of `text` within `length` code units: the cut never parts a surrogate pair. */
+const clipped = (text: string, length: number): string => {
+  if (text.length <= length) return text
+  const last = text.charCodeAt(length - 1)
+  return text.slice(0, last >= 0xd800 && last <= 0xdbff ? length - 1 : length)
 }
 
 const encoder = new TextEncoder()
@@ -238,20 +250,29 @@ const encoder = new TextEncoder()
 /**
  * The request `build` makes of `payload`, as it fits in `maxBytes` of JSON in UTF-8, the most the object reads of a
  * submit (MessagesShardRoutes.ts `MAX_SHARD_COMMAND_BYTES`): the whole command when it fits, and otherwise the command
- * without as many of its last steps as it takes, its first steps kept in order. A command the reducer takes always
- * fits, so nothing is shed of one. A command still too large with no steps left is sent as it is, and refused. An
+ * without as many of its last steps as it takes, its first steps kept in order, and then with its body cut by as many
+ * code units as it is bytes too long, never parting a surrogate pair. A command the reducer takes always fits, so
+ * nothing is shed of one. A command still too large with no steps and no body left is sent as it is, and refused. An
  * answer whose run holds more than a submit carries still ends: the status that follows it is sent, where a run the
  * object refused left it streaming.
  */
 export const fitted = <R>(payload: ChatCommand, build: (payload: ChatCommand) => R, maxBytes: number): R => {
   let fit = payload
   let request = build(fit)
-  while (encoder.encode(JSON.stringify(request)).length > maxBytes) {
-    if (!("parts" in fit) || fit.parts === undefined || fit.parts.length === 0) return request
-    const { parts, ...rest } = fit
-    const kept = parts.slice(0, -1)
-    fit = kept.length === 0 ? rest : { ...rest, parts: kept }
+  let over = encoder.encode(JSON.stringify(request)).length - maxBytes
+  while (over > 0) {
+    if ("parts" in fit && fit.parts !== undefined && fit.parts.length > 0) {
+      const { parts, ...rest } = fit
+      const kept = parts.slice(0, -1)
+      fit = kept.length === 0 ? rest : { ...rest, parts: kept }
+    } else if ("body" in fit && fit.body.length > 0) {
+      // Every code unit is at least one byte of the JSON, so one cut is almost always enough.
+      fit = { ...fit, body: clipped(fit.body, Math.max(0, fit.body.length - over)) }
+    } else {
+      return request
+    }
     request = build(fit)
+    over = encoder.encode(JSON.stringify(request)).length - maxBytes
   }
   return request
 }
@@ -316,6 +337,43 @@ const noteStep = (noted: Noted): Step => ({
   payload: { _tag: "UpdateMessageMetadata", messageId: noted.messageId, ...noted.notes, noteVersion: noted.version },
 })
 
+/** The submit of `step` to `shard` under `epoch`, as it fits in what the object reads of one (`fitted`). */
+const requestOf = (shard: ShardProtocol.ShardId, step: Step, epoch: number): ShardProtocol.SubmitRequest =>
+  fitted(step.payload, (payload) => ({
+    version: ShardProtocol.protocolVersion,
+    shard,
+    epoch,
+    command: {
+      key: [`${step.writer.author}/${BRIDGE_DEVICE}`, step.id],
+      stream: Schema.decodeUnknownSync(ShardProtocol.StreamId)(shard),
+      payload,
+    },
+  }), MessagesShardRoutes.MAX_SHARD_COMMAND_BYTES)
+
+// A UUID has equivalent case spellings; a message id and a key have one, as Postgres prints it.
+const lower = <A extends Exchange>(write: A): A => ({
+  ...write,
+  conversationId: write.conversationId.toLowerCase(),
+  questionId: write.questionId.toLowerCase(),
+  ...(isAsked(write) ? { answerId: write.answerId.toLowerCase() } : {}),
+})
+
+/**
+ * What the backfill sends of one exchange and the notes on its messages (worker/chat/MessagesShardBackfill.vibe), in
+ * order: the commands `replayed` sends, under the same writers and the same keys, each as it fits in what the object
+ * reads of a submit. The object sequences them under its own epoch (MessagesShard.ts `backfill.batch`).
+ *
+ * @throws {never}
+ */
+export const backfillCommands = (
+  exchange: Exchange,
+  notes: ReadonlyArray<Noted>,
+): ReadonlyArray<MessagesShard.BackfillCommand> => {
+  const shard = MessagesShard.shardOf(exchange.conversationId)
+  const steps = [...stepsOf(lower(exchange)), ...notes.map((noted) => noteStep({ ...noted, messageId: noted.messageId.toLowerCase() }))]
+  return steps.map((step) => ({ author: step.writer.author, id: step.id, payload: requestOf(shard, step, 0).command.payload }))
+}
+
 export interface BridgeOptions {
   /** How long one bridged write may take, every command included, before the request goes on without it. Default 5 seconds. */
   readonly within?: Duration.Input
@@ -340,6 +398,15 @@ export class MessagesShardBridge extends Context.Service<
     readonly replayed: (exchange: Exchange, notes: ReadonlyArray<Noted>) => Effect.Effect<Replayed>
     /** Whether the conversation's shard holds its history from Postgres (MessagesShardRoutes.ts `backfilled`). */
     readonly backfilled: (conversationId: string) => Effect.Effect<boolean, MessagesShardRoutes.SubmitFailed>
+    /** The conversation's shard's backfill mark and cursor (MessagesShardRoutes.ts `backfillState`). */
+    readonly backfillState: (
+      conversationId: string,
+    ) => Effect.Effect<{ readonly checked: boolean; readonly cursor: number }, MessagesShardRoutes.SubmitFailed>
+    /** Applies one batch of the backfill in the conversation's shard (MessagesShardRoutes.ts `backfillBatch`). */
+    readonly backfillBatch: (
+      conversationId: string,
+      batch: MessagesShard.BackfillBatch,
+    ) => Effect.Effect<MessagesShard.BackfillResult, MessagesShardRoutes.SubmitFailed>
     /** Marks the conversation's shard as holding its history from Postgres (MessagesShardRoutes.ts `markBackfilled`). */
     readonly markBackfilled: (conversationId: string) => Effect.Effect<void, MessagesShardRoutes.SubmitFailed>
   }
@@ -351,16 +418,7 @@ export class MessagesShardBridge extends Context.Service<
       ShardProtocol.SubmitResponse,
       MessagesShardRoutes.SubmitFailed
     > =>
-      MessagesShardRoutes.submitAs(forward, step.writer, fitted(step.payload, (payload) => ({
-        version: ShardProtocol.protocolVersion,
-        shard,
-        epoch,
-        command: {
-          key: [`${step.writer.author}/${BRIDGE_DEVICE}`, step.id],
-          stream: Schema.decodeUnknownSync(ShardProtocol.StreamId)(shard),
-          payload,
-        },
-      }), MessagesShardRoutes.MAX_SHARD_COMMAND_BYTES))
+      MessagesShardRoutes.submitAs(forward, step.writer, requestOf(shard, step, epoch))
     /**
      * Each command of `steps` in order, stopping at the first the shard did not sequence: a later one assumes the
      * earlier. A post whose key the shard holds for other content is not a stop. Only the bridge posts under its ids,
@@ -476,13 +534,6 @@ export class MessagesShardBridge extends Context.Service<
         duration: within,
         orElse: () => Effect.fail(new MessagesShardRoutes.SubmitFailed({ reason: "unreachable" })),
       })
-    // A UUID has equivalent case spellings; a message id and a key have one, as Postgres prints it.
-    const lower = <A extends Exchange>(write: A): A => ({
-      ...write,
-      conversationId: write.conversationId.toLowerCase(),
-      questionId: write.questionId.toLowerCase(),
-      ...(isAsked(write) ? { answerId: write.answerId.toLowerCase() } : {}),
-    })
     /** `id` when it is a UUID, as ChatApi's routes already hold every id to; a shard is named, and a key built, from nothing else. */
     const uuid = (id: string) => (isUuid(id) ? id : undefined)
     /** The ids an exchange's commands are built from: its question's, and its answer's where it has one. */
@@ -530,6 +581,10 @@ export class MessagesShardBridge extends Context.Service<
         }),
       backfilled: (conversationId) =>
         timed(MessagesShardRoutes.backfilled(forward, MessagesShard.shardOf(conversationId))),
+      backfillState: (conversationId) =>
+        timed(MessagesShardRoutes.backfillState(forward, MessagesShard.shardOf(conversationId))),
+      backfillBatch: (conversationId, batch) =>
+        timed(MessagesShardRoutes.backfillBatch(forward, MessagesShard.shardOf(conversationId), batch)),
       markBackfilled: (conversationId) =>
         timed(MessagesShardRoutes.markBackfilled(forward, MessagesShard.shardOf(conversationId))),
     })

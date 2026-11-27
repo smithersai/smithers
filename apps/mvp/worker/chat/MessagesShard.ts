@@ -9,8 +9,10 @@ import {
   emptyChat,
   evolveChat,
   findMessage,
+  isBridged,
   MAX_ADMITTED_POSITION,
   type Message,
+  MessageCount,
   questionOwner as bridgeQuestionOwner
 } from "@smthrs/app-state"
 import { DoSqliteShard, type ObjectDatabase } from "@smthrs/platform-cloudflare"
@@ -99,6 +101,48 @@ export class Refused extends Data.TaggedError("MessagesRefused")<{ readonly reas
 export interface Writer {
   readonly author: string
   readonly person?: string
+}
+
+/**
+ * One command of the backfill's batch (`backfill.batch`): the bridge's owner name it is written under, the id of its
+ * key on the bridge's device, and the command. The object builds the submit itself, under its own epoch.
+ */
+export const BackfillCommand = Schema.Struct({ author: Schema.String, id: Schema.String, payload: Schema.Unknown })
+export type BackfillCommand = typeof BackfillCommand.Type
+
+/**
+ * A batch of the backfill (worker/chat/MessagesShardBackfill.vibe): its commands in order, the Postgres `position` of
+ * the last question whose commands are all in this batch or an earlier one (`cursor`), and whether the history ends
+ * here (`done`).
+ */
+export const BackfillBatch = Schema.Struct({
+  cursor: MessageCount,
+  done: Schema.Boolean,
+  commands: Schema.Array(BackfillCommand),
+})
+export type BackfillBatch = typeof BackfillBatch.Type
+
+/**
+ * Why a command of a batch was not taken: a refusal of the object (`REFUSAL_REASONS`), of the reducer
+ * (`@smthrs/app-state` `CHAT_REFUSALS`), `idempotency_conflict` for an update whose key holds other content, or
+ * `stale_epoch` for an epoch that kept moving. Fixed codes, safe to log and to count by.
+ */
+export interface BackfillRejection {
+  readonly index: number
+  readonly messageId: string
+  readonly code: string
+}
+
+/**
+ * What a batch did: how many commands were sequenced or held already (`applied`), how many posts the shard held in
+ * another form (`kept`), the cursor and the mark as they stand after it, and the first command it did not take.
+ */
+export interface BackfillResult {
+  readonly applied: number
+  readonly kept: number
+  readonly cursor: number
+  readonly checked: boolean
+  readonly rejected?: BackfillRejection
 }
 
 const Snapshot = Schema.Struct({ chat: ChatState })
@@ -263,6 +307,21 @@ export const make = Effect.fnUntraced(function*(storage: ObjectDatabase.Storage,
   storage.sql.exec(
     "CREATE TABLE IF NOT EXISTS messages_shard_backfill (id INTEGER PRIMARY KEY CHECK (id = 1), checked_at INTEGER NOT NULL)"
   )
+  // How far the backfill got: the Postgres `position` of the last question whose commands all reached an answer that
+  // stands. Written in the transaction that sets the mark, and never lowered, so a backfill cut short resumes after it.
+  storage.sql.exec(
+    "CREATE TABLE IF NOT EXISTS messages_shard_backfill_cursor (id INTEGER PRIMARY KEY CHECK (id = 1), cursor INTEGER NOT NULL)"
+  )
+  // Where Postgres put a message the bridge posted before posts carried a place (slice 4c). Its post stands, and no
+  // event changes an origin, so the place the backfill read for it is kept here and given to every reader with its
+  // post (`placed`): mixed history reads in Postgres's order.
+  storage.sql.exec(
+    "CREATE TABLE IF NOT EXISTS messages_shard_positions (message_id TEXT PRIMARY KEY, position INTEGER NOT NULL)"
+  )
+  const exec = <T>(query: string, ...bindings: Array<unknown>): Array<T> =>
+    storage.sql.exec(query, ...bindings).toArray() as unknown as Array<T>
+  const checkedNow = () => exec("SELECT id FROM messages_shard_backfill WHERE id = 1").length > 0
+  const cursorNow = () => exec<{ readonly cursor: number }>("SELECT cursor FROM messages_shard_backfill_cursor WHERE id = 1")[0]?.cursor ?? 0
 
   /** Request-scoped refusals that depend only on the admitted writer and command, never on mutable state. */
   const refusal = (writer: Writer, command: ShardProtocol.Command, payload: ChatCommand): RefusalReason | undefined => {
@@ -309,42 +368,170 @@ export const make = Effect.fnUntraced(function*(storage: ObjectDatabase.Storage,
     return undefined
   }
 
+  /**
+   * Sequences `request` for `writer`. The answer is the protocol's: `Accepted`, `Duplicate`, `Refused` (the reducer's
+   * reason, kept as the key's receipt), `StaleEpoch` or `IdempotencyConflict`.
+   */
+  const admit = (writer: Writer, request: ShardProtocol.SubmitRequest) =>
+    Effect.gen(function*() {
+      if (request.shard !== shard || request.command.stream !== stream) {
+        return yield* new Refused({ reason: "wrong_shard" })
+      }
+      const decoded = payloadOf(request.command.payload)
+      if (Option.isNone(decoded)) return yield* new Refused({ reason: "invalid" })
+      const payload = decoded.value
+      const reason = refusal(writer, request.command, payload)
+      if (reason !== undefined) return yield* new Refused({ reason })
+      // The journal sequences and hashes the decoded payload, which holds the schema's fields and nothing else:
+      // whatever else the body carried is never walked, stored or sent on.
+      return yield* journal.submit({ ...request, command: { ...request.command, payload } }).pipe(
+        Effect.orDie,
+        Effect.catchDefect((defect) => (defect instanceof Refused ? Effect.fail(defect) : Effect.die(defect)))
+      )
+    })
+
+  /**
+   * Keeps the place Postgres gave a message the shard holds as the bridge posted it with none (slice 4c), once: a post
+   * of the backfill's that names a place, answered `IdempotencyConflict` because its key holds that older post.
+   */
+  const reconcile = (payload: Extract<ChatCommand, { readonly _tag: "PostMessage" }>) => {
+    const held = findMessage(chat, payload.messageId)
+    // A post whose key holds a refusal, or another writer's message, or a message with a place: nothing to keep.
+    const unplaced = held !== undefined && isBridged(held) && held.position === undefined
+    if (unplaced && payload.position !== undefined) {
+      exec("INSERT OR IGNORE INTO messages_shard_positions (message_id, position) VALUES (?, ?)", payload.messageId, payload.position)
+    }
+  }
+
+  /**
+   * One command of a batch, as the bridge would send it (worker/chat/MessagesShardBridge.ts `sequence`): under the
+   * shard's own epoch, once more under the one a `StaleEpoch` names, and once more under a key no `message_missing`
+   * receipt holds. `ok` when it was sequenced or held already, `kept` for a post the shard holds in another form,
+   * which stands, and otherwise the code of why it was not taken.
+   */
+  const backfillOne = (command: BackfillCommand) =>
+    Effect.gen(function*() {
+      const decoded = payloadOf(command.payload)
+      if (Option.isNone(decoded)) return "invalid"
+      const payload = decoded.value
+      const writer = { author: command.author }
+      const send = (id: string, epoch: number) =>
+        admit(writer, {
+          version: ShardProtocol.protocolVersion,
+          shard,
+          epoch,
+          command: { key: [`${command.author}/${BRIDGE_DEVICE}`, id], stream, payload },
+        })
+      const settle = (id: string): Effect.Effect<string, Refused> =>
+        Effect.gen(function*() {
+          // The epoch is read here and the submit is decided in the same turn: nothing between them moves it.
+          const answer = yield* send(id, (yield* journal.head).epoch)
+          if (answer._tag === "IdempotencyConflict") {
+            if (payload._tag !== "PostMessage") return "idempotency_conflict"
+            reconcile(payload)
+            return "kept"
+          }
+          if (answer._tag === "Refused") {
+            // A receipt that says the message was missing answers its key for ever: the message may be there now.
+            return answer.reason === "message_missing" && !id.endsWith(":again") ? yield* settle(`${id}:again`) : answer.reason
+          }
+          return SETTLED[answer._tag]
+        })
+      return yield* settle(command.id).pipe(Effect.catch((refused) => Effect.succeed(refused.reason)))
+    })
+
+  /** What a batch's command came to, by the protocol's answer: taken, or an epoch that kept moving. */
+  const SETTLED = { Accepted: "ok", Duplicate: "ok", StaleEpoch: "stale_epoch" } as const
+
+  /** The places `messages_shard_positions` keeps, by message id. */
+  const positions = () =>
+    new Map(exec<{ readonly message_id: string; readonly position: number }>(
+      "SELECT message_id, position FROM messages_shard_positions"
+    ).map((row) => [row.message_id, row.position]))
+  /** `message`, a post or a message as Json, with the place kept for it when its post named none. */
+  const placed = (kept: ReadonlyMap<string, number>) => <A>(message: A): A => {
+    const { id, position } = message as { readonly id: string; readonly position?: number }
+    const place = position === undefined ? kept.get(id) : undefined
+    return place === undefined ? message : { ...message, position: place }
+  }
+
   return {
     shard,
-    /**
-     * Sequences the submit request in `body` for `writer`. The answer is the protocol's: `Accepted`, `Duplicate`,
-     * `Refused` (the reducer's reason, kept as the key's receipt), `StaleEpoch` or `IdempotencyConflict`.
-     */
+    /** Sequences the submit request in `body` for `writer` (`admit`). */
     submit: (writer: Writer, body: string) =>
       Effect.gen(function*() {
         const read = submitOf(body)
         if (Option.isNone(read)) return yield* new Refused({ reason: "invalid" })
-        const request = read.value
-        if (request.shard !== shard || request.command.stream !== stream) {
-          return yield* new Refused({ reason: "wrong_shard" })
-        }
-        const decoded = payloadOf(request.command.payload)
-        if (Option.isNone(decoded)) return yield* new Refused({ reason: "invalid" })
-        const payload = decoded.value
-        const reason = refusal(writer, request.command, payload)
-        if (reason !== undefined) return yield* new Refused({ reason })
-        // The journal sequences and hashes the decoded payload, which holds the schema's fields and nothing else:
-        // whatever else the body carried is never walked, stored or sent on.
-        return yield* journal.submit({ ...request, command: { ...request.command, payload } }).pipe(
-          Effect.orDie,
-          Effect.catchDefect((defect) => (defect instanceof Refused ? Effect.fail(defect) : Effect.die(defect)))
-        )
+        return yield* admit(writer, read.value)
       }),
-    journal: { pull: journal.pull, snapshot: journal.snapshot, head: journal.head },
     /**
-     * The backfill's mark: `checked` is whether every command of the conversation's history reached an answer that
-     * stands, and `check` records that, once. Checking again keeps the first time.
+     * The journal as readers are given it: every post of a message whose place the backfill kept
+     * (`messages_shard_positions`) carries that place, in a Pull's entries and a Snapshot's state alike.
+     */
+    journal: {
+      pull: (request: ShardProtocol.PullRequest) =>
+        Effect.map(journal.pull(request), (answer): ShardProtocol.PullResponse => {
+          const kept = positions()
+          if (answer._tag !== "Page" || kept.size === 0) return answer
+          const place = placed(kept)
+          return {
+            ...answer,
+            entries: answer.entries.map((entry) => ({
+              ...entry,
+              events: entry.events.map((event) => (event as { readonly _tag: string })._tag === "MessagePosted" ? place(event) : event),
+            })),
+          }
+        }),
+      snapshot: (requested: ShardProtocol.ShardId) =>
+        Effect.map(journal.snapshot(requested), (answer): ShardProtocol.SnapshotResponse => {
+          const kept = positions()
+          const state = answer.state as { readonly chat: { readonly messages: ReadonlyArray<Schema.Json> } } | null
+          if (state === null || kept.size === 0) return answer
+          return { ...answer, state: { ...state, chat: { ...state.chat, messages: state.chat.messages.map(placed(kept)) } } }
+        }),
+      head: journal.head,
+    },
+    /**
+     * The backfill's mark and cursor: `checked` is whether every command of the conversation's history reached an
+     * answer that stands, and `check` records that, once. Checking again keeps the first time. `cursor` is how far
+     * the backfill got (`BackfillBatch.cursor`), 0 before it started.
+     *
+     * `batch` applies a batch of the backfill in order, as the bridge would (`backfillOne`), and stops at the first
+     * command not taken: nothing after it is sent, and the cursor and the mark stay as they were. Each command is its
+     * own transaction, under its key's receipt, so a batch cut short and sent again adds nothing. Once every command
+     * is taken, one transaction raises the cursor to the batch's, never lowers it, and on the last batch sets the
+     * mark.
      */
     backfill: {
-      checked: Effect.sync(() => storage.sql.exec("SELECT id FROM messages_shard_backfill WHERE id = 1").toArray().length > 0),
+      checked: Effect.sync(checkedNow),
+      cursor: Effect.sync(cursorNow),
       check: Effect.sync(() => {
-        storage.sql.exec("INSERT OR IGNORE INTO messages_shard_backfill (id, checked_at) VALUES (1, ?)", Date.now())
-      })
+        exec("INSERT OR IGNORE INTO messages_shard_backfill (id, checked_at) VALUES (1, ?)", Date.now())
+      }),
+      batch: (batch: BackfillBatch): Effect.Effect<BackfillResult> =>
+        Effect.gen(function*() {
+          let applied = 0
+          let kept = 0
+          for (const [index, command] of batch.commands.entries()) {
+            const outcome = yield* backfillOne(command)
+            if (outcome === "ok") applied++
+            else if (outcome === "kept") kept++
+            else {
+              // A message's id, or none for a command that is no command: never anything else of it.
+              const messageId = Option.getOrElse(Option.map(payloadOf(command.payload), (payload) => payload.messageId), () => "")
+              return { applied, kept, cursor: cursorNow(), checked: checkedNow(), rejected: { index, messageId, code: outcome } }
+            }
+          }
+          storage.transactionSync(() => {
+            exec(
+              `INSERT INTO messages_shard_backfill_cursor (id, cursor) VALUES (1, ?)
+               ON CONFLICT(id) DO UPDATE SET cursor = max(cursor, excluded.cursor)`,
+              batch.cursor
+            )
+            if (batch.done) exec("INSERT OR IGNORE INTO messages_shard_backfill (id, checked_at) VALUES (1, ?)", Date.now())
+          })
+          return { applied, kept, cursor: cursorNow(), checked: checkedNow() }
+        }),
     },
     state: Effect.sync(() => ({ chat, hash: canonicalHash(chat) })),
     compact: Effect.suspend(() => journal.compact(headSeq, { chat }).pipe(Effect.orDie))

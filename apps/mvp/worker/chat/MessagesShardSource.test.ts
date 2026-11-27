@@ -139,6 +139,8 @@ test("with no bridge nothing is read; with one, a row that cannot be read is a l
     const unbuildable = Layer.effect(SqlClient.SqlClient, Effect.fail("no database is configured"))
     yield* Source.drainIn(unbuildable, asked.conversationId)
     yield* Source.drainIn(unbuildable, asked.conversationId).pipe(bridging(host))
+    yield* Source.askedIn(unbuildable, asked.id)
+    yield* Source.askedIn(unbuildable, asked.id).pipe(bridging(host))
     // A question Postgres does not hold: nothing to bridge.
     yield* Source.asked(uuid()).pipe(bridging(host))
     expect((yield* host.head(asked.conversationId)).seq).toBe(0)
@@ -153,6 +155,7 @@ test("with no bridge nothing is read; with one, a row that cannot be read is a l
     { write: "noted", outcome: "unread", reason: "unreadable" },
     { write: "noted", outcome: "unread", reason: "unreadable" },
     { write: "noted", outcome: "unread", reason: "unreadable" },
+    { write: "asked", outcome: "unread", reason: "unreadable" },
     { write: "asked", outcome: "unread", reason: "missing" },
   ])
   expect(logs.filter((log) => log.message === "chat.shard.bridge").every((log) => log.level === "WARN")).toBe(true)
@@ -295,9 +298,9 @@ test("Postgres counts a note's version whoever writes it: a Worker that never ra
   const phase = (title: string) => JSON.stringify({ title, summary: "Chose the shard.", closed: false, covered: 1 })
   await observed((host) => Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
-    // Finishing the answer wrote no note: no version, and nothing owed.
+    // Finishing the answer wrote no note: no version. What is owed is the exchange Postgres committed, with no notes.
     expect([yield* version(asked.id), yield* version(asked.answerId)]).toEqual([0, 0])
-    expect(yield* owed(asked.conversationId)).toEqual([])
+    expect([...(yield* owed(asked.conversationId))].map((row) => row.version)).toEqual([0, 0])
     // A Worker deployed before the column writes each note without it, as its statements always did: the summary with
     // its revision, a phase, an arc, and a mark taken away. Each write is one version, counted under the row's lock.
     yield* sql`UPDATE messages SET summary = 'First', summary_revision = 'rev1' WHERE id = ${asked.answerId}`
@@ -612,10 +615,16 @@ test("what is posted before a note never settles it: the row stays owed until th
     expect((yield* messagesOf(host, asked.conversationId))[1]).toMatchObject({ status: "complete", summary: "Why one writer", noteVersion: 1 })
     expect(yield* owed(asked.conversationId)).toEqual([])
   }))
+  // The replay of the exchange is refused for what it is, with a receipt, both times: that settles the exchange and
+  // never the note.
+  const refused = {
+    write: "replayed", conversationId: asked.conversationId, outcome: "refused", step: "UpdateMessageMetadata", reason: "terminal_metadata",
+  }
   expect(lines()).toEqual([
+    refused,
     { write: "noted", conversationId: asked.conversationId, outcome: "unavailable", reason: "refused", status: 503, settled: false },
     { write: "noted", outcome: "pending", pending: 1 },
-    { write: "noted", conversationId: asked.conversationId, outcome: "refused", step: "UpdateMessageMetadata", reason: "terminal_metadata", settled: true },
+    refused,
   ])
 })
 
@@ -633,6 +642,10 @@ test("a drain's worth of notes the shard keeps declining never holds a later not
   const healthy = exchanges.at(-1)!
   await observed((host) => Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
+    // The exchanges Postgres committed are owed first, 66 messages: two drains send them, and nothing is owed.
+    yield* Source.drain(conversationId).pipe(bridging(host))
+    yield* Source.drain(conversationId).pipe(bridging(host))
+    expect(yield* owed(conversationId)).toEqual([])
     const noteAll = (ids: ReadonlyArray<string>) =>
       sql`UPDATE messages SET summary = 'Noted', summary_revision = 'rev1', notes_version = notes_version + 1 WHERE id IN ${sql.in(ids)}`
     // 64 notes are owed first, then one more on the last question.
@@ -673,6 +686,11 @@ test("a pending row is read, sent and settled in its own conversation only", asy
   const there = await ask("Asked there")
   await observed((host) => Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
+    // Each conversation's own exchange is sent first, and nothing more is owed in either: three entries each.
+    yield* Source.drain(here.conversationId).pipe(bridging(host))
+    yield* Source.drain(there.conversationId).pipe(bridging(host))
+    expect([yield* owed(here.conversationId), yield* owed(there.conversationId)]).toEqual([[], []])
+    const sent = 3
     // An exchange is found in the conversation a caller holds it to, and in no other.
     expect((yield* Source.exchange(here.id, here.conversationId))._tag).toBe("Some")
     expect((yield* Source.exchange(here.id, there.conversationId))._tag).toBe("None")
@@ -682,8 +700,8 @@ test("a pending row is read, sent and settled in its own conversation only", asy
     yield* write(here.id, { summary: "Noted here", summary_revision: "rev1" })
     yield* sql`UPDATE messages_shard_pending SET conversation_id = ${there.conversationId} WHERE message_id = ${here.id}`
     yield* Source.drain(there.conversationId).pipe(bridging(host))
-    expect((yield* host.head(there.conversationId)).seq).toBe(0)
-    expect((yield* host.head(here.conversationId)).seq).toBe(0)
+    expect((yield* host.head(there.conversationId)).seq).toBe(sent)
+    expect((yield* host.head(here.conversationId)).seq).toBe(sent)
     expect(yield* owed(there.conversationId)).toEqual([{ id: here.id, version: 1 }])
     yield* sql`UPDATE messages_shard_pending SET conversation_id = ${here.conversationId} WHERE message_id = ${here.id}`
 
@@ -697,7 +715,7 @@ test("a pending row is read, sent and settled in its own conversation only", asy
     yield* Fiber.join(sending)
     expect((yield* messagesOf(host, here.conversationId))[0]).toMatchObject({ id: here.id, summary: "Noted here", noteVersion: 1 })
     expect(yield* owed(there.conversationId)).toEqual([{ id: here.id, version: 1 }])
-    expect((yield* host.head(there.conversationId)).seq).toBe(0)
+    expect((yield* host.head(there.conversationId)).seq).toBe(sent)
   }))
 })
 
@@ -709,7 +727,9 @@ test("a note the shard could not be given stays owed, and the next drain deliver
     yield* write(asked.answerId, { summary: "Why one writer", summary_revision: "rev1" })
     yield* Source.drain(asked.conversationId).pipe(Effect.provideService(MessagesShardBridge, down))
     expect((yield* host.head(asked.conversationId)).seq).toBe(0)
-    expect(yield* owed(asked.conversationId)).toEqual([{ id: asked.answerId, version: 1 }])
+    // The question is owed too: Postgres committed it, and no bridge ever sent it.
+    expect([...(yield* owed(asked.conversationId))].sort((left, right) => left.version - right.version))
+      .toEqual([{ id: asked.id, version: 0 }, { id: asked.answerId, version: 1 }])
     // The object is back. Nothing writes the note again: the drain a read or a later write runs delivers it, with the
     // exchange it belongs to, which the shard never held either.
     yield* Source.drain(asked.conversationId).pipe(bridging(host))
@@ -718,8 +738,8 @@ test("a note the shard could not be given stays owed, and the next drain deliver
     expect(yield* owed(asked.conversationId)).toEqual([])
   }))
   expect(lines()).toEqual([
-    { write: "noted", conversationId: asked.conversationId, outcome: "unavailable", reason: "unreachable", settled: false },
-    { write: "noted", outcome: "pending", pending: 1 },
+    { write: "replayed", conversationId: asked.conversationId, outcome: "unavailable", reason: "unreachable" },
+    { write: "noted", outcome: "pending", pending: 2 },
   ])
 })
 

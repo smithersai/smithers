@@ -1036,8 +1036,23 @@ test("a command past what the object reads sheds its last steps until it fits, i
   // A command with no steps to shed, or none at all, is sent as it is.
   const empty: ChatCommand = { ...run, parts: [] }
   expect(Bridge.fitted(empty, build, 1)).toEqual(build(empty))
+  // A body past the bound is cut, by as many code units as it is bytes over, and never inside a surrogate pair: to
+  // nothing at all when even its envelope is too large, which is then sent as it is.
   const body: ChatCommand = { _tag: "UpdateMessageBody", messageId: answerId, author: ANSWER, body: "Because." }
-  expect(Bridge.fitted(body, build, 1)).toEqual(build(body))
+  const withBody = (text: string) => build({ ...body, body: text })
+  expect(Bridge.fitted(body, build, 1)).toEqual(withBody(""))
+  expect(Bridge.fitted(body, build, wireBytes(withBody("Because")))).toEqual(withBody("Because"))
+  const emoji: ChatCommand = { ...body, body: "ab😀" }
+  // Two bytes over: two code units come off, the whole emoji, never one half of it.
+  expect(Bridge.fitted(emoji, build, wireBytes(withBody("ab😀")) - 2)).toEqual(withBody("ab"))
+  // One byte over: one code unit would part the pair, so the cut keeps both units out.
+  expect(Bridge.fitted(emoji, build, wireBytes(withBody("ab😀")) - 1)).toEqual(withBody("ab"))
+  // A post too: a question Postgres held past the bound is cut to fit, its place and its time kept.
+  const question: ChatCommand = {
+    _tag: "PostMessage", messageId: answerId, author: ANSWER, body: "x".repeat(40), position: 7, createdAt: "2026-11-25 10:00:00+00",
+  }
+  const fit = Bridge.fitted(question, build, wireBytes(build({ ...question, body: "x".repeat(10) })))
+  expect(fit).toEqual(build({ ...question, body: "x".repeat(10) }))
 })
 
 test("an answer at every bound the reducer holds, run and body, ends: finished or abandoned, every command taken, never left streaming", async () => {

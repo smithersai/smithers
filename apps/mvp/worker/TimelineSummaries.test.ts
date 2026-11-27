@@ -655,8 +655,9 @@ test("a segmentation whose bridge was lost stays owed, and the next read of the 
       return annotations
     })
     expect(said()).toEqual([
-      { write: "noted", conversationId, outcome: "unavailable", reason: "unreachable", settled: false },
-      { write: "noted", conversationId, outcome: "unavailable", reason: "unreachable", settled: false },
+      // Each note's exchange is replayed first, and the object cannot be reached: no note is sent.
+      { write: "replayed", conversationId, outcome: "unavailable", reason: "unreachable" },
+      { write: "replayed", conversationId, outcome: "unavailable", reason: "unreachable" },
       { write: "noted", outcome: "pending", pending: 2 },
     ])
     // A reader asks while the object is still down: the read fails as the object does, and the notes stay owed.

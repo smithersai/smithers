@@ -516,9 +516,9 @@ test("the route answers 401 signed out, 403 without access, 404 off the map, 413
       expect(yield* statusOf(ada, branch(), "submit", { body: "{" })).toBe(400)
       expect(yield* statusOf(ada, branch(), "submit", { body: submitRequest([ADA, "1"], { _tag: "Nope" }) })).toBe(400)
       expect(yield* statusOf(ada, branch(), "submit", { body: submitRequest(["", "1"], post("m1", ADA)) })).toBe(400)
-      // The right path with the wrong method is not a route.
-      expect(yield* statusOf(ada, branch(), "submit")).toBe(404)
-      expect(yield* statusOf(ada, branch(), pullPath(0), { method: "DELETE" })).toBe(404)
+      // The right path with the wrong method is not allowed.
+      expect(yield* statusOf(ada, branch(), "submit")).toBe(405)
+      expect(yield* statusOf(ada, branch(), pullPath(0), { method: "DELETE" })).toBe(405)
 
       // 403: another person's node or name.
       expect(yield* statusOf(bob, branch(), "submit", { body })).toBe(403)
@@ -2105,8 +2105,8 @@ test("a read the object would not serve is answered before anything is asked of 
       expect(yield* statusOf(pullPath(0, other))).toBe(403)
       expect(yield* statusOf(snapshotPath(other))).toBe(403)
       // A method the reads do not have.
-      expect(yield* statusOf(pullPath(0), { method: "DELETE" })).toBe(404)
-      expect(yield* statusOf(snapshotPath(), { body: "{}" })).toBe(404)
+      expect(yield* statusOf(pullPath(0), { method: "DELETE" })).toBe(405)
+      expect(yield* statusOf(snapshotPath(), { body: "{}" })).toBe(405)
       // Whoever may not read is refused before that, as ever.
       expect(yield* statusOf(pullPath(0), {}, null)).toBe(401)
       expect(yield* statusOf(pullPath(0), {}, bob, branch({ access: "none" }))).toBe(403)
@@ -2180,5 +2180,58 @@ test("a Worker with no secret to key owner names with admits no page's or run's 
     } finally {
       app.close()
     }
+  }))
+})
+
+test("a backfill batch stops at the first command not taken, keeps its cursor and its mark as they were, and names the refusal by its code", async () => {
+  await scoped(Effect.gen(function*() {
+    const db = openStorage(":memory:")
+    const hub = yield* open(db.storage)
+    const id = "5b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e"
+    const QUESTION = Messages.questionOwner(id)
+    const placed = (body: string): Messages.BackfillCommand => ({
+      author: QUESTION,
+      id: `question:${id}`,
+      payload: { _tag: "PostMessage", messageId: id, author: QUESTION, body, role: "user", position: 9, createdAt: "2026-11-25 10:00:00+00" },
+    })
+    const batch = (commands: ReadonlyArray<Messages.BackfillCommand>, cursor = 0, done = false) =>
+      hub.backfill.batch({ cursor, done, commands })
+    // A question with its place: taken, and the cursor rises to the batch's.
+    expect(yield* batch([placed("Asked")], 9)).toEqual({ applied: 1, kept: 0, cursor: 9, checked: false })
+    // The same key with other content, on a message that already has its place: kept, and no place is recorded for it.
+    expect(yield* batch([placed("Asked again")], 9)).toEqual({ applied: 0, kept: 1, cursor: 9, checked: false })
+    // An update whose key holds other content is no post: it is refused, and the cursor and the mark stand.
+    const streaming = (status: "streaming" | "complete"): Messages.BackfillCommand => ({
+      author: QUESTION, id: `status:${id}`, payload: { _tag: "UpdateMessageStatus", messageId: id, status },
+    })
+    expect(yield* batch([streaming("streaming")])).toMatchObject({ applied: 1 })
+    expect(yield* batch([placed("Asked"), streaming("complete")], 20, true)).toEqual({
+      applied: 1, kept: 0, cursor: 9, checked: false, rejected: { index: 1, messageId: id, code: "idempotency_conflict" },
+    })
+    // A command that is no command is named by no id.
+    expect(yield* batch([{ author: QUESTION, id: "nothing", payload: { _tag: "DeleteEverything" } }])).toEqual({
+      applied: 0, kept: 0, cursor: 9, checked: false, rejected: { index: 0, messageId: "", code: "invalid" },
+    })
+    // The object's own refusal, of a writer who is not the bridge's for that id.
+    expect(yield* batch([{ ...placed("Squatted"), author: "person:someone", id: "squat" }])).toMatchObject({
+      rejected: { index: 0, messageId: id, code: "reserved" },
+    })
+    // A refusal kept as a receipt that says the message was missing is sent once more under a key that holds none, and
+    // refused again for the same reason: the batch stops there.
+    const missing = "6c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"
+    const writer = "person:legacy"
+    expect(yield* batch([{ author: writer, id: "status", payload: { _tag: "UpdateMessageStatus", messageId: missing, status: "complete" } }]))
+      .toMatchObject({ rejected: { index: 0, messageId: missing, code: "message_missing" } })
+    expect(Messages.REFUSAL_REASONS).toContain("missing")
+    const receipts = db.storage.sql.exec("SELECT command_id FROM shard_receipts WHERE origin_node = ? ORDER BY command_id", `${writer}/chatapi`).toArray()
+    expect(receipts.map((row) => row.command_id)).toEqual(["status", "status:again"])
+    // The reducer's refusal of a post: another message under the same id, under a key of its own.
+    expect(yield* batch([{ ...placed("Another body"), id: `question:${id}:other` }])).toMatchObject({
+      rejected: { index: 0, messageId: id, code: "message_conflict" },
+    })
+    // A batch all taken, the last, sets the mark with its cursor.
+    expect(yield* batch([placed("Asked")], 20, true)).toEqual({ applied: 1, kept: 0, cursor: 20, checked: true })
+    expect([yield* hub.backfill.checked, yield* hub.backfill.cursor]).toEqual([true, 20])
+    db.hibernate()
   }))
 })
