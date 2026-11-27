@@ -240,7 +240,9 @@ A `cron` row starts its flow on a schedule, through `@smthrs/triggers` ([library
 | `github.webhook` | log | gains `dispatched`: the repository a push or pull request dispatched for; `synced`: the repository a default-branch push synced schedules for |
 | `smithers_repo_flow_plans{outcome}`, `smithers_repo_flow_statuses{state,outcome}` | counter | |
 
-A checkout refusal carries `checkoutFailure` on the durable checkout step and, when known, its numeric `exitCode`. `ci.job.call` records the same bounded fields and the `ci.job.checkout` span identifies the failure. The checkout command’s output and the upstream response body stay out of these records. Earlier receipts can omit the stage and carry a null exit code. A failed checkout skips every declared job step.
+A checkout refusal carries `checkoutFailure` on the durable checkout step and, when known, its numeric `exitCode`. `ci.job.call` records the same bounded fields and the `ci.job.checkout` span identifies the failure. The checkout command’s output and the upstream response body stay out of these records. Earlier receipts can omit the failure category and carry a null exit code. A failed checkout skips every declared job step.
+
+The job retains the compatible `clone` category. The `checkoutStage` field on `ci.job.call`, the `ci.checkout.stage` span attribute and the job view decode the host’s numeric exit. For a pinned job, checkout reports initialization (73), remote configuration (74), revision fetch (75), or working copy checkout (76). An earlier pinned receipt with code 72 leaves initialization, remote configuration and fetch indistinguishable.
 
 No record carries a flow's source, a command, its output, an artifact's name or content, or a secret.
 

@@ -1,4 +1,5 @@
 import type { CodeStorage } from "@smthrs/effect-code-storage"
+import { pinnedCheckoutExit } from "../../src/features/runs/checkoutStage.ts"
 import { FORGE_HOST, WORKSPACE } from "../../src/features/terminal/contract.ts"
 
 // How a branch's machine checks the branch out (decision 0013 §2, `terminal/Open` step 2): a clone of the one
@@ -14,9 +15,13 @@ export const forgeRemote = (owner: string, name: string): string =>
 
 /**
  * Why a checkout failed, by its exit code, so a failure says where it broke without its output: the forge didn't
- * answer the ref list (`forge`), it answered without the branch (`branch`), or the clone itself failed (`clone`).
+ * answer the ref list (`forge`), it answered without the branch (`branch`), or cloning the branch failed (`clone`). Pinned jobs distinguish initialization, remote configuration, fetch
+ * and writing the working copy. Older pinned receipts used 72 for any of the first three commands.
  */
-export const CHECKOUT_FAILURES: Readonly<Record<number, "forge" | "branch" | "clone">> = { 70: "forge", 71: "branch", 72: "clone" }
+export const CHECKOUT_FAILURES: Readonly<Record<number, "forge" | "branch" | "clone">> = {
+  70: "forge", 71: "branch", 72: "clone", [pinnedCheckoutExit.init]: "clone", [pinnedCheckoutExit.remote]: "clone",
+  [pinnedCheckoutExit.fetch]: "clone", [pinnedCheckoutExit.worktree]: "clone",
+}
 
 const script = (namespace: CodeStorage.RefNamespace) => [
   "set -e",
@@ -29,10 +34,11 @@ const script = (namespace: CodeStorage.RefNamespace) => [
   `if printf '%s' "$1" | grep -Eq '^[0-9a-f]{40}$'; then`,
   `  [ "$(git -C ${WORKSPACE} rev-parse --verify -q HEAD 2>/dev/null)" = "$1" ] && exit 0`,
   // A machine stopped mid-checkout left the repository and its origin: set it again, never fail on it.
-  `  git init --quiet ${WORKSPACE} || exit 72`,
-  `  git -C ${WORKSPACE} remote set-url origin "$2" 2>/dev/null || git -C ${WORKSPACE} remote add origin "$2" || exit 72`,
-  `  git -C ${WORKSPACE} fetch --quiet --depth 1 origin "$1" || exit 72`,
-  `  exec git -C ${WORKSPACE} -c advice.detachedHead=false checkout --quiet --force --detach FETCH_HEAD`,
+  `  git init --quiet ${WORKSPACE} || exit ${pinnedCheckoutExit.init}`,
+  `  git -C ${WORKSPACE} remote set-url origin "$2" 2>/dev/null || git -C ${WORKSPACE} remote add origin "$2" || exit ${pinnedCheckoutExit.remote}`,
+  `  git -C ${WORKSPACE} fetch --quiet --depth 1 origin "$1" || exit ${pinnedCheckoutExit.fetch}`,
+  `  git -C ${WORKSPACE} -c advice.detachedHead=false checkout --quiet --force --detach FETCH_HEAD || exit ${pinnedCheckoutExit.worktree}`,
+  "  exit 0",
   "fi",
   `if git -C ${WORKSPACE} rev-parse --verify -q HEAD >/dev/null 2>&1; then exit 0; fi`,
   `refs=$(git ls-remote --heads "$2" 2>/dev/null) || exit 70`,

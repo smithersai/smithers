@@ -1,7 +1,7 @@
 // A CI job on the Node host's engine (worker/flows/CiJobMachine.ts, `@smthrs/sandbox`'s `ci/job`): its machine is a
 // test `Machines` that records each call and answers each command's exit code from a table, the only stand-in.
 import { CiJob, SandboxTools } from "@smthrs/sandbox"
-import { Effect, Exit, Layer } from "effect"
+import { Effect, Exit, Layer, Logger, Tracer } from "effect"
 import { describe, expect, test } from "vitest"
 import { noCommands } from "../test/commands.ts"
 import { Machines } from "../branch/Machines.vibe"
@@ -154,10 +154,41 @@ describe("ci/job on a job machine", { timeout: 60_000 }, () => {
     expect(box.calls.map((call) => call.command)).not.toContain("make")
   })
 
+  test.each([[72, undefined], [75, "fetch"]] as const)("checkout telemetry for exit %i", async (exitCode, stage) => {
+    const box = machine({ checkoutFailure: new CheckoutFailed({ exitCode, checkoutFailure: "clone" }) })
+    const spans: Tracer.NativeSpan[] = []
+    const lines: unknown[] = []
+    const result = await Effect.runPromise(Effect.gen(function* () {
+      return yield* Effect.exit((yield* CiJob.Machine).checkout(target, { name: "build" }))
+    }).pipe(
+      Effect.provide(CiJobMachine.layer.pipe(Layer.provide(box.layer))),
+      Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((line) => {
+        lines.push(Logger.formatStructured.log(line))
+      })])),
+      Effect.provideService(Tracer.Tracer, Tracer.make({ span(options) {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      } })),
+    ))
+    expect(Exit.isFailure(result)).toBe(true)
+    const checkout = spans.find((span) => span.name === "ci.job.checkout")
+    expect(checkout?.attributes.get("ci.checkout.exit_code")).toBe(exitCode)
+    expect(checkout?.attributes.get("ci.checkout.stage")).toBe(stage)
+    const log = lines.find((line) => (line as { message?: unknown }).message === "ci.job.call") as
+      { annotations: Record<string, unknown> } | undefined
+    expect(log?.annotations).toMatchObject({ checkoutFailure: "clone", exitCode })
+    expect(log?.annotations.checkoutStage).toBe(stage)
+  })
+
   test.each([
     { exitCode: 70, checkoutFailure: "forge" },
     { exitCode: 71, checkoutFailure: "branch" },
     { exitCode: 72, checkoutFailure: "clone" },
+    { exitCode: 73, checkoutFailure: "clone" },
+    { exitCode: 74, checkoutFailure: "clone" },
+    { exitCode: 75, checkoutFailure: "clone" },
+    { exitCode: 76, checkoutFailure: "clone" },
     { exitCode: 128, checkoutFailure: "other" },
   ] as const)("the durable checkout reports the machine's bounded $checkoutFailure failure", async (details) => {
     const box = machine({ checkoutFailure: new CheckoutFailed(details) })

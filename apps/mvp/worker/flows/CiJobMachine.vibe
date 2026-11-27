@@ -1,3 +1,4 @@
+import { pinnedCheckoutStage } from "../../src/features/runs/checkoutStage.ts"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Action, Interpreter } from "@smthrs/flow"
 import { CiJob, type SandboxTools } from "@smthrs/sandbox"
@@ -91,13 +92,17 @@ export const layer = Layer.effect(
             return true
           },
           Effect.tap(() => counted("checkout", "exact", target, job)),
-          Effect.tapErrorTag("@smthrs/sandbox/CiJob/CheckoutRefused", (refusal) => counted("checkout", "refused", target, job).pipe(
-            Effect.annotateLogs({ checkoutFailure: refusal.checkoutFailure, exitCode: refusal.exitCode }),
-            Effect.andThen(Effect.annotateCurrentSpan({
-              "ci.checkout.failure": refusal.checkoutFailure,
-              ...(refusal.exitCode === null ? {} : { "ci.checkout.exit_code": refusal.exitCode }),
-            })),
-          )),
+          Effect.tapErrorTag("@smthrs/sandbox/CiJob/CheckoutRefused", effect (refusal) => {
+            const stage = try sync(() => pinnedCheckoutStage(refusal.checkoutFailure, refusal.exitCode))
+            try counted("checkout", "refused", target, job).pipe(
+              Effect.annotateLogs({ checkoutFailure: refusal.checkoutFailure, exitCode: refusal.exitCode, ...(stage === undefined ? {} : { checkoutStage: stage }) }),
+              Effect.andThen(Effect.annotateCurrentSpan({
+                "ci.checkout.failure": refusal.checkoutFailure,
+                ...(stage === undefined ? {} : { "ci.checkout.stage": stage }),
+                ...(refusal.exitCode === null ? {} : { "ci.checkout.exit_code": refusal.exitCode }),
+              })),
+            )
+          }),
           Effect.withSpan("ci.job.checkout"),
         ),
       run: (target, job, index, step) =>

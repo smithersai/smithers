@@ -59,7 +59,7 @@ describe("checkoutArgv failures", () => {
     expect(exitOf(() => checkout(workspace, "no-such-branch"))).toBe(71)
     // `feature/x` is there; `feature` alone, a prefix of it, isn't.
     expect(exitOf(() => checkout(workspace, "feature"))).toBe(71)
-    expect(CHECKOUT_FAILURES).toEqual({ 70: "forge", 71: "branch", 72: "clone" })
+    expect(CHECKOUT_FAILURES).toEqual({ 70: "forge", 71: "branch", 72: "clone", 73: "clone", 74: "clone", 75: "clone", 76: "clone" })
     // Nothing was cloned.
     expect(exitOf(() => git(workspace, "rev-parse", "HEAD"))).not.toBe(0)
   })
@@ -160,10 +160,36 @@ describe("checkoutArgv for a CI job", () => {
     expect(git(workspace, "rev-parse", "HEAD").trim()).toBe(feature)
   })
 
-  test("fails the clone (72) on a commit the forge doesn't have, and leaves nothing checked out", () => {
+  test("identifies initialization when a file already occupies the workspace path", () => {
+    const workspace = join(root, "workspace-file")
+    writeFileSync(workspace, "occupied")
+    expect(exitOf(() => checkout(workspace, "0".repeat(40)))).toBe(73)
+    expect(readFileSync(workspace, "utf8")).toBe("occupied")
+  })
+
+  test("identifies conflicting origin URLs when the target commit changes", () => {
+    const workspace = join(root, "conflicting-origin")
+    mkdirSync(workspace)
+    git(workspace, "init", "-q")
+    git(workspace, "remote", "add", "origin", remote)
+    git(workspace, "config", "--add", "remote.origin.url", "file:///other")
+    expect(exitOf(() => checkout(workspace, "0".repeat(40)))).toBe(74)
+  })
+
+  test("identifies an index lock that prevents writing the fetched revision", () => {
+    const workspace = join(root, "locked-index")
+    mkdirSync(workspace)
+    git(workspace, "init", "-q")
+    writeFileSync(join(workspace, ".git/index.lock"), "held")
+    const main = git(remote.slice("file://".length), "rev-parse", "main").trim()
+    expect(exitOf(() => checkout(workspace, main))).toBe(76)
+    expect(readFileSync(join(workspace, ".git/index.lock"), "utf8")).toBe("held")
+  })
+
+  test("identifies the fetch (75) for a commit the forge doesn't have, and leaves nothing checked out", () => {
     const workspace = join(root, "job-missing")
     mkdirSync(workspace)
-    expect(exitOf(() => checkout(workspace, "0".repeat(40)))).toBe(72)
+    expect(exitOf(() => checkout(workspace, "0".repeat(40)))).toBe(75)
     expect(exitOf(() => git(workspace, "rev-parse", "--verify", "-q", "HEAD"))).not.toBe(0)
   })
 })
