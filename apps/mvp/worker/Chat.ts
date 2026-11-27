@@ -305,6 +305,8 @@ export const make = <E, R>(
         // 5a) as Postgres committed them, with the place and time it gave each: on a retry too, which its keys answer
         // from their receipts. It never fails and never changes this answer.
         yield* MessagesShardSource.askedIn(database, question.id)
+        fields.stage = "awaiting_agent"
+        yield* Effect.annotateCurrentSpan({ "smithers.chat.stage": "awaiting_agent" })
         if (asked.txid === null) fields.existing = true
         return asked.txid === null
           ? HttpServerResponse.jsonUnsafe({ txid: null, existing: true }, { status: 200, headers: noStore })

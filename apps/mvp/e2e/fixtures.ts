@@ -286,11 +286,11 @@ export const redactedRequests = [
 
 export const test = base.extend<{ browserLog: Array<string>; spendGuard: void; problems: Watched }, { redactedRequests: void }>({
   redactedRequests: [...redactedRequests],
-  context: async ({ context, playwright, browserName, contextOptions, baseURL, colorScheme, ignoreHTTPSErrors, viewport }, use, testInfo) => {
+  context: async ({ context, playwright, browserName, contextOptions, baseURL, colorScheme, ignoreHTTPSErrors, viewport, video }, use, testInfo) => {
     if (browserName !== "webkit") return use(context)
     const device = await persistent(playwright.webkit, {
       ...contextOptions, baseURL, colorScheme, ignoreHTTPSErrors, viewport,
-      recordVideo: { dir: testInfo.outputPath("videos"), size: viewport ?? { width: 1280, height: 800 } },
+      ...(video === "off" ? {} : { recordVideo: { dir: testInfo.outputPath("videos"), size: viewport ?? { width: 1280, height: 800 } } }),
     })
     try {
       await device.context.addCookies((await context.storageState()).cookies)
@@ -336,7 +336,7 @@ export const test = base.extend<{ browserLog: Array<string>; spendGuard: void; p
         await testInfo.attach("browser-log", { path: await writeLog(testInfo.outputPath("browser.log"), log), contentType: "text/plain" })
       }
       // Playwright saves the page's video as video.webm beside it once the test ends.
-      const videos = page.url() === "about:blank" ? await ownVideos(testInfo) : [{ name: "", video: "video.webm", openedAt: 0 }]
+      const videos = page.video() === null || page.url() === "about:blank" ? await ownVideos(testInfo) : [{ name: "", video: "video.webm", openedAt: 0 }]
       await writeManifest(testInfo, "flow.json", startedAt, videos)
     },
     { auto: true },

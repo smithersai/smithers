@@ -13,7 +13,7 @@ test("only chat entries join the rail; recorded states and content identities co
   expect(railEntries([{ ...summarized, summary: "", summaryRevision: "" }], [])[0]?.summary).toBeUndefined()
   expect(railEntries([{ ...summarized, summary: null, summaryRevision: null }], [])[0]?.summary).toBeUndefined()
   expect(railEntries([{ ...base, role: "view" }], [])).toEqual([])
-  for (const [status, state] of [["streaming", "working"], ["failed", "failed"], ["unsent", "failed"], ["queued", "queued"], ["done", "done"]]) {
+  for (const [status, state] of [["streaming", "queued"], ["failed", "failed"], ["unsent", "failed"], ["queued", "queued"], ["done", "done"]]) {
     expect(railEntries([{ ...summarized, status: status!, role: "assistant" }], [])[0]).toMatchObject({ state, kind: "answer" })
   }
   expect(railEntries([base, { ...base, status: "unsent" }], []).map(entry => entry.id)).toEqual(["a", "unsent:a"])
@@ -76,7 +76,8 @@ test("cached generic and stale summaries stay pending", () => {
 test("placeholders distinguish queued, waiting, streaming and failed outcomes", () => {
   const question = { id: "q", role: "user", status: "done", text: "one two three four five six seven eight nine" }
   const answer = { id: "a", questionId: "q", role: "assistant", status: "streaming", text: "" }
-  expect(railEntries([question, answer], [])[1]?.label).toBe("Answer 2 · answering")
+  expect(railEntries([question, answer], [])[1]?.label).toBe("Answer 2 · waiting")
+  expect(railEntries([question, answer], [{ id: "a", state: "working", flow: "chat/Answer" }])[1]?.label).toBe("Answer 2 · answering")
   expect(railEntries([question, answer], [{ id: "a", state: "needs_you" }])[1]?.label).toBe("Answer 2 · needs you")
   expect(railEntries([question, answer], [{ id: "a", state: "waiting" }])[1]?.label).toBe("Answer 2 · queued")
   expect(railEntries([{ ...question, status: "unsent" }], [])[0]?.label).toBe("Question 1 · not sent")

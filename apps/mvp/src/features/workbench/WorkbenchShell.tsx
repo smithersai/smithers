@@ -1,6 +1,5 @@
 import { useRef, type ReactNode } from "react"
 import {
-  AttachAgentCard,
   AudienceSwitch,
   Badge,
   Button,
@@ -12,7 +11,6 @@ import {
   StateMachineView,
   WaitlistCard,
   WorkflowExecutionView,
-  type AttachAgentCardProps,
   type AudienceRole,
   type CauseReceiptData,
   type PlanTreeNodeItem,
@@ -54,7 +52,7 @@ export type WorkbenchShellProps = {
   readonly chatColumn?: ReactNode
   readonly planNodes: ReadonlyArray<PlanTreeNodeItem>
   readonly onToggleAssumption?: (nodeId: string, assumptionId: string) => void
-  readonly attach: AttachAgentCardProps
+  readonly attachHref: string
   readonly workflow?: {
     readonly workflowTag: string
     readonly sourcePath: string
@@ -112,7 +110,7 @@ export function WorkbenchShell({
   chatColumn,
   planNodes,
   onToggleAssumption,
-  attach,
+  attachHref,
   workflow,
   stateMachine,
   waitlist,
@@ -160,7 +158,7 @@ export function WorkbenchShell({
           />
         )
       case "attach":
-        return <AttachAgentCard {...attach} />
+        return <Button asChild variant="outline"><a href={attachHref}>Attach in branch chat</a></Button>
       case "workflow":
         return workflow ? (
           <WorkflowExecutionView

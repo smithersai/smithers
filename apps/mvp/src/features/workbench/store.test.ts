@@ -4,8 +4,6 @@ import { HttpClientError } from "effect/http"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { describe, expect, test } from "vitest"
 import {
-  ATTACH_ROW_ID,
-  attachPromptFor,
   PLAN_ROW_ID,
   planNodesFromTree,
   planSnapshotRoute,
@@ -82,14 +80,6 @@ describe("workbench store and helpers", () => {
     expect(roleToAudience(undefined)).toBe("visitor")
   })
 
-  test("attachPromptFor produces zero-secret prompts without semicolons or em dashes", () => {
-    const local = attachPromptFor("local-stdio", "https://smithers.sh", "evmts", "voltaire", "main")
-    const remote = attachPromptFor("remote-http", "https://smithers.sh", "evmts", "voltaire", "main")
-    expect(local).toContain("smthrs attach --repo evmts/voltaire --branch main")
-    expect(remote).toContain("https://smithers.sh/api/attach/mcp/evmts/voltaire/main")
-    expect(local).not.toMatch(/[;—]/)
-    expect(remote).not.toMatch(/[;—]/)
-  })
 
   test("planSnapshotRoute builds canonical repository shard URL", () => {
     expect(planSnapshotRoute("https://smithers.sh", "evmts", "voltaire")).toBe(
@@ -153,7 +143,7 @@ describe("workbench store and helpers", () => {
     )
   })
 
-  test("attach transport toggle and waitlist submit update local collections cleanly", async () => {
+  test("waitlist submit updates the local collection", async () => {
     let waitlistStatus = 200
     let waitlistBody: unknown = { status: "submitted", repoUrl: "https://github.com/evmts/voltaire", position: 12 }
     const layer = Workbench.live({ origin: "https://smithers.sh" }).pipe(
@@ -174,14 +164,6 @@ describe("workbench store and helpers", () => {
           const workbench = yield* Workbench
           const store = yield* WorkbenchStore
 
-          workbench.actions.setTransport("remote-http")
-          workbench.actions.markCopied()
-          expect(store.attach.tanstack.get(ATTACH_ROW_ID)).toMatchObject({
-            id: ATTACH_ROW_ID,
-            mode: "remote-http",
-            state: "unattached",
-            copied: true,
-          })
 
           workbench.actions.setWaitlistRepoUrl("https://github.com/evmts/voltaire")
           workbench.actions.setWaitlistWorkflowNote(".smithers/workflows/ci.vibe")

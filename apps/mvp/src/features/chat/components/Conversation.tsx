@@ -57,6 +57,7 @@ export function Conversation({ empty = <Wordmark />, notices, readOnly = false, 
   const shown = queries.of(place?.conversationId)
   const status = useStatus().queries.of(place?.conversationId)
   const { data: statuses } = useLiveQuery(status.statuses)
+  const statusByAnswer = new Map(statuses.map(status => [status.id, status]))
   const { data: conversation } = useLiveQuery(shown.conversation)
   const { data: everything } = useLiveQuery(shown.everything)
   const { data: timelineNotice } = useLiveQuery(queries.timelineNotice)
@@ -80,8 +81,10 @@ export function Conversation({ empty = <Wordmark />, notices, readOnly = false, 
           Load earlier
         </Button>
       ) : null}
-      {conversation.map((message) =>
-        message.role === "view" ? (
+      {conversation.map(message => {
+        const answerStatus = statusByAnswer.get(message.id)
+        const hasRun = answerStatus?.flow != null
+        return message.role === "view" ? (
           <ConversationView
             key={message.id}
             id={message.id}
@@ -92,15 +95,15 @@ export function Conversation({ empty = <Wordmark />, notices, readOnly = false, 
         // replay the fade-in. Only an unsent question can share its id with a synced row (another message took it).
         <Fragment key={message.status === "unsent" ? `unsent:${message.id}` : message.id}>
         {message.role === "assistant" && message.text === "" &&
-            statuses.find((status) => status.id === message.id)?.state === "needs_you" ? null : (
+            answerStatus?.state === "needs_you" ? null : (
         <ChatMessage
           role={message.role}
-          // An answer's id is its run's: a notification opens `#<run id>`, and the router scrolls it into view.
+          // A recorded run uses its answer's id: a notification opens `#<run id>`, and the router scrolls it into view.
           id={message.status === "unsent" ? `unsent:${message.id}` : message.id}
           data-id={message.id}
           data-state={message.status}
           data-answer={message.status === "streaming" ? "streaming" : undefined}
-          pending={message.status === "streaming" && message.text === ""}
+          pending={message.status === "streaming" && message.text === "" && hasRun}
           pendingLabel="Smithers is answering"
           actions={
             <>
@@ -115,7 +118,7 @@ export function Conversation({ empty = <Wordmark />, notices, readOnly = false, 
                 {EDIT}
               </Button>
             ) : null}
-            {message.role !== "assistant" || !statuses.some((status) => status.id === message.id) ? null : (
+            {message.role !== "assistant" || !hasRun ? null : (
               <Button asChild variant="ghost" size="sm">
                 <Link to="/app/runs/$runId" params={{ runId: message.id }} aria-label={DEBUG_INFO} title={DEBUG_INFO}>
                   <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.3">
@@ -156,19 +159,19 @@ export function Conversation({ empty = <Wordmark />, notices, readOnly = false, 
           }
         >
           {message.role === "assistant" ? (
-            <MessageResponse content={message.text} streaming={message.status === "streaming"} />
+            message.status === "streaming" && message.text === "" ? <span role="status">Waiting for your agent</span> : <MessageResponse content={message.text} streaming={message.status === "streaming"} />
           ) : (
             message.text
           )}
         </ChatMessage>
         )}
         {message.role === "assistant" ? <span id={`run:${message.id}`} /> : null}
-        {message.role === "assistant" && !readOnly ? <div id={message.text === "" && statuses.find(status => status.id === message.id)?.state === "needs_you" ? message.id : undefined}><AnswerStatus id={message.id} statuses={status.statuses} /></div> : null}
+        {message.role === "assistant" && !readOnly ? <div id={message.text === "" && answerStatus?.state === "needs_you" ? message.id : undefined}><AnswerStatus id={message.id} statuses={status.statuses} /></div> : null}
         {/* A TODO the agent drafted in this answer, private to this device until the person commits it (0016 §3). */}
         {message.role === "assistant" && !readOnly ? <AnswerDrafts id={message.id} /> : null}
         </Fragment>
-        ),
-      )}
+        )
+      })}
     </ChatTranscript>
     </div>
   )

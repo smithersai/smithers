@@ -10,7 +10,8 @@ import { useStatus } from "./StatusContext"
 export function HeaderStatus() {
   const { data: place } = useLiveQuery(useChat().queries.place)
   const { data: latest } = useLiveQuery(useStatus().queries.of(place?.conversationId).latest)
-  const state = latest[0]?.state
+  if (latest[0]?.flow == null) return null
+  const state = latest[0].state
   if (state === "failed") return (
     <Link to="/app/runs/$runId" params={{ runId: latest[0]!.id }} aria-label="Answer failed — view run">
       <AgentStatusPill state="failed" />

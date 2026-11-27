@@ -14,7 +14,8 @@ import {
   type WorkbenchAction,
 } from "../../features/workbench/layout"
 import { effectivePaneSize } from "../../features/workbench/conversationState"
-import { attachPromptFor, roleToAudience } from "../../features/workbench/store.vibe"
+import { branchPath } from "../../features/conversations/contract"
+import { roleToAudience } from "../../features/workbench/store.vibe"
 import { useWorkbenchOptional } from "../../features/workbench/WorkbenchContext"
 import { playgroundPresetFor } from "../../features/workbench/playgroundBridge"
 import { WorkbenchShell } from "../../features/workbench/WorkbenchShell"
@@ -53,7 +54,6 @@ export function WorkbenchScreen() {
   const branch = repoData?.repository?.defaultBranch ?? "main"
   const fork = exampleForkOf(owner, repo)
   const playgroundPreset = playgroundPresetFor(repoSlug)
-  const origin = typeof window === "undefined" ? "https://smithers.sh" : window.location.origin
 
   const handleDispatch = (action: WorkbenchAction) => {
     const next = reduceWorkbenchLayout(layout, action)
@@ -105,13 +105,7 @@ export function WorkbenchScreen() {
               totalFrames={1}
               {...(fork !== undefined ? { fork } : {})}
               planNodes={[]}
-              attach={{
-                mode: "local-stdio",
-                state: "unattached",
-                promptText: attachPromptFor("local-stdio", origin, owner, repo, branch),
-                repoSlug: `${owner}/${repo}`,
-                branch,
-              }}
+              attachHref={branchPath(`${owner}/${repo}`, branch) + "#attach-agent"}
             />
             </div>
           ) : (
@@ -119,7 +113,6 @@ export function WorkbenchScreen() {
               owner={owner}
               repo={repo}
               branch={branch}
-              origin={origin}
               maxRole={maxRole}
               layout={layout}
               fork={fork}
@@ -138,7 +131,6 @@ function WorkbenchBound({
   owner,
   repo,
   branch,
-  origin,
   maxRole,
   layout,
   fork,
@@ -149,7 +141,6 @@ function WorkbenchBound({
   readonly owner: string
   readonly repo: string
   readonly branch: string
-  readonly origin: string
   readonly maxRole: ReturnType<typeof roleToAudience>
   readonly layout: ReturnType<typeof parseWorkbenchSearch>
   readonly fork: ReturnType<typeof exampleForkOf>
@@ -158,9 +149,7 @@ function WorkbenchBound({
   readonly workbench: NonNullable<ReturnType<typeof useWorkbenchOptional>>
 }) {
   const { data: plan } = useLiveQuery(workbench.queries.plan)
-  const { data: attach } = useLiveQuery(workbench.queries.attach)
   const { data: waitlist } = useLiveQuery(workbench.queries.waitlist)
-  const mode = attach?.mode ?? "local-stdio"
   const planError =
     plan?.status === "failed" && plan.error !== null ? (PLAN_ERROR_COPY[plan.error] ?? PLAN_ERROR_COPY.unavailable) : null
 
@@ -181,15 +170,7 @@ function WorkbenchBound({
         {...(fork !== undefined ? { fork } : {})}
         {...(playgroundPresetFor(`${owner}/${repo}`) !== undefined ? { playground: { preset: playgroundPresetFor(`${owner}/${repo}`)! } } : {})}
         planNodes={plan?.nodes ?? []}
-        attach={{
-          mode,
-          state: attach?.state ?? "unattached",
-          promptText: attachPromptFor(mode, origin, owner, repo, branch),
-          repoSlug: `${owner}/${repo}`,
-          branch,
-          onModeChange: (nextMode) => workbench.actions.setTransport(nextMode),
-          onCopyPrompt: () => workbench.actions.markCopied(),
-        }}
+        attachHref={branchPath(`${owner}/${repo}`, branch) + "#attach-agent"}
         waitlist={{
           repoUrl: waitlist?.repoUrl ?? `https://github.com/${owner}/${repo}`,
           workflowNote: waitlist?.workflowNote ?? "",

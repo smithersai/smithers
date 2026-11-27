@@ -100,14 +100,14 @@ const label = (name: string) => {
   addEventListener("DOMContentLoaded", () => new MutationObserver(follow).observe(document.body, { childList: true, subtree: true, characterData: true }))
 }
 
-// Every message on screen, in order, as a person reads it. `pending` is "Smithers is answering" with no text yet.
+// Every message on screen, in order, as a person reads it. A pending answer may be waiting for an attached agent.
 const readMessages = (word: string | null) => {
   const region = document.querySelector('section[aria-label="Conversation"]')
   const articles = [...(region?.querySelectorAll(".sui-chat-message") ?? [])]
   const read = (article: Element) => {
     const bubble = article.querySelector<HTMLElement>(".sui-chat-bubble")
     const response = article.querySelector('[data-slot="message-response"]')
-    const state = bubble?.getAttribute("role") === "status" ? "pending" : response?.getAttribute("data-streaming") === "true" ? "streaming" : "settled"
+    const state = bubble?.getAttribute("role") === "status" || bubble?.querySelector('[role="status"]') ? "pending" : response?.getAttribute("data-streaming") === "true" ? "streaming" : "settled"
     return { role: article.getAttribute("data-role") ?? "", text: (bubble?.innerText ?? "").trim(), state }
   }
   if (word === null) return articles.map(read)

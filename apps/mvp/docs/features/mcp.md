@@ -62,6 +62,8 @@ repository still answers `not_found`. Quota exhaustion surfaces as the `rate_lim
 
 ## Attach to a conversation
 
+Open the branch conversation and choose **Attach agent**. Copy its command to the agent's terminal. The CLI prints a six-digit pairing code. In the branch, choose **Review request**, check the client, branch and permissions, enter the pairing code and choose **Approve attachment**. Give the one-time approval code to the terminal. The CLI serves the granted MCP connection over stdin and stdout. An MCP client can now call `conversation_read` with no arguments and `conversation_respond` with the pending question's `questionId` and its answer in `text`. The dialog also offers **Revoke access**.
+
 The person mints an attach reference for a repository, branch and conversation. The agent claims it with a PKCE S256
 challenge and reads out a pairing code. The person opens consent and approves that claim using the code. The agent
 redeems the approval with its PKCE verifier and sends its resulting bearer token on every MCP request.

@@ -41,6 +41,8 @@ export const statusesQuery = (
           "needs_you",
           Query.eq(run?.status, "waiting"),
           "waiting",
+          Query.isUndefined(run?.id),
+          "awaiting_agent",
           "working",
         ),
         version: run?.version,

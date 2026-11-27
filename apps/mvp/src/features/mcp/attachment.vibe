@@ -1,0 +1,70 @@
+import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
+import { ATTACH_CAPABILITIES } from "./contract"
+
+export schema Target { repo: string; branch: string; conversation: string }
+export const Reference = Schema.Struct({ reference: Schema.String })
+export const Review = Schema.Struct({
+  ...Target.fields, claim: Schema.String, client: Schema.String, ceiling: Schema.Array(Schema.Literals(ATTACH_CAPABILITIES)),
+})
+export const Approval = Schema.Struct({ code: Schema.String, grant: Schema.String })
+export interface PairingClient<E> {
+  readonly mint: (target: Target) => typeof Reference.Type!E
+  readonly review: (reference: string) => typeof Review.Type!E
+  readonly approve: (claim: string, pairing: string) => typeof Approval.Type!E
+  readonly revoke: (grant: string) => void!E
+}
+
+const Row = Schema.Struct({
+  id: Schema.String, target: Schema.NullOr(Target), busy: Schema.Boolean, error: Schema.NullOr(Schema.String),
+  reference: Schema.NullOr(Schema.String), review: Schema.NullOr(Review), approval: Schema.NullOr(Approval),
+})
+const empty = { id: "pairing", target: null, busy: false, error: null, reference: null, review: null, approval: null } as const
+
+/** Only this tab holds the reference and single-use code. Closing the dialog fences late responses. */
+export const makePairing = effect <E>(client: PairingClient<E>, errorCode: (error: E) => string) => {
+  const rows = try Collection.local({ id: "chat-attach", schema: Row, getKey: (row) => row.id, initialData: [empty] })
+  const query = try LiveQuery.make(q => q.from({ row: rows.tanstack }).findOne())
+  let generation = 0
+  const put = (change: Partial<typeof Row.Type>) => rows.update(empty.id, row => void Object.assign(row, change)).pipe(orDie, asVoid)
+  const current = () => rows.tanstack.get(empty.id)
+  const send = effect <A>(request: A!E, change: (value: A) => Partial<typeof Row.Type>) => {
+    if (current()?.busy) return
+    const started = generation
+    try put({ busy: true, error: null })
+    const result = try Effect.result(request)
+    if (started !== generation) return
+    try put({ ...(Result.isSuccess(result) ? change(result.success) : { error: errorCode(result.failure) }), busy: false })
+  }
+  const mint = effect (target: Target) => {
+    const row = current()
+    if (row?.busy && row.target?.conversation === target.conversation) return
+    generation++
+    try put({ ...empty, target })
+    try send(client.mint(target), receipt => ({ reference: receipt.reference }))
+  }
+  return {
+    query: query.tanstack,
+    mint,
+    review: effect {
+      const row = current()
+      if (!row?.reference || !row.target || row.approval) return
+      const target = row.target
+      try send(client.review(row.reference), review =>
+        review.repo === target.repo && review.branch === target.branch && review.conversation === target.conversation
+          ? { review } : { review: null, error: "wrong_target" })
+    },
+    approve: effect (pairing: string) => {
+      const row = current()
+      if (!row?.review || row.approval || !/^\d{6}$/.test(pairing)) return
+      try send(client.approve(row.review.claim, pairing), approval => ({ approval }))
+    },
+    revoke: effect {
+      const grant = current()?.approval?.grant
+      if (grant) try send(client.revoke(grant), () => empty)
+    },
+    close: effect {
+      generation++
+      try put(empty)
+    },
+  }
+}

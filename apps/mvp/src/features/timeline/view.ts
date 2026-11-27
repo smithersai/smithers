@@ -34,9 +34,10 @@ export interface RailTodo {
 }
 
 /** Distinct, bounded placeholders while each message waits for its own model summary. */
-const pendingLabel = (message: RailMessage, index: number, state: ChatTimelineEntry["state"]): string => {
+const pendingLabel = (message: RailMessage, index: number, state: ChatTimelineEntry["state"], awaitingAgent: boolean): string => {
   const name = `${message.role === "user" ? "Question" : "Answer"} ${index + 1}`
   const outcome = state === "failed" ? (message.status === "unsent" ? "not sent" : "failed")
+    : awaitingAgent ? "waiting"
     : state === "waiting" ? "needs you" : state === "queued" ? "queued"
     : state === "working" ? "answering" : undefined
   return outcome ? `${name} · ${outcome}` : `${name}…`
@@ -53,8 +54,10 @@ export const railEntries = (
 ): ChatTimelineEntry[] => [
   ...messages.filter(message => message.role === "user" || message.role === "assistant").map((message, index): ChatTimelineEntry => {
     const status = statuses.find(status => status.id === message.id)
+    const awaitingAgent = message.status === "streaming" && (status == null || status.state === "awaiting_agent")
     const state = status?.state === "needs_you" ? "waiting"
       : status?.state === "waiting" ? "queued"
+      : awaitingAgent ? "queued"
       : message.status === "streaming" ? "working" : message.status === "failed" || message.status === "unsent" ? "failed"
       : message.status === "queued" ? "queued" : "done"
     const summary = message.status === "done" && message.summary && message.summaryRevision === revisionOf(message) ? message.summary.trim() : undefined
@@ -67,7 +70,7 @@ export const railEntries = (
         ? message.inputTokens + message.outputTokens : undefined,
       kind: message.role === "user" ? "ask" : "answer", state, length: message.text.length,
       summary: ownSummary,
-      label: ownSummary ?? pendingLabel(message, index, state),
+      label: ownSummary ?? pendingLabel(message, index, state, awaitingAgent),
     }
   }),
 ]

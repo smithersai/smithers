@@ -1010,7 +1010,7 @@ test("the header's latest answer is the transcript's: of two answers at one plac
   await until(async () => expect((await tab.run(status.statuses.toArray)).map((row) => row.id)).toEqual(await transcript()))
   await until(async () => expect((await tab.run(status.latest.toArray)).map((row) => row.id)).toEqual([next.answerId]))
   expect((await transcript()).at(-1)).toBe(next.answerId)
-  expect((await tab.run(status.latest.toArray))[0]).toMatchObject({ id: next.answerId, position: posted.position, state: "working" })
+  expect((await tab.run(status.latest.toArray))[0]).toMatchObject({ id: next.answerId, position: posted.position, state: "awaiting_agent" })
 }, 120_000)
 
 test("two rows at one place read in the order the shard holds them, on every query a page reads, never by their ids", async () => {

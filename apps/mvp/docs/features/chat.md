@@ -136,6 +136,8 @@ Rules:
 
 ### Answering
 
+A saved question without a run shows **Waiting for your agent**. The branch's **Attach agent** button pairs a responder with the existing conversation, including its pending questions. Debug info appears when the answer has a recorded run. The question log records `awaiting_agent`; the MCP transcript read records the conversation ID and count, and a committed reply records `answered` and the question ID. These stages exclude message text and credentials.
+
 An attached agent reads the transcript over MCP and calls `conversation_respond` to settle a pending answer. The Worker uses the granted repository, branch, conversation and person for both tools. Postgres stores the finished answer, and Electric streams it to the devices that can view the conversation.
 
 Migration `0133_byoa_cutover` marks the browser agent's pending answers as abandoned and preserves their partial text and recorded steps. It settles their active run and feed states too.

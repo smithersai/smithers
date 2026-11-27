@@ -11,6 +11,7 @@ import { BranchHeader } from "../../features/branch/components/BranchHeader"
 import { useBranch } from "../../features/branch/components/BranchContext"
 import { comparesOf } from "../../features/branch/publishView"
 import { accessNow, deniedTitleOf, paneModeOf, writes } from "../../features/branch/view"
+import { ConversationAttachment } from "../../features/mcp/components/ConversationAttachment"
 import { Composer } from "../../features/chat/components/Composer"
 import { SharedFile } from "../../features/coedit/components/SharedFile"
 import { FileTabsBar } from "../../features/files/components/FileTabsBar"
@@ -120,6 +121,9 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
             <Card className="branch-screen-conversation">
               <Conversation timelineTodos={todos.filter(todo => todo.branch === current?.name)} timelineRepo={current ? { owner: current.owner, name: current.repo } : undefined} readOnly={savedConversation} empty={<EmptyState title={NO_MESSAGES} />} />
             </Card>
+            {open && writes(access) && current?.conversationId && session?.status === "signed_in" ? (
+              <ConversationAttachment key={session.login} target={{ repo: `${current.owner}/${current.repo}`.toLowerCase(), branch: current.name, conversation: current.conversationId }} />
+            ) : null}
             {open ? <div className="branch-screen-composer">
               {writes(access) ? (
                 // Writing the branch means a Member or above on its repository: the gate asks only sign-in and a model.

@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Layer, ManagedRuntime } from "effect"
+import { Cause, Deferred, Effect, Exit, Layer, ManagedRuntime } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test } from "vitest"
 import type { McpConsentDetails, McpTokenSummary } from "./contract"
@@ -33,6 +33,7 @@ const DETAILS: McpConsentDetails = {
 }
 
 interface Script {
+  pairing: McpClient["Service"]["pairing"]
   tokens: Effect.Effect<ReadonlyArray<McpTokenSummary>, McpNotTaken>
   revoke: (tokenId: string) => Effect.Effect<void, McpNotTaken>
   consent: (search: string) => Effect.Effect<McpConsentDetails, McpNotTaken>
@@ -47,6 +48,7 @@ afterEach(async () => {
 const open = async (script: Partial<Script> = {}): Promise<McpView> => {
   const refuse = Effect.fail(new McpNotTaken({}))
   const client = McpClient.of({
+    pairing: script.pairing ?? { mint: () => refuse, review: () => refuse, approve: () => refuse, revoke: () => refuse },
     tokens: Effect.suspend(() => script.tokens ?? refuse),
     revoke: (tokenId) => script.revoke?.(tokenId) ?? refuse,
     consent: (search) => script.consent?.(search) ?? refuse,
@@ -65,6 +67,45 @@ const open = async (script: Partial<Script> = {}): Promise<McpView> => {
 const connect = (mcp: McpView) => mcp.queries.connect.toArray[0]!
 const tokens = (mcp: McpView) => mcp.queries.tokens.toArray[0]!
 const consent = (mcp: McpView) => mcp.queries.consent.toArray[0]!
+
+describe("the conversation attachment", () => {
+  const target = { repo: "acme/demo", branch: "feature/demo", conversation: crypto.randomUUID() }
+  const refused = Effect.fail(new McpNotTaken({ status: 403, code: "forbidden" }))
+
+  test("closing the dialog while minting fences the response and repeated clicks claim one reference", async () => {
+    const receipt = Effect.runSync(Deferred.make<{ reference: string }>())
+    let calls = 0
+    const tab = await open({ pairing: {
+      mint: () => Effect.andThen(Effect.sync(() => { calls++ }), Deferred.await(receipt)),
+      review: () => refused, approve: () => refused, revoke: () => refused,
+    } })
+    tab.queries.pairing.startSyncImmediate()
+    const first = tab.actions.mintAttachment(target)
+    await tab.actions.mintAttachment(target)
+    expect(calls).toBe(1)
+    expect(tab.queries.pairing.toArray[0]?.busy).toBe(true)
+    tab.actions.closeAttachment()
+    await Effect.runPromise(Deferred.succeed(receipt, { reference: "ABCD-EFGH" }))
+    await first
+    expect(tab.queries.pairing.toArray[0]).toMatchObject({ target: null, reference: null, busy: false })
+  })
+
+  test("an invalid consent target never reaches approval", async () => {
+    let approvals = 0
+    const tab = await open({ pairing: {
+      mint: () => Effect.succeed({ reference: "ABCD-EFGH" }),
+      review: () => Effect.succeed({ ...target, conversation: crypto.randomUUID(), claim: "claim", client: "fixture", ceiling: [] }),
+      approve: () => Effect.andThen(Effect.sync(() => { approvals++ }), refused),
+      revoke: () => refused,
+    } })
+    tab.queries.pairing.startSyncImmediate()
+    await tab.actions.mintAttachment(target)
+    await tab.actions.reviewAttachment()
+    await tab.actions.approveAttachment("123456")
+    expect(tab.queries.pairing.toArray[0]).toMatchObject({ error: "wrong_target", review: null, approval: null })
+    expect(approvals).toBe(0)
+  })
+})
 
 describe("the Connect agent dialog", () => {
   test("opens for a repository, shows the chosen client and keeps it when closed", async () => {

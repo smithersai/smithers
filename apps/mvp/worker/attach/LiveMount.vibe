@@ -98,6 +98,8 @@ const conversationRead = defineTool({
         ORDER BY position DESC
         LIMIT ${ATTACH_READ_LIMIT}
       ) recent ORDER BY position`
+    try annotateCurrentSpan({ "smithers.chat.stage": "conversation_read", "smithers.chat.conversation_id": grant.conversation })
+    try logInfo("chat.conversation_read").pipe(annotateLogs({ conversationId: grant.conversation, count: messages.length }))
     return { messages }
   },
 })
@@ -270,7 +272,11 @@ effect function serveMcp(origin: string, web: Request, body: Result.Result<strin
   // that rolled back, or whose commit failed, never gets here, so the shard never holds an answer Postgres does not.
   // Each answer is read back as Postgres holds it, with its question, its place and its time. The bridge never fails;
   // an answer it could not send is sent by the same answer given again.
-  try forEach(answers, MessagesShardSource.answered, { discard: true })
+  for (const questionId of answers) {
+    try annotateCurrentSpan({ "smithers.chat.stage": "answered", "smithers.chat.question_id": questionId })
+    try logInfo("chat.answered").pipe(annotateLogs({ questionId, stage: "answered" }))
+    try MessagesShardSource.answered(questionId)
+  }
   return response
 }
 

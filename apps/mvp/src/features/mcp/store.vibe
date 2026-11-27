@@ -5,6 +5,8 @@ import { runners } from "../../boundary.vibe"
 import { ROLES } from "../auth/contract"
 import { MCP_CLIENTS, MCP_OAUTH_AUTHORIZE_ROUTE, MCP_SCOPES, MCP_TOKENS_ROUTE, type McpClientId } from "./contract"
 import { EXECUTION_TRUST_TIERS, ONE_TIME_AUTH_PURPOSES, type OneTimeAuthPurpose, repoOneTimeAuthRoute } from "../trust/contract"
+import { Approval, makePairing, Reference, Review, type PairingClient, type Target } from "./attachment.vibe"
+import { ATTACH_APPROVALS_ROUTE, ATTACH_CAPABILITIES, ATTACH_CONSENT_ROUTE, ATTACH_INTENTS_ROUTE, ATTACH_REVOCATIONS_ROUTE } from "./contract"
 import { searchOf, verifiedRedirect } from "./view"
 
 // Bring Your Own Agent on this tab: three local-only TanStack DB collections of one row each, in memory and never kept
@@ -146,6 +148,7 @@ const decodeOneTime = Schema.decodeUnknownEffect(OneTimeMintSchema)
 export class McpClient extends Context.Service<
   McpClient,
   {
+    readonly pairing: PairingClient<McpNotTaken>
     /** `GET /api/me/mcp-tokens`: the person's connected agents. */
     readonly tokens: Effect.Effect<ReadonlyArray<TokenSummary>, McpNotTaken>
     /** `DELETE /api/me/mcp-tokens/<id>`: revoke one. */
@@ -181,7 +184,17 @@ export class McpClient extends Context.Service<
             Effect.timeoutOrElse({ duration: options.within ?? MCP_WITHIN, orElse: () => Effect.fail(new McpNotTaken({})) }),
           )
         const authorize = (search: string) => `${options.origin}${MCP_OAUTH_AUTHORIZE_ROUTE}${searchOf(search)}`
+        const post = (route: string, body: object) => HttpClientRequest.post(options.origin + route).pipe(HttpClientRequest.bodyJsonUnsafe(body))
         return McpClient.of({
+          pairing: {
+            mint: target => send(post(ATTACH_INTENTS_ROUTE, { ...target, ceiling: ATTACH_CAPABILITIES }), [201],
+              response => Effect.flatMap(response.json, Schema.decodeUnknownEffect(Reference))),
+            review: reference => send(post(ATTACH_CONSENT_ROUTE, { reference }), [200],
+              response => Effect.flatMap(response.json, Schema.decodeUnknownEffect(Review))),
+            approve: (claim, pairing) => send(post(ATTACH_APPROVALS_ROUTE, { claim, pairing }), [200],
+              response => Effect.flatMap(response.json, Schema.decodeUnknownEffect(Approval))),
+            revoke: grant => send(post(ATTACH_REVOCATIONS_ROUTE, { grant }), [204], () => Effect.void),
+          },
           tokens: send(HttpClientRequest.get(`${options.origin}${MCP_TOKENS_ROUTE}`), [200], (response) =>
             response.json.pipe(
               Effect.flatMap(decodeTokens),
@@ -409,7 +422,9 @@ export const submitConsent = (decision: Decision, search: string) =>
 type Store = McpStore["Service"]
 
 /** What a frontend reads live: each is one row. */
+type Pairing = Effect.Success<ReturnType<typeof makePairing<McpNotTaken>>>
 export interface McpQueries {
+  readonly pairing: Pairing["query"]
   readonly connect: Store["connectState"]["tanstack"]
   readonly tokens: Store["tokensState"]["tanstack"]
   readonly consent: Store["consentState"]["tanstack"]
@@ -418,6 +433,11 @@ export interface McpQueries {
 
 /** What a person does, as plain functions with no Effect in sight. */
 export interface McpActions {
+  readonly mintAttachment: (target: Target) => Promise<void>
+  readonly reviewAttachment: () => Promise<void>
+  readonly approveAttachment: (pairing: string) => Promise<void>
+  readonly revokeAttachment: () => Promise<void>
+  readonly closeAttachment: () => void
   readonly openConnect: (owner: string, name: string) => void
   readonly closeConnect: () => void
   readonly selectClient: (client: McpClientId) => void
@@ -441,11 +461,17 @@ export class Mcp extends Context.Service<Mcp, { readonly queries: McpQueries; re
     Mcp,
     effect {
       const store = try McpStore
+      const pairing = try makePairing((try McpClient).pairing, codeOf)
       const context = try Effect.context<McpStore | McpClient>()
       const { runSync: run, runPromise: promise } = runners(context, "mcp")
       return Mcp.of({
-        queries: { connect: store.connectState.tanstack, tokens: store.tokensState.tanstack, consent: store.consentState.tanstack, oneTime: store.oneTimeState.tanstack },
+        queries: { pairing: pairing.query, connect: store.connectState.tanstack, tokens: store.tokensState.tanstack, consent: store.consentState.tanstack, oneTime: store.oneTimeState.tanstack },
         actions: {
+          mintAttachment: target => promise(pairing.mint(target)),
+          reviewAttachment: () => promise(pairing.review),
+          approveAttachment: value => promise(pairing.approve(value)),
+          revokeAttachment: () => promise(pairing.revoke),
+          closeAttachment: () => run(pairing.close),
           openConnect: (owner, name) => run(openConnect(owner, name)),
           closeConnect: () => run(closeConnect),
           selectClient: (client) => run(selectClient(client)),

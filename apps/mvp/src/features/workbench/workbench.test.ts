@@ -130,15 +130,7 @@ describe("WorkbenchShell presentation", () => {
         cause: SAMPLE_CAUSE,
       },
     ],
-    attach: {
-      mode: "local-stdio" as const,
-      state: "consent_pending" as const,
-      promptText: "Run smthrs attach --intent att_123",
-      repoSlug: "smithersai/effect",
-      branch: "main",
-      agentLabel: "Claude Code",
-      onApproveConsent: () => {},
-    },
+    attachHref: "/smithersai/effect/tree/main#attach-agent",
     workflow: {
       workflowTag: "ci/fast-check",
       sourcePath: ".smithers/workflows/fast-check.vibe",
@@ -200,7 +192,7 @@ describe("WorkbenchShell presentation", () => {
 
     expect(html).toContain('data-size="full"')
     expect(html).not.toContain('data-slot="workbench-chat-column"')
-    expect(html).toContain("Allow Claude Code on smithersai/effect (main)")
+    expect(html).toContain("/smithersai/effect/tree/main#attach-agent")
   })
 
   test("renders all 6 panes with clean text copy and neutral empty waitlist fallback", () => {
@@ -323,15 +315,7 @@ describe("playground pane wiring", () => {
       onDispatch: () => {},
       totalFrames: 1,
       planNodes: [],
-      attach: {
-        mode: "local-stdio",
-        state: "unattached",
-        promptText: "connect",
-        repoSlug: "evmts/tevm-monorepo",
-        branch: "main",
-        onModeChange: () => {},
-        onCopyPrompt: () => {},
-      },
+      attachHref: "/smithersai/effect/tree/main#attach-agent",
       playground: {
         preset: {
           id: "tevm-evm",
@@ -353,15 +337,7 @@ describe("playground pane wiring", () => {
       onDispatch: () => {},
       totalFrames: 1,
       planNodes: [],
-      attach: {
-        mode: "local-stdio",
-        state: "unattached",
-        promptText: "connect",
-        repoSlug: "other/repo",
-        branch: "main",
-        onModeChange: () => {},
-        onCopyPrompt: () => {},
-      },
+      attachHref: "/smithersai/effect/tree/main#attach-agent",
     })
     expect(withoutPreset).toContain("No interactive playground is configured for this repository.")
   })

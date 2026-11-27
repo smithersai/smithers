@@ -1,6 +1,6 @@
 import { PlanTree as PlanTreeSchema, type PlanNodeState, type PlanTree } from "@smthrs/app-state"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import type { AttachTransportMode, AudienceRole, PlanTreeNodeItem, WaitlistStatus } from "@smthrs/ui"
+import type { AudienceRole, PlanTreeNodeItem, WaitlistStatus } from "@smthrs/ui"
 import { Context, Data, type Duration, Effect, Layer, Option, Schema, type Scope } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { runners } from "../../boundary.vibe"
@@ -16,7 +16,6 @@ import type { WorkbenchLayout } from "./layout"
 // via TanStack Router. All HTTP calls go through Effect HttpClient.
 
 export const PLAN_ROW_ID = "plan"
-export const ATTACH_ROW_ID = "attach"
 export const WAITLIST_ROW_ID = "waitlist"
 
 export const PLAN_STATUSES = ["idle", "loading", "ready", "empty", "failed"] as const
@@ -47,14 +46,6 @@ export const PlanRow = Schema.Struct({
   error: Schema.NullOr(Schema.String),
 })
 export type PlanRow = typeof PlanRow.Type
-
-export const AttachRow = Schema.Struct({
-  id: Schema.Literal(ATTACH_ROW_ID),
-  mode: Schema.Literals(["local-stdio", "remote-http"]),
-  state: Schema.Literals(["unattached", "consent_pending", "connected", "revoked"]),
-  copied: Schema.Boolean,
-})
-export type AttachRow = typeof AttachRow.Type
 
 export const WaitlistRow = Schema.Struct({
   id: Schema.Literal(WAITLIST_ROW_ID),
@@ -133,21 +124,6 @@ export const roleToAudience = (role: Role | null | undefined): AudienceRole => {
   return "visitor"
 }
 
-/** Build the zero-secret BYOA MCP attach prompt for a repository and branch. */
-export const attachPromptFor = (
-  mode: AttachTransportMode,
-  origin: string,
-  owner: string,
-  repo: string,
-  branch: string,
-): string => {
-  const slug = `${owner}/${repo}`
-  if (mode === "local-stdio") {
-    return `Attach to ${slug} on branch ${branch} using the local Smithers MCP node: smthrs attach --repo ${slug} --branch ${branch}`
-  }
-  return `Attach to ${slug} on branch ${branch} over Streamable HTTP MCP: ${origin}/api/attach/mcp/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(branch)}`
-}
-
 export const planSnapshotRoute = (origin: string, owner: string, repo: string): string => {
   const shard = `repo:${owner}/${repo}`
   return `${origin}/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/plan/snapshot?shard=${encodeURIComponent(shard)}`
@@ -216,8 +192,6 @@ export class WorkbenchClient extends Context.Service<
 
 const planQuery = (rows: Collection.Collection<PlanRow, string>) =>
   LiveQuery.make((q) => q.from({ row: rows.tanstack }).findOne())
-const attachQuery = (rows: Collection.Collection<AttachRow, string>) =>
-  LiveQuery.make((q) => q.from({ row: rows.tanstack }).findOne())
 const waitlistQuery = (rows: Collection.Collection<WaitlistRow, string>) =>
   LiveQuery.make((q) => q.from({ row: rows.tanstack }).findOne())
 
@@ -228,8 +202,6 @@ export class WorkbenchStore extends Context.Service<
   {
     readonly plan: Collection.Collection<PlanRow, string>
     readonly planState: Query<typeof planQuery>
-    readonly attach: Collection.Collection<AttachRow, string>
-    readonly attachState: Query<typeof attachQuery>
     readonly waitlist: Collection.Collection<WaitlistRow, string>
     readonly waitlistState: Query<typeof waitlistQuery>
     readonly scope: Scope.Scope
@@ -259,12 +231,6 @@ export class WorkbenchStore extends Context.Service<
               { discard: true },
             )))
       }
-      const attach = try Collection.local<AttachRow, string>({
-        id: "workbench-attach",
-        schema: AttachRow,
-        getKey: (row) => row.id,
-        initialData: [{ id: ATTACH_ROW_ID, mode: "local-stdio", state: "unattached", copied: false }],
-      })
       const waitlist = try Collection.local<WaitlistRow, string>({
         id: "workbench-waitlist",
         schema: WaitlistRow,
@@ -283,8 +249,6 @@ export class WorkbenchStore extends Context.Service<
       return WorkbenchStore.of({
         plan,
         planState: try planQuery(plan),
-        attach,
-        attachState: try attachQuery(attach),
         waitlist,
         waitlistState: try waitlistQuery(waitlist),
         scope,
@@ -296,11 +260,6 @@ export class WorkbenchStore extends Context.Service<
 const setPlan = (change: Partial<Omit<PlanRow, "id">>) =>
   Effect.flatMap(WorkbenchStore, ({ plan }) =>
     Effect.asVoid(Effect.orDie(plan.update(PLAN_ROW_ID, (draft) => void Object.assign(draft, change)))),
-  )
-
-const setAttach = (change: Partial<Omit<AttachRow, "id">>) =>
-  Effect.flatMap(WorkbenchStore, ({ attach }) =>
-    Effect.asVoid(Effect.orDie(attach.update(ATTACH_ROW_ID, (draft) => void Object.assign(draft, change)))),
   )
 
 const setWaitlist = (change: Partial<Omit<WaitlistRow, "id">>) =>
@@ -365,7 +324,6 @@ type Store = WorkbenchStore["Service"]
 
 export interface WorkbenchQueries {
   readonly plan: Store["planState"]["tanstack"]
-  readonly attach: Store["attachState"]["tanstack"]
   readonly waitlist: Store["waitlistState"]["tanstack"]
 }
 
@@ -373,8 +331,6 @@ export interface WorkbenchActions {
   readonly saveConversation: (repoSlug: string, layout: WorkbenchLayout, draft?: string, conversationId?: string | null) => void
   readonly restoreConversation: (repoSlug: string, search: URLSearchParams | string | Record<string, unknown>, maxRole: AudienceRole, conversationId?: string | null) => ConversationPaneSnapshot
   readonly loadPlan: (owner: string, repo: string) => Promise<void>
-  readonly setTransport: (mode: AttachTransportMode) => void
-  readonly markCopied: () => void
   readonly setWaitlistRepoUrl: (repoUrl: string) => void
   readonly setWaitlistWorkflowNote: (workflowNote: string) => void
   readonly submitWaitlist: () => Promise<void>
@@ -394,7 +350,6 @@ export class Workbench extends Context.Service<
       return Workbench.of({
         queries: {
           plan: store.planState.tanstack,
-          attach: store.attachState.tanstack,
           waitlist: store.waitlistState.tanstack,
         },
         actions: {
@@ -415,8 +370,6 @@ export class Workbench extends Context.Service<
               maxRole,
             }),
           loadPlan: (owner, repo) => promise(loadPlan(owner, repo)),
-          setTransport: (mode) => run(setAttach({ mode, copied: false })),
-          markCopied: () => run(setAttach({ copied: true })),
           setWaitlistRepoUrl: (repoUrl) => run(setWaitlist({ repoUrl, status: "idle" as WaitlistStatus, errorMessage: null })),
           setWaitlistWorkflowNote: (workflowNote) => run(setWaitlist({ workflowNote })),
           submitWaitlist: () => promise(submitWaitlistDraft),

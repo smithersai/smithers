@@ -20,6 +20,7 @@ import { QuestionFaults, ShardFaults } from "../../test/faults"
 import { AuthStore, SESSION } from "../auth/store.vibe"
 import { Chat } from "../chat/chat"
 import { COULDNT_ANSWER, QUESTIONS_ROUTE } from "../chat/contract"
+import { Status } from "../status/status.vibe"
 import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands.vibe"
 import { replaceRole, RepoStore } from "../repo/store.vibe"
@@ -46,7 +47,7 @@ const quick: TabOptions = {
 
 /** A tab on `runtime`, signed in as a Member, with the live queries React starts on first render. */
 const tabOn = async <R, E>(
-  runtime: ManagedRuntime.ManagedRuntime<R | ConversationOwners | Chat | ChatStore | Views | ViewsStore | Commands | AuthStore | TestChatApi, E>,
+  runtime: ManagedRuntime.ManagedRuntime<R | ConversationOwners | Chat | ChatStore | Status | Views | ViewsStore | Commands | AuthStore | TestChatApi, E>,
 ) => {
   runtimes.push(runtime)
   const chat = await runtime.runPromise(Effect.service(Chat))
@@ -161,6 +162,9 @@ describe("a branch's conversation", () => {
     const { questionId, answerId } = asked((await tab.chat.actions.ask("asked in the branch")))
     expect(tab.shown(branch)).toEqual(["user queued asked in the branch"])
     await until(() => expect(tab.shown(branch)).toEqual(["user done asked in the branch", "assistant streaming "]))
+    const statuses = (await tab.runtime.runPromise(Effect.service(Status))).queries.of(branch).statuses
+    statuses.startSyncImmediate()
+    await until(() => expect(statuses.toArray.find(row => row.id === answerId)).toMatchObject({ state: "awaiting_agent" }))
     const attached = await tab.runtime.runPromise(tab.api.attachFor(questionId))
     expect(await attached.respond("Here.")).toEqual({ answered: true, answerId })
     await until(() => expect(tab.shown(branch)).toEqual(["user done asked in the branch", "assistant done Here."]))
