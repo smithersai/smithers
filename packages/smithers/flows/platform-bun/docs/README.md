@@ -38,7 +38,7 @@ is Effect's Node spawner re-exported; contained POSIX variants use
 ## Install
 
 ```bash
-bun add @smthrs/platform-bun@1.0.0-rc.21 effect
+bun add @smthrs/platform-bun@1.0.0-rc.22 effect
 ```
 
 `effect` is a required peer at exactly `4.1.1`. `@effect/platform-bun` is

@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/model",
   "type": "module",
-  "version": "1.0.0-rc.21",
+  "version": "1.0.0-rc.22",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -355,19 +355,19 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/capability": "1.0.0-rc.21",
-    "@smthrs/flow": "1.0.0-rc.21",
-    "@smthrs/journal": "1.0.0-rc.21",
-    "@smthrs/kernel": "1.0.0-rc.21",
-    "@smthrs/canonical": "1.0.0-rc.21",
-    "@smthrs/core": "1.0.0-rc.21"
+    "@smthrs/capability": "1.0.0-rc.22",
+    "@smthrs/flow": "1.0.0-rc.22",
+    "@smthrs/journal": "1.0.0-rc.22",
+    "@smthrs/kernel": "1.0.0-rc.22",
+    "@smthrs/canonical": "1.0.0-rc.22",
+    "@smthrs/core": "1.0.0-rc.22"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
     "@smthrs/fuzz": "workspace:*",
-    "@smthrs/platform-node": "1.0.0-rc.21",
+    "@smthrs/platform-node": "1.0.0-rc.22",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

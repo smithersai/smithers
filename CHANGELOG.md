@@ -5,6 +5,19 @@ release (what changed and why it matters, with screenshots and examples), see
 the release notes at
 [smithers.sh/changelogs/1.0.0-rc.0](https://smithers.sh/changelogs/1.0.0-rc.0).
 
+## 1.0.0-rc.22 (2026-11-27)
+
+<!-- commits:1.0.0-rc.22 -->
+
+2 commits since [v1.0.0-rc.21](https://github.com/smithersai/smithers/commit/92b91eba09).
+
+### 🐛 Bug fixes
+
+- **ci:** provide cacheNamespace expression in tarball.e2e workflow test ([1226e66133](https://github.com/smithersai/smithers/commit/1226e66133fd30111f38c496efa627bad2451360))
+- **site,flows:** add @smthrs/app-core to support matrix and resolve 3 remaining release-gate checks ([bfb5f7871a](https://github.com/smithersai/smithers/commit/bfb5f7871a3ddc1d59b5fef3b091c04ab3efe63a))
+
+<!-- /commits:1.0.0-rc.22 -->
+
 ## 1.0.0-rc.21 (2026-11-27)
 
 <!-- commits:1.0.0-rc.21 -->

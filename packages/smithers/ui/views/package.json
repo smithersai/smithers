@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/views",
   "type": "module",
-  "version": "1.0.0-rc.21",
+  "version": "1.0.0-rc.22",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -73,9 +73,9 @@
   },
   "dependencies": {
     "@babel/parser": "8.0.4",
-    "@smthrs/crypto": "1.0.0-rc.21",
-    "@smthrs/flow": "1.0.0-rc.21",
-    "@smthrs/harness": "1.0.0-rc.21",
+    "@smthrs/crypto": "1.0.0-rc.22",
+    "@smthrs/flow": "1.0.0-rc.22",
+    "@smthrs/harness": "1.0.0-rc.22",
     "sucrase": "3.35.1",
     "quickjs-emscripten-core": "0.32.0"
   },
