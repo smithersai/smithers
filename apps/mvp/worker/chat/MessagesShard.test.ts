@@ -2200,14 +2200,28 @@ test("a backfill batch stops at the first command not taken, keeps its cursor an
     expect(yield* batch([placed("Asked")], 9)).toEqual({ applied: 1, kept: 0, cursor: 9, checked: false })
     // The same key with other content, on a message that already has its place: kept, and no place is recorded for it.
     expect(yield* batch([placed("Asked again")], 9)).toEqual({ applied: 0, kept: 1, cursor: 9, checked: false })
-    // An update whose key holds other content is no post: it is refused, and the cursor and the mark stand.
+    // An update whose key already holds another receipt is kept (Fable P1: never brick-lock backfill on prior receipts),
+    // and reducer refusals on already-terminal state (terminal_status, terminal_body, terminal_metadata, body_conflict) are kept too.
     const streaming = (status: "streaming" | "complete"): Messages.BackfillCommand => ({
       author: QUESTION, id: `status:${id}`, payload: { _tag: "UpdateMessageStatus", messageId: id, status },
     })
     expect(yield* batch([streaming("streaming")])).toMatchObject({ applied: 1 })
-    expect(yield* batch([placed("Asked"), streaming("complete")], 20, true)).toEqual({
-      applied: 1, kept: 0, cursor: 9, checked: false, rejected: { index: 1, messageId: id, code: "idempotency_conflict" },
+    expect(yield* batch([placed("Asked"), streaming("complete")], 9, false)).toEqual({
+      applied: 1, kept: 1, cursor: 9, checked: false,
     })
+    // Assistant answer: divergent body_conflict while streaming and out-of-order terminal_status/terminal_body/terminal_metadata
+    // after completion are all counted as kept so backfill never permanently locks a conversation at 503 (Fable P1).
+    const ansId = "7d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f60"
+    const ANSWER = Messages.answerOwner(ansId)
+    expect(yield* batch([
+      { author: ANSWER, id: `answer:${ansId}`, payload: { _tag: "PostMessage", messageId: ansId, author: ANSWER, body: "Initial prefix", role: "assistant", parentId: id, position: 10, createdAt: "2026-11-25 10:00:01+00" } },
+      { author: ANSWER, id: `streaming:${ansId}`, payload: { _tag: "UpdateMessageStatus", messageId: ansId, status: "streaming" } },
+      { author: ANSWER, id: `body-conflict:${ansId}`, payload: { _tag: "UpdateMessageBody", messageId: ansId, author: ANSWER, body: "Completely different" } },
+      { author: ANSWER, id: `complete:${ansId}`, payload: { _tag: "UpdateMessageStatus", messageId: ansId, status: "complete" } },
+      { author: ANSWER, id: `streaming-late:${ansId}`, payload: { _tag: "UpdateMessageStatus", messageId: ansId, status: "streaming" } },
+      { author: ANSWER, id: `body-late:${ansId}`, payload: { _tag: "UpdateMessageBody", messageId: ansId, author: ANSWER, body: "Edited after terminal" } },
+      { author: ANSWER, id: `meta-late:${ansId}`, payload: { _tag: "UpdateMessageMetadata", messageId: ansId, modelId: "late-model" } },
+    ], 9, false)).toEqual({ applied: 3, kept: 4, cursor: 9, checked: false })
     // A command that is no command is named by no id.
     expect(yield* batch([{ author: QUESTION, id: "nothing", payload: { _tag: "DeleteEverything" } }])).toEqual({
       applied: 0, kept: 0, cursor: 9, checked: false, rejected: { index: 0, messageId: "", code: "invalid" },

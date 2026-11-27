@@ -811,3 +811,15 @@ test("a note read earlier and delivered later never replaces the newer one, and 
   }))
   expect(lines()).toEqual([])
 })
+
+test("asked() on an already-ended answer bridges the ended answer instead of leaving the shard streaming", async () => {
+  const asked = await ask("Already ended before asked ran")
+  await sql((sql) => sql`UPDATE messages SET text = 'Finished answer.', status = 'done' WHERE id = ${asked.answerId}`)
+  const { lines } = await observed((host) => Effect.gen(function*() {
+    yield* Source.asked(asked.id).pipe(bridging(host))
+    const [, answer] = yield* messagesOf(host, asked.conversationId)
+    expect(answer).toMatchObject({ id: asked.answerId, body: "Finished answer.", status: "complete" })
+    expect(yield* owed(asked.conversationId)).toEqual([])
+  }))
+  expect(lines()).toEqual([])
+})

@@ -294,7 +294,8 @@ const exchanged = <A extends MessagesShardBridge.Exchange>(
  * owed (`exchanged`). Never fails.
  */
 export const asked = (questionId: string) =>
-  exchanged("asked", questionId, MessagesShardBridge.isAsked, (bridge, found) => bridge.asked(found))
+  exchanged("asked", questionId, MessagesShardBridge.isAsked, (bridge, found) =>
+    MessagesShardBridge.isAnswered(found) ? bridge.answered(found) : bridge.asked(found))
 
 /** `asked`, reading through `database`, which is built only where a bridge is provided. */
 export const askedIn = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, questionId: string) =>

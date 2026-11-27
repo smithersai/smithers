@@ -427,13 +427,13 @@ export const make = Effect.fnUntraced(function*(storage: ObjectDatabase.Storage,
           // The epoch is read here and the submit is decided in the same turn: nothing between them moves it.
           const answer = yield* send(id, (yield* journal.head).epoch)
           if (answer._tag === "IdempotencyConflict") {
-            if (payload._tag !== "PostMessage") return "idempotency_conflict"
-            reconcile(payload)
+            if (payload._tag === "PostMessage") reconcile(payload)
             return "kept"
           }
           if (answer._tag === "Refused") {
             // A receipt that says the message was missing answers its key for ever: the message may be there now.
-            return answer.reason === "message_missing" && !id.endsWith(":again") ? yield* settle(`${id}:again`) : answer.reason
+            if (answer.reason === "message_missing" && !id.endsWith(":again")) return yield* settle(`${id}:again`)
+            return KEPT_REFUSALS.has(answer.reason) ? "kept" : answer.reason
           }
           return SETTLED[answer._tag]
         })
@@ -442,6 +442,17 @@ export const make = Effect.fnUntraced(function*(storage: ObjectDatabase.Storage,
 
   /** What a batch's command came to, by the protocol's answer: taken, or an epoch that kept moving. */
   const SETTLED = { Accepted: "ok", Duplicate: "ok", StaleEpoch: "stale_epoch" } as const
+  /**
+   * Reducer refusals that mean the shard already holds a frozen terminal or diverged state for the message
+   * (matching MessagesShardSource.ts SETTLED). Treating them as kept prevents an out-of-order receipt or
+   * post-bridge row edit from permanently locking backfill at 503.
+   */
+  const KEPT_REFUSALS: ReadonlySet<string> = new Set([
+    "terminal_status",
+    "terminal_metadata",
+    "terminal_body",
+    "body_conflict",
+  ])
 
   /** The places `messages_shard_positions` keeps, by message id. */
   const positions = () =>
