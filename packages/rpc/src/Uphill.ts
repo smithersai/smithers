@@ -314,18 +314,18 @@ export const HistoryPointSchema = z.object({
 export type HistoryPoint = z.infer<typeof HistoryPointSchema>
 
 /**
- * Enriched repository feed payload stored under feed name `"uphill"`.
- *
- * @since 1.0.0
- * @category schemas
- */
-/**
  * Server-verified execution trust provenance attached to a published Uphill audit report.
  *
  * @since 1.0.0
  * @category schemas
  */
 export const ExecutionTrustSchema = z.enum(["trusted_sandbox", "trusted_maintainer", "untrusted_contributor"])
+/**
+ * The decoded value accepted by {@link ExecutionTrustSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type ExecutionTrust = z.infer<typeof ExecutionTrustSchema>
 
 /**
@@ -344,8 +344,20 @@ export const ProvenanceSchema = z.object({
   objectUrl: z.string().nullable().optional().default(null),
   sha256: z.string().nullable().optional().default(null)
 })
+/**
+ * The decoded value accepted by {@link ProvenanceSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type Provenance = z.infer<typeof ProvenanceSchema>
 
+/**
+ * Enriched repository feed payload stored under feed name `"uphill"`.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const FeedEnvelopeSchema = z.object({
   report: ReportSchema,
   commit: z.string().nullable().optional().default(null),

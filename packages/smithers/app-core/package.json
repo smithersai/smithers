@@ -1,8 +1,7 @@
 {
   "name": "@smthrs/app-core",
   "type": "module",
-  "version": "1.0.0-rc.18",
-  "private": true,
+  "version": "1.0.0-rc.19",
   "license": "MIT",
   "smthrs": {
     "group": "tooling"
@@ -34,9 +33,12 @@
     "./index": "./src/index.ts"
   },
   "scripts": {
-    "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
-    "test": "vitest",
-    "build": "node scripts/build.mjs"
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -p tsconfig.json --noEmit && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../repo-targets/scripts/circular.mjs",
+    "test": "vitest"
   },
   "dependencies": {
     "@smthrs/canonical": "1.0.0-rc.19",
@@ -47,15 +49,27 @@
     "effect": "4.1.1",
     "fast-check": "4.9.0",
     "typescript": "5.9.3",
-    "vitest": "5.0.0"
+    "vitest": "5.0.0",
+    "dprint": "0.57.1"
   },
   "peerDependencies": {
     "effect": "4.1.1"
   },
   "files": [
-    "dist"
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "docs/"
   ],
   "publishConfig": {
+    "access": "public",
+    "tag": "next",
+    "provenance": true,
     "exports": {
       "./package.json": "./package.json",
       ".": {

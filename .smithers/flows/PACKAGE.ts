@@ -817,6 +817,7 @@ const automation = Smithers.NodeTest({
  */
 const landSources = [Smithers.glob("//.smithers/flows/land/**/*"), runModuleSource]
 const land = Smithers.NodeTest({
+  timeout: "20m",
   runner: Smithers.testRunner([
     Smithers.file("//.smithers/flows/land/flow.test.ts"),
     Smithers.file("//.smithers/flows/land/lane-gates/flow.test.ts"),

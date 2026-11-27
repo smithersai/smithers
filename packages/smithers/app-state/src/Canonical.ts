@@ -1,10 +1,19 @@
 /**
+ * Pure synchronous RFC 8785 canonical JSON serialization and SHA-256 hashing.
+ *
+ * @since 1.0.0
+ */
+
+/**
  * Canonical JSON (RFC 8785, JCS) and SHA-256, both pure and synchronous.
  *
  * `canonicalJson` sorts object keys by UTF-16 code unit, serializes numbers and
  * strings as ECMAScript `JSON.stringify` does (which RFC 8785 specifies), and
  * emits no whitespace. `undefined` properties are omitted. Anything JSON cannot
  * represent throws `TypeError`.
+ *
+ * @since 1.0.0
+ * @category utilities
  */
 export const canonicalJson = (value: unknown): string => {
   if (value === null) return "null"
@@ -100,7 +109,12 @@ const K = new Uint32Array([
 
 const rotr = (x: number, n: number): number => (x >>> n) | (x << (32 - n))
 
-/** SHA-256 of the UTF-8 encoding of `text`, as lowercase hex. */
+/**
+ * SHA-256 of the UTF-8 encoding of `text`, as lowercase hex.
+ *
+ * @since 1.0.0
+ * @category utilities
+ */
 export const sha256Hex = (text: string): string => {
   const bytes = new TextEncoder().encode(text)
   const paddedLength = ((bytes.length + 9 + 63) >> 6) << 6
@@ -177,5 +191,10 @@ export const sha256Hex = (text: string): string => {
   return out
 }
 
-/** Deterministic state hash: SHA-256 over the RFC 8785 canonical JSON. */
+/**
+ * Deterministic state hash: SHA-256 over the RFC 8785 canonical JSON.
+ *
+ * @since 1.0.0
+ * @category utilities
+ */
 export const canonicalHash = (state: unknown): string => sha256Hex(canonicalJson(state))

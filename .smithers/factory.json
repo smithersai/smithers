@@ -1239,6 +1239,50 @@
       "flows": []
     },
     {
+      "id": "hill-climb",
+      "description": "Print Uphill rules and score the repository to rank the highest-leverage hill-climbing opportunities.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/hill-climb/flow.ts",
+      "capabilities": [],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "run": {
+              "type": "string"
+            },
+            "repo": {
+              "type": "string"
+            },
+            "sha": {
+              "type": "string"
+            },
+            "ref": {
+              "type": "string"
+            },
+            "event": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "run",
+            "repo",
+            "sha",
+            "ref",
+            "event"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
       "id": "issue-claim",
       "description": "Claim, check, release or comment on an issue through the machine's GitHub proxy.",
       "summary": null,
@@ -1988,6 +2032,50 @@
       "flows": []
     },
     {
+      "id": "uphill",
+      "description": "Run Uphill continuous metrics, verify metric lines, and score every category.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/uphill/flow.ts",
+      "capabilities": [],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "run": {
+              "type": "string"
+            },
+            "repo": {
+              "type": "string"
+            },
+            "sha": {
+              "type": "string"
+            },
+            "ref": {
+              "type": "string"
+            },
+            "event": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "run",
+            "repo",
+            "sha",
+            "ref",
+            "event"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
       "id": "vibelang-fuzz",
       "description": "Fuzz the VibeLang app in Effect, Chromium and workerd, retaining every regression and per-target budget receipt.",
       "summary": null,
@@ -2072,7 +2160,7 @@
         "docs-publish",
         "release"
       ],
-      "description": "Run backpressure audit, refresh wiki, fold mythical history, publish docs, and trigger release"
+      "description": "Run backpressure audit, refresh wiki, fold mythical history, publish docs, and trigger release on main"
     },
     {
       "event": "schedule:0 9 * * 1-5",

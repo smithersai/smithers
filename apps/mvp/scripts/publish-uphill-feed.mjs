@@ -5,7 +5,7 @@
  * scorecard appear live in the repository's Uphill tab.
  *
  * Usage:
- *   SMITHERS_URL=https://smithers.sh SMITHERS_FEED_KEY=... node scripts/publish-uphill-feed.mjs owner/repo
+ *   SMITHERS_URL=https://smithers.sh SMITHERS_FEED_KEY=... node apps/mvp/scripts/publish-uphill-feed.mjs owner/repo
  */
 import { execSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"

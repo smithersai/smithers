@@ -4,11 +4,11 @@
  *
  * Usage:
  *   # Mint via authenticated MCP bearer token (prints shell + MCP snippets to stdout):
- *   SMITHERS_MCP_TOKEN=sma_... node scripts/mint-one-time-auth.mjs \
+ *   SMITHERS_MCP_TOKEN=sma_... node apps/mvp/scripts/mint-one-time-auth.mjs \
  *     --repo smithersai/smithers --purpose sandbox --ttl 300 --label ci-run-1
  *
  *   # Redeem inside an ephemeral sandbox (prints JSON `{ accessToken, mcpUrl, executionTrust, ... }`):
- *   SMITHERS_ONE_TIME_TOKEN=smot_... node scripts/mint-one-time-auth.mjs --redeem
+ *   SMITHERS_ONE_TIME_TOKEN=smot_... node apps/mvp/scripts/mint-one-time-auth.mjs --redeem
  */
 
 const args = process.argv.slice(2)

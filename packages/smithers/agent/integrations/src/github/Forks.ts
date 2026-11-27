@@ -14,13 +14,13 @@ import { requireBranch } from "./Refs.ts"
 import { requireRepositoryPath } from "./Repository.ts"
 
 const ForkOwner = Schema.Struct({
-  login: Schema.String,
+  login: Schema.String
 })
 
 const ForkParent = Schema.Struct({
   name: Schema.String,
   full_name: Schema.String,
-  owner: ForkOwner,
+  owner: ForkOwner
 })
 
 /**
@@ -36,10 +36,12 @@ export const ForkRepository = Schema.Struct({
   owner: ForkOwner,
   default_branch: Schema.String,
   html_url: Schema.String,
-  parent: Schema.optional(ForkParent),
+  parent: Schema.optional(ForkParent)
 })
 
 /**
+ * Decoded GitHub fork repository model.
+ *
  * @category models
  * @since 1.0.0
  */
@@ -54,10 +56,12 @@ export type ForkRepository = typeof ForkRepository.Type
 export const MergeUpstreamResult = Schema.Struct({
   message: Schema.String,
   merge_type: Schema.optional(Schema.String),
-  base_branch: Schema.optional(Schema.String),
+  base_branch: Schema.optional(Schema.String)
 })
 
 /**
+ * Decoded result of syncing a fork branch with its upstream repository.
+ *
  * @category models
  * @since 1.0.0
  */
@@ -76,15 +80,15 @@ export type MergeUpstreamResult = typeof MergeUpstreamResult.Type
 export const createFork = (
   owner: string,
   repo: string,
-  options?: { readonly defaultBranchOnly?: boolean | undefined },
+  options?: { readonly defaultBranchOnly?: boolean | undefined }
 ): Effect.Effect<ForkRepository, IntegrationError, GitHubClient> =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const client = yield* GitHubClient
     const repository = yield* requireRepositoryPath(owner, repo)
     const body = options?.defaultBranchOnly === true ? { default_branch_only: true } : {}
     return yield* client.request("POST", `/repos/${repository}/forks`, body, {
       schema: ForkRepository,
-      retryUnsafeWrites: true,
+      retryUnsafeWrites: true
     })
   }).pipe(Effect.withSpan("GitHub.Forks.createFork"))
 
@@ -98,9 +102,9 @@ export const createFork = (
 export const syncUpstream = (
   owner: string,
   repo: string,
-  branch: string,
+  branch: string
 ): Effect.Effect<MergeUpstreamResult, IntegrationError, GitHubClient> =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const client = yield* GitHubClient
     const repository = yield* requireRepositoryPath(owner, repo)
     const validatedBranch = yield* requireBranch(branch)
@@ -108,6 +112,6 @@ export const syncUpstream = (
       "POST",
       `/repos/${repository}/merge-upstream`,
       { branch: validatedBranch },
-      { schema: MergeUpstreamResult },
+      { schema: MergeUpstreamResult }
     )
   }).pipe(Effect.withSpan("GitHub.Forks.syncUpstream"))

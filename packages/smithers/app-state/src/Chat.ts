@@ -37,17 +37,50 @@
  * Notes carry a `noteVersion` when the bridge writes them: which write of the notes this is, counted where they are
  * kept. A patch whose version is no newer than the stored one changes nothing, so a delayed older note never replaces
  * a newer one.
+ *
+ * @since 1.0.0
  */
+
 import * as Schema from "effect/Schema"
 import { canonicalJson } from "./Canonical.ts"
 import { accepted, type Decision, refused } from "./Decision.ts"
 
+/**
+ * Schema or value export `MessageStatus` (message status).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const MessageStatus = Schema.Literals(["posted", "streaming", "complete", "failed"])
+/**
+ * Type definition for `MessageStatus` (message status).
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type MessageStatus = typeof MessageStatus.Type
 
+/**
+ * Schema or value export `MessageRole` (message role).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const MessageRole = Schema.Literals(["user", "assistant"])
+/**
+ * Type definition for `MessageRole` (message role).
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type MessageRole = typeof MessageRole.Type
 
+/**
+ * Schema or value export `MessageFailure` (message failure).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const MessageFailure = Schema.Literals([
   "quota",
   "rate_limited",
@@ -56,29 +89,73 @@ export const MessageFailure = Schema.Literals([
   "abandoned",
   "unfinished"
 ])
+/**
+ * Type definition for `MessageFailure` (message failure).
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type MessageFailure = typeof MessageFailure.Type
 
-/** A count or a position. Lean models it as `Nat`, so the wire refuses negatives and fractions. */
+/**
+ * A count or a position. Lean models it as `Nat`, so the wire refuses negatives and fractions.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const MessageCount = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 
-/** The longest summary: the timeline's own cap on the line it writes and shows. */
+/**
+ * The longest summary: the timeline's own cap on the line it writes and shows.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
 export const MAX_SUMMARY_LENGTH = 96
-/** The longest phase or arc: the timeline reads nothing longer as a mark. */
+/**
+ * The longest phase or arc: the timeline reads nothing longer as a mark.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
 export const MAX_MARK_LENGTH = 512
-/** The most steps one answer records. */
+/**
+ * The most steps one answer records.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
 export const MAX_PARTS = 64
-/** The longest id, flow name, model name, stop reason, revision or timestamp. */
+/**
+ * The longest id, flow name, model name, stop reason, revision or timestamp.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
 export const MAX_LABEL_LENGTH = 256
-/** The longest body a body update writes, in UTF-16 code units: the longest answer an attached agent gives. */
+/**
+ * The longest body a body update writes, in UTF-16 code units: the longest answer an attached agent gives.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
 export const MAX_BODY_LENGTH = 32_000
 /**
  * The most bytes a streamed body takes on the wire, as a JSON string in UTF-8: a UTF-16 code unit is at most three
  * bytes written as itself and six written as an escape (`\u0001`), between two quotes. A route that carries a body
  * update admits this many bytes for the body, and its envelope besides, so no body the reducer takes is refused for
  * the size of its encoding.
+ *
+ * @since 1.0.0
+ * @category constants
  */
 export const MAX_BODY_WIRE_BYTES = MAX_BODY_LENGTH * 6 + 2
-/** The longest `data` a post carries, in UTF-16 code units: a view's values as JSON text (16 KiB of ASCII). */
+/**
+ * The longest `data` a post carries, in UTF-16 code units: a view's values as JSON text (16 KiB of ASCII).
+ *
+ * @since 1.0.0
+ * @category constants
+ */
 export const MAX_DATA_LENGTH = 16_384
 
 const Label = Schema.String.check(Schema.isMaxLength(MAX_LABEL_LENGTH))
@@ -93,17 +170,39 @@ const isWhole = Schema.makeFilter((text: string) => !LONE_SURROGATE.test(text))
 const StreamedBody = Schema.String.check(Schema.isMaxLength(MAX_BODY_LENGTH), isWhole)
 const WholeLabel = Label.check(isWhole)
 
-/** The view a question was sent from, and the view's event that sent it. */
+/**
+ * The view a question was sent from, and the view's event that sent it.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const MessageSource = Schema.Struct({ viewId: WholeLabel, event: WholeLabel })
+/**
+ * Type definition for `MessageSource` (message source).
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type MessageSource = typeof MessageSource.Type
 
-/** One step an answer took: the flow it called and how the call went. */
+/**
+ * One step an answer took: the flow it called and how the call went.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const MessagePart = Schema.Struct({
   id: Label,
   kind: Schema.Literal("step"),
   flow: Label,
   status: Schema.Literals(["running", "done", "failed"])
 })
+/**
+ * Type definition for `MessagePart` (message part).
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type MessagePart = typeof MessagePart.Type
 
 const originFields = {
@@ -138,22 +237,72 @@ const notesFields = {
   noteVersion: Schema.optionalKey(MessageCount)
 }
 
-/** What a post sets once. */
+/**
+ * What a post sets once.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const MessageOrigin = Schema.Struct(originFields)
+/**
+ * Type definition for `MessageOrigin` (message origin).
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type MessageOrigin = typeof MessageOrigin.Type
 
-/** What a run writes while its message streams. Frozen once the status is terminal. */
+/**
+ * What a run writes while its message streams. Frozen once the status is terminal.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const MessageRun = Schema.Struct(runFields)
+/**
+ * Type definition for `MessageRun` (message run).
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type MessageRun = typeof MessageRun.Type
 
-/** What anyone may still write once the message is terminal. */
+/**
+ * What anyone may still write once the message is terminal.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const MessageNotes = Schema.Struct(notesFields)
+/**
+ * Type definition for `MessageNotes` (message notes).
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type MessageNotes = typeof MessageNotes.Type
 
-/** A metadata patch: each field it has replaces the message's, each field it lacks leaves the message's. */
+/**
+ * A metadata patch: each field it has replaces the message's, each field it lacks leaves the message's.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const MessageMetadata = Schema.Struct({ ...runFields, ...notesFields })
+/**
+ * Type definition for `MessageMetadata` (message metadata).
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type MessageMetadata = typeof MessageMetadata.Type
 
+/**
+ * Schema or value export `Message` (message).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const Message = Schema.Struct({
   id: Schema.String,
   author: Schema.String,
@@ -164,13 +313,43 @@ export const Message = Schema.Struct({
   ...runFields,
   ...notesFields
 })
+/**
+ * Type definition for `Message` (message).
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type Message = typeof Message.Type
 
+/**
+ * Schema or value export `Chat` (chat).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const Chat = Schema.Struct({ messages: Schema.Array(Message) })
+/**
+ * Type definition for `Chat` (chat).
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type Chat = typeof Chat.Type
 
+/**
+ * Initial state value `emptyChat` (empty chat).
+ *
+ * @since 1.0.0
+ * @category constants
+ */
 export const emptyChat: Chat = { messages: [] }
 
+/**
+ * Schema or value export `PostMessage` (post message).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const PostMessage = Schema.TaggedStruct("PostMessage", {
   messageId: Schema.String,
   author: Schema.String,
@@ -179,10 +358,22 @@ export const PostMessage = Schema.TaggedStruct("PostMessage", {
   ...runFields,
   ...notesFields
 })
+/**
+ * Schema or value export `UpdateMessageStatus` (update message status).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const UpdateMessageStatus = Schema.TaggedStruct("UpdateMessageStatus", {
   messageId: Schema.String,
   status: MessageStatus
 })
+/**
+ * Schema or value export `UpdateMessageMetadata` (update message metadata).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const UpdateMessageMetadata = Schema.TaggedStruct("UpdateMessageMetadata", {
   messageId: Schema.String,
   ...runFields,
@@ -191,15 +382,36 @@ export const UpdateMessageMetadata = Schema.TaggedStruct("UpdateMessageMetadata"
 /**
  * The whole body `author` has written of its message so far. `author` is who submits it, as the shard admitted them:
  * the reducer refuses anyone but the message's own author.
+ *
+ * @since 1.0.0
+ * @category schemas
  */
 export const UpdateMessageBody = Schema.TaggedStruct("UpdateMessageBody", {
   messageId: Schema.String,
   author: Schema.String,
   body: StreamedBody
 })
+/**
+ * Schema or value export `ChatCommand` (chat command).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const ChatCommand = Schema.Union([PostMessage, UpdateMessageStatus, UpdateMessageMetadata, UpdateMessageBody])
+/**
+ * Type definition for `ChatCommand` (chat command).
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type ChatCommand = typeof ChatCommand.Type
 
+/**
+ * Schema or value export `MessagePosted` (message posted).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const MessagePosted = Schema.TaggedStruct("MessagePosted", {
   id: Schema.String,
   author: Schema.String,
@@ -208,23 +420,58 @@ export const MessagePosted = Schema.TaggedStruct("MessagePosted", {
   ...runFields,
   ...notesFields
 })
+/**
+ * Schema or value export `MessageStatusUpdated` (message status updated).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const MessageStatusUpdated = Schema.TaggedStruct("MessageStatusUpdated", {
   id: Schema.String,
   status: MessageStatus
 })
+/**
+ * Schema or value export `MessageMetadataUpdated` (message metadata updated).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const MessageMetadataUpdated = Schema.TaggedStruct("MessageMetadataUpdated", {
   id: Schema.String,
   ...runFields,
   ...notesFields
 })
+/**
+ * Schema or value export `MessageBodyUpdated` (message body updated).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const MessageBodyUpdated = Schema.TaggedStruct("MessageBodyUpdated", {
   id: Schema.String,
   body: StreamedBody
 })
+/**
+ * Schema or value export `ChatEvent` (chat event).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const ChatEvent = Schema.Union([MessagePosted, MessageStatusUpdated, MessageMetadataUpdated, MessageBodyUpdated])
+/**
+ * Type definition for `ChatEvent` (chat event).
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type ChatEvent = typeof ChatEvent.Type
 
-/** Every reason the reducer refuses a command for: fixed codes, safe to log and to count by. */
+/**
+ * Every reason the reducer refuses a command for: fixed codes, safe to log and to count by.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const CHAT_REFUSALS = [
   "message_conflict",
   "message_missing",
@@ -235,6 +482,12 @@ export const CHAT_REFUSALS = [
   "terminal_body",
   "body_conflict"
 ] as const
+/**
+ * Type definition for `ChatRefusal` (chat refusal).
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type ChatRefusal = (typeof CHAT_REFUSALS)[number]
 
 const ORIGIN_KEYS = Object.keys(originFields) as ReadonlyArray<keyof MessageOrigin>
@@ -254,13 +507,28 @@ const pick = <A extends object>(keys: ReadonlyArray<keyof A>, source: A): A => {
   return out as A
 }
 
-/** The origin fields `source` holds: a message's, a post's, or a posted event's. */
+/**
+ * The origin fields `source` holds: a message's, a post's, or a posted event's.
+ *
+ * @since 1.0.0
+ * @category utilities
+ */
 export const originOf = (source: MessageOrigin): MessageOrigin => pick(ORIGIN_KEYS, source)
 
-/** The run fields `source` holds. */
+/**
+ * The run fields `source` holds.
+ *
+ * @since 1.0.0
+ * @category utilities
+ */
 export const runOf = (source: MessageRun): MessageRun => pick(RUN_KEYS, source)
 
-/** The run and notes fields `source` holds: a message's, an update's, or an updated event's. */
+/**
+ * The run and notes fields `source` holds: a message's, an update's, or an updated event's.
+ *
+ * @since 1.0.0
+ * @category utilities
+ */
 export const metadataOf = (source: MessageMetadata): MessageMetadata => pick(METADATA_KEYS, source)
 
 const same = (left: unknown, right: unknown): boolean => canonicalJson(left) === canonicalJson(right)
@@ -268,13 +536,26 @@ const same = (left: unknown, right: unknown): boolean => canonicalJson(left) ===
 /**
  * The owner name ChatApi's bridge writes question `questionId` under, and no one else: a person's, so the message reads
  * as a question, and no signed-in person's. It names the question and nobody.
+ *
+ * @since 1.0.0
+ * @category utilities
  */
 export const questionOwner = (questionId: string): string => `person:question:${questionId}`
 
-/** The owner name ChatApi's bridge writes answer `answerId` under, and no one else. It names the answer and nobody. */
+/**
+ * The owner name ChatApi's bridge writes answer `answerId` under, and no one else. It names the answer and nobody.
+ *
+ * @since 1.0.0
+ * @category utilities
+ */
 export const answerOwner = (answerId: string): string => `answer:${answerId}`
 
-/** Whether the bridge posted `message`: its author is the bridge's owner name for its own id. */
+/**
+ * Whether the bridge posted `message`: its author is the bridge's owner name for its own id.
+ *
+ * @since 1.0.0
+ * @category utilities
+ */
 export const isBridged = (message: Pick<Message, "id" | "author">): boolean =>
   message.author === questionOwner(message.id) || message.author === answerOwner(message.id)
 
@@ -283,10 +564,18 @@ export const isBridged = (message: Pick<Message, "id" | "author">): boolean =>
  * position, a `hubSeq` or a floor one or two past one, so under this ceiling `placesOf` adds exactly: a double steps
  * by one up to `2 ** 53`, and Lean's `Nat` agrees with it on every admitted position. A higher position is no
  * position at all, whoever posted it; the shard also refuses a post that names one (worker/chat/MessagesShard.ts).
+ *
+ * @since 1.0.0
+ * @category constants
  */
 export const MAX_ADMITTED_POSITION = 2 ** 50
 
-/** The `position` a post named, when a reader admits it (Lean's `MessageOrigin.place`). */
+/**
+ * The `position` a post named, when a reader admits it (Lean's `MessageOrigin.place`).
+ *
+ * @since 1.0.0
+ * @category utilities
+ */
 export const placeOf = (origin: Pick<MessageOrigin, "position">): number | undefined =>
   origin.position !== undefined && origin.position <= MAX_ADMITTED_POSITION ? origin.position : undefined
 
@@ -300,6 +589,9 @@ export const placeOf = (origin: Pick<MessageOrigin, "position">): number | undef
  * - any other message is anchored at its `hubSeq`, and never below the floor: one past the highest anchor before it,
  *   and two past a bridge question's position, whose next place is its answer's. A `position` its post carries is
  *   ignored.
+ *
+ * @since 1.0.0
+ * @category utilities
  */
 export const placesOf = (messages: ReadonlyArray<Message>): ReadonlyArray<number> => {
   let floor = 0
@@ -320,12 +612,29 @@ export const placesOf = (messages: ReadonlyArray<Message>): ReadonlyArray<number
   })
 }
 
+/**
+ * Pure state-machine helper `findMessage` (find message).
+ *
+ * @since 1.0.0
+ * @category utilities
+ */
 export const findMessage = (chat: Chat, id: string): Message | undefined =>
   chat.messages.find((message) => message.id === id)
 
-/** A terminal status is never overwritten by a later, stale update. */
+/**
+ * A terminal status is never overwritten by a later, stale update.
+ *
+ * @since 1.0.0
+ * @category utilities
+ */
 export const isTerminal = (status: MessageStatus): boolean => status === "complete" || status === "failed"
 
+/**
+ * Pure state-machine helper `decideChat` (decide chat).
+ *
+ * @since 1.0.0
+ * @category utilities
+ */
 export const decideChat = (chat: Chat, command: ChatCommand): Decision<ChatEvent, ChatRefusal> => {
   switch (command._tag) {
     case "PostMessage": {
@@ -389,6 +698,12 @@ export const decideChat = (chat: Chat, command: ChatCommand): Decision<ChatEvent
   }
 }
 
+/**
+ * Pure state-machine helper `evolveChat` (evolve chat).
+ *
+ * @since 1.0.0
+ * @category utilities
+ */
 export const evolveChat = (chat: Chat, hubSeq: number, event: ChatEvent): Chat => {
   switch (event._tag) {
     case "MessagePosted":

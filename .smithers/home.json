@@ -1,233 +1,55 @@
 {
-  "docs": "https://smithers.sh/llms.txt",
-  "sections": [
+  "blocks": [
     {
-      "title": "Maintainer control room",
-      "audience": "maintainer",
-      "blocks": [
+      "type": "prompt",
+      "title": "Ask about Smithers",
+      "placeholder": "Ask Smithers…"
+    },
+    {
+      "type": "links",
+      "links": [
         {
-          "type": "action",
-          "flow": "branch.new",
-          "title": "New branch",
-          "key": "b"
+          "label": "Install Smithers",
+          "url": "https://smithers.sh/docs/installation/"
         },
         {
-          "type": "stack"
+          "label": "Docs",
+          "url": "https://smithers.sh/docs/"
         },
         {
-          "type": "issues"
-        },
-        {
-          "type": "runs"
-        },
-        {
-          "type": "cards",
-          "title": "Post-merge automation and trust",
-          "cards": [
-            {
-              "title": "Automatic releases and docs",
-              "text": "Merging to main dispatches backpressure-audit, wiki-refresh, mythical-fold, docs-publish, and release."
-            },
-            {
-              "title": "One-time sandbox auth",
-              "text": "Open Connect agent to print a single-use smot_ token for Cloudflare sandboxes and headless agents."
-            },
-            {
-              "title": "Trusted gate isolation",
-              "text": "Only controlled Smithers sandboxes and maintainers write the shared build cache or satisfy merge gates."
-            },
-            {
-              "title": "Product manager view switcher",
-              "text": "Preview Maintainer, Contributor, and Viewer layouts directly from the View as bar above."
-            }
-          ]
+          "label": "Report a bug",
+          "url": "https://smithers.sh/bug"
         }
       ]
     },
     {
-      "title": "Contributor workspace",
-      "audience": "contributor",
-      "blocks": [
-        {
-          "type": "code",
-          "title": "Connect your agent over authenticated cloud MCP",
-          "language": "sh",
-          "code": "claude mcp add --transport http smithers https://smithers.sh/smithersai/smithers/mcp"
-        },
-        {
-          "type": "stack"
-        },
-        {
-          "type": "flows",
-          "title": "Repository flows"
-        },
-        {
-          "type": "cards",
-          "title": "How a contribution lands",
-          "cards": [
-            {
-              "title": "Pick a public TODO or open an issue",
-              "text": "Browse the public TODO stack or call todo_list and issue_create through Smithers MCP."
-            },
-            {
-              "title": "Stack changesets and publish untrusted audits",
-              "text": "Run uphill locally and call audit_report_publish. Community runs are encouraged and stay cache isolated."
-            },
-            {
-              "title": "Controlled sandbox verification",
-              "text": "A maintainer re-runs checks in a controlled Smithers sandbox and merges your pull request with credit."
-            },
-            {
-              "title": "Automatic release and wiki refresh",
-              "text": "Landing on main mirrors to GitHub and updates releases, docs, project wiki, and mythical history."
-            }
-          ]
-        },
-        {
-          "type": "links",
-          "title": "Factory surfaces",
-          "links": [
-            {
-              "label": "Backpressure audit",
-              "url": "https://smithers.sh/smithersai/smithers/-/uphill"
-            },
-            {
-              "label": "Project wiki",
-              "url": "https://smithers.sh/smithersai/smithers/-/wiki"
-            },
-            {
-              "label": "Mythical history",
-              "url": "https://smithers.sh/smithersai/smithers/-/mythical"
-            },
-            {
-              "label": "Public TODO stack",
-              "url": "https://smithers.sh/smithersai/smithers/stack"
-            }
-          ]
-        }
-      ]
+      "type": "markdown",
+      "path": "docs/fixed-by-agents.md",
+      "title": "Fixed by agents"
     },
     {
-      "audience": "everyone",
-      "blocks": [
-        {
-          "type": "hero",
-          "title": "Smithers",
-          "tagline": "The durable coding factory for open source repositories",
-          "text": "Public TODO stacks, Lighthouse backpressure audits, an Obsidian wiki, mythical history, a shared cloud object store, and an authenticated MCP server at smithers.sh/org/repo, mirroring cleanly to GitHub.",
-          "install": "claude mcp add --transport http smithers https://smithers.sh/smithersai/smithers/mcp",
-          "actions": [
-            {
-              "label": "Backpressure audit",
-              "url": "https://smithers.sh/smithersai/smithers/-/uphill"
-            },
-            {
-              "label": "Project wiki",
-              "url": "https://smithers.sh/smithersai/smithers/-/wiki"
-            },
-            {
-              "label": "Add your repo",
-              "url": "https://smithers.sh/#waitlist"
-            }
-          ],
-          "announcement": {
-            "label": "Building Smithers publicly on Smithers Cloud",
-            "url": "https://smithers.sh/smithersai/smithers/-/factory"
-          }
-        },
-        {
-          "type": "stats",
-          "stats": [
-            {
-              "value": "Public",
-              "label": "TODOs and factory"
-            },
-            {
-              "value": "Cloud R2",
-              "label": "Shared object store"
-            },
-            {
-              "value": "Single use",
-              "label": "Sandbox auth tokens"
-            },
-            {
-              "value": "Isolated",
-              "label": "Untrusted community runs"
-            }
-          ]
-        },
-        {
-          "type": "code",
-          "file": ".smithers/workflows/backpressure-audit.ts",
-          "language": "ts",
-          "code": "import { Flow } from \"@smthrs/flow\"\nimport { Node } from \"@smthrs/plan\"\nimport { CiJob } from \"@smthrs/sandbox\"\nimport { Schema } from \"effect\"\n\nconst auditJob = CiJob.make(\"backpressure-audit\", {\n  steps: [\n    { name: \"uphill-check\", run: \"uphill check\" },\n    { name: \"uphill-report\", run: \"uphill --compact\" }\n  ]\n})\n\nexport default Flow.make(\"backpressure-audit\", {\n  description: \"Score backpressure metrics and publish a Lighthouse audit report\",\n  payload: { target: CiJob.Target },\n  success: Schema.Struct({ audit: CiJob.Result }),\n  body: Node.capture({}, ({ target }) => Node.all({ audit: auditJob.call(target) }))\n})"
-        },
-        {
-          "type": "cards",
-          "title": "Why open source teams run on Smithers",
-          "cards": [
-            {
-              "title": "Authenticated cloud MCP",
-              "text": "Agents create artifacts, draft TODOs, open issues, stack changesets, update wiki pages, and publish audits."
-            },
-            {
-              "title": "One-time sandbox auth",
-              "text": "Print single-use short-lived tokens for sandboxes and agents. Redeemed atomically once with zero long-lived keys."
-            },
-            {
-              "title": "Lighthouse backpressure",
-              "text": "Every commit scores against continuous Uphill targets. Untrusted community runs stay isolated from trusted gates."
-            },
-            {
-              "title": "Automatic post-merge",
-              "text": "Merging from Smithers Cloud to GitHub automatically triggers releases, docs publishing, wiki refresh, and mythical folds."
-            },
-            {
-              "title": "Shared cloud object store",
-              "text": "Build cache, audit reports, artifacts, wiki snapshots, and changeset stacks share one content-addressed cloud store."
-            },
-            {
-              "title": "Wiki and mythical history",
-              "text": "Browse an Obsidian-compatible project wiki alongside a clean linear commit narrative verified tree-equal to main."
-            }
-          ]
-        },
-        {
-          "type": "links",
-          "title": "Explore this factory",
-          "links": [
-            {
-              "label": "Backpressure audit",
-              "url": "https://smithers.sh/smithersai/smithers/-/uphill"
-            },
-            {
-              "label": "Project wiki",
-              "url": "https://smithers.sh/smithersai/smithers/-/wiki"
-            },
-            {
-              "label": "Mythical history",
-              "url": "https://smithers.sh/smithersai/smithers/-/mythical"
-            },
-            {
-              "label": "Public TODO stack",
-              "url": "https://smithers.sh/smithersai/smithers/stack"
-            },
-            {
-              "label": "GitHub mirror",
-              "url": "https://github.com/smithersai/smithers"
-            },
-            {
-              "label": "Request Smithers for your repo",
-              "url": "https://smithers.sh/#waitlist"
-            }
-          ]
-        },
-        {
-          "type": "prompt",
-          "title": "Make your first contribution",
-          "placeholder": "Ask about Smithers architecture, TODOs, or flows…"
-        }
-      ]
+      "type": "app",
+      "flow": "issue.implement",
+      "title": "Fix an issue",
+      "picture": "issue"
+    },
+    {
+      "type": "app",
+      "flow": "prs.triage",
+      "title": "Review a PR",
+      "picture": "review"
+    },
+    {
+      "type": "app",
+      "flow": "wiki.ask",
+      "title": "Ask the codebase",
+      "picture": "wiki"
+    },
+    {
+      "type": "app",
+      "flow": "triggers.register",
+      "title": "Run it every night",
+      "picture": "schedule"
     }
   ]
 }

@@ -14,6 +14,7 @@
  */
 export const publishedPackages = [
   "@smthrs/agent",
+  "@smthrs/app-core",
   "@smthrs/artifacts",
   "@smthrs/build",
   "@smthrs/build-cli",

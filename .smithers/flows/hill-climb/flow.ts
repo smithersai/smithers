@@ -6,8 +6,8 @@ import { Schema } from "effect"
 const measure = CiJob.make("measure", {
   steps: [
     { name: "rules", run: "uphill rules" },
-    { name: "measure", run: "uphill --compact" },
-  ],
+    { name: "measure", run: "uphill --compact" }
+  ]
 })
 
 export default Flow.make("hill-climb", {
@@ -17,8 +17,8 @@ export default Flow.make("hill-climb", {
     repo: Schema.String,
     sha: Schema.String,
     ref: Schema.String,
-    event: Schema.String,
+    event: Schema.String
   },
   success: Schema.Struct({ measure: CiJob.Result }),
-  body: (run) => Node.all({ measure: measure.call(run) }),
+  body: (run) => Node.all({ measure: measure.call(run) })
 })

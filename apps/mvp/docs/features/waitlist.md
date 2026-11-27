@@ -1,6 +1,6 @@
 # Repository waitlist
 
-People can request hosting for a repository that is not on Smithers yet through `POST /api/waitlist/join`. [Decision 0172](../decisions/0172-ux-ui-workbench-and-minimal-text.md) records the intent-triggered UX.
+People can request hosting for a repository that is not on Smithers yet through `POST /api/waitlist/join`. [Decision 0172](../decisions/0172-progressive-disclosure-and-cause-receipts.md) records the intent-triggered UX.
 
 ## Contract
 

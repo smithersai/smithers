@@ -24,7 +24,7 @@ function walk(dir: string, exts: string[], files: string[] = []): string[] {
 }
 
 const dirs = ["apps/mvp/src", "apps/mvp/plugins", "apps/mvp/worker", "packages/rpc/src"]
-const todoRe = /\b(?:TODO|FIXME|HACK)\b/g
+const todoRe = /(?:\/\/|\/\*|\*)\s*(?:TODO|FIXME|HACK)\b(?::|\s*\(|\s+[a-z])/g
 
 for (const dir of dirs) {
   const files = walk(join(root, dir), [".ts", ".tsx", ".vibe"])

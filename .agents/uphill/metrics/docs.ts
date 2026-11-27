@@ -33,7 +33,7 @@ let broken = 0
 if (existsSync(featuresDir)) {
   for (const file of readdirSync(featuresDir).filter((f) => f.endsWith(".md")).sort()) {
     const full = join(featuresDir, file)
-    const content = readFileSync(full, "utf8")
+    const content = readFileSync(full, "utf8").replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]+`/g, "")
     let fileBroken = 0
     for (const match of content.matchAll(linkRe)) {
       const target = match[1]!

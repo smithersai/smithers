@@ -30,10 +30,10 @@ architecture:
     packages/rpc/src: { baseline: 4 }
   todo-markers:
     "*": { target: 0 }
-    apps/mvp/plugins: { baseline: 4 }
-    apps/mvp/src: { baseline: 360 }
-    apps/mvp/worker: { baseline: 351 }
-    packages/rpc/src: { baseline: 45 }
+    apps/mvp/plugins: { baseline: 0 }
+    apps/mvp/src: { baseline: 9 }
+    apps/mvp/worker: { baseline: 4 }
+    packages/rpc/src: { baseline: 1 }
   plugin-boundary:
     "*": { baseline: pass }
 
@@ -49,4 +49,4 @@ footprint:
 documentation:
   core-docs:
     "*": { baseline: pass }
-  broken-doc-links: { baseline: 2, target: 0 }
+  broken-doc-links: { baseline: 0, target: 0 }

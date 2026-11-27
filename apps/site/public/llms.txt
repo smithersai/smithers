@@ -38,6 +38,7 @@
 - [Smithers API cheat sheet](https://smithers.sh/docs/reference/api/cheat-sheet/): The complete top-level Smithers API used in WORKSPACE.ts and PACKAGE.ts, shown through examples.
 - [@smthrs/targets](https://smithers.sh/docs/reference/api/targets/): What @smthrs/targets exports: the Smithers namespace of workspace declarations, catalog rules, macros, actions, and errors, with types from source.
 - [@smthrs/agent](https://smithers.sh/docs/reference/api/agent/): The Smithers agent: the production agent loop composed on the durable engine, plus the two adapters that run it, AgentSession for control-plane runs and AgentAction for typed workflow steps
+- [@smthrs/app-core](https://smithers.sh/docs/reference/api/app-core/): The one principal-bound Smithers core, and its four generated clients: MCP, CLI, SDK and GUI
 - [@smthrs/artifacts](https://smithers.sh/docs/reference/api/artifacts/): Effect service for the Smithers content-addressed artifact store, local and remote
 - [@smthrs/build](https://smithers.sh/docs/reference/api/build/): Bazel-style TypeScript workflow orchestration with explicit pnpm installation
 - [@smthrs/build-cli](https://smithers.sh/docs/reference/api/build-cli/): Executes PACKAGE.ts target graphs with content-addressed caching
@@ -107,6 +108,7 @@
 - [@smthrs/scorers](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/scorers/docs): Flow-native scoring and durable observations for caller-owned flow steps
 - [@smthrs/std](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/std/docs): The flows standard tool library: filesystem, search, HTTP, web-search, shell, and language-server flows
 - [@smthrs/triggers](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/triggers/docs): Durable cron triggers and channel contracts for flows
+- [@smthrs/app-core](https://github.com/smithersai/smithers/tree/main/packages/smithers/app-core/docs): The one principal-bound Smithers core, and its four generated clients: MCP, CLI, SDK and GUI
 - [@smthrs/build](https://github.com/smithersai/smithers/tree/main/packages/smithers/build/docs): Bazel-style TypeScript workflow orchestration with explicit pnpm installation
 - [@smthrs/build-cli](https://github.com/smithersai/smithers/tree/main/packages/smithers/build/build-cli/docs): Executes PACKAGE.ts target graphs with content-addressed caching
 - [@smthrs/targets](https://github.com/smithersai/smithers/tree/main/packages/smithers/build/targets/docs): Typed legacy declaration rules and macros for smithers build

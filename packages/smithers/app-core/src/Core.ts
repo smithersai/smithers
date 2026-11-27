@@ -667,7 +667,10 @@ export const make = (options: {
           return Object.freeze({ runId, outputRef: receipt.outputRef, journalSeq, output: value, cause: receipt })
         },
         publish: (requested) => {
-          for (const [collection, rows] of draft) state.set(collection, merged(collection)), rows.clear()
+          for (const [collection, rows] of draft) {
+            state.set(collection, merged(collection))
+            rows.clear()
+          }
           head = requested.journalSeq
           ledger.record(requested.cause, flow.private ? facts.subject : undefined)
           for (const listener of Array.from(listeners)) listener()

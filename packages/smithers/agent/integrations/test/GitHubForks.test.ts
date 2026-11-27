@@ -16,14 +16,14 @@ const mockClient = (handler: (url: string, method: string, body: unknown) => { s
         request,
         new Response(JSON.stringify(res.body), {
           status: res.status,
-          headers: { "content-type": "application/json" },
-        }),
-      ),
+          headers: { "content-type": "application/json" }
+        })
+      )
     )
   })
   return GitHub.GitHubClient.layer({
     token: Redacted.make("ghu_test_token_1234567890"),
-    apiBaseUrl: "https://api.github.com",
+    apiBaseUrl: "https://api.github.com"
   }).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, http)))
 }
 
@@ -41,17 +41,17 @@ describe("GitHub.Forks", () => {
           owner: { login: "alice" },
           default_branch: "main",
           html_url: "https://github.com/alice/smithers",
-          parent: { name: "smithers", full_name: "smithersai/smithers", owner: { login: "smithersai" } },
-        },
+          parent: { name: "smithers", full_name: "smithersai/smithers", owner: { login: "smithersai" } }
+        }
       }
     })
     const forked = await Effect.runPromise(
-      GitHub.Forks.createFork("smithersai", "smithers", { defaultBranchOnly: true }).pipe(Effect.provide(layer)),
+      GitHub.Forks.createFork("smithersai", "smithers", { defaultBranchOnly: true }).pipe(Effect.provide(layer))
     )
     expect(seen).toEqual({
       url: "https://api.github.com/repos/smithersai/smithers/forks",
       method: "POST",
-      body: { default_branch_only: true },
+      body: { default_branch_only: true }
     })
     expect(forked.full_name).toBe("alice/smithers")
     expect(forked.parent?.full_name).toBe("smithersai/smithers")
@@ -60,7 +60,7 @@ describe("GitHub.Forks", () => {
   test("createFork rejects path traversal coordinates", async () => {
     const layer = mockClient(() => ({ status: 200, body: {} }))
     const exit = await Effect.runPromiseExit(
-      GitHub.Forks.createFork("..", "smithers").pipe(Effect.provide(layer)),
+      GitHub.Forks.createFork("..", "smithers").pipe(Effect.provide(layer))
     )
     expect(exit._tag).toBe("Failure")
   })
@@ -71,16 +71,20 @@ describe("GitHub.Forks", () => {
       seen = { url, method, body }
       return {
         status: 200,
-        body: { message: "Successfully fetched and fast-forwarded from upstream.", merge_type: "fast-forward", base_branch: "smithersai:main" },
+        body: {
+          message: "Successfully fetched and fast-forwarded from upstream.",
+          merge_type: "fast-forward",
+          base_branch: "smithersai:main"
+        }
       }
     })
     const res = await Effect.runPromise(
-      GitHub.Forks.syncUpstream("alice", "smithers", "main").pipe(Effect.provide(layer)),
+      GitHub.Forks.syncUpstream("alice", "smithers", "main").pipe(Effect.provide(layer))
     )
     expect(seen).toEqual({
       url: "https://api.github.com/repos/alice/smithers/merge-upstream",
       method: "POST",
-      body: { branch: "main" },
+      body: { branch: "main" }
     })
     expect(res.merge_type).toBe("fast-forward")
   })

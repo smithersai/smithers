@@ -188,12 +188,12 @@ test("workspaces covers every non-private engine and agent package under package
   assert.ok(tooling.length > 0)
   assert.deepEqual(
     tooling.filter(([, manifest]) => manifest.private !== true).map(([, manifest]) => manifest.name).sort(),
-    ["@smthrs/build", "@smthrs/build-cli", "@smthrs/targets", "smithers-ci"]
+    ["@smthrs/app-core", "@smthrs/build", "@smthrs/build-cli", "@smthrs/targets", "smithers-ci"]
   )
   assert.deepEqual(
     tooling.filter(([, manifest]) => manifest.private === true).map(([, manifest]) => manifest.name).sort(),
     [
-      "@smthrs/app-core", "@smthrs/app-state", "@smthrs/build-infra", "@smthrs/eval-agent",
+      "@smthrs/app-state", "@smthrs/build-infra", "@smthrs/eval-agent",
       "@smthrs/lemmascript", "@smthrs/repo-targets", "@smthrs/rpc", "smithers-comments"
     ]
   )
@@ -240,7 +240,7 @@ test("the packed set is exactly the 53 names the RC contract publishes", () => {
   const manifests = readWorkspaceManifests()
   const packed = packedWorkspaces.map((directory) => manifests.get(directory).name)
 
-  assert.equal(publishedPackages.length, 53)
+  assert.equal(publishedPackages.length, 54)
   assert.deepEqual([...packed].sort(), [...publishedPackages].sort())
   assert.ok(publishedPackages.includes("smthrs"), "the unscoped deprecation notice publishes with the RC")
 })

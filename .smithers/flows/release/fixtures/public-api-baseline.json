@@ -414,6 +414,66 @@
         "internal/memory/wiki.d.ts": "5825518d9217285f4c2b11a337c0627556b2c35f8985018cecb1e6f1b0d94519"
       }
     },
+    "@smthrs/app-core": {
+      "exports": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./CauseReceipt": {
+          "types": "./dist/esm/CauseReceipt.d.ts",
+          "import": "./dist/esm/CauseReceipt.js",
+          "require": "./dist/cjs/CauseReceipt.js"
+        },
+        "./CliAdapter": {
+          "types": "./dist/esm/CliAdapter.d.ts",
+          "import": "./dist/esm/CliAdapter.js",
+          "require": "./dist/cjs/CliAdapter.js"
+        },
+        "./Core": {
+          "types": "./dist/esm/Core.d.ts",
+          "import": "./dist/esm/Core.js",
+          "require": "./dist/cjs/Core.js"
+        },
+        "./GuiAdapter": {
+          "types": "./dist/esm/GuiAdapter.d.ts",
+          "import": "./dist/esm/GuiAdapter.js",
+          "require": "./dist/cjs/GuiAdapter.js"
+        },
+        "./McpAdapter": {
+          "types": "./dist/esm/McpAdapter.d.ts",
+          "import": "./dist/esm/McpAdapter.js",
+          "require": "./dist/cjs/McpAdapter.js"
+        },
+        "./Principal": {
+          "types": "./dist/esm/Principal.d.ts",
+          "import": "./dist/esm/Principal.js",
+          "require": "./dist/cjs/Principal.js"
+        },
+        "./SdkAdapter": {
+          "types": "./dist/esm/SdkAdapter.d.ts",
+          "import": "./dist/esm/SdkAdapter.js",
+          "require": "./dist/cjs/SdkAdapter.js"
+        },
+        "./index": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        }
+      },
+      "declarations": {
+        "CauseReceipt.d.ts": "0d3df3b08e3402e9d3cd75af4efe8b40a8a86bfde003acf74798e3a1c4643891",
+        "CliAdapter.d.ts": "735a997596412ea1a72154b31c1e225682cab0622963561ef23d7ad1e3f81f51",
+        "Core.d.ts": "36243e0a8ec1c29ee11c13a45d6879ffa41ff1aba7ec793cef9ce7663b26d575",
+        "GuiAdapter.d.ts": "82943c59a90e750245db9a0a4952bb33b315f751bd78b2b1907e8db45eff9ba5",
+        "McpAdapter.d.ts": "0b3ff1c2064c0827b9c605408ff8ab0091b167213dbb5384cdc8c19e358af3bd",
+        "Principal.d.ts": "9321ebde2d320dd7a8269629ceb71284f9c30575a9b4a8660bbb599c48a25d9e",
+        "SdkAdapter.d.ts": "70ec8961e2186c6f23b8d5c1a5ab2cb6bab23e8e3351b364b8cf7510c937f299",
+        "index.d.ts": "3f0c28723acf0a3c12cd6e389c4e2a97ab6b52f0fd6e88b2762ed82c87bf7247"
+      }
+    },
     "@smthrs/artifacts": {
       "exports": {
         "./package.json": "./package.json",
@@ -5768,7 +5828,7 @@
         "core/SourceRecord.d.ts": "66156ff70e2bcb08293b665471d54e964a21f14a859e8632941477091b5410aa",
         "core/SourceStore.d.ts": "4bf85d28b8d6181db8a1b801e182609fbe68a61e118335b7ca9ccee8f2f418fc",
         "core/Sync.d.ts": "0cd6a856250d6478eabbcfbc8f91b5369c2f800071c1b945307130190bff6630",
-        "github.d.ts": "a995b98d081dcf617e07a492036ab0c5b3e9887fd11e1805b1069af21b0a66cb",
+        "github.d.ts": "7f487802ee4539ff5cc99870d00ba734ac941cc993cda8c20c799be7b932d7b9",
         "github/Actions.d.ts": "7fcb37a9b5cc68c4f5a625f1028ad10f0f3f97432e7004bd3ecd5242cc6b7488",
         "github/AppAuth.d.ts": "7d99c4530d6d9cf957e024a894403f6a5b3322c43be83d4cca4f30ec1de3c609",
         "github/Auth.d.ts": "ffa64faf03642bf8dad093e4a3889105f1190c9a5cd667ac9a53a9e38b2c3af4",
@@ -5782,6 +5842,7 @@
         "github/Contents.d.ts": "4da347c7b0aa410d0d26e78d7c5bd44682aea40f30971d6ec490196291bc287f",
         "github/Delegation.d.ts": "75e6022a341863921baf8fdee01705fe503f749dfd250b13638d065b5e080bfb",
         "github/DelegationPolicy.d.ts": "678b2a79d33a6b3ba5f5cefd355912a9df99452d0f59c16e04f9a208a149d65e",
+        "github/Forks.d.ts": "d5b8089fa06bffdb65f46752c8471ea4a2345bd481b776fb7c48b7f02ade4e16",
         "github/GitDatabase.d.ts": "b2fa878cf309b1eae9999bf5923ae4608e7cda4d895228f9f4b21c4e1c12b6b6",
         "github/GitHubClient.d.ts": "9ee1cf51a725fcfdf81ebab8270d2f0a06c83c67b13847b194333aeda10ab984",
         "github/IssueChanges.d.ts": "111f1e28ae647b4b83acd8aa7447826a83446b40302a4532072dfecc71104923",
@@ -7130,7 +7191,7 @@
         "SqliteStoreNode.d.ts": "5cb2e6ae7e6af86e8edd78e7d89773d66205444dcfb4a40763a69bec80ea81d7",
         "Units.d.ts": "d2afffe389895c3065cb7e85ced70c185e9faf7b59cdae018b6ef9e98b3127a7",
         "ZodSchemaHints.d.ts": "a812e183b0e239ac64dd060b331eb4a52192d44474d0dffd7ec6090c40b12451",
-        "flow/Archive.d.ts": "5c4d77078d113db195dbf50da00e055c38de723889c4f9f125dd95238e975296",
+        "flow/Archive.d.ts": "901c660245da3022561cba36dd15a92f18e3df6f7d12ce8cd88f357033e75551",
         "flow/Checkpoint.d.ts": "4ead487b7a24a3083a0ed3bb3e19cf9d87e8625eab45d46717e8d92911804c75",
         "flow/Cli.d.ts": "475176366d8b592ae7a89ade2bbbe362176ff150497eb81a89f1c1e4ef244349",
         "flow/Command.d.ts": "90de8863f1fe971a7ebe2363a77ef9d69115800f3459e9b5dfc96b345d3d8a9e",
@@ -8806,7 +8867,7 @@
         "CloudflareRuntime.d.ts": "013a78703727f9f78c6f3cebb1e84f426e2bf8716623ce076b8c4540fddecc2f",
         "ContainerSession.d.ts": "eecb84a275c03b13d83ea4757262493c8e34c32ffd380c0458ae98da68f809a1",
         "ContainerTerminal.d.ts": "86fe57f2fcd945b8cbf213e5497bf5ef6c86a27978ae569f5ac425ab74effce0",
-        "DoSqliteShard.d.ts": "6bc57796fada3aa108e4faec6ad4784b5fef9f54d1b46ad3b3c338907bf80734",
+        "DoSqliteShard.d.ts": "811da575428bdff0b8727153de9cadb5fefff0a501cc9da1d2107a032af5ad19",
         "EdgeCache.d.ts": "bc463a0d333b9377c4366182d6b185faca297a27d999eb67315a83ca24d4639e",
         "ExecutionObject.d.ts": "ae3ba97c60279f579730530592714544eb2dee9102f8c9c18fad031ee6f6886e",
         "ObjectDatabase.d.ts": "41c2066b061ecbe783be3bc6b88789b1b62fd5f7594591e83e00b854b4ec64fd",
