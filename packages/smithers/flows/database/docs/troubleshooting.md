@@ -22,7 +22,7 @@ touched, so nothing about your database path is implicated.
 `@smthrs/database/bun/BunDatabase`. Use `NodeDatabase.layer` on Node.js
 22.19.0 or later.
 
-### `<path> is not a Smithers 1.0 database (1.0.0-rc.18 does not load a 0.x smithers.db)`
+### `<path> is not a Smithers 1.0 database (1.0.0-rc.19 does not load a 0.x smithers.db)`
 
 **Code:** `unsupported_database_file`.
 

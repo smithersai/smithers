@@ -8,6 +8,8 @@ are history, not the release that carries it.
 
 ## [Unreleased]
 
+## [1.0.0-rc.19] - 2026-11-27
+
 ### Fixed
 
 - A check detail longer than 200 characters is cut between code points. A cut

@@ -19,7 +19,7 @@ from `@smthrs/platform-node`. `@smthrs/flows` does not install this host package
 `@smthrs/platform-node` at the version of `@smthrs/flows` you have:
 
 ```bash
-npm install @smthrs/platform-node@1.0.0-rc.18
+npm install @smthrs/platform-node@1.0.0-rc.19
 ```
 
 ## Write the entry module
