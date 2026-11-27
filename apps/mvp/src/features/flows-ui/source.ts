@@ -1,6 +1,6 @@
 import { parse } from "@babel/parser"
 import type { Node } from "@babel/types"
-import { PLACEMENTS, type Placement, SOURCE_PATH } from "./sourceConstants"
+import { PLACEMENTS, type Placement, SOURCE_PATH } from "./sourceConstants.ts"
 
 export { PLACEMENTS, type Placement, SOURCE_PATH }
 
