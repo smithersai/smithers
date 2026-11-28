@@ -1,7 +1,7 @@
 import { applyDocumentLocale } from "./documentLocale"
 import { PendingSnapshot } from "@smthrs/platform-browser"
 import { hostRecords, thrownName } from "./hostRecords"
-import { applyRelease, preloadKind, preloadWindow, type ReleaseReason, watchInstalls, watchUpdates } from "./pwa"
+import { applyRelease, hasNewerLiveBuild, preloadKind, preloadWindow, type ReleaseReason, type UpdateActivationSource, watchControllerUpdates, watchInstalls, watchUpdates } from "./pwa"
 import { reloadedBecause, reloadFor } from "./reloadReason"
 import { Button, EmptyState, SmithersUiStyles } from "@smthrs/ui"
 import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
@@ -132,10 +132,10 @@ const reloadWhenSafe = async (reason: ReleaseReason) => {
   }
 }
 
-const releaseActivated = () => {
+const releaseActivated = (via: UpdateActivationSource) => {
   if (updateReloading) return
   updateReloading = true
-  records.record({ _tag: "pwa.update", outcome: "activated" })
+  records.record({ _tag: "pwa.update", outcome: "activated", via })
   applyRelease({
     hidden: () => document.visibilityState === "hidden",
     listen: (signal, listener) => {
@@ -151,6 +151,11 @@ const releaseActivated = () => {
     reload: (reason) => void reloadWhenSafe(reason),
   }, delivery.recent() && navigator.onLine)
 }
+// Listen for controller replacements immediately so an update activating before deferred `registerSW()`, from a
+// waiting worker that `workbox-window` does not attach `statechange` to, or after an earlier update is never missed.
+if ("serviceWorker" in navigator) {
+  watchControllerUpdates(navigator.serviceWorker, () => releaseActivated("controllerchange"))
+}
 
 // Defer service-worker registration until the initial page load settles so SW precaching never contends with
 // critical-path JS, CSS or API traffic on a cold visit.
@@ -161,7 +166,15 @@ const startServiceWorker = () => {
       if (!registration) return
       checkAfterPreload = () => {
         // recorded: pwa.update.check logs this failed worker check
-        void registration.update().catch(() => records.record({ _tag: "pwa.update.check", trigger: "preload" }))
+        void registration.update().then(
+          () => {
+            if (updateReloading || registration.installing !== null || registration.waiting !== null || !navigator.onLine) return
+            void hasNewerLiveBuild(BUILD, window.fetch.bind(window)).then((newer) => {
+              if (newer) releaseActivated("version_mismatch")
+            })
+          },
+          () => records.record({ _tag: "pwa.update.check", trigger: "preload" }),
+        )
       }
       if (!updateReloading) delivery.check(checkAfterPreload)
       watchInstalls(registration, () => records.record({ _tag: "pwa.install" }))
@@ -183,7 +196,7 @@ const startServiceWorker = () => {
     },
     // A new release activated: it waits until the page is hidden, or needs a module only the old release had (src/pwa.ts
     // `applyRelease`, decision 0131); then the editors' gate above holds the reload until every edit is saved.
-    onNeedReload: releaseActivated,
+    onNeedReload: () => releaseActivated("workbox"),
     onRegisterError: (error: unknown) => records.record({ _tag: "pwa.register", name: thrownName(error) }),
   })
 }

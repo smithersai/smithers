@@ -175,6 +175,56 @@ export const preloadWindow = (now: () => number) => {
 /** Why a new release reloads the page (src/reloadReason.ts). */
 export type ReleaseReason = "pwa_update" | "stale_module"
 
+/** How this tab learned that a newer release is live (src/hostRecords.ts `pwa.update`). */
+export type UpdateActivationSource = "workbox" | "controllerchange" | "version_mismatch"
+
+/** Minimal ServiceWorkerContainer surface for observing controller replacements without importing DOM globals. */
+export interface ControllerContainer {
+  readonly controller: object | null
+  readonly addEventListener: (type: "controllerchange", listener: () => void) => void
+  readonly removeEventListener: (type: "controllerchange", listener: () => void) => void
+}
+
+/**
+ * Calls `activated` when a new service worker replaces a previous controller on this page.
+ *
+ * A first-visit claim (`null -> worker`) only records the initial controller and is not a release update.
+ * Replacing a non-null controller (`workerA -> workerB`) is always a release activation, including during
+ * deferred `registerSW()`, when a waiting/installing worker activates before Workbox attaches `statechange`,
+ * or on later updates after `workbox-window` removes its `updatefound` listener.
+ */
+export const watchControllerUpdates = (container: ControllerContainer, activated: () => void): (() => void) => {
+  let current = container.controller
+  const onChange = () => {
+    const next = container.controller
+    if (current !== null && next !== null && next !== current) activated()
+    current = next
+  }
+  container.addEventListener("controllerchange", onChange)
+  return () => container.removeEventListener("controllerchange", onChange)
+}
+
+/**
+ * Verifies `/version.json` after an online preload failure whose `registration.update()` found no installing or
+ * waiting worker (for example, when the new worker already took control before this bundle evaluated). Returns true
+ * only when the live build is a concrete identifier distinct from `currentBuild`; errors and `dev` builds return false.
+ */
+export const hasNewerLiveBuild = async (
+  currentBuild: string,
+  load: (input: string, init?: RequestInit) => Promise<{ readonly ok: boolean; readonly json: () => Promise<unknown> }>,
+): Promise<boolean> => {
+  if (currentBuild === "" || currentBuild === "dev") return false
+  try {
+    const response = await load("/version.json", { cache: "no-store" })
+    if (!response.ok) return false
+    const body = (await response.json()) as { readonly build?: unknown } | null
+    return typeof body?.build === "string" && body.build !== "" && body.build !== "dev" && body.build !== currentBuild
+  } catch {
+    // expected: offline or unreachable version check must never trigger a speculative reload
+    return false
+  }
+}
+
 /** The page's signals a new release waits on, and how it reloads; main.tsx gives the window's and the document's. */
 export interface ReleaseHost {
   readonly hidden: () => boolean

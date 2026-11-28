@@ -563,7 +563,10 @@ const logHostRecord = (record: HostRecord): Effect.Effect<void> => {
       return Effect.logWarning("pwa.update.check").pipe(Effect.annotateLogs({ outcome: "failed", trigger: record.trigger }))
     case "pwa.update":
       return (record.outcome === "activated" ? Effect.logInfo : Effect.logWarning)("pwa.update").pipe(
-        Effect.annotateLogs({ outcome: record.outcome }),
+        Effect.annotateLogs({
+          outcome: record.outcome,
+          ...(record.via === undefined ? {} : { via: record.via }),
+        }),
       )
     case "page.reload":
       return Effect.andThen(

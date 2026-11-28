@@ -1,5 +1,5 @@
 import type { LifecycleOutcome } from "./wipe"
-import type { UpdateTrigger } from "./pwa"
+import type { UpdateActivationSource, UpdateTrigger } from "./pwa"
 import type { ReloadReason } from "./reloadReason"
 
 // What the page's host saw go wrong that the app's program records (src/boot.ts `logHostRecords`): React's render
@@ -21,7 +21,7 @@ export type HostRecord =
   /** Asking the browser to check for a new service worker failed. */
   | { readonly _tag: "pwa.update.check"; readonly trigger: UpdateTrigger | "preload" }
   /** A new release activated and the page reloads into it, or an editor's unsaved write held the reload back. */
-  | { readonly _tag: "pwa.update"; readonly outcome: "activated" | "editor_unpersisted" }
+  | { readonly _tag: "pwa.update"; readonly outcome: "activated" | "editor_unpersisted"; readonly via?: UpdateActivationSource }
   /** This boot is a reload, and why (src/reloadReason.ts). */
   | { readonly _tag: "page.reload"; readonly reason: ReloadReason }
 

@@ -338,6 +338,7 @@ test("logs what the page's host saw, those from before it listened first: render
     host.record({ _tag: "pwa.install" })
     host.record({ _tag: "pwa.update.check", trigger: "navigation" })
     host.record({ _tag: "pwa.preload", kind: "module", network: "online", controlled: true, activated: false })
+    host.record({ _tag: "pwa.update", outcome: "activated", via: "controllerchange" })
     host.record({ _tag: "pwa.update", outcome: "activated" })
     host.record({ _tag: "pwa.update", outcome: "editor_unpersisted" })
     host.record({ _tag: "page.reload", reason: "pwa_update" })
@@ -362,6 +363,7 @@ test("logs what the page's host saw, those from before it listened first: render
     { severity: "Warn", attributes: { feature: "app", outcome: "failed", trigger: "navigation" } },
   ])
   expect(lines("pwa.update")).toEqual([
+    { severity: "Info", attributes: { feature: "app", outcome: "activated", via: "controllerchange" } },
     { severity: "Info", attributes: { feature: "app", outcome: "activated" } },
     { severity: "Warn", attributes: { feature: "app", outcome: "editor_unpersisted" } },
   ])

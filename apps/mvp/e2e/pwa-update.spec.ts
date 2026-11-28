@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import type { Page } from "@playwright/test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -9,6 +10,21 @@ import { requires } from "./target"
 import { expectServerError } from "./watch"
 
 test.use({ serviceWorkers: "allow" })
+
+/**
+ * Attaches a one-shot `controllerchange` listener inside the page before the caller triggers or releases an update,
+ * eliminating the CDP-vs-ServiceWorker-thread race where an un-awaited `page.evaluate` misses an immediate claim.
+ */
+const watchControllerChange = async (page: Page) => {
+  const handle = await page.evaluateHandle(() => ({
+    done: new Promise<void>((resolve) =>
+      navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true })),
+  }))
+  return async () => {
+    try { await handle.evaluate(({ done }) => done) }
+    finally { await handle.dispose() }
+  }
+}
 
 test("release: an open tab discovers a second production build on navigation and moves to it once hidden, never under a click", {
   annotation: { type: "summary", description: "A deploy reaches an open tab without reloading it under a click; the tab moves once hidden." },
@@ -55,12 +71,11 @@ test("release: an open tab discovers a second production build on navigation and
         await expect(page.locator('meta[name="release-test"]')).toHaveAttribute("content", "old")
       })
       await step("Navigate in the app: the new release activates and the page stays as it is", async () => {
-        const changed = page.evaluate(() =>
-          new Promise<void>((resolve) => navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true })))
+        const waitForController = await watchControllerChange(page)
         const before = documents
         // A real router link: no manual registration.update(), reload or document navigation.
         await page.getByRole("link", { name: "Flows", exact: true }).click()
-        await changed
+        await waitForController()
         expect(checks.some((record) => record.includes("navigation"))).toBe(true)
         // Five seconds after the release took over the tab, the click's page is still the old release's, not reloaded.
         await Effect.runPromise(Effect.sleep(5_000))
@@ -144,10 +159,9 @@ test("a route import lost before a new worker activates recovers once through th
       expect(records).toEqual([])
       expect(documents).toBe(before)
       await expect(unsaved).toHaveValue("fixture")
-      const controlling = page.evaluate(() => new Promise<void>((resolve) =>
-        navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true })))
+      const waitForController = await watchControllerChange(page)
       activate()
-      await controlling
+      await waitForController()
       await expect(unsaved).toHaveValue("fixture")
       await expect(page.locator('meta[name="release-test"]')).toHaveAttribute("content", "old")
       expect(records).toEqual([])
@@ -183,5 +197,59 @@ test("a route import lost before a new worker activates recovers once through th
 
       await page.goto("about:blank")
     } finally { activate(); await builds.close() }
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test("a returning controlled tab whose new worker activates before Workbox tracks it still recovers a retired route once safe", async ({ page }) => {
+  requires("localServer")
+  test.setTimeout(300_000)
+  const root = join(import.meta.dirname, "..")
+  const directory = await mkdtemp(join(tmpdir(), "pwa-returning-"))
+  const records: string[] = []
+  page.on("console", (message) => {
+    if (message.text().startsWith("page.reload")) records.push(message.text())
+  })
+  try {
+    for (const version of ["old", "new"]) {
+      await build({ root, logLevel: "error", build: { outDir: join(directory, version), emptyOutDir: true },
+        plugins: [{ name: "release-marker",
+          transformIndexHtml: (html) => html.replace("<head>", `<head><meta name="release-test" content="${version}">`)
+            .replace("<body>", '<body><input aria-label="Unsaved test input" type="password">'),
+          transform: (source, id) => id.endsWith("/screens/flows/FlowsScreen.tsx")
+            ? source + `\ndocument.documentElement.dataset.flowsRelease = "${version}";` : undefined,
+        }],
+      })
+    }
+    const builds = await serveSiteBuilds({ old: join(directory, "old"), new: join(directory, "new") })
+    const origin = builds.url.origin
+    try {
+      await page.goto(`${origin}/app`)
+      await expect(page.getByRole("link", { name: "Flows", exact: true })).toBeVisible()
+      await page.evaluate(async () => {
+        await navigator.serviceWorker.ready
+        if (!navigator.serviceWorker.controller) await new Promise<void>((resolve) =>
+          navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true }))
+      })
+      // Deploy release "new", then reload as a returning user: the old precache serves the old shell while Chromium's
+      // navigation update check installs and activates release "new" before Workbox's deferred registerSW tracks it.
+      builds.use("new")
+      await page.reload()
+      await expect(page.getByRole("link", { name: "Flows", exact: true })).toBeVisible()
+      await expect(page.locator('meta[name="release-test"]')).toHaveAttribute("content", "old")
+      const unsaved = page.getByLabel("Unsaved test input")
+      await unsaved.fill("branch-draft")
+      const lost = page.waitForResponse((r) => r.status() === 404 && /\/assets\/[^/]+\.js$/.test(new URL(r.url()).pathname))
+      await page.getByRole("link", { name: "Flows", exact: true }).click()
+      const lostResponse = await lost
+      expectServerError(404, new URL(lostResponse.url()).pathname)
+      await expect(page.getByText("Couldn't show this page", { exact: true })).toBeVisible()
+      await expect(unsaved).toHaveValue("branch-draft")
+      expect(records).toEqual([])
+      await unsaved.fill("")
+      await expect(page.locator("html")).toHaveAttribute("data-flows-release", "new", { timeout: 30_000 })
+      await expect(page.locator('meta[name="release-test"]')).toHaveAttribute("content", "new")
+      expect(records.filter((line) => line.includes("stale_module"))).toHaveLength(1)
+      await page.goto("about:blank")
+    } finally { await builds.close() }
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

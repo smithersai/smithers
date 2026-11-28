@@ -139,6 +139,7 @@ export const APP_TELEMETRY = {
     "boundary",
     "outcome",
     "stage",
+    "via",
     "trigger",
     "reason",
     "kind",

@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { describe, expect, test } from "vitest"
 import {
   applyRelease,
+  hasNewerLiveBuild,
   preloadKind,
   preloadWindow,
   PRELOAD_RECOVERY_MS,
@@ -11,8 +12,10 @@ import {
   DOCS_SITE_PATHS,
   FRAME_POLICY,
   PAGE_HEADERS,
+  type ControllerContainer,
   type ReleaseHost,
   shellCaches,
+  watchControllerUpdates,
   watchInstalls,
   watchUpdates,
   type UpdateTrigger,
@@ -257,5 +260,88 @@ describe("a service worker's install", () => {
     registration.installing = null
     for (const update of registration.updates) update()
     expect(failures).toEqual(["failed"])
+  })
+})
+
+describe("controller updates and live build verification", () => {
+  const container = (initial: object | null) => {
+    const listeners = new Set<() => void>()
+    const state = { controller: initial }
+    const surface: ControllerContainer = {
+      get controller() { return state.controller },
+      addEventListener: (_type, listener) => void listeners.add(listener),
+      removeEventListener: (_type, listener) => void listeners.delete(listener),
+    }
+    return {
+      surface,
+      listeners,
+      switchTo: (next: object | null) => {
+        state.controller = next
+        for (const listener of listeners) listener()
+      },
+    }
+  }
+
+  test("ignores first-visit claim (null -> worker) and fires whenever a later worker replaces the controller", () => {
+    const first = { id: "v1" }
+    const second = { id: "v2" }
+    const third = { id: "v3" }
+    const sw = container(null)
+    let activations = 0
+    const stop = watchControllerUpdates(sw.surface, () => { activations++ })
+    sw.switchTo(first)
+    expect(activations).toBe(0)
+    // Repeated event for the same controller is ignored.
+    sw.switchTo(first)
+    expect(activations).toBe(0)
+    // Replacing an existing controller signals a release activation.
+    sw.switchTo(second)
+    expect(activations).toBe(1)
+    // Clearing controller (null) is not an activation; a subsequent replacement after reclaim still triggers.
+    sw.switchTo(null)
+    expect(activations).toBe(1)
+    sw.switchTo(second)
+    expect(activations).toBe(1)
+    sw.switchTo(third)
+    expect(activations).toBe(2)
+    stop()
+    expect(sw.listeners.size).toBe(0)
+    sw.switchTo(first)
+    expect(activations).toBe(2)
+  })
+
+  test("catches an immediate replacement when the page loaded already controlled by an older worker", () => {
+    const oldWorker = { id: "old" }
+    const newWorker = { id: "new" }
+    const sw = container(oldWorker)
+    let activations = 0
+    const stop = watchControllerUpdates(sw.surface, () => { activations++ })
+    sw.switchTo(newWorker)
+    expect(activations).toBe(1)
+    stop()
+  })
+
+  test("hasNewerLiveBuild confirms only a concrete distinct build and stays false on dev, same build, or failure", async () => {
+    let calls = 0
+    const fake = (answer: () => Promise<{ readonly ok: boolean; readonly json: () => Promise<unknown> }>) =>
+      async (input: string, init?: RequestInit) => {
+        calls++
+        expect(input).toBe("/version.json")
+        expect(init?.cache).toBe("no-store")
+        return answer()
+      }
+
+    expect(await hasNewerLiveBuild("dev", fake(async () => ({ ok: true, json: async () => ({ build: "abc123" }) })))).toBe(false)
+    expect(await hasNewerLiveBuild("", fake(async () => ({ ok: true, json: async () => ({ build: "abc123" }) })))).toBe(false)
+    expect(calls).toBe(0)
+
+    expect(await hasNewerLiveBuild("old123", fake(async () => ({ ok: false, json: async () => ({ build: "new456" }) })))).toBe(false)
+    expect(await hasNewerLiveBuild("old123", fake(async () => ({ ok: true, json: async () => null })))).toBe(false)
+    expect(await hasNewerLiveBuild("old123", fake(async () => ({ ok: true, json: async () => ({ build: "" }) })))).toBe(false)
+    expect(await hasNewerLiveBuild("old123", fake(async () => ({ ok: true, json: async () => ({ build: "dev" }) })))).toBe(false)
+    expect(await hasNewerLiveBuild("old123", fake(async () => ({ ok: true, json: async () => ({ build: "old123" }) })))).toBe(false)
+    expect(await hasNewerLiveBuild("old123", fake(async () => { throw new TypeError("offline") }))).toBe(false)
+    expect(await hasNewerLiveBuild("old123", fake(async () => ({ ok: true, json: async () => ({ build: "new456" }) })))).toBe(true)
+    expect(calls).toBe(7)
   })
 })
