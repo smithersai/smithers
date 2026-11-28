@@ -252,7 +252,7 @@ export class RunsStore extends Context.Service<
     /** Reads `repo`'s flows a person runs by hand into the form, choosing none. */
     readonly loadRepoFlows: (repo: RepoName) => Effect.Effect<void>
     /** Chooses `flow` and reads its form at the form's branch's head. */
-    readonly chooseRepoFlow: (flow: string) => Effect.Effect<void>
+    readonly chooseRepoFlow: (flow: string, token?: string) => Effect.Effect<void>
     /** Sets the branch a run starts at; `chooseRepoFlow` reads the form there. */
     readonly setRunRef: (ref: string) => Effect.Effect<void>
     /** The page left: a Run still in flight no longer moves this tab. */
@@ -804,18 +804,18 @@ export class RunsStore extends Context.Service<
             ? setForm({ flows: read.success.flows, defaultBranch: read.success.defaultBranch, ref: read.success.defaultBranch, state: "ready" })
             : setForm({ state: "refused", refusal: read.failure.code ?? "unavailable" }))
         }
-      const chooseRepoFlow = (flow: string) =>
+      const chooseRepoFlow = (flow: string, token: string | null = null) =>
         effect {
           const current = Option.getOrThrow(try form.get(FORM))
           // A Run in flight keeps the form it was started from.
           if (current.repo === null || current.ref === null || current.state === "starting") return
           const generation = try nextGeneration
-          try setForm({ flow, schema: null, state: "loading", refusal: null })
+          try setForm({ flow, token, schema: null, state: "loading", refusal: null })
           const read = try Effect.result(remote.inputs(current.repo, flow, current.ref))
           if (!(try isLatest(generation))) return
           try (read._tag === "Success"
             ? setForm({ schema: read.success.inputs, state: "ready" })
-            : setForm({ state: "refused", refusal: read.failure.code ?? "unavailable" }))
+            : setForm({ state: "refused", token: null, refusal: read.failure.code ?? "unavailable" }))
         }
 
       const opening = try Semaphore.make(1)
@@ -901,7 +901,12 @@ export class RunsStore extends Context.Service<
         formRow: try formQuery(form),
         loadRepoFlows,
         chooseRepoFlow,
-        setRunRef: (ref) => setForm({ ref }),
+        setRunRef: (ref) => effect {
+          const current = Option.getOrThrow(try form.get(FORM))
+          if (current.flow === null || current.ref === ref || current.state === "starting") return
+          try nextGeneration
+          try setForm({ ref, schema: null, state: "ready", refusal: null, token: null })
+        },
         closeRepoRuns: setForm({ token: null }),
         // Reads and live subscriptions belong to the store's scope, never the router's pending navigation.
         loadRun: (runId, repo) => effect {

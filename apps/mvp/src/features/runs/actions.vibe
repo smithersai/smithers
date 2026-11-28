@@ -362,7 +362,7 @@ export const openRepoRuns = (repo: RepoName) =>
 /** Chooses a flow to run by hand: its form shows once read. */
 export const chooseRepoFlow = (flow: string) => Effect.flatMap(RunsStore, (store) => store.chooseRepoFlow(flow))
 
-/** The branch a run starts at, as the person types it; the form reads again once they leave the field. */
+/** The branch a run starts at, as the person types it; editing invalidates the previous branch’s schema. */
 export const setRunRef = (ref: string) => Effect.flatMap(RunsStore, (store) => store.setRunRef(ref))
 
 /** Reads the chosen flow's form at its branch, or retries the repository's initial flow-list read. */
@@ -384,22 +384,32 @@ export const runRepoFlow = (values: Readonly<Record<string, string | number | bo
   effect {
     const store = try RunsStore
     const form = Option.getOrThrow(try store.form.get(FORM))
-    if (form.repo === null || form.flow === null || form.ref === null || form.state === "starting") return
+    if (form.repo === null || form.flow === null || form.ref === null || form.ref.length === 0 || form.state === "loading" || form.state === "starting") return
     const repo = form.repo
     const token = try Effect.sync(() => WebCryptoReference.defaultValue().randomUUID())
     const setForm = (fields: Partial<Omit<RepoRunForm, "id">>) =>
       store.form.update(FORM, (draft) => void Object.assign(draft, fields)).pipe(Effect.asVoid, Effect.orDie)
+    if (form.schema === null) {
+      try store.chooseRepoFlow(form.flow, token)
+      const checked = Option.getOrThrow(try store.form.get(FORM))
+      if (checked.token !== token || checked.state !== "ready" || checked.schema === null) return
+      const schema = checked.schema as { readonly properties?: Readonly<Record<string, unknown>> }
+      if (Object.keys(schema.properties ?? {}).length > 0) {
+        try setForm({ token: null })
+        return
+      }
+    }
     try setForm({ state: "starting", refusal: null, token })
     const dispatched = try (try FlowDispatch).dispatch("repo/run", {
       repo: `${repo.owner}/${repo.name}`,
       flow: form.flow,
       ref: form.ref,
-      input: values,
+      input: form.schema === null ? {} : values,
     }, { door: "button" }).pipe(Effect.result)
     // The page left, or a newer form took its place: this answer moves nothing.
     if (Option.getOrThrow(try store.form.get(FORM)).token !== token) return
     if (dispatched._tag === "Success" && dispatched.success._tag === "Done") {
-      try setForm({ state: "ready", token: null })
+      // Keep the accepted request busy until navigation replaces this form.
       const { runId } = dispatched.success.value
       return (try RunsNavigation).navigate(try Effect.sync(() => actionRunPath(repo.owner, repo.name, runId)))
     }

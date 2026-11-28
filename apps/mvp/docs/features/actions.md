@@ -64,6 +64,8 @@ The stop route's refusals are `{ code }`, `Cache-Control: no-store`:
 
 The Run form on `/$owner/$repo/actions` lists the repository's runnable flows (`GET .../flows`), and for the chosen flow and branch draws its inputs (`GET .../flows/<flow>`) with `FlowFormView` (`@smthrs/views`), defaults and choices kept. Run starts `repo/run { repo, flow, ref, input }`, a client flow the agent may call too; its step `repo/run/start` posts through the outbox to `POST .../runs`, and the new run opens on its page. Only a navigation reads the flows into the form: a link's hover or focus ([navigation](navigation.md)) syncs the repository's runs and keeps the chosen flow and branch, so hovering another repository's Runs link never points Run at that repository.
 
+Editing Branch clears the old inputs. Run reads the schema for the edited branch. A flow without inputs starts from that click. A flow with inputs shows its new form for review and submission. Enter in the branch field reads the form without starting a run.
+
 The Run card stays visible while the flow list loads or its read is refused. A refusal shows its reason and Retry reads the list again. Only a successful empty list hides the card.
 
 The person's Stop and the agent's call run the same flow on this device's engine; its step asks ChatApi as the run that made it (decision 0017 slice 0).

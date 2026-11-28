@@ -384,13 +384,83 @@ test("Run dispatches repo/run with the form's values, the branch apart, and open
   await t.runtime.runPromise(t.store.loadRepoFlows(repo))
   await t.runtime.runPromise(actions.chooseRepoFlow("release"))
   await t.runtime.runPromise(actions.setRunRef("next"))
-  await t.runtime.runPromise(actions.runRepoFlow({ tag: "v1", dry: true }))
+  await t.runtime.runPromise(actions.runRepoFlow({}))
   expect(t.calls).toEqual([{
     name: "repo/run",
-    payload: { repo: "octo/hello", flow: "release", ref: "next", input: { tag: "v1", dry: true } },
+    payload: { repo: "octo/hello", flow: "release", ref: "next", input: {} },
     executionId: undefined,
   }])
+  await t.runtime.runPromise(actions.runRepoFlow({}))
+  expect(t.calls).toHaveLength(1)
   expect(t.navigated).toEqual(["/octo/hello/actions/runs/release%3A1"])
+  await t.runtime.runPromise(actions.closeRepoRuns)
+  await t.runtime.runPromise(t.store.loadRepoFlows(repo))
+  await t.runtime.runPromise(actions.chooseRepoFlow("release"))
+  await t.runtime.runPromise(actions.runRepoFlow({}))
+  expect(t.calls).toHaveLength(2)
+})
+
+test("a slow branch validation starts once, discards a superseded answer and presents changed inputs", async () => {
+  const reading = Effect.runSync(Deferred.make<void>())
+  const release = Effect.runSync(Deferred.make<void>())
+  const reads: string[] = []
+  const t = await setup({
+    remote: {
+      flows: () => Effect.succeed({ defaultBranch: "main", flows: [{ name: "audit" }] }),
+      inputs: (_repo, _flow, ref) => Effect.gen(function* () {
+        reads.push(ref)
+        if (ref === "slow") {
+          yield* Deferred.succeed(reading, undefined)
+          yield* Deferred.await(release)
+        }
+        return { sha: "s", inputs: ref === "params" ? { properties: { tag: { type: "string" } }, required: ["tag"] } : {} }
+      }),
+    },
+    dispatch: Effect.succeed({ _tag: "Done", value: { runId: "audit:one" } }),
+  })
+  await t.runtime.runPromise(t.store.loadRepoFlows(repo))
+  await t.runtime.runPromise(actions.chooseRepoFlow("audit"))
+  await t.runtime.runPromise(actions.setRunRef("slow"))
+  const pending = t.runtime.runPromise(actions.runRepoFlow({}))
+  await t.runtime.runPromise(Deferred.await(reading))
+  await t.runtime.runPromise(actions.runRepoFlow({}))
+  expect(reads).toEqual(["main", "slow"])
+  expect(t.calls).toEqual([])
+  await t.runtime.runPromise(actions.setRunRef("params"))
+  await t.runtime.runPromise(actions.runRepoFlow({}))
+  await t.runtime.runPromise(Deferred.succeed(release, undefined))
+  await pending
+  const form = await t.runtime.runPromise(t.store.form.get("form")).then(Option.getOrThrow)
+  expect(form).toMatchObject({ ref: "params", state: "ready", schema: { required: ["tag"] } })
+  expect(t.calls).toEqual([])
+  await t.runtime.runPromise(actions.runRepoFlow({ tag: "v3" }))
+  expect(t.calls.map(call => call.payload)).toEqual([{ repo: "octo/hello", flow: "audit", ref: "params", input: { tag: "v3" } }])
+})
+
+test("an empty branch does nothing and a refused branch read can be retried once", async () => {
+  let available = false
+  const t = await setup({
+    remote: {
+      flows: () => Effect.succeed({ defaultBranch: "main", flows: [{ name: "audit" }] }),
+      inputs: (_repo, _flow, ref) => ref === "main" || available
+        ? Effect.succeed({ sha: "s", inputs: {} })
+        : Effect.fail(new RepoRunsFailed({ code: "not_found", status: 404 })),
+    },
+    dispatch: Effect.succeed({ _tag: "Done", value: { runId: "audit:one" } }),
+  })
+  await t.runtime.runPromise(t.store.loadRepoFlows(repo))
+  await t.runtime.runPromise(actions.chooseRepoFlow("audit"))
+  await t.runtime.runPromise(actions.setRunRef(""))
+  await t.runtime.runPromise(actions.runRepoFlow({}))
+  expect(t.calls).toHaveLength(0)
+  await t.runtime.runPromise(actions.setRunRef("next"))
+  await t.runtime.runPromise(actions.runRepoFlow({}))
+  const form = await t.runtime.runPromise(t.store.form.get("form")).then(Option.getOrThrow)
+  expect(form).toMatchObject({ ref: "next", state: "refused", refusal: "not_found", token: null })
+  expect(t.calls).toHaveLength(0)
+  available = true
+  await t.runtime.runPromise(actions.runRepoFlow({}))
+  expect(t.calls.map(call => call.payload)).toEqual([{ repo: "octo/hello", flow: "audit", ref: "next", input: {} }])
 })
 
 test("a refused Run stays on the form with why; one that couldn't be dispatched says unavailable; one starting ignores a second", async () => {
