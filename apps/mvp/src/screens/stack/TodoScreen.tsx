@@ -1,12 +1,13 @@
 import { NotSentChanges } from "../../features/todos/components/NotSentChanges"
 import { Button, Breadcrumbs, Card, CardContent, ConfirmButton, EmptyState, ItemAsideSection, ItemConversation, ItemStateIcon, PageBody, StageStrip } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { useNavigate, useParams } from "@tanstack/react-router"
+import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useTodos } from "../../features/todos/components/TodosContext"
 import { AFTER, BRANCH, DROP, ISSUE, NOT_FOUND, PULL_REQUEST, RUN, STACK, stackPath } from "../../features/todos/contract"
-import { mayRetry, accessFor, dropConfirm, mayChange, stackRows, todoCardOf, todoScreenOf, todoStagesOf } from "../../features/todos/view"
+import { YOUR_MODEL, YOUR_MODEL_ANCHOR } from "../../features/personal-model/copy"
+import { showYourModel, mayRetry, accessFor, dropConfirm, mayChange, stackRows, todoCardOf, todoScreenOf, todoStagesOf } from "../../features/todos/view"
 import "./stack-screen.css"
 import { useRepo, useRepoAnswer } from "../../features/repo/components/RepoContext"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
@@ -55,6 +56,7 @@ export function TodoScreen() {
   const card = todoCardOf(number, stackRows(repoId, todos, sending, requested), todos, requests)
   const screen = status === "forbidden" ? { kind: "missing" as const } : todoScreenOf(card, number, todos, status, owner, repo)
   const todo = todos.find((todo) => todo.number === number)
+  const modelLink = showYourModel(todo, session)
   const retryable = todo !== undefined && session !== undefined && mayRetry(todo, session, answer)
   const may = session !== undefined && mayChange(session, confirmed, answer)
   const stages = todoStagesOf(todo)
@@ -97,7 +99,7 @@ export function TodoScreen() {
           comments={[]}
           {...(screen.page.pending === undefined ? {} : { pending: screen.page.pending })}
           aside={screen.page.after === undefined && screen.page.issue === undefined && screen.page.branch === undefined &&
-              screen.page.pullRequest === undefined && screen.page.run === undefined && !(may && screen.page.droppable) && !retryable
+              screen.page.pullRequest === undefined && screen.page.run === undefined && !(may && screen.page.droppable) && !retryable && !modelLink
             ? undefined
             : (
               <>
@@ -116,6 +118,7 @@ export function TodoScreen() {
                 {screen.page.run === undefined ? null : (
                   <ItemAsideSection title={RUN} links={[screen.page.run]} onNavigate={(href) => void navigate({ href })} />
                 )}
+                {modelLink ? <Link to="/app/settings" hash={YOUR_MODEL_ANCHOR}>{YOUR_MODEL}</Link> : null}
                 {retryable ? <Button size="sm" onClick={() => actions.retry(owner, repo, number)}>Retry</Button> : null}
                 {may && screen.page.droppable ? (
                   <ConfirmButton

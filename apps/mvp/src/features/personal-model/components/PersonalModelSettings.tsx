@@ -46,7 +46,7 @@ import {
   TIER_LABEL,
   TIER_PURPOSE,
   TOKEN,
-  YOUR_MODEL,
+  YOUR_MODEL, YOUR_MODEL_ANCHOR,
 } from "../copy"
 import type { PersonalModelRow } from "../schema"
 import { addKind, busy, FIELDS, linkView, listOf, readAdd, rowDetail, rowStatusOf, type Status, statusOf, testable } from "../view"
@@ -241,7 +241,7 @@ export function PersonalModelSettings({ canSave }: { readonly canSave: boolean }
   if (!canSave) {
     if (rows.length === 0) return null
     return (
-      <section className="personal-model" aria-label={YOUR_MODEL}>
+      <section id={YOUR_MODEL_ANCHOR} className="personal-model" aria-label={YOUR_MODEL}>
         <h2>{YOUR_MODEL}</h2>
         <div className="personal-model-actions">
           <Button variant="outline" disabled={waiting} onClick={actions.removeAll}>{REMOVE}</Button>
@@ -252,7 +252,7 @@ export function PersonalModelSettings({ canSave }: { readonly canSave: boolean }
   }
   const kind = addKind(add?.view)
   return (
-    <section className="personal-model" aria-label={YOUR_MODEL}>
+    <section id={YOUR_MODEL_ANCHOR} className="personal-model" aria-label={YOUR_MODEL}>
       <h2>{YOUR_MODEL}</h2>
       {rows.length === 0 ? null : (
         <ol className="personal-model-list" aria-label={YOUR_MODEL}>

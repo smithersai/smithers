@@ -12,10 +12,8 @@ import { AlertSettings } from "../../features/spend/components/AlertSettings"
 import { SandboxLimitsSettings } from "../../features/spend/components/SandboxLimitsSettings"
 import "./settings-screen.css"
 
-// /app/settings: a signed-in Member's or above's own model, or Remove alone for anyone else who still has one saved
-// (docs/features/personal-model.md#the-settings-section), and
-// for an Admin, where spend alerts go outside the app (docs/features/spend-alerts.md#channels) and the sandbox limits
-// (docs/features/sandbox-budgets.md#the-limits). Anyone else sees the page's header alone.
+// Each signed-in person manages their own connections here (AUTH-8). Admins also manage
+// spend alert channels and sandbox limits.
 export function SettingsScreen() {
   const { queries } = useAuth()
   const { data: session } = useLiveQuery(queries.session)

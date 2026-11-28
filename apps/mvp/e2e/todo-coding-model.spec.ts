@@ -40,6 +40,12 @@ test("the stack shows a coding model failure after a fresh load and keeps its Re
     await expect(page.getByRole("link", { name: /^History(?: \(\d+\))?$/ })).toBeVisible()
     await page.reload()
     await expect(page.getByText("Coding model unavailable", { exact: true })).toBeVisible()
+    const model = page.getByRole("link", { name: "Your model", exact: true })
+    await expect(model).toHaveAttribute("href", "/app/settings#your-model")
+    await model.focus()
+    await model.press("Enter")
+    await expect(page).toHaveURL(/\/app\/settings#your-model$/)
+    await expect(page.locator("#your-model").getByRole("heading", { name: "Your model" })).toBeVisible()
   } finally {
     expect((await dropTodo(page, repo, number)).status).toBe(202)
   }

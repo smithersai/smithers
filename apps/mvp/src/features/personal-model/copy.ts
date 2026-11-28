@@ -5,6 +5,7 @@ import type { ConnectionKind, Protocol, Refusal } from "./contract"
 // words to act, in product words.
 
 /** The section's heading. */
+export const YOUR_MODEL_ANCHOR = "your-model"
 export const YOUR_MODEL = "Your model"
 
 /** Each key's fields. */

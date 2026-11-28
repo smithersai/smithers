@@ -4,7 +4,7 @@ import {
   afterChoicesOf,
   afterValueOf,
   parseAfterChoice,
-  todoStagesOf, mayRetry } from "./view"
+  todoStagesOf, mayRetry, showYourModel } from "./view"
 // What the stack's screens show (src/features/todos/view.ts) and the contract's helpers, as pure functions over rows;
 // and how a send's refusal reads (writes.ts `reasonOf`). The rows they read
 // come from real devices in todos.test.ts.
@@ -651,6 +651,19 @@ describe("TODO boundary regressions", () => {
   test("a refused change with no reason still has a badge label", () => {
     expect(notSentRows(REPO, [requested({ id: "refused", op: "drop", status: "not_sent", reason: null })])[0]?.reason).toBe("Not sent")
   })
+})
+
+test("the failed coding attempt takes only its signed-in owner to their model", () => {
+  const failed = { state: "failed", createdLogin: "maya", failure: "no_seat" } as const
+  const session = { status: "signed_in", login: "maya", role: null }
+  expect(showYourModel(failed, session)).toBe(true)
+  expect(showYourModel(failed, { ...session, role: "guest" })).toBe(true)
+  expect(showYourModel(failed, { ...session, login: "other" })).toBe(false)
+  expect(showYourModel(failed, { ...session, status: "signed_out" })).toBe(false)
+  expect(showYourModel(failed, undefined)).toBe(false)
+  expect(showYourModel(undefined, session)).toBe(false)
+  expect(showYourModel({ ...failed, state: "queued" }, session)).toBe(false)
+  expect(showYourModel({ ...failed, failure: "implement" }, session)).toBe(false)
 })
 
 test("Retry names the least role on the TODO's repository: own Member or anyone Maintainer", () => {

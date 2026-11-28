@@ -1,6 +1,7 @@
 import type { IssuesViewIssue, IssuesViewLink, ItemConversationEvent, ItemStateKind, ItemStatus, StageStripItem } from "@smthrs/ui"
 import { mayAsk, type Role } from "../auth/contract"
 import { hereOf, type RepoAnswer } from "../auth/viewer"
+import { canSave, type Reader } from "../personal-model/view"
 import { issuePath } from "../issues/contract"
 import { pullPath } from "../pulls/contract"
 import { hrefFor } from "../repo/paths"
@@ -507,6 +508,13 @@ export const withTodos = (
       ...(mayMakeTodo(may, issue) ? { menu: [...(issue.menu ?? []), { label: MAKE_TODO, onSelect: () => make(number) }] } : {}),
     }
   })
+
+/** The model connection belongs to the signed-in committer of this failed coding attempt. */
+export const showYourModel = (
+  todo: Pick<Todo, "state" | "failure" | "createdLogin"> | undefined,
+  session: (Reader & { readonly login: string | null }) | undefined,
+): boolean => todo?.state === "failed" && todo.failure === "no_seat" &&
+  canSave(session) && session?.login === todo.createdLogin
 
 /**
  * Whether Retry shows on a failed TODO: for a Maintainer or above on its repository, or the Member who made it, as
