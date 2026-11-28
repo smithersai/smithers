@@ -105,6 +105,19 @@ const sampleReport = {
 } as const
 
 describe("Uphill wire contracts", () => {
+  test("reads Lighthouse category IDs in bare and enveloped community reports", () => {
+    const report = { categories: [{ id: "correctness", title: "Correctness", score: 58 }] }
+    const provenance = { trust: "untrusted_contributor", gateEligible: false, cacheWriteAllowed: false, actor: "alice" }
+    const wrapped = Uphill.decodeFeedBody({ report, commit: "abc", provenance })
+    expect(wrapped?.report.categories[0]).toMatchObject({ name: "correctness", title: "Correctness", score: 58 })
+    expect(wrapped?.provenance).toMatchObject(provenance)
+    expect(Uphill.decodeFeedBody(report)?.report).toEqual(wrapped?.report)
+    expect(Uphill.decodeFeedBody({ categories: [{ id: "correctness", name: "checks", title: "Checks" }] })
+      ?.report.categories[0]?.name).toBe("checks")
+    expect(Uphill.decodeFeedBody({ categories: [{ id: 1, title: "Checks" }] })).toBeUndefined()
+    expect(Uphill.decodeFeedBody({ categories: [{ id: "checks", name: 1, title: "Checks" }] })).toBeUndefined()
+  })
+
   test("decodes a bare report.json via decodeFeedBody", () => {
     const decoded = Uphill.decodeFeedBody(sampleReport)
     expect(decoded).toBeDefined()

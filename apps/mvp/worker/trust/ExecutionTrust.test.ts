@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { isTrustedExecution, trustLabel } from "../../src/features/trust/contract.ts"
 import type { Actor } from "../Actor.vibe"
 import {
+  auditReportTrust,
   authorizeObjectWrite,
   canReadCloudObject,
   canSatisfyGate,
@@ -27,6 +28,23 @@ const agentActor: Actor = {
 const policy = { admins: new Set(["roninjin10"]) }
 
 describe("ExecutionTrust", () => {
+  it("retains community provenance when a maintainer or sandbox imports an audit", () => {
+    const preview = { trusted: false, effectiveTier: "untrusted:community" }
+    for (const publisher of ["trusted_maintainer", "trusted_sandbox", "untrusted_contributor"] as const) {
+      for (const report of [
+        { execution: preview },
+        { execution: { trusted: false, effectiveTier: "trusted:maintainer" } },
+        { execution: { effectiveTier: "untrusted:community" } },
+        { execution: null, gate: { trustTier: "untrusted:community" } },
+      ]) {
+        expect(auditReportTrust(publisher, report)).toBe("untrusted_contributor")
+      }
+      expect(auditReportTrust(publisher, { execution: { trusted: true } })).toBe(publisher)
+      expect(auditReportTrust(publisher, { gate: { satisfied: false } })).toBe(publisher)
+      expect(auditReportTrust(publisher, {})).toBe(publisher)
+    }
+  })
+
   it("classifies sandbox attestation above everything, then maintainer/admin, else untrusted contributor", () => {
     expect(classifyExecutionTrust({ role: "guest", sandboxAttested: true })).toBe("trusted_sandbox")
     expect(classifyExecutionTrust({ role: "maintainer" })).toBe("trusted_maintainer")

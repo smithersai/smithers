@@ -119,7 +119,7 @@ Every repository exposes 15 Cloud Factory tools alongside the core BYOA catalog 
 - **Stacked Changesets**: `changeset_stack_list`, `changeset_create` (`changeset_stacks` table, tracking trusted vs untrusted gate status).
 - **Project Wiki**: `wiki_list`, `wiki_read`, `wiki_write` (canonical writes sync live to `feed_documents` `wiki/<page>`, while untrusted contributors write isolated proposals under `proposed/<login>/`).
 - **Mythical History**: `mythical_history_list`, `mythical_history_record` (linear commit narrative with tree-equality verification against `main`; canonical writes require trusted execution).
-- **Backpressure Audit Reports**: `audit_report_list`, `audit_report_get`, `audit_report_publish` (mirrors trusted audits to `uphill` and untrusted community audits to `uphill/untrusted-<login>`).
+- **Backpressure Audit Reports**: `audit_report_list`, `audit_report_get`, `audit_report_publish` (mirrors trusted audits to `uphill` and untrusted community audits to `uphill/untrusted-<login>`). Importing a Smithers CI report marked as a community execution keeps it in the community feed, including when a maintainer imports it.
 - **Pull Requests**: `pull_create` (requires Member access or above, opens a PR attributed to `@<login> (agent)`, and never approves or merges).
 - **One-Time Sandbox & Agent Auth**: `auth_one_time_mint` and `POST /api/repos/:owner/:repo/auth/one-time` print a short-lived single-use `smot_` token plus copy-paste shell and MCP snippets (`cache-control: no-store`). Ephemeral sandboxes redeem it atomically once via `POST /api/auth/one-time/redeem` (or `apps/mvp/scripts/mint-one-time-auth.mjs --redeem`) into an attenuated 2-hour `sma_` bearer token. Non-maintainers always receive `untrusted_contributor` trust.
 

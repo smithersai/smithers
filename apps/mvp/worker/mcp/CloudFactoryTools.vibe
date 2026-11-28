@@ -32,7 +32,7 @@ import * as CloudObjectStore from "../object-store/CloudObjectStore.vibe"
 import { safeJsonStringify } from "../object-store/ObjectBytes.ts"
 import * as RepoStateStore from "../object-store/RepoStateStore.vibe"
 import * as Visibility from "../ops/ArtifactVisibility.ts"
-import { classifyExecutionTrust, isObjectNamespace } from "../trust/ExecutionTrust.vibe"
+import { auditReportTrust, classifyExecutionTrust, isObjectNamespace } from "../trust/ExecutionTrust.vibe"
 import {
   McpAuthService,
   type McpContentBlock,
@@ -816,7 +816,8 @@ export effect function callCloudFactoryTool(
       if (typeof args.report !== "object" || args.report === null || Array.isArray(args.report)) {
         throw new McpToolError({ code: "invalid_params", message: "report must be a JSON object" })
       }
-      const trusted = try sync(() => isTrustedExecution(trust))
+      const reportTrust = auditReportTrust(trust, args.report)
+      const trusted = try sync(() => isTrustedExecution(reportTrust))
       const key = strArg(args, "key") ?? "latest.json"
       const commitSha = strArg(args, "commitSha") ?? null
       const branch = strArg(args, "branch") ?? null
@@ -828,13 +829,13 @@ export effect function callCloudFactoryTool(
         rules,
         updatedAt: new Date(try Clock.currentTimeMillis).toISOString(),
         provenance: {
-          trust,
+          trust: reportTrust,
           gateEligible: trusted,
           cacheWriteAllowed: trusted,
           actor: caller.login,
-          runner: trust === "trusted_sandbox"
+          runner: reportTrust === "trusted_sandbox"
             ? "Smithers Cloud Sandbox"
-            : trust === "trusted_maintainer"
+            : reportTrust === "trusted_maintainer"
             ? `Maintainer (${caller.login})`
             : `Community runner (${caller.login})`,
         },
@@ -855,7 +856,7 @@ export effect function callCloudFactoryTool(
             bytes,
             contentType: "application/json; charset=utf-8",
             requestedVisibility: writePrincipal.access.isPublic ? "public" : "repo_members",
-            trust,
+            trust: reportTrust,
             actor: caller.actor,
             commitSha,
             refName: branch,

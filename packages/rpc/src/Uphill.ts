@@ -468,6 +468,12 @@ export function formatMetricValue(
   return unit ? `${formatted} ${unit}` : formatted
 }
 
+// Smithers CI calls the category identifier `id`. Keep the canonical schemas and their public types intact.
+const lighthouseCategory = CategorySchema.extend({ id: z.string(), name: z.undefined().optional() })
+  .transform(({ id, ...category }) => ({ ...category, name: id }))
+const feedReport = ReportSchema.extend({ categories: z.array(z.union([CategorySchema, lighthouseCategory])) })
+const feedEnvelope = FeedEnvelopeSchema.extend({ report: feedReport })
+
 /**
  * Decodes a repository feed document body into a normalized {@link FeedEnvelope}.
  * Accepts either a bare Uphill `report.json` or an envelope `{ report, commit, branch, history, rules }`.
@@ -476,9 +482,9 @@ export function formatMetricValue(
  * @category helpers
  */
 export function decodeFeedBody(body: unknown): FeedEnvelope | undefined {
-  const envelope = FeedEnvelopeSchema.safeParse(body)
+  const envelope = feedEnvelope.safeParse(body)
   if (envelope.success) return envelope.data
-  const bare = ReportSchema.safeParse(body)
+  const bare = feedReport.safeParse(body)
   if (bare.success) {
     return {
       report: bare.data,

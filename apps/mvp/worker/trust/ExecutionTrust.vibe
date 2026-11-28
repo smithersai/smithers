@@ -51,6 +51,20 @@ export function classifyExecutionTrust(input: TrustClassificationInput): Executi
   return "untrusted_contributor"
 }
 
+/** A publisher can import a community audit without promoting its execution into the trusted feed. */
+export function auditReportTrust(publisher: ExecutionTrust, report: object): ExecutionTrust {
+  const execution = "execution" in report ? report.execution : null
+  if (typeof execution === "object" && execution !== null) {
+    if ("trusted" in execution && execution.trusted === false) return "untrusted_contributor"
+    if ("effectiveTier" in execution && execution.effectiveTier === "untrusted:community") return "untrusted_contributor"
+  }
+  const gate = "gate" in report ? report.gate : null
+  if (typeof gate === "object" && gate !== null && "trustTier" in gate && gate.trustTier === "untrusted:community") {
+    return "untrusted_contributor"
+  }
+  return publisher
+}
+
 /**
  * Classifies the trust tier granted to a newly minted one-time token.
  * A non-maintainer can NEVER mint a `trusted_sandbox` or `trusted_maintainer` token.
