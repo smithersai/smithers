@@ -395,3 +395,99 @@ test("GitHub's forge moves no branch and syncs no mirror: it holds no credential
   }).pipe(Effect.provide(Forge.gitHub)))
   expect(value(exit)).toEqual(["not_configured", "not_configured"])
 })
+
+test("proxy emits bounded per-stage observations for github, deployment, unscoped ephemeral refusals, and ignores observer throws", async () => {
+  const host = github()
+  const events: Array<unknown> = []
+  const req = (path: string, method = "GET") =>
+    HttpServerRequest.fromWeb(new Request(`http://forge.smithers.internal/octocat/Spoon-Knife${path}`, {
+      method,
+      headers: method === "POST" ? { "content-type": "application/x-git-upload-pack-request" } : undefined,
+      body: method === "POST" ? "0000" : undefined,
+    }))
+
+  // Public GitHub forge: info-refs 200 and missing repo 404 report upstream: "github".
+  const ok = value(await run(
+    Effect.flatMap(Forge, (forge) =>
+      proxy(req("/info/refs?service=git-upload-pack"), forge, { owner: "octocat", name: "Spoon-Knife", forge: "github" }, {
+        onResponse: (event) => events.push(event),
+      })),
+    {},
+    host.fetch,
+  ))
+  expect(ok.status).toBe(200)
+  expect(events.at(-1)).toEqual({
+    kind: "response",
+    upstream: "github",
+    service: "info-refs",
+    source: "upstream",
+    outcome: "ok",
+    status: 200,
+  })
+
+  const missing = value(await run(
+    Effect.flatMap(Forge, (forge) =>
+      proxy(req("/info/refs?service=git-upload-pack"), forge, { owner: "octocat", name: "absent", forge: "github" }, {
+        onResponse: (event) => events.push(event),
+      })),
+    {},
+    host.fetch,
+  ))
+  expect(missing.status).toBe(404)
+  expect(events.at(-1)).toEqual({
+    kind: "response",
+    upstream: "github",
+    service: "info-refs",
+    source: "upstream",
+    outcome: "4xx",
+    status: 404,
+  })
+
+  // Deployment forge omits forge: "github" and reports upstream: "deployment".
+  const deployed = value(await run(
+    Effect.flatMap(Forge, (forge) =>
+      proxy(req("/info/refs?service=git-upload-pack"), forge, { owner: "octocat", name: "Spoon-Knife" }, {
+        onResponse: (event) => events.push(event),
+      })),
+    {},
+    host.fetch,
+  ))
+  expect(deployed.status).toBe(200)
+  expect(events.at(-1)).toEqual({
+    kind: "response",
+    upstream: "deployment",
+    service: "info-refs",
+    source: "upstream",
+    outcome: "ok",
+    status: 200,
+  })
+
+  // Ephemeral namespace without branch reports kind: "unscoped" 403.
+  const unscoped = value(await run(
+    Effect.flatMap(Forge, (forge) =>
+      proxy(req("/info/refs?service=git-upload-pack"), forge, { owner: "octocat", name: "Spoon-Knife", namespace: "ephemeral" }, {
+        onResponse: (event) => events.push(event),
+      })),
+    {},
+    host.fetch,
+  ))
+  expect(unscoped.status).toBe(403)
+  expect(events.at(-1)).toEqual({
+    kind: "unscoped",
+    service: "info-refs",
+    source: "proxy",
+    outcome: "refused",
+    status: 403,
+  })
+
+  // Throwing observer never alters response status.
+  const resilient = value(await run(
+    Effect.flatMap(Forge, (forge) =>
+      proxy(req("/info/refs?service=git-upload-pack"), forge, { owner: "octocat", name: "Spoon-Knife", forge: "github" }, {
+        onResponse: () => { throw new Error("boom") },
+      })),
+    {},
+    host.fetch,
+  ))
+  expect(resilient.status).toBe(200)
+})

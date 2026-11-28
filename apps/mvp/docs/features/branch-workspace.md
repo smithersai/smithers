@@ -130,19 +130,28 @@ typed errors; branch names, response text, URLs and credentials are never record
 ## The forge
 
 Checkout failures retain their exit code, bounded `checkoutFailure` (`forge`,
-`branch`, `clone`, `other`), and bounded machine-side `checkoutTransportCause`
-(`http_status` with `checkoutHttpStatus` `100`–`599`, `dns`, `missing_object`,
-`pack_storage`, `interrupted`, or `unknown`) across the object RPC in the
-durable tool step's error receipt. Recording `unknown` distinguishes an
-unclassified machine failure from historical receipts that omit the field. Its
-`sandbox.tool` log correlates them by call and branch id. Existing receipts
-without these fields remain readable. `sandbox.checkout` additionally records
-namespace, forge, generation, `transportCause`, `httpStatus` when observed, and
-stage durations; failed wake stages keep their elapsed time. Stderr is drained
-bounded in memory only for local classification; no raw stderr, command output,
-URL, customer content, or credential is recorded. The object log keeps its
-existing `failure` field; the tool log and durable error receipt call the same
-values `checkoutFailure`, `checkoutTransportCause`, and `checkoutHttpStatus`.
+`branch`, `clone`, `other`), bounded machine-side `checkoutTransportCause`
+(`http_status` with `checkoutHttpStatus` `100` to `599`, `dns`, `missing_object`,
+`pack_storage`, `interrupted`, or `unknown`), and bounded host-side
+`checkoutForge` (`routing`, optional `upstream`, and per-stage `infoRefs`,
+`uploadPack`, and `refused` receipts) across the object RPC in the durable tool
+step's error receipt. Recording `unknown` and `checkoutForge.routing`
+distinguishes an unclassified or pre-machine failure from historical receipts
+that omit those fields. Requests targeting internal sandbox hosts
+(`forge.smithers.internal`, `artifacts.smithers.internal`) that arrive at
+ChatApi without valid box `props` fail closed with HTTP `502` (`routeBox`,
+logged as `sandbox.box_request` with `outcome: missing_box_props`) rather than
+falling through to external routes that return `404`. `sandbox.tool` correlates
+them by call and branch id; existing receipts without these fields remain
+readable. `sandbox.checkout` additionally records namespace, forge, generation,
+`transportCause`, `httpStatus`, `forgeRouting`, `forgeUpstream`, per-stage
+`forgeInfoRefs*` / `forgeUploadPack*` / `forgeRefused*`, and stage durations;
+failed wake stages keep their elapsed time. Stderr is drained bounded in memory
+only for local classification; no raw stderr, command output, URL, customer
+content, or credential is recorded. The object log keeps its existing `failure`
+field; the tool log and durable error receipt call the same values
+`checkoutFailure`, `checkoutTransportCause`, `checkoutHttpStatus`, and
+`checkoutForge`.
 
 The box has no credential and no internet. It reaches the package registries through its egress ([the machine](sandbox-tools.md#the-machine)), and its repository only through `http://forge.smithers.internal`, which `SandboxObject` intercepts (`interceptOutboundHttp`) and answers with `@smthrs/effect-code-storage`'s `GitProxy.uploadPack`: only `info/refs?service=git-upload-pack` and `git-upload-pack` (a push and anything else is 403), to the branch's own repository whatever the guest's path names, with the read credential added outside the box (`worker/branch/Forge.ts`):
 

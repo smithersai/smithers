@@ -7,13 +7,17 @@ import { Clock, Console, Context, Deferred, Effect, Exit, Fiber, Layer, Metric, 
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test, vi } from "vitest"
-import { readdirSync } from "node:fs"
+import { execFileSync, spawn } from "node:child_process"
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { createServer } from "node:http"
+import type { AddressInfo } from "node:net"
+import { tmpdir } from "node:os"
 import { Miniflare, Response as WorkerResponse, WebSocketPair as WorkerSocketPair } from "miniflare"
 import { TestClock } from "effect/testing"
 import { join, relative } from "node:path"
 import { sourceText } from "../../../packages/repo-targets/test-utils/source-readers.mjs"
 import * as TestDatabase from "../db/TestDatabase.ts"
+import { WORKSPACE } from "../src/features/terminal/contract.ts"
 import * as BranchSandboxes from "./BranchSandboxes.vibe"
 import { Machines, type CommandRequest } from "./branch/Machines.vibe"
 import { Sandboxes, type Attachment } from "./branch/Sandboxes.vibe"
@@ -551,6 +555,7 @@ test("the sandbox reserves a real budget slot, keeps checkout diagnostics, and r
       exitCode: 70,
       checkoutFailure: "forge",
       checkoutTransportCause: "unknown",
+      checkoutForge: { routing: "unreached" },
     })
     checkoutCode = 99
     expect(yield* sandbox.wake(branch)).toEqual({
@@ -558,6 +563,7 @@ test("the sandbox reserves a real budget slot, keeps checkout diagnostics, and r
       exitCode: 99,
       checkoutFailure: "other",
       checkoutTransportCause: "unknown",
+      checkoutForge: { routing: "unreached" },
     })
     checkoutCode = 0
     expect(yield* sandbox.wake(branch)).toEqual({ _tag: "Woken", generation: 1 })
@@ -622,38 +628,38 @@ test("sandbox checkout classifies bounded transport causes from stderr without l
       {
         code: 75,
         stderr: `error: RPC failed; HTTP 502 curl 22 The requested URL returned error: 502 (${secret})\n`,
-        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "http_status", checkoutHttpStatus: 502 },
-        log: { exitCode: 75, failure: "clone", transportCause: "http_status", httpStatus: 502 },
+        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "http_status", checkoutHttpStatus: 502, checkoutForge: { routing: "unreached" } },
+        log: { exitCode: 75, failure: "clone", transportCause: "http_status", httpStatus: 502, forgeRouting: "unreached" },
       },
       {
         code: 75,
         stderr: `fatal: unable to access 'http://forge.smithers.internal/${secret}': Could not resolve host: forge.smithers.internal\n`,
-        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "dns" },
-        log: { exitCode: 75, failure: "clone", transportCause: "dns" },
+        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "dns", checkoutForge: { routing: "unreached" } },
+        log: { exitCode: 75, failure: "clone", transportCause: "dns", forgeRouting: "unreached" },
       },
       {
         code: 75,
         stderr: `fatal: remote error: upload-pack: not our ref ${secret}\n`,
-        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "missing_object" },
-        log: { exitCode: 75, failure: "clone", transportCause: "missing_object" },
+        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "missing_object", checkoutForge: { routing: "unreached" } },
+        log: { exitCode: 75, failure: "clone", transportCause: "missing_object", forgeRouting: "unreached" },
       },
       {
         code: 75,
         stderr: `fatal: write error: No space left on device (${secret})\n`,
-        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "pack_storage" },
-        log: { exitCode: 75, failure: "clone", transportCause: "pack_storage" },
+        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "pack_storage", checkoutForge: { routing: "unreached" } },
+        log: { exitCode: 75, failure: "clone", transportCause: "pack_storage", forgeRouting: "unreached" },
       },
       {
         code: 75,
         stderr: `error: index-pack died of signal 9 (${secret})\n`,
-        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "interrupted" },
-        log: { exitCode: 75, failure: "clone", transportCause: "interrupted" },
+        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "interrupted", checkoutForge: { routing: "unreached" } },
+        log: { exitCode: 75, failure: "clone", transportCause: "interrupted", forgeRouting: "unreached" },
       },
       {
         code: 75,
         stderr: `fatal: opaque error ${secret}\n`,
-        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "unknown" },
-        log: { exitCode: 75, failure: "clone", transportCause: "unknown" },
+        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "unknown", checkoutForge: { routing: "unreached" } },
+        log: { exitCode: 75, failure: "clone", transportCause: "unknown", forgeRouting: "unreached" },
       },
     ] as const
     for (const scenario of scenarios) {
@@ -1415,3 +1421,362 @@ test("a lapsed terminal survives both a notifier defect and a renewal defect bef
     Effect.provideService(Cloudflare.Hyperdrive.Connect, unusedDatabase),
   ), { signal: AbortSignal.timeout(15_000) }))
 }, 30_000)
+
+test("internalHostOf and routeBox fail closed with 502 for internal sandbox hosts arriving without box props", async () => {
+  expect(BranchSandboxes.internalHostOf("http://forge.smithers.internal/evmts/guillotine/info/refs?service=git-upload-pack")).toBe("forge")
+  expect(BranchSandboxes.internalHostOf("http://FORGE.SMITHERS.INTERNAL:80/a/b")).toBe("forge")
+  expect(BranchSandboxes.internalHostOf("http://artifacts.smithers.internal/report")).toBe("artifacts")
+  expect(BranchSandboxes.internalHostOf("https://smithers.sh/api/health")).toBeUndefined()
+  expect(BranchSandboxes.internalHostOf("not a valid url")).toBeUndefined()
+
+  // ChatApiProgram dispatches through routeBox before any external API route.
+  const program = sourceText(new URL("./ChatApiProgram.ts", import.meta.url))
+  expect(program).toContain("BranchSandboxes.routeBox(")
+
+  const objects = objectNamespace({ fetch: () => Effect.succeed(HttpServerResponse.empty({ status: 204 })) })
+  const objectsFor = BranchSandboxes.namespaces(objects, undefined)
+
+  const runRoute = (url: string, props: unknown) =>
+    Effect.runPromise(
+      BranchSandboxes.routeBox(objectsFor, props).pipe(
+        Effect.provideService(RuntimeContext, objectRuntime),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request(url))),
+      ),
+    )
+
+  // Valid props route straight to the sandbox object.
+  const forwarded = await runRoute("http://forge.smithers.internal/evmts/guillotine/info/refs?service=git-upload-pack", {
+    [BranchSandboxes.BOX_PROP]: "object-id",
+  })
+  expect(Option.isSome(forwarded) ? forwarded.value.status : undefined).toBe(204)
+
+  // Missing props on forge or artifacts internal hosts fail closed with 502 (never fall through to 404).
+  const missingForge = await runRoute("http://forge.smithers.internal/evmts/guillotine/info/refs?service=git-upload-pack", undefined)
+  expect(Option.isSome(missingForge) ? missingForge.value.status : undefined).toBe(502)
+
+  const missingArtifacts = await runRoute("http://artifacts.smithers.internal/report", {})
+  expect(Option.isSome(missingArtifacts) ? missingArtifacts.value.status : undefined).toBe(502)
+
+  // Normal external API requests pass through untouched (`Option.none()`).
+  const external = await runRoute("https://smithers.sh/api/health", undefined)
+  expect(Option.isNone(external)).toBe(true)
+})
+
+test("real public git checkout through SandboxObject + routeBox + Forge.proxy succeeds and discriminates info-refs 404, upload-pack 404, missing props 502, pre-object 404 and host mismatch", async () => {
+  const scratch = mkdtempSync(join(tmpdir(), "sandbox-forge-e2e-"))
+  const repoDir = join(scratch, "upstream.git")
+  mkdirSync(repoDir, { recursive: true })
+  const runGit = (cwd: string, ...args: ReadonlyArray<string>) =>
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" }).trim()
+  runGit(repoDir, "init", "-q", "-b", "main")
+  runGit(repoDir, "config", "uploadpack.allowAnySHA1InWant", "true")
+  writeFileSync(join(repoDir, "README.md"), "public repo content\n")
+  runGit(repoDir, "add", ".")
+  runGit(repoDir, "commit", "-q", "-m", "initial")
+  const sha = runGit(repoDir, "rev-parse", "HEAD")
+
+  const uploadPack = (args: ReadonlyArray<string>, input: Buffer, protocol?: string) =>
+    new Promise<Buffer>((resolve, reject) => {
+      const child = spawn("git", ["upload-pack", "--stateless-rpc", ...args, repoDir], {
+        env: { ...process.env, ...(protocol ? { GIT_PROTOCOL: protocol } : {}) },
+      })
+      const chunks: Array<Buffer> = []
+      let errs = ""
+      child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk))
+      child.stderr.on("data", (chunk: Buffer) => { errs += chunk.toString("utf8") })
+      child.on("error", reject)
+      child.on("close", (code) => code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(errs)))
+      child.stdin.end(input)
+    })
+
+  let upstreamMode: "ok" | "info-refs-404" | "upload-pack-404" = "ok"
+  let bridgeMode: "routed" | "missing-props" | "pre-object-404" | "host-mismatch" = "routed"
+  const upstreamCalls: Array<string> = []
+
+  // Clean upstream HttpClient using FetchHttpClient backed by a real local upstream HTTP server so streaming POST bodies work natively.
+  const upstreamServer = createServer(async (req, res) => {
+    const chunks: Array<Buffer> = []
+    for await (const chunk of req) chunks.push(Buffer.from(chunk))
+    const body = Buffer.concat(chunks)
+    if (req.method === "GET" && req.url?.includes("/info/refs")) {
+      if (upstreamMode === "info-refs-404") {
+        res.writeHead(404, { "content-type": "text/plain" })
+        res.end("Not Found")
+        return
+      }
+      const pack = await uploadPack(["--advertise-refs"], body, req.headers["git-protocol"] as string | undefined)
+      res.writeHead(200, { "content-type": "application/x-git-upload-pack-advertisement" })
+      res.end(Buffer.concat([Buffer.from("001e# service=git-upload-pack\n0000"), pack]))
+      return
+    }
+    if (req.method === "POST" && req.url?.includes("/git-upload-pack")) {
+      if (upstreamMode === "upload-pack-404") {
+        res.writeHead(404, { "content-type": "text/plain" })
+        res.end("Not Found")
+        return
+      }
+      const pack = await uploadPack([], body, req.headers["git-protocol"] as string | undefined)
+      res.writeHead(200, { "content-type": "application/x-git-upload-pack-result" })
+      res.end(pack)
+      return
+    }
+    res.writeHead(500)
+    res.end("unexpected")
+  })
+
+  let activeSandbox: Effect.Success<ReturnType<typeof sandboxRegistration>["initialize"]> | undefined
+  let workspaceDir = join(scratch, "w0")
+  let bridgeOrigin = ""
+  const logLines: Array<string> = []
+  const testConsole: Console.Console = Object.assign(Object.create(globalThis.console), {
+    log: (value: unknown) => {
+      if (typeof value === "string") logLines.push(value)
+    },
+  })
+
+  await new Promise<void>((resolve) => upstreamServer.listen(0, "127.0.0.1", resolve))
+  const upstreamOrigin = `http://127.0.0.1:${(upstreamServer.address() as AddressInfo).port}`
+
+  const objectHttp = FetchHttpClient.layer.pipe(
+    Layer.provide(Layer.succeed(FetchHttpClient.Fetch, (input, init) => {
+      const incoming = input instanceof Request ? input : new Request(input, init)
+      upstreamCalls.push(`${incoming.method} ${incoming.url}`)
+      const parsed = new URL(incoming.url)
+      if (parsed.hostname !== "github.com") {
+        return Promise.reject(new Error(`unexpected outbound host: ${parsed.hostname}`))
+      }
+      const rewritten = new Request(`${upstreamOrigin}${parsed.pathname}${parsed.search}`, {
+        method: incoming.method,
+        headers: incoming.headers,
+        body: incoming.method === "POST" ? incoming.body : undefined,
+        ...(incoming.method === "POST" ? { duplex: "half" } : {}),
+      } as RequestInit)
+      return globalThis.fetch(rewritten)
+    })),
+  )
+
+  const bridgeServer = createServer(async (req, res) => {
+    try {
+      const chunks: Array<Buffer> = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      const body = Buffer.concat(chunks)
+      if (bridgeMode === "pre-object-404") {
+        res.writeHead(404, { "content-type": "text/plain" })
+        res.end("pre-object 404")
+        return
+      }
+      const targetHost = bridgeMode === "host-mismatch" ? "wrong.smithers.internal" : "forge.smithers.internal"
+      const request = new Request(`http://${targetHost}${req.url}`, {
+        method: req.method,
+        headers: req.headers as Record<string, string>,
+        ...(req.method === "POST" ? { body } : {}),
+      })
+      const objects = objectNamespace({
+        fetch: (incoming) =>
+          activeSandbox!.fetch.pipe(
+            Effect.provideService(HttpServerRequest.HttpServerRequest, incoming),
+          ),
+      })
+      const objectsFor = BranchSandboxes.namespaces(objects, undefined)
+      const props = bridgeMode === "missing-props" ? undefined : { [BranchSandboxes.BOX_PROP]: "object-id" }
+      const { routed, context } = await Effect.runPromise(
+        Effect.all({
+          routed: BranchSandboxes.routeBox(objectsFor, props),
+          context: Effect.context<never>(),
+        }).pipe(
+          Effect.provideService(RuntimeContext, objectRuntime),
+          Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
+          Effect.provideService(Console.Console, testConsole),
+        ),
+      )
+      const web = Option.isSome(routed) ? HttpServerResponse.toWeb(routed.value, { context }) : new Response("fell through", { status: 404 })
+      res.writeHead(web.status, Object.fromEntries(web.headers))
+      res.end(Buffer.from(await web.arrayBuffer()))
+    } catch (error) {
+      res.writeHead(500)
+      res.end(String(error))
+    }
+  })
+
+  await new Promise<void>((resolve) => bridgeServer.listen(0, "127.0.0.1", resolve))
+  bridgeOrigin = `http://127.0.0.1:${(bridgeServer.address() as AddressInfo).port}`
+
+  const container = {
+    running: true,
+    start: () => {},
+    monitor: () => Promise.resolve(),
+    setInactivityTimeout: () => Promise.resolve(),
+    interceptOutboundHttp: async () => {},
+    interceptAllOutboundHttp: () => Promise.resolve(),
+    interceptOutboundHttps: () => Promise.resolve(),
+    exec: async (argv: ReadonlyArray<string>) => {
+      if (argv[3] !== "checkout") {
+        return {
+          pid: 1,
+          isPty: false,
+          stdin: new WritableStream(),
+          stdout: new ReadableStream({ start: (s) => s.close() }),
+          stderr: new ReadableStream({ start: (s) => s.close() }),
+          exitCode: Promise.resolve(0),
+          kill: () => {},
+        }
+      }
+      const [shell, flag, script, name, branchArg, remoteArg] = argv
+      const rewrittenScript = script!.replaceAll(WORKSPACE, workspaceDir)
+      const rewrittenRemote = remoteArg!.replace("http://forge.smithers.internal", bridgeOrigin)
+      const child = spawn(shell!, [flag!, rewrittenScript, name!, branchArg!, rewrittenRemote], {
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+        stdio: ["ignore", "ignore", "pipe"],
+      })
+      const stderr = new ReadableStream<Uint8Array>({
+        start(controller) {
+          child.stderr.on("data", (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)))
+          child.stderr.on("end", () => controller.close())
+          child.stderr.on("error", (err) => controller.error(err))
+        },
+      })
+      const exitCode = new Promise<number>((resolve, reject) => {
+        child.on("error", reject)
+        child.on("close", (code) => resolve(code ?? 137))
+      })
+      return {
+        pid: child.pid ?? 1,
+        isPty: false,
+        stdin: new WritableStream(),
+        stdout: new ReadableStream({ start: (s) => s.close() }),
+        stderr,
+        exitCode,
+        kill: () => child.kill("SIGKILL"),
+      }
+    },
+  }
+
+  const jobBranch = {
+    branchId: "job-public-forge-e2e",
+    owner: "octo",
+    name: "widgets",
+    branch: sha,
+    forge: "github" as const,
+    kind: "job" as const,
+  }
+
+  try {
+    const { initialize } = sandboxRegistration(container, { http: objectHttp })
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const hyperdrive = yield* withScratchDatabase
+      const sandbox = yield* initialize.pipe(Effect.provideService(Cloudflare.Hyperdrive.Connect, () => hyperdrive))
+      activeSandbox = sandbox
+
+      const freshDir = (label: string) => {
+        workspaceDir = join(scratch, label)
+        mkdirSync(workspaceDir, { recursive: true })
+      }
+
+      // 1. Ordinary public pinned checkout succeeds end-to-end.
+      freshDir("happy")
+      upstreamMode = "ok"
+      bridgeMode = "routed"
+      expect(yield* sandbox.wake(jobBranch)).toEqual({ _tag: "Woken", generation: 1 })
+      expect(runGit(workspaceDir, "rev-parse", "HEAD")).toBe(sha)
+      expect(upstreamCalls.some((c) => c.includes("https://github.com/octo/widgets.git/info/refs?service=git-upload-pack"))).toBe(true)
+      expect(upstreamCalls.some((c) => c.includes("https://github.com/octo/widgets.git/git-upload-pack"))).toBe(true)
+
+      // 2. Upstream returns 404 on info-refs -> discriminated as reached + github + infoRefs 404.
+      freshDir("info-refs-404")
+      upstreamMode = "info-refs-404"
+      bridgeMode = "routed"
+      const refs404 = yield* sandbox.wake(jobBranch)
+      expect(refs404).toMatchObject({
+        _tag: "CheckoutFailed",
+        exitCode: 75,
+        checkoutFailure: "clone",
+        checkoutTransportCause: "http_status",
+        checkoutHttpStatus: 404,
+        checkoutForge: {
+          routing: "reached",
+          upstream: "github",
+          infoRefs: { source: "upstream", status: 404, outcome: "4xx" },
+        },
+      })
+      expect((refs404 as { checkoutForge?: { uploadPack?: unknown } }).checkoutForge?.uploadPack).toBeUndefined()
+
+      // 3. Upstream returns 200 on info-refs, 404 on upload-pack -> both stages recorded cleanly.
+      freshDir("upload-pack-404")
+      upstreamMode = "upload-pack-404"
+      bridgeMode = "routed"
+      const pack404 = yield* sandbox.wake(jobBranch)
+      expect(pack404).toEqual({
+        _tag: "CheckoutFailed",
+        exitCode: 75,
+        checkoutFailure: "clone",
+        checkoutTransportCause: "http_status",
+        checkoutHttpStatus: 404,
+        checkoutForge: {
+          routing: "reached",
+          upstream: "github",
+          infoRefs: { source: "upstream", status: 200, outcome: "ok" },
+          uploadPack: { source: "upstream", status: 404, outcome: "4xx" },
+        },
+      })
+
+      // 4. Missing props at ChatApi routeBox fails closed with 502 (not 404) and records unreached.
+      freshDir("missing-props")
+      upstreamMode = "ok"
+      bridgeMode = "missing-props"
+      const missingProps = yield* sandbox.wake(jobBranch)
+      expect(missingProps).toEqual({
+        _tag: "CheckoutFailed",
+        exitCode: 75,
+        checkoutFailure: "clone",
+        checkoutTransportCause: "http_status",
+        checkoutHttpStatus: 502,
+        checkoutForge: { routing: "unreached" },
+      })
+
+      // 5. 404 returned before SandboxObject.fetch records unreached.
+      freshDir("pre-object-404")
+      upstreamMode = "ok"
+      bridgeMode = "pre-object-404"
+      const preObject404 = yield* sandbox.wake(jobBranch)
+      expect(preObject404).toEqual({
+        _tag: "CheckoutFailed",
+        exitCode: 75,
+        checkoutFailure: "clone",
+        checkoutTransportCause: "http_status",
+        checkoutHttpStatus: 404,
+        checkoutForge: { routing: "unreached" },
+      })
+
+      // 6. Non-forge host hitting SandboxObject.fetch during checkout is refused 403 and records host_mismatch.
+      freshDir("host-mismatch")
+      upstreamMode = "ok"
+      bridgeMode = "host-mismatch"
+      const mismatch = yield* sandbox.wake(jobBranch)
+      expect(mismatch).toEqual({
+        _tag: "CheckoutFailed",
+        exitCode: 75,
+        checkoutFailure: "clone",
+        checkoutTransportCause: "http_status",
+        checkoutHttpStatus: 403,
+        checkoutForge: { routing: "host_mismatch" },
+      })
+
+      // Admission boundary: git-receive-pack remains refused with 403.
+      const pushRefused = yield* fetchSandbox(
+        sandbox,
+        new Request("http://forge.smithers.internal/octo/widgets/info/refs?service=git-receive-pack"),
+      )
+      expect(pushRefused.status).toBe(403)
+    })).pipe(
+      Effect.provide(TestDatabase.layer("branch_sandbox_forge_e2e")),
+      Effect.provideService(Console.Console, testConsole),
+      Effect.provideService(RuntimeContext, objectRuntime),
+    ))
+  } finally {
+    bridgeServer.closeAllConnections()
+    upstreamServer.closeAllConnections()
+    await new Promise<void>((resolve) => bridgeServer.close(() => resolve()))
+    await new Promise<void>((resolve) => upstreamServer.close(() => resolve()))
+    rmSync(scratch, { recursive: true, force: true })
+  }
+}, 60_000)

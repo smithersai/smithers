@@ -31,3 +31,39 @@ export const checkoutTransportLabel = (
   if (cause === "http_status" && httpStatus !== undefined) return `HTTP ${httpStatus}`
   return transportCauseWords[cause]
 }
+
+const forgeRoutingWords: Readonly<Record<Exclude<CiJob.CheckoutForgeRouting, "reached">, string>> = {
+  unreached: "Forge unreached",
+  host_mismatch: "Forge host mismatch",
+  no_branch: "Forge no branch",
+  unscoped: "Forge unscoped",
+  failed: "Forge error",
+}
+
+const forgeSourceWord = (
+  source: CiJob.CheckoutForgeStageReceipt["source"],
+  upstream: CiJob.CheckoutForgeUpstream | undefined,
+): string => (source === "proxy" ? "Proxy" : upstream === "deployment" ? "Mirror" : "GitHub")
+
+const isFailedStage = (stage: CiJob.CheckoutForgeStageReceipt): boolean =>
+  stage.outcome !== "ok" || stage.status >= 400
+
+/** Formats a bounded host-side forge receipt succinctly for display, omitting it on historical receipts. */
+export const checkoutForgeLabel = (forge: CiJob.CheckoutForgeReceipt | undefined): string | undefined => {
+  if (forge === undefined) return undefined
+  if (forge.routing !== "reached") return forgeRoutingWords[forge.routing]
+  if (forge.uploadPack !== undefined && isFailedStage(forge.uploadPack)) {
+    return `${forgeSourceWord(forge.uploadPack.source, forge.upstream)} upload-pack ${forge.uploadPack.status}`
+  }
+  if (forge.infoRefs !== undefined && isFailedStage(forge.infoRefs)) {
+    return `${forgeSourceWord(forge.infoRefs.source, forge.upstream)} info-refs ${forge.infoRefs.status}`
+  }
+  if (forge.refused !== undefined) return `Proxy refused ${forge.refused.status}`
+  if (forge.uploadPack !== undefined) {
+    return `${forgeSourceWord(forge.uploadPack.source, forge.upstream)} upload-pack ${forge.uploadPack.status}`
+  }
+  if (forge.infoRefs !== undefined) {
+    return `${forgeSourceWord(forge.infoRefs.source, forge.upstream)} info-refs ${forge.infoRefs.status}`
+  }
+  return "Forge reached"
+}

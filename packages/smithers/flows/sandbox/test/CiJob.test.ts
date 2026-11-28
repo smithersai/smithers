@@ -495,3 +495,110 @@ describe("ci/graph", () => {
       expect(box.asked.machines).toEqual({ shard: "gate", lint: "default", merge: "gate" })
     }))
 })
+
+describe("ci/job bounded checkout forge receipts", () => {
+  it.effect("preserves checkoutForge per-stage receipts through CheckoutRefused and decodes historical receipts", () =>
+    Effect.gen(function*() {
+      const decodeResult = Schema.decodeUnknownSync(CiJob.Result)
+      const decodeForge = Schema.decodeUnknownOption(CiJob.CheckoutForgeReceipt)
+
+      // Historical receipts without checkoutForge or checkoutTransportCause remain valid.
+      expect(decodeResult({
+        outcome: "failed",
+        steps: [{ name: "checkout", outcome: "failed", exitCode: 75, checkoutFailure: "clone" }]
+      })).toEqual({
+        outcome: "failed",
+        steps: [{ name: "checkout", outcome: "failed", exitCode: 75, checkoutFailure: "clone" }]
+      })
+
+      // Out-of-range status or invalid routing is rejected by the schema.
+      expect(decodeForge({ routing: "reached", infoRefs: { source: "upstream", status: 99, outcome: "ok" } })._tag)
+        .toBe("None")
+      expect(decodeForge({ routing: "reached", infoRefs: { source: "upstream", status: 600, outcome: "5xx" } })._tag)
+        .toBe("None")
+      expect(decodeForge({ routing: "unknown_route" })._tag).toBe("None")
+
+      const cases: ReadonlyArray<CiJob.CheckoutForgeReceipt | undefined> = [
+        undefined,
+        { routing: "unreached" },
+        { routing: "host_mismatch" },
+        { routing: "no_branch" },
+        { routing: "unscoped", refused: { source: "proxy", status: 403, outcome: "refused" } },
+        { routing: "failed" },
+        { routing: "reached", upstream: "github", infoRefs: { source: "upstream", status: 404, outcome: "4xx" } },
+        {
+          routing: "reached",
+          upstream: "github",
+          infoRefs: { source: "upstream", status: 200, outcome: "ok" },
+          uploadPack: { source: "upstream", status: 404, outcome: "4xx" }
+        },
+        {
+          routing: "reached",
+          upstream: "deployment",
+          infoRefs: { source: "proxy", status: 502, outcome: "redirect" }
+        }
+      ]
+
+      for (const [index, checkoutForge] of cases.entries()) {
+        const layer = Layer.succeed(
+          CiJob.Machine,
+          CiJob.Machine.of({
+            checkout: () =>
+              Effect.fail(
+                new CiJob.CheckoutRefused({
+                  checkoutFailure: "clone",
+                  exitCode: 75,
+                  checkoutTransportCause: "http_status",
+                  checkoutHttpStatus: 404,
+                  ...(checkoutForge === undefined ? {} : { checkoutForge })
+                })
+              ),
+            run: () => Effect.die(new Error("step should not run after checkout refusal")),
+            release: () => Effect.void
+          })
+        )
+        const settled = yield* CiJob.CiJob.execute(
+          { target, job: CiJob.make("build", { steps: [{ name: "test", run: "echo hi" }] }).job },
+          { executionId: `checkout-forge-${index}` }
+        ).pipe(Effect.provide(host(layer, CiJob.CiJob)))
+
+        expect(settled).toEqual({
+          outcome: "failed",
+          steps: [
+            {
+              name: "checkout",
+              outcome: "failed",
+              exitCode: 75,
+              checkoutFailure: "clone",
+              checkoutTransportCause: "http_status",
+              checkoutHttpStatus: 404,
+              ...(checkoutForge === undefined ? {} : { checkoutForge })
+            },
+            { name: "test", outcome: "skipped", exitCode: null }
+          ]
+        })
+        expect(decodeResult(settled)).toEqual(settled)
+      }
+
+      // Also cover CheckoutRefused without checkoutTransportCause (e.g. branch-absent exit 71).
+      const bareLayer = Layer.succeed(
+        CiJob.Machine,
+        CiJob.Machine.of({
+          checkout: () => Effect.fail(new CiJob.CheckoutRefused({ checkoutFailure: "branch", exitCode: 71 })),
+          run: () => Effect.die(new Error("step should not run")),
+          release: () => Effect.void
+        })
+      )
+      const bareSettled = yield* CiJob.CiJob.execute(
+        { target, job: CiJob.make("build", { steps: [{ name: "test", run: "echo hi" }] }).job },
+        { executionId: "checkout-forge-bare" }
+      ).pipe(Effect.provide(host(bareLayer, CiJob.CiJob)))
+      expect(bareSettled).toEqual({
+        outcome: "failed",
+        steps: [
+          { name: "checkout", outcome: "failed", exitCode: 71, checkoutFailure: "branch" },
+          { name: "test", outcome: "skipped", exitCode: null }
+        ]
+      })
+    }))
+})

@@ -576,3 +576,103 @@ test.each(["version=0", "version=1", "version=2"])(
     expect(result.seen.at(-1)!.headers.get("git-protocol")).toBeNull()
   }
 )
+
+test("uploadPack reports bounded per-stage observations before body reads and ignores observer failures", async () => {
+  const seenObservations: Array<GitProxy.Observation> = []
+  const runObserved = async (
+    request: Request,
+    responder: (req: Request) => Response | "throw",
+    branch?: string,
+    onResponse?: (observation: GitProxy.Observation) => void
+  ) => {
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      const outgoing = input instanceof Request ? input : new Request(input, init)
+      const answer = responder(outgoing)
+      if (answer === "throw") throw new TypeError("fetch failed")
+      return answer
+    }
+    return Effect.runPromise(
+      GitProxy.uploadPack(HttpServerRequest.fromWeb(request), UPSTREAM, branch, { onResponse }).pipe(
+        Effect.provide(httpClient(fetch))
+      )
+    )
+  }
+
+  // Upstream 200 on info-refs is observed before the response body is drained.
+  const okRefs = await runObserved(
+    new Request(`${GUEST}/info/refs?service=git-upload-pack`),
+    () => new Response("001e# service=git-upload-pack\n0000", { status: 200 }),
+    undefined,
+    (obs) => seenObservations.push(obs)
+  )
+  expect(okRefs.status).toBe(200)
+  expect(seenObservations.at(-1)).toEqual({ service: "info-refs", source: "upstream", outcome: "ok", status: 200 })
+  expect(Object.keys(seenObservations.at(-1)!).sort()).toEqual(["outcome", "service", "source", "status"])
+
+  // Upstream 404 on info-refs vs upload-pack.
+  const missingRefs = await runObserved(
+    new Request(`${GUEST}/info/refs?service=git-upload-pack`),
+    () => new Response("Not Found", { status: 404 }),
+    undefined,
+    (obs) => seenObservations.push(obs)
+  )
+  expect(missingRefs.status).toBe(404)
+  expect(seenObservations.at(-1)).toEqual({ service: "info-refs", source: "upstream", outcome: "4xx", status: 404 })
+
+  const missingPack = await runObserved(
+    new Request(`${GUEST}/git-upload-pack`, { method: "POST", body: "0000" }),
+    () => new Response("Not Found", { status: 404 }),
+    undefined,
+    (obs) => seenObservations.push(obs)
+  )
+  expect(missingPack.status).toBe(404)
+  expect(seenObservations.at(-1)).toEqual({ service: "upload-pack", source: "upstream", outcome: "4xx", status: 404 })
+
+  // Proxy refusal (git-receive-pack), redirect refusal (502), transport error (502), and scoped synthesis (200).
+  const refused = await runObserved(
+    new Request(`${GUEST}/info/refs?service=git-receive-pack`),
+    () => new Response("should not run"),
+    undefined,
+    (obs) => seenObservations.push(obs)
+  )
+  expect(refused.status).toBe(403)
+  expect(seenObservations.at(-1)).toEqual({ service: "refused", source: "proxy", outcome: "refused", status: 403 })
+
+  const redirected = await runObserved(
+    new Request(`${GUEST}/info/refs?service=git-upload-pack`),
+    () => new Response(null, { status: 302, headers: { location: "https://other.example/repo.git" } }),
+    undefined,
+    (obs) => seenObservations.push(obs)
+  )
+  expect(redirected.status).toBe(502)
+  expect(seenObservations.at(-1)).toEqual({ service: "info-refs", source: "proxy", outcome: "redirect", status: 502 })
+
+  const failedTransport = await runObserved(
+    new Request(`${GUEST}/info/refs?service=git-upload-pack`),
+    () => "throw",
+    undefined,
+    (obs) => seenObservations.push(obs)
+  )
+  expect(failedTransport.status).toBe(502)
+  expect(seenObservations.at(-1)).toEqual({ service: "info-refs", source: "proxy", outcome: "transport", status: 502 })
+
+  const scoped = await runObserved(
+    new Request(`${GUEST}/info/refs?service=git-upload-pack`),
+    () => listing(),
+    "conversation",
+    (obs) => seenObservations.push(obs)
+  )
+  expect(scoped.status).toBe(200)
+  expect(seenObservations.at(-1)).toEqual({ service: "info-refs", source: "proxy", outcome: "ok", status: 200 })
+
+  // Observer failure must never break the proxied response.
+  const throwing = await runObserved(
+    new Request(`${GUEST}/info/refs?service=git-upload-pack`),
+    () => new Response("ok", { status: 200 }),
+    undefined,
+    () => {
+      throw new Error("observer exploded")
+    }
+  )
+  expect(throwing.status).toBe(200)
+})

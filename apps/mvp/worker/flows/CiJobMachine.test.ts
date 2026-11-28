@@ -5,7 +5,7 @@ import { Effect, Exit, Layer, Logger, Tracer } from "effect"
 import { describe, expect, test } from "vitest"
 import { noCommands } from "../test/commands.ts"
 import { Machines } from "../branch/Machines.vibe"
-import { CheckoutFailed, SandboxUnavailable } from "../branch/Sandboxes.vibe"
+import { checkoutDetails, CheckoutFailed, SandboxUnavailable } from "../branch/Sandboxes.vibe"
 import { runFlow } from "../test/flowHost.ts"
 import * as CiJobMachine from "./CiJobMachine.vibe"
 
@@ -306,4 +306,109 @@ test("CI adapter retains bounded command output in the step result", async () =>
       { name: "step-0", outcome: "passed", exitCode: 0, output },
     ] }))
   }
+}, 60_000)
+
+test("checkoutDetails sanitizes checkoutForge and CiJobMachine propagates bounded per-stage receipts to durable results, logs and spans", async () => {
+  const dirtyForge = {
+    routing: "reached" as const,
+    upstream: "github" as const,
+    infoRefs: { source: "upstream" as const, status: 200, outcome: "ok" as const, leakedUrl: "https://secret.invalid" },
+    uploadPack: { source: "upstream" as const, status: 404, outcome: "4xx" as const, secret: "ghp_secret" },
+    extra: "drop-me",
+  }
+  expect(checkoutDetails({
+    exitCode: 75,
+    checkoutFailure: "clone",
+    checkoutTransportCause: "http_status",
+    checkoutHttpStatus: 404,
+    checkoutForge: dirtyForge as never,
+  })).toEqual({
+    exitCode: 75,
+    checkoutFailure: "clone",
+    checkoutTransportCause: "http_status",
+    checkoutHttpStatus: 404,
+    checkoutForge: {
+      routing: "reached",
+      upstream: "github",
+      infoRefs: { source: "upstream", status: 200, outcome: "ok" },
+      uploadPack: { source: "upstream", status: 404, outcome: "4xx" },
+    },
+  })
+  expect(checkoutDetails({
+    exitCode: 75,
+    checkoutFailure: "clone",
+    checkoutForge: { routing: "bogus" } as never,
+  })).toEqual({ exitCode: 75, checkoutFailure: "clone" })
+
+  const checkoutForge = {
+    routing: "reached" as const,
+    upstream: "github" as const,
+    infoRefs: { source: "upstream" as const, status: 200, outcome: "ok" as const },
+    uploadPack: { source: "upstream" as const, status: 404, outcome: "4xx" as const },
+  }
+  const box = machine({
+    checkoutFailure: new CheckoutFailed({
+      exitCode: 75,
+      checkoutFailure: "clone",
+      checkoutTransportCause: "http_status",
+      checkoutHttpStatus: 404,
+      checkoutForge,
+    }),
+  })
+  const ran = await runFlow(
+    CiJob.CiJob,
+    { target, job: job("audit", "pnpm audit") },
+    registration(box.layer),
+  )
+  expect(ran.exit).toEqual(Exit.succeed({
+    outcome: "failed",
+    steps: [
+      {
+        name: "checkout",
+        outcome: "failed",
+        exitCode: 75,
+        checkoutFailure: "clone",
+        checkoutTransportCause: "http_status",
+        checkoutHttpStatus: 404,
+        checkoutForge,
+      },
+      { name: "step-0", outcome: "skipped", exitCode: null },
+    ],
+  }))
+
+  const spans: Array<Tracer.NativeSpan> = []
+  const lines: Array<unknown> = []
+  const direct = await Effect.runPromise(Effect.gen(function* () {
+    return yield* Effect.exit((yield* CiJob.Machine).checkout(target, { name: "audit" }))
+  }).pipe(
+    Effect.provide(CiJobMachine.layer.pipe(Layer.provide(box.layer))),
+    Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((line) => {
+      lines.push(Logger.formatStructured.log(line))
+    })])),
+    Effect.provideService(Tracer.Tracer, Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      },
+    })),
+  ))
+  expect(Exit.isFailure(direct)).toBe(true)
+  const log = lines.find((line) => (line as { message?: unknown }).message === "ci.job.call") as
+    { annotations: Record<string, unknown> } | undefined
+  expect(log?.annotations).toMatchObject({
+    call: "checkout",
+    outcome: "refused",
+    checkoutHttpStatus: 404,
+    forgeRouting: "reached",
+    forgeUpstream: "github",
+    forgeInfoRefsStatus: 200,
+    forgeUploadPackStatus: 404,
+    forgeUploadPackSource: "upstream",
+  })
+  const checkoutSpan = spans.find((span) => span.name === "ci.job.checkout")
+  expect(checkoutSpan?.attributes.get("ci.checkout.forge.routing")).toBe("reached")
+  expect(checkoutSpan?.attributes.get("ci.checkout.forge.upstream")).toBe("github")
+  expect(checkoutSpan?.attributes.get("ci.checkout.forge.info_refs.status")).toBe(200)
+  expect(checkoutSpan?.attributes.get("ci.checkout.forge.upload_pack.status")).toBe(404)
 }, 60_000)

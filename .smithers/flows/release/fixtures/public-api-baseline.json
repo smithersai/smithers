@@ -9947,7 +9947,7 @@
         "AwsSandbox/Sdk.d.ts": "1102de965333f870451757daafbbf6e7a1a66b5549983bcf7b5c125662623174",
         "AwsSandbox/index.d.ts": "af21c1a9a6709988c915dbc49706cbfd5b2b656bba589e12cb517fc012860c8f",
         "AwsSandbox/make.d.ts": "eed68fa32de3c95d56ac0d8a3b27cd6506beefa4e3a7f3cb58d70e726b7dacf1",
-        "CiJob/index.d.ts": "b4aceb6bef9bd5375352879d2ca9f567ff77897ca6e656a8756f4f5344226fa1",
+        "CiJob/index.d.ts": "d60dfc9096aef4f680446965fcb3240f9e1bb9b872fe91ab286bb4baa461c762",
         "CloudflareSandbox/Sdk.d.ts": "3990eca4bd06a3da3ac3917a5a799c53b21d2ac59a404b84c520239bdbe8507e",
         "CloudflareSandbox/index.d.ts": "d11742a7327592870cb0d1e912ad1d5d3ed400b8ca59e6dfc693a60cbc204485",
         "CloudflareSandbox/make.d.ts": "38480323b02f4375163de1900da414e81907c1f9c800f6116f053e3f9614a444",

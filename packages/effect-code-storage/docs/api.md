@@ -400,10 +400,24 @@ const requests: Metric.Counter<number>
 ### `GitProxy.uploadPack`
 
 ```ts
+type Source = "proxy" | "upstream"
+
+interface Observation {
+  readonly service: Service | "refused"
+  readonly source: Source
+  readonly outcome: string
+  readonly status: number
+}
+
+interface UploadPackOptions {
+  readonly onResponse?: ((observation: Observation) => void) | undefined
+}
+
 const uploadPack: (
   request: HttpServerRequest.HttpServerRequest,
   upstream: GitRemote.Upstream,
-  branch?: string
+  branch?: string,
+  options?: UploadPackOptions
 ) => Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpClient.HttpClient>
 ```
 
@@ -420,6 +434,11 @@ const uploadPack: (
 - **Redirects:** it never follows one, which would carry the credential to an
   origin the host never chose. An upstream that answers 3xx is a bodyless 502
   to the guest.
+- **Observations:** when `options.onResponse` is passed, `uploadPack` reports a
+  bounded `{ service, source, outcome, status }` receipt immediately before
+  returning response headers (for proxy refusals/errors or upstream responses),
+  never leaking URLs, paths, headers, bodies, or credentials. Observer errors
+  are ignored.
 
 ### `GitProxy.classify`
 

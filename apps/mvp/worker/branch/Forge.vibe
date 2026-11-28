@@ -170,6 +170,34 @@ export const forgeOf = (deployment: Forge["Service"], branch: { readonly forge?:
     upstream: (repository) => deployment.upstream(repository, branch.namespace),
   }
 
+/** Bounded observation emitted by {@link proxy} when a guest git request is answered or refused. */
+export type ProxyEvent =
+  | {
+    readonly kind: "unscoped"
+    readonly service: GitProxy.Service | "refused"
+    readonly source: "proxy"
+    readonly outcome: "refused"
+    readonly status: 403
+  }
+  | (GitProxy.Observation & {
+    readonly kind: "response"
+    readonly upstream: "github" | "deployment"
+  })
+
+/** Optional observer hook for {@link proxy}. */
+export interface ProxyOptions {
+  readonly onResponse?: ((event: ProxyEvent) => void) | undefined
+}
+
+const notifyProxy = (onResponse: ((event: ProxyEvent) => void) | undefined, event: ProxyEvent) => {
+  if (onResponse === undefined) return
+  try {
+    onResponse(event)
+  } catch {
+    // Observer errors must not alter the proxied response.
+  }
+}
+
 /**
  * Guest Git traffic must not expose other conversations in a shared ephemeral namespace.
  * The SDK advertises only the persisted branch and authorizes its current tip. A missing branch
@@ -179,9 +207,11 @@ export const proxy = (
   request: HttpServerRequest.HttpServerRequest,
   deployment: Forge["Service"],
   branch: Repository & { readonly branch?: string | undefined; readonly forge?: "github" | undefined; readonly namespace?: CodeStorage.RefNamespace | undefined },
+  options?: ProxyOptions,
 ) => (effect {
   if (branch.namespace === "ephemeral" && branch.branch === undefined) {
     const service = (try sync(() => GitProxy.classify(request.method, request.url))) ?? "refused"
+    try sync(() => notifyProxy(options?.onResponse, { kind: "unscoped", service, source: "proxy", outcome: "refused", status: 403 }))
     try Metric.update(Metric.withAttributes(GitProxy.requests, { service, outcome: "refused" }), 1)
     try Effect.annotateCurrentSpan({
       "git.proxy.service": service,
@@ -193,6 +223,17 @@ export const proxy = (
     )
     return HttpServerResponse.empty({ status: 403 })
   }
+  const upstreamKind = branch.forge === "github" ? "github" as const : "deployment" as const
   const remote = try forgeOf(deployment, branch).upstream(branch)
-  return try GitProxy.uploadPack(request, remote, branch.namespace === "ephemeral" ? branch.branch : undefined)
+  return try GitProxy.uploadPack(
+    request,
+    remote,
+    branch.namespace === "ephemeral" ? branch.branch : undefined,
+    options?.onResponse === undefined
+      ? undefined
+      : {
+        onResponse: (observation) =>
+          notifyProxy(options.onResponse, { kind: "response", upstream: upstreamKind, ...observation }),
+      },
+  )
 }).pipe((effect) => withUserAgent(effect, true), Effect.withSpan("sandbox.forge", { kind: "server" }))

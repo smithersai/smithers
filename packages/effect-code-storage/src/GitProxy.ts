@@ -61,6 +61,45 @@ import { negotiation, packet, validBranch } from "./internal/scopedGit.ts"
 export type Service = "info-refs" | "upload-pack"
 
 /**
+ * Whether a proxied git answer came from the proxy itself (refusal, scoped ref
+ * read, redirect refusal, or upstream transport failure) or from the upstream
+ * git remote.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export type Source = "proxy" | "upstream"
+
+/**
+ * Bounded per-request receipt reported by {@link uploadPack} once the response
+ * status is known. Never carries URLs, paths, headers, bodies, or credentials.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export interface Observation {
+  readonly service: Service | "refused"
+  readonly source: Source
+  readonly outcome: string
+  readonly status: number
+}
+
+/**
+ * Optional controls for {@link uploadPack}.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export interface UploadPackOptions {
+  /**
+   * Invoked once the proxy decides the response status (immediately for proxy
+   * refusals/errors or as soon as upstream headers arrive, before returning the
+   * response to the guest). Observer failures are ignored.
+   */
+  readonly onResponse?: ((observation: Observation) => void) | undefined
+}
+
+/**
  * The counter {@link uploadPack} updates once per request:
  * `git_proxy_requests`, by `service` (`info-refs`, `upload-pack`, or
  * `refused`) and `outcome` (`ok`, `refused`, the upstream's status class
@@ -121,11 +160,23 @@ const statusClass = (status: number) => `${Math.floor(status / 100)}xx`
 export const uploadPack = (
   request: HttpServerRequest.HttpServerRequest,
   upstream: GitRemote.Upstream,
-  branch?: string
+  branch?: string,
+  options?: UploadPackOptions
 ): Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpClient.HttpClient> =>
   Effect.gen(function*() {
     const startedAt = yield* Clock.currentTimeMillis
     const service = classify(request.method, request.url)
+    const onResponse = options?.onResponse
+    const observe = (source: Source, outcome: string, status: number) =>
+      onResponse === undefined
+        ? Effect.void
+        : Effect.sync(() => {
+          try {
+            onResponse({ service: service ?? "refused", source, outcome, status })
+          } catch {
+            // Observer failures must not alter the proxied git response.
+          }
+        })
     const annotate = (status: number) =>
       Effect.annotateCurrentSpan({
         "git.proxy.service": service ?? "refused",
@@ -139,7 +190,8 @@ export const uploadPack = (
           Effect.annotateLogs({ service: service ?? "refused", outcome, status, durationMs })
         )
       })
-    const done = (outcome: string, status: number) => annotate(status).pipe(Effect.andThen(record(outcome, status)))
+    const done = (outcome: string, status: number) =>
+      observe("proxy", outcome, status).pipe(Effect.andThen(annotate(status)), Effect.andThen(record(outcome, status)))
     if (service === undefined) {
       yield* done("refused", 403)
       return HttpServerResponse.empty({ status: 403 })
@@ -226,6 +278,8 @@ export const uploadPack = (
       if (value !== undefined) headers[name] = value
     }
     const outcome = answer.status < 300 ? "ok" : statusClass(answer.status)
+    // Observed before headers return to the guest so callers see the upstream status without racing body close.
+    yield* observe("upstream", outcome, answer.status)
     // The server streams the body after this handler has returned, with its own services: the record runs with the
     // request's, so it reaches the logger, metric registry and clock the request ran with.
     const context = yield* Effect.context<never>()

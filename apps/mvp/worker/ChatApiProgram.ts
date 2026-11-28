@@ -585,8 +585,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, m
       fetch: Effect.gen(function*() {
         // A branch's box reaches its forge through this Worker's own entrypoint, with props naming its object
         // (worker/BranchSandboxes.ts): handed straight back to that object, never routed as a person's request.
-        const box = BranchSandboxes.boxOf((yield* Cloudflare.WorkerExecutionContext).raw.props)
-        if (box !== undefined) return yield* BranchSandboxes.answerBox(machineObjects, box)
+        const boxed = yield* BranchSandboxes.routeBox(machineObjects, (yield* Cloudflare.WorkerExecutionContext).raw.props)
+        if (Option.isSome(boxed)) return boxed.value
         if (options.door !== undefined) {
           const answered = yield* options.door({ executions, database })
           if (Option.isSome(answered)) return answered.value

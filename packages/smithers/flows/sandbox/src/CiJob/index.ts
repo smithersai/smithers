@@ -204,8 +204,19 @@ export type Target = typeof Target.Type
  * @since 1.0.0-rc.23
  */
 export const CheckoutFailure = Schema.Literals([
-  "forge", "branch", "clone", "other", "verify", "timed_out", "tool_lost",
-  "path", "not_found", "not_a_file", "not_a_directory", "not_a_repository", "too_large"
+  "forge",
+  "branch",
+  "clone",
+  "other",
+  "verify",
+  "timed_out",
+  "tool_lost",
+  "path",
+  "not_found",
+  "not_a_file",
+  "not_a_directory",
+  "not_a_repository",
+  "too_large"
 ])
 /**
  * Bounded checkout failure stage.
@@ -257,6 +268,119 @@ export const CheckoutHttpStatus = Schema.Int.check(Schema.isBetween({ minimum: 1
 export type CheckoutHttpStatus = typeof CheckoutHttpStatus.Type
 
 /**
+ * Bounded per-stage outcome observed at the host git forge proxy.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.23
+ */
+export const CheckoutForgeStageOutcome = Schema.Literals([
+  "ok",
+  "refused",
+  "transport",
+  "redirect",
+  "broken",
+  "1xx",
+  "2xx",
+  "3xx",
+  "4xx",
+  "5xx"
+])
+
+/**
+ * Bounded per-stage outcome observed at the host git forge proxy.
+ *
+ * @category models
+ * @since 1.0.0-rc.23
+ */
+export type CheckoutForgeStageOutcome = typeof CheckoutForgeStageOutcome.Type
+
+/**
+ * Bounded per-stage receipt for one git smart-HTTP request at the host forge
+ * proxy (`info-refs`, `upload-pack`, or a refused request). Never carries URLs,
+ * paths, headers, stderr, or secrets.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.23
+ */
+export const CheckoutForgeStageReceipt = Schema.Struct({
+  source: Schema.Literals(["proxy", "upstream"]),
+  status: CheckoutHttpStatus,
+  outcome: CheckoutForgeStageOutcome
+})
+
+/**
+ * Bounded per-stage receipt for one git smart-HTTP request at the host forge proxy.
+ *
+ * @category models
+ * @since 1.0.0-rc.23
+ */
+export type CheckoutForgeStageReceipt = typeof CheckoutForgeStageReceipt.Type
+
+/**
+ * Where a failed checkout reached the branch machine forge proxy, or why it did not.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.23
+ */
+export const CheckoutForgeRouting = Schema.Literals([
+  "reached",
+  "unreached",
+  "host_mismatch",
+  "no_branch",
+  "unscoped",
+  "failed"
+])
+
+/**
+ * Where a failed checkout reached the branch machine forge proxy, or why it did not.
+ *
+ * @category models
+ * @since 1.0.0-rc.23
+ */
+export type CheckoutForgeRouting = typeof CheckoutForgeRouting.Type
+
+/**
+ * Which configured upstream forge the branch machine selected for checkout.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.23
+ */
+export const CheckoutForgeUpstream = Schema.Literals(["github", "deployment"])
+
+/**
+ * Which configured upstream forge the branch machine selected for checkout.
+ *
+ * @category models
+ * @since 1.0.0-rc.23
+ */
+export type CheckoutForgeUpstream = typeof CheckoutForgeUpstream.Type
+
+/**
+ * Bounded host-side forge proxy observation for a failed checkout: whether the
+ * branch machine received forge traffic, which upstream it selected, and the
+ * per-stage status for `info-refs`, `upload-pack`, and refused requests.
+ * Omitted on historical receipts; never carries URLs, paths, stderr, or secrets.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.23
+ */
+export const CheckoutForgeReceipt = Schema.Struct({
+  routing: CheckoutForgeRouting,
+  upstream: Schema.optionalKey(CheckoutForgeUpstream),
+  infoRefs: Schema.optionalKey(CheckoutForgeStageReceipt),
+  uploadPack: Schema.optionalKey(CheckoutForgeStageReceipt),
+  refused: Schema.optionalKey(CheckoutForgeStageReceipt)
+})
+
+/**
+ * Bounded host-side forge proxy observation for a failed checkout.
+ *
+ * @category models
+ * @since 1.0.0-rc.23
+ */
+export type CheckoutForgeReceipt = typeof CheckoutForgeReceipt.Type
+
+/**
  * A terminal checkout failure carrying bounded diagnostics. Machine checkout still answers a boolean on success.
  * @category errors
  * @since 1.0.0-rc.23
@@ -265,7 +389,8 @@ export class CheckoutRefused extends Schema.TaggedError<CheckoutRefused>()("@smt
   checkoutFailure: CheckoutFailure,
   exitCode: Schema.NullOr(Schema.Int),
   checkoutTransportCause: Schema.optionalKey(CheckoutTransportCause),
-  checkoutHttpStatus: Schema.optionalKey(CheckoutHttpStatus)
+  checkoutHttpStatus: Schema.optionalKey(CheckoutHttpStatus),
+  checkoutForge: Schema.optionalKey(CheckoutForgeReceipt)
 }) {}
 
 /**
@@ -281,6 +406,7 @@ export const StepResult = Schema.Struct({
   checkoutFailure: Schema.optionalKey(CheckoutFailure),
   checkoutTransportCause: Schema.optionalKey(CheckoutTransportCause),
   checkoutHttpStatus: Schema.optionalKey(CheckoutHttpStatus),
+  checkoutForge: Schema.optionalKey(CheckoutForgeReceipt),
   output: Schema.optionalKey(Schema.Struct({ stdout: Schema.String, stderr: Schema.String, truncated: Schema.Boolean }))
 })
 
@@ -504,7 +630,7 @@ export const layer = Layer.mergeAll(
       }),
       Effect.catchTag(
         "@smthrs/sandbox/CiJob/CheckoutRefused",
-        ({ checkoutFailure, checkoutHttpStatus, checkoutTransportCause, exitCode }) =>
+        ({ checkoutFailure, checkoutForge, checkoutHttpStatus, checkoutTransportCause, exitCode }) =>
           Effect.succeed<Result>({
             outcome: "failed",
             steps: [{
@@ -515,7 +641,8 @@ export const layer = Layer.mergeAll(
               ...(checkoutTransportCause === undefined ? {} : { checkoutTransportCause }),
               ...(checkoutTransportCause === "http_status" && checkoutHttpStatus !== undefined
                 ? { checkoutHttpStatus }
-                : {})
+                : {}),
+              ...(checkoutForge === undefined ? {} : { checkoutForge })
             }]
           })
       )

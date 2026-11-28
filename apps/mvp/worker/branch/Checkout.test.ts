@@ -11,7 +11,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
 import { WORKSPACE } from "../../src/features/terminal/contract.ts"
-import { CHECKOUT_FAILURES, checkoutArgv, classifyCheckoutTransport, DEPTH, forgeRemote } from "./Checkout.ts"
+import { CHECKOUT_FAILURES, checkoutArgv, checkoutForgeLogFields, checkoutForgeSpanAttributes, classifyCheckoutTransport, createCheckoutForgeTracker, DEPTH, forgeRemote } from "./Checkout.ts"
 
 const root = mkdtempSync(join(tmpdir(), "checkout-"))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
@@ -462,5 +462,86 @@ describe("real git transport failure classification", () => {
       expect(classified).toEqual(expected)
       expect(JSON.stringify(classified)).not.toContain(secret)
     }
+  })
+})
+
+describe("createCheckoutForgeTracker", () => {
+  test("tracks unreached, host_mismatch, no_branch, unscoped, failed, and per-stage reached receipts without clobbering stages", () => {
+    expect(createCheckoutForgeTracker().snapshot()).toEqual({ routing: "unreached" })
+
+    const mismatch = createCheckoutForgeTracker()
+    mismatch.onHostMismatch()
+    expect(mismatch.snapshot()).toEqual({ routing: "host_mismatch" })
+
+    const noBranch = createCheckoutForgeTracker()
+    noBranch.onHostMismatch()
+    noBranch.onNoBranch()
+    expect(noBranch.snapshot()).toEqual({ routing: "no_branch" })
+
+    const unscoped = createCheckoutForgeTracker()
+    unscoped.onUnscoped(403)
+    expect(unscoped.snapshot()).toEqual({
+      routing: "unscoped",
+      refused: { source: "proxy", status: 403, outcome: "refused" },
+    })
+
+    const failed = createCheckoutForgeTracker()
+    failed.onFailed()
+    expect(failed.snapshot()).toEqual({ routing: "failed" })
+
+    // info-refs 404 followed by a refused dumb-HTTP fallback keeps both stages distinct.
+    const refs404 = createCheckoutForgeTracker()
+    refs404.onResponse("github", { service: "info-refs", source: "upstream", outcome: "4xx", status: 404 })
+    refs404.onResponse("github", { service: "refused", source: "proxy", outcome: "refused", status: 403 })
+    refs404.onHostMismatch()
+    refs404.onFailed()
+    expect(refs404.snapshot()).toEqual({
+      routing: "reached",
+      upstream: "github",
+      infoRefs: { source: "upstream", status: 404, outcome: "4xx" },
+      refused: { source: "proxy", status: 403, outcome: "refused" },
+    })
+
+    // info-refs 200 followed by upload-pack 404 records both stages.
+    const pack404 = createCheckoutForgeTracker()
+    pack404.onResponse("github", { service: "info-refs", source: "upstream", outcome: "ok", status: 200 })
+    pack404.onResponse("github", { service: "upload-pack", source: "upstream", outcome: "4xx", status: 404 })
+    // Out-of-range status is ignored; unknown outcome normalizes to status class.
+    pack404.onResponse("deployment", { service: "refused", source: "proxy", outcome: "custom_unlisted", status: 502 })
+    pack404.onResponse("deployment", { service: "upload-pack", source: "upstream", outcome: "4xx", status: 999 })
+    const snap = pack404.snapshot()
+    expect(snap).toEqual({
+      routing: "reached",
+      upstream: "deployment",
+      infoRefs: { source: "upstream", status: 200, outcome: "ok" },
+      uploadPack: { source: "upstream", status: 404, outcome: "4xx" },
+      refused: { source: "proxy", status: 502, outcome: "5xx" },
+    })
+    expect(checkoutForgeLogFields(snap)).toEqual({
+      forgeRouting: "reached",
+      forgeUpstream: "deployment",
+      forgeInfoRefsSource: "upstream",
+      forgeInfoRefsStatus: 200,
+      forgeInfoRefsOutcome: "ok",
+      forgeUploadPackSource: "upstream",
+      forgeUploadPackStatus: 404,
+      forgeUploadPackOutcome: "4xx",
+      forgeRefusedSource: "proxy",
+      forgeRefusedStatus: 502,
+      forgeRefusedOutcome: "5xx",
+    })
+    expect(checkoutForgeSpanAttributes(snap)).toEqual({
+      "ci.checkout.forge.routing": "reached",
+      "ci.checkout.forge.upstream": "deployment",
+      "ci.checkout.forge.info_refs.source": "upstream",
+      "ci.checkout.forge.info_refs.status": 200,
+      "ci.checkout.forge.info_refs.outcome": "ok",
+      "ci.checkout.forge.upload_pack.source": "upstream",
+      "ci.checkout.forge.upload_pack.status": 404,
+      "ci.checkout.forge.upload_pack.outcome": "4xx",
+      "ci.checkout.forge.refused.source": "proxy",
+      "ci.checkout.forge.refused.status": 502,
+      "ci.checkout.forge.refused.outcome": "5xx",
+    })
   })
 })

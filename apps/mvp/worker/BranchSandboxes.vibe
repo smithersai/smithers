@@ -15,7 +15,15 @@ import type { Role } from "./Actor.vibe"
 import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.vibe"
 import * as Artifacts from "./branch/Artifacts.vibe"
 import * as Budget from "./branch/Budget.vibe"
-import { CHECKOUT_FAILURES, checkoutArgv, classifyCheckoutTransport, forgeRemote } from "./branch/Checkout.ts"
+import {
+  CHECKOUT_FAILURES,
+  checkoutArgv,
+  checkoutForgeLogFields,
+  type CheckoutForgeTracker,
+  classifyCheckoutTransport,
+  createCheckoutForgeTracker,
+  forgeRemote
+} from "./branch/Checkout.ts"
 import { Forge, proxy } from "./branch/Forge.vibe"
 import * as JobMachines from "./branch/JobMachines.vibe"
 import * as Machine from "./branch/Machine.vibe"
@@ -224,6 +232,21 @@ export const boxOf = (props: unknown): { readonly id: string; readonly machine?:
   return typeof machine === "string" && machine !== "" ? { id, machine } : { id }
 }
 
+/**
+ * Identifies requests targeting sandbox-only internal hosts (`forge.smithers.internal` or `artifacts.smithers.internal`)
+ * so ChatApi fails closed with 502 instead of routing missing-props loopback requests into external routes (which 404).
+ */
+export const internalHostOf = (url: string): "forge" | "artifacts" | undefined => {
+  try {
+    const host = new URL(url).host
+    if (host === FORGE_HOST) return "forge"
+    if (host === Artifacts.ARTIFACTS_HOST) return "artifacts"
+    return undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** The loopback to ChatApi's own default entrypoint a Durable Object's `ctx.exports` holds, with `props`. */
 interface Loopback {
   readonly exports: { readonly default: (options: { readonly props: Record<string, string> }) => Fetcher }
@@ -414,6 +437,11 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
       ]
       // One-use tickets ChatApi took for the sockets it is about to hand this object (TICKET_HEADER).
       const tickets = new Set<string>()
+      // Active checkout trackers on this object instance: receives bounded forge proxy events before git exits.
+      const checkoutTrackers = new Set<CheckoutForgeTracker>()
+      const notifyCheckoutTrackers = (notify: (tracker: CheckoutForgeTracker) => void) => {
+        for (const tracker of checkoutTrackers) notify(tracker)
+      }
       const branchOf = state.storage.get<SandboxBranch>("branch").pipe(
         Effect.map((value) => (value !== undefined && isBranch(value) ? value : undefined))
       )
@@ -514,13 +542,28 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
             }
             stage = "checkout"
             const argv = try sync(() => checkoutArgv(branch.branch, forgeRemote(branch.owner, branch.name), branch.namespace))
-            const ran = try timed(runCheckout(argv, SANDBOX_USER))
+            const forgeTracker = try sync(() => createCheckoutForgeTracker())
+            const ran = try timed(
+              Effect.acquireUseRelease(
+                sync(() => {
+                  checkoutTrackers.add(forgeTracker)
+                }),
+                () => runCheckout(argv, SANDBOX_USER),
+                () =>
+                  sync(() => {
+                    checkoutTrackers.delete(forgeTracker)
+                  })
+              )
+            )
             if (ran.exitCode !== 0) {
               const transport = try sync(() => classifyCheckoutTransport(ran.exitCode, ran.stderr))
+              const checkoutForge = try sync(() => forgeTracker.snapshot())
+              const forgeLogs = try sync(() => checkoutForgeLogFields(checkoutForge))
               const diagnostics = {
                 exitCode: ran.exitCode,
                 checkoutFailure: CHECKOUT_FAILURES[ran.exitCode] ?? "other",
-                ...transport
+                ...transport,
+                checkoutForge
               } as const
               try Effect.logWarning("sandbox.checkout").pipe(
                 Effect.annotateLogs({
@@ -532,6 +575,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
                   failure: diagnostics.checkoutFailure,
                   ...(diagnostics.checkoutTransportCause === undefined ? {} : { transportCause: diagnostics.checkoutTransportCause }),
                   ...(diagnostics.checkoutHttpStatus === undefined ? {} : { httpStatus: diagnostics.checkoutHttpStatus }),
+                  ...forgeLogs,
                   ...took
                 })
               )
@@ -962,17 +1006,28 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
         effect {
           const branch = try branchOf
           if (branch === undefined) {
+            try sync(() => notifyCheckoutTrackers((tracker) => tracker.onNoBranch()))
             try Effect.logWarning("sandbox.forge").pipe(Effect.annotateLogs({ status: 403, outcome: "no_branch" }))
             return HttpServerResponse.empty({ status: 403 })
           }
-          const response = try proxy(request, forge, branch).pipe(Effect.provide(http))
+          const response = try proxy(request, forge, branch, {
+            onResponse: (event) =>
+              notifyCheckoutTrackers((tracker) =>
+                event.kind === "unscoped"
+                  ? tracker.onUnscoped(event.status)
+                  : tracker.onResponse(event.upstream, event)
+              )
+          }).pipe(Effect.provide(http))
           try Effect.logInfo("sandbox.forge").pipe(
             Effect.annotateLogs({ branchId: branch.branchId, status: response.status, outcome: "answered" })
           )
           return response
         }.pipe(
           Effect.tapCause((cause) =>
-            Effect.logWarning("sandbox.forge").pipe(Effect.annotateLogs({ outcome: "failed", ...failureFields(cause) }))
+            Effect.andThen(
+              sync(() => notifyCheckoutTrackers((tracker) => tracker.onFailed())),
+              Effect.logWarning("sandbox.forge").pipe(Effect.annotateLogs({ outcome: "failed", ...failureFields(cause) }))
+            )
           )
         )
 
@@ -1107,6 +1162,10 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
           }
           // Only ChatApi holds a ticket: a socket it hands over is attached, once per ticket.
           if (tickets.delete(request.headers[TICKET_HEADER] ?? "")) return try attach(request)
+          // A non-forge, non-artifact outbound request arriving during checkout flags a host routing mismatch.
+          if (checkoutTrackers.size > 0) {
+            try sync(() => notifyCheckoutTrackers((tracker) => tracker.onHostMismatch()))
+          }
           // Every other request is the box's own, out through its egress. An overflow box's go only through its own
           // credentials' egress; a TODO box's agent's to its vendor first.
           const overflowing = try state.storage.get<SandboxEgress.OverflowCredentials>("overflow")
@@ -1245,6 +1304,24 @@ export const answerBox = (objectsFor: Namespaces, box: { readonly id: string; re
       )
     )
   )
+
+/**
+ * ChatApi's sandbox loopback boundary: routes valid box `props` through `answerBox`, fails closed with 502 when a
+ * sandbox-only internal host (`forge.smithers.internal` or `artifacts.smithers.internal`) arrives without `props`
+ * (preventing fallthrough to external routes that return 404), and returns `None` for normal external requests.
+ */
+export const routeBox = (objectsFor: Namespaces, props: unknown) =>
+  effect {
+    const box = boxOf(props)
+    if (box !== undefined) return Option.some(try answerBox(objectsFor, box))
+    const request = try HttpServerRequest.HttpServerRequest
+    const internalHost = internalHostOf(request.originalUrl)
+    if (internalHost === undefined) return Option.none<HttpServerResponse.HttpServerResponse>()
+    try Effect.logWarning("sandbox.box_request").pipe(
+      Effect.annotateLogs({ outcome: "missing_box_props", internalHost })
+    )
+    return Option.some(HttpServerResponse.empty({ status: 502 }))
+  }
 
 /** `Sandboxes` as a layer, built in the runtime that runs the flows (`RuntimeContext`). */
 export const sandboxesLayer = (objects: Objects, keep: Keep = noKeep) =>

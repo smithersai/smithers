@@ -3,6 +3,7 @@ import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Action, Interpreter } from "@smthrs/flow"
 import { CiJob, type SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer, Metric } from "effect"
+import { checkoutForgeLogFields, checkoutForgeSpanAttributes } from "../branch/Checkout.ts"
 import { Machines } from "../branch/Machines.vibe"
 import { machineOf } from "./CiJobIdentity.ts"
 
@@ -86,6 +87,7 @@ export const layer = Layer.effect(
                   ...(error.checkoutTransportCause === "http_status" && error.checkoutHttpStatus !== undefined
                     ? { checkoutHttpStatus: error.checkoutHttpStatus }
                     : {}),
+                  ...(error.checkoutForge === undefined ? {} : { checkoutForge: error.checkoutForge }),
                 })
               }
               throw new CiJob.CheckoutRefused({
@@ -102,6 +104,8 @@ export const layer = Layer.effect(
           Effect.tapErrorTag("@smthrs/sandbox/CiJob/CheckoutRefused", effect (refusal) => {
             const stage = try sync(() => pinnedCheckoutStage(refusal.checkoutFailure, refusal.exitCode))
             const httpStatus = refusal.checkoutTransportCause === "http_status" ? refusal.checkoutHttpStatus : undefined
+            const forgeLogs = refusal.checkoutForge === undefined ? {} : try sync(() => checkoutForgeLogFields(refusal.checkoutForge!))
+            const forgeSpans = refusal.checkoutForge === undefined ? {} : try sync(() => checkoutForgeSpanAttributes(refusal.checkoutForge!))
             try counted("checkout", "refused", target, job).pipe(
               Effect.annotateLogs({
                 checkoutFailure: refusal.checkoutFailure,
@@ -109,6 +113,7 @@ export const layer = Layer.effect(
                 ...(stage === undefined ? {} : { checkoutStage: stage }),
                 ...(refusal.checkoutTransportCause === undefined ? {} : { checkoutTransportCause: refusal.checkoutTransportCause }),
                 ...(httpStatus === undefined ? {} : { checkoutHttpStatus: httpStatus }),
+                ...forgeLogs,
               }),
               Effect.andThen(Effect.annotateCurrentSpan({
                 "ci.checkout.failure": refusal.checkoutFailure,
@@ -116,6 +121,7 @@ export const layer = Layer.effect(
                 ...(refusal.exitCode === null ? {} : { "ci.checkout.exit_code": refusal.exitCode }),
                 ...(refusal.checkoutTransportCause === undefined ? {} : { "ci.checkout.transport_cause": refusal.checkoutTransportCause }),
                 ...(httpStatus === undefined ? {} : { "ci.checkout.http_status": httpStatus }),
+                ...forgeSpans,
               })),
             )
           }),

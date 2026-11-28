@@ -60,3 +60,56 @@ test("checkout details show the recorded stage, transport cause and exit code wh
   expect(historic).not.toContain("Unknown cause")
   expect(historic).not.toContain("Exit ")
 })
+
+test("checkout forge receipts render compact stage/origin labels and stay hidden for historical receipts", () => {
+  const render = (checkoutForge?: CiJob.CheckoutForgeReceipt) =>
+    renderToStaticMarkup(createElement(RunJobResults, {
+      jobs: [{
+        name: "audit",
+        outcome: "failed",
+        steps: [
+          {
+            name: "checkout",
+            outcome: "failed",
+            exitCode: 75,
+            checkoutFailure: "clone",
+            checkoutTransportCause: "http_status",
+            checkoutHttpStatus: 404,
+            ...(checkoutForge === undefined ? {} : { checkoutForge }),
+          },
+          { name: "run", outcome: "skipped", exitCode: null },
+        ],
+      }],
+    }))
+
+  // Historical Stage 7 receipt (no checkoutForge) renders HTTP 404 with no forge pill.
+  const historic = render()
+  expect(historic).toContain(">HTTP 404<")
+  expect(historic).not.toContain("Forge ")
+  expect(historic).not.toContain("info-refs")
+  expect(historic).not.toContain("upload-pack")
+
+  const cases: ReadonlyArray<readonly [CiJob.CheckoutForgeReceipt, string]> = [
+    [{ routing: "unreached" }, "Forge unreached"],
+    [{ routing: "host_mismatch" }, "Forge host mismatch"],
+    [{ routing: "no_branch" }, "Forge no branch"],
+    [{ routing: "unscoped", refused: { source: "proxy", status: 403, outcome: "refused" } }, "Forge unscoped"],
+    [{ routing: "failed" }, "Forge error"],
+    [{ routing: "reached", upstream: "github", infoRefs: { source: "upstream", status: 404, outcome: "4xx" } }, "GitHub info-refs 404"],
+    [{
+      routing: "reached",
+      upstream: "github",
+      infoRefs: { source: "upstream", status: 200, outcome: "ok" },
+      uploadPack: { source: "upstream", status: 404, outcome: "4xx" },
+    }, "GitHub upload-pack 404"],
+    [{ routing: "reached", upstream: "deployment", infoRefs: { source: "upstream", status: 404, outcome: "4xx" } }, "Mirror info-refs 404"],
+    [{ routing: "reached", upstream: "github", infoRefs: { source: "proxy", status: 502, outcome: "transport" } }, "Proxy info-refs 502"],
+    [{ routing: "reached", upstream: "github", refused: { source: "proxy", status: 403, outcome: "refused" } }, "Proxy refused 403"],
+    [{ routing: "reached", upstream: "github", infoRefs: { source: "upstream", status: 200, outcome: "ok" } }, "GitHub info-refs 200"],
+    [{ routing: "reached", upstream: "github", uploadPack: { source: "upstream", status: 200, outcome: "ok" } }, "GitHub upload-pack 200"],
+    [{ routing: "reached" }, "Forge reached"],
+  ]
+  for (const [receipt, expected] of cases) {
+    expect(render(receipt)).toContain(`>${expected}<`)
+  }
+})

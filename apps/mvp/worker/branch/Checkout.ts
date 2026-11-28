@@ -1,4 +1,4 @@
-import type { CodeStorage } from "@smthrs/effect-code-storage"
+import type { CodeStorage, GitProxy } from "@smthrs/effect-code-storage"
 import type { CiJob } from "@smthrs/sandbox"
 import { pinnedCheckoutExit } from "../../src/features/runs/checkoutStage.ts"
 import { FORGE_HOST, WORKSPACE } from "../../src/features/terminal/contract.ts"
@@ -125,3 +125,128 @@ const script = (namespace: CodeStorage.RefNamespace) => [
  */
 export const checkoutArgv = (branch: string, remote: string, namespace: CodeStorage.RefNamespace = "default"): Array<string> =>
   ["sh", "-c", script(namespace), "checkout", branch, remote]
+
+const FORGE_STAGE_OUTCOMES: ReadonlySet<string> = new Set<CiJob.CheckoutForgeStageOutcome>([
+  "ok",
+  "refused",
+  "transport",
+  "redirect",
+  "broken",
+  "1xx",
+  "2xx",
+  "3xx",
+  "4xx",
+  "5xx",
+])
+
+const forgeStageOutcomeOf = (outcome: string, status: number): CiJob.CheckoutForgeStageOutcome =>
+  FORGE_STAGE_OUTCOMES.has(outcome)
+    ? (outcome as CiJob.CheckoutForgeStageOutcome)
+    : status < 300
+    ? "ok"
+    : (`${Math.floor(status / 100)}xx` as CiJob.CheckoutForgeStageOutcome)
+
+const forgeStageReceiptOf = (
+  source: "proxy" | "upstream",
+  outcome: string,
+  status: number,
+): CiJob.CheckoutForgeStageReceipt | undefined =>
+  Number.isInteger(status) && status >= 100 && status <= 599
+    ? { source, status, outcome: forgeStageOutcomeOf(outcome, status) }
+    : undefined
+
+/**
+ * In-memory per-checkout forge proxy tracker attached to a branch machine for the duration of one checkout command.
+ * Records only closed routing enums, upstream selection, and bounded HTTP statuses; never URLs, paths, or stderr.
+ */
+export interface CheckoutForgeTracker {
+  readonly onHostMismatch: () => void
+  readonly onNoBranch: () => void
+  readonly onUnscoped: (status: number) => void
+  readonly onFailed: () => void
+  readonly onResponse: (upstream: CiJob.CheckoutForgeUpstream, observation: GitProxy.Observation) => void
+  readonly snapshot: () => CiJob.CheckoutForgeReceipt
+}
+
+/** Creates an isolated per-checkout forge tracker starting in `"unreached"`. */
+export const createCheckoutForgeTracker = (): CheckoutForgeTracker => {
+  let routing: CiJob.CheckoutForgeRouting = "unreached"
+  let upstream: CiJob.CheckoutForgeUpstream | undefined
+  let infoRefs: CiJob.CheckoutForgeStageReceipt | undefined
+  let uploadPack: CiJob.CheckoutForgeStageReceipt | undefined
+  let refused: CiJob.CheckoutForgeStageReceipt | undefined
+  return {
+    onHostMismatch: () => {
+      if (routing === "unreached") routing = "host_mismatch"
+    },
+    onNoBranch: () => {
+      if (routing === "unreached" || routing === "host_mismatch") routing = "no_branch"
+    },
+    onUnscoped: (status) => {
+      if (routing !== "reached") routing = "unscoped"
+      const stage = forgeStageReceiptOf("proxy", "refused", status)
+      if (stage !== undefined) refused = stage
+    },
+    onFailed: () => {
+      if (routing !== "reached") routing = "failed"
+    },
+    onResponse: (selectedUpstream, observation) => {
+      routing = "reached"
+      upstream = selectedUpstream
+      const stage = forgeStageReceiptOf(observation.source, observation.outcome, observation.status)
+      if (stage === undefined) return
+      if (observation.service === "info-refs") infoRefs = stage
+      else if (observation.service === "upload-pack") uploadPack = stage
+      else refused = stage
+    },
+    snapshot: () => ({
+      routing,
+      ...(upstream === undefined ? {} : { upstream }),
+      ...(infoRefs === undefined ? {} : { infoRefs }),
+      ...(uploadPack === undefined ? {} : { uploadPack }),
+      ...(refused === undefined ? {} : { refused }),
+    }),
+  }
+}
+
+/** Bounded flat log annotations for a checkout forge receipt. Never contains URLs, paths, stderr, or secrets. */
+export const checkoutForgeLogFields = (receipt: CiJob.CheckoutForgeReceipt): Record<string, string | number> => ({
+  forgeRouting: receipt.routing,
+  ...(receipt.upstream === undefined ? {} : { forgeUpstream: receipt.upstream }),
+  ...(receipt.infoRefs === undefined ? {} : {
+    forgeInfoRefsSource: receipt.infoRefs.source,
+    forgeInfoRefsStatus: receipt.infoRefs.status,
+    forgeInfoRefsOutcome: receipt.infoRefs.outcome,
+  }),
+  ...(receipt.uploadPack === undefined ? {} : {
+    forgeUploadPackSource: receipt.uploadPack.source,
+    forgeUploadPackStatus: receipt.uploadPack.status,
+    forgeUploadPackOutcome: receipt.uploadPack.outcome,
+  }),
+  ...(receipt.refused === undefined ? {} : {
+    forgeRefusedSource: receipt.refused.source,
+    forgeRefusedStatus: receipt.refused.status,
+    forgeRefusedOutcome: receipt.refused.outcome,
+  }),
+})
+
+/** Bounded flat span attributes for a checkout forge receipt. Never contains URLs, paths, stderr, or secrets. */
+export const checkoutForgeSpanAttributes = (receipt: CiJob.CheckoutForgeReceipt): Record<string, string | number> => ({
+  "ci.checkout.forge.routing": receipt.routing,
+  ...(receipt.upstream === undefined ? {} : { "ci.checkout.forge.upstream": receipt.upstream }),
+  ...(receipt.infoRefs === undefined ? {} : {
+    "ci.checkout.forge.info_refs.source": receipt.infoRefs.source,
+    "ci.checkout.forge.info_refs.status": receipt.infoRefs.status,
+    "ci.checkout.forge.info_refs.outcome": receipt.infoRefs.outcome,
+  }),
+  ...(receipt.uploadPack === undefined ? {} : {
+    "ci.checkout.forge.upload_pack.source": receipt.uploadPack.source,
+    "ci.checkout.forge.upload_pack.status": receipt.uploadPack.status,
+    "ci.checkout.forge.upload_pack.outcome": receipt.uploadPack.outcome,
+  }),
+  ...(receipt.refused === undefined ? {} : {
+    "ci.checkout.forge.refused.source": receipt.refused.source,
+    "ci.checkout.forge.refused.status": receipt.refused.status,
+    "ci.checkout.forge.refused.outcome": receipt.refused.outcome,
+  }),
+})

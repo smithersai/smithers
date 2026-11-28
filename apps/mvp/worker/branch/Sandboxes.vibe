@@ -55,6 +55,28 @@ const CheckoutFailureStage = Schema.Literals(["forge", "branch", "clone", "other
 const isCheckoutFailureStage = Schema.is(CheckoutFailureStage)
 const isCheckoutTransportCause = Schema.is(CiJob.CheckoutTransportCause)
 const isCheckoutHttpStatus = Schema.is(CiJob.CheckoutHttpStatus)
+const isCheckoutForgeReceipt = Schema.is(CiJob.CheckoutForgeReceipt)
+
+const sanitizeForgeStage = (
+  stage: CiJob.CheckoutForgeStageReceipt | undefined,
+): CiJob.CheckoutForgeStageReceipt | undefined =>
+  stage === undefined ? undefined : { source: stage.source, status: stage.status, outcome: stage.outcome }
+
+const sanitizeCheckoutForge = (
+  forge: CiJob.CheckoutForgeReceipt | undefined,
+): CiJob.CheckoutForgeReceipt | undefined => {
+  if (forge === undefined || !isCheckoutForgeReceipt(forge)) return undefined
+  const infoRefs = sanitizeForgeStage(forge.infoRefs)
+  const uploadPack = sanitizeForgeStage(forge.uploadPack)
+  const refused = sanitizeForgeStage(forge.refused)
+  return {
+    routing: forge.routing,
+    ...(forge.upstream === undefined ? {} : { upstream: forge.upstream }),
+    ...(infoRefs === undefined ? {} : { infoRefs }),
+    ...(uploadPack === undefined ? {} : { uploadPack }),
+    ...(refused === undefined ? {} : { refused }),
+  }
+}
 
 /** Safe checkout diagnostics carried across RPC and into the durable tool step's failure receipt. */
 export const CheckoutDetails = Schema.Struct({
@@ -62,6 +84,7 @@ export const CheckoutDetails = Schema.Struct({
   checkoutFailure: Schema.optional(CheckoutFailureStage),
   checkoutTransportCause: Schema.optional(CiJob.CheckoutTransportCause),
   checkoutHttpStatus: Schema.optional(CiJob.CheckoutHttpStatus),
+  checkoutForge: Schema.optional(CiJob.CheckoutForgeReceipt),
 })
 
 /** The branch couldn't be checked out in the machine. Legacy receipts lack diagnostics. Not retried. */
@@ -80,6 +103,7 @@ export const checkoutDetails = (outcome: typeof CheckoutDetails.Type): typeof Ch
       isCheckoutHttpStatus(outcome.checkoutHttpStatus)
     ? outcome.checkoutHttpStatus
     : undefined
+  const forge = sanitizeCheckoutForge(outcome.checkoutForge)
   return {
     ...(typeof outcome.exitCode === "number" && Number.isInteger(outcome.exitCode) ? { exitCode: outcome.exitCode } : {}),
     ...(outcome.checkoutFailure !== undefined && isCheckoutFailureStage(outcome.checkoutFailure)
@@ -87,6 +111,7 @@ export const checkoutDetails = (outcome: typeof CheckoutDetails.Type): typeof Ch
       : {}),
     ...(transport === undefined ? {} : { checkoutTransportCause: transport }),
     ...(httpStatus === undefined ? {} : { checkoutHttpStatus: httpStatus }),
+    ...(forge === undefined ? {} : { checkoutForge: forge }),
   }
 }
 
