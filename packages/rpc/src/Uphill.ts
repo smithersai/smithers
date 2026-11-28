@@ -498,3 +498,190 @@ export function decodeFeedBody(body: unknown): FeedEnvelope | undefined {
   }
   return undefined
 }
+
+/**
+ * Canonical top-level feed document name for a repository's trusted Uphill baseline report.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const UPHILL_FEED_NAME = "uphill" as const
+
+/**
+ * On-demand feed document name for a repository's Uphill trend history.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const UPHILL_HISTORY_FEED_NAME = "uphill/history" as const
+
+/**
+ * Prefix for isolated, on-demand untrusted community preview feed documents (`uphill/untrusted-<login>`).
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const UPHILL_UNTRUSTED_FEED_PREFIX = "uphill/untrusted-" as const
+
+/**
+ * Top-level index document name referencing `public` on-demand Uphill previews and history.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const UPHILL_INDEX_PUBLIC = "uphill-index" as const
+
+/**
+ * Top-level index document name referencing `maintainers`-only on-demand Uphill previews and history.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const UPHILL_INDEX_MAINTAINERS = "uphill-index-maintainers" as const
+
+/**
+ * Maximum number of preview references stored in one visibility-partitioned Uphill index document.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MAX_UPHILL_INDEX_PREVIEWS = 100 as const
+
+/**
+ * Lightweight reference to one on-demand Uphill feed document (`uphill/untrusted-*` or `uphill/history`).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const FeedIndexRefSchema = z.object({
+  name: z.string().min(1),
+  updatedAt: z.string().nullable().optional().default(null)
+})
+/**
+ * The decoded value accepted by {@link FeedIndexRefSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type FeedIndexRef = z.infer<typeof FeedIndexRefSchema>
+
+/**
+ * Visibility-partitioned top-level index listing a repository's on-demand Uphill previews and optional history.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const FeedIndexSchema = z.object({
+  version: z.literal(1),
+  previews: z.array(FeedIndexRefSchema).optional().default([]),
+  history: FeedIndexRefSchema.nullable().optional().default(null)
+})
+/**
+ * The decoded value accepted by {@link FeedIndexSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type FeedIndex = z.infer<typeof FeedIndexSchema>
+
+/**
+ * Whether `name` is an isolated untrusted Uphill preview document (`uphill/untrusted-<segment>`).
+ *
+ * @since 1.0.0
+ * @category helpers
+ * @throws {never}
+ */
+export function isUphillPreviewName(name: string): boolean {
+  if (!name.startsWith(UPHILL_UNTRUSTED_FEED_PREFIX)) return false
+  const suffix = name.slice(UPHILL_UNTRUSTED_FEED_PREFIX.length)
+  return suffix.length > 0 && !suffix.includes("/")
+}
+
+/**
+ * Whether `name` is an on-demand Uphill document tracked by the Uphill feed index
+ * (`uphill/history` or `uphill/untrusted-<segment>`).
+ *
+ * @since 1.0.0
+ * @category helpers
+ * @throws {never}
+ */
+export function isUphillIndexedName(name: string): boolean {
+  return name === UPHILL_HISTORY_FEED_NAME || isUphillPreviewName(name)
+}
+
+/**
+ * Whether `name` is one of the visibility-partitioned Uphill index documents.
+ *
+ * @since 1.0.0
+ * @category helpers
+ * @throws {never}
+ */
+export function isUphillIndexName(name: string): boolean {
+  return name === UPHILL_INDEX_PUBLIC || name === UPHILL_INDEX_MAINTAINERS
+}
+
+/**
+ * Top-level index document name matching a feed document's visibility.
+ *
+ * @since 1.0.0
+ * @category helpers
+ * @throws {never}
+ */
+export function uphillIndexName(
+  visibility: "public" | "maintainers"
+): typeof UPHILL_INDEX_PUBLIC | typeof UPHILL_INDEX_MAINTAINERS {
+  return visibility === "public" ? UPHILL_INDEX_PUBLIC : UPHILL_INDEX_MAINTAINERS
+}
+
+/**
+ * Builds a normalized {@link FeedIndex} from ordered on-demand document references of one visibility,
+ * or returns `null` when no indexed Uphill documents remain.
+ *
+ * @since 1.0.0
+ * @category helpers
+ * @throws {never}
+ */
+export function buildFeedIndex(
+  rows: ReadonlyArray<{ readonly name: string; readonly updatedAt: string | null }>
+): FeedIndex | null {
+  const previews: Array<FeedIndexRef> = []
+  const seen = new Set<string>()
+  let history: FeedIndexRef | null = null
+  for (const row of rows) {
+    if (row.name === UPHILL_HISTORY_FEED_NAME) {
+      if (history === null) history = { name: UPHILL_HISTORY_FEED_NAME, updatedAt: row.updatedAt }
+      continue
+    }
+    if (!isUphillPreviewName(row.name) || seen.has(row.name)) continue
+    if (previews.length >= MAX_UPHILL_INDEX_PREVIEWS) continue
+    seen.add(row.name)
+    previews.push({ name: row.name, updatedAt: row.updatedAt })
+  }
+  if (previews.length === 0 && history === null) return null
+  return { version: 1, previews, history }
+}
+
+/**
+ * Decodes and sanitizes a repository Uphill index document body into a {@link FeedIndex}.
+ * Drops any reference outside `uphill/untrusted-*` and `uphill/history`.
+ *
+ * @since 1.0.0
+ * @category helpers
+ * @throws {never}
+ */
+export function decodeFeedIndex(body: unknown): FeedIndex | undefined {
+  const parsed = FeedIndexSchema.safeParse(body)
+  if (!parsed.success) return undefined
+  const previews: Array<FeedIndexRef> = []
+  const seen = new Set<string>()
+  for (const ref of parsed.data.previews) {
+    if (!isUphillPreviewName(ref.name) || seen.has(ref.name)) continue
+    if (previews.length >= MAX_UPHILL_INDEX_PREVIEWS) break
+    seen.add(ref.name)
+    previews.push({ name: ref.name, updatedAt: ref.updatedAt })
+  }
+  const history = parsed.data.history !== null && parsed.data.history.name === UPHILL_HISTORY_FEED_NAME
+    ? { name: UPHILL_HISTORY_FEED_NAME, updatedAt: parsed.data.history.updatedAt }
+    : null
+  return { version: 1, previews, history }
+}

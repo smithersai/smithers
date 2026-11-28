@@ -5,6 +5,20 @@
   max-width: 1080px;
 }
 
+.uphill-plugin-loading,
+.uphill-inline-progress {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.uphill-preview-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .uphill-plugin-tab-link {
   display: inline-flex;
   align-items: center;

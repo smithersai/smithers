@@ -16,7 +16,9 @@
  * - Person-only acts (`pull/merge`, `todo/commit`, `todo/drop`, `secrets/write`) remain strictly blocked.
  */
 
+import { Uphill } from "@smthrs/rpc"
 import { SqlClient } from "effect/sql"
+import type { Visibility as FeedVisibility } from "../../src/features/feeds/contract.ts"
 import { isRepository, repoId } from "../../src/features/repo/contract.ts"
 import {
   isTrustedExecution,
@@ -28,6 +30,8 @@ import {
   type OneTimeAuthPurpose,
 } from "../../src/features/trust/contract.ts"
 import * as DeploymentPolicy from "../DeploymentPolicy.vibe"
+import { codeOf } from "../ErrorCode.ts"
+import * as UphillIndex from "../feeds/UphillIndex.vibe"
 import * as CloudObjectStore from "../object-store/CloudObjectStore.vibe"
 import { safeJsonStringify } from "../object-store/ObjectBytes.ts"
 import * as RepoStateStore from "../object-store/RepoStateStore.vibe"
@@ -871,36 +875,96 @@ export effect function callCloudFactoryTool(
         }),
       )
       // Mirror trusted reports to feed_documents (`uphill`) and untrusted community runs to `uphill/untrusted-<login>`
-      // so the Lighthouse Uphill UI updates live via Electric without manual feed keys or gate poisoning.
+      // plus its matching visibility-partitioned index (`uphill-index` or `uphill-index-maintainers`) in one transaction
+      // so the Lighthouse Uphill UI discovers and streams updates live via Electric without gate poisoning.
       const feedRepo = `${target.owner}/${target.name}`.toLowerCase()
-      const feedName = trusted ? "uphill" : `uphill/untrusted-${caller.login.toLowerCase().replace(/[^a-z0-9-]/g, "")}`
-      const feedId = `${feedRepo}:${feedName}`
-      const feedVisibility = writePrincipal.access.isPublic ? "public" : "maintainers"
-      try Effect.ignore(
-        (effect {
-          const sql = try SqlClient.SqlClient
-          try sql`
-            INSERT INTO feed_documents (id, repo, name, visibility, body, updated_at)
-            VALUES (${feedId}, ${feedRepo}, ${feedName}, ${feedVisibility}, ${serialized}::jsonb, now())
-            ON CONFLICT (repo, name) DO UPDATE SET
-              visibility = EXCLUDED.visibility,
-              body = EXCLUDED.body,
-              updated_at = now()
-          `
-        }).pipe(Effect.provide(deps.database)),
+      const feedName = trusted ? Uphill.UPHILL_FEED_NAME : UphillIndex.untrustedFeedName(caller.login, caller.personId)
+      const feedVisibility: FeedVisibility = writePrincipal.access.isPublic ? "public" : "maintainers"
+      const mirrorExit = try Effect.exit(
+        withSpan(
+          effect {
+            provide deps.database {
+              return try UphillIndex.mirrorAuditReport({
+                repo: feedRepo,
+                name: feedName,
+                visibility: feedVisibility,
+                serializedBody: serialized,
+                trusted,
+              })
+            }
+          },
+          "uphill.feed_mirror",
+          {
+            attributes: {
+              "uphill.trust": reportTrust,
+              "uphill.visibility": feedVisibility,
+            },
+          },
+        ),
       )
-      try Effect.ignore(
-        RepoStateStore.recordContribution({
-          owner: target.owner,
-          name: target.name,
-          githubLogin: caller.login,
-          kind: "audit",
-        }).pipe(Effect.provide(deps.database)),
+      if (Exit.isFailure(mirrorExit)) {
+        const errorCode = codeOf(Cause.squash(mirrorExit.cause))
+        try Metric.update(
+          Metric.withAttributes(UphillIndex.auditFeedMirrors, {
+            trust: reportTrust,
+            visibility: feedVisibility,
+            outcome: "failed",
+          }),
+          1,
+        )
+        try annotateLogs(logError("uphill.feed_mirror.failed"), {
+          repoId: feedRepo,
+          trust: reportTrust,
+          visibility: feedVisibility,
+          errorCode,
+        })
+        throw new McpToolError({
+          code: "unavailable",
+          message: `Audit report stored at ${stored.key} (sha256 ${stored.sha256}), but mirroring to the Uphill feed failed (${errorCode}). Retry audit_report_publish to finish syncing the Uphill view.`,
+        })
+      }
+      const mirrored = mirrorExit.value
+      const mirrorOutcome = mirrored.written ? "written" : "unchanged"
+      try Metric.update(
+        Metric.withAttributes(UphillIndex.auditFeedMirrors, {
+          trust: reportTrust,
+          visibility: feedVisibility,
+          outcome: mirrorOutcome,
+        }),
+        1,
       )
+      try annotateLogs(logInfo("uphill.feed_mirror"), {
+        repoId: feedRepo,
+        trust: reportTrust,
+        visibility: feedVisibility,
+        outcome: mirrorOutcome,
+      })
+      const contributionExit = try Effect.exit(
+        effect {
+          provide deps.database {
+            try RepoStateStore.recordContribution({
+              owner: target.owner,
+              name: target.name,
+              githubLogin: caller.login,
+              kind: "audit",
+            })
+          }
+        },
+      )
+      if (Exit.isFailure(contributionExit)) {
+        try annotateLogs(logWarning("uphill.contribution.failed"), {
+          repoId: feedRepo,
+          errorCode: codeOf(Cause.squash(contributionExit.cause)),
+        })
+      }
       return jsonResult({
         ...stored,
         gateEligible: trusted,
         cacheWriteAllowed: trusted,
+        feedMirrored: true,
+        feedName: mirrored.feedName,
+        feedVisibility: mirrored.feedVisibility,
+        feedIndexName: mirrored.feedIndexName,
         note: trusted
           ? "Published trusted audit report eligible for merge gates."
           : "Published untrusted community audit report. Visible for review, isolated from trusted cache and merge gates.",

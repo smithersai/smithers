@@ -842,6 +842,8 @@ An outside collector's documents, a Maintainer's answers and who reads them ([fe
 | `feed.answer`, `smithers_web_feed_answers` | browser | the tab's engine, `feed/answer/request` | `outcome` (`sent`, `refused`, `unsent`), `status`, `code` |
 | `feed.answer.send` | browser span | `FeedsClient` | `http.response.status_code` |
 | `smithers_web_feed_documents` | browser counter | `FeedsStore` | `outcome` (`opened` on an on-demand document's first listener, `closed` after its last) |
+| `uphill.feed_mirror`, `uphill.feed_mirror.failed` | log (Info / Error), span (`uphill.trust`, `uphill.visibility`) | ChatApi, MCP `audit_report_publish` | `repoId`, `trust`, `visibility`, `outcome` (`written`, `unchanged`), `errorCode` |
+| `smithers_uphill_feed_mirrors` | counter | ChatApi, MCP `audit_report_publish` | `trust`, `visibility`, `outcome` (`written`, `unchanged`, `failed`) |
 
 ### Secrets
 

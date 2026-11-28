@@ -1,0 +1,114 @@
+import { Uphill } from "@smthrs/rpc"
+import { SqlClient } from "effect/sql"
+import { feedDocumentId, MAX_FEED_NAME_LENGTH, VISIBILITIES, type Visibility } from "../../src/features/feeds/contract.ts"
+
+// Visibility-partitioned Uphill index upkeep (`uphill-index` for `public`, `uphill-index-maintainers` for
+// `maintainers`) pointing at on-demand `uphill/untrusted-*` community previews and `uphill/history`.
+// Each index document holds only references with identical visibility so public viewers never learn of
+// maintainer-only previews or history, and canonical `uphill` baselines stay strictly isolated.
+
+/** Uphill feed mirror writes from MCP `audit_report_publish`, by `trust`, `visibility`, and `outcome`. */
+export const auditFeedMirrors = Metric.counter("smithers_uphill_feed_mirrors", {
+  description: "Uphill audit report mirrors written to repository feeds, by trust, visibility, and outcome",
+  incremental: true,
+})
+
+const MAX_PREVIEW_SEGMENT_LENGTH = MAX_FEED_NAME_LENGTH - Uphill.UPHILL_UNTRUSTED_FEED_PREFIX.length
+
+const cleanSegment = (value: string): string => value.toLowerCase().replace(/[^a-z0-9-]/g, "")
+
+/**
+ * Isolated untrusted preview feed name (`uphill/untrusted-<segment>`) for `login`.
+ * Preserves the exact `uphill/untrusted-<alnum-hyphen>` naming; falls back to `fallback` or `"contributor"`
+ * only when `login` strips to empty so the name always satisfies the feed name grammar.
+ */
+export const untrustedFeedName = (login: string, fallback = "contributor"): string => {
+  const segment = (cleanSegment(login) || cleanSegment(fallback) || "contributor").slice(0, MAX_PREVIEW_SEGMENT_LENGTH)
+  return `${Uphill.UPHILL_UNTRUSTED_FEED_PREFIX}${segment}`
+}
+
+interface IndexedRow {
+  readonly name: string
+  readonly visibility: Visibility
+  readonly updated_at: string
+}
+
+/**
+ * Rebuilds `repo`'s `uphill-index` (`public`) and `uphill-index-maintainers` (`maintainers`) documents
+ * inside the caller's Postgres transaction. Takes a per-repository advisory transaction lock so concurrent
+ * publishers never lose each other's preview references. Writes only when the index body or visibility
+ * changes (idempotent, zero Electric churn when unchanged), and deletes an index document once empty.
+ */
+export const syncUphillIndex = (repo: string) =>
+  effect {
+    const sql = try SqlClient.SqlClient
+    try sql`SELECT pg_advisory_xact_lock(hashtextextended(${`uphill-index:${repo}`}, 0))`
+    const rows = try sql<IndexedRow>`
+      SELECT name, visibility,
+        to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS updated_at
+      FROM feed_documents
+      WHERE repo = ${repo}
+        AND (name = ${Uphill.UPHILL_HISTORY_FEED_NAME} OR name LIKE ${`${Uphill.UPHILL_UNTRUSTED_FEED_PREFIX}%`})
+      ORDER BY updated_at DESC, name ASC`
+    for (const visibility of VISIBILITIES) {
+      const indexName = Uphill.uphillIndexName(visibility)
+      const indexId = feedDocumentId(repo, indexName)
+      const matching = rows
+        .filter((row) => row.visibility === visibility)
+        .map((row) => ({ name: row.name, updatedAt: row.updated_at }))
+      const indexDoc = Uphill.buildFeedIndex(matching)
+      if (indexDoc === null) {
+        try sql`DELETE FROM feed_documents WHERE id = ${indexId}`
+      } else {
+        const body = try sync(() => JSON.stringify(indexDoc))
+        try sql`
+          INSERT INTO feed_documents (id, repo, name, visibility, body, updated_at)
+          VALUES (${indexId}, ${repo}, ${indexName}, ${visibility}, ${body}::jsonb, now())
+          ON CONFLICT (id) DO UPDATE SET
+            visibility = EXCLUDED.visibility,
+            body = EXCLUDED.body,
+            updated_at = now()
+          WHERE feed_documents.body IS DISTINCT FROM EXCLUDED.body
+            OR feed_documents.visibility IS DISTINCT FROM EXCLUDED.visibility`
+      }
+    }
+  }
+
+/**
+ * Mirrors one published Uphill audit report envelope (`uphill` for trusted runs, `uphill/untrusted-<login>`
+ * for untrusted community runs) into `feed_documents` and updates its visibility-partitioned index
+ * atomically in one Postgres transaction. Never swallows failures.
+ */
+export const mirrorAuditReport = (params: {
+  readonly repo: string
+  readonly name: string
+  readonly visibility: Visibility
+  readonly serializedBody: string
+  readonly trusted: boolean
+}) =>
+  effect {
+    const sql = try SqlClient.SqlClient
+    const feedId = feedDocumentId(params.repo, params.name)
+    const indexName = params.trusted ? null : Uphill.uphillIndexName(params.visibility)
+    return try sql.withTransaction(effect {
+      const written = try sql<{ readonly id: string }>`
+        INSERT INTO feed_documents (id, repo, name, visibility, body, updated_at)
+        VALUES (${feedId}, ${params.repo}, ${params.name}, ${params.visibility}, ${params.serializedBody}::jsonb, now())
+        ON CONFLICT (id) DO UPDATE SET
+          visibility = EXCLUDED.visibility,
+          body = EXCLUDED.body,
+          updated_at = now()
+        WHERE feed_documents.body IS DISTINCT FROM EXCLUDED.body
+          OR feed_documents.visibility IS DISTINCT FROM EXCLUDED.visibility
+        RETURNING id`
+      if (Uphill.isUphillIndexedName(params.name)) {
+        try syncUphillIndex(params.repo)
+      }
+      return {
+        written: written.length > 0,
+        feedName: params.name,
+        feedVisibility: params.visibility,
+        feedIndexName: indexName,
+      }
+    })
+  }

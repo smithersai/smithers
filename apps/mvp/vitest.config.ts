@@ -285,6 +285,7 @@ export default await WebAssembly.compile(await readFile(new URL(${url})))`
         // (docs/features/feeds.md).
         "worker/feeds/*.{ts,vibe}",
         "db/migrations/0073_feeds.ts",
+        "db/migrations/0141_uphill_feed_index.ts",
         // Co-editing: the texts people edit together (docs/features/coedit.md).
         "db/migrations/0026_text_updates.ts",
         // What the Electric gateway lets through (docs/infrastructure.md).

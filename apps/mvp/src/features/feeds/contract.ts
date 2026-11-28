@@ -56,7 +56,10 @@ export const isIndexName = (name: string): boolean => !name.includes("/")
  */
 export const feedRepo = (owner: string, name: string): string => `${owner}/${name}`.toLowerCase()
 
-/** A document's id, its Electric key: `<repo>:<name>`. A repository has no `:`, so it is unique. */
+/**
+ * A document's id, its Electric key: `<repo>:<name>`. A repository has no `:`, so it is unique.
+ * @throws {never}
+ */
 export const feedDocumentId = (repo: string, name: string): string => `${repo}:${name}`
 
 /**

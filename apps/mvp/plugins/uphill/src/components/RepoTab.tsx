@@ -20,7 +20,7 @@ export function RepoTab({ tab, repository }: { readonly tab: UphillTab; readonly
 
 function Shown({ tab, repository }: { readonly tab: UphillTab; readonly repository: Host.Repository }) {
   const watched = tab.queries.summary(repository)
-  const summary = useSyncExternalStore(watched.subscribe, watched.current)
+  const summary = useSyncExternalStore(watched.subscribe, watched.current, watched.current)
   if (!summary.hasFeed) return null
   return (
     <Button asChild variant="ghost">

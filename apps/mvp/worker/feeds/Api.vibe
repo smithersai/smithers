@@ -1,4 +1,5 @@
 import { digestSync } from "@smthrs/crypto"
+import { Uphill } from "@smthrs/rpc"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import * as SchemaIssue from "effect/SchemaIssue"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -26,6 +27,7 @@ import { type Actor, refusesPersonOnly, Sessions } from "../Actor.vibe"
 import { readBounded } from "../Body.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { keyMatches } from "./KeyMatch.ts"
+import { syncUphillIndex } from "./UphillIndex.vibe"
 import { repositoryOf } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.vibe"
 import * as ShapeAccess from "../ShapeAccess.vibe"
@@ -150,6 +152,7 @@ export const ingest = (repo: string, set: IngestRequest["set"]) =>
         DELETE FROM feed_documents
         WHERE repo = ${repo} AND name IN (SELECT jsonb_array_elements_text(${try sync(() => JSON.stringify(deletes))}::jsonb))
         RETURNING id`
+      try (Object.keys(set).some(Uphill.isUphillIndexedName) ? syncUphillIndex(repo) : Effect.void)
       return { written: written.length, unchanged: upserts.length - written.length, deleted: deleted.length }
     })
   }

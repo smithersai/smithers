@@ -112,8 +112,10 @@ describe("Uphill wire contracts", () => {
     expect(wrapped?.report.categories[0]).toMatchObject({ name: "correctness", title: "Correctness", score: 58 })
     expect(wrapped?.provenance).toMatchObject(provenance)
     expect(Uphill.decodeFeedBody(report)?.report).toEqual(wrapped?.report)
-    expect(Uphill.decodeFeedBody({ categories: [{ id: "correctness", name: "checks", title: "Checks" }] })
-      ?.report.categories[0]?.name).toBe("checks")
+    expect(
+      Uphill.decodeFeedBody({ categories: [{ id: "correctness", name: "checks", title: "Checks" }] })
+        ?.report.categories[0]?.name
+    ).toBe("checks")
     expect(Uphill.decodeFeedBody({ categories: [{ id: 1, title: "Checks" }] })).toBeUndefined()
     expect(Uphill.decodeFeedBody({ categories: [{ id: "checks", name: 1, title: "Checks" }] })).toBeUndefined()
   })
@@ -196,5 +198,90 @@ describe("Uphill formatting edge cases", () => {
     expect(Uphill.formatMetricValue(42, "count", "ops/s")).toBe("42 ops/s")
     expect(Uphill.formatMetricValue(Number.NaN, "count")).toBe("–")
     expect(Uphill.formatMetricValue(undefined, "count")).toBe("–")
+  })
+})
+
+describe("Uphill feed index contracts", () => {
+  test("classifies indexed document names and visibility-partitioned index names", () => {
+    expect(Uphill.isUphillPreviewName("uphill/untrusted-roninjin10")).toBe(true)
+    expect(Uphill.isUphillPreviewName("uphill/untrusted-")).toBe(false)
+    expect(Uphill.isUphillPreviewName("uphill/untrusted-a/b")).toBe(false)
+    expect(Uphill.isUphillPreviewName("uphill")).toBe(false)
+    expect(Uphill.isUphillPreviewName("uphill/history")).toBe(false)
+
+    expect(Uphill.isUphillIndexedName("uphill/untrusted-roninjin10")).toBe(true)
+    expect(Uphill.isUphillIndexedName("uphill/history")).toBe(true)
+    expect(Uphill.isUphillIndexedName("uphill")).toBe(false)
+    expect(Uphill.isUphillIndexedName("lanes")).toBe(false)
+
+    expect(Uphill.uphillIndexName("public")).toBe("uphill-index")
+    expect(Uphill.uphillIndexName("maintainers")).toBe("uphill-index-maintainers")
+    expect(Uphill.isUphillIndexName("uphill-index")).toBe(true)
+    expect(Uphill.isUphillIndexName("uphill-index-maintainers")).toBe(true)
+    expect(Uphill.isUphillIndexName("uphill")).toBe(false)
+  })
+
+  test("builds bounded, deduplicated feed indexes and returns null when empty", () => {
+    expect(Uphill.buildFeedIndex([])).toBeNull()
+    expect(Uphill.buildFeedIndex([{ name: "uphill", updatedAt: "2026-11-27T00:00:00Z" }])).toBeNull()
+
+    const built = Uphill.buildFeedIndex([
+      { name: "uphill/untrusted-roninjin10", updatedAt: "2026-11-27T02:00:00Z" },
+      { name: "uphill/untrusted-roninjin10", updatedAt: "2026-11-27T01:00:00Z" },
+      { name: "uphill/history", updatedAt: "2026-11-27T01:30:00Z" },
+      { name: "uphill/history", updatedAt: "2026-11-27T01:00:00Z" },
+      { name: "uphill", updatedAt: "2026-11-27T00:00:00Z" }
+    ])
+    expect(built).toEqual({
+      version: 1,
+      previews: [{ name: "uphill/untrusted-roninjin10", updatedAt: "2026-11-27T02:00:00Z" }],
+      history: { name: "uphill/history", updatedAt: "2026-11-27T01:30:00Z" }
+    })
+
+    const many = Array.from({ length: Uphill.MAX_UPHILL_INDEX_PREVIEWS + 5 }, (_, i) => ({
+      name: `uphill/untrusted-user${i}`,
+      updatedAt: "2026-11-27T00:00:00Z"
+    }))
+    expect(Uphill.buildFeedIndex(many)?.previews).toHaveLength(Uphill.MAX_UPHILL_INDEX_PREVIEWS)
+  })
+
+  test("decodes valid feed indexes and strips unauthorized or duplicate references", () => {
+    expect(Uphill.decodeFeedIndex(null)).toBeUndefined()
+    expect(Uphill.decodeFeedIndex({ version: 2, previews: [] })).toBeUndefined()
+
+    const decoded = Uphill.decodeFeedIndex({
+      version: 1,
+      previews: [
+        { name: "uphill/untrusted-roninjin10", updatedAt: "2026-11-27T02:00:00Z" },
+        { name: "uphill/untrusted-roninjin10", updatedAt: "2026-11-27T01:00:00Z" },
+        { name: "secrets/prod", updatedAt: "2026-11-27T02:00:00Z" },
+        { name: "uphill/untrusted-alice" }
+      ],
+      history: { name: "uphill/history", updatedAt: "2026-11-27T01:00:00Z" }
+    })
+    expect(decoded).toEqual({
+      version: 1,
+      previews: [
+        { name: "uphill/untrusted-roninjin10", updatedAt: "2026-11-27T02:00:00Z" },
+        { name: "uphill/untrusted-alice", updatedAt: null }
+      ],
+      history: { name: "uphill/history", updatedAt: "2026-11-27T01:00:00Z" }
+    })
+
+    const wrongHistory = Uphill.decodeFeedIndex({
+      version: 1,
+      previews: [],
+      history: { name: "transcript/lane-1", updatedAt: null }
+    })
+    expect(wrongHistory).toEqual({ version: 1, previews: [], history: null })
+
+    const overflow = Uphill.decodeFeedIndex({
+      version: 1,
+      previews: Array.from({ length: Uphill.MAX_UPHILL_INDEX_PREVIEWS + 3 }, (_, i) => ({
+        name: `uphill/untrusted-u${i}`,
+        updatedAt: null
+      }))
+    })
+    expect(overflow?.previews).toHaveLength(Uphill.MAX_UPHILL_INDEX_PREVIEWS)
   })
 })
