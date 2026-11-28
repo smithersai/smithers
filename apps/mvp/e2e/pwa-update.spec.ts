@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { build } from "vite"
-import { serveBuilds } from "./builds"
+import { serveBuilds, serveSiteBuilds } from "./builds"
 import { expect, step, test } from "./fixtures"
 import { requires } from "./target"
 import { expectServerError } from "./watch"
@@ -85,14 +85,22 @@ test("release: an open tab discovers a second production build on navigation and
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
-test("a route import lost before a new worker activates recovers once through the new shell", async ({ page }) => {
+test("a route import lost before a new worker activates recovers once through the new shell", async ({ page, browser }) => {
   requires("localServer")
   test.setTimeout(300_000)
   const root = join(import.meta.dirname, "..")
   const directory = await mkdtemp(join(tmpdir(), "pwa-import-"))
   const records: string[] = []
+  const hashedAssets: Array<{ readonly path: string; readonly cacheControl: string | undefined; readonly contentType: string | undefined }> = []
   page.on("console", (message) => {
     if (message.text().startsWith("page.reload")) records.push(message.text())
+  })
+  page.on("response", (response) => {
+    const pathname = new URL(response.url()).pathname
+    if (response.status() === 200 && /^\/assets\/[^/]+\.(?:js|css)$/.test(pathname)) {
+      const headers = response.headers()
+      hashedAssets.push({ path: pathname, cacheControl: headers["cache-control"], contentType: headers["content-type"] })
+    }
   })
   let documents = 0
   page.on("request", (request) => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents++ })
@@ -109,10 +117,13 @@ test("a route import lost before a new worker activates recovers once through th
         }],
       })
     }
-    const builds = await serveBuilds({ old: join(directory, "old"), new: join(directory, "new"), beforeNewWorker })
+    const builds = await serveSiteBuilds({ old: join(directory, "old"), new: join(directory, "new"), beforeNewWorker })
+    const origin = builds.url.origin
     try {
-      await page.goto(`${builds.url}/app`)
+      await page.goto(`${origin}/app`)
       await expect(page.getByRole("link", { name: "Flows", exact: true })).toBeVisible()
+      expect(hashedAssets.some((asset) => asset.path.endsWith(".js") && asset.cacheControl === "public, max-age=31536000, immutable")).toBe(true)
+      expect(hashedAssets.some((asset) => asset.path.endsWith(".css") && asset.cacheControl === "public, max-age=31536000, immutable")).toBe(true)
       await page.evaluate(async () => {
         await navigator.serviceWorker.ready
         if (!navigator.serviceWorker.controller) await new Promise<void>((resolve) =>
@@ -124,7 +135,11 @@ test("a route import lost before a new worker activates recovers once through th
       builds.use("new")
       const lost = page.waitForResponse((r) => r.status() === 404 && /\/assets\/[^/]+\.js$/.test(new URL(r.url()).pathname))
       await page.getByRole("link", { name: "Flows", exact: true }).click()
-      expectServerError(404, new URL((await lost).url()).pathname)
+      const lostResponse = await lost
+      expectServerError(404, new URL(lostResponse.url()).pathname)
+      expect(lostResponse.headers()["cache-control"]).toBe("no-store")
+      expect(lostResponse.headers()["content-type"] ?? "").not.toContain("text/html")
+      expect(await lostResponse.text()).toBe("")
       await expect(page.getByText("Couldn't show this page", { exact: true })).toBeVisible()
       expect(records).toEqual([])
       expect(documents).toBe(before)
@@ -141,6 +156,31 @@ test("a route import lost before a new worker activates recovers once through th
       await expect(page.locator('meta[name="release-test"]')).toHaveAttribute("content", "new")
       expect(documents).toBe(before + 1)
       expect(records.filter((line) => line.includes("stale_module"))).toHaveLength(1)
+
+      // Verify retired CSS, app deep links, and unknown-route 404 recovery directly through the live Miniflare site Worker.
+      const retiredCss = await page.request.get(`${origin}/assets/retired-12345678.css`, { headers: { accept: "text/css,*/*;q=0.1" } })
+      expect(retiredCss.status()).toBe(404)
+      expect(retiredCss.headers()["cache-control"]).toBe("no-store")
+      expect(retiredCss.headers()["content-type"] ?? "").not.toContain("text/html")
+      expect(await retiredCss.text()).toBe("")
+
+      const deepLink = await page.request.get(`${origin}/owner/repo/blob/main/src/file.ts`, { headers: { accept: "text/html" } })
+      expect(deepLink.status()).toBe(200)
+      expect(deepLink.headers()["content-type"]).toContain("text/html")
+      expect(deepLink.headers()["cache-control"] ?? "").not.toContain("immutable")
+
+      expectServerError(404, "/_definitely-missing-page")
+      const uncontrolled = await browser.newContext({ serviceWorkers: "block", ignoreHTTPSErrors: true })
+      try {
+        const missingPage = await uncontrolled.newPage()
+        const missingDoc = await missingPage.goto(`${origin}/_definitely-missing-page`)
+        expect(missingDoc?.status()).toBe(404)
+        expect(missingDoc?.headers()["x-robots-tag"]).toBe("noindex")
+        expect(missingDoc?.headers()["cache-control"] ?? "").not.toContain("immutable")
+        await expect(missingPage.getByRole("link", { name: "Back to chat", exact: true })).toBeVisible({ timeout: 30_000 })
+        await missingPage.goto("about:blank")
+      } finally { await uncontrolled.close() }
+
       await page.goto("about:blank")
     } finally { activate(); await builds.close() }
   } finally { await rm(directory, { recursive: true, force: true }) }

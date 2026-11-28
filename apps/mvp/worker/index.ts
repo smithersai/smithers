@@ -38,6 +38,69 @@ const customDomainLocation = async (env: Env, url: URL): Promise<string | undefi
   }
 }
 
+const SUBRESOURCE_DESTINATIONS: ReadonlySet<string> = new Set([
+  "audio",
+  "audioworklet",
+  "embed",
+  "font",
+  "image",
+  "manifest",
+  "object",
+  "paintworklet",
+  "script",
+  "serviceworker",
+  "sharedworker",
+  "style",
+  "track",
+  "video",
+  "worker",
+  "xslt",
+])
+
+/** Extensions that are always static code/style/binary assets and never SPA HTML documents. */
+const STATIC_ASSET_EXTENSIONS: ReadonlySet<string> = new Set(["js", "mjs", "cjs", "css", "wasm", "map"])
+
+const decodePathname = (pathname: string): string =>
+  pathname
+    .split("/")
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment)
+      } catch {
+        return segment
+      }
+    })
+    .join("/")
+    .replace(/\/+/g, "/")
+
+/** Whether a 404 from `ASSETS` is a missing static asset rather than an app route or unknown HTML page. */
+const isMissingStaticAsset = (pathname: string, request: Request): boolean => {
+  const normalized = decodePathname(pathname)
+  // Any removed Vite build output under /assets/ is always a resource miss, even if Accept asks for HTML.
+  if (normalized.startsWith("/assets/")) return true
+  const dest = request.headers.get("sec-fetch-dest")?.toLowerCase()
+  if (dest !== undefined && SUBRESOURCE_DESTINATIONS.has(dest)) return true
+  if (isAppRoute(pathname)) return false
+  const segment = normalized.slice(normalized.lastIndexOf("/") + 1)
+  const dot = segment.lastIndexOf(".")
+  if (dot <= 0 || dot === segment.length - 1) return false
+  const ext = segment.slice(dot + 1).toLowerCase()
+  if (ext === "html" || ext === "htm") return false
+  if (STATIC_ASSET_EXTENSIONS.has(ext)) return true
+  const accept = request.headers.get("accept")
+  return accept === null || !accept.includes("text/html")
+}
+
+/** Returns a truthful empty 404 without `_headers`'s immutable caching on retired asset paths. */
+const nonCacheableMissing = (response: Response): Response => {
+  const headers = new Headers(response.headers)
+  headers.delete("etag")
+  headers.delete("content-length")
+  headers.delete("content-type")
+  headers.set("cache-control", "no-store")
+  return new Response(null, { status: 404, headers })
+}
+
 export default {
   fetch: async (request: Request, env: Env, ctx?: ExecutionContext) => {
     const url = new URL(request.url)
@@ -71,7 +134,15 @@ export default {
       url.pathname = `${url.pathname}/`
       return Response.redirect(url.toString(), 301)
     }
-    const response = await env.ASSETS.fetch(request)
+    let response = await env.ASSETS.fetch(request)
+    if (response.status === 404) {
+      if ((request.method !== "GET" && request.method !== "HEAD") || isMissingStaticAsset(url.pathname, request)) {
+        return nonCacheableMissing(response)
+      }
+      // App deep links and unknown page routes render the stored SPA shell without letting ASSETS rewrite missing files.
+      const shell = new URL("/", url.origin)
+      response = await env.ASSETS.fetch(new Request(shell, { method: request.method }))
+    }
     if (response.status !== 200 || !response.headers.get("content-type")?.startsWith("text/html")) return response
     // Asset validators and lengths describe the stored shell, not this origin-specific representation.
     const headers = new Headers(response.headers)
@@ -79,6 +150,9 @@ export default {
     headers.delete("etag")
     const status = url.pathname === "/index.html" || isAppRoute(url.pathname) ? 200 : 404
     if (status === 404) headers.set("x-robots-tag", "noindex")
+    if (request.method === "HEAD") {
+      return new Response(null, { status, headers })
+    }
     let html = (await response.text()).replaceAll("__SMITHERS_ORIGIN__", url.origin)
     if (status === 200) {
       html = await injectEdgeFirstPaint(html, url, request, env.CHAT_API, ctx)

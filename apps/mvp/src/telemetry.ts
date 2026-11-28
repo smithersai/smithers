@@ -107,6 +107,7 @@ export const APP_TELEMETRY = {
     "http.request.recovered",
     "flows_observability_http_failures",
     "render error",
+    "pwa.preload",
     "pwa.register",
     "pwa.install",
     "pwa.update.check",
@@ -117,6 +118,7 @@ export const APP_TELEMETRY = {
     "smithers_browser_sqlite_openings",
   ],
   fields: [
+    "clientBuild",
     "page",
     "render",
     "services",

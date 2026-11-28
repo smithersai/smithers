@@ -57,6 +57,7 @@ import { directUrl, Postgres } from "./infra/Postgres.ts"
 import * as Secrets from "./infra/Secrets.ts"
 import { SessionSigningKeyGate } from "./infra/SessionSigningKeyGate.ts"
 import * as SignIn from "./infra/SignIn.ts"
+import { siteAssets } from "./infra/SiteAssets.ts"
 import ChatApi from "./worker/ChatApi.ts"
 import DevChatApi from "./worker/DevChatApi.ts"
 
@@ -127,23 +128,9 @@ export default Alchemy.Stack(
     const site = yield* Cloudflare.Website.Vite("smithers-mvp", {
       main: "worker/index.ts",
       compatibility: { date: "2026-10-01", flags: ["enable_request_signal"] },
-      // HTML must pass through the site Worker to resolve social image URLs and edge first-paint on this request's origin,
-      // while content-hashed static assets and icons bypass the Worker and serve directly from Cloudflare's CDN edge.
-      assets: {
-        notFoundHandling: "single-page-application",
-        runWorkerFirst: [
-          "/*",
-          "!/assets/*",
-          "!/icon.svg",
-          "!/icon-192.png",
-          "!/icon-512.png",
-          "!/icon-maskable-512.png",
-          "!/social-card.png",
-          "!/manifest.webmanifest",
-          "!/sw.js",
-          "!/workbox-*.js",
-        ],
-      },
+      // Existing static files bypass the Worker on Cloudflare's CDN edge; `/` and `/index.html` run the Worker first,
+      // and `notFoundHandling: "none"` hands app routes and missing assets to worker/index.ts (infra/SiteAssets.ts).
+      assets: siteAssets,
       // The aliases' pages, which `/` on each alias redirects to (worker/aliases.ts).
       env: {
         CHAT_API: chatApi,

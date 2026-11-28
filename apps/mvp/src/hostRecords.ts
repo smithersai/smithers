@@ -11,7 +11,7 @@ import type { ReloadReason } from "./reloadReason"
 export type HostRecord =
   | { readonly _tag: "device.lifecycle"; readonly outcome: LifecycleOutcome }
   /** React caught a render error in a boundary (`caught`), or nothing caught it and the root unmounted (`uncaught`). */
-  | { readonly _tag: "render"; readonly boundary: "caught" | "uncaught"; readonly name: string }
+  | { readonly _tag: "render"; readonly boundary: "caught" | "uncaught"; readonly name: string; readonly clientBuild?: string; readonly controlled?: boolean }
   /** The service worker couldn't be registered. */
   | { readonly _tag: "pwa.register"; readonly name: string }
   /** First Vite preload failure per page and network state; no asset URL or error message. */

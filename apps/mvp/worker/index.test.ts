@@ -228,3 +228,108 @@ test("GET and HEAD /api/health answer 200 JSON with no-store at the edge without
   expect(await headRes.text()).toBe("")
   expect(called).toBe(0)
 })
+
+const noneModeAssets = (seen: Array<string>) =>
+  ({
+    fetch: async (request: Request) => {
+      const { pathname } = new URL(request.url)
+      seen.push(`${request.method} ${pathname}`)
+      if (pathname === "/") {
+        return new Response(request.method === "HEAD" ? null : "<html>__SMITHERS_ORIGIN__</html>", {
+          status: 200,
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "public, max-age=0, must-revalidate",
+            "x-frame-options": "DENY",
+            etag: '"shell"',
+          },
+        })
+      }
+      // Mirrors Cloudflare Workers Assets attaching public/_headers rules even to 404 misses.
+      const headers: Record<string, string> = { "x-frame-options": "DENY" }
+      if (pathname.startsWith("/assets/")) headers["cache-control"] = "public, max-age=31536000, immutable"
+      return new Response(null, { status: 404, headers })
+    },
+  }) as unknown as Fetcher
+
+test.each([
+  ["GET", "/assets/retired-12345678.js", { accept: "*/*", "sec-fetch-dest": "script" }],
+  ["HEAD", "/assets/retired-12345678.js", { accept: "*/*", "sec-fetch-dest": "script" }],
+  ["POST", "/assets/retired-12345678.js", {}],
+  ["GET", "/assets/retired-12345678.js", { accept: "text/html", "sec-fetch-dest": "document" }],
+  ["GET", "/assets/retired-12345678.css", { accept: "text/css,*/*;q=0.1", "sec-fetch-dest": "style" }],
+  ["GET", "/%61ssets/retired-12345678.js", { accept: "*/*" }],
+  ["GET", "//assets/retired-12345678.js", { accept: "*/*" }],
+  ["GET", "/assets/%E0%A4%A.js", { accept: "*/*" }],
+  ["GET", "/workbox-oldhash.js", { accept: "*/*" }],
+  ["GET", "/retired.css", { accept: "text/html" }],
+  ["GET", "/retired.wasm", { accept: "*/*" }],
+  ["GET", "/retired.js.map", { accept: "*/*" }],
+  ["GET", "/favicon.ico", { accept: "image/webp,*/*" }],
+  ["GET", "/favicon.ico", {}],
+  ["GET", "/sitemap.xml", { accept: "*/*" }],
+  ["GET", "/owner/repo/blob/main/app.js", { accept: "*/*", "sec-fetch-dest": "script" }],
+  ["POST", "/_definitely-missing-page", {}],
+])("notFoundHandling=none returns a non-immutable empty 404 for missing asset %s %s", async (method, path, headers) => {
+  const seen: Array<string> = []
+  const env = { CHAT_API: binding("CHAT_API", []), ASSETS: noneModeAssets(seen) }
+  const response = await site.fetch(new Request(`https://app.test${path}`, { method, headers }) as Parameters<typeof site.fetch>[0], env)
+  expect(response.status).toBe(404)
+  expect(response.headers.get("cache-control")).toBe("no-store")
+  expect(response.headers.get("content-type")).toBeNull()
+  expect(response.headers.get("x-frame-options")).toBe("DENY")
+  expect(await response.text()).toBe("")
+  expect(seen).toEqual([`${method} ${path}`])
+})
+
+test.each([
+  "/app",
+  "/evmts/zevm/pull/63",
+  "/owner/repo/blob/main/src/file.ts",
+  "/owner/my.repo",
+  "/owner/repo/blob/main/app.js",
+])("notFoundHandling=none serves decorated 200 HTML for app deep link %s", async (path) => {
+  const seen: Array<string> = []
+  const env = { CHAT_API: binding("CHAT_API", []), ASSETS: noneModeAssets(seen) }
+  const response = await site.fetch(new Request(`https://app.test${path}`) as Parameters<typeof site.fetch>[0], env)
+  expect(response.status).toBe(200)
+  expect(response.headers.get("x-robots-tag")).toBeNull()
+  expect(response.headers.get("etag")).toBeNull()
+  expect(response.headers.get("cache-control")).toBe("public, max-age=0, must-revalidate")
+  expect(await response.text()).toBe("<html>https://app.test</html>")
+  expect(seen).toEqual([`GET ${path}`, "GET /"])
+})
+
+test.each([
+  ["/_definitely-missing-page", {}],
+  ["/app/conversations/missing", {}],
+  ["/owner/repo/issues/0", {}],
+  ["/api", {}],
+  ["/_missing.html", {}],
+  ["/%E0%A4%A", {}],
+  ["/sitemap.xml", { accept: "text/html" }],
+])("notFoundHandling=none keeps recovery HTML with 404 and noindex for unknown page %s", async (path, headers) => {
+  const seen: Array<string> = []
+  const env = { CHAT_API: binding("CHAT_API", []), ASSETS: noneModeAssets(seen) }
+  const response = await site.fetch(new Request(`https://app.test${path}`, { headers }) as Parameters<typeof site.fetch>[0], env)
+  expect(response.status).toBe(404)
+  expect(response.headers.get("x-robots-tag")).toBe("noindex")
+  expect(response.headers.get("cache-control")).toBe("public, max-age=0, must-revalidate")
+  expect(await response.text()).toBe("<html>https://app.test</html>")
+  expect(seen).toEqual([`GET ${path}`, "GET /"])
+})
+
+test("HEAD on app routes and unknown pages skips body and edge first-paint while preserving status", async () => {
+  const apiSeen: Array<string> = []
+  const assetsSeen: Array<string> = []
+  const env = { CHAT_API: binding("CHAT_API", apiSeen), ASSETS: noneModeAssets(assetsSeen) }
+  const ok = await site.fetch(new Request("https://app.test/owner/repo", { method: "HEAD" }) as Parameters<typeof site.fetch>[0], env)
+  expect(ok.status).toBe(200)
+  expect(ok.headers.get("content-type")).toContain("text/html")
+  expect(await ok.text()).toBe("")
+  const missing = await site.fetch(new Request("https://app.test/_missing", { method: "HEAD" }) as Parameters<typeof site.fetch>[0], env)
+  expect(missing.status).toBe(404)
+  expect(missing.headers.get("x-robots-tag")).toBe("noindex")
+  expect(await missing.text()).toBe("")
+  expect(apiSeen).toEqual([])
+})

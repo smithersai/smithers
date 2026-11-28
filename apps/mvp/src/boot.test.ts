@@ -329,10 +329,11 @@ test("every line at Warn or above is counted by record, code and feature, and th
 test("logs what the page's host saw, those from before it listened first: render errors and the service worker's", async () => {
   const { runtime, exported } = await app()
   const host = hostRecords()
-  host.record({ _tag: "render", boundary: "caught", name: "TypeError" })
+  host.record({ _tag: "render", boundary: "caught", name: "RouteModuleUnavailable", clientBuild: "a83b04e0c061", controlled: true })
   await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
     yield* logHostRecords(host)
-    host.record({ _tag: "render", boundary: "uncaught", name: "RangeError" })
+    host.record({ _tag: "render", boundary: "uncaught", name: "RangeError", controlled: false })
+    host.record({ _tag: "render", boundary: "caught", name: "TypeError" })
     host.record({ _tag: "pwa.register", name: "SecurityError" })
     host.record({ _tag: "pwa.install" })
     host.record({ _tag: "pwa.update.check", trigger: "navigation" })
@@ -348,8 +349,9 @@ test("logs what the page's host saw, those from before it listened first: render
   const records = await exported()
   const lines = (message: string) => records.log(message).map(({ severity, attributes }) => ({ severity, attributes }))
   expect(lines("render error")).toEqual([
+    { severity: "Error", attributes: { feature: "app", boundary: "caught", name: "RouteModuleUnavailable", clientBuild: "a83b04e0c061", stage: "controlled" } },
+    { severity: "Error", attributes: { feature: "app", boundary: "uncaught", name: "RangeError", stage: "uncontrolled" } },
     { severity: "Error", attributes: { feature: "app", boundary: "caught", name: "TypeError" } },
-    { severity: "Error", attributes: { feature: "app", boundary: "uncaught", name: "RangeError" } },
   ])
   expect(lines("pwa.register")).toEqual([
     { severity: "Warn", attributes: { feature: "app", outcome: "failed", name: "SecurityError" } },

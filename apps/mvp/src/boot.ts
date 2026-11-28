@@ -547,7 +547,12 @@ const logHostRecord = (record: HostRecord): Effect.Effect<void> => {
         Effect.logInfo("device.lifecycle").pipe(Effect.annotateLogs({ outcome: record.outcome })),
       )
     case "render":
-      return Effect.logError("render error").pipe(Effect.annotateLogs({ boundary: record.boundary, name: record.name }))
+      return Effect.logError("render error").pipe(Effect.annotateLogs({
+        boundary: record.boundary,
+        name: record.name,
+        ...(record.clientBuild === undefined ? {} : { clientBuild: record.clientBuild }),
+        ...(record.controlled === undefined ? {} : { stage: record.controlled ? "controlled" : "uncontrolled" }),
+      }))
     case "pwa.register":
       return Effect.logWarning("pwa.register").pipe(Effect.annotateLogs({ outcome: "failed", name: record.name }))
     case "pwa.preload":

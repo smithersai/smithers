@@ -220,6 +220,8 @@ describe("the contract", () => {
     expect(BROWSER_TELEMETRY.fields).toEqual(expect.arrayContaining([...RELAY_FIELDS]))
     // Local-first's records (docs/observability.md#browser) and the fields its end-to-end tests read.
     expect(BROWSER_TELEMETRY.fields).toEqual(expect.arrayContaining(["queued", "action", "granted", "attempt", "leader"]))
+    expect(BROWSER_TELEMETRY.records).toContain("pwa.preload")
+    expect(BROWSER_TELEMETRY.fields).toContain("clientBuild")
     expect(new Set(BROWSER_TELEMETRY.records).size).toBe(BROWSER_TELEMETRY.records.length)
     expect(new Set(BROWSER_TELEMETRY.fields).size).toBe(BROWSER_TELEMETRY.fields.length)
   })

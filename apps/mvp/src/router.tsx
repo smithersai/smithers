@@ -47,7 +47,11 @@ function lazyRouteComponent<T extends Record<string, unknown>, K extends keyof T
   return lazyTanStackComponent(async () => {
     try { return await load() }
     catch (error) {
-      if (preloadKind(error) === "module") throw new Error("Route module unavailable")
+      if (preloadKind(error) === "module") {
+        const unavailable = new Error("Route module unavailable")
+        unavailable.name = "RouteModuleUnavailable"
+        throw unavailable
+      }
       throw error
     }
   }, name)

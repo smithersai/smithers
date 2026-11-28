@@ -160,6 +160,7 @@ const startServiceWorker = () => {
     onRegistered: (registration) => {
       if (!registration) return
       checkAfterPreload = () => {
+        // recorded: pwa.update.check logs this failed worker check
         void registration.update().catch(() => records.record({ _tag: "pwa.update.check", trigger: "preload" }))
       }
       if (!updateReloading) delivery.check(checkAfterPreload)
@@ -197,11 +198,11 @@ else window.addEventListener("load", scheduleServiceWorker, { once: true })
 // instead of a blank page) and one nothing caught. Under the dev server the console keeps React's own report.
 const root = createRoot(document.getElementById("root")!, {
   onCaughtError: (error, info) => {
-    records.record({ _tag: "render", boundary: "caught", name: thrownName(error) })
+    records.record({ _tag: "render", boundary: "caught", name: thrownName(error), clientBuild: BUILD, controlled: navigator.serviceWorker?.controller != null })
     if (import.meta.env.DEV) console.error(error, info.componentStack)
   },
   onUncaughtError: (error, info) => {
-    records.record({ _tag: "render", boundary: "uncaught", name: thrownName(error) })
+    records.record({ _tag: "render", boundary: "uncaught", name: thrownName(error), clientBuild: BUILD, controlled: navigator.serviceWorker?.controller != null })
     if (import.meta.env.DEV) console.error(error, info.componentStack)
   },
 })
