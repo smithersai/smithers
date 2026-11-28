@@ -2,6 +2,8 @@ import { QuickJSLifecycle, QuickJSVariant } from "@smthrs/harness"
 import { CiJob } from "@smthrs/sandbox"
 import { Effect, Schema } from "effect"
 import { transform } from "sucrase"
+import { PLAN_REFUSALS } from "../../src/features/actions/contract.ts"
+import { importRefusal } from "./WorkflowImports.ts"
 
 // A repository flow's plan, built in a QuickJS realm (docs/features/ci.md#repository-flows; the CI/CD parity proposal,
 // Design 2: orchestration in the realm, commands in containers). The flow's `flow.ts` is the repository's code, so it
@@ -51,7 +53,7 @@ export interface Payload {
 export const RUN_FIELDS = ["run", "repo", "sha", "ref", "event"] as const
 
 /** Why a flow couldn't be planned. */
-export const Reason = Schema.Literals(["too_large", "syntax", "import", "evaluation", "limit", "invalid_plan", "tag", "machine"])
+export const Reason = Schema.Literals(PLAN_REFUSALS)
 export type Reason = typeof Reason.Type
 
 /** A plan: the flow's tag and its jobs, in the order the body named them. */
@@ -195,12 +197,6 @@ const __describe = (exported, runFields) => {
 };
 `
 
-/**
- * Every module a source names: `from "x"`, a bare `import "x"`, and `import(`, `require(` or an `import ... =` by any
- * spelling, which name no allowed module. Strings or comments that only look like one refuse too: the safe direction.
- */
-const IMPORT = /\bfrom\s*["'`]([^"'`]*)["'`]|\bimport\s*["'`]([^"'`]*)["'`]|\b(?:import|require)\s*\(/g
-
 const decodeJobs = Schema.decodeUnknownOption(Schema.Struct({ tag: Schema.String, jobs: Planned.fields.jobs }))
 
 /**
@@ -210,10 +206,8 @@ const decodeJobs = Schema.decodeUnknownOption(Schema.Struct({ tag: Schema.String
 const evaluate = (source: string, invocation: string) =>
   effect {
     if (new TextEncoder().encode(source).length > LIMITS.sourceBytes) return refused("too_large")
-    // Imports are checked in the source: the type stripper drops an import nothing uses, so the realm would never see it.
-    if ([...source.matchAll(IMPORT)].some((match) => !(MODULES as ReadonlyArray<string>).includes(match[1] ?? match[2] ?? ""))) {
-      return refused("import")
-    }
+    const rejected = try sync(() => importRefusal(source, MODULES))
+    if (rejected !== undefined) return refused(rejected)
     const compiled = try Effect.result(Effect.try(() => transform(source, {
       transforms: ["typescript", "imports"],
       production: true,

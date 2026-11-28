@@ -343,7 +343,8 @@ describe("GET /api/repos/<owner>/<name>/flows/<flow>?ref=", () => {
     expect(await answer(await h.fetch(inputs("release", "nope")))).toEqual([404, { code: "not_found" }])
     expect(await answer(await h.fetch(inputs("release", "..")))).toEqual([400, { code: "invalid" }])
     expect(await answer(await h.fetch(inputs("Bad Flow", "main")))).toEqual([400, { code: "invalid" }])
-    expect(await answer(await h.fetch(inputs("ci", "main")))).toEqual([422, { code: "inputs" }])
+    expect(await answer(await h.fetch(inputs("ci", "main")))).toEqual([422, { code: "inputs", stage: "definition", reason: "inputs" }])
+    expect(h.logs).toContainEqual(expect.objectContaining({ annotations: expect.objectContaining({ stage: "describe_definition", reason: "inputs", outcome: "definition" }) }))
     const noFile = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     noFile.roles.set("maya", "write")
     noFile.push("main", { ".smithers/factory.json": MANIFEST })
@@ -617,7 +618,7 @@ describe("POST /api/repos/<owner>/<name>/runs", () => {
       expect([input, ...(await answer(await h.fetch(path, start(input))))]).toEqual([input, 422, { code: "inputs" }])
     }
     expect(await answer(await h.fetch(path, start({ channel: "next" }, { ref: "nope" })))).toEqual([404, { code: "not_found" }])
-    expect(await answer(await h.fetch(path, start({}, { flow: "ci" })))).toEqual([422, { code: "inputs" }])
+    expect(await answer(await h.fetch(path, start({}, { flow: "ci" })))).toEqual([422, { code: "inputs", stage: "definition", reason: "inputs" }])
     expect(await answer(await h.fetch(path, start({ channel: "x".repeat(9_000) })))).toEqual([400, { code: "invalid" }])
     expect(await answer(await h.fetch(path, start({ channel: "next" }, { ref: "a b" })))).toEqual([400, { code: "invalid" }])
     expect(await answer(await h.fetch(path, post({ id: "not-a-uuid", flow: "release", ref: "main" })))).toEqual([400, { code: "invalid" }])

@@ -328,6 +328,10 @@ describe("a repository's runs routes (worker/ci/RunsApi.test.ts runs them throug
       _tag: "Failure",
       failure: { status: 422, code: "inputs" },
     })
+    const definition = await serve(json(422, { code: "inputs", stage: "definition", reason: "import" }))
+    expect(await client(definition.origin, (c) => c.inputs(repo, "f", "main"))).toMatchObject({
+      _tag: "Failure", failure: { status: 422, code: "definition" },
+    })
     const bare = await serve((_, response) => {
       response.writeHead(500)
       response.end()

@@ -334,6 +334,7 @@ export const REFUSAL_WORDS: Readonly<Record<string, string>> = {
   forbidden: "Members only.",
   nothing_failed: "Nothing failed.",
   inputs: "Check the inputs.",
+  definition: "Check the workflow definition.",
   not_manual: "Not runnable by hand.",
   off: "Flows are off here.",
   conflict: "That id ran before.",

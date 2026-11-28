@@ -23,6 +23,7 @@ export class RemoteReadFailed extends Data.TaggedError("RemoteReadFailed")<{
 }> {}
 
 const decodeInspection = Schema.decodeUnknownEffect(BrowserEngine.Inspection)
+const decodeRepoRefusal = Schema.decodeUnknownOption(Schema.Struct({ code: Schema.String, stage: Schema.optional(Schema.String) }))
 const decodeRefusal = Schema.decodeUnknownOption(Schema.Struct({ code: Schema.String }))
 
 /** `GET /api/remote-runs/<runId>?afterSeq=&limit=`. */
@@ -220,10 +221,10 @@ const exchange = <A>(
       if (Option.isSome(decoded)) return decoded.value
       throw (new RepoRunsFailed({ status: response.status }))
     }
-    const refused = Option.flatMap(body, decodeRefusal)
+    const refused = Option.flatMap(body, decodeRepoRefusal)
     throw (new RepoRunsFailed({
       status: response.status,
-      ...(Option.isSome(refused) ? { code: refused.value.code } : {}),
+      ...(Option.isSome(refused) ? { code: refused.value.code === "inputs" && refused.value.stage === "definition" ? "definition" : refused.value.code } : {}),
     }))
   }).pipe(Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new RepoRunsFailed({})) }))
 

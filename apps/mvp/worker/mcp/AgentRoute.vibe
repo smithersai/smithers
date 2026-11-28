@@ -1,4 +1,5 @@
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { DEFINITION_REASONS } from "../../src/features/actions/contract.ts"
 import { type Actor, Sessions } from "../Actor.vibe"
 import { McpToolError } from "./Contract.vibe"
 
@@ -27,6 +28,8 @@ export const post = <A>(receipt: Schema.Decoder<A, never>, route: HttpServerResp
   throw new McpToolError({
     code: status === 401 ? "authentication" : status === 403 ? "forbidden" : status === 404 ? "not_found"
       : status === 409 ? "conflict" : status === 429 ? "rate_limited" : status >= 500 ? "unavailable" : "invalid_params",
-    message: typeof result.code === "string" ? result.code : "Admission unavailable",
+    message: result.code === "inputs" && result.stage === "definition"
+      ? (DEFINITION_REASONS.some((reason) => reason === result.reason) ? `definition: ${result.reason}` : "definition")
+      : typeof result.code === "string" ? result.code : "Admission unavailable",
   })
 }

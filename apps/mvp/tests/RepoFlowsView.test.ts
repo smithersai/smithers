@@ -74,6 +74,13 @@ test.each([["unavailable", 503, REFUSAL_WORDS.unavailable], ["rate_limited", 429
       await act(async () => {})
       expect(container.querySelector('[role="alert"]')?.textContent).toBe("Branch or flow not found.")
     })
+    for (const [code, words] of [["definition", "Check the workflow definition."], ["inputs", "Check the inputs."]] as const) {
+      await device.runPromise(store.form.update(FORM, (form) => { form.refusal = code }))
+      await vi.waitFor(async () => {
+        await act(async () => {})
+        expect(container.querySelector('[role="alert"]')?.textContent).toBe(words)
+      })
+    }
   } finally {
     await device.runPromise(Deferred.succeed(releaseRetry, undefined))
     await act(async () => root.unmount())

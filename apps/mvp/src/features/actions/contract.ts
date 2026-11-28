@@ -77,11 +77,15 @@ export const manualExecutionId = (flow: string, id: string): string => `${flow}:
 /** The most a run by hand's inputs may take as JSON, in UTF-8 bytes. */
 export const MAX_INPUT_BYTES = 8 * 1024
 
+/** Closed diagnostic values for a repository workflow definition, independent of submitted form values. */
+export const PLAN_REFUSALS = ["too_large", "syntax", "import", "evaluation", "limit", "invalid_plan", "tag", "machine"] as const
+export const DEFINITION_REASONS = [...PLAN_REFUSALS, "inputs"] as const
+
 /**
  * Why the runs routes refused, as `{ code }`: `invalid` (400), `authentication` (401), `forbidden` (403: not a Member
  * on the repository), `not_found` (404: a repository repository flows don't run for, no such flow or branch, no such
- * run), `not_manual` (404: the flow has no `manual` trigger), `inputs` (422: the inputs don't fit the flow's form, or
- * the flow has none a form can fill), `nothing_failed` (409: Retry failed of a run with no failed job), `not_settled`
+ * run), `not_manual` (404: the flow has no `manual` trigger), `inputs` (422: submitted inputs do not fit the form),
+ * a definition refusal retains the wire code `inputs` and adds `stage=definition` and the realm reason, `nothing_failed` (409: Retry failed of a run with no failed job), `not_settled`
  * (409: Retry of a run still going), `conflict` (409: the request's id holds another run), `rate_limited` (429: GitHub
  * asked to wait before it says the role), `off` (503: repository flows aren't on here) and `unavailable` (503).
  */
@@ -92,6 +96,7 @@ export const RUNS_REFUSALS = [
   "not_found",
   "not_manual",
   "inputs",
+  "definition",
   "nothing_failed",
   "not_settled",
   "conflict",

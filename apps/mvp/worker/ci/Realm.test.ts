@@ -56,6 +56,18 @@ describe("a repository flow's plan in the realm", () => {
     })
   })
 
+  test("describes and plans a job whose shell command reads JSON with Node", async () => {
+    const command = `node -e 'JSON.parse(require("fs").readFileSync("package.json", "utf8"))'`
+    const source = CI.replace('"node --version"', JSON.stringify(command))
+    const described = await Effect.runPromise(Realm.describe("ci", source).pipe(
+      Effect.provide(QuickJSVariant.layerVariant(wasmfile as unknown as QuickJSSyncVariant)),
+    ))
+    expect(described).toMatchObject({ _tag: "described", inputs: { properties: {} } })
+    expect(await plan(source)).toMatchObject({ _tag: "planned", jobs: [
+      { name: "versions", steps: [{ name: "node", run: command }, { name: "pnpm" }] }, { name: "lint" },
+    ] })
+  })
+
   test("a body may decide from the run's payload, and return one job", async () => {
     const source = `
 import { Flow } from "@smthrs/flow"
@@ -81,6 +93,7 @@ export default Flow.make("ci", {
     expect(await plan(`const m = require("node:fs")\n${CI}`)).toEqual({ _tag: "refused", reason: "import" })
     // Past the source check, the realm's own require refuses it too.
     expect(await plan(`const r = require; r("node:fs")\n${CI}`)).toEqual({ _tag: "refused", reason: "import" })
+    expect(await plan(`import type { Job } from "unsupported-package"\n${CI}`)).toEqual({ _tag: "refused", reason: "import" })
     expect(await plan(`import type { Job } from "@smthrs/sandbox"\n${CI}`)).toMatchObject({ _tag: "planned" })
   })
 

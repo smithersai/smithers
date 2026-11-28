@@ -168,6 +168,7 @@ const statusOf: Readonly<Record<RunsRefusal, number>> = {
   not_found: 404,
   not_manual: 404,
   inputs: 422,
+  definition: 422,
   nothing_failed: 409,
   not_settled: 409,
   conflict: 409,
@@ -247,7 +248,7 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
           )
           if (Option.isNone(source)) return { _tag: "refused", code: "not_found" } as const
           const described = try Effect.provide(Realm.describe(flow, source.value.text), options.variant)
-          if (described._tag === "refused") return { _tag: "refused", code: "inputs" } as const
+          if (described._tag === "refused") return { _tag: "refused", code: "definition", reason: described.reason } as const
           return { _tag: "found", branch, sha: head.value.sha, inputs: described.inputs } as const
         }
 
@@ -332,10 +333,14 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
       const route = parsePath(url.pathname)!
       const startedAt = try Clock.currentTimeMillis
       const fields: Record<string, string | number> = { route: route.kind, stage: "request" }
-      const refused = (code: RunsRefusal) => {
+      const refused = (code: RunsRefusal, reason?: Realm.Reason | "inputs") => {
+        if (reason !== undefined) {
+          fields.stage = "describe_definition"
+          fields.reason = reason
+        }
         fields.outcome = code
         const status = statusOf[code]
-        return HttpServerResponse.jsonUnsafe({ code }, {
+        return HttpServerResponse.jsonUnsafe(reason === undefined ? { code } : { code: "inputs", stage: "definition", reason }, {
           status,
           headers: status === 503 ? { ...noStore, "retry-after": String(ShapeAccess.RETRY_AFTER_SECONDS) } : noStore,
         })
@@ -381,7 +386,7 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
           const ref = url.searchParams.get("ref") ?? ""
           if (!RepoFlow.FLOW_NAME.test(route.flow) || !(try sync(() => GitHub.Refs.isBranch(ref)))) return refused("invalid")
           const found = try github.flowAt(route.flow, ref)
-          if (found._tag === "refused") return refused(found.code)
+          if (found._tag === "refused") return refused(found.code, found.code === "definition" ? found.reason : undefined)
           fields.outcome = "read"
           return answered({ inputs: found.inputs, sha: found.sha })
         }
@@ -418,8 +423,11 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
         // A request sent again reads the form at the commit its run recorded, so it replays the same run.
         const recorded = try Effect.provide(RepoRuns.recordedSha(run), database)
         const found = try github.flowAt(flow, defaultBranchOnly ? undefined : ref, recorded)
-        if (found._tag === "refused") return refused(found.code)
-        if (!fits(found.inputs, input)) return refused("inputs")
+        if (found._tag === "refused") return refused(found.code, found.code === "definition" ? found.reason : undefined)
+        if (!fits(found.inputs, input)) {
+          fields.stage = "validate_inputs"
+          return refused("inputs")
+        }
         const started = try startRun(repository, {
           run,
           repo: full,
@@ -451,7 +459,7 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
       } else {
         try Metric.update(Metric.withAttributes(reads, { read: route.kind, outcome }), 1)
       }
-      try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, stage: fields.stage, outcome })
+      try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, stage: fields.stage, ...(fields.reason === undefined ? {} : { reason: fields.reason }), outcome })
       try annotateLogs(
         logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
           route.kind === "runs" ? "repo.run.start" : "repo.flow.read",
