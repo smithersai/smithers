@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto"
 import { expect, type Tab, test } from "./devices"
 import { requires, scriptedAgent } from "./target"
+import { expectServerError } from "./watch"
 
 // Notifications and live work, end to end (decision 0009, docs/features/notifications.md): two people, Ann on two
 // devices and Ben on one, in real browsers against the real app, ChatApi, Postgres and Electric. Ann's agent is the
@@ -46,6 +47,35 @@ const inPanel = (tab: Tab, check: () => Promise<void>, timeout = SYNCED_WITHIN) 
     if (!(await panel(tab).isVisible())) await bell(tab).click()
     await check()
   }).toPass({ timeout, intervals: [250, 500, 1_000] })
+
+test("Workbench uses the repository header bell and one notifications panel", async ({ devices }) => {
+  requires("localServer")
+  const [tab] = await devices.open("Workbench")
+  await tab.page.goto("/octocat/Spoon-Knife/workbench")
+  const header = tab.page.locator('header[aria-label="Repository"]')
+  await expect(header.locator('[data-slot="notification-bell"]')).toBeVisible({ timeout: 30_000 })
+  await expect(tab.page.locator('[data-slot="notification-bell"]')).toHaveCount(1)
+  await expect(tab.page.locator(".root-notices")).toHaveCount(0)
+  await bell(tab).click()
+  await expect(panel(tab)).toBeVisible()
+  await tab.page.keyboard.press("Escape")
+  await expect(panel(tab)).toBeHidden()
+  await expect(bell(tab)).toBeFocused()
+
+  // This missing run still renders the repository run header. Only its exact absence is expected.
+  expectServerError(404, "/api/remote-runs/notification-placement")
+  expectServerError(403, "/api/shapes/remote-runs")
+  await tab.page.goto("/octocat/Spoon-Knife/actions/runs/notification-placement")
+  await expect(header.locator('[data-slot="notification-bell"]')).toBeVisible({ timeout: 30_000 })
+  await expect(tab.page.locator('[data-slot="notification-bell"]')).toHaveCount(1)
+  await expect(tab.page.locator(".root-notices")).toHaveCount(0)
+
+  await tab.page.goto("/app/runs")
+  await expect(tab.page.getByRole("main", { name: "Runs" })).toBeVisible()
+  await expect(tab.page.locator(".root-notices")).toHaveCount(1)
+  await expect(tab.page.locator('.root-bell [data-slot="notification-bell"]')).toBeVisible()
+  await expect(tab.page.locator('[data-slot="notification-bell"]')).toHaveCount(1)
+})
 
 test("live work: Ann's run toasts for Ben on her branch, and her notifications follow her across devices", async ({ devices }) => {
   requires("scriptedAgent", "devPeople")

@@ -13,7 +13,9 @@ test("every stack has one zero-space owner; the home conversation anchors after 
   expect(notices).toContain('placement="anchored"')
   expect(notices).not.toContain("inline")
   // The root places the stack only where the bell floats; other pages supply their own anchor.
-  expect(read("./components/PageNotices.tsx")).toContain("floatsBell(routeId) ? (")
+  expect(read("../../screens/root/Root.tsx")).toContain("floatsBell(routeId) ? <PageNotices /> : null")
+  expect(read("../../screens/root/RecoveryShell.tsx")).toContain("floatsBell(routeId) ? null : <PageNotices />")
+  expect(read("../../screens/actions/ActionRunScreen.tsx")).toContain('<Notices surface="page" />')
   expect(read("../repo/components/RepoHeader.tsx")).toContain('{notices ? <Notices surface="page" /> : null}')
   expect(read("../../screens/branch/BranchScreen.tsx")).toContain("<RepoHeader notices={false} />")
   expect(read("../../screens/app/AppShell.tsx")).toContain('<Conversation notices={<Notices surface="conversation" />} />')
@@ -35,6 +37,8 @@ test("every stack has one zero-space owner; the home conversation anchors after 
     expect(surfaceOf(route)).toBe("conversation")
     expect(floatsBell(route)).toBe(false)
   }
+  expect(floatsBell("/$owner/$repo/workbench")).toBe(false)
+  expect(floatsBell("/$owner/$repo/actions/runs/$runId")).toBe(false)
   expect(floatsBell("/app/runs")).toBe(true)
   expect(floatsBell(undefined)).toBe(false)
 })

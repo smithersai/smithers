@@ -83,7 +83,7 @@ Rows written before the writers above stopped putting private text in the feed a
 
 ## The top bar
 
-The top bar's bell (`NotificationsBell`, `@smthrs/ui` `NotificationBell`) is the one way in to what waits on you, on every page: in `/app`'s header or the repository header where present, and floated at the window's top-right on other pages (`src/screens/root/Root.tsx`). It counts your unread entries, and while a run of yours waits on you it reads `◆ Needs you` in gold (with the count above 1), replacing agent status's header pill. Clicking it or Alt+N opens the panel at the newest run waiting on you, expanded with its question; O or Open goes to it.
+The top bar's bell (`NotificationsBell`, `@smthrs/ui` `NotificationBell`) is the one way in to what waits on you, on every page: in `/app`'s header or the repository header (including Workbench and individual runs), and floated at the window's top-right on other pages (`src/screens/root/Root.tsx`). If a page fails to load, its recovery screen keeps one bell and toast stack available. It counts your unread entries, and while a run of yours waits on you it reads `◆ Needs you` in gold (with the count above 1), replacing agent status's header pill. Clicking it or Alt+N opens the panel at the newest run waiting on you, expanded with its question; O or Open goes to it.
 
 ## The panel
 

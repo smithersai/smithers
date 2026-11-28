@@ -1,4 +1,6 @@
 import { PageBody, PageHeader } from "@smthrs/ui"
+import { Notices } from "../../features/attention/components/Notices"
+import { NotificationsBell } from "../../features/attention/components/NotificationsBell"
 import { useCallback } from "react"
 import { useRuns } from "../../features/runs/components/RunsContext"
 import { Link, useParams, useSearch } from "@tanstack/react-router"
@@ -21,7 +23,10 @@ export function ActionRunScreen() {
         back={<Link to="/$owner/$repo" params={{ owner, repo }}>{owner}/{repo}</Link>}
         nav={<Link to={(from === "runs" ? "/app/runs" : actionsPath(owner, repo)) as never}>Runs</Link>}
         navLabel="Run"
-      />
+        actions={<NotificationsBell />}
+      >
+        <Notices surface="page" />
+      </PageHeader>
       <PageBody width="wide">
         <RunPageView fromRuns={from === "runs"} />
       </PageBody>

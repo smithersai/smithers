@@ -1,6 +1,5 @@
 import { LoadingBar, PageFocus } from "@smthrs/ui"
 import { Outlet, useRouterState } from "@tanstack/react-router"
-import { NotificationsBell } from "../../features/attention/components/NotificationsBell"
 import { NotificationsPanel } from "../../features/attention/components/NotificationsPanel"
 import { PageNotices } from "../../features/attention/components/PageNotices"
 import { floatsBell } from "../../features/attention/contract"
@@ -22,14 +21,9 @@ export function Root() {
       <a className="root-skip" href="#main-content">Skip to content</a>
       <LoadingBar loading={loading} label="Loading page" />
       <IntentPreload>
-        <PageNotices />
         <Outlet />
         <PageFocus pathname={pathname} />
-        {floatsBell(routeId) ? (
-          <div className="root-bell">
-            <NotificationsBell />
-          </div>
-        ) : null}
+        {floatsBell(routeId) ? <PageNotices /> : null}
         <NotificationsPanel />
         <GlobalPalette />
       </IntentPreload>

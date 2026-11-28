@@ -1,10 +1,13 @@
 import type { ReactNode } from "react"
-import { Link } from "@tanstack/react-router"
+import { Link, useRouterState } from "@tanstack/react-router"
+import { PageNotices } from "../../features/attention/components/PageNotices"
+import { floatsBell } from "../../features/attention/contract"
 import { Account } from "../../features/auth/components/Account"
 import { ThemeButton } from "../../features/theme/components/ThemeButton"
 
-/** Navigation remains available when the requested page cannot render. Root supplies notices and the bell. */
+/** Navigation remains available when the requested page cannot render. Supply the failed header’s controls if Root normally leaves them to the page. */
 export function RecoveryShell({ children }: { readonly children: ReactNode }) {
+  const routeId = useRouterState({ select: (state) => state.matches.at(-1)?.routeId })
   return (
     <main className="recovery-shell" aria-label="Smithers">
       <header className="recovery-shell-header">
@@ -17,6 +20,7 @@ export function RecoveryShell({ children }: { readonly children: ReactNode }) {
         <ThemeButton />
         <Account />
       </header>
+      {floatsBell(routeId) ? null : <PageNotices />}
       {children}
     </main>
   )

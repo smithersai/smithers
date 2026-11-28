@@ -47,7 +47,7 @@ export const surfaceOf = (routeId: string | undefined): Surface =>
 /**
  * The routes whose screen's header holds the top bar's bell: the home conversation's, and the repository header
  * (src/features/repo/components/RepoHeader.tsx) of a repository's home, a branch, a file, its raw view, docs, issues,
- * new issue, runs, pull requests, stack and secrets. A screen that adds the repository header adds its route here, or
+ * new issue, runs, individual run pages, pull requests, stack, Workbench and secrets. A screen that adds the repository header adds its route here, or
  * the floating bell covers the header's last button.
  */
 export const BELL_ROUTES: ReadonlySet<string> = new Set([
@@ -58,6 +58,8 @@ export const BELL_ROUTES: ReadonlySet<string> = new Set([
   "/$owner/$repo",
   "/$owner/$repo/tree/$ref/$",
   "/$owner/$repo/branches",
+  "/$owner/$repo/workbench",
+  "/$owner/$repo/actions/runs/$runId",
   "/$owner/$repo/blob/$ref/$",
   "/$owner/$repo/raw/$ref/$",
   "/$owner/$repo/docs",
