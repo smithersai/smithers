@@ -1,6 +1,6 @@
 ---
 title: Show the confirmed clone after reload or launch failure
-status: in-progress
+status: done
 area: app
 owner: codex-astra
 updated: 2026-11-27
@@ -13,4 +13,4 @@ The repositories shape returned 200 across two pages. Its up-to-date snapshot an
 
 Uses the library catalog’s local state and sync entries, `@smthrs/effect-tanstack-db` and `@smthrs/effect-electric`, for collection readiness and visibility-gated reads. Existing authentication, refusal and clone admission controls still decide access.
 
-The header now waits for the first installed snapshot, including in a watching tab. A received ready row clears the earlier generic failure. The Mini exercised an actual clone that became ready after its confirmation timeout, two Electric pages, two tabs sharing storage, and read-only reconnect. Launch and confirmation records include the server-issued attempt UUID. The production reload check follows deployment.
+The header now waits for the first installed snapshot, including in a watching tab. A received ready row clears the earlier generic failure. The Mini exercised an actual clone that became ready after its confirmation timeout, two Electric pages, two tabs sharing storage, and read-only reconnect. Launch and confirmation records include the server-issued attempt UUID. A fresh browser profile opened the ready repository and reloaded it. Both visits loaded the repository shape and showed the file listing without a clone prompt or failure.
