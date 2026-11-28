@@ -1,4 +1,5 @@
 import { Fault } from "@smthrs/flow"
+import { CiJob } from "@smthrs/sandbox"
 import { Context, Schema } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Admission } from "../SocketAccess.vibe"
@@ -50,10 +51,17 @@ export class SandboxStartTimedOut extends Schema.TaggedError<SandboxStartTimedOu
   {},
 ) {}
 
+const CheckoutFailureStage = Schema.Literals(["forge", "branch", "clone", "other"])
+const isCheckoutFailureStage = Schema.is(CheckoutFailureStage)
+const isCheckoutTransportCause = Schema.is(CiJob.CheckoutTransportCause)
+const isCheckoutHttpStatus = Schema.is(CiJob.CheckoutHttpStatus)
+
 /** Safe checkout diagnostics carried across RPC and into the durable tool step's failure receipt. */
 export const CheckoutDetails = Schema.Struct({
   exitCode: Schema.optional(Schema.Int),
-  checkoutFailure: Schema.optional(Schema.Literals(["forge", "branch", "clone", "other"])),
+  checkoutFailure: Schema.optional(CheckoutFailureStage),
+  checkoutTransportCause: Schema.optional(CiJob.CheckoutTransportCause),
+  checkoutHttpStatus: Schema.optional(CiJob.CheckoutHttpStatus),
 })
 
 /** The branch couldn't be checked out in the machine. Legacy receipts lack diagnostics. Not retried. */
@@ -63,10 +71,24 @@ export class CheckoutFailed extends Schema.TaggedError<CheckoutFailed>()("@smthr
 export const CheckoutOutcome = Schema.Struct({ _tag: Schema.Literal("CheckoutFailed"), ...CheckoutDetails.fields })
 
 /** Picks only bounded checkout metadata; neither output nor a provider's message crosses this boundary. */
-export const checkoutDetails = (outcome: typeof CheckoutDetails.Type): typeof CheckoutDetails.Type => ({
-  ...(outcome.exitCode === undefined ? {} : { exitCode: outcome.exitCode }),
-  ...(outcome.checkoutFailure === undefined ? {} : { checkoutFailure: outcome.checkoutFailure }),
-})
+export const checkoutDetails = (outcome: typeof CheckoutDetails.Type): typeof CheckoutDetails.Type => {
+  const transport = outcome.checkoutTransportCause !== undefined && isCheckoutTransportCause(outcome.checkoutTransportCause)
+    ? outcome.checkoutTransportCause
+    : undefined
+  const httpStatus = transport === "http_status" &&
+      outcome.checkoutHttpStatus !== undefined &&
+      isCheckoutHttpStatus(outcome.checkoutHttpStatus)
+    ? outcome.checkoutHttpStatus
+    : undefined
+  return {
+    ...(typeof outcome.exitCode === "number" && Number.isInteger(outcome.exitCode) ? { exitCode: outcome.exitCode } : {}),
+    ...(outcome.checkoutFailure !== undefined && isCheckoutFailureStage(outcome.checkoutFailure)
+      ? { checkoutFailure: outcome.checkoutFailure }
+      : {}),
+    ...(transport === undefined ? {} : { checkoutTransportCause: transport }),
+    ...(httpStatus === undefined ? {} : { checkoutHttpStatus: httpStatus }),
+  }
+}
 
 // What each failure is to the flow engine: a machine that couldn't answer is retried, as infrastructure; a start that ran
 // out of time or a refused checkout isn't, as the steps above say (`Fault`, the engine's default retry of a keyed step).

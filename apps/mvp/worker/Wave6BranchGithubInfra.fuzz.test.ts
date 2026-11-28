@@ -44,12 +44,15 @@ const REFUSED = "@smthrs/sandbox/SandboxTools/ToolRefused"
 const LOST = "@smthrs/sandbox/SandboxTools/ToolLost"
 const TOOL_UNAVAILABLE = "@smthrs/sandbox/SandboxTools/ToolUnavailable"
 const MACHINE_UNAVAILABLE = "@smthrs/sandbox/CiJob/MachineUnavailable"
+const CHECKOUT_REFUSED = "@smthrs/sandbox/CiJob/CheckoutRefused"
 
 interface Failure {
   readonly tag: string
   readonly reason?: string
-  readonly exitCode?: number
+  readonly exitCode?: number | null
   readonly checkoutFailure?: string
+  readonly checkoutTransportCause?: string
+  readonly checkoutHttpStatus?: number
   readonly code?: string
 }
 
@@ -62,12 +65,22 @@ const failureOf = (error: object): { readonly failed: Record<string, unknown> } 
       reason: fields["reason"],
       exitCode: fields["exitCode"],
       checkoutFailure: fields["checkoutFailure"],
+      checkoutTransportCause: fields["checkoutTransportCause"],
+      checkoutHttpStatus: fields["checkoutHttpStatus"],
       code: fields["code"],
     },
   }
 }
 const failed = (failure: Failure) => ({
-  failed: { tag: failure.tag, reason: failure.reason, exitCode: failure.exitCode, checkoutFailure: failure.checkoutFailure, code: failure.code },
+  failed: {
+    tag: failure.tag,
+    reason: failure.reason,
+    exitCode: failure.exitCode,
+    checkoutFailure: failure.checkoutFailure,
+    checkoutTransportCause: failure.checkoutTransportCause,
+    checkoutHttpStatus: failure.checkoutHttpStatus,
+    code: failure.code,
+  },
 })
 const settled = <A, E extends object>(effect: Effect.Effect<A, E>) =>
   effect.pipe(Effect.match({ onFailure: failureOf, onSuccess: (value) => ({ ok: value }) }))
@@ -90,6 +103,10 @@ const toolAnswers = (generation: number): ReadonlyArray<{ readonly outcome: Mach
   { outcome: { _tag: "Done", result: runResult(0), generation } },
   { outcome: { _tag: "Refused", reason: "path" }, failure: { tag: REFUSED, reason: "path" } },
   { outcome: { _tag: "Lost" }, failure: { tag: LOST } },
+  {
+    outcome: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "http_status", checkoutHttpStatus: 502 },
+    failure: { tag: CHECKOUT_FAILED, exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "http_status", checkoutHttpStatus: 502 },
+  },
   { outcome: { _tag: "CheckoutFailed", exitCode: 128, checkoutFailure: "clone" }, failure: { tag: CHECKOUT_FAILED, exitCode: 128, checkoutFailure: "clone" } },
   { outcome: { _tag: "CheckoutFailed" }, failure: { tag: CHECKOUT_FAILED } },
   { outcome: { _tag: "Waiting" }, failure: { tag: UNAVAILABLE, reason: "waiting" } },
@@ -228,7 +245,7 @@ test("a CI job's machine maps each machine answer to the job's checkout, step an
         if (scenario.mode === "start_timeout") return Effect.fail(new SandboxStartTimedOut())
         if (scenario.mode === "lost") return Effect.fail(new SandboxTools.ToolLost())
         if (scenario.mode === "refused") return Effect.fail(new SandboxTools.ToolRefused({ reason: "path" }))
-        return Machines.ranOf({ _tag: "CheckoutFailed", exitCode: 128 })
+        return Machines.ranOf({ _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "dns" })
       },
       sleepIfIdle: (...args) => {
         sleeps.push(args)
@@ -246,8 +263,19 @@ test("a CI job's machine maps each machine answer to the job's checkout, step an
 
     const ran = scenario.mode === "passed" || scenario.mode === "failed"
     const retried = scenario.mode === "unavailable" || scenario.mode === "start_timeout"
+    const expectedCheckout = retried
+      ? failed({ tag: MACHINE_UNAVAILABLE })
+      : scenario.mode === "passed"
+      ? { ok: true }
+      : scenario.mode === "failed"
+      ? failed({ tag: CHECKOUT_REFUSED, checkoutFailure: "timed_out", exitCode: null })
+      : scenario.mode === "lost"
+      ? failed({ tag: CHECKOUT_REFUSED, checkoutFailure: "tool_lost", exitCode: null })
+      : scenario.mode === "refused"
+      ? failed({ tag: CHECKOUT_REFUSED, checkoutFailure: "path", exitCode: null })
+      : failed({ tag: CHECKOUT_REFUSED, checkoutFailure: "clone", exitCode: 75, checkoutTransportCause: "dns" })
     expect(answers).toEqual({
-      checkout: retried ? failed({ tag: MACHINE_UNAVAILABLE }) : { ok: scenario.mode === "passed" },
+      checkout: expectedCheckout,
       step: retried
         ? failed({ tag: MACHINE_UNAVAILABLE })
         : scenario.mode === "passed"

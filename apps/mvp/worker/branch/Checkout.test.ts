@@ -11,7 +11,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
 import { WORKSPACE } from "../../src/features/terminal/contract.ts"
-import { CHECKOUT_FAILURES, checkoutArgv, DEPTH, forgeRemote } from "./Checkout.ts"
+import { CHECKOUT_FAILURES, checkoutArgv, classifyCheckoutTransport, DEPTH, forgeRemote } from "./Checkout.ts"
 
 const root = mkdtempSync(join(tmpdir(), "checkout-"))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
@@ -257,4 +257,210 @@ test("the real git client checks out an ephemeral branch through the scoped SDK 
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
+})
+
+/** Runs the real checkout script asynchronously and returns both exit code and captured stderr. */
+const runCheckoutCapture = (workspace: string, branch: string, from: string, namespace: "default" | "ephemeral" = "default") =>
+  new Promise<{ readonly exitCode: number; readonly stderr: string }>((resolve, reject) => {
+    const [shell, flag, script, name, ...args] = checkoutArgv(branch, from, namespace)
+    const child = spawn(shell!, [flag!, script!.replaceAll(WORKSPACE, workspace), name!, ...args], {
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    })
+    let stderr = ""
+    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8") })
+    child.on("error", reject)
+    child.on("close", (code) => resolve({ exitCode: code ?? 137, stderr }))
+  })
+
+describe("real git transport failure classification", () => {
+  test("discriminates HTTP statuses on info/refs and upload-pack, mid-stream drops, missing objects, DNS, local storage and branch absence", async () => {
+    const dir = remote.slice("file://".length)
+    const mainSha = git(dir, "rev-parse", "main").trim()
+    const runGitUploadPack = (args: ReadonlyArray<string>, input: Buffer, protocol?: string) =>
+      new Promise<Buffer>((resolve, reject) => {
+        const child = spawn("git", ["upload-pack", "--stateless-rpc", ...args, dir], {
+          env: { ...process.env, ...(protocol ? { GIT_PROTOCOL: protocol } : {}) },
+        })
+        const chunks: Buffer[] = []
+        let errors = ""
+        child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk))
+        child.stderr.on("data", (chunk: Buffer) => { errors += chunk.toString("utf8") })
+        child.on("error", reject)
+        // Like git-http-backend, upload-pack emits pkt-line ERR responses on stdout even when exiting non-zero.
+        child.on("close", (code) => {
+          const output = Buffer.concat(chunks)
+          if (code === 0 || output.length > 0) resolve(output)
+          else reject(new Error(errors))
+        })
+        child.stdin.end(input)
+      })
+
+    let mode:
+      | { readonly kind: "refs-status"; readonly status: number }
+      | { readonly kind: "pack-status"; readonly status: number }
+      | { readonly kind: "pack-drop" }
+      | { readonly kind: "real" } = { kind: "real" }
+
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      const body = Buffer.concat(chunks)
+      if (req.method === "GET" && req.url?.includes("/info/refs")) {
+        if (mode.kind === "refs-status") {
+          res.writeHead(mode.status, { "content-type": "text/plain" })
+          res.end(`upstream status ${mode.status}`)
+          return
+        }
+        const pack = await runGitUploadPack(["--advertise-refs"], body, req.headers["git-protocol"] as string | undefined)
+        res.writeHead(200, { "content-type": "application/x-git-upload-pack-advertisement" })
+        res.end(Buffer.concat([Buffer.from("001e# service=git-upload-pack\n0000"), pack]))
+        return
+      }
+      if (req.method === "POST" && req.url?.includes("/git-upload-pack")) {
+        if (mode.kind === "pack-status") {
+          res.writeHead(mode.status, { "content-type": "text/plain" })
+          res.end(`upload-pack status ${mode.status}`)
+          return
+        }
+        if (mode.kind === "pack-drop") {
+          res.writeHead(200, { "content-type": "application/x-git-upload-pack-result", "content-length": "4096" })
+          res.write("0008NAK\n")
+          res.destroy()
+          return
+        }
+        const pack = await runGitUploadPack([], body, req.headers["git-protocol"] as string | undefined)
+        res.writeHead(200, { "content-type": "application/x-git-upload-pack-result" })
+        res.end(pack)
+        return
+      }
+      res.writeHead(403)
+      res.end()
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+
+    let step = 0
+    const nextDir = (label: string) => {
+      const dirPath = join(root, `transport-${++step}-${label}`)
+      mkdirSync(dirPath)
+      return dirPath
+    }
+
+    try {
+      // HTTP statuses on GET /info/refs during pinned fetch (75).
+      for (const status of [401, 403, 404, 429, 500, 502, 503, 504] as const) {
+        mode = { kind: "refs-status", status }
+        const ran = await runCheckoutCapture(nextDir(`refs-${status}`), mainSha, `${origin}/evmts/tevm`)
+        expect(ran.exitCode).toBe(75)
+        expect(classifyCheckoutTransport(ran.exitCode, ran.stderr)).toEqual({
+          checkoutTransportCause: "http_status",
+          checkoutHttpStatus: status,
+        })
+      }
+
+      // HTTP statuses on POST /git-upload-pack after a clean GET /info/refs (75).
+      for (const status of [403, 429, 502, 503] as const) {
+        mode = { kind: "pack-status", status }
+        const ran = await runCheckoutCapture(nextDir(`pack-${status}`), mainSha, `${origin}/evmts/tevm`)
+        expect(ran.exitCode).toBe(75)
+        expect(classifyCheckoutTransport(ran.exitCode, ran.stderr)).toEqual({
+          checkoutTransportCause: "http_status",
+          checkoutHttpStatus: status,
+        })
+      }
+
+      // Abrupt connection drop mid-pack -> interrupted.
+      mode = { kind: "pack-drop" }
+      const dropped = await runCheckoutCapture(nextDir("drop"), mainSha, `${origin}/evmts/tevm`)
+      expect(dropped.exitCode).toBe(75)
+      expect(classifyCheckoutTransport(dropped.exitCode, dropped.stderr)).toEqual({
+        checkoutTransportCause: "interrupted",
+      })
+
+      // Missing commit SHA against a real smart-HTTP git server -> missing_object.
+      mode = { kind: "real" }
+      const missing = await runCheckoutCapture(nextDir("missing"), "0".repeat(40), `${origin}/evmts/tevm`)
+      expect(missing.exitCode).toBe(75)
+      expect(classifyCheckoutTransport(missing.exitCode, missing.stderr)).toEqual({
+        checkoutTransportCause: "missing_object",
+      })
+
+      // Branch ls-remote failure (70) preserves HTTP status cause; absent branch (71) carries no transport cause.
+      mode = { kind: "refs-status", status: 502 }
+      const forge502 = await runCheckoutCapture(nextDir("forge-502"), "main", `${origin}/evmts/tevm`)
+      expect(forge502.exitCode).toBe(70)
+      expect(classifyCheckoutTransport(forge502.exitCode, forge502.stderr)).toEqual({
+        checkoutTransportCause: "http_status",
+        checkoutHttpStatus: 502,
+      })
+
+      mode = { kind: "real" }
+      const absentBranch = await runCheckoutCapture(nextDir("absent-branch"), "no-such-branch", `${origin}/evmts/tevm`)
+      expect(absentBranch.exitCode).toBe(71)
+      expect(classifyCheckoutTransport(absentBranch.exitCode, absentBranch.stderr)).toEqual({})
+
+      // Local storage error: locked index during worktree checkout (76) -> pack_storage.
+      const locked = nextDir("locked")
+      git(locked, "init", "-q")
+      writeFileSync(join(locked, ".git/index.lock"), "held")
+      const lockedRun = await runCheckoutCapture(locked, mainSha, `${origin}/evmts/tevm`)
+      expect(lockedRun.exitCode).toBe(76)
+      expect(classifyCheckoutTransport(lockedRun.exitCode, lockedRun.stderr)).toEqual({
+        checkoutTransportCause: "pack_storage",
+      })
+
+      // DNS failure against RFC 6761 .invalid hostname -> dns.
+      const dnsRun = await runCheckoutCapture(nextDir("dns"), mainSha, "http://nonexistent.invalid/evmts/tevm")
+      expect(dnsRun.exitCode).toBe(75)
+      expect(classifyCheckoutTransport(dnsRun.exitCode, dnsRun.stderr)).toEqual({
+        checkoutTransportCause: "dns",
+      })
+    } finally {
+      server.closeAllConnections()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+
+    // Closed localhost port -> interrupted (connection refused).
+    const closed = createServer()
+    await new Promise<void>((resolve) => closed.listen(0, "127.0.0.1", resolve))
+    const closedPort = (closed.address() as AddressInfo).port
+    await new Promise<void>((resolve) => closed.close(() => resolve()))
+    const refused = await runCheckoutCapture(nextDir("refused"), mainSha, `http://127.0.0.1:${closedPort}/evmts/tevm`)
+    expect(refused.exitCode).toBe(75)
+    expect(classifyCheckoutTransport(refused.exitCode, refused.stderr)).toEqual({
+      checkoutTransportCause: "interrupted",
+    })
+  }, 30_000)
+
+  test("classifyCheckoutTransport enforces precedence, ignores spoofed remote sidebands, distinguishes unknown, and never echoes stderr", () => {
+    const secret = "tok_secret_customer_token_sentinel"
+    const cases: ReadonlyArray<readonly [number, string, ReturnType<typeof classifyCheckoutTransport>]> = [
+      // Local storage wins over downstream pack/EOF symptoms.
+      [75, `fatal: write error: No space left on device (${secret})\nfatal: early EOF\nfatal: index-pack failed`, { checkoutTransportCause: "pack_storage" }],
+      // Explicit HTTP status wins over trailing remote hangup.
+      [75, `error: RPC failed; HTTP 502 curl 22 The requested URL returned error: 502\nfatal: the remote end hung up unexpectedly`, { checkoutTransportCause: "http_status", checkoutHttpStatus: 502 }],
+      // DNS timeout classifies as dns rather than generic timeout.
+      [75, `fatal: unable to access 'http://forge.smithers.internal/${secret}': Resolving timed out after 3000 milliseconds`, { checkoutTransportCause: "dns" }],
+      // Signal sentinel or OOM-killed git child classifies as interrupted even with invalid index-pack output.
+      [75, `smithers-checkout-signal:137\n`, { checkoutTransportCause: "interrupted" }],
+      [75, `error: index-pack died of signal 9\nfatal: fetch-pack: invalid index-pack output`, { checkoutTransportCause: "interrupted" }],
+      [137, ``, { checkoutTransportCause: "interrupted" }],
+      // Corrupt pack without stream drop or signal classifies as pack_storage.
+      [75, `fatal: pack has bad object at offset 42: inflate returned -3\nfatal: index-pack failed`, { checkoutTransportCause: "pack_storage" }],
+      // Unadvertised commit object classifies as missing_object.
+      [75, `error: Server does not allow request for unadvertised object c2a8c83dee3f40ca0f5d15ffb2ccabad6dcd0129`, { checkoutTransportCause: "missing_object" }],
+      // Spoofed remote sideband cannot masquerade as HTTP 502; real local error wins or falls back to unknown.
+      [75, `remote: The requested URL returned error: 502\nfatal: remote error: upload-pack: not our ref 0000000000000000000000000000000000000000`, { checkoutTransportCause: "missing_object" }],
+      [75, `remote: The requested URL returned error: 502\nremote: Could not resolve host: ${secret}`, { checkoutTransportCause: "unknown" }],
+      // Unknown is explicitly returned on unclassified non-71 failures, distinct from omitted historical records.
+      [75, `fatal: unexpected opaque failure involving ${secret}`, { checkoutTransportCause: "unknown" }],
+      [75, ``, { checkoutTransportCause: "unknown" }],
+      [71, ``, {}],
+    ]
+    for (const [exitCode, stderr, expected] of cases) {
+      const classified = classifyCheckoutTransport(exitCode, stderr)
+      expect(classified).toEqual(expected)
+      expect(JSON.stringify(classified)).not.toContain(secret)
+    }
+  })
 })

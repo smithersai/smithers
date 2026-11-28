@@ -36,6 +36,7 @@ const machine = (
     readonly output?: { readonly stdout: string; readonly stderr: string; readonly truncated: boolean }
     readonly wrongCommit?: boolean
     readonly unavailable?: boolean
+    readonly checkoutRefused?: CiJob.CheckoutRefused
   } = {}
 ) => {
   const asked: Asked = { checkouts: [], runs: [], released: [], events: [], machines: {} }
@@ -45,6 +46,8 @@ const machine = (
       checkout: (at, job) =>
         options.unavailable === true
           ? Effect.fail(new CiJob.MachineUnavailable())
+          : options.checkoutRefused !== undefined
+          ? Effect.fail(options.checkoutRefused)
           : Effect.sync(() => {
             asked.events.push(`checkout:${job.name}`)
             asked.machines[job.name] = job.machine ?? "default"
@@ -162,6 +165,153 @@ describe("ci/job", () => {
       expect(box.asked.runs).toEqual([])
     }).pipe(Effect.provide(host(box.layer)))
   })
+
+  it.effect("persists bounded checkout transport causes across skipped steps and preserves historical decoding", () =>
+    Effect.gen(function*() {
+      const cases: ReadonlyArray<{
+        readonly refused: CiJob.CheckoutRefused
+        readonly expected: CiJob.StepResult
+      }> = [
+        {
+          refused: new CiJob.CheckoutRefused({
+            checkoutFailure: "clone",
+            exitCode: 75,
+            checkoutTransportCause: "http_status",
+            checkoutHttpStatus: 502
+          }),
+          expected: {
+            name: "checkout",
+            outcome: "failed",
+            exitCode: 75,
+            checkoutFailure: "clone",
+            checkoutTransportCause: "http_status",
+            checkoutHttpStatus: 502
+          }
+        },
+        {
+          refused: new CiJob.CheckoutRefused({
+            checkoutFailure: "clone",
+            exitCode: 75,
+            checkoutTransportCause: "dns",
+            // Ignored when transport cause is not http_status.
+            checkoutHttpStatus: 502
+          }),
+          expected: {
+            name: "checkout",
+            outcome: "failed",
+            exitCode: 75,
+            checkoutFailure: "clone",
+            checkoutTransportCause: "dns"
+          }
+        },
+        {
+          refused: new CiJob.CheckoutRefused({
+            checkoutFailure: "clone",
+            exitCode: 75,
+            checkoutTransportCause: "missing_object"
+          }),
+          expected: {
+            name: "checkout",
+            outcome: "failed",
+            exitCode: 75,
+            checkoutFailure: "clone",
+            checkoutTransportCause: "missing_object"
+          }
+        },
+        {
+          refused: new CiJob.CheckoutRefused({
+            checkoutFailure: "clone",
+            exitCode: 75,
+            checkoutTransportCause: "pack_storage"
+          }),
+          expected: {
+            name: "checkout",
+            outcome: "failed",
+            exitCode: 75,
+            checkoutFailure: "clone",
+            checkoutTransportCause: "pack_storage"
+          }
+        },
+        {
+          refused: new CiJob.CheckoutRefused({
+            checkoutFailure: "clone",
+            exitCode: 75,
+            checkoutTransportCause: "interrupted"
+          }),
+          expected: {
+            name: "checkout",
+            outcome: "failed",
+            exitCode: 75,
+            checkoutFailure: "clone",
+            checkoutTransportCause: "interrupted"
+          }
+        },
+        {
+          refused: new CiJob.CheckoutRefused({
+            checkoutFailure: "clone",
+            exitCode: 75,
+            checkoutTransportCause: "unknown"
+          }),
+          expected: {
+            name: "checkout",
+            outcome: "failed",
+            exitCode: 75,
+            checkoutFailure: "clone",
+            checkoutTransportCause: "unknown"
+          }
+        }
+      ]
+      for (const [index, entry] of cases.entries()) {
+        const box = machine({ checkoutRefused: entry.refused })
+        const result = yield* CiJob.CiJob.execute({ target, job: job("build", "make", "test") }, {
+          executionId: `job-transport-${index}`
+        }).pipe(Effect.provide(host(box.layer)))
+        expect(result).toEqual({
+          outcome: "failed",
+          steps: [
+            entry.expected,
+            { name: "step-0", outcome: "skipped", exitCode: null },
+            { name: "step-1", outcome: "skipped", exitCode: null }
+          ]
+        })
+        expect(box.asked.runs).toEqual([])
+      }
+
+      // Historical receipts (pre-diagnostics and stage-5 pre-transport) remain valid.
+      const decodeResult = Schema.decodeUnknownExit(CiJob.Result)
+      expect(Exit.isSuccess(decodeResult({
+        outcome: "failed",
+        steps: [{ name: "checkout", outcome: "failed", exitCode: null }]
+      }))).toBe(true)
+      expect(Exit.isSuccess(decodeResult({
+        outcome: "failed",
+        steps: [{ name: "checkout", outcome: "failed", exitCode: 75, checkoutFailure: "clone" }]
+      }))).toBe(true)
+      // Reject unbounded strings or out-of-range HTTP status codes.
+      expect(Exit.isFailure(decodeResult({
+        outcome: "failed",
+        steps: [{
+          name: "checkout",
+          outcome: "failed",
+          exitCode: 75,
+          checkoutFailure: "clone",
+          checkoutTransportCause: "raw-stderr-sentinel"
+        }]
+      }))).toBe(true)
+      for (const badStatus of [99, 600, 502.5, "502"]) {
+        expect(Exit.isFailure(decodeResult({
+          outcome: "failed",
+          steps: [{
+            name: "checkout",
+            outcome: "failed",
+            exitCode: 75,
+            checkoutFailure: "clone",
+            checkoutTransportCause: "http_status",
+            checkoutHttpStatus: badStatus
+          }]
+        }))).toBe(true)
+      }
+    }))
 
   it.effect("a machine that never answers fails the job, and the machine is still released", () => {
     const box = machine({ unavailable: true })

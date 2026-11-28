@@ -263,8 +263,13 @@ test("the sandbox adapter keeps successful generations and preserves wake and se
     expect(yield* Effect.flip(sandboxes.wake(branch, "person"))).toMatchObject({ reason: "waiting" })
     wake = { _tag: "Unavailable" }
     expect(yield* Effect.flip(sandboxes.wake(branch, "person"))).toMatchObject({ reason: "start" })
-    wake = { _tag: "CheckoutFailed", exitCode: 42, checkoutFailure: "clone" }
-    expect(yield* Effect.flip(sandboxes.wake(branch, "person"))).toMatchObject({ exitCode: 42, checkoutFailure: "clone" })
+    wake = { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "http_status", checkoutHttpStatus: 502 }
+    expect(yield* Effect.flip(sandboxes.wake(branch, "person"))).toMatchObject({
+      exitCode: 75,
+      checkoutFailure: "clone",
+      checkoutTransportCause: "http_status",
+      checkoutHttpStatus: 502,
+    })
     ready = false
     expect(yield* Effect.flip(sandboxes.session(branch.branchId, "term-1", "person"))).toMatchObject({ reason: "exec" })
     expect(kept).toEqual([[branch.branchId, 7, undefined]])
@@ -541,9 +546,19 @@ test("the sandbox reserves a real budget slot, keeps checkout diagnostics, and r
     expect(yield* sandbox.wake(branch)).toEqual({ _tag: "Unavailable" })
     expect(yield* sql`SELECT generation FROM sandbox_generations WHERE branch_id = ${branch.branchId} AND ended_at IS NULL`).toEqual([])
     startRefused = false
-    expect(yield* sandbox.wake(branch)).toEqual({ _tag: "CheckoutFailed", exitCode: 70, checkoutFailure: "forge" })
+    expect(yield* sandbox.wake(branch)).toEqual({
+      _tag: "CheckoutFailed",
+      exitCode: 70,
+      checkoutFailure: "forge",
+      checkoutTransportCause: "unknown",
+    })
     checkoutCode = 99
-    expect(yield* sandbox.wake(branch)).toEqual({ _tag: "CheckoutFailed", exitCode: 99, checkoutFailure: "other" })
+    expect(yield* sandbox.wake(branch)).toEqual({
+      _tag: "CheckoutFailed",
+      exitCode: 99,
+      checkoutFailure: "other",
+      checkoutTransportCause: "unknown",
+    })
     checkoutCode = 0
     expect(yield* sandbox.wake(branch)).toEqual({ _tag: "Woken", generation: 1 })
     expect(starts).toEqual([{ enableInternet: false, instance: "standard-1" }])
@@ -559,6 +574,106 @@ test("the sandbox reserves a real budget slot, keeps checkout diagnostics, and r
     ])
   })).pipe(
     Effect.provide(TestDatabase.layer("branch_sandbox_object")),
+    Effect.provideService(RuntimeContext, objectRuntime),
+  ))
+})
+
+test("sandbox checkout classifies bounded transport causes from stderr without logging raw stderr or secrets", async () => {
+  const secret = "tok_checkout_stderr_secret_sentinel"
+  const logLines: Array<string> = []
+  const testConsole: Console.Console = Object.assign(Object.create(globalThis.console), {
+    log: (value: unknown) => {
+      if (typeof value === "string") logLines.push(value)
+    },
+  })
+  let checkoutCode = 75
+  let checkoutStderr = ""
+  const container = {
+    running: true,
+    start: () => {},
+    monitor: () => Promise.resolve(),
+    setInactivityTimeout: () => Promise.resolve(),
+    interceptOutboundHttp: async () => {},
+    interceptAllOutboundHttp: () => Promise.resolve(),
+    interceptOutboundHttps: () => Promise.resolve(),
+    exec: async (argv: ReadonlyArray<string>) => {
+      const payload = argv[3] === "checkout" ? checkoutStderr : ""
+      return {
+        pid: 1,
+        isPty: false,
+        stdin: new WritableStream(),
+        stdout: new ReadableStream({ start: (stream) => stream.close() }),
+        stderr: new ReadableStream({
+          start: (stream) => {
+            if (payload !== "") stream.enqueue(new TextEncoder().encode(payload))
+            stream.close()
+          },
+        }),
+        exitCode: Promise.resolve(argv[3] === "checkout" ? checkoutCode : 0),
+        kill: () => {},
+      }
+    },
+  }
+  const { initialize } = sandboxRegistration(container)
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const hyperdrive = yield* withScratchDatabase
+    const sandbox = yield* initialize.pipe(Effect.provideService(Cloudflare.Hyperdrive.Connect, () => hyperdrive))
+    const scenarios = [
+      {
+        code: 75,
+        stderr: `error: RPC failed; HTTP 502 curl 22 The requested URL returned error: 502 (${secret})\n`,
+        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "http_status", checkoutHttpStatus: 502 },
+        log: { exitCode: 75, failure: "clone", transportCause: "http_status", httpStatus: 502 },
+      },
+      {
+        code: 75,
+        stderr: `fatal: unable to access 'http://forge.smithers.internal/${secret}': Could not resolve host: forge.smithers.internal\n`,
+        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "dns" },
+        log: { exitCode: 75, failure: "clone", transportCause: "dns" },
+      },
+      {
+        code: 75,
+        stderr: `fatal: remote error: upload-pack: not our ref ${secret}\n`,
+        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "missing_object" },
+        log: { exitCode: 75, failure: "clone", transportCause: "missing_object" },
+      },
+      {
+        code: 75,
+        stderr: `fatal: write error: No space left on device (${secret})\n`,
+        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "pack_storage" },
+        log: { exitCode: 75, failure: "clone", transportCause: "pack_storage" },
+      },
+      {
+        code: 75,
+        stderr: `error: index-pack died of signal 9 (${secret})\n`,
+        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "interrupted" },
+        log: { exitCode: 75, failure: "clone", transportCause: "interrupted" },
+      },
+      {
+        code: 75,
+        stderr: `fatal: opaque error ${secret}\n`,
+        expected: { _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "unknown" },
+        log: { exitCode: 75, failure: "clone", transportCause: "unknown" },
+      },
+    ] as const
+    for (const scenario of scenarios) {
+      logLines.length = 0
+      checkoutCode = scenario.code
+      checkoutStderr = scenario.stderr
+      const outcome = yield* sandbox.wake(branch)
+      expect(outcome).toEqual(scenario.expected)
+      expect(JSON.stringify(outcome)).not.toContain(secret)
+      const checkoutLog = logLines
+        .map((line) => {
+          try { return JSON.parse(line) as { message?: string; annotations?: Record<string, unknown> } } catch { return {} }
+        })
+        .find((entry) => entry.message === "sandbox.checkout")
+      expect(checkoutLog?.annotations).toMatchObject(scenario.log)
+      expect(logLines.join("\n")).not.toContain(secret)
+    }
+  })).pipe(
+    Effect.provide(TestDatabase.layer("branch_sandbox_checkout_transport")),
+    Effect.provideService(Console.Console, testConsole),
     Effect.provideService(RuntimeContext, objectRuntime),
   ))
 })

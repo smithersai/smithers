@@ -79,7 +79,14 @@ export const layer = Layer.effect(
             const ran = checkout catch effect (error) => {
               if (unavailable(error)) throw new CiJob.MachineUnavailable()
               if (error._tag === "@smthrs/mvp/branch/CheckoutFailed") {
-                throw new CiJob.CheckoutRefused({ checkoutFailure: error.checkoutFailure ?? "other", exitCode: error.exitCode ?? null })
+                throw new CiJob.CheckoutRefused({
+                  checkoutFailure: error.checkoutFailure ?? "other",
+                  exitCode: error.exitCode ?? null,
+                  ...(error.checkoutTransportCause === undefined ? {} : { checkoutTransportCause: error.checkoutTransportCause }),
+                  ...(error.checkoutTransportCause === "http_status" && error.checkoutHttpStatus !== undefined
+                    ? { checkoutHttpStatus: error.checkoutHttpStatus }
+                    : {}),
+                })
               }
               throw new CiJob.CheckoutRefused({
                 checkoutFailure: error._tag === "@smthrs/sandbox/SandboxTools/ToolLost" ? "tool_lost" : error.reason,
@@ -94,12 +101,21 @@ export const layer = Layer.effect(
           Effect.tap(() => counted("checkout", "exact", target, job)),
           Effect.tapErrorTag("@smthrs/sandbox/CiJob/CheckoutRefused", effect (refusal) => {
             const stage = try sync(() => pinnedCheckoutStage(refusal.checkoutFailure, refusal.exitCode))
+            const httpStatus = refusal.checkoutTransportCause === "http_status" ? refusal.checkoutHttpStatus : undefined
             try counted("checkout", "refused", target, job).pipe(
-              Effect.annotateLogs({ checkoutFailure: refusal.checkoutFailure, exitCode: refusal.exitCode, ...(stage === undefined ? {} : { checkoutStage: stage }) }),
+              Effect.annotateLogs({
+                checkoutFailure: refusal.checkoutFailure,
+                exitCode: refusal.exitCode,
+                ...(stage === undefined ? {} : { checkoutStage: stage }),
+                ...(refusal.checkoutTransportCause === undefined ? {} : { checkoutTransportCause: refusal.checkoutTransportCause }),
+                ...(httpStatus === undefined ? {} : { checkoutHttpStatus: httpStatus }),
+              }),
               Effect.andThen(Effect.annotateCurrentSpan({
                 "ci.checkout.failure": refusal.checkoutFailure,
                 ...(stage === undefined ? {} : { "ci.checkout.stage": stage }),
                 ...(refusal.exitCode === null ? {} : { "ci.checkout.exit_code": refusal.exitCode }),
+                ...(refusal.checkoutTransportCause === undefined ? {} : { "ci.checkout.transport_cause": refusal.checkoutTransportCause }),
+                ...(httpStatus === undefined ? {} : { "ci.checkout.http_status": httpStatus }),
               })),
             )
           }),

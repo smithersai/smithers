@@ -725,7 +725,7 @@ Tracking a branch, its conversation, its terminals, its machine, sharing it and 
 | `terminal.open.wake`, `terminal.open` | log | the `FlowExecution` Durable Object | `branchId`, `generation`, `terminalId`, `outcome`, `recorded`, `errorCode` |
 | `sandbox.wake`, `terminal.session`, `terminal.open` | span | the `FlowExecution` Durable Object | `smithers.branch.id`, `smithers.terminal.id` |
 | `smithers_terminal_opens` | counter | the `FlowExecution` Durable Object | `outcome` (`open`, `unavailable`, `checkout`) |
-| `sandbox.object.wake` (span), `sandbox.checkout`, `sandbox.wake`, `sandbox.forge`, `sandbox.object.session` (logs, JSON) | | `SandboxObject` | `smithers.branch.id`, `branchId`, `stage` (`start`, `ledger`, `checkout`, `restore`, `placeholders`), `exitCode`, `failure` (`forge`, `branch`, `clone`, `other`), `namespace`, `forge`, `generation`, per-stage `*Ms` including failed stages, `status`, `outcome`, `errorCode` |
+| `sandbox.object.wake` (span), `sandbox.checkout`, `sandbox.wake`, `sandbox.forge`, `sandbox.object.session` (logs, JSON) | | `SandboxObject` | `smithers.branch.id`, `branchId`, `stage` (`start`, `ledger`, `checkout`, `restore`, `placeholders`), `exitCode`, `failure` (`forge`, `branch`, `clone`, `other`), `transportCause` (`http_status`, `dns`, `missing_object`, `pack_storage`, `interrupted`, `unknown`), `httpStatus` (`100`–`599`), `namespace`, `forge`, `generation`, per-stage `*Ms` including failed stages, `status`, `outcome`, `errorCode` |
 | `sandbox.box_request` (log) | | ChatApi | `errorCode`: a box's request that couldn't reach its object (502) |
 | `smithers_cloudflare_terminal_connects`, `_sessions_open`, `_bytes`, `_sessions`, `smithers_cloudflare_sandbox_wakes`, `smithers_cloudflare_sandbox_rearms` | counters | `SandboxObject` (`@smthrs/platform-cloudflare`) | `access`, `outcome`, `direction` |
 | `git.proxy` (log), `GitProxy.uploadPack` (span), `git_proxy_requests` | | `SandboxObject` (`@smthrs/effect-code-storage`) | `service`, `outcome`, `status`, `durationMs` |
@@ -773,7 +773,7 @@ A branch machine's tools and its sleep and wake ([sandbox-tools.md](features/san
 |---|---|---|---|
 | `sandbox.call`, `sandbox.result` | log, span | ChatApi | `callId`, `tool`, `door` (`person`, `agent`), `branchId`, `outcome` (`running`, `existing`, a status, or the refusal), `code`, `status`, `durationMs`, `errorCode` |
 | `smithers_sandbox_call_requests` | counter | ChatApi | `route` (`call`, `result`), `outcome` |
-| `sandbox.tool`, `sandbox.call` | log | the `FlowExecution` Durable Object | `callId`, `branchId`, `tool`, `outcome`, `settled`, `exitCode`, `timedOut`, `errorCode`; checkout failures retain `exitCode` and `checkoutFailure` in `sandbox.tool` and the durable error receipt |
+| `sandbox.tool`, `sandbox.call` | log | the `FlowExecution` Durable Object | `callId`, `branchId`, `tool`, `outcome`, `settled`, `exitCode`, `timedOut`, `errorCode`; checkout failures retain `exitCode`, `checkoutFailure`, `checkoutTransportCause`, and `checkoutHttpStatus` (for `http_status`) in `sandbox.tool` and the durable error receipt |
 | `sandbox.call.tool`, `sandbox.call.settle` | span | the `FlowExecution` Durable Object | `smithers.branch.id`, `smithers.sandbox.tool`, `smithers.sandbox.call.id` |
 | `smithers_sandbox_calls` | counter | the `FlowExecution` Durable Object | `tool`, `outcome` (`done`, or the failure) |
 | `sandbox.keep`, `sandbox.slept` | log, span | the `FlowExecution` Durable Object | `branchId`, `generation`, `ended`, `terminals`, `errorCode` |

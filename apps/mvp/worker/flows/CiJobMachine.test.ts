@@ -154,8 +154,20 @@ describe("ci/job on a job machine", { timeout: 60_000 }, () => {
     expect(box.calls.map((call) => call.command)).not.toContain("make")
   })
 
-  test.each([[72, undefined], [75, "fetch"]] as const)("checkout telemetry for exit %i", async (exitCode, stage) => {
-    const box = machine({ checkoutFailure: new CheckoutFailed({ exitCode, checkoutFailure: "clone" }) })
+  test.each([
+    [72, undefined, undefined, undefined],
+    [75, "fetch", "http_status", 502],
+    [75, "fetch", "dns", undefined],
+    [75, "fetch", "unknown", undefined],
+  ] as const)("checkout telemetry for exit %i (%s)", async (exitCode, stage, transportCause, httpStatus) => {
+    const box = machine({
+      checkoutFailure: new CheckoutFailed({
+        exitCode,
+        checkoutFailure: "clone",
+        ...(transportCause === undefined ? {} : { checkoutTransportCause: transportCause }),
+        ...(httpStatus === undefined ? {} : { checkoutHttpStatus: httpStatus }),
+      }),
+    })
     const spans: Tracer.NativeSpan[] = []
     const lines: unknown[] = []
     const result = await Effect.runPromise(Effect.gen(function* () {
@@ -175,10 +187,14 @@ describe("ci/job on a job machine", { timeout: 60_000 }, () => {
     const checkout = spans.find((span) => span.name === "ci.job.checkout")
     expect(checkout?.attributes.get("ci.checkout.exit_code")).toBe(exitCode)
     expect(checkout?.attributes.get("ci.checkout.stage")).toBe(stage)
+    expect(checkout?.attributes.get("ci.checkout.transport_cause")).toBe(transportCause)
+    expect(checkout?.attributes.get("ci.checkout.http_status")).toBe(httpStatus)
     const log = lines.find((line) => (line as { message?: unknown }).message === "ci.job.call") as
       { annotations: Record<string, unknown> } | undefined
     expect(log?.annotations).toMatchObject({ checkoutFailure: "clone", exitCode })
     expect(log?.annotations.checkoutStage).toBe(stage)
+    expect(log?.annotations.checkoutTransportCause).toBe(transportCause)
+    expect(log?.annotations.checkoutHttpStatus).toBe(httpStatus)
   })
 
   test.each([
@@ -188,6 +204,12 @@ describe("ci/job on a job machine", { timeout: 60_000 }, () => {
     { exitCode: 73, checkoutFailure: "clone" },
     { exitCode: 74, checkoutFailure: "clone" },
     { exitCode: 75, checkoutFailure: "clone" },
+    { exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "http_status", checkoutHttpStatus: 429 },
+    { exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "dns" },
+    { exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "missing_object" },
+    { exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "pack_storage" },
+    { exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "interrupted" },
+    { exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "unknown" },
     { exitCode: 76, checkoutFailure: "clone" },
     { exitCode: 128, checkoutFailure: "other" },
   ] as const)("the durable checkout reports the machine's bounded $checkoutFailure failure", async (details) => {

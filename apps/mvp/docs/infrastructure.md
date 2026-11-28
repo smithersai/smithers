@@ -385,7 +385,7 @@ Leave `SESSION_SECRET` unset: Alchemy generates it once (`infra/SignIn.ts`) and 
    Then sign in at `<site>/app` as a Member of `GITHUB_REPOSITORY` and ask: the browser's agent answers. On production, run [the deploy smoke](#the-deploy-smoke).
 
 5. Watch ChatApi in the Cloudflare dashboard: Workers Logs (`message = chat.answer.write` for answers the browsers' agents settle, `model.proxy.serve` for their model calls) and Traces. [observability.md](observability.md) lists every record, and says how to also [send them to your own collector](observability.md#sending-to-your-own-collector).
-6. A live tail (`POST /accounts/<account>/workers/scripts/<script>/tails`, protocol `trace-v1`) goes silent at the next deploy without closing: start a new tail after every deploy, and for a long watch replace it every few minutes. A branch's machine logs `sandbox.wake` with the step that failed, `sandbox.checkout` with its `failure` (`forge`, `branch` or `clone`) and `sandbox.forge` for each request its box sent the forge.
+6. A live tail (`POST /accounts/<account>/workers/scripts/<script>/tails`, protocol `trace-v1`) goes silent at the next deploy without closing: start a new tail after every deploy, and for a long watch replace it every few minutes. A branch's machine logs `sandbox.wake` with the step that failed, `sandbox.checkout` with its `failure` (`forge`, `branch` or `clone`), bounded `transportCause` and optional `httpStatus`, and `sandbox.forge` for each request its box sent the forge.
 
 `pnpm destroy` removes the Workers, the container, Hyperdrive and Electric's secret, and keeps the Neon project.
 

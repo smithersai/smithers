@@ -672,8 +672,31 @@ image's user when absent) and `env` the variables beyond the image's `PATH`.
 Standard output and error are `ignore`d, never piped: workerd's exec pipes hold
 no bytes, so a command writing to a pipe nobody reads blocks on its first write
 and its exit code never comes. One line of warning on stderr is enough. Run a
-command whose output matters through `ContainerSession`. The process belongs to
-the call's own scope. A failure is the container client's own error, unchanged.
+command whose output matters through `ContainerSession` or
+`SandboxObject.runWithStderr`. The process belongs to the call's own scope. A
+failure is the container client's own error, unchanged.
+
+### `SandboxObject.runWithStderr`
+
+```ts
+const defaultMaxStderrBytes = 8192
+
+const runWithStderr: <E, R>(
+  container: SandboxObject.StderrContainer<E, R>,
+  argv: Array<string>,
+  options?: SandboxObject.RunWithStderrOptions
+) => Effect.Effect<SandboxObject.RunWithStderrResult, E, R>
+```
+
+Runs `argv` with stdout ignored and stderr piped, draining the full stderr
+stream concurrently with `exitCode` so workerd's unbuffered pipes never block.
+Keeps at most `maxStderrBytes` (default `defaultMaxStderrBytes`, 8 KiB) in
+memory, retaining both the head and the tail when truncated, and returns
+`{ exitCode, stderr, truncated }`. Never logs or records `stderr`; callers must
+classify or discard it before logging or persisting diagnostics. A stderr stream
+error preserves any partial bytes captured so far with `truncated: true` when
+`exitCode` resolves; a failed `exec` or `exitCode` fails with the container
+client's error unchanged.
 
 ### `SandboxObject.Machine`
 

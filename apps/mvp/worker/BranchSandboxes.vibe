@@ -15,7 +15,7 @@ import type { Role } from "./Actor.vibe"
 import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.vibe"
 import * as Artifacts from "./branch/Artifacts.vibe"
 import * as Budget from "./branch/Budget.vibe"
-import { CHECKOUT_FAILURES, checkoutArgv, forgeRemote } from "./branch/Checkout.ts"
+import { CHECKOUT_FAILURES, checkoutArgv, classifyCheckoutTransport, forgeRemote } from "./branch/Checkout.ts"
 import { Forge, proxy } from "./branch/Forge.vibe"
 import * as JobMachines from "./branch/JobMachines.vibe"
 import * as Machine from "./branch/Machine.vibe"
@@ -480,6 +480,12 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
       /** Runs `argv` as the machine's user `name`, answering its exit code. */
       const run = (argv: Array<string>, name: string) => runOn(runBox, argv, name)
 
+      /** Runs checkout with bounded stderr drained concurrently for local classification only; stderr is never logged. */
+      const runCheckout = effect (argv: Array<string>, name: string) => {
+        const options = try asUser(name)
+        return try SandboxHost.runWithStderr(box, argv, options)
+      }
+
       // A wake's failure is logged with the step it failed in: the container's start, its slot in the ledger, the
       // checkout, the restore or the placeholders, so a failure only production shows says where it happened. A wake
       // that works logs how long each step took, so a slow one says which step was slow.
@@ -508,17 +514,24 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
             }
             stage = "checkout"
             const argv = try sync(() => checkoutArgv(branch.branch, forgeRemote(branch.owner, branch.name), branch.namespace))
-            const exit = try timed(run(argv, SANDBOX_USER))
-            if (exit !== 0) {
-              const diagnostics = { exitCode: exit, checkoutFailure: CHECKOUT_FAILURES[exit] ?? "other" } as const
+            const ran = try timed(runCheckout(argv, SANDBOX_USER))
+            if (ran.exitCode !== 0) {
+              const transport = try sync(() => classifyCheckoutTransport(ran.exitCode, ran.stderr))
+              const diagnostics = {
+                exitCode: ran.exitCode,
+                checkoutFailure: CHECKOUT_FAILURES[ran.exitCode] ?? "other",
+                ...transport
+              } as const
               try Effect.logWarning("sandbox.checkout").pipe(
                 Effect.annotateLogs({
                   branchId: branch.branchId,
                   generation,
                   namespace: branch.namespace ?? "default",
                   forge: branch.forge ?? "deployment",
-                  exitCode: exit,
+                  exitCode: ran.exitCode,
                   failure: diagnostics.checkoutFailure,
+                  ...(diagnostics.checkoutTransportCause === undefined ? {} : { transportCause: diagnostics.checkoutTransportCause }),
+                  ...(diagnostics.checkoutHttpStatus === undefined ? {} : { httpStatus: diagnostics.checkoutHttpStatus }),
                   ...took
                 })
               )

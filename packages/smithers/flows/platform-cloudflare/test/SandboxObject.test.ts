@@ -5,8 +5,11 @@
  * runs a command that writes for its exit code.
  */
 import { describe, expect, it } from "@effect/vitest"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
+import * as Stream from "effect/Stream"
 import { TestClock } from "effect/testing"
 import { type ContainerTerminal, SandboxObject } from "../src/index.ts"
 import * as MemoryContainer from "./fixtures/MemoryContainer.ts"
@@ -274,5 +277,146 @@ describe("SandboxObject.run", () => {
       // With no user or variables, the image's own apply.
       yield* SandboxObject.run(box.container, ["true"])
       expect(box.execs[1]!.options).toEqual({ stdout: "ignore", stderr: "ignore" })
+    }))
+})
+
+describe("SandboxObject.runWithStderr", () => {
+  const bytes = (text: string) => new TextEncoder().encode(text)
+
+  it.live("drains stderr concurrently so an unbuffered pipe finishes without blocking, and keeps bounded output out of telemetry", () => {
+    const t = Telemetry.make()
+    const execs: Array<{ readonly argv: ReadonlyArray<string>; readonly options: unknown }> = []
+    let released = 0
+    return Effect.gen(function*() {
+      const drained = yield* Deferred.make<void>()
+      const container: SandboxObject.StderrContainer = {
+        exec: (argv, options) =>
+          Effect.acquireRelease(
+            Effect.sync(() => {
+              execs.push({ argv, options })
+              return {
+                stderr: Stream.fromIterable([bytes("error: secret-sentinel\n")]).pipe(
+                  Stream.onEnd(Deferred.succeed(drained, undefined).pipe(Effect.asVoid))
+                ),
+                // Only resolves once stderr has been completely drained, proving no deadlock.
+                exitCode: Deferred.await(drained).pipe(Effect.as(75))
+              }
+            }),
+            () => Effect.sync(() => void released++)
+          )
+      }
+      const ran = yield* SandboxObject.runWithStderr(container, ["sh", "-c", "git fetch"], {
+        user: "1000:2000",
+        env: { HOME: "/home/smithers" }
+      }).pipe(Effect.timeout("2 seconds"))
+      expect(ran).toEqual({ exitCode: 75, stderr: "error: secret-sentinel\n", truncated: false })
+      expect(execs).toEqual([{
+        argv: ["sh", "-c", "git fetch"],
+        options: { user: "1000:2000", env: { HOME: "/home/smithers" }, stdout: "ignore", stderr: "pipe" }
+      }])
+      expect(released).toBe(1)
+    }).pipe(
+      t.observed,
+      Effect.andThen(Effect.sync(() => {
+        t.expectNoContent("secret-sentinel")
+      }))
+    )
+  })
+
+  it.live("retains head and tail when stderr exceeds maxStderrBytes while draining every chunk", () =>
+    Effect.gen(function*() {
+      let chunksDrained = 0
+      const makeBox = (chunks: ReadonlyArray<Uint8Array>, code: number): SandboxObject.StderrContainer => ({
+        exec: () =>
+          Effect.succeed({
+            stderr: Stream.fromIterable(chunks).pipe(Stream.tap(() => Effect.sync(() => void chunksDrained++))),
+            exitCode: Effect.succeed(code)
+          })
+      })
+      // Multi-chunk overflow crossing both headCap and tail ring wraparound.
+      const large = makeBox([
+        bytes("HEAD-START-"),
+        bytes("x".repeat(4000)),
+        bytes("y".repeat(6000)),
+        bytes("z".repeat(4000)),
+        bytes("-TAIL-END")
+      ], 75)
+      const bounded = yield* SandboxObject.runWithStderr(large, ["git"], { maxStderrBytes: 64 })
+      expect(bounded.exitCode).toBe(75)
+      expect(bounded.truncated).toBe(true)
+      expect(bounded.stderr.startsWith("HEAD-START-")).toBe(true)
+      expect(bounded.stderr.endsWith("-TAIL-END")).toBe(true)
+      expect(chunksDrained).toBe(5)
+
+      // Single chunk larger than maxStderrBytes.
+      const single = makeBox([bytes("0123456789" + "m".repeat(200) + "ABCDEFGHIJ")], 75)
+      const singleRes = yield* SandboxObject.runWithStderr(single, ["git"], { maxStderrBytes: 10 })
+      expect(singleRes).toEqual({ exitCode: 75, stderr: "01234\nFGHIJ", truncated: true })
+
+      // Overflow after partial fill past headCap exercises ring wraparound on prior buffered tail bytes.
+      const partial = makeBox([bytes("01234567"), bytes("89AB")], 75)
+      const partialRes = yield* SandboxObject.runWithStderr(partial, ["git"], { maxStderrBytes: 10 })
+      expect(partialRes).toEqual({ exitCode: 75, stderr: "01234\n789AB", truncated: true })
+
+      // Exact boundary is not truncated.
+      const exact = makeBox([bytes("01234"), bytes("56789")], 0)
+      expect(yield* SandboxObject.runWithStderr(exact, ["git"], { maxStderrBytes: 10 })).toEqual({
+        exitCode: 0,
+        stderr: "0123456789",
+        truncated: false
+      })
+
+      // Zero cap drains everything and reports truncation only when non-empty bytes arrived.
+      expect(yield* SandboxObject.runWithStderr(makeBox([bytes("abc")], 75), ["git"], { maxStderrBytes: 0 })).toEqual({
+        exitCode: 75,
+        stderr: "",
+        truncated: true
+      })
+      expect(yield* SandboxObject.runWithStderr(makeBox([new Uint8Array(0)], 0), ["git"], { maxStderrBytes: 0 }))
+        .toEqual({ exitCode: 0, stderr: "", truncated: false })
+    }))
+
+  it.live("handles missing stderr, preserves partial stderr on stream error, propagates exit failure, and rejects invalid limits", () =>
+    Effect.gen(function*() {
+      const noStderr: SandboxObject.StderrContainer = {
+        exec: () => Effect.succeed({ stderr: undefined, exitCode: Effect.succeed(70) })
+      }
+      expect(yield* SandboxObject.runWithStderr(noStderr, ["git"])).toEqual({
+        exitCode: 70,
+        stderr: "",
+        truncated: false
+      })
+
+      const streamError: SandboxObject.StderrContainer<MemoryContainer.ContainerFailure> = {
+        exec: () =>
+          Effect.succeed({
+            stderr: Stream.concat(
+              Stream.make(bytes("error: RPC failed; HTTP 502\n")),
+              Stream.fail(new MemoryContainer.ContainerFailure({ message: "pipe closed" }))
+            ),
+            exitCode: Effect.succeed(75)
+          })
+      }
+      expect(yield* SandboxObject.runWithStderr(streamError, ["git"])).toEqual({
+        exitCode: 75,
+        stderr: "error: RPC failed; HTTP 502\n",
+        truncated: true
+      })
+
+      const exitError: SandboxObject.StderrContainer<MemoryContainer.ContainerFailure> = {
+        exec: () =>
+          Effect.succeed({
+            stderr: Stream.empty,
+            exitCode: Effect.fail(new MemoryContainer.ContainerFailure({ message: "container gone" }))
+          })
+      }
+      expect(yield* Effect.flip(SandboxObject.runWithStderr(exitError, ["git"]))).toBeInstanceOf(
+        MemoryContainer.ContainerFailure
+      )
+
+      for (const bad of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+        const exit = yield* Effect.exit(SandboxObject.runWithStderr(noStderr, ["git"], { maxStderrBytes: bad }))
+        expect(Exit.isFailure(exit)).toBe(true)
+      }
     }))
 })

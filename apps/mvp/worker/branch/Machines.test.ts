@@ -43,18 +43,46 @@ describe("ranOf", () => {
   })
 
   test("checkout diagnostics survive the RPC codec and typed failure; legacy outcomes remain readable", async () => {
-    const details = { exitCode: 72, checkoutFailure: "clone" } as const
+    const details = { exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "http_status", checkoutHttpStatus: 502 } as const
     const wire = Schema.decodeUnknownSync(ToolOutcome)({ _tag: "CheckoutFailed", ...details, stderr: "private-sentinel" })
     const failure = await Effect.runPromise(Effect.flip(ranOf(wire)))
     expect(failure).toEqual(new CheckoutFailed(details))
     expect(JSON.stringify(failure)).not.toContain("private-sentinel")
-    // Live RPC passes plain data directly; the picker must exclude extras without a codec's help.
+    // Live RPC passes plain data directly; the picker must exclude extras and invalid bounds without a codec's help.
     const raw = { _tag: "CheckoutFailed", ...details, stderr: "private-sentinel" } as const
     const direct = await Effect.runPromise(Effect.flip(ranOf(raw)))
     expect(direct).toEqual(new CheckoutFailed(details))
     expect(JSON.stringify(direct)).not.toContain("private-sentinel")
+    const invalidRaw = {
+      _tag: "CheckoutFailed",
+      exitCode: 75,
+      checkoutFailure: "clone",
+      checkoutTransportCause: "private-sentinel",
+      checkoutHttpStatus: 999,
+    } as unknown as Parameters<typeof ranOf>[0]
+    const sanitized = await Effect.runPromise(Effect.flip(ranOf(invalidRaw)))
+    expect(sanitized).toEqual(new CheckoutFailed({ exitCode: 75, checkoutFailure: "clone" }))
+    expect(JSON.stringify(sanitized)).not.toContain("private-sentinel")
+    // Non-HTTP transport causes never carry an HTTP status across the picker.
+    const mismatched = await Effect.runPromise(Effect.flip(ranOf({
+      _tag: "CheckoutFailed",
+      exitCode: 75,
+      checkoutFailure: "clone",
+      checkoutTransportCause: "dns",
+      checkoutHttpStatus: 502,
+    })))
+    expect(mismatched).toEqual(new CheckoutFailed({ exitCode: 75, checkoutFailure: "clone", checkoutTransportCause: "dns" }))
+    // Both pre-diagnostics and pre-transport historical outcomes remain readable.
     expect(Schema.decodeUnknownSync(ToolOutcome)({ _tag: "CheckoutFailed" })).toEqual({ _tag: "CheckoutFailed" })
+    expect(Schema.decodeUnknownSync(ToolOutcome)({ _tag: "CheckoutFailed", exitCode: 75, checkoutFailure: "clone" })).toEqual({
+      _tag: "CheckoutFailed",
+      exitCode: 75,
+      checkoutFailure: "clone",
+    })
     expect(() => Schema.decodeUnknownSync(ToolOutcome)({ _tag: "CheckoutFailed", checkoutFailure: "private-sentinel" })).toThrow()
+    expect(() => Schema.decodeUnknownSync(ToolOutcome)({ _tag: "CheckoutFailed", checkoutTransportCause: "private-sentinel" })).toThrow()
+    expect(() => Schema.decodeUnknownSync(ToolOutcome)({ _tag: "CheckoutFailed", checkoutHttpStatus: 99 })).toThrow()
+    expect(() => Schema.decodeUnknownSync(ToolOutcome)({ _tag: "CheckoutFailed", checkoutHttpStatus: 600 })).toThrow()
   })
 })
 

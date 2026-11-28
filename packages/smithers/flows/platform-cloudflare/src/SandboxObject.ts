@@ -32,6 +32,8 @@
 import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
+import type * as Scope from "effect/Scope"
+import * as Stream from "effect/Stream"
 import type * as ContainerTerminal from "./ContainerTerminal.ts"
 import * as Observed from "./internal/Observed.ts"
 
@@ -312,3 +314,204 @@ export const run = <E, R>(
       (process) => process.exitCode
     )
   )
+
+/**
+ * The default maximum stderr bytes {@link runWithStderr} retains in memory
+ * while draining a process's stderr stream to completion (8 KiB).
+ *
+ * @category constants
+ * @since 1.0.0-rc.23
+ */
+export const defaultMaxStderrBytes = 8192
+
+/**
+ * A running process whose exit code and optional stderr stream
+ * {@link runWithStderr} consumes concurrently.
+ *
+ * @category models
+ * @since 1.0.0-rc.23
+ */
+export interface StderrProcess<E = never, R = never> {
+  readonly stderr: Stream.Stream<Uint8Array, E, R> | undefined
+  readonly exitCode: Effect.Effect<number, E, R>
+}
+
+/**
+ * The slice of an Effect container client {@link runWithStderr} uses.
+ *
+ * @category models
+ * @since 1.0.0-rc.23
+ */
+export interface StderrContainer<E = never, R = never> {
+  exec(
+    cmd: Array<string>,
+    options: {
+      readonly user?: string
+      readonly env?: Record<string, string>
+      readonly stdout: "ignore"
+      readonly stderr: "pipe"
+    }
+  ): Effect.Effect<StderrProcess<E, R>, E, R | Scope.Scope>
+}
+
+/**
+ * Options for {@link runWithStderr}: {@link RunOptions} plus `maxStderrBytes`,
+ * the maximum stderr bytes kept in memory while draining the stream.
+ *
+ * @category models
+ * @since 1.0.0-rc.23
+ */
+export interface RunWithStderrOptions extends RunOptions {
+  readonly maxStderrBytes?: number | undefined
+}
+
+/**
+ * What {@link runWithStderr} returns: the command's exit code, a bounded UTF-8
+ * slice of its stderr (head and tail when truncated), and whether stderr
+ * exceeded `maxStderrBytes` or ended early on a stream error.
+ *
+ * @category models
+ * @since 1.0.0-rc.23
+ */
+export interface RunWithStderrResult {
+  readonly exitCode: number
+  readonly stderr: string
+  readonly truncated: boolean
+}
+
+const makeStderrCollector = (maxBytes: number) => {
+  const headCap = Math.floor(maxBytes / 2)
+  const tailCap = maxBytes - headCap
+  let buf = new Uint8Array(0)
+  let used = 0
+  let truncated = false
+  let head = new Uint8Array(0)
+  let tail = new Uint8Array(0)
+  let tailPos = 0
+  let tailLen = 0
+
+  const pushTail = (bytes: Uint8Array) => {
+    if (tailCap === 0 || bytes.length === 0) return
+    if (bytes.length >= tailCap) {
+      tail.set(bytes.subarray(bytes.length - tailCap), 0)
+      tailPos = 0
+      tailLen = tailCap
+      return
+    }
+    const first = Math.min(bytes.length, tailCap - tailPos)
+    tail.set(bytes.subarray(0, first), tailPos)
+    if (first < bytes.length) tail.set(bytes.subarray(first), 0)
+    tailPos = (tailPos + bytes.length) % tailCap
+    tailLen = Math.min(tailCap, tailLen + bytes.length)
+  }
+
+  const push = (chunk: Uint8Array) => {
+    if (chunk.length === 0) return
+    if (maxBytes === 0) {
+      truncated = true
+      return
+    }
+    if (!truncated) {
+      if (used + chunk.length <= maxBytes) {
+        const end = used + chunk.length
+        if (end > buf.length) {
+          const grown = new Uint8Array(Math.min(maxBytes, Math.max(end, buf.length * 2, 256)))
+          grown.set(buf.subarray(0, used))
+          buf = grown
+        }
+        buf.set(chunk, used)
+        used = end
+        return
+      }
+      truncated = true
+      head = new Uint8Array(headCap)
+      const fromBuf = Math.min(used, headCap)
+      if (fromBuf > 0) head.set(buf.subarray(0, fromBuf), 0)
+      const fromChunk = Math.min(chunk.length, headCap - fromBuf)
+      if (fromChunk > 0) head.set(chunk.subarray(0, fromChunk), fromBuf)
+      tail = new Uint8Array(tailCap)
+      if (used > headCap) pushTail(buf.subarray(headCap, used))
+      pushTail(chunk.subarray(fromChunk))
+      buf = new Uint8Array(0)
+      used = 0
+      return
+    }
+    pushTail(chunk)
+  }
+
+  const read = (streamFailed = false): { readonly stderr: string; readonly truncated: boolean } => {
+    const decoder = new TextDecoder()
+    if (!truncated) {
+      return {
+        stderr: used === 0 ? "" : decoder.decode(buf.subarray(0, used)),
+        truncated: streamFailed
+      }
+    }
+    const headText = headCap > 0 ? decoder.decode(head) : ""
+    let tailText = ""
+    if (tailLen > 0) {
+      if (tailLen < tailCap) {
+        tailText = decoder.decode(tail.subarray(0, tailLen))
+      } else {
+        const ordered = new Uint8Array(tailCap)
+        ordered.set(tail.subarray(tailPos), 0)
+        ordered.set(tail.subarray(0, tailPos), tailCap - tailPos)
+        tailText = decoder.decode(ordered)
+      }
+    }
+    return {
+      stderr: headText === "" ? tailText : tailText === "" ? headText : `${headText}\n${tailText}`,
+      truncated: true
+    }
+  }
+
+  return { push, read }
+}
+
+/**
+ * Runs `argv` in the running container, ignoring stdout and draining stderr
+ * concurrently with `exitCode` so workerd's unbuffered exec pipes never block.
+ * Retains at most `maxStderrBytes` (head and tail when truncated) in memory
+ * and never logs or records stderr. Callers must classify or discard it before
+ * logging or persisting diagnostics.
+ *
+ * @category operations
+ * @since 1.0.0-rc.23
+ */
+export const runWithStderr = <E, R>(
+  container: StderrContainer<E, R>,
+  argv: Array<string>,
+  options: RunWithStderrOptions = {}
+): Effect.Effect<RunWithStderrResult, E, R> =>
+  Effect.suspend(() => {
+    const maxBytes = options.maxStderrBytes ?? defaultMaxStderrBytes
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || maxBytes >= Number.MAX_SAFE_INTEGER) {
+      return Effect.die(new TypeError("sandbox object: invalid maxStderrBytes"))
+    }
+    return Effect.scoped(
+      Effect.flatMap(
+        container.exec(argv, {
+          ...(options.user === undefined ? {} : { user: options.user }),
+          ...(options.env === undefined ? {} : { env: options.env }),
+          stdout: "ignore",
+          stderr: "pipe"
+        }),
+        (process) => {
+          const collector = makeStderrCollector(maxBytes)
+          const drained = process.stderr === undefined
+            ? Effect.succeed({ stderr: "", truncated: false })
+            : Stream.runForEach(process.stderr, (chunk) => Effect.sync(() => collector.push(chunk))).pipe(
+              Effect.map(() => collector.read(false)),
+              Effect.catch(() => Effect.succeed(collector.read(true)))
+            )
+          return Effect.all([drained, process.exitCode], { concurrency: "unbounded" }).pipe(
+            Effect.map(([captured, exitCode]): RunWithStderrResult => ({
+              exitCode,
+              stderr: captured.stderr,
+              truncated: captured.truncated
+            }))
+          )
+        }
+      )
+    )
+  })

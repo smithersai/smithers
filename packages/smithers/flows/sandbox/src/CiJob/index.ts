@@ -207,10 +207,54 @@ export const CheckoutFailure = Schema.Literals([
   "forge", "branch", "clone", "other", "verify", "timed_out", "tool_lost",
   "path", "not_found", "not_a_file", "not_a_directory", "not_a_repository", "too_large"
 ])
-/** @category models
+/**
+ * Bounded checkout failure stage.
+ *
+ * @category models
  * @since 1.0.0-rc.23
  */
 export type CheckoutFailure = typeof CheckoutFailure.Type
+
+/**
+ * Bounded machine-side transport cause for a failed checkout. Distinguished
+ * from omitted/historical records by recording `"unknown"` when the machine ran
+ * and no narrower cause matched. Never carries raw stderr, URLs, or secrets.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.23
+ */
+export const CheckoutTransportCause = Schema.Literals([
+  "http_status",
+  "dns",
+  "missing_object",
+  "pack_storage",
+  "interrupted",
+  "unknown"
+])
+
+/**
+ * Bounded machine-side transport cause for a failed checkout.
+ *
+ * @category models
+ * @since 1.0.0-rc.23
+ */
+export type CheckoutTransportCause = typeof CheckoutTransportCause.Type
+
+/**
+ * Bounded HTTP status code observed by the machine during a failed checkout (`100`–`599`).
+ *
+ * @category schemas
+ * @since 1.0.0-rc.23
+ */
+export const CheckoutHttpStatus = Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 599 }))
+
+/**
+ * Bounded HTTP status code observed by the machine during a failed checkout.
+ *
+ * @category models
+ * @since 1.0.0-rc.23
+ */
+export type CheckoutHttpStatus = typeof CheckoutHttpStatus.Type
 
 /**
  * A terminal checkout failure carrying bounded diagnostics. Machine checkout still answers a boolean on success.
@@ -219,7 +263,9 @@ export type CheckoutFailure = typeof CheckoutFailure.Type
  */
 export class CheckoutRefused extends Schema.TaggedError<CheckoutRefused>()("@smthrs/sandbox/CiJob/CheckoutRefused", {
   checkoutFailure: CheckoutFailure,
-  exitCode: Schema.NullOr(Schema.Int)
+  exitCode: Schema.NullOr(Schema.Int),
+  checkoutTransportCause: Schema.optionalKey(CheckoutTransportCause),
+  checkoutHttpStatus: Schema.optionalKey(CheckoutHttpStatus)
 }) {}
 
 /**
@@ -233,6 +279,8 @@ export const StepResult = Schema.Struct({
   outcome: Outcome,
   exitCode: Schema.NullOr(Schema.Int),
   checkoutFailure: Schema.optionalKey(CheckoutFailure),
+  checkoutTransportCause: Schema.optionalKey(CheckoutTransportCause),
+  checkoutHttpStatus: Schema.optionalKey(CheckoutHttpStatus),
   output: Schema.optionalKey(Schema.Struct({ stdout: Schema.String, stderr: Schema.String, truncated: Schema.Boolean }))
 })
 
@@ -454,11 +502,22 @@ export const layer = Layer.mergeAll(
         const outcome = exact ? "passed" : "failed"
         return { outcome, steps: [{ name: CHECKOUT, outcome, exitCode: null }] }
       }),
-      Effect.catchTag("@smthrs/sandbox/CiJob/CheckoutRefused", ({ exitCode, checkoutFailure }) =>
-        Effect.succeed<Result>({
-          outcome: "failed",
-          steps: [{ name: CHECKOUT, outcome: "failed", exitCode, checkoutFailure }]
-        })
+      Effect.catchTag(
+        "@smthrs/sandbox/CiJob/CheckoutRefused",
+        ({ checkoutFailure, checkoutHttpStatus, checkoutTransportCause, exitCode }) =>
+          Effect.succeed<Result>({
+            outcome: "failed",
+            steps: [{
+              name: CHECKOUT,
+              outcome: "failed",
+              exitCode,
+              checkoutFailure,
+              ...(checkoutTransportCause === undefined ? {} : { checkoutTransportCause }),
+              ...(checkoutTransportCause === "http_status" && checkoutHttpStatus !== undefined
+                ? { checkoutHttpStatus }
+                : {})
+            }]
+          })
       )
     )
   ),
