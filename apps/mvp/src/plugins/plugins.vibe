@@ -10,6 +10,8 @@ import { FeedItem } from "../features/feeds/schema"
 import { FeedsStore } from "../features/feeds/store.vibe"
 import type { Available, GlobalFleetShape } from "../features/fleet/globalContract"
 import { FleetStore, type GlobalAccess } from "../features/fleet/store.vibe"
+import { PROJECTS_QUERY } from "../features/projects/contract"
+import { ProjectsStore } from "../features/projects/store.vibe"
 import { AuthStore } from "../features/auth/store.vibe"
 import { repoId } from "../features/repo/contract"
 import { RepoStore } from "../features/repo/store.vibe"
@@ -27,9 +29,7 @@ import { type Button, personOnly, textFields } from "./strip"
 // The plugin host (decision 0017, docs/features/plugins.md): loads the built-in plugins' manifests through the public
 // loader, `@smthrs/plugin`'s `Load`, and serves each plugin the one public contract, `PluginHost`, scoped to that
 // plugin: it reads only the queries its contributions declare, selects only rows of them, and dispatches only events
-// its views declare. An event whose flow is person-only (`run/answer`) is never dispatched for plugin code: the host's
-// action strip draws it, and the person's press or key sends it with their own door. First-party plugins get nothing
-// else; a plugin needing more makes the public contract grow.
+// its contributions declare. The host renders and dispatches person-only actions.
 
 type View = Contribution.View
 
@@ -207,6 +207,7 @@ export class Plugins extends Context.Service<
     readonly repos: RepoStore["Service"]
     /** Every repository's agent runs and machines, which `core/agent-runs` and `core/machines` read. */
     readonly fleet: FleetStore["Service"]
+    readonly projects: ProjectsStore.Shape
     /** `core/agent-runs` and `core/machines` of each repository asked for so far, by `<query>:<repo>`, opened once. */
     readonly fleetOpen: Map<string, Host.Live<Readonly<Record<string, unknown>>>!!>
     readonly visible: (id: string) => boolean
@@ -245,6 +246,7 @@ export class Plugins extends Context.Service<
         const bugs = try BugsStore
         const feeds = try FeedsStore
         const fleet = try FleetStore
+        const projects = try ProjectsStore
         const auth = try Effect.serviceOption(AuthStore)
         const repos = try RepoStore
         const visible = (id: string) => {
@@ -331,6 +333,7 @@ export class Plugins extends Context.Service<
           feeds,
           repos,
           fleet,
+          projects,
           fleetOpen: new Map(),
           /** Whether repository `id` may show now, read from the session and its role row (`repoVisibility`). */
           visible,
@@ -511,6 +514,7 @@ export effect function queryOf(name: string, params: Host.QueryParams | undefine
   const plugins = try Plugins
   const fixed = plugins.core.get(name)
   if (fixed !== undefined) return fixed.live
+  if (name === PROJECTS_QUERY) return try plugins.projects.open
   if (name === FLEET_NODES || name === FLEET_SESSIONS || name === FLEET_ACCOUNTS) {
     const key = `global:${name}`
     const existing = plugins.fleetOpen.get(key)
@@ -753,6 +757,23 @@ const refuse = (plugin: string, reason: Host.PluginRefused["reason"], detail: st
     |> annotateLogs(%, { feature: "plugins", plugin, outcome: "refused", reason })
     |> andThen(%, fail(new Host.PluginRefused({ plugin, reason, detail })))
 
+/** A person-only event that the host drew alongside a compiled slot's component. */
+export effect function pressSlot(ref: Host.EventRef, fields: unknown) {
+  const plugins = try Plugins
+  const slot = plugins.contributions.slots.find((entry) => entry.id === ref.view)
+  const event = slot?.events?.find((entry) => entry.name === ref.name)
+  if (slot?.tier !== "built-in" || slot.render.kind !== "component" || event === undefined
+    || !("flow" in event) || !personOnly(event)) return { _tag: "Failed", code: "undeclared_event" } satisfies Host.Settled
+  const invalid = misfit(event.payload, fields)
+  const payload = try sync(() => Bind.bind(event.args, { item: undefined, event: fields }))
+  if (Option.isSome(invalid) || Result.isFailure(payload)) {
+    return { _tag: "Failed", code: "invalid_fields" } satisfies Host.Settled
+  }
+  const flows = try FlowDispatch
+  const outcome = try exit(flows.dispatch(event.flow as FlowName, payload.success as never, { door: "button" }))
+  return settledOf(outcome)
+}
+
 /**
  * `PluginHost` for `plugin`, over this host: the one contract its tab reads and acts through (decision 0017, "The host
  * contract"). Every request is checked against what the plugin's own manifest declares.
@@ -772,11 +793,12 @@ export effect function hostFor(plugin: string) {
     query: <R>(name: string, params?: Host.QueryParams) =>
       effect {
         if (!reads.has(name)) return try refuse(plugin, "undeclared_query", name)
+        if (name === PROJECTS_QUERY && !plugins.built.has(plugin)) return try refuse(plugin, "outside_ceiling", name)
         // A declared query is one the host serves (`Load` checks `reads` against its facts): only a parameter fails.
         const live = try (
           provideHost(queryOf(name, params)) |> Effect.catch(%, (param) => refuse(plugin, "invalid_fields", `${name} needs ${param}`))
         )
-        return live as unknown as Host.Live<R>
+        return (name === PROJECTS_QUERY ? { current: live.current, subscribe: live.subscribe } : live) as unknown as Host.Live<R>
       },
     select: (item: Host.ItemRef) =>
       effect {
@@ -807,12 +829,16 @@ export effect function hostFor(plugin: string) {
       },
     dispatch: (ref: Host.EventRef, fields: unknown) =>
       effect {
-        const { view, event } = try eventOf(ref)
+        const slot = plugins.contributions.slots.find((entry) => entry.id === ref.view && entry.plugin === plugin)
+        const slotEvent = slot?.events?.find((candidate) => candidate.name === ref.name)
+        const { view, event } = slotEvent === undefined
+          ? (try eventOf(ref))
+          : { view: undefined, event: slotEvent }
         if (!("flow" in event)) return try refuse(plugin, "undeclared_event", "a local event stays in its view")
         if (personOnly(event)) return try refuse(plugin, "person_only", event.flow)
         const invalid = misfit(event.payload, fields)
         if (Option.isSome(invalid)) return try refuse(plugin, "invalid_fields", invalid.value)
-        const item = try provideHost(selectedOf(view.id))
+        const item = view === undefined ? undefined : (try provideHost(selectedOf(view.id)))
         const payload = try sync(() => Bind.bind(event.args, { item, event: fields }))
         if (Result.isFailure(payload)) return try refuse(plugin, "invalid_fields", payload.failure)
         const runId = try sync(() => WebCrypto.defaultValue().randomUUID())

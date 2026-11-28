@@ -1,0 +1,11 @@
+.projects-dashboard { display: grid; gap: 0.75rem; padding: 1rem; }
+.projects-heading h1 { margin: 0; font-size: 1.25rem; }
+.projects-add { display: grid; gap: 0.25rem; max-width: 27rem; }
+.projects-add label, .projects-add-feedback { font-size: 0.8125rem; }
+.projects-add-controls { display: flex; align-items: center; gap: 0.5rem; }
+.projects-add-controls input { min-width: 0; }
+.projects-add-controls button { flex: none; }
+.projects-add-feedback:empty { margin-top: -0.25rem; }
+.projects-add-feedback[data-status="invalid"],
+.projects-add-feedback[data-status="failed"],
+.projects-add-feedback[data-status="sign_in"] { color: var(--danger); }

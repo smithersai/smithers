@@ -3,6 +3,7 @@ import { BUG_REPORT_ROW } from "../features/bugs/contract"
 import { FEED_ITEM_ROW, FEED_ROW } from "../features/feeds/contract"
 import { AGENT_RUN_ROW, MACHINE_ROW } from "../features/fleet/schema"
 import { HOST_NODE_ROW, OBSERVED_SESSION_ROW, PROVIDER_ACCOUNT_ROW } from "../features/fleet/globalSchema"
+import { PROJECTS_QUERY } from "../features/projects/contract"
 import { WAITS_ROW } from "../features/status/contract"
 import { type Entry, registry } from "../flows/registry.vibe"
 import { POINTS } from "./contract"
@@ -49,6 +50,7 @@ export const hostFacts = (catalog: Readonly<Record<string, Entry>> = registry): 
   catalog: new Map(Object.entries(catalog).map(([name, entry]) => [name, factsOf(entry)])),
   queries: new Map([
     ["core/waits", WAITS_ROW as never],
+    [PROJECTS_QUERY, { type: "object", properties: { id: { type: "string" } } } as never],
     ["core/bug-reports", BUG_REPORT_ROW as never],
     // A repository's feeds (docs/features/feeds.md#plugins): its index, one document, and the items of one index
     // document, asked with `params`.

@@ -17,6 +17,8 @@ plugin.json ─ Manifest.decode ─▶ Manifest ─┼─ Load.load(hostFacts) �
 plugin.json ─ Manifest.decode ─▶ Refusal  ─┘
 ```
 
+A slot at `app.home` contributes signed-in home content. Slots can declare events that run a flow using `$event` fields. A person-only slot event requires a built-in `component` render.
+
 ## A manifest
 
 The queue plugin's manifest, trimmed to one event and one key:

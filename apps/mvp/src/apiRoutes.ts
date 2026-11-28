@@ -12,9 +12,9 @@ export const ROUTE_WORDS: ReadonlySet<string> = new Set([
   "comments", "compare", "connections", "consent", "conversations", "create", "creation", "credential", "delete", "docs", "domains", "exchange", "feeds", "file", "fleet",
   "flow-drafts", "flows", "github", "github-sync", "github-writes", "handoff", "home", "hosted-model", "intents", "issue-edges", "item-summaries", "items", "jev", "join", "keys", "launch", "logs", "machines", "mcp", "mcp-tokens", "me", "merge",
   "message-pin", "message-pins", "messages", "metrics", "model", "my-conversations", "nodes", "notifications", "oauth", "personal-model", "plan",
-  "preview", "profiles", "pull", "pull-commits", "pulls", "questions", "raw", "redeem", "refs", "register", "remote-runs", "renderer", "repos", "repositories", "resolve",
+  "preview", "profiles", "projects", "pull", "pull-commits", "pulls", "questions", "raw", "redeem", "refs", "register", "remote-runs", "renderer", "repos", "repositories", "resolve",
   "review", "reviews", "revocations", "room", "run", "runners", "runs", "sandbox", "sandbox-limits", "save", "secrets", "session", "sessions", "shapes", "shares",
-  "sign-in", "sign-out", "snapshot", "source", "spend-alerts", "stack", "stamp", "start", "state", "steers", "stop", "submit", "summaries",
+  "sign-in", "sign-out", "snapshot", "source", "spend-alerts", "stack", "stamp", "start", "state", "steers", "stop", "submit", "summaries", "summary",
   "telemetry", "terminals", "test", "texts", "timeline", "todo-leaves", "token", "tokens", "todo-requests", "todos", "traces", "tree", "triage-settings", "user",
   "v1", "views", "waitlist", "watches", "web", "webhook", "work-links", "write", "writes",
 ])

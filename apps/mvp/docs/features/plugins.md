@@ -52,8 +52,8 @@ The loader checks every manifest against the host's facts (`src/plugins/facts.ts
 | Boundary | How it holds | Refusal |
 |---|---|---|
 | System flows can't be overridden | Every existing system flow remains the core's: a plugin may borrow one through `uses`, never own, replace or rename one. The creation host admits a separate owned tag without replacing a system flow. Owned flow tags, plugin ids and contribution ids may not start with a reserved segment (`app`, `chat`, `run`, `flow`, `secret`, `auth`, `system`, `plugin`, `core`, …). | `conflict`, `reserved` |
-| A plugin acts only through what it declares | A contribution may name only flows it owns or `uses`; every used flow's capabilities must be in the manifest's ceiling; `PluginHost` serves only the queries its contributions `read` and the events its views declare. | `undeclared_use`, `capability_exceeded`; at run time `undeclared_query`, `undeclared_event` |
-| Person-only actions need a person | A command may point at a person-only flow only in a built-in plugin, and a plugin keys only its own commands. An event whose flow is person-only (a `userOnlyReason` in the registry, as `run/answer`) is never dispatched for plugin code: `PluginHost.dispatch` refuses it `person_only`. The host's action strip draws it under the view, and the person's press (door `button`) or key (door `key`) sends it with their own session ([run credentials](sign-in.md#run-credentials)). | `person_only` |
+| A plugin acts only through what it declares | A contribution may name only flows it owns or `uses`. Every used flow's capabilities must be in the manifest's ceiling. `PluginHost` checks each query and event against the plugin's contributions. | `undeclared_use`, `capability_exceeded`, `undeclared_query`, `undeclared_event` |
+| Person-only actions need a person | The host handles person-only events through its action strip, built-in commands, and its own controls on a person's press. Those actions use the person's session ([run credentials](sign-in.md#run-credentials)). | `person_only` |
 | Nobody sees what the server refuses | A view's, slot's or command's `minimum` must be at least every flow it dispatches. | `minimum_below_flow` |
 | Secrets stay opaque | No tier holds a `secret:` capability until an Admin's per-installation grant exists (decision 0017 slice 6), and a schema field named like a secret, `format: "password"` or `writeOnly` is refused, so a plugin never collects or reads one. No core query carries a secret. | `capability_exceeded`, `secret_field` |
 
@@ -70,7 +70,7 @@ Live query snapshots retain the same array reference while their rows and order 
 | `query(name, params?)` | The rows of a declared query, live: `core/waits` is the viewer's open waits, oldest first (from the synced `runs`, [agent status](agent-status.md)); `core/feeds`, `core/feed` and `core/feed-items` take `params` ([below](#repository-feeds)), as do `core/agent-runs` and `core/machines` ([the fleet](#the-fleet)). |
 | `select(item)` | The row the person is looking at, in its query as asked with `item.params`; the strip under every view of the plugin that reads its query acts on it. A key that isn't a row is refused `not_in_reads`. |
 | `propose(event, fields)` | Prefills the strip's note from a strip event's text field. Nothing runs until the person presses. |
-| `dispatch(event, fields)` | Runs an event whose flow isn't person-only, door `view`. Answers the run's id and `settled`, which waits for its end: `Done`, or `Failed` with the failure's stable code (a refusal's `code`, else its kind, dispatch's refusal, `interrupted`), never a message. |
+| `dispatch(event, fields)` | Runs a declared event with door `view`. A person-only event is refused. Returns the run's id and `settled`, which waits for `Done` or `Failed` with a stable code. |
 | `open(view)` | Navigates to one of the plugin's views (`app/navigate`). |
 | `events(view)` | The view's local events the keymap delivered (`j`, `k`). |
 
@@ -94,7 +94,7 @@ Under a plugin's view, in host UI (`ActionStrip.tsx`, `src/plugins/strip.ts`): o
 ## Views, slots and commands
 
 - **Views** show at `/app/<plugin>/<path>` full size (`PluginScreen.tsx`), with the strip under them. A person below the view's `minimum` sees the page's header alone. Inline views in the conversation come later.
-- **Slots** are named places the shell draws: `shell.nav` holds the queue's count and Report a bug beside Flows, Runs and Settings; `repo.tabs` sits in the repository's header after Stack and Secrets.
+- **Slots** are named places the shell draws. `shell.nav` holds the queue's count and Report a bug beside Flows, Runs and Settings. `app.home` hosts signed-in home content beside Chat. `repo.tabs` sits in the repository's header after Stack and Secrets. Built-in component slots can declare flow events whose arguments use literal values and `$event` fields. The host's registered form draws and dispatches a person-only slot event.
 - **Commands** never shadow the core's own slash commands: the host's facts list them (`Load.HostFacts.slash`), and a plugin command naming one (`/status`) is refused `conflict`.
 
 ## Repository views

@@ -2,9 +2,8 @@
  * The host contract: what a plugin's UI reads and dispatches through.
  *
  * The app implements {@link PluginHost}; a built-in's tab layer requires it
- * and gives its components `{ queries, actions }`. The host owns person-only
- * actions: an event whose flow is person-only is drawn in the host's action
- * strip and never dispatched by plugin code.
+ * and gives its components `{ queries, actions }`. The host draws and
+ * dispatches person-only events from its own UI.
  *
  * @since 1.1.0
  */
@@ -93,7 +92,7 @@ export interface ItemRef {
 }
 
 /**
- * An event a view declares.
+ * An event a view or slot declares.
  *
  * @category models
  * @since 1.1.0
@@ -208,9 +207,10 @@ export interface PluginHost {
   /** Prefill an event's fields in the action strip. Nothing runs until the person presses. */
   readonly propose: (event: EventRef, fields: unknown) => Effect.Effect<void, PluginRefused>
   /**
-   * Run an event whose flow is not person-only: the host fills `$item` and
-   * `$event` and mints the invocation context. Answers once the run started,
-   * with its id and `settled`, which waits for its end.
+   * Run an event declared by the view or slot whose id is in `event.view`.
+   * The host fills `$item` (views) and `$event` and mints the invocation context.
+   * Person-only events must be handled by the host's own controls. Returns the
+   * run id and `settled`, which waits for the run's end.
    */
   readonly dispatch: (event: EventRef, fields: unknown) => Effect.Effect<Dispatched, PluginRefused>
   /** Open a view the manifest declares; a `repository` view opens on `repository`, and without one does nothing. */

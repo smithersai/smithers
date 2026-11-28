@@ -1,0 +1,45 @@
+import { SqlClient } from "effect/sql"
+
+export const list = effect (personId: string) => {
+  const sql = try SqlClient.SqlClient
+  const rows = try sql<{ readonly project: string }>`
+    SELECT project FROM person_projects WHERE person_id = ${personId} ORDER BY project`
+  return rows.map((row) => row.project)
+}
+
+export const page = effect (personId: string, after: string | null, size: number) => {
+  const sql = try SqlClient.SqlClient
+  const rows = try sql<{ readonly project: string }>`
+    SELECT project FROM person_projects
+    WHERE person_id = ${personId} AND project > ${after ?? ""}
+    ORDER BY project LIMIT ${size + 1}`
+  const projects = rows.slice(0, size).map((row) => row.project)
+  return { projects, nextAfter: rows.length > size ? projects.at(-1) : undefined }
+}
+
+export const add = effect (personId: string, project: string) => {
+  const sql = try SqlClient.SqlClient
+  try sql`
+    INSERT INTO person_projects (person_id, project) VALUES (${personId}, ${project})
+    ON CONFLICT (person_id, project) DO NOTHING`
+}
+
+/** Failed TODOs stay open until settled. Review readiness comes from the linked GitHub projection. */
+export const todoCounts = effect (project: string) => {
+  const sql = try SqlClient.SqlClient
+  const rows = try sql<{
+    readonly open: number
+    readonly attention: number
+    readonly unknown_attention: boolean
+  }>`
+    SELECT count(*)::int AS open,
+      count(*) FILTER (WHERE t.state = 'failed' OR
+        (t.state = 'in_review' AND i.state = 'open' AND p.draft IS FALSE AND p.merged IS FALSE))::int AS attention,
+      coalesce(bool_or(t.state = 'in_review' AND i.id IS NULL), false) AS unknown_attention
+    FROM todos t
+    LEFT JOIN pulls p ON p.repo_id = t.repo_id AND p.number = t.pr_number
+    LEFT JOIN items i ON i.id = p.item_id AND i.kind = 'pull' AND i.deleted_at IS NULL
+    WHERE t.repo_id = ${`github/${project}`} AND t.position IS NOT NULL`
+  const counts = rows[0]!
+  return { openTodos: counts.open, needsAttention: counts.unknown_attention ? null : counts.attention }
+}

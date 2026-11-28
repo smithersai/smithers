@@ -48,6 +48,7 @@ export const Session = Schema.Struct({
   unverifiable: Schema.optional(Schema.Boolean),
   /** The person's home conversation, as the session answer named it: its rows are theirs (conversations/owners.ts). */
   homeConversationId: Schema.optional(Schema.String),
+  personId: Schema.optional(Schema.String),
   login: Schema.NullOr(Schema.String),
   role: Schema.NullOr(Schema.Literals(ROLES)),
   roleConfirmed: Schema.optional(Schema.Boolean),

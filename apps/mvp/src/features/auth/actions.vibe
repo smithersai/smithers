@@ -82,6 +82,7 @@ export const load = effect {
       ? {
         status: "signed_in",
         login: state.login,
+        personId: state.personId,
         role: state.role,
         roleConfirmed: state.roleConfirmed,
         available: true,
@@ -91,7 +92,7 @@ export const load = effect {
         install: state.install,
         homeConversationId: state.homeConversationId,
       }
-      : { status: "signed_out", login: null, role: null, roleConfirmed: undefined, available: state.available, hostedModel: state.hostedModel, computeAccess: undefined, computeBalanceMicroUsd: undefined, install: undefined, homeConversationId: undefined },
+      : { status: "signed_out", personId: undefined, login: null, role: null, roleConfirmed: undefined, available: state.available, hostedModel: state.hostedModel, computeAccess: undefined, computeBalanceMicroUsd: undefined, install: undefined, homeConversationId: undefined },
   )
   try (try AuthStore).sessionConfirmed
   if (state.signedIn) {
@@ -174,7 +175,7 @@ const sendSignOut = effect {
     }
     // The server ended the session. No local state or telemetry failure may bypass durable wipe marking or sealing.
     try effect {
-      try change({ status: "signed_out", login: null, role: null, signingOut: false, confirmSignOut: false })
+      try change({ status: "signed_out", personId: undefined, login: null, role: null, signingOut: false, confirmSignOut: false })
       try confirm(null)
       try Metric.update(Metric.withAttributes(signOuts, { outcome: "signed_out" }), 1)
       try Effect.logInfo("signed out")

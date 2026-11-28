@@ -269,6 +269,7 @@ describe("names and placement", () => {
       "model/test",
       "app/bug/report",
       "app/bug/list",
+      "app/project/add",
       "feed/answer",
       "model/remove",
       "sandbox/run",

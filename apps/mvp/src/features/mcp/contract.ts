@@ -143,7 +143,7 @@ export const mcpClientSnippet = (
     case "agy":
       return {
         label: "Run once in your terminal (Google Gemini models only)",
-        command: `agy mcp add ${slug} --transport http ${url}`,
+        command: `agy mcp add --type http ${slug} ${url}`,
         note: "Antigravity CLI connects over Streamable HTTP MCP with OAuth 2.1. Use Google Gemini models (gemini-*) only.",
       }
     case "cursor":

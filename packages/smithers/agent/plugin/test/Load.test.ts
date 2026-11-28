@@ -1065,3 +1065,44 @@ it("types the host points from the loader's runtime vocabulary", () => {
   expect(Load.loadablePoints).toEqual(["views", "slots", "commands", "keybindings", "flows"])
   expect(Object.isFrozen(Load.loadablePoints)).toBe(true)
 })
+
+describe("slot events", () => {
+  const slotWith = (render: object, event: object) => minimal("slotted", {
+    uses: ["run/answer"],
+    contributes: { slots: [{ slot: "app.home", id: "slotted/home", minimum: "member", render, events: [event] }] }
+  })
+  const component = { kind: "component", export: "Form" }
+  const event = {
+    name: "submit",
+    flow: "run/answer",
+    args: { runId: "run", version: 1, execution: "execution", value: "yes" }
+  }
+
+  it("admits a person-only form event in a built-in component slot", async () => {
+    const { contributions, refused } = await load([builtIn(slotWith(component, event))])
+    expect(refused).toEqual([])
+    expect(contributions.slots).toMatchObject([{
+      slot: "app.home",
+      events: [{ name: "submit", flow: "run/answer", personOnly: true }]
+    }])
+  })
+
+  it("refuses person-only slot events in declarative or externally installed components", async () => {
+    const render = { kind: "blocks", blocks: [] }
+    for (const tier of ["built-in", "personal", "repository"] as const) {
+      expect(await refusals([{ tier, manifest: slotWith(render, event) }])).toEqual([
+        ["slotted", "unsupported_point", "contributes.slots[0].events[0]"]
+      ])
+    }
+    expect(await refusals([{ tier: "personal", manifest: slotWith(component, event) }])).toEqual([
+      ["slotted", "unsupported_point", "contributes.slots[0].render"]
+    ])
+  })
+
+  it("refuses local slot events and item references", async () => {
+    const local = slotWith(component, { name: "local", local: true })
+    expect(await refusals([builtIn(local)])).toEqual([["slotted", "invalid", "contributes.slots[0].events[0]"]])
+    const item = slotWith(component, { ...event, args: { ...event.args, runId: "$item.runId" } })
+    expect(await refusals([builtIn(item)])).toEqual([["slotted", "invalid", "contributes.slots[0].events[0].args.runId"]])
+  })
+})

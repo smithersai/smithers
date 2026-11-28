@@ -13,6 +13,7 @@ import { createRoot } from "react-dom/client"
 import { registerSW } from "virtual:pwa-register"
 import { AppProviders } from "./AppProviders"
 import { type BootOptions, type Host, realServices, start } from "./boot"
+import { ProjectFormProvider } from "./features/projects/components/ProjectsHome"
 import { THEME_ATTRIBUTE, THEME_MIRROR_KEY } from "./features/theme/contract"
 import { ENGINE_NAME, OUTBOX_DATABASE } from "./flows/contract"
 import { router } from "./router"
@@ -690,6 +691,7 @@ const render: BootOptions["render"] = (
   workbench,
   billing,
   fork,
+  projects,
 ) =>
   root.render(
     <StrictMode>
@@ -702,10 +704,12 @@ const render: BootOptions["render"] = (
           }}
         >
           {/* The routes' loaders open what they show through these (src/router.tsx). */}
-          <RouterProvider
-            router={router}
-            context={{ repo, home, docs, views, branch, terminal, issues, pulls, todos, runs, flows, plugins, domains, secrets, mcp, profile, workbench, billing, fork }}
-          />
+          <ProjectFormProvider value={projects}>
+            <RouterProvider
+              router={router}
+              context={{ repo, home, docs, views, branch, terminal, issues, pulls, todos, runs, flows, plugins, domains, secrets, mcp, profile, workbench, billing, fork }}
+            />
+          </ProjectFormProvider>
         </AppProviders>
       </AppErrorBoundary>
     </StrictMode>,

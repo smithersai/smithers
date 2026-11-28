@@ -13,6 +13,10 @@ describe("connectDialogView: each client's snippet", () => {
     expect(dialog("claude").snippet.command).toBe("claude mcp add voltaire --transport http https://smithers.sh/evmts/voltaire/mcp")
   })
 
+  test("Antigravity accepts its HTTP type flag before the server name and URL", () => {
+    expect(dialog("agy").snippet.command).toBe("agy mcp add --type http voltaire https://smithers.sh/evmts/voltaire/mcp")
+  })
+
   test("codex: one terminal command with --url", () => {
     expect(dialog("codex").snippet.command).toBe("codex mcp add voltaire --url https://smithers.sh/evmts/voltaire/mcp")
   })

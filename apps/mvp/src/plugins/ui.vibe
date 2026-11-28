@@ -48,6 +48,7 @@ export interface PluginsView {
     readonly tab: (plugin: string) => Promise<unknown>
     /** Plugin `plugin`'s components, loaded on first use. */
     readonly components: (plugin: string) => Promise<Readonly<Record<string, unknown>>>
+    readonly slotFrame?: (plugin: string, slot: string) => Promise<unknown> | undefined
     /** Whether `viewer` may see a contribution that asks `minimum`. */
     readonly allows: (minimum: Minimum, viewer: Viewer) => boolean
     /**
@@ -68,7 +69,10 @@ export const buildTab = (plugin: string) =>
     if (entry === undefined) return try die(new Error(`no active plugin ${plugin}`))
     const module = try promise(entry.tab)
     const host = try hostFor(plugin)
-    return try Scope.provide(provideService(module.tab, Host.PluginHost, host), plugins.scope)
+    // Replacing the context keeps privileged services out of a tab even when it captures its ambient context.
+    const telemetry = Context.pick(Logger.CurrentLoggers, Metric.MetricRegistry, References.MinimumLogLevel)(try context<never>())
+    const allowed = telemetry.pipe(Context.add(Host.PluginHost, host), Context.add(Scope.Scope, plugins.scope))
+    return try setContext(module.tab, allowed)
   }
 
 export class PluginsUi extends Context.Service<PluginsUi, PluginsView>()("@smthrs/mvp/plugins/PluginsUi") {
@@ -85,6 +89,11 @@ export class PluginsUi extends Context.Service<PluginsUi, PluginsView>()("@smthr
         contributions: plugins.contributions,
         queries: { views: plugins.strips.tanstack, notes: plugins.notes.tanstack },
         actions: {
+          slotFrame: (plugin, slot) => {
+            const entry = plugins.contributions.slots.find((entry) => entry.plugin === plugin && entry.id === slot)
+            if (!entry?.events?.some((event) => "flow" in event && event.personOnly)) return undefined
+            return plugins.built.get(plugin)?.hostSlots?.[slot]?.()
+          },
           viewAt: (plugin, path, scope) => viewAt(plugins.contributions, plugin, path, scope),
           pathOf,
           show: (id) => run(show(id)),

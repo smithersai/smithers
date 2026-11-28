@@ -23,6 +23,7 @@ import * as SharingSteps from "../features/sharing/steps.vibe"
 import * as SpendSteps from "../features/spend/steps.vibe"
 import * as BugSteps from "../features/bugs/steps.vibe"
 import { BugTabs } from "../features/bugs/flows.vibe"
+import * as ProjectSteps from "../features/projects/steps.vibe"
 import * as DomainSteps from "../features/domains/steps.vibe"
 import * as FeedSteps from "../features/feeds/steps.vibe"
 import * as PullSteps from "../features/pulls/steps.vibe"
@@ -146,6 +147,7 @@ export const registrations = (options: HostOptions) =>
     PullSteps.registrationAt(options.origin),
     PersonalModelSteps.registrationAt(options.origin),
     BugSteps.registrationAt(options.origin),
+    ProjectSteps.registrationAt(options.origin),
     FeedSteps.registrationAt(options.origin),
   ).pipe(Layer.provide(FlowRegistry.layer), Layer.provide(statusReports(options.origin)), Layer.provideMerge(Action.layerImplementations))
 

@@ -155,6 +155,8 @@ export const PROTECTED_ACTS = {
   // Purchasing or granting compute credits (decision 0175): only the person in person.
   "billing/checkout": { route: "POST /api/billing/checkout" },
   "billing/grant": { route: "POST /api/billing/admin/grant" },
+  // A private project roster (decision 0177): the owner in person.
+  projects: { route: "GET /api/me/projects[/summaries]" },
   // Forking or syncing a repository on GitHub (decision 0175): only the person in person.
   "repo/fork": { route: "POST /api/repos/<owner>/<name>/fork" },
   "repo/sync-upstream": { route: "POST /api/repos/<owner>/<name>/sync-upstream" },

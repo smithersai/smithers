@@ -1,0 +1,140 @@
+import type { Layer } from "effect"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { SqlClient } from "effect/sql"
+import { DEVICE_PERSON_HEADER } from "../../src/features/auth/contract.ts"
+import { PROJECT_PERSON_HEADER, PROJECT_STATUS_ROUTE, PROJECTS_ROUTE, projectId } from "../../src/features/projects/contract.ts"
+import type { ProjectSummary } from "../../src/features/projects/schema.ts"
+import { type Actor, memberOrAbove, refusesPersonOnly, Sessions } from "../Actor.vibe"
+import { readBounded } from "../Body.vibe"
+import { holdsDeploymentAuthority } from "../DeploymentPolicy.vibe"
+import { repositoryOf } from "../github/Config.vibe"
+import { RoleRefused, type RepoRoles } from "../github/RepoRoles.vibe"
+import * as Visibility from "../ops/ArtifactVisibility.ts"
+import * as Store from "./Store.vibe"
+
+const privateHeaders = { "cache-control": "private, no-store" }
+const respond = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status, headers: privateHeaders })
+const decodeAdd = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ project: Schema.String })), {
+  onExcessProperty: "error",
+})
+
+export const handles = (path: string): boolean => path === PROJECTS_ROUTE || path === PROJECT_STATUS_ROUTE
+
+const requests = Metric.counter("smithers_project_roster_requests", { incremental: true })
+const summaryReads = Metric.counter("smithers_project_summaries", { incremental: true })
+const unknownCounts = { openTodos: null, needsAttention: null, openPlanNodes: null } as const
+// One wave per page, with up to five seconds for access and three for the parallel count reads.
+const summaryConcurrency = 8
+
+/** Own roster only; each summary reuses the TODO and plan read policy on that specific repository. */
+export const serve = <E, R, PE, PR>(
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
+  roles: RepoRoles<R>,
+  policy: Visibility.Policy,
+  plan: (actor: Actor, project: string) => ({ readonly openPlanNodes: number; readonly waitingPlanNodes: number } | null)!PE!PR,
+) => withSpan(effect {
+  const request = try HttpServerRequest.HttpServerRequest
+  const summaries = request.url.split("?")[0] === PROJECT_STATUS_ROUTE
+  const operation = summaries ? "summary" : request.method === "POST" ? "add" : "list"
+  const response = try (effect {
+    if (request.method !== "GET" && (summaries || request.method !== "POST")) {
+      return HttpServerResponse.empty({ status: 405, headers: { ...privateHeaders, allow: summaries ? "GET" : "GET, POST" } })
+    }
+    const who = try (try Sessions).resolve
+    if (Option.isNone(who)) return respond({ code: "sign_in" }, 401)
+    const actor = who.value
+    if (try refusesPersonOnly(actor, operation === "add" ? "app/project/add" : "projects", { runId: false })) return respond({ code: "forbidden" }, 403)
+    const personId = actor.subject.id
+    const expected = request.headers[PROJECT_PERSON_HEADER] ?? request.headers[DEVICE_PERSON_HEADER]
+    if ((expected !== undefined && expected !== personId) || (operation === "add" && expected !== personId)) {
+      return respond({ code: "sign_in" }, 401)
+    }
+
+    if (operation === "add") {
+      const body = try result(readBounded(request, 512))
+      if (body._tag === "Failure") return respond({ code: "invalid" }, body.failure.reason === "too_large" ? 413 : 400)
+      const parsed = try option(decodeAdd(body.success))
+      const project = Option.isNone(parsed) ? undefined : projectId(parsed.value.project)
+      if (project === undefined) return respond({ code: "invalid" }, 400)
+      try Effect.provide(Store.add(personId, project), database)
+      return respond({ project })
+    }
+
+    if (!summaries) return respond({ projects: try Effect.provide(Store.list(personId), database) })
+    const after = new URL(request.url, "http://localhost").searchParams.get("after")
+    if (after !== null && projectId(after) !== after) return respond({ code: "invalid" }, 400)
+    const { projects: roster, nextAfter } = try Effect.provide(Store.page(personId, after, summaryConcurrency), database)
+    if (roster.length === 0) return respond({ projects: [] })
+    const access = (project: string) => effect {
+      if (try sync(() => Visibility.isOpsRepository({ fullName: project, private: true }, policy)
+        && !holdsDeploymentAuthority(actor, policy.admins))) return "restricted" as const
+      // A roster can name a private or as-yet unverified project. Keep the role resolver's outcome metrics
+      // while suppressing its normal repository-keyed diagnostics and outbound GitHub URL spans for this read.
+      const resolved = try result(roles.resolve(actor, repositoryOf(project)).pipe(
+        Effect.provideService(References.MinimumLogLevel, "None"),
+        Effect.withTracerEnabled(false),
+        Effect.timeout("5 seconds"),
+      ))
+      if (resolved._tag === "Failure") {
+        // Missing and inaccessible repositories produce the same answer. Outages stay unknown.
+        const failure = resolved.failure
+        if (failure instanceof RoleRefused && (failure.code === "not_found" || failure.code === "app_not_installed")) return "restricted" as const
+        return "unavailable" as const
+      }
+      return memberOrAbove(resolved.success.role) ? "member" as const : "restricted" as const
+    }
+
+    const completed = new Map<string, ProjectSummary>()
+    const readProjects = Effect.forEach(roster, (project) => effect {
+      const granted = try access(project)
+      let summary: ProjectSummary = { project, access: granted, ...unknownCounts }
+      try sync(() => completed.set(project, summary))
+      if (granted !== "member") return
+
+      let todoAttention: number | null = null
+      let planAttention: number | null = null
+      const record = (counts: Partial<ProjectSummary>) => {
+        const needsAttention = todoAttention === null || planAttention === null ? null : todoAttention + planAttention
+        summary = { ...summary, ...counts, needsAttention }
+        completed.set(project, summary)
+      }
+      try.all [
+        effect {
+          const todos = (timeout(Store.todoCounts(project), "3 seconds") catch () => null)
+          if (todos === null) return
+          todoAttention = todos.needsAttention
+          try sync(() => record({ openTodos: todos.openTodos }))
+        },
+        effect {
+          const counts = (timeout(plan(actor, project), "3 seconds") catch () => null)
+          if (counts === null) return
+          planAttention = counts.waitingPlanNodes
+          try sync(() => record({ openPlanNodes: counts.openPlanNodes }))
+        },
+      ]
+    }, { concurrency: summaryConcurrency, discard: true })
+    // Keep completed reads at the page deadline. Its cursor advances independently of source availability.
+    const read = try result(timeout(Effect.provide(readProjects, database), "12 seconds"))
+    try annotateCurrentSpan({
+      "summary.outcome": Result.isSuccess(read) ? "completed" : "partial",
+      "summary.page_size": roster.length,
+      "summary.has_more": nextAfter !== undefined,
+    })
+    const projects = roster.map((project): ProjectSummary => completed.get(project) ?? { project, access: "unavailable", ...unknownCounts })
+    for (const summary of projects) {
+      try Metric.update(Metric.withAttributes(summaryReads, {
+        access: summary.access,
+        todos: summary.openTodos === null ? "unavailable" : "ready",
+        plan: summary.openPlanNodes === null ? "unavailable" : "ready",
+        attention: summary.needsAttention === null ? "unavailable" : "ready",
+      }), 1)
+    }
+    return respond(nextAfter === undefined ? { projects } : { projects, nextAfter })
+  } |> catchCause(%, () => succeed(respond({ code: "unavailable" }, 503))))
+  const status = response.status
+  try Metric.update(Metric.withAttributes(requests, { operation, status: String(status) }), 1)
+  try annotateCurrentSpan({ operation, "http.response.status_code": status })
+  try logWithLevel(status >= 500 ? "Error" : status >= 400 ? "Warn" : "Info")("projects.request")
+    .pipe(Effect.annotateLogs({ operation, status }))
+  return response
+}, "projects.request")

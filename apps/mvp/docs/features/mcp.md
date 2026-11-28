@@ -1,10 +1,12 @@
 # Bring your own agent (MCP)
 
-A person connects Claude Code, Codex, Cursor or another Streamable HTTP MCP client to a repository at
+A person connects Claude Code, Codex, Antigravity, Cursor or another Streamable HTTP MCP client to a repository at
 `https://smithers.sh/evmts/voltaire/mcp`. They sign in with GitHub and approve the connection in Smithers. The client
 acts for that person within the token's scopes and the person's current role on the repository. Its writes are
 attributed as `<login> (agent)`. See [roles per repository](../decisions/0079-roles-per-repository.md) and
 [person-only acts](../decisions/0017-everything-is-a-plugin.md).
+
+For Antigravity CLI, open **Connect agent** on the repository, choose **Antigravity (agy)**, and copy its command. For Voltaire, the command is `agy mcp add --type http voltaire https://smithers.sh/evmts/voltaire/mcp`.
 
 ## Routes
 

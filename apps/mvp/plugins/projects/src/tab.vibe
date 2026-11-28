@@ -1,0 +1,10 @@
+import { Host } from "@smthrs/plugin"
+import { PROJECTS_QUERY } from "../../../src/features/projects/contract"
+import type { ProjectsSnapshot } from "../../../src/features/projects/schema"
+
+export const tab = effect {
+  const host = try Host.PluginHost
+  return { queries: { projects: try host.query<ProjectsSnapshot>(PROJECTS_QUERY) } }
+}
+
+export type ProjectsTab = Effect.Success<typeof tab>

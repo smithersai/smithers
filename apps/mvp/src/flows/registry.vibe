@@ -48,6 +48,7 @@ import { AskWithForm, RenderView, SetViewState, ShowIssues, ShowRepo } from "../
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
 import { ListBugs, ReportBug } from "../features/bugs/flows.vibe"
+import { AddProject } from "../features/projects/flows"
 import { FeedAnswer } from "../features/feeds/flows"
 
 // The app's flows (docs/features/flows.md#the-registry): every action a person or the agent takes is one `Flow.make`
@@ -414,6 +415,11 @@ export const registry = {
     changes: "sends a bug report, with the page and the tab's latest run and trace ids, to the deployment's Admins",
   },
   "app/bug/list": { flow: ListBugs, minimum: "admin" },
+  "app/project/add": {
+    flow: AddProject,
+    minimum: "guest",
+    userOnlyReason: "Only the person can change their private project roster.",
+  },
   // Repository feeds (decision 0128, docs/features/feeds.md): a Maintainer answers an item a repository's feed shows,
   // such as a decision its factory asks for. ChatApi checks the role on that repository.
   "feed/answer": {

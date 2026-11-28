@@ -68,7 +68,7 @@ export interface OwnedFlow extends FlowFacts {
 
 /**
  * Contribution points this loader can fold, shared by runtime admission and
- * the host declaration type. View events are part of `views`.
+ * the host declaration type. Views and compiled component slots can declare events.
  *
  * @category constants
  * @since 1.1.0
@@ -507,23 +507,23 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
       return Effect.succeed(schemas)
     }
 
-    const views: Array<View> = []
-    const routes = new Set<string>()
-    for (const [index, view] of (contributes.views ?? []).entries()) {
-      const at = `contributes.views[${index}]`
-      yield* claim(view.id, `${at}.id`)
-      const route = `${view.scope}:${view.path}`
-      if (routes.has(route)) return yield* fail("conflict", `${at}.path`, `another ${view.scope} view has this path`)
-      routes.add(route)
-      yield* rendered(view.render, tier, `${at}.render`)
-      const rowSchemas = yield* rows(view.reads, at)
+    const eventsOf = (
+      contribution: Manifest.View | Manifest.Slot,
+      at: string,
+      rowSchemas: ReadonlyArray<JsonSchema.Resolved>,
+    ) => Effect.gen(function* () {
       const events: Array<Event> = []
-      for (const [position, event] of (view.events ?? []).entries()) {
+      const slot = "slot" in contribution
+      for (const [position, event] of (contribution.events ?? []).entries()) {
         const where = `${at}.events[${position}]`
         if (events.some((declared) => declared.name === event.name)) {
           return yield* fail("conflict", `${where}.name`, "the event is declared twice")
         }
+        if (slot && (tier !== "built-in" || contribution.render.kind !== "component")) {
+          return yield* fail("unsupported_point", where, "only built-in component slots dispatch events")
+        }
         if ("local" in event) {
+          if (slot) return yield* fail("invalid", where, "slot events must run a flow")
           events.push({ name: event.name, local: true })
           continue
         }
@@ -532,7 +532,7 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
           : yield* JsonSchema.resolve(event.payload, defs, `${where}.payload`, inlining)
         const payloads = payload === undefined ? [] : [payload]
         const facts = yield* flowOf(event.flow, `${where}.flow`)
-        yield* atLeast(view.minimum, facts, `${at}.minimum`, event.flow)
+        yield* atLeast(contribution.minimum, facts, `${at}.minimum`, event.flow)
         for (const reference of yield* Effect.fromResult(Bind.references(event.args, `${where}.args`))) {
           const path = Path.prefix(`${where}.args`, reference.at)
           // Any index reaches `items`; `[$event.x]` is checked as a payload field below.
@@ -542,7 +542,7 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
           const named = reference.root === "key"
             ? steps.join(".") === "index"
             : reaches(reference.root === "item" ? rowSchemas : payloads)
-          if (!named) return yield* fail("invalid", path, "the reference reaches no field of the reads or the payload")
+          if ((slot && reference.root !== "event") || !named) return yield* fail("invalid", path, "the reference reaches no field of the reads or the payload")
           for (const segment of reference.path) {
             if (typeof segment === "object" && !payloads.some((schema) => JsonSchema.at(schema, [segment.event]))) {
               return yield* fail("invalid", path, "the index names no field of the event's payload")
@@ -579,6 +579,20 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
           ...(payload === undefined ? {} : { payload })
         })
       }
+      return events
+    })
+
+    const views: Array<View> = []
+    const routes = new Set<string>()
+    for (const [index, view] of (contributes.views ?? []).entries()) {
+      const at = `contributes.views[${index}]`
+      yield* claim(view.id, `${at}.id`)
+      const route = `${view.scope}:${view.path}`
+      if (routes.has(route)) return yield* fail("conflict", `${at}.path`, `another ${view.scope} view has this path`)
+      routes.add(route)
+      yield* rendered(view.render, tier, `${at}.render`)
+      const rowSchemas = yield* rows(view.reads, at)
+      const events = yield* eventsOf(view, at, rowSchemas)
       views.push({ ...view, events, plugin: id, tier })
     }
 
@@ -588,13 +602,15 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
       yield* claim(slot.id, `${at}.id`)
       yield* rendered(slot.render, tier, `${at}.render`)
       yield* rows(slot.reads, at)
+      const events = yield* eventsOf(slot, at, [])
       if (slot.when !== undefined && Result.isFailure(When.parse(slot.when))) {
         return yield* fail("invalid", `${at}.when`, "the condition is outside the when grammar")
       }
       if (slot.slot === "shell.header" && state.header + header(slots) >= maximumHeaderEntries) {
         return yield* fail("conflict", `${at}.slot`, `the header holds at most ${maximumHeaderEntries} entries`)
       }
-      slots.push({ ...slot, plugin: id, tier })
+      const { events: _events, ...entry } = slot
+      slots.push({ ...entry, ...(events.length === 0 ? {} : { events }), plugin: id, tier })
     }
 
     const commands: Array<Command> = []

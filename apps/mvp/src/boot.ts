@@ -24,6 +24,8 @@ import { Auth, bindSessionConnectivity, type AuthView } from "./features/auth/au
 import { Branch, type BranchView } from "./features/branch/branch.vibe"
 import { BranchStore } from "./features/branch/store.vibe"
 import { DeviceWipe } from "./features/auth/device.vibe"
+import { projectsLayer } from "./features/projects/store.vibe"
+import { projectForm, type ProjectForm } from "./features/projects/form.vibe"
 import { AuthStore, anonymousRun } from "./features/auth/store.vibe"
 import { ChatClient } from "./features/chat/api"
 import { Chat, type ChatView } from "./features/chat/chat"
@@ -359,6 +361,7 @@ export const appLayer = <S = never>(
     // below the composer's commands, which offer the plugins' slash commands (decision 0017).
     Layer.provideMerge(
       Plugins.layer(plugins).pipe(
+        Layer.provideMerge(projectsLayer({ origin })),
         // The bug reports the viewer may see, which the host serves as `core/bug-reports` (docs/features/bugs.md).
         Layer.provideMerge(BugsStore.layer({ origin })),
         // Every repository's feeds, which the host serves as `core/feeds`, `core/feed` and `core/feed-items`
@@ -651,6 +654,7 @@ export interface BootOptions {
     workbench: WorkbenchView,
     billing?: BillingView,
     fork?: ForkView,
+    projects?: ProjectForm,
   ) => void
 }
 
@@ -696,6 +700,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const workbench = yield* Workbench
     const billing = yield* Billing
     const fork = yield* Fork
+    const projects = yield* projectForm
     const store = yield* ChatStore
     // Summaries that can't be made say so, on the one stack (ruling FE-19).
     const { launches } = yield* AttentionStore
@@ -738,6 +743,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         workbench,
         billing,
         fork,
+        projects,
       )
     )
     if (timeline !== undefined) {

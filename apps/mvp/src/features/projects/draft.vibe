@@ -1,0 +1,71 @@
+import { Collection } from "@smthrs/effect-tanstack-db"
+import type { Host } from "@smthrs/plugin"
+import { runners } from "../../boundary.vibe"
+import { projectId } from "./contract"
+import type { ProjectsLive } from "./schema"
+
+const Draft = Schema.Struct({
+  id: Schema.Literal("add"),
+  personId: Schema.optional(Schema.String),
+  text: Schema.String,
+  status: Schema.Literals(["idle", "invalid", "pending", "saved", "sign_in", "failed"]),
+})
+const emptyDraft: typeof Draft.Type = { id: "add", personId: undefined, text: "", status: "idle" }
+
+export const makeProjectForm = (
+  projects: ProjectsLive,
+  owner: { current: () => string | undefined; subscribe: (listener: () => void) => () => void },
+  save: (fields: { readonly project: string; readonly personId: string }) => Host.Settled!!,
+) => effect {
+  const drafts = try Collection.local({ id: "add-project", schema: Draft, getKey: (row) => row.id, initialData: [emptyDraft] })
+  const scope = try Effect.scope
+  const { runSync } = runners(try Effect.context<never>(), "projects")
+  const current = () => drafts.tanstack.get(emptyDraft.id) ?? emptyDraft
+  const active = (personId: string) => projects.current()[0]?.personId === personId
+  const set = (draft: typeof Draft.Type) => orDie(drafts.update(emptyDraft.id, (row) => { Object.assign(row, draft) }))
+  let attempt = 0
+  const release = try sync(() => owner.subscribe(() => {
+    const draft = current()
+    if (draft.personId !== undefined && draft.personId !== owner.current()) {
+      attempt++
+      runSync(set(emptyDraft))
+    }
+  }))
+  try Effect.addFinalizer(() => sync(release))
+
+  const submit = effect (personId: string) => {
+    if (!(try sync(() => active(personId)))) return
+    const draft = try sync(current)
+    if (draft.personId !== personId || draft.status === "pending") return
+    const project = try sync(() => projectId(draft.text.trim()))
+    if (project === undefined) return try set({ ...draft, status: "invalid" })
+    const mine = ++attempt
+    try set({ ...draft, status: "pending" })
+    fork.in(scope) (effect {
+      const settled = try exit(save({ project, personId }))
+      const saved = settled._tag === "Success" && settled.value._tag === "Done"
+      if (saved) try sync(() => projects.refresh(personId))
+      if (mine !== attempt || (try sync(owner.current)) !== personId) return
+      const signIn = settled._tag === "Success" && settled.value._tag === "Failed" && settled.value.code === "sign_in"
+      try set({ ...draft, text: saved ? "" : draft.text, status: saved ? "saved" : signIn ? "sign_in" : "failed" })
+    })
+  }
+
+  return {
+    projects,
+    draft: {
+      current,
+      subscribe: (listener: () => void) => {
+        const changes = drafts.tanstack.subscribeChanges(listener)
+        return () => changes.unsubscribe()
+      },
+    },
+    edit: (personId: string, text: string) => {
+      const draft = current()
+      if (active(personId) && (draft.personId !== personId || draft.status !== "pending")) {
+        runSync(set({ ...emptyDraft, personId, text }))
+      }
+    },
+    submit: (personId: string) => { runSync(submit(personId)) },
+  }
+}

@@ -7,9 +7,26 @@
   min-width: 0;
 }
 
+.app-shell-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.app-shell-home {
+  flex: 0 0 56%;
+  min-width: 0;
+  overflow: auto;
+  border-inline-end: 1px solid var(--border);
+}
+.app-shell-home:empty { display: none; }
+
+.app-shell-chat { display: flex; flex: 1; min-width: 0; min-height: 0; container-type: inline-size; }
+
 /* The centered column under the full-width bar. */
 .app-shell-center {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   width: 100%;
   max-width: 48rem;
@@ -25,10 +42,15 @@
    the rail never squeezes. Collapsed, the chat column stays centered. The rail ends 18 px left of the transcript,
    which starts inside the column's 1rem padding. */
 @media (min-width: 1180px) {
-  .app-shell-center:has(.sui-timeline-disclosure[open]) {
-    --app-shell-start: max(calc(var(--sui-timeline-want) + 18px - 1rem), calc((100% - 48rem) / 2));
-    width: min(48rem, calc(100% - var(--app-shell-start) - 1rem));
-    margin: 0 auto 0 var(--app-shell-start);
+  @container (min-width: 63rem) {
+    .app-shell-center:has(.sui-timeline-disclosure[open]) {
+      --app-shell-start: max(calc(var(--sui-timeline-want) + 18px - 1rem), calc((100% - 48rem) / 2));
+      width: min(48rem, calc(100% - var(--app-shell-start) - 1rem));
+      margin: 0 auto 0 var(--app-shell-start);
+    }
+  }
+  @container (max-width: 62.999rem) {
+    .app-shell-center { max-width: 39rem; }
   }
 }
 
@@ -58,6 +80,17 @@
 /* The empty chat: a quiet centered mark instead of a page-filling logo, and no empty timeline label beside it. */
 .app-shell .sui-chat-empty .sui-wordmark { max-width: 20rem; }
 .app-shell .sui-chat-transcript:has(.sui-chat-empty) > .sui-timeline-disclosure { display: none; }
+
+@media (max-width: 52rem) {
+  .app-shell-body { flex-direction: column; }
+  .app-shell-home {
+    flex: 0 1 auto;
+    max-height: 55dvh;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--border);
+  }
+  .app-shell-center { min-height: 0; }
+}
 
 @media (max-width: 40rem) {
   .app-shell-header .sui-page-header-inner { padding-inline: 16px; }

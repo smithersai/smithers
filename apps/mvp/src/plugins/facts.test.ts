@@ -6,6 +6,7 @@ import { Load } from "@smthrs/plugin"
 import { Effect } from "effect"
 import { describe, expect, test } from "vitest"
 import factory from "../../plugins/factory/plugin.json" with { type: "json" }
+import projects from "../../plugins/projects/plugin.json" with { type: "json" }
 import uphill from "../../plugins/uphill/plugin.json" with { type: "json" }
 import queue from "../../plugins/queue/plugin.json" with { type: "json" }
 import { registry } from "../flows/registry.vibe"
@@ -47,6 +48,7 @@ describe("the host's facts", () => {
     }
     expect([...facts.queries.keys()]).toEqual([
       "core/waits",
+      "core/projects",
       "core/bug-reports",
       "core/feeds",
       "core/feed",
@@ -73,6 +75,17 @@ describe("the host's facts", () => {
 
   test("the queue loads with nothing refused", () => {
     expect(load({ tier: "built-in", manifest: queue }).refused).toEqual([])
+  })
+
+  test("Projects declares an account-only form event in its home slot", () => {
+    const loaded = load({ tier: "built-in", manifest: projects })
+    expect(loaded.refused).toEqual([])
+    expect(loaded.contributions.slots).toMatchObject([{
+      id: "projects/dashboard",
+      slot: "app.home",
+      minimum: "guest",
+      events: [{ name: "add", flow: "app/project/add", personOnly: true }],
+    }])
   })
 
   test("the factory loads with nothing refused: its views, its repository tab, its commands and For you's answers", () => {

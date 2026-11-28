@@ -1,0 +1,25 @@
+import { AuthStore } from "../auth/store.vibe"
+import { pressSlot } from "../../plugins/plugins.vibe"
+import { makeProjectForm } from "./draft.vibe"
+import { ProjectsStore } from "./store.vibe"
+
+/** The host owns the person's press and the plugin supplies its declared event. */
+export const projectForm = effect {
+  const projects = try (try ProjectsStore).open
+  const services = try Effect.context<Effect.Services<ReturnType<typeof pressSlot>>>()
+  const auth = try AuthStore
+  const owner = {
+    current: () => {
+      const session = auth.session.tanstack.get("session")
+      return session?.status === "signed_in" && !session.signingOut ? session.personId : undefined
+    },
+    subscribe: (listener: () => void) => {
+      const changes = auth.session.tanstack.subscribeChanges(listener)
+      return () => changes.unsubscribe()
+    },
+  }
+  return try makeProjectForm(projects, owner, (fields) =>
+    Effect.provide(pressSlot({ view: "projects/dashboard", name: "add" }, fields), services))
+}
+
+export type ProjectForm = Effect.Success<typeof projectForm>

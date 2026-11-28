@@ -14,17 +14,17 @@ import { Home } from "../features/home/home.vibe"
 import { Repo } from "../features/repo/repo.vibe"
 import type { Need } from "../features/status/schema"
 import { StatusStore } from "../features/status/store"
-import { dispatches } from "../flows/dispatch.vibe"
+import { dispatches, FlowDispatch } from "../flows/dispatch.vibe"
 import { finishRun, waitOnPerson } from "../test/attachedRun"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "../test/chatApi"
 import { shaOf } from "../../worker/test/branch"
 import { read as readTelemetry } from "../test/otlp"
-import type { BuiltIn } from "./builtin"
+import { BUILTIN, type BuiltIn } from "./builtin"
 import type { MythicalTab } from "../../plugins/mythical/src/tab"
 import { pluginKeys } from "./keymap.vibe"
 import { hostFor, loads, pathOf, Plugins, presses, settledOf, shownView, viewAt, viewById } from "./plugins"
 import { draftKey } from "./schema"
-import { PluginsUi } from "./ui.vibe"
+import { buildTab, PluginsUi } from "./ui.vibe"
 
 const ENGINE_WITHIN = 90_000
 const VIEW = "queue/queue"
@@ -99,13 +99,28 @@ const openDevice = async (api: TestChatApi["Service"]) => {
 
 const question = (word: string): Need => ({ kind: "question", prompt: `Deploy which branch for ${word}?`, options: ["main", "docs-v2"] })
 
+test("the built-in Projects slot cannot dispatch its person-only event through PluginHost", async () => {
+  const projects = BUILTIN.find((plugin) => (plugin.manifest as { id?: string }).id === "projects")!
+  const event = { view: "projects/dashboard", name: "add" }
+  const tab = Effect.gen(function* () {
+    const ambient = yield* Effect.serviceOption(FlowDispatch)
+    const host = yield* Host.PluginHost
+    const refused = yield* Effect.flip(host.dispatch(event, { project: "example/private", personId: "local-developer" }))
+    return { ambient, reason: refused.reason }
+  })
+  const runtime = openTestApp({ answers: false, plugins: BUILTIN.map((plugin) =>
+    plugin === projects ? { ...projects, tab: async () => ({ tab }) } : plugin) })
+  runtimes.push(runtime)
+  expect(await runtime.runPromise(buildTab("projects"))).toMatchObject({ ambient: { _tag: "None" }, reason: "person_only" })
+})
+
 describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
   test("loads the queue, whose tab and the host's strip answer the agent's question; the run goes on", async () => {
     const api = await openApi()
     const a = await openDevice(api)
     // The built-ins, ordered by their dependencies, then id (src/plugins/builtin.ts).
-    expect(a.plugins.contributions.plugins.map((plugin) => plugin.id)).toEqual(["bugs", "factory", "fleet", "mythical", "queue", "uphill", "wiki"])
-    expect(a.count(Metric.withAttributes(loads, { outcome: "active", tier: "built-in", reason: "none" }))).toBe(7)
+    expect(a.plugins.contributions.plugins.map((plugin) => plugin.id)).toEqual(["bugs", "factory", "fleet", "mythical", "projects", "queue", "uphill", "wiki"])
+    expect(a.count(Metric.withAttributes(loads, { outcome: "active", tier: "built-in", reason: "none" }))).toBe(8)
 
     const answerId = await a.ask("Deploy the preview", question("preview"))
     const history = await a.plugins.actions.tab("mythical") as MythicalTab

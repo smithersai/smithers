@@ -26,6 +26,7 @@ import { WEB_TELEMETRY } from "./features/web/contract"
 import { FLOWS_TELEMETRY } from "./flows/contract"
 import { FLOWS_UI_TELEMETRY } from "./features/flows-ui/contract"
 import { DOCS_TELEMETRY } from "./features/docs/contract"
+import { PROJECTS_TELEMETRY } from "./features/projects/contract"
 import { HOME_TELEMETRY } from "./features/home/contract"
 import { RUNS_TELEMETRY } from "./features/runs/contract"
 import { SECRETS_TELEMETRY } from "./features/secrets/contract"
@@ -227,6 +228,7 @@ const features: ReadonlyArray<Telemetry> = [
   PERSONAL_MODEL_TELEMETRY,
   FIRST_RUN_TELEMETRY,
   HOME_TELEMETRY,
+  PROJECTS_TELEMETRY,
   DOCS_TELEMETRY,
   ATTENTION_TELEMETRY,
   TIMELINE_TELEMETRY,

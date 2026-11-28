@@ -1,4 +1,4 @@
-import { EmptyState, RunList, Skeleton } from "@smthrs/ui"
+import { EmptyState, RunList } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
 import { NO_RUNS } from "../contract"
@@ -7,21 +7,14 @@ import type { RepoRunRow, RepoRunsLoaded } from "../schema"
 import { useRuns } from "./RunsContext"
 
 // A repository's runs on Cloudflare, newest first (docs/features/actions.md, `/$owner/$repo/actions`): each its flow
-// and ref, its state, when it started and how long it ran, opening its run page. Electric keeps the rows live. Until
-// they have loaded, the shared skeleton keeps the pending read visible.
+// and ref, its state, when it started and how long it ran, opening its run page. Electric keeps the rows live. The first read is announced without painting empty or loading rows.
 export function RepoRunsView({ owner, name }: { owner: string; name: string }) {
   const { queries } = useRuns()
   const { data } = useLiveQuery(queries.repoRuns)
   const { data: loaded } = useLiveQuery(queries.repoRunsLoaded)
   const runs = repoRunRows(data as ReadonlyArray<RepoRunRow>, owner, name)
   if (runs.length === 0 && !repoRunsLoaded(loaded as ReadonlyArray<RepoRunsLoaded>, owner, name)) {
-    return (
-      <div role="status" aria-label="Loading runs" className="repo-runs-loading">
-        <Skeleton />
-        <Skeleton />
-        <Skeleton />
-      </div>
-    )
+    return <span className="sui-sr-only" role="status">Loading runs</span>
   }
   return (
     <RunList

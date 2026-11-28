@@ -15,6 +15,7 @@ import * as PublicFactoryRoutes from "./object-store/PublicFactoryRoutes.vibe"
 import * as OneTimeAuth from "./mcp/OneTimeAuth.vibe"
 import * as GitHubVisibility from "./github/Visibility.vibe"
 import * as Waitlist from "./waitlist/Waitlist.vibe"
+import * as ProjectsApi from "./projects/Api.vibe"
 import * as PlanTreeRoutes from "./plan/PlanTreeRoutes.vibe"
 import { MessagesShardBridge } from "./chat/MessagesShardBridge.ts"
 import * as MessagesShardObject from "./chat/MessagesShardObject.ts"
@@ -672,6 +673,17 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, m
                       HttpServerResponse.jsonUnsafe({ error: "unavailable" }, { status: 503, headers: { "cache-control": "no-store" } }),
                     ),
                   ),
+                )
+              }
+              if (ProjectsApi.handles(path)) {
+                return yield* ProjectsApi.serve(database, roles, artifactPolicy, (actor, project) =>
+                  PlanTreeRoutes.readSummary(
+                    (shard, outgoing) => planObjects.getByName(shard).fetch(outgoing),
+                    actor,
+                    project,
+                  )).pipe(
+                  Effect.provideService(RuntimeContext, runtime),
+                  Effect.provide(signedIn),
                 )
               }
               if (PlanTreeRoutes.handles(path)) {

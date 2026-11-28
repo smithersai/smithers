@@ -86,7 +86,7 @@ export type Tier = typeof Tier.Type
 /**
  * The full contribution vocabulary. The loader folds only `views`, `slots`,
  * `commands`, `keybindings` and `flows`; the other seven points are reserved
- * for future loading. View events are part of `views`.
+ * for future loading. Views and compiled component slots can declare events.
  *
  * @category models
  * @since 1.1.0
@@ -143,9 +143,9 @@ export interface Active {
 }
 
 /**
- * A view event that runs a flow. `payload` has every `$ref` inlined;
- * `personOnly` is the flow's registry fact, so the host's action strip draws
- * the event and plugin code never dispatches it.
+ * A view or slot event that runs a flow. `payload` has every `$ref` inlined.
+ * `personOnly` is the flow's registry fact. The host's action strip draws
+ * person-only view events. The host handles presses for person-only slot events.
  *
  * @category models
  * @since 1.1.0
@@ -191,7 +191,7 @@ export type View = Omit<Manifest.View, "events"> & Owner & { readonly events: Re
  * @category models
  * @since 1.1.0
  */
-export type Slot = Manifest.Slot & Owner
+export type Slot = Omit<Manifest.Slot, "events"> & Owner & { readonly events?: ReadonlyArray<Event> }
 
 /**
  * A command, as loaded.

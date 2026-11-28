@@ -1,0 +1,42 @@
+import { Interpreter } from "@smthrs/flow"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { PROJECT_PERSON_HEADER, PROJECTS_ROUTE } from "./contract"
+import { AddProject, ProjectAdded, ProjectAddFailed, ProjectAddUnavailable, SaveProject } from "./flows"
+
+const decode = Schema.decodeUnknownEffect(ProjectAdded)
+const writes = Metric.counter("smithers_projects_adds", { incremental: true })
+
+/** Send through the engine's account-bound client. The expected person is captured before dispatch. */
+export const saveAt = (origin: string) => ({ project, personId }: typeof SaveProject.payloadSchema.Type) =>
+  withSpan(effect {
+    const http = try HttpClient.HttpClient
+    const saved = try result(timeout(effect {
+      const request = HttpClientRequest.post(origin + PROJECTS_ROUTE).pipe(
+        HttpClientRequest.setHeader(PROJECT_PERSON_HEADER, personId),
+        HttpClientRequest.bodyJsonUnsafe({ project }),
+      )
+      const response = try http.execute(request)
+      try annotateCurrentSpan({ "http.response.status_code": response.status })
+      if (response.status === 401) throw new ProjectAddFailed({ code: "sign_in" })
+      if (response.status === 400 || response.status === 403 || response.status === 413) {
+        throw new ProjectAddFailed({ code: "refused" })
+      }
+      if (response.status !== 200) throw new ProjectAddUnavailable()
+      const receipt = try decode(try response.json)
+      if (receipt.project !== project) throw new ProjectAddUnavailable()
+      return receipt
+    }, "5 seconds"))
+    if (saved._tag === "Success") {
+      try Metric.update(Metric.withAttributes(writes, { outcome: "saved" }), 1)
+      try logInfo("projects.add").pipe(annotateLogs({ outcome: "saved" }))
+      return saved.success
+    }
+    const failure = saved.failure instanceof ProjectAddFailed ? saved.failure : new ProjectAddUnavailable()
+    const outcome = failure instanceof ProjectAddFailed ? failure.code : "unavailable"
+    try Metric.update(Metric.withAttributes(writes, { outcome }), 1)
+    try logWarning("projects.add").pipe(annotateLogs({ outcome }))
+    throw failure
+  }, "projects.add")
+
+export const registrationAt = (origin: string) =>
+  Interpreter.layerWithImplementations(AddProject, SaveProject.toLayer(saveAt(origin)))

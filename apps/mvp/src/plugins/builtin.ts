@@ -1,6 +1,6 @@
 import type { Host } from "@smthrs/plugin"
 import type { Effect, Scope } from "effect"
-import { bugs, factory, fleet, mythical, queue, uphill, wiki } from "./manifests"
+import { bugs, factory, fleet, mythical, projects, queue, uphill, wiki } from "./manifests"
 
 // The built-in plugins (decision 0017, "What stays hardcoded"): the one place the core names a plugin, as webpack's
 // `WebpackOptionsApply` lists its own. Each is a manifest, read without running plugin code, and two chunks loaded only
@@ -14,10 +14,18 @@ export interface BuiltIn {
   readonly tab: () => Promise<{ readonly tab: Effect.Effect<unknown, unknown, Host.PluginHost | Scope.Scope> }>
   /** The components: a module whose exports are the names a `component` render names. */
   readonly components: () => Promise<Readonly<Record<string, unknown>>>
+  /** Host UI around a slot whose manifest declares a person-only action. */
+  readonly hostSlots?: Readonly<Record<string, () => Promise<unknown>>>
 }
 
 /** Every built-in plugin, in no order: the loader orders them by their dependencies, then id. */
 export const BUILTIN: ReadonlyArray<BuiltIn> = [
+  {
+    manifest: projects,
+    tab: () => import("../../plugins/projects/src/tab.vibe"),
+    components: () => import("../../plugins/projects/src/Projects"),
+    hostSlots: { "projects/dashboard": () => import("../features/projects/components/ProjectsHome").then(({ ProjectsHome }) => ProjectsHome) },
+  },
   {
     manifest: queue,
     tab: () => import("../../plugins/queue/src/tab"),

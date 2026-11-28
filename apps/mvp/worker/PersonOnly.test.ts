@@ -14,6 +14,8 @@ import * as SshKeyAccess from "./SshKeyAccess.vibe"
 import * as Flows from "./Flows.vibe"
 import * as RunnerAdmin from "./runners/Admin.vibe"
 import { describe, expect, test } from "vitest"
+import { PROJECTS_ROUTE } from "../src/features/projects/contract.ts"
+import * as ProjectsApi from "./projects/Api.vibe"
 import { secretRoute } from "../src/features/secrets/contract.ts"
 import { stackRoute } from "../src/features/todos/contract.ts"
 import { writesRoute } from "../src/features/issues/contract.ts"
@@ -118,6 +120,20 @@ const domain = (path: string, init: RequestInit): Case => async (actor, act) => 
   return { status, counted: h.count(personOnlyRefusals, { act, by: actor.act!.kind }) }
 }
 
+const projects = (method: "GET" | "POST"): Case => async (actor, act) => {
+  const registry: Metric.MetricRegistry = new Map()
+  const unopened = Layer.effect(SqlClient.SqlClient, Effect.die("delegated request reached the roster store"))
+  const handler = HttpEffect.toWebHandler(ProjectsApi.serve(
+    unopened, {} as never, { admins: new Set() }, () => Effect.die("delegated request read a plan"),
+  ).pipe(Effect.provide(signedIn(actor)), Effect.provideService(Metric.MetricRegistry, registry)))
+  const init = method === "POST" ? json({ project: "example/project" }) : undefined
+  const response = await handler(new Request(`https://chat.test${PROJECTS_ROUTE}`, init))
+  const counted = Effect.runSync(Metric.value(Metric.withAttributes(personOnlyRefusals, {
+    act, by: actor.act!.kind,
+  })).pipe(Effect.provideService(Metric.MetricRegistry, registry))).count
+  return { status: response.status, counted }
+}
+
 type Routed = {
   readonly [N in keyof typeof PERSON_ONLY_FLOWS as (typeof PERSON_ONLY_FLOWS)[N] extends { readonly device: string } ? never
     : N]: Case
@@ -151,6 +167,7 @@ const flows: Routed = {
   "domain/add": domain(domainsRoute(REPO.owner, REPO.name), json({ hostname: "docs.example.com" })),
   "domain/remove": domain(domainRoute(REPO.owner, REPO.name, "docs.example.com"), { method: "DELETE" }),
   "feed/answer": feedAnswer,
+  "app/project/add": projects("POST"),
 }
 
 /** An Admin's write to a repository's runners or agents, with a starter that is never reached. */
@@ -250,6 +267,7 @@ const protectedActs: { readonly [A in keyof typeof PROTECTED_ACTS]: Case } = {
     })).pipe(Effect.provideService(Metric.MetricRegistry, registry))).count
     return { status: response.status, counted }
   },
+  projects: projects("GET"),
   "repo/fork": async (actor, act) => {
     const registry: Metric.MetricRegistry = new Map()
     const api = await Effect.runPromise(ForkApi.make(Layer.succeed(SqlClient.SqlClient, {} as SqlClient.SqlClient)))

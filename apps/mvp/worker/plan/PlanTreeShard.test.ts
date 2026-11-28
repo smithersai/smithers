@@ -70,6 +70,11 @@ test("Plan Tree capabilities are explicit and the journal routes stay on the loc
           new Request("https://smithers.example" + path, { headers: { authorization: "Bearer " + token } })
         ))
       )
+      expect(Routes.handles("/api/repos/example/project/plan/summary")).toBe(false)
+      expect((yield* route("/api/plan/summary", "other")).status).toBe(403)
+      const aggregate = HttpServerResponse.toWeb(yield* route("/api/plan/summary", "reader"))
+      expect(yield* Effect.promise(() => aggregate.json())).toEqual({ openPlanNodes: 1, waitingPlanNodes: 0 })
+
       for (const requested of [shard, other]) {
         const paths = [
           "/api/plan/pull?" + ShardProtocol.pullQuery({ version: 2, shard: requested, epoch: 0, after: 0, limit: 10 }),
@@ -626,5 +631,34 @@ test("plan/update enforces durable SQLite idempotency across retries, restarts, 
   } finally {
     db.hibernate()
     rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("the projects summary counts outstanding plan items and decisions after reopening the shard", async () => {
+  const db = openStorage(":memory:")
+  try {
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const project = yield* Plan.make(db.storage, shard, auth())
+      const writer = yield* project.engine.openMcp({ transport: "http", tokenRef: "writer" })
+      expect(yield* project.summary).toEqual({ openPlanNodes: 0, waitingPlanNodes: 0 })
+      for (const id of ["decision", "working", "finished"]) {
+        yield* writer.submit({ operation: Plan.update, payload: command(id) })
+      }
+      for (const [nodeId, status] of [["decision", "blocked_on_will"], ["working", "in_progress"]] as const) {
+        yield* writer.submit({ operation: Plan.update, payload: {
+          command: { _tag: "SetNodeStatus", nodeId, status, expectedRevision: null },
+        } })
+      }
+      const person = yield* project.engine.openPerson({ session: "person" })
+      yield* person.submit({ operation: Plan.review, payload: {
+        command: { _tag: "SetNodeStatus", nodeId: "finished", status: "done", expectedRevision: null },
+      } })
+      expect(yield* project.summary).toEqual({ openPlanNodes: 2, waitingPlanNodes: 1 })
+      yield* project.compact
+      const reopened = yield* Plan.make(db.storage, shard, auth())
+      expect(yield* reopened.summary).toEqual({ openPlanNodes: 2, waitingPlanNodes: 1 })
+    }).pipe(Effect.provide(Reactivity.layer))))
+  } finally {
+    db.hibernate()
   }
 })

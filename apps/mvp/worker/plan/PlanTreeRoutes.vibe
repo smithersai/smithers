@@ -5,14 +5,14 @@ import { ShardProtocol } from "@smthrs/sync"
 import { Cause, Clock, Effect, Metric, Option, Schema } from "effect"
 import { Headers, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Reactivity from "effect/reactivity/Reactivity"
-import { memberOrAbove, rankOf, Sessions } from "../Actor.vibe"
+import { type Actor, memberOrAbove, rankOf, Sessions } from "../Actor.vibe"
 import { MAX_PLAN_MCP_BYTES, readBounded } from "../Body.vibe"
 import { holdsDeploymentAuthority } from "../DeploymentPolicy.vibe"
 import { codeOf } from "../ErrorCode.ts"
 import { repositoryOf } from "../github/Config.vibe"
 import type { RepoRoles } from "../github/RepoRoles.vibe"
 import * as ArtifactVisibility from "../ops/ArtifactVisibility.ts"
-import { admissionToken, forwardedRequest, PLAN_ADMISSION_HEADER } from "./PlanTreeBoundary.ts"
+import { admissionToken, forwardedRequest, PLAN_ADMISSION_HEADER, readServerResponseText } from "./PlanTreeBoundary.ts"
 import * as PlanTreeShard from "./PlanTreeShard.vibe"
 
 const noStore = { "cache-control": "no-store" }
@@ -40,6 +40,10 @@ export const handle = (plan: PlanTreeShard.LivePlanTree) =>
       return reply === undefined
         ? HttpServerResponse.empty({ status: 202, headers: noStore })
         : HttpServerResponse.text(reply, { contentType: "application/json", headers: noStore })
+    }
+    if (request.method === "GET" && url.pathname === "/api/plan/summary") {
+      if (!(try plan.canRead(evidence))) return forbidden
+      return respond(try plan.summary)
     }
     if (request.method === "GET" && url.pathname === "/api/plan/pull") {
       if (!(try plan.canRead(evidence))) return forbidden
@@ -103,6 +107,31 @@ export const live = PlanTreeObject.make(effect {
     return { fetch: try makeShardHandler(state.raw.storage, shard).pipe(Effect.orDie) }
   }
 })
+
+const PlanSummary = Schema.fromJsonString(Schema.Struct({
+  openPlanNodes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  waitingPlanNodes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+}))
+
+/** Aggregate-only read on the internal binding. The caller must admit the repository's member read first. */
+export const readSummary = <E, R>(
+  forward: (shard: ShardProtocol.ShardId, request: HttpServerRequest.HttpServerRequest) =>
+    HttpServerResponse.HttpServerResponse!E!R,
+  actor: Actor,
+  repo: string,
+) => effect {
+  const shard = try Schema.decodeUnknownEffect(ShardProtocol.ShardId)(`repo:${repo}`)
+  const request = try sync(() => forwardedRequest("https://plan.internal/api/plan/summary", {
+    method: "GET",
+    headers: {
+      [admissionHeader]: JSON.stringify({ subject: actor.subject.id, session: actor.session ?? actor.subject.id, write: false }),
+    },
+  }))
+  const response = try forward(shard, request)
+  if (response.status !== 200) return null
+  const summary = try Schema.decodeUnknownEffect(PlanSummary)(try readServerResponseText(response))
+  return summary
+}
 
 const repoPlanPath = /^\/api\/repos\/([^/]+)\/([^/]+)\/plan\/(mcp|pull|snapshot)$/
 

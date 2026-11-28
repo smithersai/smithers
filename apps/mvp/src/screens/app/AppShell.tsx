@@ -60,23 +60,28 @@ export function AppShell() {
           </>
         }
       />
-      {/* The room the timeline rail wants beside the chat; app-shell.css shifts the column to leave it. */}
-      <div className="app-shell-center" style={{ "--sui-timeline-want": `${TIMELINE_ROOM}px` } as CSSProperties}>
-        {/* Until the person has a conversation of their own, the steps to their first one, above the composer's place,
-            which they take while a step before Ask shows (decision 0121). */}
-        <div className="app-shell-start">
-          <FirstRunSteps />
-        </div>
-        <div className="app-shell-composer">
-          <FirstRunGate>
-            <ComposerGate>
-              <Composer />
-            </ComposerGate>
-          </FirstRunGate>
-        </div>
-        <div className="app-shell-conversation">
-          {/* Anchor after the pin so its controls stay clear; the stack still takes no space (0137). */}
-          <Conversation notices={<Notices surface="conversation" />} />
+      <div className="app-shell-body">
+        <div className="app-shell-home"><Slot name="app.home" /></div>
+        <div className="app-shell-chat">
+          {/* The room the timeline rail wants beside the chat; app-shell.css shifts the column to leave it. */}
+          <div className="app-shell-center" style={{ "--sui-timeline-want": `${TIMELINE_ROOM}px` } as CSSProperties}>
+            {/* Until the person has a conversation of their own, the steps to their first one, above the composer's place,
+                which they take while a step before Ask shows (decision 0121). */}
+            <div className="app-shell-start">
+              <FirstRunSteps />
+            </div>
+            <div className="app-shell-composer">
+              <FirstRunGate>
+                <ComposerGate>
+                  <Composer />
+                </ComposerGate>
+              </FirstRunGate>
+            </div>
+            <div className="app-shell-conversation">
+              {/* Anchor after the pin so its controls stay clear; the stack still takes no space (0137). */}
+              <Conversation notices={<Notices surface="conversation" />} />
+            </div>
+          </div>
         </div>
       </div>
     </main>

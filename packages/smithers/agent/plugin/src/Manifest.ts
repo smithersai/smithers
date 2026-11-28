@@ -323,13 +323,14 @@ export type View = typeof View.Type
  * @since 1.1.0
  */
 export const Slot = Schema.Struct({
-  slot: Schema.Literals(["shell.header", "shell.nav", "repo.tabs", "branch.pane", "item.pane"]),
+  slot: Schema.Literals(["shell.header", "shell.nav", "app.home", "repo.tabs", "branch.pane", "item.pane"]),
   id: Qualified,
   order: Schema.optional(Schema.Int),
   when: Schema.optional(When),
   minimum: Minimum,
   render: Render,
-  reads: Schema.optional(bounded(QueryRef, 16))
+  reads: Schema.optional(bounded(QueryRef, 16)),
+  events: Schema.optional(bounded(Event, 32))
 })
 
 /**

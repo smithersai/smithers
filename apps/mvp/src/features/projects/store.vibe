@@ -1,0 +1,224 @@
+import { Collection } from "@smthrs/effect-tanstack-db"
+import { HttpClient, HttpClientError, HttpClientRequest } from "effect/http"
+import { runners } from "../../boundary.vibe"
+import { DeviceIdentityRefused } from "../../device/identity.vibe"
+import type { Session } from "../auth/schema"
+import { AuthStore } from "../auth/store.vibe"
+import { RepoStore } from "../repo/store.vibe"
+import { PROJECT_PERSON_HEADER, PROJECT_STATUS_ROUTE, PROJECTS_ROUTE } from "./contract"
+import { type ProjectsLive, ProjectsSnapshot, Roster, Summaries } from "./schema"
+
+const EMPTY: ReadonlyArray<ProjectsSnapshot> = Object.freeze([])
+const initial: ProjectsSnapshot = {
+  id: "projects", personId: undefined, status: "loading", projects: [], summaries: [], summariesPending: true,
+}
+const unavailable: ProjectsSnapshot = { ...initial, status: "unavailable", summariesPending: false }
+const UNAVAILABLE = Object.freeze([unavailable])
+
+error ProjectReadRefused {
+  status: number
+}
+
+const refused = (failure: unknown) =>
+  (failure instanceof ProjectReadRefused && [401, 403].includes(failure.status)) ||
+  (HttpClientError.isHttpClientError(failure) && failure.reason._tag === "TransportError" &&
+    failure.reason.cause instanceof DeviceIdentityRefused && failure.reason.cause.reason === "credential_stale")
+
+/** Read only under an identified, current session. The offline-confirmed row never opens this private view. */
+const ownerOf = (session: Session | undefined) =>
+  session?.status === "signed_in" && !session.signingOut ? session.personId : undefined
+
+const authorityOf = (session: Session | undefined) => {
+  const person = ownerOf(session)
+  return person === undefined ? undefined : JSON.stringify([person, session?.role, session?.roleConfirmed])
+}
+
+export service ProjectsStore {
+  open: ProjectsLive!!
+}
+
+const loads = Metric.counter("smithers_projects_loads", { incremental: true })
+
+/** Roster and summaries are memory-only. The account and the subscription fence every response. */
+export const projectsLayer = ({ origin }: { readonly origin: string }) => Layer.effect(ProjectsStore, effect {
+  const http = try HttpClient.HttpClient
+  const auth = try AuthStore
+  const repos = try RepoStore
+  const scope = try Effect.scope
+  const rows = try Collection.local({ id: "project-roster", schema: ProjectsSnapshot, getKey: (row) => row.id, initialData: [initial] })
+  const { runSync } = runners(try Effect.context<never>(), "projects")
+  const session = () => auth.session.tanstack.get("session")
+  const owner = () => ownerOf(session())
+  const authority = () => authorityOf(session())
+  const get = <A>(person: string, path: string, decode: (body: unknown) => A!Schema.SchemaError) =>
+    withSpan(effect {
+      const request = HttpClientRequest.get(origin + path).pipe(HttpClientRequest.setHeader(PROJECT_PERSON_HEADER, person))
+      const response = try http.execute(request)
+      if (response.status !== 200) throw new ProjectReadRefused({ status: response.status })
+      return try decode(try response.json)
+    }, "projects.read")
+  const list = Schema.decodeUnknownEffect(Roster)
+  const summaries = Schema.decodeUnknownEffect(Summaries)
+  const record = (operation: "list" | "summary", outcome: "ready" | "unavailable") => effect {
+    try Metric.update(Metric.withAttributes(loads, { operation, outcome }), 1)
+    try logWithLevel(outcome === "ready" ? "Info" : "Warn")("projects.load").pipe(Effect.annotateLogs({ operation, outcome }))
+  }
+  let currentAuthority: string | undefined
+  let deniedAt: number | undefined
+  let askedCheck = false
+  let generation = 0
+  let snapshot: ReadonlyArray<ProjectsSnapshot> = EMPTY
+  let active: Fiber.Fiber<void> | undefined
+  let summaryReads = new Map<string, number>()
+  const listeners = new Set<() => void>()
+  const visible = repos.visible.tanstack
+  const repoId = (project: string) => `github/${project}`
+  const mayShow = (id: string) => visible.get(id)?.show === true
+
+  // A saved link belongs to the person's roster. Counts belong to the repository and go away with its access.
+  try acquireRelease(sync(() => visible.subscribeChanges((changes) => {
+    const closed = new Set(changes.filter((change) => change.type === "delete" || !change.value.show).map((change) => change.key))
+    if (closed.size === 0) return
+    for (const id of closed) summaryReads.delete(id)
+    const row = rows.tanstack.get(initial.id)
+    const kept = row?.summaries.filter((summary) => !closed.has(repoId(summary.project)))
+    if (row !== undefined && kept !== undefined && kept.length !== row.summaries.length) {
+      runSync(orDie(rows.update(initial.id, (draft) => { draft.summaries = kept })))
+    }
+  })), (subscription) => sync(() => subscription.unsubscribe()))
+
+  const refresh = effect (keepRows = false): void!! => {
+    const authRow = try sync(session)
+    const person = ownerOf(authRow)
+    const granted = authorityOf(authRow)
+    const changed = granted !== currentAuthority
+    currentAuthority = granted
+    if (changed || listeners.size === 0) askedCheck = false
+    deniedAt = undefined
+    const mine = ++generation
+    const reads = new Map<string, number>()
+    summaryReads = reads
+    const previous = active
+    active = undefined
+    if (previous !== undefined) fork.in(scope) Fiber.interrupt(previous)
+    const starting = { ...initial, personId: person }
+    if (!keepRows || changed) {
+      snapshot = EMPTY
+      try orDie(rows.update(initial.id, (row) => { Object.assign(row, starting) }))
+    }
+    if (person === undefined || listeners.size === 0) return
+    const isCurrent = () => mine === generation && authority() === granted
+    const publish = (state: ProjectsSnapshot) => effect {
+      if (!(try sync(isCurrent))) return
+      try orDie(rows.update(initial.id, (row) => {
+        Object.assign(row, state, { summaries: state.summaries.filter((summary) => {
+          const id = repoId(summary.project)
+          return mayShow(id) && reads.get(id) === repos.fenceOf(id)
+        }) })
+      }))
+    }
+    active = fork.in(scope) (effect {
+      const deny = (confirmation: number) => effect {
+        if (!(try sync(isCurrent))) return
+        deniedAt = confirmation
+        try publish(unavailable)
+        if ((try auth.confirmation) > confirmation) {
+          fork.in(scope) resumeRefused
+        } else if (!askedCheck) {
+          // One session check per refusal episode. An enduring refusal stays hidden until a later confirmation.
+          askedCheck = true
+          try auth.askCheck
+        }
+      }
+      const listConfirmation = try auth.confirmation
+      const roster = try result(timeout(get(person, PROJECTS_ROUTE, list), "8 seconds"))
+      try record("list", roster._tag === "Success" ? "ready" : "unavailable")
+      if (roster._tag === "Failure") {
+        if (refused(roster.failure)) try deny(listConfirmation)
+        else try publish({ ...unavailable, personId: person })
+        return
+      }
+      const state: ProjectsSnapshot = { ...starting, status: "ready", projects: roster.success.projects }
+      if (state.projects.length === 0 || authRow?.roleConfirmed === false) {
+        if ((try sync(isCurrent)) && authRow?.roleConfirmed !== false) askedCheck = false
+        try publish({ ...state, summariesPending: false })
+        return
+      }
+      try publish(state)
+      // The roster is ready while this tab restores repository refusals.
+      try repos.refusalsKnown
+      if (!(try sync(isCurrent))) return
+      try sync(() => {
+        for (const project of state.projects) {
+          const id = repoId(project)
+          repos.track(id)
+          if (mayShow(id)) reads.set(id, repos.fenceOf(id))
+        }
+      })
+      let path = PROJECT_STATUS_ROUTE as string
+      const seen = new Set<string>()
+      const received: Array<ProjectsSnapshot["summaries"][number]> = []
+      while (try sync(isCurrent)) {
+        const summaryConfirmation = try auth.confirmation
+        const page = try result(timeout(get(person, path, summaries), "15 seconds"))
+        try record("summary", page._tag === "Success" ? "ready" : "unavailable")
+        if (page._tag === "Failure") {
+          if (refused(page.failure)) return try deny(summaryConfirmation)
+          try publish({ ...state, summaries: [...received], summariesPending: false })
+          return
+        }
+        const cursor = page.success.nextAfter
+        received.push(...page.success.projects)
+        const more = cursor !== undefined && !seen.has(cursor) && state.projects.includes(cursor)
+        try publish({ ...state, summaries: [...received], summariesPending: more })
+        if (!more || cursor === undefined) {
+          if (try sync(isCurrent)) askedCheck = false
+          return
+        }
+        seen.add(cursor)
+        path = PROJECT_STATUS_ROUTE + "?after=" + encodeURIComponent(cursor)
+      }
+    })
+  }
+
+  const resumeRefused: void!! = effect {
+    if (deniedAt !== undefined && (try auth.confirmation) > deniedAt) try refresh()
+  }
+  try auth.confirmations.pipe(Stream.runForEach(() => effect {
+    if (deniedAt !== undefined) return try resumeRefused
+    // A same-role confirmation may follow a change to access on an individual repository.
+    if (listeners.size > 0 && (try sync(() => rows.tanstack.get(initial.id)))?.summariesPending === false) try refresh()
+  }), Effect.forkIn(scope, { startImmediately: true }))
+
+  const live: ProjectsLive = {
+    refresh: (person) => {
+      if (person === owner() && authority() === currentAuthority && deniedAt === undefined && listeners.size > 0) runSync(refresh(true))
+    },
+    current: () => {
+      const authRow = session()
+      const who = ownerOf(authRow)
+      if (who === undefined) return authRow?.status === "signed_in" && !authRow.signingOut ? UNAVAILABLE : EMPTY
+      if (authorityOf(authRow) !== currentAuthority || listeners.size === 0) return EMPTY
+      const row = rows.tanstack.get(initial.id)
+      if (row === undefined) return EMPTY
+      if (snapshot[0] !== row) snapshot = Object.freeze([row])
+      return snapshot
+    },
+    subscribe: (listener) => {
+      listeners.add(listener)
+      const changes = rows.tanstack.subscribeChanges(listener)
+      const confirmation = auth.session.tanstack.subscribeChanges(() => {
+        if (authority() !== currentAuthority) runSync(refresh())
+        listener()
+      })
+      if (listeners.size === 1) runSync(refresh())
+      return () => {
+        changes.unsubscribe()
+        confirmation.unsubscribe()
+        listeners.delete(listener)
+        if (listeners.size === 0) runSync(refresh())
+      }
+    },
+  }
+  return { open: succeed(live) }
+})

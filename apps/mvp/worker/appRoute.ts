@@ -11,10 +11,10 @@ import { BUILTIN_MANIFESTS } from "../src/plugins/manifests"
 const root = createRootRoute()
 const routes = Object.values(ROUTE_PATHS).filter((path) => !path.includes("$plugin")).map((path) => createRoute({ getParentRoute: () => root, path }))
 // A plugin's view: `/app/<plugin>/<path>`, or a repository's page `/$owner/$repo/-/<plugin>/<path>` (decision 0128 §8).
-const plugins = BUILTIN_MANIFESTS.flatMap((plugin) => (plugin.contributes.views as ReadonlyArray<{ readonly scope: string; readonly path: string }>).map((view) =>
+const plugins = BUILTIN_MANIFESTS.flatMap(({ id, contributes }) => !("views" in contributes) ? [] : contributes.views.map((view) =>
   createRoute({
     getParentRoute: () => root,
-    path: `${view.scope === "repository" ? "/$owner/$repo/-" : "/app"}/${plugin.id}${view.path === "" ? "" : `/${view.path}`}`,
+    path: `${view.scope === "repository" ? "/$owner/$repo/-" : "/app"}/${id}${view.path === "" ? "" : `/${view.path}`}`,
   })))
 const router = createRouter({ routeTree: root.addChildren([...routes, ...plugins]), history: createMemoryHistory(), isServer: true })
 

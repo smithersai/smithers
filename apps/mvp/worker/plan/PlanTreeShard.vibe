@@ -261,6 +261,13 @@ export const make = effect (
     ),
     journal: { pull: journal.pull, snapshot: journal.snapshot },
     state: Effect.sync(() => ({ tree, hash: canonicalHash(tree) })),
+    summary: Effect.sync(() => {
+      const nodes = Object.values(tree.nodes)
+      return {
+        openPlanNodes: nodes.filter((node) => node.status !== "done").length,
+        waitingPlanNodes: nodes.filter((node) => node.status === "blocked_on_will").length,
+      }
+    }),
     compact: Effect.suspend(() => journal.compact(headSeq, { tree, receipts: [...receipts] }))
   }
 }

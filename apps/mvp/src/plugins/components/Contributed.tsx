@@ -1,5 +1,5 @@
 import type { Host } from "@smthrs/plugin"
-import { type ComponentType, lazy, Suspense, useMemo } from "react"
+import { type ComponentType, lazy, type PropsWithChildren, Suspense, useMemo } from "react"
 import { Boundary } from "./Boundary"
 import { usePlugins } from "./PluginsContext"
 
@@ -8,18 +8,23 @@ import { usePlugins } from "./PluginsContext"
 interface Props {
   readonly plugin: string
   readonly name: string
+  readonly slot?: string
   readonly repository?: Host.Repository | undefined
 }
 
-function Contribution({ plugin, name, repository }: Props) {
+function Contribution({ plugin, name, repository, slot }: Props) {
   const { actions } = usePlugins()
   const Loaded = useMemo(() => lazy(async () => {
     const components = await actions.components(plugin)
     const tab = await actions.tab(plugin)
+    const Frame = (slot === undefined ? undefined : await actions.slotFrame?.(plugin, slot)) as ComponentType<PropsWithChildren> | undefined
     const Rendered = components[name] as ComponentType<Host.Rendered<unknown>> | undefined
     if (Rendered === undefined) throw new Error(`${plugin} exports no ${name}`)
-    return { default: (props: Pick<Props, "repository">) => <Rendered tab={tab} repository={props.repository} /> }
-  }), [actions, plugin, name])
+    return { default: (props: Pick<Props, "repository">) => {
+      const content = <Rendered tab={tab} repository={props.repository} />
+      return Frame === undefined ? content : <Frame>{content}</Frame>
+    } }
+  }), [actions, plugin, name, slot])
 
   return <Suspense fallback={null}><Loaded repository={repository} /></Suspense>
 }

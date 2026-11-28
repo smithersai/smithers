@@ -1,0 +1,9 @@
+# 0177. Keep the home project roster under the person’s account
+
+The app has global repository inventory, conversations, runs and watches. None answers which projects a person maintains across organizations, including projects with no activity. The owner explicitly adds their own references with the Projects form. Postgres stores the canonical path by stable session person and project. A single conflict-safe insert admits each reference.
+
+The first-party Projects plugin uses the public manifest's `app.home` slot and `PluginHost.query("core/projects")`. The shell contributes space and a live signed-in gate. The form declares a person-only slot event. The plugin loader admits this event for host-compiled components and the host dispatches its durable flow from the person’s press. The flow binds its save to the original account even after a session changes. The host supplies a TanStack DB snapshot scoped to the current person. It starts the read when the view subscribes and keeps the result in memory, so a previous account or disconnected browser has no persisted copy to reveal. Browser requests bind to the person displayed when the request starts. Account changes cancel the old fetch and fence its response.
+
+The roster returns independently of project summaries. Summaries resolve each repository's existing Member access and the private operations policy before querying stack or plan data. The stack gives TODO counts. An internal read of the plan shard's committed state gives aggregate counts without returning node names or contents. Partial failures preserve available counts and present unknown values as unavailable. The browser and Worker record operation and outcome without roster entries.
+
+Library catalog entries used are `@smthrs/plugin` for the manifest and host query, `@smthrs/ui` for cards, buttons and state indicators, `@smthrs/effect-tanstack-db` for the tab snapshot, and Effect HTTP and SQL for the transport and Postgres layer.

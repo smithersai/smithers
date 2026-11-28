@@ -2,7 +2,7 @@
 // the API version it offers, and what it records. A point it doesn't implement yet refuses the plugin that uses it
 // (`unsupported_point`), so nothing a manifest declares is silently ignored.
 
-/** The points slice 1's host implements; view events are part of `views`. */
+/** The points slice 1's host implements. Views and compiled component slots can declare events. */
 export const POINTS = ["views", "slots", "commands", "keybindings"] as const
 
 /** How long the first stroke of a two-stroke key (`g q`) waits for the second. */

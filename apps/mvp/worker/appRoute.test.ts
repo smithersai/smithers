@@ -14,7 +14,7 @@ test.each([
 ])("a supported deep link remains successful: %s", (path) => expect(isAppRoute(path)).toBe(true))
 
 test.each([
-  "/api", "/assets", "/docs", "/_missing", "/owner!", "/favicon.ico", "/sitemap.xml", "/app/conversations/id", "/app/unknown", "/app/bugs/unknown",
+  "/api", "/assets", "/docs", "/_missing", "/owner!", "/favicon.ico", "/sitemap.xml", "/app/conversations/id", "/app/projects", "/app/unknown", "/app/bugs/unknown",
   "/owner/repo/flows", "/owner/repo/issues/0", "/owner/repo/issues/abc", "/owner/repo/stack/0",
   "/owner/repo/pull/1/conversation", "/owner/repo/pull/1/unknown", "/owner!/repo", "/owner/repo/%",
 ])("an unsupported document has no route: %s", (path) => expect(isAppRoute(path)).toBe(false))
