@@ -273,7 +273,7 @@ const populateSyntheticHome = (
       script +=
         `printf '%s\\n' '[{"id":"sb-arr","owner":"lane-arr TOKEN=x","image":"ubuntu","state":"starting","startedAt":"2026-11-24T00:00:00Z","lastContactAt":"2026-11-24T00:01:00Z"},{"id":"sb-err","owner":"lane-e","image":"ubuntu","state":"failed"},{"id":"sb-done","owner":"lane-d","image":"ubuntu","state":"stopped"}]'\n`
     } else if (opts.cfboxMode === "json-jobs") {
-      script += `printf '%s\\n' '{"jobs":[{"id":"sb-job","owner":"lane-j","image":"node","state":"reserved"}]}'\n`
+      script += `printf '%s\\n' '{"jobs":[{"id":"sb-job","owner":"lane-j","image":"node","state":"reserved"},{"id":"sb-wait","state":"waiting"},{"id":"sb-live","state":"running"},{"id":"sb-finished","state":"completed"}]}'\n`
     } else if (opts.cfboxMode === "table") {
       script +=
         `printf 'ID OWNER IMAGE CPU STATE STARTED\\n--- --- --- --- ---\\nsb-tbl lane-t img1 1.0 running 2026-11-24\\nsb-tbl2 lane-t2 img2 0.0 error 2026-11-24\\n'\n`
@@ -406,6 +406,9 @@ try {
                       cfbox !== null && cfbox.host.online === false && cfbox.host.held === "cfbox token unavailable",
                       "cfbox no-token held"
                     )
+                  } else if (input.cfboxMode === "json-jobs") {
+                    expect(cfbox?.sessions.map((session) => session.status)).toEqual(["waiting", "waiting", "working", "ended"])
+                    expect(cfbox?.host.activeSessions).toBe(3)
                   } else if (input.cfboxMode === "timeout-125") {
                     assertInv(
                       cfbox !== null && cfbox.host.held === "cfbox partial worker timeout",

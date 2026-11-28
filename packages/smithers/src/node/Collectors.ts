@@ -1617,7 +1617,8 @@ const runCfboxList = (
 
 const mapCfboxState = (state: string): SessionSnapshot["status"] => {
   const s = state.toLowerCase()
-  if (s === "running" || s === "starting" || s === "reserved") return "working"
+  if (s === "running" || s === "starting") return "working"
+  if (s === "reserved" || s === "waiting") return "waiting"
   if (s === "failed" || s === "error") return "error"
   return "ended"
 }
