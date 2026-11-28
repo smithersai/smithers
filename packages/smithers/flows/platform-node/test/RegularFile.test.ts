@@ -31,7 +31,7 @@ const contents = (opened: Effect.Effect<FileSystem.File, PlatformError.PlatformE
 const refusal = (platform: NodeJS.Platform, path: string) =>
   Effect.runPromise(Effect.flip(Effect.scoped(RegularFile.open(platform, path))))
 
-describe.skipIf(process.platform === "win32")("NodeHost.openRegularFile", () => {
+describe("NodeHost.openRegularFile", () => {
   it("reads a regular file", async () => {
     await withRoot(async (root) => {
       const path = NodePath.join(root, "pnpm-lock.yaml")
@@ -40,6 +40,17 @@ describe.skipIf(process.platform === "win32")("NodeHost.openRegularFile", () => 
     })
   })
 
+  it("reports a missing file", async () => {
+    await withRoot(async (root) => {
+      const result = await Effect.runPromise(Effect.flip(Effect.scoped(
+        NodeHost.openRegularFile(NodePath.join(root, "missing"))
+      )))
+      expect(result.reason._tag).toBe("NotFound")
+    })
+  })
+})
+
+describe.skipIf(process.platform === "win32")("POSIX regular file handling", () => {
   it("refuses a FIFO without waiting for a writer", async () => {
     await withRoot(async (root) => {
       const path = NodePath.join(root, "pnpm-lock.yaml")
@@ -65,7 +76,6 @@ describe.skipIf(process.platform === "win32")("NodeHost.openRegularFile", () => 
     await withRoot(async (root) => {
       const file = NodePath.join(root, "file")
       await Fs.writeFile(file, "text", "utf8")
-      expect((await refusal(process.platform, NodePath.join(root, "missing"))).reason._tag).toBe("NotFound")
       expect((await refusal(process.platform, NodePath.join(file, "child"))).reason._tag).toBe("Unknown")
       if (process.getuid?.() !== 0) {
         await Fs.chmod(file, 0o000)

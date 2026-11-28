@@ -135,6 +135,9 @@ Two test helpers ship in the package's export map, not as dev-only files:
 `@smthrs/kernel/test/TestGrantStore` for allow, deny, and scripted grant-store
 doubles and `@smthrs/kernel/test/contract` for `runHostContract`, the behavioral
 contract every host bundle must satisfy (`test/HostContract` is an alias).
+For a host with working Jj, the contract logs each fixture preparation and Jj operation
+when it starts and finishes. The finish record carries elapsed milliseconds and
+the Effect outcome. On a timeout, the last start identifies the active operation.
 The contract is Node-only. The
 deterministic host bundle lives at `@smthrs/testing/TestHost` so the kernel does
 not depend back on a platform implementation.

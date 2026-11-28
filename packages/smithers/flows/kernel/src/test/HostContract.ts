@@ -740,38 +740,44 @@ export const runHostContract = (
             expect(root).toBeTypeOf("function")
             expect(revert).toBeTypeOf("function")
             expect(opRestore).toBeTypeOf("function")
-            yield* (jjCap.prepareChange?.("first") ?? Effect.void)
-            const first = yield* jj.snapshot("host contract first")
+            const timed = <A, E, R>(operation: string, probe: Effect.Effect<A, E, R>) =>
+              Effect.logInfo("Jj contract operation started").pipe(
+                Effect.andThen(probe),
+                Effect.onExit((exit) => Effect.logInfo("Jj contract operation finished", { outcome: exit._tag })),
+                Effect.withLogSpan(operation)
+              )
+            yield* timed("prepare.first", jjCap.prepareChange?.("first") ?? Effect.void)
+            const first = yield* timed("snapshot.first", jj.snapshot("host contract first"))
             expect(first.changeId.length).toBeGreaterThan(0)
-            yield* (jjCap.prepareChange?.("second") ?? Effect.void)
-            const second = yield* jj.snapshot("host contract second")
+            yield* timed("prepare.second", jjCap.prepareChange?.("second") ?? Effect.void)
+            const second = yield* timed("snapshot.second", jj.snapshot("host contract second"))
             expect(second.changeId.length).toBeGreaterThan(0)
-            expect(typeof (yield* jj.diff(first.changeId, second.changeId))).toBe("string")
+            expect(typeof (yield* timed("diff", jj.diff(first.changeId, second.changeId)))).toBe("string")
             const revertCode = jjCap.unsupported?.revert
             if (revertCode === undefined) {
-              const reverted = yield* revert!(second.changeId)
+              const reverted = yield* timed("revert", revert!(second.changeId))
               expect(Array.isArray(reverted.reverted)).toBe(true)
               expect(reverted.reverted.every((path) =>
                 typeof path === "string"
               )).toBe(true)
             } else {
-              yield* assertFailure(revert!(second.changeId), revertCode)
+              yield* assertFailure(timed("revert", revert!(second.changeId)), revertCode)
             }
-            yield* jj.restore(first.changeId)
+            yield* timed("restore", jj.restore(first.changeId))
             const workspaceName = `host-contract-${process.pid}-${++scratchSeq}`
-            yield* jj.workspaceAdd(
+            yield* timed("workspaceAdd", jj.workspaceAdd(
               workspaceName,
               jjCap.workspacePath ?? defaultScratchPath(`${name}-jj-workspace`),
               first.changeId
-            )
-            yield* jj.workspaceForget(workspaceName)
-            expect(typeof (yield* jj.status())).toBe("string")
+            ))
+            yield* timed("workspaceForget", jj.workspaceForget(workspaceName))
+            expect(typeof (yield* timed("status", jj.status()))).toBe("string")
             const rootCode = jjCap.unsupported?.root
             const rootFrom = jjCap.rootFrom ?? "."
             if (rootCode === undefined) {
-              expect((yield* root!(rootFrom)).length).toBeGreaterThan(0)
+              expect((yield* timed("root", root!(rootFrom))).length).toBeGreaterThan(0)
             } else {
-              yield* assertFailure(root!(rootFrom), rootCode)
+              yield* assertFailure(timed("root", root!(rootFrom)), rootCode)
             }
             // Restore only after forgetting the temporary workspace. The
             // snapshot predates it, so no workspace is left pointing at a
@@ -779,9 +785,9 @@ export const runHostContract = (
             const opRestoreCode = jjCap.unsupported?.opRestore
             if (opRestoreCode === undefined) {
               expect(second.operationId).toBeTypeOf("string")
-              yield* opRestore!(second.operationId!)
+              yield* timed("opRestore", opRestore!(second.operationId!))
             } else {
-              yield* assertFailure(opRestore!(second.operationId ?? "0123456789abcdef"), opRestoreCode)
+              yield* assertFailure(timed("opRestore", opRestore!(second.operationId ?? "0123456789abcdef")), opRestoreCode)
             }
           }),
         layer
